@@ -174,7 +174,11 @@ describe('measureBlocks — questions', () => {
     const node = fragment.nodes[0];
     const lineCount = node.cells[0].lines.length;
     expect(lineCount).toBeGreaterThan(1);
-    for (const line of node.cells[0].lines) expect(line.widthPt).toBeLessThanOrEqual(node.cellWidthPt);
+    // Wrapping at the full cell width let a long label run flush into the next
+    // column's text; every line must leave the column gutter clear.
+    for (const line of node.cells[0].lines) {
+      expect(line.widthPt).toBeLessThanOrEqual(node.cellWidthPt - theme.omr.choiceColumnGutterPt);
+    }
     expect(node.heightPt)
       .toBe(theme.omr.rowHeightPt + theme.omr.choiceGapPt + lineCount * theme.omr.choiceLeadingPt);
   });

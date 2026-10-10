@@ -104,6 +104,24 @@ test('recomputeSummaryForPart excludes participants below the HR-sample threshol
   assert.deepEqual(Object.keys(summary.participants), ['real']);
 });
 
+test('recomputeSummaryForPart still counts rings a below-threshold participant earned', () => {
+  // A strap that connects a few ticks before the split earns rings in part 1.
+  // Leaving them out of the total breaks the split's ring reconciliation even
+  // though the per-participant series reconcile (2026-10-09, 381 vs 383).
+  const series = {
+    'late:hr':  [null, null, 110, 112],          // 2 samples — below threshold
+    'real:hr':  [120, 121, 122, 123],
+    'late:zone': [null, null, 'w', 'w'], 'real:zone': ['a', 'a', 'w', 'w'],
+    'late:rings': [null, null, 1, 2], 'real:rings': [1, 2, 3, 4],
+  };
+  const { summary, treasureBox } = recomputeSummaryForPart({
+    series, slugs: ['late', 'real'], events: [], intervalMs: 5000, ringTimeUnitMs: 5000, minHrSamples: 3,
+  });
+  assert.deepEqual(Object.keys(summary.participants), ['real']);
+  assert.equal(treasureBox.totalRings, 6);
+  assert.equal(summary.rings.total, 6);
+});
+
 test('recomputeSummaryForPart marks the longest media as primary (so the part stands alone)', () => {
   const series = { 'user_3:hr': [120, 130], 'user_3:zone': ['a', 'w'], 'user_3:rings': [5, 10] };
   const events = [

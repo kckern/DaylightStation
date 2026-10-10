@@ -1,3 +1,5 @@
+import {lessonReadinessRequired,waitForPublishedUnit} from './published-unit-readiness.mjs';
+import {validateStudyWindow} from './synthetic-study-grant.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -42,6 +44,9 @@ assert.ok(outputRoot !== sourceRoot && !outputRoot.startsWith(sourceRoot + path.
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const fixtureFile = fs.realpathSync(options['--fixture'] ?? path.join(directory, 'local-app-fixture.json'));
 const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
+const studyFixtureFileSha256=createHash('sha256').update(fs.readFileSync(fixtureFile)).digest('hex');
+if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtureFileSha256);validateStudyWindow(captureExpectations,Date.now());}
+const publishedUnitRequired=captureExpectations?lessonReadinessRequired(captureExpectations,studyFixtureFileSha256):false;
 const rawUTF8Files = validateRawFixtures(prepared);
 const rawBinaryFiles = prepared.rawBinaryFiles ?? [];
 const {fixtureDirectories, metadataDirectories} = validateDirectoryFixtures(prepared);
@@ -55,7 +60,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
   // Exact synthetic stored-array destinations only; no raw or filesystem grant.
   const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml","data/household/automotive/log/synthetic-array-car/2026-10-01.yml","data/household/automotive/log/synthetic-array-car/2026-10-02.yml","data/household/automotive/synthetic-array-car/fuel.yml"].includes(relative);
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml"), 'Only reviewed stored-data or exact School recipes paths may have an array root');
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArray || reviewedRecipeArray || reviewedStoredArray || ["data/users/user_1/apps/school/language/daily-korean/log/2026-10-08.yml", "data/users/user_1/apps/school/language/daily-korean/log/2026-10-09.yml", "data/users/user_2/apps/school/language/daily-korean/log/2026-10-09.yml", "data/household/school/artifacts/print/cards/1234567.yml", "data/household/school/artifacts/print/cards/7654321.yml", "data/household/school/records/curriculum-exceptions.yml"].includes(relative) || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml" || ["data/household/school/records/print/jobs.yml", "data/household/school/runtime/queues/print.yml"].includes(relative)), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
 const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;
@@ -111,7 +116,7 @@ assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe gran
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
 const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F').map(([file]) => ({ file, sha256: hash(file) }));
 const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
-for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
+for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
 const c = path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c');
@@ -120,7 +125,7 @@ const compile = spawnSync('/usr/bin/gcc', ['-O2', '-Wall', '-Wextra', '-Werror',
 assert.equal(compile.status, 0, compile.stderr);
 const args = [scratch, fs.realpathSync(process.execPath), manifest, toolRoot, path.join(run, 'transparent-loader.mjs'), path.join(run, entryName), denied, 'readiness-http', 'baseline', ''];
 const captureStartedAt = Date.now();
-let captured = null;
+let captured = null, publishedUnitReadiness;
 const child = spawn('/usr/bin/timeout', ['--signal=KILL', '75s', binary, ...args], { cwd: scratch, env: { PATH: '/usr/bin:/bin' } });
 let stderr = '', finished = null, comparison = null, comparisonError = null, response = null, referenceIdentityBefore = null, referenceIdentityAfter = null;
 const referenceObservations = [];
@@ -135,11 +140,13 @@ for (let attempt = 0; attempt < 400 && !finished; attempt++) {
         response = { status: result.status, header: result.headers.get('x-control'), body: await result.text() };
         assert.deepEqual(response, { status: 200, header: 'actual-http', body: 'synthetic transport bytes\n' });
       } else if (captureRole) {
+        if(publishedUnitRequired) publishedUnitReadiness=await waitForPublishedUnit({manifest:captureExpectations,fixtureFileSha256:studyFixtureFileSha256,role:captureRole,transport:fetchTransport,persist:evidence=>fs.writeFileSync(path.join(run,'published-unit-readiness.json'),JSON.stringify(evidence,null,2),{mode:0o600})});
         captured = [];
         for (const c of captureExpectations.cases) {
           const url = new URL(c.path, 'http://127.0.0.1:43129').href;
-          captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind,
-            observed:await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind}) });
+          validateStudyWindow(captureExpectations,Date.now());
+          captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),
+            observed:await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind,caseId:c.id,...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),manifestSha256:jsonHash(captureExpectations),fixtureFileSha256:studyFixtureFileSha256,captureRole}) });
         }
       } else if (options['--manifest']) {
         const { compareApi, fetchTransport } = await import('./api-comparator.mjs');
@@ -193,17 +200,18 @@ const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === ro
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
 let capture = null;
 if (captureRole && captured) {
+  validateStudyWindow(captureExpectations,Date.now());
   const record = {schema:'isolated-api-capture-v1', role:captureRole, pairNonce:options['--pair-nonce'],sourceCommit,
     workingTreeSha256,
     runtimeSha256:options['--runtime-sha256'],harnessSha256:options['--harness-sha256'],
     fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,
     manifestSha256:jsonHash(captureExpectations),url:'http://127.0.0.1:43129',
-    startedAt:captureStartedAt,endedAt:Date.now(),cases:captured};
+    startedAt:captureStartedAt,endedAt:Date.now(),...(publishedUnitReadiness?{publishedUnitReadiness}:{}),cases:captured};
   const file=path.join(run,'capture.json');
   fs.writeFileSync(file,JSON.stringify(record,null,2),{mode:0o600,flag:'wx'});
   const {cases,...metadata}=record;capture={...metadata,file,sha256:hash(file)};
 }
-const receipt = { capture, sourceCommit, runtimeTimezone, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(fixtureIdentity), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
+const receipt = { capture, sourceCommit, runtimeTimezone, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,'published-unit-readiness.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(fixtureIdentity), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
 fs.writeFileSync(path.join(run, 'receipt.json'), JSON.stringify(receipt, null, 2), { mode: 0o600 });
 console.log(JSON.stringify({ receipt: path.join(run, 'receipt.json'), ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: receipt.comparisonAccepted, comparisonError }));
 if (!completed || comparison?.accepted === false) process.exitCode = 1;

@@ -42,7 +42,7 @@ try {
     const file = path.join(scratch, row.destination);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (row.mtimeMs !== undefined) {
-      assert.ok(row.encoding === 'binary' && ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(row.destination));
+      assert.ok(row.encoding === 'binary' && ["media/games/_common/synthetic-read-assets/tiles.png", "media/games/party-games/synthetic-read-assets.png", "media/school/language/synthetic-read-assets/words/en/star/image.png", "media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(row.destination));
       assert.equal(row.mtimeMs, 1759276800000);
       const stat = fs.lstatSync(file);
       assert.ok(stat.isFile() && !stat.isSymbolicLink() && fs.realpathSync(file) === file);

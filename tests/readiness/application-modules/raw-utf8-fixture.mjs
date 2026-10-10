@@ -29,10 +29,13 @@ export function validateRawFixtures(fixture) {
     const pianoLesson = ['media/docs/piano-lessons/synthetic-daily-lessons/index.yml', 'media/docs/piano-lessons/synthetic-daily-lessons/five-finger.yml'].includes(destination);
     const gamingStored = ['media/games/_common/catalog/synthetic-read-assets.yml', 'data/household/gaming/effects/sessions/synthetic_asset-session.jsonl'].includes(destination);
     const gamingSchoolImage = ['media/games/_common/synthetic-read-assets/tiles.png', 'media/games/party-games/synthetic-read-assets.png', 'media/school/language/synthetic-read-assets/words/en/star/image.png'].includes(destination);
-    if (row.mtimeMs !== undefined) assert.ok(binary && gamingSchoolImage && row.mtimeMs === 1759276800000, 'Unreviewed fixture mtime');
-    if (gamingSchoolImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
+    const mediaNavigationImage = ["media/audio/readalong/synthetic-media-navigation/cover.png", "media/audio/readalong/synthetic-media-navigation/chapter/cover.png", "data/content/readalong/synthetic-media-navigation/icon.png"].includes(destination);
+    const mediaNavigationAudio = ["media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav", "media/audio/singalong/synthetic-media-navigation/0001-synthetic-song.mp3"].includes(destination);
+    if (row.mtimeMs !== undefined) assert.ok(binary && (gamingSchoolImage || mediaNavigationImage) && row.mtimeMs === 1759276800000, 'Unreviewed fixture mtime');
+    if (gamingSchoolImage || mediaNavigationImage) assert.equal(row.mtimeMs, 1759276800000, 'Exact image fixture mtime required');
+    const studyRecording = destination === "media/school/language/daily-korean/recordings/user_1/0002-KR.wav";
     const cueAudio = destination === 'media/school/_ux/ding.mp3';
-    assert.ok(binary ? gamingSchoolImage || payload || asset || promptAudio || cueAudio : gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
+    assert.ok(binary ? mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
     for (const match of [attempts, manifest, payload]) if (match) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + match[1] + '/profile.yml'), 'Raw School user must have projected roster profile');
     if (composer) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + composer[1] + '/profile.yml'), 'Raw composer user must have a projected roster profile');
     assert.ok(!seen.has(destination) && !Object.hasOwn(fixture.fixtureFiles, destination), 'Raw duplicate or JSON collision'); seen.add(destination);
@@ -44,7 +47,8 @@ export function validateRawFixtures(fixture) {
     assert.equal(createHash('sha256').update(bytes).digest('hex'), row.sha256, 'Raw byte hash mismatch');
     if (binary) {
       const extension = path.posix.extname(destination);
-      const signature = extension === '.png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+      const signature = (studyRecording || destination === "media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav") ? bytes.length>=44 && bytes.subarray(0,4).toString('ascii')==='RIFF' && bytes.subarray(8,12).toString('ascii')==='WAVE' && bytes.readUInt32LE(4)+8===bytes.length
+        : extension === '.png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
         : extension === '.jpg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
         : extension === '.mp3' && (bytes.subarray(0, 3).toString('ascii') === 'ID3' || bytes[0] === 255 && (bytes[1] & 224) === 224);
       assert.ok(signature, 'Binary fixture does not match approved PNG/JPEG/MP3 type');

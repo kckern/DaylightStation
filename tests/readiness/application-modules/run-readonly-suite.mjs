@@ -1,3 +1,4 @@
+import {validateStudyPacket} from './synthetic-study-grant.mjs';
 // Explicit reviewed packs only. The proof index is an approval artifact, not discovery.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,9 +18,10 @@ export const packs = Object.freeze({ initial: 'expectations.json', next: 'next-r
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-const request = row => ({ id: row.id, method: row.method, path: row.path, safety: row.safety });
+const request = row => ({ id: row.id, method: row.method, path: row.path, safety: row.safety, ...(row.headers?{headers:row.headers}:{}) });
 
-export function validateSelection(manifest, approvals) {
+export function validateSelection(manifest, approvals, {isolatedStudyFixtureFileSha256}={}) {
+  const study=isolatedStudyFixtureFileSha256!==undefined && validateStudyPacket(manifest,isolatedStudyFixtureFileSha256);
   assert.deepEqual(manifest.cases.map(row => row.id).sort(), approvals.map(row => row.id).sort(), 'Reviewed case IDs changed');
   assert.equal(new Set(approvals.map(row => row.id)).size, approvals.length, 'Duplicate approval IDs');
   for (const row of manifest.cases) {
@@ -27,7 +29,7 @@ export function validateSelection(manifest, approvals) {
     assert.deepEqual(row.safety, { reviewed: true, disposition: 'read-only', sideEffects: false, nonlocal: false, longLived: false });
     assert.equal(row.method, 'GET');
     assert.ok(row.path.startsWith('/') && !row.path.startsWith('//'));
-    assert.ok(!row.headers && !row.body, 'No authentication or request bodies in this suite');
+    assert.ok(!row.body && (!row.headers || study), 'No unreviewed authentication or request bodies in this suite');
   }
 }
 
@@ -37,7 +39,7 @@ export function aggregateCases(results) {
   for (const result of results) for (const observed of result.cases) {
     const approved = result.approvals.find(row => row.id === observed.id);
     assert.ok(approved, 'Unexpected comparator case');
-    const signature = JSON.stringify([approved.method, approved.path]);
+    const signature = JSON.stringify([approved.method, approved.path, ...(approved.headers?[approved.headers]:[])]);
     let row = unique.get(observed.id);
     if (row) assert.equal(row.signature, signature, 'Conflicting duplicate case ID');
     else { row = { id: observed.id, signature, method: approved.method, path: approved.path,

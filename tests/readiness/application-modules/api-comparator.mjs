@@ -1,3 +1,5 @@
+import {validatePublishedUnitEvidence} from './published-unit-readiness.mjs';
+import {validateStudyPacket, validateStudyWindow, approvedStudyHeaders} from './synthetic-study-grant.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -227,6 +229,7 @@ function inspect(response, c) {
 // independently provisioned and reviewed; loopback and declared metadata are not
 // isolation or provenance proof. Live mode keeps its reference data identity separate.
 export async function compareApi({ manifest, targets, transport }) {
+  assert.ok(!manifest.cases.some(c=>Object.hasOwn(c,'headers')), 'Synthetic study grants forbidden in live comparison');
   validate(manifest, targets);
   return compareValidated({ manifest, targets, transport });
 }
@@ -238,7 +241,7 @@ async function compareValidated({ manifest, targets, transport }) {
     const errors = [];
     for (const side of ['reference', 'candidate']) {
       try {
-        observations[side] = await transport({ side, caseId:c.id, url: new URL(c.path, targets[side].url).href, method: c.method, bodyKind: c.expected.body.kind });
+        observations[side] = await transport({ side, caseId:c.id, url: new URL(c.path, targets[side].url).href, method: c.method, bodyKind: c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}) });
         inspect(observations[side], c);
       } catch (error) { errors.push({ side, message: error.message }); }
     }
@@ -259,18 +262,19 @@ async function compareValidated({ manifest, targets, transport }) {
 }
 
 // Admission is shared by capture and offline replay, before any socket request.
-export function validateCaptureManifest(manifest) {
+export function validateCaptureManifest(manifest, fixtureFileSha256) {
+  const reviewedStudy=validateStudyPacket(manifest,fixtureFileSha256);
   validateManifest(manifest, 'http://127.0.0.1:43129');
   for (const c of manifest.cases) {
     assert.equal(c.method, 'GET');
-    assert.ok(!Object.hasOwn(c, 'headers') && !Object.hasOwn(c, 'body'), 'Capture has no credentials, headers or body');
+    assert.ok(!Object.hasOwn(c,'body') && (!Object.hasOwn(c,'headers') || reviewedStudy), 'Capture denies unreviewed credentials, headers or body');
     const url = new URL(c.path, 'http://127.0.0.1:43129');
     for (const key of url.searchParams.keys()) assert.ok(!/^(sid|cookie|authorization|bearer|token)$/i.test(key), 'Credential query denied');
   }
 }
 export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, fixtureFileSha256,
   runtimeSha256, harnessSha256, runs, guardsAccepted }) {
-  validateCaptureManifest(manifest);
+  validateCaptureManifest(manifest,fixtureFileSha256);
   assert.equal(guardsAccepted, true, 'Fresh coordinator input guards required');
   assert.match(pairNonce, /^[a-f0-9]{32}$/);
   assert.equal(createHash('sha256').update(JSON.stringify(manifest)).digest('hex'), manifestSha256, 'Manifest identity mismatch');
@@ -306,9 +310,13 @@ export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, 
     assert.equal(receipt.capture.startedAt, capture.startedAt); assert.equal(receipt.capture.endedAt, capture.endedAt);
     assert.ok(Number.isFinite(capture.startedAt) && Number.isFinite(capture.endedAt) && capture.startedAt < capture.endedAt);
     assert.equal(capture.cases.length, manifest.cases.length);
+    assert.deepEqual(receipt.capture.publishedUnitReadiness,capture.publishedUnitReadiness,'Receipt prerequisite linkage');
+    validatePublishedUnitEvidence({manifest,fixtureFileSha256,role:run.role,evidence:capture.publishedUnitReadiness,captureStartedAt:capture.startedAt,captureEndedAt:capture.endedAt,selectedObservations:capture.cases.map(row=>row.observed)});
+    if(validateStudyPacket(manifest,fixtureFileSha256)) { validateStudyWindow(manifest,capture.startedAt);validateStudyWindow(manifest,capture.endedAt); }
     for (const [i, c] of manifest.cases.entries()) {
       const row = capture.cases[i];
-      assert.deepEqual(Object.keys(row).sort(), ['id','method','path','url','bodyKind','observed'].sort(), 'Unexpected captured request fields');
+      if(Object.hasOwn(c,'headers')) assert.deepEqual(row.headers,c.headers,'Captured study header linkage');
+      assert.deepEqual(Object.keys(row).sort(), ['id','method','path','url','bodyKind','observed',...(Object.hasOwn(c,'headers')?['headers']:[])].sort(), 'Unexpected captured request fields');
       for (const [key, value] of Object.entries({id:c.id,method:c.method,path:c.path,bodyKind:c.expected.body.kind,url:new URL(c.path,capture.url).href})) assert.equal(row[key],value,'Request linkage: '+key);
       if (c.timestampContract) {
         const interval = observationInterval(row.observed);
@@ -321,19 +329,20 @@ export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, 
   assert.equal(captures[0].fixtureSha256, captures[1].fixtureSha256);
   assert.equal(captures[0].runtimeTimezone, captures[1].runtimeTimezone);
   const targets = { mode:'captured-isolated', reference:captures[0], candidate:captures[1] };
-  const result = await compareValidated({ manifest, targets, transport:async ({side,caseId,url,method,bodyKind}) => {
+  const result = await compareValidated({ manifest, targets, transport:async ({side,caseId,url,method,bodyKind,headers}) => {
     const capture = captures[side === 'reference' ? 0 : 1];
     const row = capture.cases.find(row => row.id === caseId && row.url === url && row.method === method && row.bodyKind === bodyKind);
-    assert.ok(row, 'No verified stored request'); return row.observed;
+    assert.ok(row, 'No verified stored request'); if(headers) assert.deepEqual(row.headers,headers,'Offline study header identity'); return row.observed;
   }});
   result.declaredTargets = Object.fromEntries(Object.entries(targets).map(([key,value]) => [key,typeof value === 'object' ? { ...value, cases:undefined } : value]));
   result.evidence = runs; result.productionOrLiveCoverage = false;
   return result;
 }
 
-export async function fetchTransport({ url, method, bodyKind }) {
+export async function fetchTransport({ url, method, bodyKind, caseId, headers, manifestSha256, fixtureFileSha256, captureRole }) {
+  const requestHeaders=headers===undefined?undefined:approvedStudyHeaders({caseId,url,method,headers,manifestSha256,fixtureFileSha256,captureRole});
   const startedAt = Date.now();
-  const response = await fetch(url, { method, redirect: 'manual', signal: AbortSignal.timeout(5000) });
+  const response = await fetch(url, { method, ...(requestHeaders?{headers:requestHeaders}:{}), redirect: 'manual', signal: AbortSignal.timeout(5000) });
   // A fixed response limit keeps accidental stream endpoints out of this probe.
   const reader = response.body?.getReader();
   const chunks = []; let length = 0;

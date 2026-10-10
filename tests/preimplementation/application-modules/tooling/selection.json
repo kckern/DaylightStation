@@ -406,7 +406,7 @@
   },
   "helperPin": {
     "relativePath": "tests/preimplementation/application-modules/tooling/landlock-runner.c",
-    "sha256": "35f1744f80d54c49d5a7091a92578f9f97abcec831276b8303cbc0b9d94abb4f"
+    "sha256": "101ba68cf12679058d0f3eac50a234bd2f2a2c3855d64fb8e95f2501b8401b0e"
   },
   "buildToolPins": [
     {

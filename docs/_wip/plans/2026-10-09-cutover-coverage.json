@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "Mixed-reference historical union385 accepted IDs/376 independent contracts;388 credited-or-baseline-diagnostic IDs,390 literal observed including two historical bootstrap aliases;261 accepted parity templates of394/133gaps. Assets7 genuine guarded requests and Home2 reviewed bounded elapsed/static derivation over original captures; original failures and disconnected NoOp semantics preserved. No fresh385 replay or global readiness claim.",
+  "stage": "Mixed-reference historical union434accepted/425independent contracts;437credited-or-baseline-diagnostic IDs and439literal observed including two renamed bootstrap aliases. 284accepted parity templates of394/110gaps. Pinned60cb Schoolstored11 validates finite quota/request/pending/progress reads; printing constructor is inert, no physical printing. No fresh434 replay or global readiness claim.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -620,8 +620,8 @@
     "isolatedAndLiveEvidenceAccounting": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 265,
-      "isolatedAcceptedOccurrences": 265,
+      "isolatedUniqueAcceptedCaseIds": 314,
+      "isolatedAcceptedOccurrences": 314,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -790,6 +790,23 @@
         "life-piano-schedule-json",
         "life-piano-schedule-rss",
         "life-piano-schedule-xml",
+        "media-policy-assertions",
+        "media-policy-assets-collection-icon",
+        "media-policy-assets-cover-chapter",
+        "media-policy-assets-cover-collection",
+        "media-policy-assets-cover-inherited",
+        "media-policy-assets-embedded-cover",
+        "media-policy-assets-readalong-audio",
+        "media-policy-assets-singalong-audio",
+        "media-policy-browse-games",
+        "media-policy-browse-tiles",
+        "media-policy-dashboard-config",
+        "media-policy-policy",
+        "media-policy-transitions-after5",
+        "media-policy-transitions-ahead",
+        "media-policy-transitions-all",
+        "media-policy-transitions-expired",
+        "media-policy-transitions-page",
         "reading-configured-aliases",
         "reading-hymn-detail",
         "reading-hymn-index",
@@ -802,6 +819,38 @@
         "reading-talk-01",
         "reading-talk-02",
         "school-insights-populated-monitor",
+        "school-language-joins-cross-recording",
+        "school-language-joins-denied-cross-corpus",
+        "school-language-joins-denied-cross-learner",
+        "school-language-joins-denied-expired",
+        "school-language-joins-denied-malformed",
+        "school-language-joins-denied-missing",
+        "school-language-joins-denied-tampered",
+        "school-language-joins-denied-wrong-purpose",
+        "school-language-joins-exceptions",
+        "school-language-joins-language-history",
+        "school-language-joins-language-recording",
+        "school-language-joins-learner-sheets-user_1",
+        "school-language-joins-learner-sheets-user_2",
+        "school-language-joins-lesson-joins-playing",
+        "school-language-joins-lesson-joins-resumed",
+        "school-language-joins-missing-recording",
+        "school-language-joins-other-history",
+        "school-language-joins-sentence-ladder-history",
+        "school-language-joins-sentence-ladder-recording",
+        "school-language-joins-sheet-1234567",
+        "school-language-joins-sheet-7654321",
+        "school-stored-pending",
+        "school-stored-progress",
+        "school-stored-progress-filter",
+        "school-stored-quota-missing",
+        "school-stored-quota-unknown",
+        "school-stored-quota-user_1",
+        "school-stored-quota-user_2",
+        "school-stored-requests-missing",
+        "school-stored-requests-unknown",
+        "school-stored-requests-user_1",
+        "school-stored-requests-user_2",
         "spend-cost-category-depth1",
         "spend-cost-category-depth2",
         "spend-cost-dashboard",
@@ -891,11 +940,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 385,
-      "unionIndependentContracts": 376,
+      "unionUniqueAcceptedCaseIds": 434,
+      "unionIndependentContracts": 425,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 179,
-      "newIsolatedTemplates": 172,
+      "isolatedDistinctTemplates": 202,
+      "newIsolatedTemplates": 195,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -995,9 +1044,9 @@
     "currentSourceUnionEvidenceAccounting": {
       "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
       "historicalLiveEligibleTemplateLinks": 94,
-      "isolatedAdditionalEligibleTemplateLinks": 167,
-      "unionEligibleTemplatesWithExecutedCaseLinks": 261,
-      "unionEligibleTemplatesWithoutExecutedCaseLinks": 133,
+      "isolatedAdditionalEligibleTemplateLinks": 190,
+      "unionEligibleTemplatesWithExecutedCaseLinks": 284,
+      "unionEligibleTemplatesWithoutExecutedCaseLinks": 110,
       "isolatedOnlyTemplates": [
         "/api/v1/admin/apps/:appId/config",
         "/api/v1/admin/content/lists",
@@ -1005,6 +1054,8 @@
         "/api/v1/admin/content/lists/:type/:name",
         "/api/v1/admin/household",
         "/api/v1/admin/household/members/:username",
+        "/api/v1/admin/state-gates/assertions",
+        "/api/v1/admin/state-gates/policy",
         "/api/v1/art/preset/:key",
         "/api/v1/auth/context",
         "/api/v1/auth/setup-status",
@@ -1084,6 +1135,7 @@
         "/api/v1/home-automation/status",
         "/api/v1/home-automation/todos",
         "/api/v1/home-automation/weather",
+        "/api/v1/home-dashboard/config",
         "/api/v1/home/calendar",
         "/api/v1/home/entropy",
         "/api/v1/home/events",
@@ -1101,12 +1153,17 @@
         "/api/v1/lifelog/aggregate/:username/:date",
         "/api/v1/lifelog/sources",
         "/api/v1/list",
+        "/api/v1/local-content/collection-cover/:adapter/:collection",
+        "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+        "/api/v1/local-content/collection-icon/:adapter/:collection",
         "/api/v1/local-content/collection/:name",
+        "/api/v1/local-content/cover{/*splat}",
         "/api/v1/local-content/hymn/:number",
         "/api/v1/local-content/poem/*splat",
         "/api/v1/local-content/primary/:number",
         "/api/v1/local-content/scripture/*splat",
         "/api/v1/local-content/talk/*splat",
+        "/api/v1/local/browse{/*splat}",
         "/api/v1/media/config",
         "/api/v1/media/household/favourites",
         "/api/v1/media/household/plays",
@@ -1139,6 +1196,9 @@
         "/api/v1/school/geography/decks",
         "/api/v1/school/language/courses",
         "/api/v1/school/language/preview/:corpusId/day",
+        "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
+        "/api/v1/school/language/users/:userId/history",
+        "/api/v1/school/lesson/:sessionId",
         "/api/v1/school/lifecycle/learners/:learnerId/agenda/preview",
         "/api/v1/school/lifecycle/learners/:learnerId/sessions",
         "/api/v1/school/lifecycle/review",
@@ -1146,6 +1206,10 @@
         "/api/v1/school/lifecycle/sessions/:sessionId/review",
         "/api/v1/school/milestones",
         "/api/v1/school/pass-overrides",
+        "/api/v1/school/print/pending",
+        "/api/v1/school/print/quota",
+        "/api/v1/school/print/requests",
+        "/api/v1/school/progress",
         "/api/v1/school/progress-report",
         "/api/v1/school/progress/insights",
         "/api/v1/school/progress/options",
@@ -1160,18 +1224,26 @@
         "/api/v1/school/review/learner/:learnerId",
         "/api/v1/school/sentence-ladder/courses",
         "/api/v1/school/sentence-ladder/preview/:corpusId/day",
+        "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+        "/api/v1/school/sentence-ladder/users/:userId/history",
         "/api/v1/school/surfaces/profile",
+        "/api/v1/school/teacher/answer-sheets/:cardId",
+        "/api/v1/school/teacher/curriculum-exceptions",
+        "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
         "/api/v1/school/transcript",
         "/api/v1/screens",
         "/api/v1/screens/:screenId",
         "/api/v1/state-gates",
-        "/api/v1/state-gates/:gateId"
+        "/api/v1/state-gates/:gateId",
+        "/api/v1/state-gates/transitions",
+        "/api/v1/stream/readalong/:collection{/*splat}",
+        "/api/v1/stream/singalong/:collection/:id"
       ],
       "counts": {
         "historicalLiveUniqueCases": 134,
         "historicalLiveIndependentContracts": 125,
-        "isolatedUniqueAcceptedCaseIds": 265,
-        "isolatedAcceptedOccurrences": 265,
+        "isolatedUniqueAcceptedCaseIds": 314,
+        "isolatedAcceptedOccurrences": 314,
         "isolatedReplayIdsAlreadyLive": [
           "health-catalog-food-not-found",
           "health-catalog-missing-query",
@@ -1340,6 +1412,23 @@
           "life-piano-schedule-json",
           "life-piano-schedule-rss",
           "life-piano-schedule-xml",
+          "media-policy-assertions",
+          "media-policy-assets-collection-icon",
+          "media-policy-assets-cover-chapter",
+          "media-policy-assets-cover-collection",
+          "media-policy-assets-cover-inherited",
+          "media-policy-assets-embedded-cover",
+          "media-policy-assets-readalong-audio",
+          "media-policy-assets-singalong-audio",
+          "media-policy-browse-games",
+          "media-policy-browse-tiles",
+          "media-policy-dashboard-config",
+          "media-policy-policy",
+          "media-policy-transitions-after5",
+          "media-policy-transitions-ahead",
+          "media-policy-transitions-all",
+          "media-policy-transitions-expired",
+          "media-policy-transitions-page",
           "reading-configured-aliases",
           "reading-hymn-detail",
           "reading-hymn-index",
@@ -1352,6 +1441,38 @@
           "reading-talk-01",
           "reading-talk-02",
           "school-insights-populated-monitor",
+          "school-language-joins-cross-recording",
+          "school-language-joins-denied-cross-corpus",
+          "school-language-joins-denied-cross-learner",
+          "school-language-joins-denied-expired",
+          "school-language-joins-denied-malformed",
+          "school-language-joins-denied-missing",
+          "school-language-joins-denied-tampered",
+          "school-language-joins-denied-wrong-purpose",
+          "school-language-joins-exceptions",
+          "school-language-joins-language-history",
+          "school-language-joins-language-recording",
+          "school-language-joins-learner-sheets-user_1",
+          "school-language-joins-learner-sheets-user_2",
+          "school-language-joins-lesson-joins-playing",
+          "school-language-joins-lesson-joins-resumed",
+          "school-language-joins-missing-recording",
+          "school-language-joins-other-history",
+          "school-language-joins-sentence-ladder-history",
+          "school-language-joins-sentence-ladder-recording",
+          "school-language-joins-sheet-1234567",
+          "school-language-joins-sheet-7654321",
+          "school-stored-pending",
+          "school-stored-progress",
+          "school-stored-progress-filter",
+          "school-stored-quota-missing",
+          "school-stored-quota-unknown",
+          "school-stored-quota-user_1",
+          "school-stored-quota-user_2",
+          "school-stored-requests-missing",
+          "school-stored-requests-unknown",
+          "school-stored-requests-user_1",
+          "school-stored-requests-user_2",
           "spend-cost-category-depth1",
           "spend-cost-category-depth2",
           "spend-cost-dashboard",
@@ -1441,11 +1562,11 @@
           "timeline-lifelog-day",
           "timeline-lifelog-sources"
         ],
-        "unionUniqueAcceptedCaseIds": 385,
-        "unionIndependentContracts": 376,
+        "unionUniqueAcceptedCaseIds": 434,
+        "unionIndependentContracts": 425,
         "newLiveTemplates": 2,
-        "isolatedDistinctTemplates": 179,
-        "newIsolatedTemplates": 172,
+        "isolatedDistinctTemplates": 202,
+        "newIsolatedTemplates": 195,
         "pendingNext15": {
           "cases": 15,
           "terminalResult": {
@@ -6811,6 +6932,1418 @@
           "correctedExpectationManifestFileSha256": "9f933697d7f6194bca080381bc44d85e116396cbcc90f1aa85f7002f10f10ccb",
           "correctedManifestWasUsedDuringHTTP": false,
           "noHTTPRerun": true
+        },
+        {
+          "id": "school-language-joins-language-history",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/language/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-language-recording",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
+          "declarationIds": [
+            "decl-894f498384e9a2cf0c78671b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-sentence-ladder-history",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-sentence-ladder-recording",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+          "declarationIds": [
+            "decl-894f498384e9a2cf0c78671b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-other-history",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-missing",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-malformed",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-tampered",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-expired",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-wrong-purpose",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-cross-learner",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-denied-cross-corpus",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+          "declarationIds": [
+            "decl-73f862a150d6ce5ce7fc2841-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-missing-recording",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+          "declarationIds": [
+            "decl-894f498384e9a2cf0c78671b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-cross-recording",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+          "declarationIds": [
+            "decl-894f498384e9a2cf0c78671b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-sheet-1234567",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/teacher/answer-sheets/:cardId",
+          "declarationIds": [
+            "decl-019bb3467122ccf6851885ad-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-learner-sheets-user_1",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+          "declarationIds": [
+            "decl-a6ba6b0b1346cfbdb6fcb93b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-sheet-7654321",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/teacher/answer-sheets/:cardId",
+          "declarationIds": [
+            "decl-019bb3467122ccf6851885ad-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-learner-sheets-user_2",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+          "declarationIds": [
+            "decl-a6ba6b0b1346cfbdb6fcb93b-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "school-language-joins-exceptions",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/teacher/curriculum-exceptions",
+          "declarationIds": [
+            "decl-f5bbea55e0274265801339db-0"
+          ],
+          "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+          "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+          "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+          "result": {
+            "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+            "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-language-execution/proof.json",
+            "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-language-execution/result-review.json",
+            "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+          }
+        },
+        {
+          "id": "media-policy-browse-games",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local/browse{/*splat}",
+          "declarationIds": [
+            "decl-ce8ba839dddb0d31c0d7838a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-browse-tiles",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local/browse{/*splat}",
+          "declarationIds": [
+            "decl-ce8ba839dddb0d31c0d7838a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assertions",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/admin/state-gates/assertions",
+          "declarationIds": [
+            "decl-870fec1de0c1acb39c50e4b5-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-policy",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/admin/state-gates/policy",
+          "declarationIds": [
+            "decl-2f1a60147d46a9ae8875dc6a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-transitions-all",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/state-gates/transitions",
+          "declarationIds": [
+            "decl-4b45454ed238e7637cc8de2a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-transitions-page",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/state-gates/transitions",
+          "declarationIds": [
+            "decl-4b45454ed238e7637cc8de2a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-transitions-after5",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/state-gates/transitions",
+          "declarationIds": [
+            "decl-4b45454ed238e7637cc8de2a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-transitions-expired",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/state-gates/transitions",
+          "declarationIds": [
+            "decl-4b45454ed238e7637cc8de2a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-transitions-ahead",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/state-gates/transitions",
+          "declarationIds": [
+            "decl-4b45454ed238e7637cc8de2a-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-dashboard-config",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/home-dashboard/config",
+          "declarationIds": [
+            "decl-34d02de797075e5b87e1eeed-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-cover-collection",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection",
+          "declarationIds": [
+            "decl-49090e8c980e0eb1bfd7f252-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-cover-chapter",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+          "declarationIds": [
+            "decl-87fff4efea87a3d3b2165aa7-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-cover-inherited",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+          "declarationIds": [
+            "decl-87fff4efea87a3d3b2165aa7-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-collection-icon",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local-content/collection-icon/:adapter/:collection",
+          "declarationIds": [
+            "decl-2080b14a592c6793c94cea89-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-embedded-cover",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/local-content/cover{/*splat}",
+          "declarationIds": [
+            "decl-be3a18739a772bbc425f94f8-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-readalong-audio",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/stream/readalong/:collection{/*splat}",
+          "declarationIds": [
+            "decl-e29eb239781b35f7e6cff96d-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "media-policy-assets-singalong-audio",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/stream/singalong/:collection/:id",
+          "declarationIds": [
+            "decl-376f360483d19e337726cb48-0"
+          ],
+          "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+          "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+          "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+          "correctedExpectationManifest": {
+            "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+            "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+          },
+          "result": {
+            "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+            "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+          },
+          "proof": {
+            "path": "/tmp/readiness-media-policy-execution/proof.json",
+            "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+            "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+          },
+          "derivedReceipt": {
+            "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+            "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+          }
+        },
+        {
+          "id": "school-language-joins-lesson-joins-playing",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/lesson/:sessionId",
+          "declarationIds": [
+            "decl-152bd3afc195734a088eacb5-0"
+          ],
+          "provenance": "actual-guarded-publication-conditioned-steady-state-two-only-lesson-pair",
+          "fixtureSha256": "45472d30f2fb2fa7554e781decc00a4fbf4e790a9b5ee1803b56b03805fada61",
+          "manifestSha256": "1c884d3e60aaf8f6052045cc55a154b992800ba53d67a81aa1df1a7c153662d6",
+          "result": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-pair/pair-result.json",
+            "sha256": "4e468698e78e6a50ec8eadfa7c0e7f664751b01f0ffbb8fff6d134b165d65a8f"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-execution/proof.json",
+            "sha256": "7c78b5c607334b107b4bd505717243f7a38bde62b36ab74367bc5a9a6fdf287b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-execution/result-review.json",
+            "sha256": "33e3b28787379063bdce6566147d8a52f9413aa60488bf4c34ad0b3e3e848aae"
+          },
+          "steadyStateOnly": true
+        },
+        {
+          "id": "school-language-joins-lesson-joins-resumed",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/lesson/:sessionId",
+          "declarationIds": [
+            "decl-152bd3afc195734a088eacb5-0"
+          ],
+          "provenance": "actual-guarded-publication-conditioned-steady-state-two-only-lesson-pair",
+          "fixtureSha256": "45472d30f2fb2fa7554e781decc00a4fbf4e790a9b5ee1803b56b03805fada61",
+          "manifestSha256": "1c884d3e60aaf8f6052045cc55a154b992800ba53d67a81aa1df1a7c153662d6",
+          "result": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-pair/pair-result.json",
+            "sha256": "4e468698e78e6a50ec8eadfa7c0e7f664751b01f0ffbb8fff6d134b165d65a8f"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-execution/proof.json",
+            "sha256": "7c78b5c607334b107b4bd505717243f7a38bde62b36ab74367bc5a9a6fdf287b"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-lesson2-steady-state-execution/result-review.json",
+            "sha256": "33e3b28787379063bdce6566147d8a52f9413aa60488bf4c34ad0b3e3e848aae"
+          },
+          "steadyStateOnly": true
+        },
+        {
+          "id": "school-stored-quota-user_1",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/quota",
+          "declarationIds": [
+            "decl-96b25704ea44860371ef1f18-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-quota-user_2",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/quota",
+          "declarationIds": [
+            "decl-96b25704ea44860371ef1f18-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-quota-unknown",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/quota",
+          "declarationIds": [
+            "decl-96b25704ea44860371ef1f18-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-quota-missing",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/quota",
+          "declarationIds": [
+            "decl-96b25704ea44860371ef1f18-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-pending",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/pending",
+          "declarationIds": [
+            "decl-8e826df43224efbb6a6f5c26-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-requests-user_1",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/requests",
+          "declarationIds": [
+            "decl-4fc880f2a1ccd3cfadd3b689-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-requests-user_2",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/requests",
+          "declarationIds": [
+            "decl-4fc880f2a1ccd3cfadd3b689-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-requests-unknown",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/requests",
+          "declarationIds": [
+            "decl-4fc880f2a1ccd3cfadd3b689-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-requests-missing",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/print/requests",
+          "declarationIds": [
+            "decl-4fc880f2a1ccd3cfadd3b689-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-progress",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/progress",
+          "declarationIds": [
+            "decl-7e183e2b98511f3946d8efea-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
+        },
+        {
+          "id": "school-stored-progress-filter",
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "urlTemplate": "/api/v1/school/progress",
+          "declarationIds": [
+            "decl-7e183e2b98511f3946d8efea-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+          "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+          "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+          "result": {
+            "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+            "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+          },
+          "proof": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+            "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+            "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+          }
         }
       ],
       "infrastructure": {
@@ -7176,10 +8709,10 @@
       "noHTTPRerun": true,
       "productionOrLiveCoverage": false
     },
-    "observedUniqueIdsIncludingBaselineDiagnostics": 388,
-    "acceptedParityTemplateMeaning": "261 templates have accepted parity links; prior9 independent-contract gaps remain, no all-template independently healthy claim",
+    "observedUniqueIdsIncludingBaselineDiagnostics": 437,
+    "acceptedParityTemplateMeaning": "284 templates have accepted parity links; prior9 independent-contract gaps remain, no all-template independently healthy claim",
     "observedIdAccountingScope": "Accepted-credit IDs plus preserved baseline diagnostic IDs; excludes two explicitly no-credit repeated bootstrap alias IDs",
-    "literalObservedIdsIncludingRepeatedBootstrapAliases": 390,
+    "literalObservedIdsIncludingRepeatedBootstrapAliases": 439,
     "actualLocalMountedCensusObservation": {
       "scope": "Actual candidate-only private readiness configuration/fixture mounted graph; separate from historical source-derived Docker accounting. No production/global-readiness or case/template credit",
       "handoff": {
@@ -17965,13 +19498,1703 @@
         },
         "disconnectedNoOpCompositionSemanticsUnchanged": true,
         "noProviderHealthOrLatencyCertification": true
+      },
+      {
+        "name": "school-language19-partial21",
+        "result": {
+          "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+          "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-school-language21-pair/comparison.json",
+          "sha256": "71fc18f082d8485f048dcafecfa008c26c9dd7cd99bb5cd0596653732ee77401"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+            "workingTreeSha256": "0b91f5fb48fd631aba4d20da2c58b532028a886d91fee655574e52988397b162",
+            "capture": {
+              "file": "/tmp/readiness-school-language21-pair/original/daylight-local-http-Bd3Stm/capture.json",
+              "sha256": "93b6e713672505e5d854c41139c8ee33d0a898b8d1b0af3028a15d9e385152b5"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-language21-pair/original/daylight-local-http-Bd3Stm/receipt.json",
+              "sha256": "989a29de130fc862d0579d327e06f40dc54fd57c30f9313d45286043fdbd833e"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "cc17b5e3ce738a295975e50817871c78f7587d3f",
+            "workingTreeSha256": "074f35f2c59c5c62709d8c0774f54b97e9dbdc138e751c45787de883d47f5657",
+            "capture": {
+              "file": "/tmp/readiness-school-language21-pair/candidate/daylight-local-http-I7hXpE/capture.json",
+              "sha256": "129b97b8d2221be8b8e66f201858351cb23c14936c00bdf2da31b1fea16ee0c3"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-language21-pair/candidate/daylight-local-http-I7hXpE/receipt.json",
+              "sha256": "e201f1f74cf07924893ae372437879946e3b182dc7dedc69a2bb7880ffc664bc"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-school-language-execution/proof.json",
+          "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-language-execution/result-review.json",
+          "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+        },
+        "cases": [
+          {
+            "id": "school-language-joins-language-history",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/language/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-language-recording",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/language/recordings/:userId/:corpusId/:seq",
+            "declarationIds": [
+              "decl-894f498384e9a2cf0c78671b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-sentence-ladder-history",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-sentence-ladder-recording",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+            "declarationIds": [
+              "decl-894f498384e9a2cf0c78671b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-other-history",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-missing",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-malformed",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-tampered",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-expired",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-wrong-purpose",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-cross-learner",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-denied-cross-corpus",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/users/:userId/history",
+            "declarationIds": [
+              "decl-73f862a150d6ce5ce7fc2841-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-missing-recording",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+            "declarationIds": [
+              "decl-894f498384e9a2cf0c78671b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-cross-recording",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/sentence-ladder/recordings/:userId/:corpusId/:seq",
+            "declarationIds": [
+              "decl-894f498384e9a2cf0c78671b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-sheet-1234567",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/teacher/answer-sheets/:cardId",
+            "declarationIds": [
+              "decl-019bb3467122ccf6851885ad-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-learner-sheets-user_1",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+            "declarationIds": [
+              "decl-a6ba6b0b1346cfbdb6fcb93b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-sheet-7654321",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/teacher/answer-sheets/:cardId",
+            "declarationIds": [
+              "decl-019bb3467122ccf6851885ad-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-learner-sheets-user_2",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/teacher/learners/:learnerId/answer-sheets",
+            "declarationIds": [
+              "decl-a6ba6b0b1346cfbdb6fcb93b-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          },
+          {
+            "id": "school-language-joins-exceptions",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/teacher/curriculum-exceptions",
+            "declarationIds": [
+              "decl-f5bbea55e0274265801339db-0"
+            ],
+            "provenance": "actual-isolated-pinned0c-original-vs-cc17-with-reviewed-school-language-harness",
+            "fixtureSha256": "dd6440c7fd2dc1ff8da4ad9e1de2a578eb33e2f86bf98d66960fdc94fa40a6dc",
+            "manifestSha256": "2c50a603a3609f13ca2895628354cd30695b0cfe647e04b5ee819135ef1d34d0",
+            "result": {
+              "path": "/tmp/readiness-school-language21-pair/pair-result.json",
+              "sha256": "49b81458533592c4e6f1b9d1666e8d3cbed82ae22527a337e01dba5b6b2716f4"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-language-execution/proof.json",
+              "sha256": "b2001e401ff8fdb48a455204f5d818e9721a36cc0c34dfb9dfac2a04aaa1666b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-language-execution/result-review.json",
+              "sha256": "38e9bba8f10e9b92bbc8767dd1fdaa59e0c8d8c28c2a87af747782f33da08b59"
+            }
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 21,
+        "acceptedCredit": 19,
+        "strictComparisonAccepted": false,
+        "observedFailedCaseIds": [
+          "school-language-joins-lesson-joins-playing",
+          "school-language-joins-lesson-joins-resumed"
+        ],
+        "partialAcceptedResult": true,
+        "productionOrLiveCoverage": false,
+        "failedCorrectionAttempts": [
+          {
+            "result": {
+              "path": "/tmp/readiness-school-lesson2-pair/pair-result.json",
+              "sha256": "0381a1aca615fd5bb96d640436f7737e14f929b242fd7b33cc098a609a1d79fc"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-lesson2-execution/result-review.json",
+              "sha256": "e2597f9f79a2b8285fe96cab605f215d85fa345edaca81ece2b25c072c99224b"
+            },
+            "fixture": {
+              "path": "/tmp/readiness-school-lesson2-correction/fixture.json",
+              "sha256": "559fe93f32c08a27fc3060081d80f7c962bd1ed1e1f1075c6209b36e509f0b6d"
+            },
+            "manifest": {
+              "path": "/tmp/readiness-school-lesson2-correction/manifest.json",
+              "sha256": "f724a5efdfaa9749c5d5d23021803a373345faf84c806c1e490366ada0bddf6c"
+            },
+            "executedCases": 2,
+            "acceptedCredit": 0,
+            "independentContracts": 0,
+            "scope": "Guarded two-only correction still fails meaningful title/checkpoint/resume expectations in both roles; no third run or empty oracle"
+          }
+        ],
+        "grantWindowEvidence": {
+          "path": "/tmp/readiness-school-language-execution/TERMINAL.json",
+          "sha256": "9ab7a9dae65b6c6f4071ab9aa914e178b849e3652ead9f448776201e8d645f4c"
+        }
+      },
+      {
+        "name": "media-policy17-derived",
+        "result": {
+          "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+          "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-corrected-comparison.json",
+          "sha256": "6534bd68033ceb4f4d4ccfe7105a8f9f61ca4199e1a69eadef533a94da36ea1a"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+            "workingTreeSha256": "0b91f5fb48fd631aba4d20da2c58b532028a886d91fee655574e52988397b162",
+            "capture": {
+              "file": "/tmp/readiness-media-policy-pair/original/daylight-local-http-GYUjvo/capture.json",
+              "sha256": "9dcce8548787c292c9f8447e2e1e814c46d465c7ca98dc6c037b8c6e69c31b91"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-media-policy-pair/original/daylight-local-http-GYUjvo/receipt.json",
+              "sha256": "eeaf2b5d4fada44c79c5672897c9b7b232eed7d6a242f537bd248147924b1973"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "cc17b5e3ce738a295975e50817871c78f7587d3f",
+            "workingTreeSha256": "074f35f2c59c5c62709d8c0774f54b97e9dbdc138e751c45787de883d47f5657",
+            "capture": {
+              "file": "/tmp/readiness-media-policy-pair/candidate/daylight-local-http-W8lNZS/capture.json",
+              "sha256": "3b10aaa810653bbf6772a149f5a1e6bd91446703cc8002cfb5b712832081fe7a"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-media-policy-pair/candidate/daylight-local-http-W8lNZS/receipt.json",
+              "sha256": "1b64c2a6e347a701fd3f44cf55b8b1a59008e8d93d8847b29970f55f747820f1"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-media-policy-execution/proof.json",
+          "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+          "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+        },
+        "cases": [
+          {
+            "id": "media-policy-browse-games",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local/browse{/*splat}",
+            "declarationIds": [
+              "decl-ce8ba839dddb0d31c0d7838a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-browse-tiles",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local/browse{/*splat}",
+            "declarationIds": [
+              "decl-ce8ba839dddb0d31c0d7838a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assertions",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/admin/state-gates/assertions",
+            "declarationIds": [
+              "decl-870fec1de0c1acb39c50e4b5-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-policy",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/admin/state-gates/policy",
+            "declarationIds": [
+              "decl-2f1a60147d46a9ae8875dc6a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-transitions-all",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/state-gates/transitions",
+            "declarationIds": [
+              "decl-4b45454ed238e7637cc8de2a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-transitions-page",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/state-gates/transitions",
+            "declarationIds": [
+              "decl-4b45454ed238e7637cc8de2a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-transitions-after5",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/state-gates/transitions",
+            "declarationIds": [
+              "decl-4b45454ed238e7637cc8de2a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-transitions-expired",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/state-gates/transitions",
+            "declarationIds": [
+              "decl-4b45454ed238e7637cc8de2a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-transitions-ahead",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/state-gates/transitions",
+            "declarationIds": [
+              "decl-4b45454ed238e7637cc8de2a-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-dashboard-config",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/home-dashboard/config",
+            "declarationIds": [
+              "decl-34d02de797075e5b87e1eeed-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-cover-collection",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection",
+            "declarationIds": [
+              "decl-49090e8c980e0eb1bfd7f252-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-cover-chapter",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+            "declarationIds": [
+              "decl-87fff4efea87a3d3b2165aa7-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-cover-inherited",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+            "declarationIds": [
+              "decl-87fff4efea87a3d3b2165aa7-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-collection-icon",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local-content/collection-icon/:adapter/:collection",
+            "declarationIds": [
+              "decl-2080b14a592c6793c94cea89-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-embedded-cover",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/local-content/cover{/*splat}",
+            "declarationIds": [
+              "decl-be3a18739a772bbc425f94f8-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-readalong-audio",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/stream/readalong/:collection{/*splat}",
+            "declarationIds": [
+              "decl-e29eb239781b35f7e6cff96d-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          },
+          {
+            "id": "media-policy-assets-singalong-audio",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/stream/singalong/:collection/:id",
+            "declarationIds": [
+              "decl-376f360483d19e337726cb48-0"
+            ],
+            "provenance": "reviewed-offline-policy-initialization-contract-over-original-guarded-media17-captures",
+            "fixtureSha256": "438f574a072f9fc54327acbeb866de3a177de954c86f4c26d35326879589aa45",
+            "manifestSha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab",
+            "correctedExpectationManifest": {
+              "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+              "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+            },
+            "result": {
+              "path": "/tmp/readiness-media-policy-pair/pair-result.json",
+              "sha256": "a7b9e2fb290d74b4881992ff1deb620579e9ca6d28855b6e13e99e01c9b5d230"
+            },
+            "proof": {
+              "path": "/tmp/readiness-media-policy-execution/proof.json",
+              "sha256": "cfed180904fdc81deda02f90d3405bce82638f26fb4f917d767bcf795cdfca78"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-policy-initialization-contract/derived-result-review.json",
+              "sha256": "03943aeb33f8b67d7218d28559a5caba93647f8ac158d9189d1c42f6430f7edb"
+            },
+            "derivedReceipt": {
+              "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+              "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+            }
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 17,
+        "acceptedCredit": 17,
+        "strictComparisonAccepted": true,
+        "originalStrictComparisonAccepted": false,
+        "originalAcceptedCases": 16,
+        "derivedReceipt": {
+          "path": "/tmp/readiness-policy-initialization-contract/policy-initialization-derived-receipt.json",
+          "sha256": "2ccd335bbd05bb9af0f246f85aab60bb64f31ccf9bbebe231ea5e3c581d13f61"
+        },
+        "captureManifest": {
+          "path": "/tmp/readiness-media-policy-batch/manifest.json",
+          "sha256": "3cc103f24af577925c8d03a5acd7e053eef41e5cdca63b216d3dcd0dd46542ab"
+        },
+        "correctedExpectationManifest": {
+          "path": "/tmp/readiness-policy-initialization-contract/corrected-manifest.json",
+          "sha256": "d605e2fd7ea3b3f33140522cc6967b1c9df463cc44f01435a71987666399094e"
+        },
+        "correctedManifestWasUsedDuringHTTP": false,
+        "noHTTPRerun": true,
+        "productionOrLiveCoverage": false
+      },
+      {
+        "name": "school-lesson2-publication-conditioned-steady-state",
+        "result": {
+          "path": "/tmp/readiness-school-lesson2-steady-state-pair/pair-result.json",
+          "sha256": "4e468698e78e6a50ec8eadfa7c0e7f664751b01f0ffbb8fff6d134b165d65a8f"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-school-lesson2-steady-state-pair/comparison.json",
+          "sha256": "a9e1b102505d485a5ce5afe912affdd226d96eeff5092d604fa7570094bc5dc5"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "0c660f6e7851bb2bd09fcbae3e76a0f09f73d1e8",
+            "workingTreeSha256": "0b91f5fb48fd631aba4d20da2c58b532028a886d91fee655574e52988397b162",
+            "capture": {
+              "file": "/tmp/readiness-school-lesson2-steady-state-pair/original/daylight-local-http-ldaNvh/capture.json",
+              "sha256": "ac46d84de0adff6c2cc22e1fb556feb5dcd124e71afe9f22cbdea18ff262210f"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-lesson2-steady-state-pair/original/daylight-local-http-ldaNvh/receipt.json",
+              "sha256": "394d0398e64575540f1d78520e8739bdf4f0d8e802e9c481f3f7774a37abcd8e"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "cc17b5e3ce738a295975e50817871c78f7587d3f",
+            "workingTreeSha256": "074f35f2c59c5c62709d8c0774f54b97e9dbdc138e751c45787de883d47f5657",
+            "capture": {
+              "file": "/tmp/readiness-school-lesson2-steady-state-pair/candidate/daylight-local-http-BqvwhJ/capture.json",
+              "sha256": "a9c67b23fba68ecfac2a562da5ef8b8920c827421df16779fb7eb5147c653d21"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-lesson2-steady-state-pair/candidate/daylight-local-http-BqvwhJ/receipt.json",
+              "sha256": "6c7d695859f4e374abbc78aa18930cf24dc4c54418b8b45b232f0411534adccd"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-school-lesson2-steady-state-execution/proof.json",
+          "sha256": "7c78b5c607334b107b4bd505717243f7a38bde62b36ab74367bc5a9a6fdf287b"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-lesson2-steady-state-execution/result-review.json",
+          "sha256": "33e3b28787379063bdce6566147d8a52f9413aa60488bf4c34ad0b3e3e848aae"
+        },
+        "terminal": {
+          "path": "/tmp/readiness-school-lesson2-steady-state-execution/TERMINAL.json",
+          "sha256": "59d6e62293a50734338b75b208e67e93d581e94db7074301fe76e88f6b4654d1"
+        },
+        "cases": [
+          {
+            "id": "school-language-joins-lesson-joins-playing",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/lesson/:sessionId",
+            "declarationIds": [
+              "decl-152bd3afc195734a088eacb5-0"
+            ],
+            "provenance": "actual-guarded-publication-conditioned-steady-state-two-only-lesson-pair",
+            "fixtureSha256": "45472d30f2fb2fa7554e781decc00a4fbf4e790a9b5ee1803b56b03805fada61",
+            "manifestSha256": "1c884d3e60aaf8f6052045cc55a154b992800ba53d67a81aa1df1a7c153662d6",
+            "result": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-pair/pair-result.json",
+              "sha256": "4e468698e78e6a50ec8eadfa7c0e7f664751b01f0ffbb8fff6d134b165d65a8f"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-execution/proof.json",
+              "sha256": "7c78b5c607334b107b4bd505717243f7a38bde62b36ab74367bc5a9a6fdf287b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-execution/result-review.json",
+              "sha256": "33e3b28787379063bdce6566147d8a52f9413aa60488bf4c34ad0b3e3e848aae"
+            },
+            "steadyStateOnly": true
+          },
+          {
+            "id": "school-language-joins-lesson-joins-resumed",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/lesson/:sessionId",
+            "declarationIds": [
+              "decl-152bd3afc195734a088eacb5-0"
+            ],
+            "provenance": "actual-guarded-publication-conditioned-steady-state-two-only-lesson-pair",
+            "fixtureSha256": "45472d30f2fb2fa7554e781decc00a4fbf4e790a9b5ee1803b56b03805fada61",
+            "manifestSha256": "1c884d3e60aaf8f6052045cc55a154b992800ba53d67a81aa1df1a7c153662d6",
+            "result": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-pair/pair-result.json",
+              "sha256": "4e468698e78e6a50ec8eadfa7c0e7f664751b01f0ffbb8fff6d134b165d65a8f"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-execution/proof.json",
+              "sha256": "7c78b5c607334b107b4bd505717243f7a38bde62b36ab74367bc5a9a6fdf287b"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-lesson2-steady-state-execution/result-review.json",
+              "sha256": "33e3b28787379063bdce6566147d8a52f9413aa60488bf4c34ad0b3e3e848aae"
+            },
+            "steadyStateOnly": true
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 2,
+        "acceptedCredit": 2,
+        "strictComparisonAccepted": true,
+        "steadyStateOnly": true,
+        "coldStartCorrectnessClaim": false,
+        "originalFailuresRetained": true,
+        "readinessObservationsCountedAsCoverage": false,
+        "productionOrLiveCoverage": false
+      },
+      {
+        "name": "school-stored-print11-pinned60cb",
+        "result": {
+          "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+          "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-school-stored-print60cb-pair/comparison.json",
+          "sha256": "f51720733ca6d414ed919381e3bc0a43b26fce2ae52eec49569f244caeb3d61f"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-school-stored-print60cb-pair/original/daylight-local-http-FqSpLH/capture.json",
+              "sha256": "62c30d7fe9c34661ec5fb828ba58f2c16c53dbd8f031fc25fbb86f7ad8623cfe"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-stored-print60cb-pair/original/daylight-local-http-FqSpLH/receipt.json",
+              "sha256": "e00e426242333845fe025ad241f7cf23bae81e002150c912837a901e8abe40bb"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "cc17b5e3ce738a295975e50817871c78f7587d3f",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-school-stored-print60cb-pair/candidate/daylight-local-http-WPEZ3w/capture.json",
+              "sha256": "da44a5c3cf917947a24effa8518ff819a6b52fb33019137beff4da321759d772"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-school-stored-print60cb-pair/candidate/daylight-local-http-WPEZ3w/receipt.json",
+              "sha256": "566467f979ddd8be48ce0e5973dd0f0c4b223b75ab984a759729d56632f3be5e"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+          "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+          "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+        },
+        "terminal": {
+          "path": "/tmp/readiness-school-stored-print60cb-execution/TERMINAL.json",
+          "sha256": "27e658c12d0667f2e49e9927169b03228ea3aac08d9e1b817647b4d97f61ace5"
+        },
+        "cases": [
+          {
+            "id": "school-stored-quota-user_1",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/quota",
+            "declarationIds": [
+              "decl-96b25704ea44860371ef1f18-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-quota-user_2",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/quota",
+            "declarationIds": [
+              "decl-96b25704ea44860371ef1f18-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-quota-unknown",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/quota",
+            "declarationIds": [
+              "decl-96b25704ea44860371ef1f18-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-quota-missing",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/quota",
+            "declarationIds": [
+              "decl-96b25704ea44860371ef1f18-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-pending",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/pending",
+            "declarationIds": [
+              "decl-8e826df43224efbb6a6f5c26-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-requests-user_1",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/requests",
+            "declarationIds": [
+              "decl-4fc880f2a1ccd3cfadd3b689-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-requests-user_2",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/requests",
+            "declarationIds": [
+              "decl-4fc880f2a1ccd3cfadd3b689-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-requests-unknown",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/requests",
+            "declarationIds": [
+              "decl-4fc880f2a1ccd3cfadd3b689-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-requests-missing",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/print/requests",
+            "declarationIds": [
+              "decl-4fc880f2a1ccd3cfadd3b689-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-progress",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/progress",
+            "declarationIds": [
+              "decl-7e183e2b98511f3946d8efea-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          },
+          {
+            "id": "school-stored-progress-filter",
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "urlTemplate": "/api/v1/school/progress",
+            "declarationIds": [
+              "decl-7e183e2b98511f3946d8efea-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-cc17-dirty-mapped60cb-and-reviewed-harness",
+            "fixtureSha256": "82db9a1073baa9e62169792769816b95dcf24e0a6f555be7faad80b9f8a01005",
+            "manifestSha256": "8f696ab860e3407fd0d274d7d79ae94b50b666c5833e7d3216ac53426359dd88",
+            "result": {
+              "path": "/tmp/readiness-school-stored-print60cb-pair/pair-result.json",
+              "sha256": "9f9afa2d401bce186453f5265ce9878b0070e9460a9e586f036bf063858a57e6"
+            },
+            "proof": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/proof.json",
+              "sha256": "a11af9efa5303e9d2340aa9b6fa6caa39d449509028b752d425b5064f860466c"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+              "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+            }
+          }
+        ],
+        "diagnosticCases": [],
+        "executedCases": 11,
+        "acceptedCredit": 11,
+        "strictComparisonAccepted": true,
+        "productionOrLiveCoverage": false,
+        "scope": "Stored quota/request/pending and progress reads; inert printer constructor only, no print/provider invocation."
       }
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 265,
-      "isolatedAcceptedOccurrences": 265,
+      "isolatedUniqueAcceptedCaseIds": 314,
+      "isolatedAcceptedOccurrences": 314,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -18140,6 +21363,23 @@
         "life-piano-schedule-json",
         "life-piano-schedule-rss",
         "life-piano-schedule-xml",
+        "media-policy-assertions",
+        "media-policy-assets-collection-icon",
+        "media-policy-assets-cover-chapter",
+        "media-policy-assets-cover-collection",
+        "media-policy-assets-cover-inherited",
+        "media-policy-assets-embedded-cover",
+        "media-policy-assets-readalong-audio",
+        "media-policy-assets-singalong-audio",
+        "media-policy-browse-games",
+        "media-policy-browse-tiles",
+        "media-policy-dashboard-config",
+        "media-policy-policy",
+        "media-policy-transitions-after5",
+        "media-policy-transitions-ahead",
+        "media-policy-transitions-all",
+        "media-policy-transitions-expired",
+        "media-policy-transitions-page",
         "reading-configured-aliases",
         "reading-hymn-detail",
         "reading-hymn-index",
@@ -18152,6 +21392,38 @@
         "reading-talk-01",
         "reading-talk-02",
         "school-insights-populated-monitor",
+        "school-language-joins-cross-recording",
+        "school-language-joins-denied-cross-corpus",
+        "school-language-joins-denied-cross-learner",
+        "school-language-joins-denied-expired",
+        "school-language-joins-denied-malformed",
+        "school-language-joins-denied-missing",
+        "school-language-joins-denied-tampered",
+        "school-language-joins-denied-wrong-purpose",
+        "school-language-joins-exceptions",
+        "school-language-joins-language-history",
+        "school-language-joins-language-recording",
+        "school-language-joins-learner-sheets-user_1",
+        "school-language-joins-learner-sheets-user_2",
+        "school-language-joins-lesson-joins-playing",
+        "school-language-joins-lesson-joins-resumed",
+        "school-language-joins-missing-recording",
+        "school-language-joins-other-history",
+        "school-language-joins-sentence-ladder-history",
+        "school-language-joins-sentence-ladder-recording",
+        "school-language-joins-sheet-1234567",
+        "school-language-joins-sheet-7654321",
+        "school-stored-pending",
+        "school-stored-progress",
+        "school-stored-progress-filter",
+        "school-stored-quota-missing",
+        "school-stored-quota-unknown",
+        "school-stored-quota-user_1",
+        "school-stored-quota-user_2",
+        "school-stored-requests-missing",
+        "school-stored-requests-unknown",
+        "school-stored-requests-user_1",
+        "school-stored-requests-user_2",
         "spend-cost-category-depth1",
         "spend-cost-category-depth2",
         "spend-cost-dashboard",
@@ -18241,11 +21513,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 385,
-      "unionIndependentContracts": 376,
+      "unionUniqueAcceptedCaseIds": 434,
+      "unionIndependentContracts": 425,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 179,
-      "newIsolatedTemplates": 172,
+      "isolatedDistinctTemplates": 202,
+      "newIsolatedTemplates": 195,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -19166,5 +22438,35 @@
       "Entirepinnedmain delta mapped; do not chase newlyadvancing main tip",
       "Historical277/268/207of394187gaps is mixed-revision union, not fresh277/globalreadiness"
     ]
+  },
+  "pinned60cbBoundedIntegrationEvidence": {
+    "mainPin": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "mappedProductProposalReview": {
+      "path": "/tmp/readiness-pinned60cb-integration/review.json",
+      "sha256": "4c523418bf66a7fa290dfdfc5977364a4fd5695715b7a9b773c846449ec57622"
+    },
+    "mappedProductActualReview": {
+      "path": "/tmp/readiness-pinned60cb-composed-boundary/applied-review.json",
+      "sha256": "8a23a0a2c8203137233920b46fa58647956f13a83f4137fbd52e18a47164ea55"
+    },
+    "affectedConfinedTests": {
+      "path": "/tmp/readiness-pinned60cb-js3/TERMINAL.json",
+      "sha256": "529eeca71289a7880db059fd6f43329a65e80f71ea0e1c2bcd93e2cee8e9f02c"
+    },
+    "affectedConfinedTestReview": {
+      "path": "/tmp/readiness-pinned60cb-js3/result-review.json",
+      "sha256": "affde493910c339725f13fa6c26b7995f4743e9b182a457a69bc14f00a1c3960"
+    },
+    "testScope": "56 genuine assertions each role:44measure/workbookTheme Vitest+12Node sessionSplit, unchanged assertions. No CLI/provider/printing executed.",
+    "school11": {
+      "path": "/tmp/readiness-school-stored-print60cb-execution/result-review.json",
+      "sha256": "f6f9e1e802f98846f780e84f4eec4f772f83622aef56b8b1b37d17e498ea4be6"
+    },
+    "jvmHelperIdentitySupplementReview": {
+      "path": "/tmp/readiness-jvm35-fixed3-helper-renewal/review.json",
+      "sha256": "6d83e59a44ac232178cea60a528a08c796b15b31ab01b6032477e7e086a02dbc"
+    },
+    "jvmScope": "Only approved current helper identity renewed;29Java source pins/35assertions/runtime unchanged. No new JVMrun or device/platform proof.",
+    "checkpointPending": true
   }
 }

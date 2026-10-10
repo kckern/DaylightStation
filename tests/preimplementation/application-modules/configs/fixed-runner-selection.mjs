@@ -1,3 +1,4 @@
+import {main60NodeSelected} from './main60-selected.mjs';
 import {mainCurrentJestSelected} from './main-current-selected.mjs';
 import {retainedVitest,retainedNode} from './retained-supplement-selected.mjs';
 import {remainingNode,remainingJest} from './remaining-selected.mjs';
@@ -8,7 +9,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {botsDisplaysNode,botsDisplaysJest} from './bots-displays-selected.mjs';
 import {mediaContentNode,mediaContentJest} from './media-content-selected.mjs';
-const populations={'main-current-jest':mainCurrentJestSelected,'retained-supplement-node':retainedNode,'piano-retained-node':['backend/src/3_applications/devices/services/PianoMidiWakeService.test.mjs','backend/src/3_applications/devices/services/PianoBridgeSupervisorService.test.mjs','backend/src/5_composition/modules/pianoBridgeSupervisor.test.mjs'],'remaining-node':remainingNode,'remaining-jest':remainingJest,'gaming-notation-node':gamingNotationNode,
+const populations={'main60-node':main60NodeSelected,'main-current-jest':mainCurrentJestSelected,'retained-supplement-node':retainedNode,'piano-retained-node':['backend/src/3_applications/devices/services/PianoMidiWakeService.test.mjs','backend/src/3_applications/devices/services/PianoBridgeSupervisorService.test.mjs','backend/src/5_composition/modules/pianoBridgeSupervisor.test.mjs'],'remaining-node':remainingNode,'remaining-jest':remainingJest,'gaming-notation-node':gamingNotationNode,
   'bots-displays-node':botsDisplaysNode,'bots-displays-jest':botsDisplaysJest,
   'media-content-node':mediaContentNode,'media-content-jest':mediaContentJest,
 };

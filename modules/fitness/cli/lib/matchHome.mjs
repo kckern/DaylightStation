@@ -47,11 +47,12 @@ export async function run(argv, ctx) {
   // read `spec`, so module import must stay side-effect free.
   const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mjs');
   const { initConfigService, configService } = await import('#system/config/index.mjs');
+  const { createSecretsProvider } = await import('#adapters/secrets/createSecretsProvider.mjs');
   const { YamlLifelogDatastore } = await import('#adapters/harvester/YamlLifelogDatastore.mjs');
   const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
 
   hydrateProcessEnvFromConfigs(configDir);
-  await initConfigService(ctx.dataDir);
+  await initConfigService(ctx.dataDir, { secretsProviderFactory: createSecretsProvider });
 
   console.log(`Backfilling Strava-home session matching for ${username}, ${daysBack} days back...`);
 

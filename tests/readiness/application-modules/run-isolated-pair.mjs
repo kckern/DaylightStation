@@ -1,3 +1,4 @@
+import {validateStudyWindow} from './synthetic-study-grant.mjs';
 // A pair uses one independently prepared and explicitly pinned fixture/manifest.
 // Projection remains the existing project-readonly-fixture.mjs command; no live calls.
 import fs from 'node:fs';
@@ -64,7 +65,7 @@ export async function main(argv=process.argv.slice(2)) {
     const proof=json(o.proof),manifest=json(o.manifest),fixture=json(o.fixture);
     assert.equal(proof.schema,'daylight.isolated-api-pair-proof/v1');assert.equal(proof.reviewed,true);
     assert.equal(hash(o.fixture),proof.fixtureFileSha256);assert.equal(hash(o.manifest),proof.manifestFileSha256);
-    validateCaptureManifest(manifest);validateSelection(manifest,proof.cases);
+    validateCaptureManifest(manifest,proof.fixtureFileSha256);validateStudyWindow(manifest,Date.now(),true);validateSelection(manifest,proof.cases,{isolatedStudyFixtureFileSha256:proof.fixtureFileSha256});
     validateRawFixtures(fixture);validateDirectoryFixtures(fixture);
     const proofSha256=hash(o.proof);
     const inputs=collectPairInputs({originalRoot:o['original-root'],candidateRoot:o['candidate-root'],toolRoot:o['tool-root']});
@@ -78,6 +79,7 @@ export async function main(argv=process.argv.slice(2)) {
     };
     guardBacking(proof.backingInputs??[]);const pairNonce=randomBytes(16).toString('hex');result.pairNonce=pairNonce;result.proofSha256=proofSha256;
     for(const role of ['original','candidate']) {
+      validateStudyWindow(manifest,Date.now());
       const roleOutput=path.join(output,role);fs.mkdirSync(roleOutput,{mode:0o700});
       const fd=fs.openSync(path.join(output,role+'.log'),'wx',0o600);
       let execution;try{execution=spawnSync(process.execPath,[path.join(directory,'run-local-app.mjs'),'--source-root',o[role+'-root'],'--tool-root',o['tool-root'],'--output-root',roleOutput,'--fixture',o.fixture,'--manifest',o.manifest,'--capture-role',role,'--pair-nonce',pairNonce,'--runtime-sha256',runtimeSha256,'--harness-sha256',harnessSha256],{stdio:['ignore',fd,fd],timeout:85000,killSignal:'SIGKILL'});}finally{fs.closeSync(fd);}
