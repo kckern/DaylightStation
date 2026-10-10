@@ -56,6 +56,12 @@ const fixed = JSON.parse(fs.readFileSync(path.join(directory, 'local-app-fixture
 assert.ok(prepared.fixtureFiles && typeof prepared.fixtureFiles === 'object');
 for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   assert.ok(!path.isAbsolute(relative) && !relative.split(/[\\/]/).includes('..') && /^data\/.+\.ya?ml$/.test(relative), 'Unsafe fixture path');
+  // Exact disposable persisted-session fixture; native freshness tolerance is finite.
+  if (relative.startsWith('data/household/gaming/arcade-game-sessions/current/')) {
+    assert.equal(relative, "data/household/gaming/arcade-game-sessions/current/synthetic-readiness-panel.yml");
+    assert.equal(createHash('sha256').update(JSON.stringify(prepared)).digest('hex'), 'c347b7337e6728111ac78d4ef9046b51ca788b51143065d2d9318a232f2144a9', 'Changed arcade stored-session fixture');
+    assert.ok(Date.now() >= 1791645328439 && Date.now() <= 1791688528439, 'Expired arcade stored-session execution window');
+  }
   const reviewedArray = /^(?:(?:data\/household(?:-[a-zA-Z0-9_-]+)?\/(?:finance\/transaction\.pairs|gratitude\/(?:selections|discarded)\.gratitude|calendar\/calendar|apps\/calendar)|data\/users\/[a-zA-Z0-9_-]+\/lifelog\/nutrition\/(?:food_catalog|observations))\.ya?ml|data\/users\/[a-zA-Z0-9_-]+\/(?:lifeplan-metrics|ceremony-records)\.yml)$/.test(relative);
   // Exact metadata recipe source only; no dataset/raw path or resolution grant.
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';

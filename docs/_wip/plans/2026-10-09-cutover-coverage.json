@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "Mixed historical631 accepted/622 independent contracts;366of396 eligible parity templates/30 exact gaps. Corrected FitnessFinance7 raw7 counted once; prior catalog-shape boot failure preserved zero. Health/status actual500 remains zero-credit baseline gap.637 credited-or-baseline diagnostic IDs/639 literal observations. No global readiness/production claim.",
+  "stage": "Mixed historical633 accepted/624 independent contracts;368of396 eligible parity templates/28 exact gaps. Arcade stored populated2 counted once at pinned60cb/candidate1cda. Health/status actual500 remains zero-credit baseline gap.639 credited-or-baseline diagnostic IDs/641 literal observations. No global readiness/production claim.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -620,8 +620,8 @@
     "isolatedAndLiveEvidenceAccounting": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 511,
-      "isolatedAcceptedOccurrences": 511,
+      "isolatedUniqueAcceptedCaseIds": 513,
+      "isolatedAcceptedOccurrences": 513,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -681,8 +681,10 @@
         "agent-feed-memory-health-coach-user_1",
         "agent-feed-memory-health-coach-user_2",
         "agent-feed-memory-lifeplan-guide-user_1",
+        "arcade-device-stored-populated",
         "arcade-grants-clamped",
         "arcade-grants-positive",
+        "arcade-open-stored-populated",
         "arcade-placement-all",
         "arcade-placement-etched",
         "array-auto-document-records",
@@ -1137,11 +1139,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 631,
-      "unionIndependentContracts": 622,
+      "unionUniqueAcceptedCaseIds": 633,
+      "unionIndependentContracts": 624,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 296,
-      "newIsolatedTemplates": 289,
+      "isolatedDistinctTemplates": 298,
+      "newIsolatedTemplates": 291,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -1241,9 +1243,9 @@
     "currentSourceUnionEvidenceAccounting": {
       "scope": "Separate historical-live and actual-source isolated executed coverage; source-template union only, no installed-live denominator",
       "historicalLiveEligibleTemplateLinks": 94,
-      "isolatedAdditionalEligibleTemplateLinks": 272,
-      "unionEligibleTemplatesWithExecutedCaseLinks": 366,
-      "unionEligibleTemplatesWithoutExecutedCaseLinks": 30,
+      "isolatedAdditionalEligibleTemplateLinks": 274,
+      "unionEligibleTemplatesWithExecutedCaseLinks": 368,
+      "unionEligibleTemplatesWithoutExecutedCaseLinks": 28,
       "isolatedOnlyTemplates": [
         "/api/v1/admin/apps",
         "/api/v1/admin/apps/:appId/config",
@@ -1269,8 +1271,10 @@
         "/api/v1/agents/:agentId/assignments",
         "/api/v1/agents/:agentId/memory/:userId",
         "/api/v1/ai",
+        "/api/v1/arcade-game-sessions/devices/:deviceId",
         "/api/v1/arcade-game-sessions/devices/:deviceId/history",
         "/api/v1/arcade-game-sessions/grants/:userId",
+        "/api/v1/arcade-game-sessions/open",
         "/api/v1/arcade-game-sessions/placement",
         "/api/v1/arcade-game-sessions/usage",
         "/api/v1/art/preset/:key",
@@ -1521,8 +1525,8 @@
       "counts": {
         "historicalLiveUniqueCases": 134,
         "historicalLiveIndependentContracts": 125,
-        "isolatedUniqueAcceptedCaseIds": 511,
-        "isolatedAcceptedOccurrences": 511,
+        "isolatedUniqueAcceptedCaseIds": 513,
+        "isolatedAcceptedOccurrences": 513,
         "isolatedReplayIdsAlreadyLive": [
           "health-catalog-food-not-found",
           "health-catalog-missing-query",
@@ -1582,8 +1586,10 @@
           "agent-feed-memory-health-coach-user_1",
           "agent-feed-memory-health-coach-user_2",
           "agent-feed-memory-lifeplan-guide-user_1",
+          "arcade-device-stored-populated",
           "arcade-grants-clamped",
           "arcade-grants-positive",
+          "arcade-open-stored-populated",
           "arcade-placement-all",
           "arcade-placement-etched",
           "array-auto-document-records",
@@ -2038,11 +2044,11 @@
           "timeline-lifelog-day",
           "timeline-lifelog-sources"
         ],
-        "unionUniqueAcceptedCaseIds": 631,
-        "unionIndependentContracts": 622,
+        "unionUniqueAcceptedCaseIds": 633,
+        "unionIndependentContracts": 624,
         "newLiveTemplates": 2,
-        "isolatedDistinctTemplates": 296,
-        "newIsolatedTemplates": 289,
+        "isolatedDistinctTemplates": 298,
+        "newIsolatedTemplates": 291,
         "pendingNext15": {
           "cases": 15,
           "terminalResult": {
@@ -14272,6 +14278,60 @@
           "correctnessAccepted": true,
           "errors": [],
           "rawEquivalenceAccepted": true
+        },
+        {
+          "id": "arcade-open-stored-populated",
+          "urlTemplate": "/api/v1/arcade-game-sessions/open",
+          "declarationIds": [
+            "decl-3c2a554129e01c53a0fc3557-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+          "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+          "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+          "result": {
+            "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+            "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+          },
+          "proof": {
+            "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+            "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+            "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "rawEquivalenceAccepted": true
+        },
+        {
+          "id": "arcade-device-stored-populated",
+          "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId",
+          "declarationIds": [
+            "decl-3c9175818434ed1b92226646-0"
+          ],
+          "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+          "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+          "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+          "result": {
+            "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+            "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+          },
+          "proof": {
+            "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+            "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+          },
+          "resultReview": {
+            "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+            "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+          },
+          "accepted": true,
+          "independentContractAccepted": true,
+          "correctnessAccepted": true,
+          "errors": [],
+          "rawEquivalenceAccepted": true
         }
       ],
       "infrastructure": {
@@ -14554,8 +14614,10 @@
         "/api/v1/agents/:agentId/assignments",
         "/api/v1/agents/:agentId/memory/:userId",
         "/api/v1/ai",
+        "/api/v1/arcade-game-sessions/devices/:deviceId",
         "/api/v1/arcade-game-sessions/devices/:deviceId/history",
         "/api/v1/arcade-game-sessions/grants/:userId",
+        "/api/v1/arcade-game-sessions/open",
         "/api/v1/arcade-game-sessions/placement",
         "/api/v1/arcade-game-sessions/usage",
         "/api/v1/art/preset/:key",
@@ -15363,10 +15425,10 @@
       "noHTTPRerun": true,
       "productionOrLiveCoverage": false
     },
-    "observedUniqueIdsIncludingBaselineDiagnostics": 637,
-    "acceptedParityTemplateMeaning": "366 eligible templates have accepted parity links from exact union;30 gaps; historical source/time limits/nine contract gaps/six baseline diagnostics retained.",
+    "observedUniqueIdsIncludingBaselineDiagnostics": 639,
+    "acceptedParityTemplateMeaning": "368 eligible templates have accepted parity links from exact union;28 gaps; historical source/time limits/nine contract gaps/six baseline diagnostics retained.",
     "observedIdAccountingScope": "Accepted-credit IDs plus preserved baseline diagnostic IDs; excludes two explicitly no-credit repeated bootstrap alias IDs",
-    "literalObservedIdsIncludingRepeatedBootstrapAliases": 639,
+    "literalObservedIdsIncludingRepeatedBootstrapAliases": 641,
     "actualLocalMountedCensusObservation": {
       "scope": "Actual candidate-only private readiness configuration/fixture mounted graph; separate from historical source-derived Docker accounting. No production/global-readiness or case/template credit",
       "handoff": {
@@ -34903,13 +34965,139 @@
           "Finance correctly reports Buxfer unavailable; stored RetroArch historicaltwoitem status does not certify live provider/sync/game launch",
           "LED constructor clock fields accepted only through previously approved source-defined bounded contract; no broad body masks or new substitutions"
         ]
+      },
+      {
+        "name": "arcade-open2-stored-populated",
+        "result": {
+          "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+          "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+        },
+        "comparison": {
+          "path": "/tmp/readiness-arcade-open2-pair/comparison.json",
+          "sha256": "407b689d87beeb6e374fa9a370c4e05724be12394bcbbf77423b4a69bfd38082"
+        },
+        "runs": [
+          {
+            "role": "original",
+            "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+            "workingTreeSha256": "01d9d2f81ac3ba79a00b760b3ad65fe85191d48c0093327b076497c9e0b1f9e3",
+            "capture": {
+              "file": "/tmp/readiness-arcade-open2-pair/original/daylight-local-http-rrxDRR/capture.json",
+              "sha256": "ecc86b545d6fd2d17d3a9b5a2d0b5e208d86b4cd303af1e765ca194cb43a1b21"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-arcade-open2-pair/original/daylight-local-http-rrxDRR/receipt.json",
+              "sha256": "55fa267f906b3c514c83f477111aedde697f75b89980931860c69b96e023d7fe"
+            }
+          },
+          {
+            "role": "candidate",
+            "sourceCommit": "1cda0e583606d00f887af78335f840c9d67f45dc",
+            "workingTreeSha256": "fddc6a57ede9852705d7b740223adc095b1600dca6693898aca629e6365db4a3",
+            "capture": {
+              "file": "/tmp/readiness-arcade-open2-pair/candidate/daylight-local-http-wqLdOh/capture.json",
+              "sha256": "7e731baaa2bb518d6645529df929e8504beeae646d19a05fd0696ee8ebaf28e2"
+            },
+            "receipt": {
+              "file": "/tmp/readiness-arcade-open2-pair/candidate/daylight-local-http-wqLdOh/receipt.json",
+              "sha256": "3ddea288ecb682046e43220ff02aaf39d407800882ea128dba3d6fa21f4c3ab7"
+            }
+          }
+        ],
+        "proof": {
+          "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+          "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+          "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+        },
+        "cases": [
+          {
+            "id": "arcade-open-stored-populated",
+            "urlTemplate": "/api/v1/arcade-game-sessions/open",
+            "declarationIds": [
+              "decl-3c2a554129e01c53a0fc3557-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+            "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+            "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+            "result": {
+              "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+              "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+            },
+            "proof": {
+              "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+              "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+              "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "rawEquivalenceAccepted": true
+          },
+          {
+            "id": "arcade-device-stored-populated",
+            "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId",
+            "declarationIds": [
+              "decl-3c9175818434ed1b92226646-0"
+            ],
+            "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+            "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+            "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+            "result": {
+              "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+              "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+            },
+            "proof": {
+              "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+              "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+            },
+            "resultReview": {
+              "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+              "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+            },
+            "accepted": true,
+            "independentContractAccepted": true,
+            "correctnessAccepted": true,
+            "errors": [],
+            "rawEquivalenceAccepted": true
+          }
+        ],
+        "executedCases": 2,
+        "acceptedCredit": 2,
+        "strictComparisonAccepted": true,
+        "sourceValidatedDerivedComparisonAccepted": false,
+        "derivedNewCredit": 0,
+        "productionOrLiveCoverage": false,
+        "actualExecutionEvidence": {
+          "path": "/tmp/readiness-arcade-open2-execution/TERMINAL.json",
+          "sha256": "2e28fdb24abd3e9f49413e41a7e61ca7be7b749e610fee2cc3404feb79752121"
+        },
+        "storedSessionByteCheck": {
+          "path": "/tmp/readiness-arcade-open2-execution/stored-session-byte-check.json",
+          "sha256": "59ecdde81599da90b3cf2c18286a55c4c022b80ac80bcaf95f0a492a49092666"
+        },
+        "nativeBootCheck": {
+          "path": "/tmp/readiness-arcade-open2-execution/native-boot-check.json",
+          "sha256": "0f223037072f8f655c790b380394a507381fe19f0d95dae492f6f7832d437d4d"
+        },
+        "limitations": [
+          "Certification covers exact two synthetic populated stored-read contracts and native fresh restart resume in bounded assembled applications.",
+          "No live gameplay, physical device, mutation, provider, billing, natural shutdown or whole readiness certification.",
+          "Two templates eligible for root set-union only if not already represented; root owns union/count update."
+        ]
       }
     ],
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 511,
-      "isolatedAcceptedOccurrences": 511,
+      "isolatedUniqueAcceptedCaseIds": 513,
+      "isolatedAcceptedOccurrences": 513,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -34969,8 +35157,10 @@
         "agent-feed-memory-health-coach-user_1",
         "agent-feed-memory-health-coach-user_2",
         "agent-feed-memory-lifeplan-guide-user_1",
+        "arcade-device-stored-populated",
         "arcade-grants-clamped",
         "arcade-grants-positive",
+        "arcade-open-stored-populated",
         "arcade-placement-all",
         "arcade-placement-etched",
         "array-auto-document-records",
@@ -35425,11 +35615,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 631,
-      "unionIndependentContracts": 622,
+      "unionUniqueAcceptedCaseIds": 633,
+      "unionIndependentContracts": 624,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 296,
-      "newIsolatedTemplates": 289,
+      "isolatedDistinctTemplates": 298,
+      "newIsolatedTemplates": 291,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -36430,5 +36620,1248 @@
       "path": "/tmp/readiness-health-status-selection/HANDOFF.json",
       "sha256": "a455b16c6d2935c294b59b1256aa12ff8f3ee961c140f8533d74e456c3fb5ba0"
     }
+  },
+  "pianoPopulatedLiveReferenceRefresh": {
+    "candidateCommit": "1cda0e583606d00f887af78335f840c9d67f45dc",
+    "referenceReportedBuild": "8758187497360c4e0ca2ce9cb72456371dc6a0c3",
+    "outcomeReview": {
+      "path": "/tmp/readiness-live-populated-next/result-review.json",
+      "sha256": "1a1a7507e808cef60db44cbb3832f8ffe462b9706fab7b9b27acdad322a2636d"
+    },
+    "cases": [
+      "piano-programs-list",
+      "piano-program-detail"
+    ],
+    "coverageIncrement": 0,
+    "contractIncrement": 0,
+    "templateIncrement": 0,
+    "scope": "Finite complete populated-response parity only;32 authored expected oracle files do not prove live backing mount/config/deployedimage/whole cutover",
+    "readinessAccepted": false
+  },
+  "dailyEightLiveReferenceRefresh": {
+    "candidateCommit": "1cda0e583606d00f887af78335f840c9d67f45dc",
+    "referenceReportedBuild": "8758187497360c4e0ca2ce9cb72456371dc6a0c3",
+    "outcomeReview": {
+      "path": "/tmp/readiness-live-daily8-next/result-review.json",
+      "sha256": "36ce332585867a114f1fbc320939c22046a72affae71f2911e6c6cdce21e82f9"
+    },
+    "executionTerminalVerified": true,
+    "comparisonAccepted": false,
+    "acceptedCases": [
+      "health-private-goals",
+      "health-private-catalog-search-chicken",
+      "health-private-catalog-detail-label-serving",
+      "finance-private-memos",
+      "finance-private-pairs",
+      "automotive-private-trip-1"
+    ],
+    "failedCases": [
+      "finance-private-stored-accounts",
+      "finance-private-stored-transactions"
+    ],
+    "verifiedMatchedContracts": 6,
+    "candidateCompleteExpectedContractsPassed": 8,
+    "referenceCompleteExpectedContractsPassed": 6,
+    "coverageIncrement": 0,
+    "contractIncrement": 0,
+    "templateIncrement": 0,
+    "scope": "Partial finite observed live refresh only; two reference Finance complete-body failures remain failed. Candidate matches historical oracle. Cause unknown; serving backing root/configuration/deployed image identity unproven. Fresh oracle follow-up requires renewed evidence, with prior failures retained.",
+    "readinessAccepted": false
+  },
+  "financeFreshLiveReferenceRefresh": {
+    "candidateCommit": "1cda0e583606d00f887af78335f840c9d67f45dc",
+    "referenceReportedBuild": "8758187497360c4e0ca2ce9cb72456371dc6a0c3",
+    "outcomeReview": {
+      "path": "/tmp/readiness-live-finance2-fresh-next/result-review.json",
+      "sha256": "18dd239da6e0de24822e868f94c56f555e76d07c7a826fb31eb4fff1854c3ca7"
+    },
+    "executionTerminalVerified": true,
+    "ownedHandle": 22712,
+    "executeExitCode": 0,
+    "runnerChildExitCode": 0,
+    "comparisonAccepted": true,
+    "acceptedCases": [
+      "finance-private-stored-accounts",
+      "finance-private-stored-transactions"
+    ],
+    "verifiedMatchedContracts": 2,
+    "strictActualResponsesVerified": 4,
+    "controlsAccepted": true,
+    "protectedInputsUnchanged": true,
+    "sourceCopyHashMetadataGuardsPassed": true,
+    "previousDaily8FailuresPreserved": true,
+    "coverageIncrement": 0,
+    "contractIncrement": 0,
+    "templateIncrement": 0,
+    "scope": "Fresh independent Finance snapshot resolves the old historical-snapshot difference for these two complete observed response contracts in this run. Prior Daily8 failures remain intact. No production serving root/configuration/reference fixture identity, deployed image bytes, full graph or whole readiness claim.",
+    "readinessAccepted": false
+  },
+  "freshHealthySuiteScopedReplay": {
+    "schema": "daylight.fresh-healthy-suite-scoped-replay/v1",
+    "scope": "Independently reviewed across-run union: prior146 plus raw478 batch476 passes plus same2 Life replacements; not one624-case execution",
+    "candidateCommit": "1cda0e583606d00f887af78335f840c9d67f45dc",
+    "originalCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "strict11": {
+      "outcomeReview": {
+        "path": "/tmp/readiness-strict11-outcome-independent-1wiuv66q/review.json",
+        "sha256": "2b6977c3775b1ebda34b05804fd6ccc46686a692b6e8e87739599fe59d2696d5"
+      },
+      "terminalHandoff": {
+        "path": "/tmp/readiness-final-suite-strict11-final/TERMINAL-HANDOFF.json",
+        "sha256": "862223b4c24ae84bfc31d80b19647685b36e95090d4f6b08e661844c067a5ea1"
+      },
+      "batchResult": {
+        "path": "/tmp/readiness-final-suite-strict11-pair/batch-result.json",
+        "sha256": "d7ac5db18330bf00ecb3bab081aeeefceec9138756310151023e4750d18bfaf0"
+      },
+      "index": {
+        "path": "/tmp/readiness-final-suite-strict11-final/current-index.json",
+        "sha256": "3b0ca206ae5f406e713c9fc450808adf0c013f0201ff42dcb9ae59ef56593973"
+      },
+      "groups": [
+        {
+          "name": "local-config-synthetic",
+          "cases": 4,
+          "caseIds": [
+            "synthetic-piano-assignment-populated",
+            "synthetic-school-geography-filtered",
+            "synthetic-piano-learning-progress",
+            "synthetic-piano-assignment-absent"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-config-synthetic/pair-result.json",
+            "sha256": "ed59c4ae31aae84915931f85154f9052751325e398ce40e84b82fc2cdc7a4b4f"
+          }
+        },
+        {
+          "name": "local-household-piano-history23",
+          "cases": 23,
+          "caseIds": [
+            "household-history-household",
+            "household-history-member-user_1",
+            "household-history-member-user_2",
+            "household-history-member-user_3",
+            "household-history-login-context",
+            "household-history-setup-status",
+            "household-history-placement-user_1",
+            "household-history-placement-user_2",
+            "household-history-placement-user_3",
+            "household-history-attempts-all",
+            "household-history-attempts-limit",
+            "household-history-attempts-exercise",
+            "household-history-attempts-practice",
+            "household-history-attempts-challenge",
+            "household-history-attempts-context",
+            "household-history-attempts-combined",
+            "household-history-pass-overrides",
+            "household-history-list-overview",
+            "household-history-list-type-menus",
+            "household-history-list-type-watchlists",
+            "household-history-list-type-programs",
+            "household-history-list-detail-menus",
+            "household-history-list-detail-watchlists"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-household-piano-history23/pair-result.json",
+            "sha256": "9d29597a19e83de03ce2cbffa91068315aa779be638f4dad9a08a152c9d98ccb"
+          }
+        },
+        {
+          "name": "local-weekly-inert-mount2",
+          "cases": 2,
+          "caseIds": [
+            "curation-usage-drafts-2026-10-05",
+            "curation-usage-drafts-2026-09-28"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-weekly-inert-mount2/pair-result.json",
+            "sha256": "3d4b4e0f5ee1da7a45618d2af38382f8eda13d0e13423ecb017ebd32e8da8765"
+          }
+        },
+        {
+          "name": "local-device-home-state21-partial23",
+          "cases": 21,
+          "caseIds": [
+            "device-home-fleet",
+            "device-home-configuration",
+            "device-home-self-input-unidentified",
+            "device-home-presence-synthetic-reading-panel",
+            "device-home-session-synthetic-reading-panel",
+            "device-home-presence-synthetic-unknown-panel",
+            "device-home-session-synthetic-unknown-panel",
+            "device-home-start-unobserved",
+            "device-home-state-all",
+            "device-home-state-learner",
+            "device-home-state-detail",
+            "device-home-entitlements-all",
+            "device-home-entitlements-denied",
+            "device-home-entitlement-detail",
+            "device-home-entropy-report",
+            "device-home-entropy-reading",
+            "device-home-entropy-practice",
+            "device-home-entropy-tasks",
+            "device-home-entropy-missing",
+            "device-home-entropy-home",
+            "device-home-entropy-home-automation"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-device-home-state21-partial23/pair-result.json",
+            "sha256": "7ea775ec6c0e13add61a217cda241b73a988584f7bba92266c86bfe56e364b60"
+          }
+        },
+        {
+          "name": "local-reading-singing-reviewed-key-correction",
+          "cases": 11,
+          "caseIds": [
+            "reading-hymn-detail",
+            "reading-primary-detail",
+            "reading-poem-comfort",
+            "reading-poem-courage",
+            "reading-scripture-synthetic-one",
+            "reading-scripture-synthetic-two",
+            "reading-talk-01",
+            "reading-talk-02",
+            "reading-hymn-index",
+            "reading-primary-index",
+            "reading-configured-aliases"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-reading-singing-reviewed-key-correction/pair-result.json",
+            "sha256": "0284ca3a572000714a8a54d5bb58ed0f27fa0bb6342575e0092d0e063a98badb"
+          }
+        },
+        {
+          "name": "local-gaming-synthetic-9",
+          "cases": 9,
+          "caseIds": [
+            "gaming-authored-definition",
+            "gaming-authored-launch",
+            "gaming-filtered-experience-catalog",
+            "gaming-authored-experiences",
+            "gaming-authored-manifest",
+            "gaming-populated-environment",
+            "gaming-party-catalog",
+            "gaming-content-list",
+            "gaming-content-detail"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-gaming-synthetic-9/pair-result.json",
+            "sha256": "914d05332d4503486caba9df74a46c144cfc9d181f6c32eb5278f162ae2cf1ea"
+          }
+        },
+        {
+          "name": "local-health-stored",
+          "cases": 12,
+          "caseIds": [
+            "health-private-catalog-recent",
+            "health-private-catalog-search-chicken",
+            "health-private-catalog-search-protein",
+            "health-private-catalog-detail-derived",
+            "health-private-catalog-detail-label-serving",
+            "health-private-catalog-detail-fallback",
+            "health-catalog-food-not-found",
+            "health-catalog-missing-query",
+            "health-private-goals",
+            "health-private-observations-open",
+            "health-private-observations-consumed",
+            "health-private-observations-dismissed"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-health-stored/pair-result.json",
+            "sha256": "c96cb2fbb6575fcdd3ba5baaf4be3b2c69907a41adb66f176243f6bc1cf675c9"
+          }
+        },
+        {
+          "name": "local-stored-history10",
+          "cases": 10,
+          "caseIds": [
+            "stored-history-journeys-default",
+            "stored-history-journeys-shuffles",
+            "stored-history-journeys-day",
+            "stored-history-events-all",
+            "stored-history-events-motion",
+            "stored-history-events-day",
+            "stored-history-fuel",
+            "stored-history-media-queue",
+            "stored-history-media-favourites",
+            "stored-history-media-removed"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-stored-history10/pair-result.json",
+            "sha256": "978ab69ea12a99701334ab800774ddc1929c4bde4de5263f66fe15971f616105"
+          }
+        },
+        {
+          "name": "local-play-ledger-insights",
+          "cases": 6,
+          "caseIds": [
+            "ledger-screen-started-by",
+            "ledger-merged-screen-started-by",
+            "ledger-household-plays",
+            "ledger-household-device-bounds",
+            "ledger-household-time-limit",
+            "school-insights-populated-monitor"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-play-ledger-insights/pair-result.json",
+            "sha256": "f5137efab6ff20ce541dfc307b61b78a21b21ebed55e26bb3f50d4963ddbb9a5"
+          }
+        },
+        {
+          "name": "local-admin-config-scenes31",
+          "cases": 31,
+          "caseIds": [
+            "admin-config-scenes-apps",
+            "admin-config-scenes-files",
+            "admin-config-scenes-file-system-config-adapters-yml",
+            "admin-config-scenes-file-system-config-auth-yml",
+            "admin-config-scenes-file-system-config-bots-yml",
+            "admin-config-scenes-file-system-config-domains-yml",
+            "admin-config-scenes-file-system-config-readiness-display-yml",
+            "admin-config-scenes-file-system-config-readiness-library-yml",
+            "admin-config-scenes-file-system-config-services-yml",
+            "admin-config-scenes-file-system-config-system-yml",
+            "admin-config-scenes-file-household-entropy-config-yml",
+            "admin-config-scenes-file-household-finance-config-yml",
+            "admin-config-scenes-file-household-fitness-config-yml",
+            "admin-config-scenes-file-household-gratitude-config-yml",
+            "admin-config-scenes-file-household-harvest-config-yml",
+            "admin-config-scenes-file-household-media-app-yml",
+            "admin-config-scenes-file-household-piano-config-yml",
+            "admin-config-scenes-file-household-integrations-yml",
+            "admin-config-scenes-app-fitness",
+            "admin-config-scenes-app-finance",
+            "admin-config-scenes-app-gratitude",
+            "admin-config-scenes-app-shopping",
+            "admin-config-scenes-app-media",
+            "admin-config-scenes-app-entropy",
+            "admin-config-scenes-app-piano",
+            "admin-config-scenes-integrations",
+            "admin-config-scenes-integration-synthetic-library",
+            "admin-config-scenes-integration-synthetic-calendar",
+            "admin-config-scenes-integration-synthetic-reading",
+            "admin-config-scenes-scenes-synthetic-daily-scenes",
+            "admin-config-scenes-scenes-synthetic-evening-scenes"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-admin-config-scenes31/pair-result.json",
+            "sha256": "bc7b0118011c5102e0fa561e02d3977d6dfe0d6800219c520b785a40df6cc584"
+          }
+        },
+        {
+          "name": "local-devices-images-health12",
+          "cases": 12,
+          "caseIds": [
+            "household-device-images-devices",
+            "household-device-images-synthetic-reading-tablet",
+            "household-device-images-synthetic-piano-display",
+            "household-device-images-synthetic-kitchen-audio",
+            "household-device-images-synthetic-hall-sensor",
+            "household-device-images-images",
+            "health-audit-journal-range",
+            "health-audit-journal-local-day",
+            "health-audit-journal-captures",
+            "health-audit-journal-changed",
+            "health-audit-journal-edits-changed",
+            "health-audit-journal-page"
+          ],
+          "result": {
+            "path": "/tmp/readiness-final-suite-strict11-pair/local-devices-images-health12/pair-result.json",
+            "sha256": "69514b5a50984b066bdeee2501b89c750b296c3b1e3aac61717008dd5c69e760"
+          }
+        }
+      ],
+      "acceptedCases": 141,
+      "batchReportedPendingCases": 483,
+      "batchReportedPendingIncludesPriorSmokeFive": true,
+      "allElevenChildCleanupAccepted": true,
+      "wrapperExitCode": 1,
+      "wrapperExitMeaning": "Expected scoped policy: full healthy population remains incomplete",
+      "finalExecutionAndGuardsAccepted": true
+    },
+    "priorSmokeFive": {
+      "outcomeReview": {
+        "path": "/tmp/readiness-final-suite-smoke2-final/result-review.json",
+        "sha256": "9c4fc7426fa46eae7c1b706e16943e56a92a96f86c054d53d8c2bc295ca603d2"
+      },
+      "acceptedCases": 5,
+      "acceptedCaseIds": [
+        "array-auto-document-records",
+        "array-auto-service-records",
+        "array-health-saved-meals-ordered",
+        "array-health-templates-active",
+        "array-health-templates-proposed"
+      ],
+      "initialPartialEvidence": {
+        "path": "/tmp/readiness-final-suite-smoke2-final/TERMINAL.json",
+        "sha256": "7b7667f8b8f4c286c5fa8a73808046e49bf69a218a49fa9724edf7c0c06c9dc6"
+      },
+      "oldWeeklyTimeoutRetained": true,
+      "originalBlockedWeeklyCaseIds": [
+        "curation-usage-drafts-2026-09-28",
+        "curation-usage-drafts-2026-10-05"
+      ],
+      "oldWeeklyMissingFinalGuardsCredit": 0
+    },
+    "acceptedUniqueCaseIds": [
+      "admin-config-scenes-app-entropy",
+      "admin-config-scenes-app-finance",
+      "admin-config-scenes-app-fitness",
+      "admin-config-scenes-app-gratitude",
+      "admin-config-scenes-app-media",
+      "admin-config-scenes-app-piano",
+      "admin-config-scenes-app-shopping",
+      "admin-config-scenes-apps",
+      "admin-config-scenes-file-household-entropy-config-yml",
+      "admin-config-scenes-file-household-finance-config-yml",
+      "admin-config-scenes-file-household-fitness-config-yml",
+      "admin-config-scenes-file-household-gratitude-config-yml",
+      "admin-config-scenes-file-household-harvest-config-yml",
+      "admin-config-scenes-file-household-integrations-yml",
+      "admin-config-scenes-file-household-media-app-yml",
+      "admin-config-scenes-file-household-piano-config-yml",
+      "admin-config-scenes-file-system-config-adapters-yml",
+      "admin-config-scenes-file-system-config-auth-yml",
+      "admin-config-scenes-file-system-config-bots-yml",
+      "admin-config-scenes-file-system-config-domains-yml",
+      "admin-config-scenes-file-system-config-readiness-display-yml",
+      "admin-config-scenes-file-system-config-readiness-library-yml",
+      "admin-config-scenes-file-system-config-services-yml",
+      "admin-config-scenes-file-system-config-system-yml",
+      "admin-config-scenes-files",
+      "admin-config-scenes-integration-synthetic-calendar",
+      "admin-config-scenes-integration-synthetic-library",
+      "admin-config-scenes-integration-synthetic-reading",
+      "admin-config-scenes-integrations",
+      "admin-config-scenes-scenes-synthetic-daily-scenes",
+      "admin-config-scenes-scenes-synthetic-evening-scenes",
+      "agent-feed-annotations-alias",
+      "agent-feed-annotations-all",
+      "agent-feed-annotations-direct",
+      "agent-feed-assignments-echo",
+      "agent-feed-assignments-health-coach",
+      "agent-feed-assignments-lifeplan-guide",
+      "agent-feed-discovery",
+      "agent-feed-memory-echo-user_1",
+      "agent-feed-memory-health-coach-user_1",
+      "agent-feed-memory-health-coach-user_2",
+      "agent-feed-memory-lifeplan-guide-user_1",
+      "arcade-device-stored-populated",
+      "arcade-grants-clamped",
+      "arcade-grants-positive",
+      "arcade-open-stored-populated",
+      "arcade-placement-all",
+      "arcade-placement-etched",
+      "array-auto-document-records",
+      "array-auto-service-records",
+      "array-health-saved-meals-ordered",
+      "array-health-templates-active",
+      "array-health-templates-proposed",
+      "automotive-private-service-types",
+      "automotive-private-trip-1",
+      "automotive-private-trip-2",
+      "automotive-private-trip-3",
+      "automotive-private-vehicles",
+      "automotive-trip-contained-path-rejection",
+      "automotive-trip-not-found",
+      "calendar-date-empty",
+      "calendar-invalid-date",
+      "calendar-private-date-all-day",
+      "calendar-private-date-mixed",
+      "calendar-private-date-timed",
+      "calendar-private-today",
+      "calendar-private-upcoming",
+      "chess-guest-private-config",
+      "critical-fitness-bootstrap",
+      "critical-fitness-session-detail-park",
+      "critical-fitness-session-detail-river",
+      "critical-fitness-session-list",
+      "critical-fitness-session-list-ungrouped",
+      "critical-school-authored-catalog",
+      "critical-school-lesson-comparison",
+      "critical-school-lesson-intro",
+      "curation-usage-ai-1",
+      "curation-usage-ai-2",
+      "curation-usage-ai-7",
+      "curation-usage-art-artist",
+      "curation-usage-art-collection",
+      "curation-usage-art-flagged",
+      "curation-usage-art-hidden",
+      "curation-usage-art-page1",
+      "curation-usage-art-page2",
+      "curation-usage-drafts-2026-09-28",
+      "curation-usage-drafts-2026-10-05",
+      "daily-catalogs-art-gallery",
+      "daily-catalogs-art-landscapes",
+      "daily-catalogs-art-morning",
+      "daily-catalogs-art-wide",
+      "daily-catalogs-browse",
+      "daily-catalogs-courses-language",
+      "daily-catalogs-courses-sentence-ladder",
+      "daily-catalogs-donow-surfaces",
+      "daily-catalogs-earn-rules",
+      "daily-catalogs-feed-workspace",
+      "daily-catalogs-headline-pages",
+      "daily-catalogs-headlines-books",
+      "daily-catalogs-headlines-local",
+      "daily-catalogs-headlines-science",
+      "daily-catalogs-preview-korean-all-input",
+      "daily-catalogs-preview-korean-default",
+      "daily-catalogs-preview-korean-english-input",
+      "daily-catalogs-preview-korean-microphone",
+      "daily-catalogs-vehicle-overview",
+      "dashboard-health-date-populated",
+      "dashboard-health-date-sparse",
+      "dashboard-health-pending-scanner",
+      "dashboard-health-pending-web-scale",
+      "dashboard-health-range-absent",
+      "dashboard-health-range-bounded",
+      "dashboard-home-calendar-agenda",
+      "dashboard-home-calendar-limit",
+      "dashboard-home-events-stored",
+      "dashboard-home-todos-cleaned",
+      "dashboard-home-todos-limit",
+      "dashboard-piano-board-day",
+      "dashboard-school-code-upper",
+      "dashboard-school-code-zero",
+      "device-camera-metadata",
+      "device-eink-stored",
+      "device-eink-unreported",
+      "device-home-configuration",
+      "device-home-entitlement-detail",
+      "device-home-entitlements-all",
+      "device-home-entitlements-denied",
+      "device-home-entropy-home",
+      "device-home-entropy-home-automation",
+      "device-home-entropy-missing",
+      "device-home-entropy-practice",
+      "device-home-entropy-reading",
+      "device-home-entropy-report",
+      "device-home-entropy-tasks",
+      "device-home-fleet",
+      "device-home-presence-synthetic-reading-panel",
+      "device-home-presence-synthetic-unknown-panel",
+      "device-home-self-input-unidentified",
+      "device-home-session-synthetic-reading-panel",
+      "device-home-session-synthetic-unknown-panel",
+      "device-home-start-unobserved",
+      "device-home-state-all",
+      "device-home-state-detail",
+      "device-home-state-learner",
+      "device-home-status-home",
+      "device-home-status-home-automation",
+      "device-mat-absent",
+      "device-mat-configured",
+      "device-mat-defaults",
+      "device-mats-list",
+      "device-printer-metadata",
+      "emulator-stored-battery",
+      "emulator-stored-bezel",
+      "emulator-stored-cover",
+      "emulator-stored-library",
+      "emulator-stored-loader",
+      "emulator-stored-locale-en",
+      "emulator-stored-locale-fallback",
+      "emulator-stored-logo",
+      "emulator-stored-rom",
+      "emulator-stored-save-users",
+      "emulator-stored-state",
+      "feedback-empty-app-list",
+      "feedback-private-fitness-detail",
+      "feedback-private-fitness-list",
+      "feedback-private-piano-kiosk-detail",
+      "feedback-private-piano-kiosk-list",
+      "feedback-private-weekly-review-detail",
+      "feedback-private-weekly-review-list",
+      "feedback-record-not-found",
+      "finance-budget-not-found",
+      "finance-native-provider-availability",
+      "finance-private-budget-detail-1",
+      "finance-private-budget-detail-2",
+      "finance-private-budgets",
+      "finance-private-memos",
+      "finance-private-mortgage",
+      "finance-private-pairs",
+      "finance-private-stored-accounts",
+      "finance-private-stored-daytoday",
+      "finance-private-stored-transactions",
+      "finance-stored-transactions-absent-period",
+      "fitness-authored-course",
+      "fitness-authored-workout-absent",
+      "fitness-authored-workouts-empty",
+      "fitness-configured-fan-status",
+      "fitness-configured-led-status",
+      "fitness-native-led-metrics",
+      "fitness-native-simulation-idle",
+      "fitness-populated-menu-music",
+      "fitness-stored-accepted-plan",
+      "fitness-stored-prepared-plan",
+      "fitness-stored-race-absent",
+      "fitness-stored-race-date",
+      "fitness-stored-race-dates",
+      "fitness-stored-race-detail",
+      "fitness-stored-session-dates",
+      "fitness-stored-voice-artifacts",
+      "fitness-stored-voice-artifacts-failed-filter",
+      "fitness-subscription-challenge",
+      "following-auto-authored-place",
+      "following-fitness-skyline-stored-run",
+      "following-fitness-workout-run-projection",
+      "following-health-coaching-schema",
+      "following-health-medical-grouped",
+      "following-home-stored-weather",
+      "following-life-resolved-user",
+      "following-life-roster",
+      "following-school-reading-status",
+      "following-school-reading-timeline",
+      "gaming-authored-definition",
+      "gaming-authored-experiences",
+      "gaming-authored-launch",
+      "gaming-authored-manifest",
+      "gaming-content-detail",
+      "gaming-content-list",
+      "gaming-filtered-experience-catalog",
+      "gaming-party-catalog",
+      "gaming-populated-environment",
+      "gaming-school-assets-candidate-not-published",
+      "gaming-school-assets-catalog",
+      "gaming-school-assets-flashcard-image",
+      "gaming-school-assets-image-tile.base",
+      "gaming-school-assets-image-tile.green",
+      "gaming-school-assets-party-media",
+      "gaming-school-assets-stored-effects",
+      "gratitude-private-discarded",
+      "gratitude-private-selections",
+      "gratitude-private-snapshot-list",
+      "gratitude-private-users",
+      "health-audit-journal-captures",
+      "health-audit-journal-changed",
+      "health-audit-journal-edits-changed",
+      "health-audit-journal-local-day",
+      "health-audit-journal-page",
+      "health-audit-journal-range",
+      "health-catalog-food-not-found",
+      "health-catalog-missing-query",
+      "health-private-catalog-detail-derived",
+      "health-private-catalog-detail-fallback",
+      "health-private-catalog-detail-label-serving",
+      "health-private-catalog-recent",
+      "health-private-catalog-search-chicken",
+      "health-private-catalog-search-protein",
+      "health-private-coaching",
+      "health-private-context",
+      "health-private-fitness",
+      "health-private-goals",
+      "health-private-nutrition",
+      "health-private-observations-consumed",
+      "health-private-observations-dismissed",
+      "health-private-observations-open",
+      "health-private-weight",
+      "health-private-workouts",
+      "health-status-life-default",
+      "health-status-life-explicit-user2",
+      "health-status-local-homebot",
+      "health-status-local-journalist",
+      "health-status-local-nutribot",
+      "household-device-images-devices",
+      "household-device-images-images",
+      "household-device-images-synthetic-hall-sensor",
+      "household-device-images-synthetic-kitchen-audio",
+      "household-device-images-synthetic-piano-display",
+      "household-device-images-synthetic-reading-tablet",
+      "household-history-attempts-all",
+      "household-history-attempts-challenge",
+      "household-history-attempts-combined",
+      "household-history-attempts-context",
+      "household-history-attempts-exercise",
+      "household-history-attempts-limit",
+      "household-history-attempts-practice",
+      "household-history-household",
+      "household-history-list-detail-menus",
+      "household-history-list-detail-watchlists",
+      "household-history-list-overview",
+      "household-history-list-type-menus",
+      "household-history-list-type-programs",
+      "household-history-list-type-watchlists",
+      "household-history-login-context",
+      "household-history-member-user_1",
+      "household-history-member-user_2",
+      "household-history-member-user_3",
+      "household-history-pass-overrides",
+      "household-history-placement-user_1",
+      "household-history-placement-user_2",
+      "household-history-placement-user_3",
+      "household-history-setup-status",
+      "household-static-art-explicit",
+      "household-static-art-extension",
+      "household-static-avatar-default",
+      "household-static-avatar-profile",
+      "household-static-entropy",
+      "household-static-equipment-convention",
+      "household-static-equipment-declared",
+      "household-static-generic-art",
+      "household-static-generic-avatar",
+      "household-static-generic-equipment",
+      "household-static-source-discovery",
+      "integrated-admin-fitness-household-timezone",
+      "integrated-admin-piano-household-timezone",
+      "language-courses-language",
+      "language-courses-sentence-ladder",
+      "language-prompt-audio-language",
+      "language-prompt-audio-sentence-ladder",
+      "language-record-cue-language",
+      "language-record-cue-sentence-ladder",
+      "launch-compat-card-ladder-stage",
+      "launch-compat-cube-preview",
+      "launch-compat-image",
+      "launch-compat-info",
+      "launch-compat-info-modifier",
+      "launch-compat-queue",
+      "launch-compat-queue-query",
+      "launch-compat-word-ladder-stage",
+      "learner-home-fitness-fingerprints",
+      "learner-home-report-household",
+      "learner-home-report-learner",
+      "learner-home-report-parent",
+      "learner-home-report-sibling",
+      "learner-home-results-cards",
+      "learner-home-results-math",
+      "learner-home-results-multibank",
+      "learner-home-results-other",
+      "learner-home-resumable-bare",
+      "learner-home-resumable-prefixed",
+      "learner-home-roster",
+      "learner-home-teachers",
+      "ledger-household-device-bounds",
+      "ledger-household-plays",
+      "ledger-household-time-limit",
+      "ledger-merged-screen-started-by",
+      "ledger-screen-started-by",
+      "life-ceremony-unknown-type",
+      "life-goal-not-found",
+      "life-piano-briefing-user_2",
+      "life-piano-dashboard",
+      "life-piano-lesson-drill",
+      "life-piano-lesson-index",
+      "life-piano-lesson-missing",
+      "life-piano-plan-user_1",
+      "life-piano-plan-user_2",
+      "life-piano-priorities-default",
+      "life-piano-priorities-explicit",
+      "life-piano-schedule-ical",
+      "life-piano-schedule-json",
+      "life-piano-schedule-rss",
+      "life-piano-schedule-xml",
+      "life-private-alignment-briefing",
+      "life-private-beliefs",
+      "life-private-cadence",
+      "life-private-ceremony-intention",
+      "life-private-drift-history",
+      "life-private-drift-latest",
+      "life-private-feedback",
+      "life-private-goal-detail",
+      "life-private-goals",
+      "life-private-plan",
+      "life-private-retro",
+      "lifelog-private-weight",
+      "media-policy-assertions",
+      "media-policy-assets-collection-icon",
+      "media-policy-assets-cover-chapter",
+      "media-policy-assets-cover-collection",
+      "media-policy-assets-cover-inherited",
+      "media-policy-assets-embedded-cover",
+      "media-policy-assets-readalong-audio",
+      "media-policy-assets-singalong-audio",
+      "media-policy-browse-games",
+      "media-policy-browse-tiles",
+      "media-policy-dashboard-config",
+      "media-policy-policy",
+      "media-policy-transitions-after5",
+      "media-policy-transitions-ahead",
+      "media-policy-transitions-all",
+      "media-policy-transitions-expired",
+      "media-policy-transitions-page",
+      "models-configured-metadata",
+      "node-edge-liveness",
+      "operations-notification-all",
+      "operations-notification-latest-one",
+      "operations-notification-latest-two",
+      "operations-play-history-after-first",
+      "operations-play-history-all",
+      "operations-play-usage-later-starts",
+      "operations-play-usage-whole-evening",
+      "operations-scheduler-1",
+      "operations-scheduler-2",
+      "operations-scheduler-jobs",
+      "piano-authored-bank-absent",
+      "piano-authored-bank-catalog",
+      "piano-authored-bank-index",
+      "piano-authored-bank-instance-ids",
+      "piano-authored-bank-search-zero-page",
+      "piano-authored-bank-seed-detail",
+      "piano-guest-budget-disabled",
+      "piano-private-composition-detail",
+      "piano-private-composition-list",
+      "piano-private-practice-score",
+      "piano-private-preferences",
+      "piano-private-preset",
+      "piano-private-roster",
+      "piano-private-studio-detail",
+      "piano-private-studio-list",
+      "piano-program-detail",
+      "piano-programs-list",
+      "piano-shared-compositions-empty",
+      "player-default-config",
+      "reading-configured-aliases",
+      "reading-hymn-detail",
+      "reading-hymn-index",
+      "reading-poem-comfort",
+      "reading-poem-courage",
+      "reading-primary-detail",
+      "reading-primary-index",
+      "reading-return-direct-launch-picker",
+      "reading-return-populated-summary",
+      "reading-scripture-synthetic-one",
+      "reading-scripture-synthetic-two",
+      "reading-talk-01",
+      "reading-talk-02",
+      "remaining-auth-invite-learner",
+      "remaining-auth-invite-missing",
+      "remaining-auth-invite-parent",
+      "remaining-content-filter-default",
+      "remaining-content-filter-strict",
+      "remaining-harvest-piano-status",
+      "remaining-harvest-registry",
+      "remaining-harvest-todoist-status",
+      "remaining-ping",
+      "runtime-status-ai",
+      "runtime-status-dev",
+      "runtime-status-expired-shutdown",
+      "school-authored-flashcard-detail-v2",
+      "school-authored-flashcard-detail-v3",
+      "school-authored-flashcard-list",
+      "school-authored-teachers",
+      "school-bank-browser-all",
+      "school-bank-browser-assigned",
+      "school-bank-browser-generic",
+      "school-enrichment-absent",
+      "school-generated-session-family",
+      "school-generated-session-headset",
+      "school-generated-shelf-user_1",
+      "school-generated-shelf-user_2",
+      "school-insights-populated-monitor",
+      "school-language-joins-cross-recording",
+      "school-language-joins-denied-cross-corpus",
+      "school-language-joins-denied-cross-learner",
+      "school-language-joins-denied-expired",
+      "school-language-joins-denied-malformed",
+      "school-language-joins-denied-missing",
+      "school-language-joins-denied-tampered",
+      "school-language-joins-denied-wrong-purpose",
+      "school-language-joins-exceptions",
+      "school-language-joins-language-history",
+      "school-language-joins-language-recording",
+      "school-language-joins-learner-sheets-user_1",
+      "school-language-joins-learner-sheets-user_2",
+      "school-language-joins-lesson-joins-playing",
+      "school-language-joins-lesson-joins-resumed",
+      "school-language-joins-missing-recording",
+      "school-language-joins-other-history",
+      "school-language-joins-sentence-ladder-history",
+      "school-language-joins-sentence-ladder-recording",
+      "school-language-joins-sheet-1234567",
+      "school-language-joins-sheet-7654321",
+      "school-periods-history-absent",
+      "school-posters-self-service-course-counting",
+      "school-posters-self-service-course-shapes",
+      "school-posters-self-service-instance-canonical",
+      "school-posters-self-service-instance-legacy",
+      "school-posters-self-service-program-canonical",
+      "school-posters-self-service-program-legacy",
+      "school-posters-teacher-course-counting",
+      "school-posters-teacher-course-shapes",
+      "school-posters-teacher-instance-canonical",
+      "school-posters-teacher-instance-legacy",
+      "school-posters-teacher-program-canonical",
+      "school-posters-teacher-program-legacy",
+      "school-preview-reading-completed",
+      "school-preview-reading-partial",
+      "school-private-attestations",
+      "school-private-attestations-annotated",
+      "school-private-periods-config-fallback",
+      "school-private-roster",
+      "school-private-teacher-notes",
+      "school-record-invalid-learner-query",
+      "school-remaining-cube-issued",
+      "school-remaining-cube-verified",
+      "school-remaining-reel-900001",
+      "school-remaining-reel-900002",
+      "school-stored-attempt-days",
+      "school-stored-issued-manifest",
+      "school-stored-pending",
+      "school-stored-program-bypasses",
+      "school-stored-progress",
+      "school-stored-progress-filter",
+      "school-stored-quota-missing",
+      "school-stored-quota-unknown",
+      "school-stored-quota-user_1",
+      "school-stored-quota-user_2",
+      "school-stored-requests-missing",
+      "school-stored-requests-unknown",
+      "school-stored-requests-user_1",
+      "school-stored-requests-user_2",
+      "school-stored-results-bank",
+      "school-stored-results-list",
+      "school-teacher-notes-unknown-learner",
+      "spend-cost-category-depth1",
+      "spend-cost-category-depth2",
+      "spend-cost-dashboard",
+      "spend-cost-dashboard-day",
+      "spend-cost-entries-first",
+      "spend-cost-entries-second",
+      "spend-cost-resources",
+      "spend-cost-users",
+      "spend-finance-compiled",
+      "spend-finance-overview",
+      "standing-agenda-json",
+      "standing-learner-feedback-default",
+      "standing-learner-feedback-limit-one",
+      "standing-lifecycle-sessions",
+      "standing-milestone",
+      "standing-pending-review",
+      "standing-progress-report",
+      "standing-report-card",
+      "standing-session-events",
+      "standing-session-review",
+      "stored-fitness-race-dates",
+      "stored-fitness-race-detail",
+      "stored-fitness-race-ghost-candidates",
+      "stored-fitness-races-date",
+      "stored-fitness-session-dates",
+      "stored-fitness-workout-synthetic-mobility",
+      "stored-fitness-workout-synthetic-strength",
+      "stored-fitness-workouts",
+      "stored-history-events-all",
+      "stored-history-events-day",
+      "stored-history-events-motion",
+      "stored-history-fuel",
+      "stored-history-journeys-day",
+      "stored-history-journeys-default",
+      "stored-history-journeys-shuffles",
+      "stored-history-media-favourites",
+      "stored-history-media-queue",
+      "stored-history-media-removed",
+      "stored-media-ambient",
+      "stored-media-canvas-garden",
+      "stored-media-canvas-room",
+      "stored-media-feedback-fitness",
+      "stored-media-feedback-school",
+      "stored-media-local-audio",
+      "stored-media-local-image",
+      "stored-media-photo-cross-user-query",
+      "stored-media-photo-cross-user-query-thumbnail",
+      "stored-media-photo-fallback",
+      "stored-media-photo-original",
+      "stored-media-photo-thumbnail",
+      "stored-media-school-targets",
+      "surfaces-legacy-home-calendar",
+      "surfaces-legacy-home-events",
+      "surfaces-legacy-home-todos",
+      "surfaces-legacy-home-weather",
+      "surfaces-media-browse-config",
+      "surfaces-room-adjacency",
+      "surfaces-routine-catalog",
+      "surfaces-routine-flags",
+      "surfaces-routine-history",
+      "surfaces-routine-history-limit",
+      "surfaces-screen-alias-detail",
+      "surfaces-screen-detail",
+      "surfaces-screen-document",
+      "surfaces-screen-documents",
+      "surfaces-screen-registry",
+      "surfaces-screen-routines",
+      "sync-retroarch-stored-status",
+      "synthetic-board-game-day",
+      "synthetic-chess-pinned-resume",
+      "synthetic-config-status",
+      "synthetic-connect-four-config",
+      "synthetic-connect-four-ladder",
+      "synthetic-gratitude-print",
+      "synthetic-language-guest-preview",
+      "synthetic-piano-assignment-absent",
+      "synthetic-piano-assignment-populated",
+      "synthetic-piano-learning-progress",
+      "synthetic-piano-progress",
+      "synthetic-school-frozen-report",
+      "synthetic-school-frozen-versions",
+      "synthetic-school-geography-filtered",
+      "synthetic-school-options",
+      "synthetic-school-remediation-detail",
+      "synthetic-school-remediation-list",
+      "synthetic-school-surface",
+      "synthetic-school-transcript",
+      "teacher-records-attestations-active",
+      "teacher-records-attestations-park",
+      "teacher-records-attestations-river",
+      "teacher-records-attestations-withdrawn",
+      "teacher-records-enrichment-active",
+      "teacher-records-enrichment-park",
+      "teacher-records-enrichment-river",
+      "teacher-records-enrichment-withdrawn",
+      "teacher-records-period-history",
+      "teacher-records-teacher-notes-active",
+      "teacher-records-teacher-notes-park",
+      "teacher-records-teacher-notes-river",
+      "teacher-records-teacher-notes-withdrawn",
+      "timeline-health-all-mentions",
+      "timeline-health-dated-dashboard",
+      "timeline-health-metric-mention",
+      "timeline-health-period-mention",
+      "timeline-health-recent-mentions",
+      "timeline-health-today-dashboard",
+      "timeline-life-day",
+      "timeline-life-explicit-month",
+      "timeline-life-health-category",
+      "timeline-life-journal-category",
+      "timeline-life-prior-day",
+      "timeline-life-range",
+      "timeline-life-sources",
+      "timeline-lifelog-day",
+      "timeline-lifelog-sources"
+    ],
+    "freshUniqueAcceptedCases": 624,
+    "healthyTargetCount": 624,
+    "nextPendingHealthyCases": 0,
+    "nextPendingHealthyCaseIds": [],
+    "partial": false,
+    "healthySuiteAccepted": false,
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false,
+    "historicalCoverageIncrement": 0,
+    "historicalContractIncrement": 0,
+    "historicalTemplateIncrement": 0,
+    "historicalTotalsUnchanged": {
+      "acceptedCases": 633,
+      "healthyCases": 624,
+      "eligibleTemplatesWithParity": 368,
+      "eligibleTemplates": 396,
+      "eligibleTemplateGaps": 28
+    },
+    "diagnosisCorrection": {
+      "path": "/tmp/readiness-final-suite-strict11-final/diagnosis-correction.json",
+      "sha256": "7b164af7d8a946206328fda9913184d21f9c4f572f6dc1ffe2c7fce264633ac5"
+    },
+    "invalidHistoricalScanPreserved": true,
+    "originalWeeklyTimeoutReview": {
+      "path": "/tmp/readiness-final-suite-smoke2-final/result-review.json",
+      "sha256": "9c4fc7426fa46eae7c1b706e16943e56a92a96f86c054d53d8c2bc295ca603d2"
+    },
+    "initialIncrementalReview": {
+      "path": "/tmp/readiness-strict11-outcome-independent-1wiuv66q/initial-nine-review.json",
+      "sha256": "0e5cc0bf55f1872fcd5b36695810fa926d1ed00fcd31c3ccba833cd098d26211"
+    },
+    "nextExecutionStatus": "Selected624 healthy IDs complete across reviewed runs; no further HTTP planned. Production/runtime and other cutover gates remain unproved.",
+    "selectedHealthyPopulationAcrossRunsAccepted": true,
+    "single624CaseRun": false,
+    "next478": {
+      "terminalHandoff": {
+        "path": "/tmp/readiness-next478-final-outcome/HANDOFF.json",
+        "sha256": "6ab19eb29a2c9cb97d829e83945515b5399df2fb6964c73992503bddd2271c00"
+      },
+      "outcomeReview": {
+        "path": "/tmp/readiness-next478-final91-independent-review/review.json",
+        "sha256": "7175e7ee6992f2a7bd9836f0f5d734f7c9c63e01424cda181ae4fb50454dceb4"
+      },
+      "batchResult": {
+        "path": "/tmp/readiness-next478-execution/batch-result.json",
+        "sha256": "b9e450fcc335772fb0a4622b24921da4de1f08c82e1391d8f1a3f8a564504d68"
+      },
+      "terminal": {
+        "path": "/tmp/readiness-next478-launch-private/NEXT478-TERMINAL.json",
+        "sha256": "db9842609bf3cc15a6782df696d745be8b85cffd907b6d5be51b386bca1a3b59"
+      },
+      "index": {
+        "path": "/tmp/readiness-next478-launch-private/current-index.json",
+        "sha256": "46f3fa7d8ed7929c111a35fe8ef98e52e472a7eee1677c69deade3206a1cff00"
+      },
+      "rawPassingCases": 476,
+      "rawFailedCases": 2,
+      "rawFailedCaseIds": [
+        "life-private-cadence",
+        "life-private-ceremony-intention"
+      ],
+      "rawBatchOutcomeUnchanged": true,
+      "rawBatchPendingPriorCases": 146,
+      "all51ExecutionFinalGuardsAndChildCleanupAccepted": true,
+      "scope": "51-group selected478 run; raw476pass/2fail remains preserved, previous146 separate"
+    },
+    "exactFollowups": {
+      "outcomeReview": {
+        "path": "/tmp/readiness-exact3-followup-independent-review/review.json",
+        "sha256": "7c3b9040f2073934f30246a093ae9f09c141ef9cb665ea31651e726a4915c096"
+      },
+      "cases": [
+        {
+          "label": "Life2",
+          "caseIds": [
+            "life-private-cadence",
+            "life-private-ceremony-intention"
+          ],
+          "fixture": {
+            "path": "/tmp/readiness-life-two-renewal-private/fixture.json",
+            "sha256": "764f6f2573db5857c1f089f957cbb4e6437e501eaa9e94f9ebd86228d883f86f"
+          },
+          "manifest": {
+            "path": "/tmp/readiness-life-two-renewal-private/manifest.json",
+            "sha256": "a6e8461be9efbb9aa639c62ba9e9ea598174fefcb5bc96357f248f49c395e665"
+          },
+          "proof": {
+            "path": "/tmp/readiness-life-two-metadata-rebind-private/proof.json",
+            "sha256": "e4adb27c69f9c5d827f06b43fdf05a78c36e6f57f2d99b2714307c3a34eedd44"
+          },
+          "pairResult": {
+            "path": "/tmp/readiness-life-two-native-day-metadata-pair/pair-result.json",
+            "sha256": "32bd193ab337930d97987a5367a4e0cea76d21a0efabc83d0f597531caf4fd2b"
+          },
+          "comparison": {
+            "path": "/tmp/readiness-life-two-native-day-metadata-pair/comparison.json",
+            "sha256": "3037657757117a6cedbd15dedb44e5984fd442e9d73ce12c78b5f25ee9345375"
+          },
+          "preparationReview": {
+            "path": "/tmp/readiness-life-two-metadata-rebind-independent-review/review.json",
+            "sha256": "4a0473fe38180ddc57655a2e6697b62d3e086dfd75e057c09eacb9afcc6c719c"
+          },
+          "executionAndGuardsAccepted": true,
+          "newCoverageCredit": 0
+        },
+        {
+          "label": "Finance1",
+          "caseIds": [
+            "spend-finance-compiled"
+          ],
+          "fixture": {
+            "path": "/tmp/readiness-finance-one-complete-period-private/fixture.json",
+            "sha256": "2b9f6efa5e0254ebcc162a1d60158fdd76f77e5013a41b8bbdd2f116556ff88c"
+          },
+          "manifest": {
+            "path": "/tmp/readiness-finance-one-complete-period-private/manifest.json",
+            "sha256": "0a6654929965398fe6437c5a657419ede61a8f49d86853083a7906282adc98ba"
+          },
+          "proof": {
+            "path": "/tmp/readiness-finance-one-complete-period-private/proof.json",
+            "sha256": "1ae0beb5fe4326b17da43f55760435efb572cc801d71770c1ba893f495fb2e40"
+          },
+          "pairResult": {
+            "path": "/tmp/readiness-finance-one-complete-period-pair/pair-result.json",
+            "sha256": "8c8dc4114b3f2abb6fb223242caf8d89ea25cabce11d39ca2c125d1cb810db22"
+          },
+          "comparison": {
+            "path": "/tmp/readiness-finance-one-complete-period-pair/comparison.json",
+            "sha256": "a00405873060930e0692725fa0520586fa8212010f8091f6fdfb626265e9b1fc"
+          },
+          "preparationReview": {
+            "path": "/tmp/readiness-finance-one-complete-period-independent-review/review.json",
+            "sha256": "5525f3e9081af4d73262eeec4b324235f5672ad04a24ffbde546bf6945eef4c8"
+          },
+          "executionAndGuardsAccepted": true,
+          "newCoverageCredit": 0
+        }
+      ],
+      "reconciliation": {
+        "priorAcceptedCases": 146,
+        "rawBatchAcceptedCases": 476,
+        "sameFailedLifeIdsReplacedByFreshReviewedOutcome": 2,
+        "uniqueAcceptedCaseIds": 624,
+        "remainingSelectedHealthyCases": 0,
+        "financeRepeatedExistingCaseAdds": 0,
+        "evidenceMap": {
+          "path": "/tmp/readiness-exact3-followup-independent-review/unique-healthy-case-evidence-map.json",
+          "sha256": "a097b26eb2238847a3886de93524ca5e213dd3ec72898cf1bc31cd4e85b918ae"
+        },
+        "oneRun624": false
+      },
+      "originalFailuresPreserved": [
+        {
+          "path": "/tmp/readiness-next478-execution/historical-life-stored/pair-result.json",
+          "sha256": "90637eedb20554e76ef76eb3737f69c0d1eaf74032bfcd80c6996b00b40f80d2"
+        },
+        {
+          "path": "/tmp/readiness-next478-execution/historical-life-stored/comparison.json",
+          "sha256": "64e1195341ce50368a67f0f39ce310f72f97282fe054bccf4e004dc5f8a5b1a7"
+        },
+        {
+          "path": "/tmp/readiness-life-two-native-day-pair/pair-result.json",
+          "sha256": "6036abe5307096055f134ae340a9786933b6d6def4988a61b74dc394f4cc79d6"
+        },
+        {
+          "path": "/tmp/readiness-finance-consumer-one-pair/pair-result.json",
+          "sha256": "a28bcfb20c9a72e0a122cd9cb9c56510b4b49d414f72eb72ed6fe8cb39a1fe31"
+        },
+        {
+          "path": "/tmp/readiness-finance-consumer-one-pair/original/daylight-local-http-pshFuT/request-error.txt",
+          "sha256": "bd97e06f3cdd8ea97aa0aba80d859ee4ab26ed11fe8c4889a91d3548dcb8398a"
+        }
+      ],
+      "failureDisposition": "Original Life Oct9 oracle mismatch, missing dev/ino preHTTP launch and oversized Finance request remain failed evidence; later accepted followups do not rewrite them."
+    },
+    "supplementalReadLinks": {
+      "schoolPiano": {
+        "review": {
+          "path": "/tmp/readiness-school-piano-read-links-independent-review/review.json",
+          "sha256": "a97a52ae760cfc2e33658aa02ee73d4db6c2338410f43cd652ca0085af32b656"
+        },
+        "dualOriginalExecutionAndNewOfflineContractProvenance": true,
+        "newCaseCredit": 0,
+        "scope": "Same-fixture School catalogID to full lesson address and Piano assignment to learning/next_up; existing captures and authored fixture/native selectors",
+        "excluded": "School certification baseline failure, draft/effectful dependencies and rendered browser are not certified"
+      },
+      "fitness": {
+        "review": {
+          "path": "/tmp/readiness-fitness-read-link-independent-review/review.json",
+          "sha256": "d4e936ffd9de1127b4c4fdb01ea6b188362027eeac33ac4b1907ec220b9bfc8e"
+        },
+        "dualOriginalExecutionAndNewOfflineContractProvenance": true,
+        "newCaseCredit": 0,
+        "scope": "Same-fixture saved list to two singleton session details; grouped/date-selector/browser/effects remain unproved",
+        "baselineConsumerGap": "SessionBrowserApp renders rosterCount, absent on both saved list rows; unchanged in original and candidate"
+      },
+      "finance": {
+        "actualOneCompleteHistoricalPeriod": {
+          "outcomeReview": {
+            "path": "/tmp/readiness-exact3-followup-independent-review/review.json",
+            "sha256": "7c3b9040f2073934f30246a093ae9f09c141ef9cb665ea31651e726a4915c096"
+          },
+          "caseId": "spend-finance-compiled",
+          "fullResponseBytes": 785396,
+          "transportCapBytesUnchanged": 1048576,
+          "months": 12,
+          "scope": "One full native2025 period and unchanged native mortgage; historical first-period fallback and populated monthly/spending links",
+          "newCaseCredit": 0
+        },
+        "priorTwoPeriodOfflineOnly": {
+          "handoff": {
+            "path": "/tmp/readiness-finance-consumer-shape/HANDOFF.json",
+            "sha256": "8dcc9160b7b72da2bae1190d76fba88552cdc73c93342d0ae78eb445cba582f4"
+          },
+          "review": {
+            "path": "/tmp/readiness-finance-consumer-shape-independent-review/review.json",
+            "sha256": "09c8c7ec09ed1e97a92fc1786395b5db78f4aa85d8b4f169a02111aa9f42e5ce"
+          },
+          "fullResponseBytes": 1552105,
+          "actualAttemptFailedCap": true,
+          "scope": "Independent2-period fixture and pure selectors tested offline; no accepted2-period actual response"
+        },
+        "limits": [
+          "Multi-period switching, current-period selection and rendered browser remain unproved",
+          "Old malformed synthetic fixture consumer failure and oversized actual request preserved"
+        ]
+      }
+    },
+    "remainingReadinessLimits": [
+      "Actual production image/config/mount provenance and installed production route graph remain unresolved; local source ancestry is not deployed-image proof",
+      "Eligible source-template parity remains368/396 with28 gaps; selected624 cases do not close those template gaps",
+      "NonGET/browser/WS/jobs/restart and actual Docker-image rollback gates remain deferred and unproved",
+      "No create/update/data pollution or cutover authorization; no whole cutover readiness claim"
+    ]
   }
 }

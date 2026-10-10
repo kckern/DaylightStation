@@ -49431,8 +49431,8 @@
     "counts": {
       "historicalLiveUniqueCases": 134,
       "historicalLiveIndependentContracts": 125,
-      "isolatedUniqueAcceptedCaseIds": 511,
-      "isolatedAcceptedOccurrences": 511,
+      "isolatedUniqueAcceptedCaseIds": 513,
+      "isolatedAcceptedOccurrences": 513,
       "isolatedReplayIdsAlreadyLive": [
         "health-catalog-food-not-found",
         "health-catalog-missing-query",
@@ -49492,8 +49492,10 @@
         "agent-feed-memory-health-coach-user_1",
         "agent-feed-memory-health-coach-user_2",
         "agent-feed-memory-lifeplan-guide-user_1",
+        "arcade-device-stored-populated",
         "arcade-grants-clamped",
         "arcade-grants-positive",
+        "arcade-open-stored-populated",
         "arcade-placement-all",
         "arcade-placement-etched",
         "array-auto-document-records",
@@ -49948,11 +49950,11 @@
         "timeline-lifelog-day",
         "timeline-lifelog-sources"
       ],
-      "unionUniqueAcceptedCaseIds": 631,
-      "unionIndependentContracts": 622,
+      "unionUniqueAcceptedCaseIds": 633,
+      "unionIndependentContracts": 624,
       "newLiveTemplates": 2,
-      "isolatedDistinctTemplates": 296,
-      "newIsolatedTemplates": 289,
+      "isolatedDistinctTemplates": 298,
+      "newIsolatedTemplates": 291,
       "pendingNext15": {
         "cases": 15,
         "terminalResult": {
@@ -62156,6 +62158,60 @@
         "resultReview": {
           "path": "/tmp/readiness-fitness-finance7-revision2-execution/result-review.json",
           "sha256": "d951f54483b0adbede10ef212336dacd55239dfbd3f52806d954771ed21edbb5"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "arcade-open-stored-populated",
+        "urlTemplate": "/api/v1/arcade-game-sessions/open",
+        "declarationIds": [
+          "decl-3c2a554129e01c53a0fc3557-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+        "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+        "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+        "result": {
+          "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+          "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+          "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+          "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
+        },
+        "accepted": true,
+        "independentContractAccepted": true,
+        "correctnessAccepted": true,
+        "errors": [],
+        "rawEquivalenceAccepted": true
+      },
+      {
+        "id": "arcade-device-stored-populated",
+        "urlTemplate": "/api/v1/arcade-game-sessions/devices/:deviceId",
+        "declarationIds": [
+          "decl-3c9175818434ed1b92226646-0"
+        ],
+        "provenance": "actual-isolated-pinned60cb-vs-1cda-arcade-open2-stored-populated",
+        "fixtureSha256": "45437788c9701b704245c5313700a8d1dd170e506d5f6d362410fd81786992a7",
+        "manifestSha256": "b5c5386be4438ffc54dbaf46ab4fb9671efb52202fc40f2056d6135ec74a7616",
+        "result": {
+          "path": "/tmp/readiness-arcade-open2-pair/pair-result.json",
+          "sha256": "f3cd723679259230fe3bf651ea39c3537910a399b0670a9f03976c2f2d64e1f7"
+        },
+        "proof": {
+          "path": "/tmp/readiness-arcade-open2-execution/proof.json",
+          "sha256": "615cba42027225180faf5a92a370c2d24b7e11185f0b6e7e737032d6c5e2aa39"
+        },
+        "resultReview": {
+          "path": "/tmp/readiness-arcade-open2-execution/result-review.json",
+          "sha256": "c497ef266479f82f2126250ccff4ef0b52045c746392becda62898cac792970b"
         },
         "accepted": true,
         "independentContractAccepted": true,
