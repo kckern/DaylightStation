@@ -60,6 +60,7 @@ export async function run(argv, ctx) {
   const configDir = path.join(ctx.dataDir, 'system', 'config');
   const { hydrateProcessEnvFromConfigs } = await import('#system/logging/config.mjs');
   const { initConfigService, configService } = await import('#system/config/index.mjs');
+  const { createSecretsProvider } = await import('#adapters/secrets/createSecretsProvider.mjs');
   const { loadYamlSafe, saveYaml, listYamlFiles, fileExists, dirExists, listDirs } =
     await import('#system/utils/FileIO.mjs');
   const { absorbOverlappingSlivers } = await import('#apps/fitness/sliverAbsorption.mjs');
@@ -69,10 +70,10 @@ export async function run(argv, ctx) {
   // initConfigService throws when called twice; tolerate a dispatcher (or a
   // sibling command) having already booted it.
   if (!configService.isReady()) {
-    await initConfigService(ctx.dataDir);
+    await initConfigService(ctx.dataDir, { secretsProviderFactory: createSecretsProvider });
   }
 
-  const username = 'user_1';
+  const username = ctx.username;
 
   console.log(`Backfill Strava enrichment for ${username}, ${daysBack} days back`);
   console.log(`Mode: ${writeMode ? 'WRITE' : 'DRY-RUN'}\n`);
