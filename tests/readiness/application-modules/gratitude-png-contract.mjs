@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';import {createHash}from'node:crypto';
 export const gratitudeOwner='local-gratitude-native-card-png1',gratitudeKind='gratitude-full-png-minute-v1';
-const recipe='dd71f02728bfa60a961d40d8de22b52f6d3a5822704ee8587101f2770fde8d49',review='d32cbe7e003d7a292de716e7f96951607d9f7905d01baac5ae780126e74e62a3';
+const recipe='7e36372a0d7b19d5df0ed6cf5e67947c6b4a5af203dbdc8a8872dc0fbdad99d5',review='a298db3747b7ca010b4ec5e5cfea1dda39f05bf6b2dd3f19c4f4870ad703b6d1';
 const sha=b=>createHash('sha256').update(b).digest('hex'),etag=b=>`W/"${b.length.toString(16)}-${createHash('sha1').update(b).digest('base64').slice(0,27)}"`;
 function keys(v,k){assert.ok(v&&typeof v==='object'&&!Array.isArray(v));assert.deepEqual(Object.keys(v).sort(),k.sort(),'Exact gratitude fields');}
 const digest=s=>assert.match(s,/^[a-f0-9]{64}$/);
@@ -35,4 +35,16 @@ export function gratitudeNativeEncodingInputs(c,fixture){
   {path:'/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache',byteLength:27028,sha256:'52c227df9d53248238602c1ddaccd2c8ddc4cc6a61aa45d7c425af590b8806a5'},
   {path:'/usr/lib/x86_64-linux-gnu/gconv/UTF-16.so',byteLength:22736,sha256:'4e4a6460835164b61349f52573c9531f066d27b5cd6fa54c835240d0f1960b36'}
  ].map(row=>{const stat=fs.lstatSync(row.path);assert.equal(fs.realpathSync(row.path),row.path,'Canonical native encoding input');assert.ok(stat.isFile()&&!stat.isSymbolicLink(),'Regular native encoding input');assert.equal(stat.size,row.byteLength,'Native encoding input size');assert.equal(sha(fs.readFileSync(row.path)),row.sha256,'Native encoding input bytes');return{...row,dev:stat.dev,ino:stat.ino};});
+}
+
+// Exact native hintslight dependency set; L grants names only, never config-directory payloads.
+export function gratitudeNativeFontconfigInputs(c,fixture,expected){
+ if(!c)return[];validateGratitudePngCase(c);validateGratitudeFixture(fixture);
+ const rows=[
+  {kind:'F',path:'/etc/fonts/fonts.conf',byteLength:2940,sha256:'93a23ba073996edb8b42d6c89ebc2ec5fd2101ce82cb65ba0db358dabf55ca22'},
+  {kind:'F',path:'/usr/share/fontconfig/conf.avail/10-hinting-slight.conf',byteLength:620,sha256:'d138eca2bac3f78d45ff7cfb649ad792caa4a6e61f73cea7cf0ea54b091f1ef4'}
+ ].map(row=>{const stat=fs.lstatSync(row.path);assert.equal(fs.realpathSync(row.path),row.path);assert.ok(stat.isFile()&&!stat.isSymbolicLink());assert.equal(stat.size,row.byteLength);assert.equal(sha(fs.readFileSync(row.path)),row.sha256);return{...row,dev:stat.dev,ino:stat.ino};});
+ const path='/etc/fonts/conf.d',stat=fs.lstatSync(path),entries=fs.readdirSync(path).sort();assert.equal(fs.realpathSync(path),path);assert.ok(stat.isDirectory()&&!stat.isSymbolicLink());assert.equal(sha(JSON.stringify(entries)),'061f6f060647996217628ea9301530ae0f73ee88dafa26fabaab624bf9e61012','Exact native Fontconfig include listing');
+ const alias=path+'/10-hinting-slight.conf',link=fs.lstatSync(alias),target=fs.readlinkSync(alias),canonicalTarget=fs.realpathSync(alias);assert.ok(link.isSymbolicLink());assert.equal(target,'/usr/share/fontconfig/conf.avail/10-hinting-slight.conf');assert.equal(canonicalTarget,rows[1].path);rows.push({kind:'L',path,dev:stat.dev,ino:stat.ino,entries,includeSymlink:{path:alias,target,canonicalTarget,dev:link.dev,ino:link.ino}});
+ if(expected!==undefined)assert.deepEqual(rows,expected,'Native Fontconfig dependency identity drift');return rows;
 }

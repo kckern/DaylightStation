@@ -38555,5 +38555,94 @@
     ],
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "gratitudeFontconfigFailedNativePngAttempt": {
+    "schema": "daylight.gratitude-fontconfig-failed-attempt/v1",
+    "session": 31132,
+    "outcome": {
+      "path": "/tmp/readiness-gratitude-fontconfig-current-one/OUTCOME.json",
+      "sha256": "75a1343f5f88e8c568516f8b826048421d1c34eafbd09a9828ce253a10cf2545"
+    },
+    "scope": "One finite local native Fontconfig-corrected Gratitude pair; failed independent populated full-PNG contract, zero coverage credit.",
+    "executionAccepted": true,
+    "guardsAccepted": true,
+    "errors": [],
+    "result": "Both native roles completed HTTP200 with exact raw Content-Length/ETag (original32673 bytes, candidate32529 bytes); both independent full-PNG minute checks failed. Raw comparison and wrapper exit1 retained; derivation not attempted.",
+    "nativeDependencyEvidence": "Encoding/Fontconfig snapshots match exactly before/after, across both roles and each canonical capture/receipt.capture/receipt.proof.",
+    "cleanupAccepted": true,
+    "priorFailedSessionsPreserved": [
+      88344,
+      30883,
+      72556
+    ],
+    "uniqueCaseIncrement": 0,
+    "healthyContractIncrement": 0,
+    "sourceTemplateIncrement": 0,
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 637,
+      "successfulIndependentContracts": 636,
+      "parityLinkedEligibleSourceTemplates": 372,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 24,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ]
+    },
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
+  },
+  "post624GratitudeSupplementalEvidence": {
+    "schema": "daylight.gratitude-semibold-accepted-local-contract/v1",
+    "session": 85591,
+    "outcome": {
+      "path": "/tmp/readiness-gratitude-semibold-current-one/OUTCOME.json",
+      "sha256": "940df7b11b6a5923767287df00b6b991b09f6cf80944206a049228c53b72168d"
+    },
+    "review": {
+      "path": "/tmp/readiness-gratitude-semibold-current-one/ROOT-OUTCOME-REVIEW.json",
+      "sha256": "3dd3505cdd581428d10218d0e34f0891cde28302ee87928e972a2fab26b5d602"
+    },
+    "scope": "One supplemental local native populated Gratitude full-PNG contract; across-run union, no single full-suite run or production/browser/print/cutover claim.",
+    "acceptedCaseIds": [
+      "gratitude-native-populated-card-png"
+    ],
+    "result": "Both HTTP200 whole PNGs match independent presealed request-minute frames (original32508 bytes, candidate32557 bytes), raw Content-Length/ETag exact, native execution/finalguards/cleanup accepted. Fixed finite minute derivation accepted; raw differential/comparisonfalse and wrapperexit1 remain immutable.",
+    "oraclePrerequisite": "Source-native eager Fitness startup globally registers bundled RobotoCondensed-SemiBold weight600 before Gratitude. Independent immutable canvas-only oracle adds only the pinned face registration; drawing/layout/model unchanged, no capture fitting or product change.",
+    "oracleReview": {
+      "path": "/tmp/readiness-gratitude-semibold-current-one/ROOT-ORACLE-REVIEW.json",
+      "sha256": "a298db3747b7ca010b4ec5e5cfea1dda39f05bf6b2dd3f19c4f4870ad703b6d1"
+    },
+    "causalWitness": {
+      "path": "/tmp/readiness-gratitude-bold-order-diagnosis-v1/HANDOFF.json",
+      "sha256": "2d97ad8cdeedbb7ec1ce597627e3074714aea4edc958b15c62a5763f9e7bfcb6"
+    },
+    "dependencyEvidence": "Both source SemiBold assets exact in backing/sourceInputs. Encoding/Fontconfig before/after snapshots match across both roles and capture/receipt.capture/receipt.proof.",
+    "preservedFailedSessions": [
+      88344,
+      30883,
+      72556,
+      31132
+    ],
+    "setupAttachment": "Initial root review had accepted/hash shape; existing loader refused attachment. Additive approved full-contract/verdict receipt admitted without pair restart or input change; rejection retained in descriptor-attachment.json.",
+    "uniqueCaseIncrement": 1,
+    "healthyContractIncrement": 1,
+    "sourceTemplateIncrement": 1,
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 638,
+      "successfulIndependentContracts": 637,
+      "parityLinkedEligibleSourceTemplates": 373,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 23,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "single637CaseRun": false,
+      "original624AndPriorReceiptsUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }

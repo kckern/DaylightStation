@@ -1,4 +1,4 @@
-import {validateGratitudeWindow,validateGratitudeFixture,gratitudeNativeEncodingInputs} from './gratitude-png-contract.mjs';
+import {validateGratitudeWindow,validateGratitudeFixture,gratitudeNativeEncodingInputs,gratitudeNativeFontconfigInputs} from './gratitude-png-contract.mjs';
 import {lessonReadinessRequired,waitForPublishedUnit} from './published-unit-readiness.mjs';
 import {validateStudyWindow} from './synthetic-study-grant.mjs';
 import fs from 'node:fs';
@@ -49,6 +49,7 @@ const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
 const gratitudeCase=captureExpectations?.cases.find(c=>c.generatedGratitudePngContract!==undefined);
 const gratitudeFixedFixture=Boolean(gratitudeCase);if(gratitudeFixedFixture)validateGratitudeFixture(prepared);
 const gratitudeEncodingInputs=gratitudeNativeEncodingInputs(gratitudeCase,prepared);
+const gratitudeFontconfigInputs=gratitudeNativeFontconfigInputs(gratitudeCase,prepared);
 if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtureFileSha256);validateStudyWindow(captureExpectations,Date.now());validateGratitudeWindow(captureExpectations,Date.now());}
 const publishedUnitRequired=captureExpectations?lessonReadinessRequired(captureExpectations,studyFixtureFileSha256):false;
 const rawUTF8Files = validateRawFixtures(prepared);
@@ -127,6 +128,7 @@ if(nativeBuild){
  const nullStat=fs.statSync('/dev/null');assert.ok(nullStat.isCharacterDevice());assert.equal(nullStat.rdev,259);
 }
 for(const row of gratitudeEncodingInputs)grants.set(row.path,'F');
+for(const row of gratitudeFontconfigInputs)grants.set(row.path,row.kind);
 const testMetadata=validateTestMetadata(toolRoot);
 const inventory = spawnSync('/usr/bin/git', ['ls-files', '-z'], { cwd: sourceRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 assert.equal(inventory.status, 0, 'Tracked source enumeration failed');
@@ -240,6 +242,8 @@ const proof = fs.existsSync(resultPath) ? JSON.parse(fs.readFileSync(resultPath,
 const cControls = ['socket(AF_UNIX): EPERM', 'anonymous IPC pair: permitted', 'non-TCP protocol: EPERM', 'socketpair: EPERM', 'ptrace: EPERM', 'mount: EPERM', 'unshare: EPERM'].every(marker => output.includes(marker));
 const required = ['private read', 'host read', 'source write', 'test results cache read', 'other TCP bind', 'AF_UNIX socket', 'outbound TCP connect', 'exact loopback TCP bind', 'actual HTTP response'];
 const controls = cControls && (options['--controls-only'] ? required.every(name => proof?.controls?.includes(name)) : ['private read', 'host read', 'source write', 'test results cache read'].every(name => output.includes(`BOOT CONTROL ${name}: denied`)));
+let gratitudeNativeDependencies;
+if(gratitudeCase){const encodingAfter=gratitudeNativeEncodingInputs(gratitudeCase,prepared),fontconfigAfter=gratitudeNativeFontconfigInputs(gratitudeCase,prepared,gratitudeFontconfigInputs);assert.deepEqual(encodingAfter,gratitudeEncodingInputs,'Native encoding dependency identity drift');gratitudeNativeDependencies={before:{encoding:gratitudeEncodingInputs,fontconfig:gratitudeFontconfigInputs},after:{encoding:encodingAfter,fontconfig:fontconfigAfter}};if(proof)proof.gratitudeNativeDependencies=gratitudeNativeDependencies;}
 const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === row.sha256);
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
 let capture = null;
@@ -248,7 +252,7 @@ if (captureRole && captured) {
   const record = {schema:'isolated-api-capture-v1', role:captureRole, pairNonce:options['--pair-nonce'],sourceCommit,
     workingTreeSha256,
     runtimeSha256:options['--runtime-sha256'],harnessSha256:options['--harness-sha256'],
-    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,...(gratitudeCase?{gratitudeRuntime:proof.gratitudeRuntime,gratitudeFont:proof.gratitudeFont}:{}),
+    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,...(gratitudeCase?{gratitudeRuntime:proof.gratitudeRuntime,gratitudeFont:proof.gratitudeFont,gratitudeNativeDependencies}:{}),
     manifestSha256:jsonHash(captureExpectations),url:'http://127.0.0.1:43129',
     startedAt:captureStartedAt,endedAt:Date.now(),...(publishedUnitReadiness?{publishedUnitReadiness}:{}),cases:captured};
   const file=path.join(run,'capture.json');
