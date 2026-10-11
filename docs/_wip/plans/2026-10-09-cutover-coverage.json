@@ -39165,6 +39165,31 @@
         "archiveSha256": "212c57e8cfe513f66b675c4720e76b98d637e2b13ee7872b508529a79275ce2f",
         "verifiedLayers": 23
       }
+    },
+    "subsequentGratitudeIntegration": {
+      "mainPin": "218ad422ca648a9133830f2dd3945f783f2e27bf",
+      "candidateParent": "0d6a37039d027b20701b4486aec2aa57acf9568b",
+      "netChange": "Gratitude text fitting and row layout plus archive documentation; no backend delta.",
+      "receipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/INTEGRATION-VERIFICATION-218.json",
+      "receiptSha256": "ed719f21f79dd0437d209e1728381a91c7be66053a65e15bb707fc8490834043",
+      "focusedTestsPassed": 4,
+      "stylesheetCompiled": true,
+      "ownersInspected": 9597,
+      "filesParsed": 11741,
+      "originalCommitHooksRequired": true,
+      "finalImageBuilt": false,
+      "currentServingImage": "sha256:c0bde76bce21b357c314eb046169d111349464713e51855473c0633bf8c4f5b0",
+      "currentServingSource": "218ad422ca648a9133830f2dd3945f783f2e27bf",
+      "capture": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/production-refresh-2102/IDENTITY.json",
+      "restorationAndRetentionStatus": "Latest private capture exists; archive verification still running at this checkpoint."
+    },
+    "exact640AdmissionPartition": {
+      "receipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/ROOT-640-PARTITION.json",
+      "firstPopulation": 407,
+      "remainingPopulation": 233,
+      "intersection": 0,
+      "exactUnion": 640,
+      "executionCredit": 0
     }
   }
 }

@@ -627,3 +627,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | fix/piano-household-tz | 77e91ae010 | Piano kiosk curfew/quiet hours in household timezone |
 | 2026-10-09 | fix/printer-slow-link-preflight | dda013e98e | Thermal pre-flight refuses jobs on a late-answering (degraded) link |
 | 2026-10-10 | fix/anonymous-worksheet-scan-slip | 9b59784886 | Score slip for session-less worksheet scans (was 'nothing new to mark') |
+| 2026-10-11 | main-superseded-20261011 (laptop) | 78b07772e | Pre-rewrite local main; superseded by PII-scrubbed history pushed as cd58cdf6ac |
+| 2026-10-11 | backup/pre-pii-scrub-20261011 (homeserver) | 772f5c343d | Homeserver main before the learner-name rewrite; tree identical to cd58cdf6ac |

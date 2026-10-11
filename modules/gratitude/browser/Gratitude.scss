@@ -667,6 +667,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 12px;
+  // Split the header evenly and allow shrinking; the label absorbs the squeeze.
+  flex: 1 1 0;
+  min-width: 0;
   padding: 12px 20px;
   border-radius: 8px;
   background: #3a3a3a;
@@ -720,6 +723,8 @@ h2 {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 1 1 auto;
+    min-width: 0;
     
     &.slide-up {
       animation: slideUp 0.3s ease-in-out;
@@ -737,10 +742,13 @@ h2 {
     flex-shrink: 0;
   }
   
+  // Font size is the MAXIMUM; useFitText shrinks it to fit one line.
   .cycle-label {
     font-size: 1.4rem;
     font-weight: 600;
-    min-width: 80px;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
     text-align: center;
   }
 }
@@ -981,9 +989,13 @@ h2 {
   font-size: 1.3rem;
   font-weight: 600;
   transition: all 0.2s ease;
+  // Rows take their text's height; never squeezed by an overflowing list.
+  flex-shrink: 0;
   
+  // Font size is the MAXIMUM; useFitText shrinks long ideas to fit two lines.
   .item-text {
     flex: 1;
+    min-width: 0;
   }
   
   .queue-user-avatar {
@@ -1061,6 +1073,10 @@ h2 {
   transition: all 0.2s ease;
   min-height: 45px;
   box-sizing: border-box;
+  // An explicit min-height cancels flex's min-height:auto, so without this an
+  // overflowing list squeezed rows to 45px and wrapped text spilled over the
+  // rows below.
+  flex-shrink: 0;
   
   &.focused {
     background-color: #4da6ff;
@@ -1117,10 +1133,12 @@ h2 {
     }
   }
   
+  // Font size is the MAXIMUM; useFitText shrinks long entries to fit two lines.
   .item-text {
     flex: 1;
+    min-width: 0;
     font-size: 1.8rem;
-    line-height: 1;;
+    line-height: 1.15;
     letter-spacing: 0.02ex;
     font-weight: 500;
     color: #e0e0e0;
@@ -1129,6 +1147,7 @@ h2 {
   .date-label {
     font-size: 0.85rem;
     color: #888;
+    flex-shrink: 0;
     min-width: 50px;
     text-align: right;
   }
