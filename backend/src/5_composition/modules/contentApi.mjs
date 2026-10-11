@@ -6,6 +6,7 @@ import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { RegistryContentCatalogGateway } from '#adapters/content/RegistryContentCatalogGateway.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { YamlSurroundStore } from '#adapters/content/surround/YamlSurroundStore.mjs';
+import { YamlSequenceStore } from '#adapters/content/sequence/YamlSequenceStore.mjs';
 import { SurroundConfigProjection } from '#adapters/content/surround/SurroundConfigProjection.mjs';
 import { ListNameCatalog } from '#adapters/content/list/ListNameCatalog.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
@@ -149,6 +150,15 @@ export function createApiRouters(config) {
   const surroundStore = new YamlSurroundStore({
     rootDir: path.join(dataPath, 'content/surround'),
     libraryDir: path.join(dataPath, 'content/library'),
+    logger
+  });
+
+  // Station sequences share the surround tree (a station's frame will live in
+  // the same file) but are read by their own store: a pinned head and station
+  // IDs are a queue-ordering rule, not a presentation. See
+  // docs/reference/player/surround/design.md "Sequence sidecars".
+  const sequenceStore = new YamlSequenceStore({
+    rootDir: path.join(dataPath, 'content/surround'),
     logger
   });
 
@@ -331,6 +341,9 @@ export function createApiRouters(config) {
           contentIdResolver,
           contentCatalog,
           queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
+          sequenceStore,
+          random: Math.random,
+          logger,
         }),
         queuePresentationService: new QueuePresentationService({
           surroundStore,
