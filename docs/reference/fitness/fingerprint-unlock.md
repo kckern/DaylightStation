@@ -80,7 +80,30 @@ locks:
   governance_bypass:  [user_1, user_9]   # bypass the HR/effort governance lock
   skip_content:       [user_1, user_9]   # play a sequentially-locked episode
   emergency:          [user_1, user_9]   # arm/abort/release the emergency lockdown
+  kids_playback:      [user_1, user_9]   # start a playback_unlock-gated video (below)
 ```
+
+### Playback unlock — `fitness.yml → playback_unlock`
+Holds a video before it plays until an authorized user scans. Which videos, and which
+lock authorizes them, are entirely config — the code names no label, library or lock:
+
+```yaml
+playback_unlock:
+  lock: kids_playback      # key of `locks:` above
+  labels: [KidsFun]        # any matching Plex label gates the item (case-insensitive)
+  libraries: [TV Shows]    # any item from these Plex libraries is gated
+  scope: show              # show = one scan covers the rest of that show; item = every item
+```
+
+The gate lives in the fitness player, so every launch path (show page, menu, URL, restored
+queue) passes through it. Labels are read off the queue item; when they don't decide it and
+`libraries` is set, the player looks the item up (`/api/v1/info/plex/:id` →
+`librarySectionTitle`). While that lookup is in flight, or if it fails, the item is held and
+a scan is asked for — fail closed. A matching scan releases the hold; a wrong finger leaves
+the prompt in its denied state; cancel closes the player. Grants live for the player's
+lifetime. An item already tagged `nogovern` by a `governance_bypass` scan passes without a
+second scan. HR governance still applies once the video plays. Events:
+`playback_unlock.{required,granted,denied,cancelled,lookup_failed}`.
 
 `locks` must be surfaced to the fitness config the frontend reads (root or nested `fitness`
 block); the gated surfaces look it up there.
