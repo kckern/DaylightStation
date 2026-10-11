@@ -1,3 +1,4 @@
+import {validateGratitudeWindow,validateGratitudeFixture,gratitudeNativeEncodingInputs} from './gratitude-png-contract.mjs';
 import {lessonReadinessRequired,waitForPublishedUnit} from './published-unit-readiness.mjs';
 import {validateStudyWindow} from './synthetic-study-grant.mjs';
 import fs from 'node:fs';
@@ -45,7 +46,10 @@ const toolRoot = fs.realpathSync(options['--tool-root']);
 const outputRoot = fs.realpathSync(options['--output-root']);
 assert.ok(outputRoot !== sourceRoot && !outputRoot.startsWith(sourceRoot + path.sep), 'Outputs must be outside source');
 const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
-if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtureFileSha256);validateStudyWindow(captureExpectations,Date.now());}
+const gratitudeCase=captureExpectations?.cases.find(c=>c.generatedGratitudePngContract!==undefined);
+const gratitudeFixedFixture=Boolean(gratitudeCase);if(gratitudeFixedFixture)validateGratitudeFixture(prepared);
+const gratitudeEncodingInputs=gratitudeNativeEncodingInputs(gratitudeCase,prepared);
+if(captureExpectations) {validateCaptureManifest(captureExpectations,studyFixtureFileSha256);validateStudyWindow(captureExpectations,Date.now());validateGratitudeWindow(captureExpectations,Date.now());}
 const publishedUnitRequired=captureExpectations?lessonReadinessRequired(captureExpectations,studyFixtureFileSha256):false;
 const rawUTF8Files = validateRawFixtures(prepared);
 const rawBinaryFiles = prepared.rawBinaryFiles ?? [];
@@ -64,6 +68,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   }
   const reviewedArray = /^(?:(?:data\/household(?:-[a-zA-Z0-9_-]+)?\/(?:finance\/transaction\.pairs|gratitude\/(?:selections|discarded)\.gratitude|calendar\/calendar|apps\/calendar)|data\/users\/[a-zA-Z0-9_-]+\/lifelog\/nutrition\/(?:food_catalog|observations))\.ya?ml|data\/users\/[a-zA-Z0-9_-]+\/(?:lifeplan-metrics|ceremony-records)\.yml)$/.test(relative);
   // Exact metadata recipe source only; no dataset/raw path or resolution grant.
+  const reviewedGratitudeHopesArray=gratitudeFixedFixture&&relative==='data/household/gratitude/selections.hopes.yml';
   const reviewedRecipeArray = relative === 'data/content/school/generated-banks/recipes.yml';
   // Exact synthetic stored-array destinations only; no raw or filesystem grant.
   const reviewedStoredArray = ["data/users/user_1/apps/health/meals.yml","data/household/automotive/synthetic-array-car/service.yml","data/household/automotive/synthetic-array-car/documents.yml","data/household/automotive/log/synthetic-array-car/2026-10-01.yml","data/household/automotive/log/synthetic-array-car/2026-10-02.yml","data/household/automotive/synthetic-array-car/fuel.yml"].includes(relative);
@@ -71,7 +76,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   const arcadeGrantArrayPins = {"data/users/user_1/apps/gaming/grants/2026-10-09.yml":"c71438f40925008da4e5070d976ab5747e75d28f3a121c961a51b0b5634fb416","data/users/user_1/apps/gaming/grants/2026-10-08.yml":"6fa0e644ab4c7eefc70995477104e5a09faf68b5a63899b82af7c41883c97bce"};
   const reviewedArcadeGrantArray = Object.hasOwn(arcadeGrantArrayPins, relative) && Array.isArray(value) && createHash('sha256').update(JSON.stringify(value)).digest('hex') === arcadeGrantArrayPins[relative];
   assert.ok(!Object.hasOwn(arcadeGrantArrayPins, relative) || reviewedArcadeGrantArray, 'Changed synthetic arcade grant ledger schema or values');
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArcadeGrantArray || reviewedArray || reviewedRecipeArray || reviewedStoredArray || ["data/users/user_1/apps/school/language/daily-korean/log/2026-10-08.yml", "data/users/user_1/apps/school/language/daily-korean/log/2026-10-09.yml", "data/users/user_2/apps/school/language/daily-korean/log/2026-10-09.yml", "data/household/school/artifacts/print/cards/1234567.yml", "data/household/school/artifacts/print/cards/7654321.yml", "data/household/school/records/curriculum-exceptions.yml"].includes(relative) || ["data/system/config/jobs.yml", "data/household/gaming/arcade-game-sessions/history/2026-10-09.yml"].includes(relative) || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml" || ["data/household/school/records/print/jobs.yml", "data/household/school/runtime/queues/print.yml"].includes(relative)), 'Only reviewed stored-data or exact School recipes paths may have an array root');
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArcadeGrantArray || reviewedArray || reviewedGratitudeHopesArray || reviewedRecipeArray || reviewedStoredArray || ["data/users/user_1/apps/school/language/daily-korean/log/2026-10-08.yml", "data/users/user_1/apps/school/language/daily-korean/log/2026-10-09.yml", "data/users/user_2/apps/school/language/daily-korean/log/2026-10-09.yml", "data/household/school/artifacts/print/cards/1234567.yml", "data/household/school/artifacts/print/cards/7654321.yml", "data/household/school/records/curriculum-exceptions.yml"].includes(relative) || ["data/system/config/jobs.yml", "data/household/gaming/arcade-game-sessions/history/2026-10-09.yml"].includes(relative) || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml" || ["data/household/school/records/print/jobs.yml", "data/household/school/runtime/queues/print.yml"].includes(relative)), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
 const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;
@@ -90,7 +95,7 @@ for (const relative of ['data/system/config/auth.yml', 'data/system/config/servi
   const reviewedModelsMetadata = relative === "data/system/secrets.yml" && JSON.stringify(prepared.fixtureFiles[relative]) === "{\"SYNTHETIC_READINESS_MODELS_TOKEN\":\"SYNTHETIC-READINESS-MODELS-METADATA-NOT-A-REAL-CREDENTIAL\"}" && createHash("sha256").update(JSON.stringify(prepared)).digest("hex") === "d6aa30907e9b1b222f473608aa995c45d39b11348b39290c59538e20d3940091";
   // Independently reviewed Fitness5 + FinanceSync2 native constructor metadata; exact entire fixture identity.
   const reviewedFitnessFinance7 = ["data/household/hardware/devices.yml", "data/household/integrations.yml"].includes(relative) && createHash("sha256").update(JSON.stringify(prepared)).digest("hex") === "898615a3ff72944a67d70458653c1899b7cb816cd362dcb78770f5bd262e02a5" && JSON.stringify(prepared.fixtureFiles["data/household/hardware/devices.yml"]) === "{\"devices\":{\"synthetic-retroarch-file-metadata\":{\"type\":\"readiness-metadata\",\"enabled\":false,\"file_server\":{\"host\":\"readiness-retroarch.invalid\",\"port\":9}}}}" && JSON.stringify(prepared.fixtureFiles["data/household/integrations.yml"]) === "{\"homeassistant\":{\"baseUrl\":\"http://readiness-ha.invalid:9\",\"token\":\"SYNTHETIC-READINESS-HA-NOT-A-REAL-TOKEN\"}}";
-  if (!reviewedFitnessFinance7 && !reviewedModelsMetadata && !reviewedDeviceMetadata5 && !reviewedHouseholdDeviceImages && !reviewedInertAdminMetadata && !reviewedMetadataDevices && !reviewedInertWeeklyImmich) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
+  if (!gratitudeFixedFixture && !reviewedFitnessFinance7 && !reviewedModelsMetadata && !reviewedDeviceMetadata5 && !reviewedHouseholdDeviceImages && !reviewedInertAdminMetadata && !reviewedMetadataDevices && !reviewedInertWeeklyImmich) assert.deepEqual(prepared.fixtureFiles[relative], fixed.fixtureFiles[relative], `Unsafe startup fixture change: ${relative}`);
 }
 const run = fs.mkdtempSync(path.join(outputRoot, 'daylight-local-http-'));
 fs.chmodSync(run, 0o700);
@@ -99,10 +104,11 @@ fs.mkdirSync(scratch); fs.mkdirSync(denied);
 materializeTimedImageFixtures(prepared, scratch);
 fs.writeFileSync(path.join(denied, 'private.env'), 'synthetic private sentinel\n', { mode: 0o600 });
 fs.writeFileSync(path.join(scratch, 'openssl.cnf'), '');
-fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories, fixedConfigMetadata }), { mode: 0o600 });
+fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ sourceRoot, fixtureFiles: prepared.fixtureFiles, rawUTF8Files, rawBinaryFiles, fixtureDirectories, metadataDirectories, fixedConfigMetadata, ...(gratitudeCase?{gratitudeCase}:{} ) }), { mode: 0o600 });
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const grants = new Map();
+for(const row of gratitudeEncodingInputs)grants.set(row.path,'F');
 const testMetadata=validateTestMetadata(toolRoot);
 const inventory = spawnSync('/usr/bin/git', ['ls-files', '-z'], { cwd: sourceRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 assert.equal(inventory.status, 0, 'Tracked source enumeration failed');
@@ -136,7 +142,7 @@ assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe gran
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
 const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F').map(([file]) => ({ file, sha256: hash(file) }));
 const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
-for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
+for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'),path.join(directory,'gratitude-png-contract.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
 const c = path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c');
@@ -164,7 +170,7 @@ for (let attempt = 0; attempt < 400 && !finished; attempt++) {
         captured = [];
         for (const c of captureExpectations.cases) {
           const url = new URL(c.path, 'http://127.0.0.1:43129').href;
-          validateStudyWindow(captureExpectations,Date.now());
+          validateStudyWindow(captureExpectations,Date.now());validateGratitudeWindow(captureExpectations,Date.now());
           captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),
             observed:await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind,caseId:c.id,...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),manifestSha256:jsonHash(captureExpectations),fixtureFileSha256:studyFixtureFileSha256,captureRole}) });
         }
@@ -220,11 +226,11 @@ const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === ro
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
 let capture = null;
 if (captureRole && captured) {
-  validateStudyWindow(captureExpectations,Date.now());
+  validateStudyWindow(captureExpectations,Date.now());validateGratitudeWindow(captureExpectations,Date.now());
   const record = {schema:'isolated-api-capture-v1', role:captureRole, pairNonce:options['--pair-nonce'],sourceCommit,
     workingTreeSha256,
     runtimeSha256:options['--runtime-sha256'],harnessSha256:options['--harness-sha256'],
-    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,
+    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,...(gratitudeCase?{gratitudeRuntime:proof.gratitudeRuntime,gratitudeFont:proof.gratitudeFont}:{}),
     manifestSha256:jsonHash(captureExpectations),url:'http://127.0.0.1:43129',
     startedAt:captureStartedAt,endedAt:Date.now(),...(publishedUnitReadiness?{publishedUnitReadiness}:{}),cases:captured};
   const file=path.join(run,'capture.json');

@@ -1,3 +1,4 @@
+import {validateGratitudePng,validateGratitudePngCase} from './gratitude-png-contract.mjs';
 import {validateSheetPdf,validateSheetPdfCase} from './sheet-pdf-contract.mjs';
 import {validatePublishedUnitEvidence} from './published-unit-readiness.mjs';
 import {validateStudyPacket, validateStudyWindow, approvedStudyHeaders} from './synthetic-study-grant.mjs';
@@ -207,6 +208,7 @@ function validateManifest(manifest, origin) {
       assert.ok(e.headers['content-type'], 'Binary MIME required');
     } else assert.equal(typeof e.body.exact, 'string');
     if(c.generatedSheetPdfContract!==undefined)validateSheetPdfCase(c);
+    if(c.generatedGratitudePngContract!==undefined)validateGratitudePngCase(c);
     validateTimestampContract(c);
     validateFitnessClock(c);
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
@@ -222,6 +224,7 @@ function validateManifest(manifest, origin) {
   }
 }
 function inspect(response, c, context) {
+  if(c.generatedGratitudePngContract!==undefined)return validateGratitudePng(c,response,context).raw;
   assert.equal(response.status, c.expected.status, 'unexpected status');
   const headers = Object.fromEntries(Object.entries(response.headers).map(([k, v]) => [k.toLowerCase(), v]));
   for (const [name, value] of Object.entries(c.expected.headers)) assert.equal(headers[name], value, `header ${name}`);
@@ -261,6 +264,7 @@ function inspect(response, c, context) {
 // independently provisioned and reviewed; loopback and declared metadata are not
 // isolation or provenance proof. Live mode keeps its reference data identity separate.
 export async function compareApi({ manifest, targets, transport }) {
+  assert.ok(!manifest.cases.some(c=>c.generatedGratitudePngContract!==undefined),'Fixed PNG policy requires guarded isolated capture');
   assert.ok(!manifest.cases.some(c=>c.generatedSheetPdfContract!==undefined),'Fixed PDF policy requires guarded isolated capture');
   assert.ok(!manifest.cases.some(c=>Object.hasOwn(c,'headers')), 'Synthetic study grants forbidden in live comparison');
   validate(manifest, targets);
@@ -301,6 +305,7 @@ export function validateCaptureManifest(manifest, fixtureFileSha256) {
   for (const c of manifest.cases) {
     assert.equal(c.method, 'GET');
     if(c.generatedSheetPdfContract!==undefined)assert.equal(fixtureFileSha256,c.generatedSheetPdfContract.fixtureFileSha256,'Exact reviewed PDF fixture');
+    if(c.generatedGratitudePngContract!==undefined){assert.match(fixtureFileSha256??'',/^[a-f0-9]{64}$/);validateGratitudePngCase(c,fixtureFileSha256);assert.equal(manifest.cases.length,1,'Fixed PNG owner only');}
     assert.ok(!Object.hasOwn(c,'body') && (!Object.hasOwn(c,'headers') || reviewedStudy), 'Capture denies unreviewed credentials, headers or body');
     const url = new URL(c.path, 'http://127.0.0.1:43129');
     for (const key of url.searchParams.keys()) assert.ok(!/^(sid|cookie|authorization|bearer|token)$/i.test(key), 'Credential query denied');
@@ -340,6 +345,7 @@ export async function compareCapturedApi({ manifest, manifestSha256, pairNonce, 
       if(key !== 'sourceCommit') assert.equal(receipt.capture[key], value, 'Receipt linkage: '+key);
     }
     assert.equal(receipt.capture.file, run.capture.file); assert.equal(receipt.capture.sha256, run.capture.sha256);
+    if(manifest.cases.some(c=>c.generatedGratitudePngContract!==undefined)){assert.deepEqual(capture.gratitudeRuntime,receipt.proof.gratitudeRuntime,'Native sampled runtime proof linkage');assert.deepEqual(receipt.capture.gratitudeRuntime,capture.gratitudeRuntime);assert.deepEqual(capture.gratitudeFont,receipt.proof.gratitudeFont);assert.deepEqual(receipt.capture.gratitudeFont,capture.gratitudeFont);}
     assert.equal(receipt.fixtureSha256, capture.fixtureSha256); assert.equal(receipt.runtimeTimezone, capture.runtimeTimezone);
     assert.equal(receipt.capture.startedAt, capture.startedAt); assert.equal(receipt.capture.endedAt, capture.endedAt);
     assert.ok(Number.isFinite(capture.startedAt) && Number.isFinite(capture.endedAt) && capture.startedAt < capture.endedAt);

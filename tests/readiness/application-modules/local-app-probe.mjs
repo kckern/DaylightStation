@@ -1,3 +1,4 @@
+import {createRequire} from 'node:module';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 
 const scratch = process.env.PRE_RUN_ROOT;
-const { sourceRoot, fixtureFiles, rawUTF8Files = [], rawBinaryFiles = [], fixtureDirectories = [], metadataDirectories = [], fixedConfigMetadata = [] } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
+const { sourceRoot, fixtureFiles, rawUTF8Files = [], rawBinaryFiles = [], fixtureDirectories = [], metadataDirectories = [], fixedConfigMetadata = [],gratitudeCase } = JSON.parse(fs.readFileSync(path.join(scratch, 'probe-input.json'), 'utf8'));
 const resultFile = path.join(scratch, 'boot-result.json');
 const result = { scope: 'Actual assembled app with synthetic configs and loopback HTTP; scheduler/MQTT disabled, no production data/provider/Docker/auth/shutdown certification', readinessAccepted: false, completed: false, phases: [], errors: [], termination: null };
 const save = () => fs.writeFileSync(resultFile, JSON.stringify(result, null, 2));
@@ -126,6 +127,15 @@ try {
   } finally { for (const restore of restores.reverse()) restore(); }
   assert.equal(server.listening, false);
   result.phases.push('actual-createApp-returned');
+  let gratitudeSnapshot;
+  if(gratitudeCase){
+    const scope=fs.existsSync(path.join(sourceRoot,'modules/gratitude/server/rendering/GratitudeCardRenderer.mjs'))?'backend/src/0_system/libraries/gratitudeRuntime.mjs':'backend/src/1_rendering/gratitude/GratitudeCardRenderer.mjs';
+    const nativeRequire=createRequire(pathToFileURL(path.join(sourceRoot,scope)));const resolved=fs.realpathSync(nativeRequire.resolve('moment-timezone'));assert.equal(nativeRequire.cache[resolved]?.loaded,true,'Actual native moment must already be loaded');const moment=nativeRequire(resolved);
+    const bytes=fs.readFileSync(resolved);const resolvedMoment={path:resolved,sha256:createHash('sha256').update(bytes).digest('hex')};const contract=gratitudeCase.generatedGratitudePngContract;assert.ok(Object.values(contract.momentBindings).some(b=>JSON.stringify(b)===JSON.stringify(resolvedMoment)),'Reviewed actual moment binding');
+    const nativeFontPath=configService.getPath('font')+'/roboto-condensed/RobotoCondensed-Regular.ttf';assert.equal(nativeFontPath,path.join(scratch,'media/fonts/roboto-condensed/RobotoCondensed-Regular.ttf'));const fontBytes=fs.readFileSync(nativeFontPath);assert.equal(fontBytes.length,144196);assert.equal(createHash('sha256').update(fontBytes).digest('hex'),'c318f47fe2ec114266cab50c9712d20acb2275516b51538d1a83862bdfc12e59');result.gratitudeFont={path:nativeFontPath,sha256:createHash('sha256').update(fontBytes).digest('hex'),byteLength:fontBytes.length};
+    gratitudeSnapshot=()=>{const sampleStart=Date.now(),sample=moment(),sampleEpoch=sample.valueOf(),formatted=sample.format('ddd, D MMM YYYY, h:mm A'),sampleEnd=Date.now();const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true}).formatToParts(new Date(sampleEpoch)).map(p=>[p.type,p.value]));assert.equal(formatted,`${parts.weekday}, ${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod}`);assert.equal(moment.locale(),'en');assert.equal(moment.defaultZone,null);assert.equal(process.env.TZ,'America/Los_Angeles');return{locale:moment.locale(),defaultZone:moment.defaultZone,timezone:process.env.TZ,resolvedMoment,sampleStart,sampleEnd,sampleEpoch,formatted};};
+    result.gratitudeRuntime={before:gratitudeSnapshot()};
+  }
   const routes = [], unresolved = [], mounted = [];
   const visit = (router, prefixes, ancestors) => {
     if (ancestors.has(router)) { unresolved.push({ prefixes, reason: 'recursive router identity' }); return; }
@@ -155,5 +165,6 @@ try {
   result.phases.push('actual-loopback-listener-ready');save();
   fs.writeFileSync(path.join(scratch,'ready.json'),JSON.stringify({port:43129,address:'127.0.0.1',fixture:'eleven synthetic config files; no live writable configuration',scope:result.scope}));
   await new Promise(resolve=>setTimeout(resolve,30000));
+  if(gratitudeSnapshot)result.gratitudeRuntime.after=gratitudeSnapshot();
   result.completed=true;result.termination='deliberate bounded exit after 30s actual listener; not natural shutdown';save();process.exit(0);
 } catch(error){fail(error);}

@@ -38370,5 +38370,89 @@
     ],
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "gratitudeFailedNativePngAttempts": {
+    "schema": "daylight.gratitude-three-failed-attempts/v1",
+    "scope": "Three failed finite local native Gratitude PNG attempts; no healthy contract or API coverage credit. Reusable narrowly reviewed harness changes only.",
+    "attempts": [
+      {
+        "session": 88344,
+        "outcome": {
+          "path": "/tmp/readiness-gratitude-current-one/OUTCOME.json",
+          "sha256": "1040119df419674122fb220c3136d6431133550eac52d6a091d39fc4e48ea291"
+        },
+        "review": {
+          "path": "/tmp/readiness-gratitude-current-one/outcome-review.json",
+          "sha256": "d75e4dbec29cab14bea77353dcd49c192abad2dee534a721b7e6e3ff64645ac9"
+        },
+        "result": "Original200 sealed; candidate native sample after240s window, capture not sealed; only one recorded role, execution false, no finalguards recorded/comparison/derivation.",
+        "credit": 0
+      },
+      {
+        "session": 30883,
+        "outcome": {
+          "path": "/tmp/readiness-gratitude-retry-one/OUTCOME.json",
+          "sha256": "415858d70071abfaf0a52270de0998dedfa04378fce62c9726e2c0b067bf7174"
+        },
+        "review": {
+          "path": "/tmp/readiness-gratitude-retry-one/outcome-review.json",
+          "sha256": "b6beb0b72cb5f084f1c33371b96911fd62105b09bf239dee57fc67e01a7504e5"
+        },
+        "result": "Both guarded roles completed200, equal2648-byte PNGs, both full independent oracle checks failed. Reviewed source diagnosis identifies missing native gconv dependencies causing font registration fallback/missing glyphs; no populated contract accepted. Derivation refused independent raw failures.",
+        "credit": 0
+      },
+      {
+        "session": 72556,
+        "outcome": {
+          "path": "/tmp/readiness-gratitude-one-gconv-pair/terminal-outcome.json",
+          "sha256": "9c5af9c247f3295267bec51ebab210e70e8c4bbb9ed13e1c366686cc6fdbb517"
+        },
+        "result": "After exact two-file gconv read grants, both native roles completed and final guards passed; both full independent PNG oracle checks still failed. Raw comparison retained, derivation not attempted, no further diagnosis or retry.",
+        "credit": 0
+      }
+    ],
+    "controlsAndSourceReviews": {
+      "initialSeven": {
+        "path": "/tmp/readiness-gratitude-seven-file-review.json",
+        "sha256": "0fb15898f6b760048f5cf1db4a6bf59bba982bdc2b1dfaf14ec4e380ff923f88"
+      },
+      "timingFix": {
+        "path": "/tmp/readiness-gratitude-timing-delta-review.json",
+        "sha256": "238d33ca6acbe2a7abe3b3cd21e6cfc797fd2850c981abeb48c71ee45bb515ac"
+      },
+      "nativeEncodingFix": {
+        "path": "/tmp/readiness-gratitude-gconv-scope-review.json",
+        "sha256": "ebd3931e331871613c2a560c7b848992f0d421ff62fd80e3a08a80df678cd006"
+      },
+      "gconvDiagnosis": {
+        "path": "/tmp/readiness-gratitude-retry-png-diagnosis-v1/HANDOFF.json",
+        "sha256": "2a38e2be276f05be096453ced0ff4bed43b54c4367e83ea8c8b63c5f9937abe2"
+      }
+    },
+    "harnessScope": "One literal upright Gratitude case/full fixture, full presealed PNG tables with finite15min maximum and unchanged1MiB/5s request/75s role bounds; canonical exact two gconv file-only grants for this case. Native sampled Moment/font evidence binds guarded captures/receipts. Full body/raw headers remain strict; independent raw errors cannot derive.",
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 636,
+      "successfulIndependentContracts": 635,
+      "parityLinkedEligibleSourceTemplates": 371,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 25,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "single635CaseRun": false,
+      "original624AndPriorSupplementalReplacementReceiptsUnchanged": true,
+      "historical633Accepted624HealthySnapshotUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "accountingUnchanged": true,
+    "uniqueCaseIncrement": 0,
+    "healthyContractIncrement": 0,
+    "sourceTemplateIncrement": 0,
+    "cleanup": "All three terminal attempts have no retained owned process/listener. Original captures, failed results and prior reviews remain distinct; no expected-body relaxation or capture fitting.",
+    "historicalEvidenceLimit": "The original596e private implementation HANDOFF and superseded private sourceguard/helper/control/recipe bytes were overwritten by the timing proposal; exact original copies were unavailable and not reconstructed. Immutable failed pair/proof/outcome/review artifacts are retained; do not represent missing private backing as restored.",
+    "remainingLimits": "Gratitude PNG remains one of25 source-template gaps; Life remains the historical contract gap. Production image/config/mount provenance, installed denominator, nonGET/browser/WS/jobs/rollback/cutover gates remain unproved.",
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }

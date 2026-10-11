@@ -1,3 +1,4 @@
+import {validateGratitudeFixture,gratitudeFixtureIdentitySha256} from './gratitude-png-contract.mjs';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -13,6 +14,7 @@ export function validateRawFixtures(fixture) {
   for (const row of [...rows, ...binaryRows]) {
     const binary = binaryRows.includes(row);
     const destination = row.destination;
+    const gratitudeFont=binary&&destination==='media/fonts/roboto-condensed/RobotoCondensed-Regular.ttf'&&row.sha256==='c318f47fe2ec114266cab50c9712d20acb2275516b51538d1a83862bdfc12e59'&&row.byteLength===144196&&createHash('sha256').update(JSON.stringify(fixture)).digest('hex')===gratitudeFixtureIdentitySha256;if(gratitudeFont)validateGratitudeFixture(fixture);
     const schoolRemainingMediaPins = {"media/school/language/korean-language-reels/synthetic-read/900001.mp4":{"sha256":"79f33ad2b4550d449a6925b2fcbbb6fe017a3ff2fbf7cd4b1a2147f9c39cd844","byteLength":1647},"media/school/language/korean-language-reels/synthetic-read/900002.mp4":{"sha256":"9029e427713fccf68d1ce1ee4fcd4dd4b2a238b2d7487ccdc570f5770b3ee155","byteLength":1647}};
     const schoolRemainingTextPins = {"data/content/school/language/korean-language-reels/reels/synthetic-read/900001.reel.yml":{"sha256":"c30c184501d2823cc3df7ae5f031c73ee8b7944067b3d3d0ee3892af052d4e3e","byteLength":284},"data/content/school/language/korean-language-reels/reels/synthetic-read/900002.reel.yml":{"sha256":"76e580f04045212acc7da8c79d568af261e4d2f8c5bf60732a6cb9ca763d60ca","byteLength":283}};
     const schoolRemainingMedia = Object.hasOwn(schoolRemainingMediaPins,destination) && row.sha256 === schoolRemainingMediaPins[destination].sha256 && row.byteLength === schoolRemainingMediaPins[destination].byteLength;
@@ -59,7 +61,7 @@ export function validateRawFixtures(fixture) {
     const cueAudio = destination === 'media/school/_ux/ding.mp3';
     // One exact authored EDL text fixture: complete bytes bound, no media subtree grant.
     const remainingContentFilterEDL = !binary && destination === "media/content-filter/edl/910001.edl.yml" && row.sha256 === "15a01a89abf474e272d4dfb44ca190acc89a6953ba86664d834353f93d87a5cc" && row.byteLength === 362;
-    assert.ok(binary ? schoolRemainingMedia || storedMedia || householdListImage || schoolPosterJPEG || emulatorStoredPNG || emulatorOpaque || householdStaticPNG || curationUsageImage || mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : remainingContentFilterEDL || schoolRemainingText || householdListNote || healthAuditJournalText || adminSceneIndexText || emulatorStoredText || curationUsageText || gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
+    assert.ok(binary ? gratitudeFont || schoolRemainingMedia || storedMedia || householdListImage || schoolPosterJPEG || emulatorStoredPNG || emulatorOpaque || householdStaticPNG || curationUsageImage || mediaNavigationImage || mediaNavigationAudio || studyRecording || gamingSchoolImage || payload || asset || promptAudio || cueAudio : remainingContentFilterEDL || schoolRemainingText || householdListNote || healthAuditJournalText || adminSceneIndexText || emulatorStoredText || curationUsageText || gamingStored || pianoLesson || languageCorpus || producer || composer || deck || attempts || bypass || lexicon || manifest || race || memo, 'Unreviewed raw destination');
     for (const match of [attempts, manifest, payload]) if (match) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + match[1] + '/profile.yml'), 'Raw School user must have projected roster profile');
     if (composer) assert.ok(Object.hasOwn(fixture.fixtureFiles, 'data/users/' + composer[1] + '/profile.yml'), 'Raw composer user must have a projected roster profile');
     assert.ok(!seen.has(destination) && !Object.hasOwn(fixture.fixtureFiles, destination), 'Raw duplicate or JSON collision'); seen.add(destination);
@@ -71,7 +73,7 @@ export function validateRawFixtures(fixture) {
     assert.equal(createHash('sha256').update(bytes).digest('hex'), row.sha256, 'Raw byte hash mismatch');
     if (binary) {
       const extension = path.posix.extname(destination);
-      const signature = schoolRemainingMedia ? bytes.subarray(4,8).toString('ascii') === 'ftyp' : emulatorOpaque ? createHash('sha256').update(bytes).digest('hex') === emulatorOpaquePins[destination].sha256 : ((storedMedia && destination.endsWith('.wav')) || studyRecording || destination === "media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav") ? bytes.length>=44 && bytes.subarray(0,4).toString('ascii')==='RIFF' && bytes.subarray(8,12).toString('ascii')==='WAVE' && bytes.readUInt32LE(4)+8===bytes.length
+      const signature = gratitudeFont ? bytes.subarray(0,4).toString('hex')==='00010000'&&createHash('sha256').update(bytes).digest('hex')===row.sha256 : schoolRemainingMedia ? bytes.subarray(4,8).toString('ascii') === 'ftyp' : emulatorOpaque ? createHash('sha256').update(bytes).digest('hex') === emulatorOpaquePins[destination].sha256 : ((storedMedia && destination.endsWith('.wav')) || studyRecording || destination === "media/audio/readalong/synthetic-media-navigation/chapter/0001-synthetic-reading.wav") ? bytes.length>=44 && bytes.subarray(0,4).toString('ascii')==='RIFF' && bytes.subarray(8,12).toString('ascii')==='WAVE' && bytes.readUInt32LE(4)+8===bytes.length
         : extension === '.png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
         : extension === '.jpg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
         : extension === '.mp3' && (bytes.subarray(0, 3).toString('ascii') === 'ID3' || bytes[0] === 255 && (bytes[1] & 224) === 224);
