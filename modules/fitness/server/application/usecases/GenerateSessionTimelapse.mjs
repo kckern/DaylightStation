@@ -10,7 +10,7 @@ export { buildSlug, participantSlug, durationMinutes };
 // never gets an endTime and would otherwise stick forever (idempotency guard
 // below would skip it on every future trigger). Anything older than this is
 // treated as abandoned and re-rendered rather than skipped.
-const STALE_PROCESSING_MS = 30 * 60 * 1000;
+export const STALE_PROCESSING_MS = 30 * 60 * 1000;
 
 /**
  * Fraction of output frames that must sit near a real capture for the recap to count

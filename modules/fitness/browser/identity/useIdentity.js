@@ -8,3 +8,8 @@ export function useIdentity() {
   if (!ctx) throw new Error('useIdentity must be used within an IdentityProvider');
   return ctx;
 }
+
+/** Same context, or null outside an IdentityProvider — for surfaces that may render without one. */
+export function useOptionalIdentity() {
+  return useContext(IdentityContext);
+}

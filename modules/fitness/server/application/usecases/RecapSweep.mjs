@@ -1,3 +1,5 @@
+import { STALE_PROCESSING_MS } from './GenerateSessionTimelapse.mjs';
+
 /**
  * Use case: periodic recap sweep.
  *
@@ -21,8 +23,20 @@
  */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Recap statuses that mean "leave it alone" — finished, in flight, or no-captures. */
-const TERMINAL_OR_INFLIGHT = new Set(['ready', 'processing', 'skipped']);
+/** Recap statuses that mean "leave it alone" — finished or no-captures. */
+const TERMINAL = new Set(['ready', 'skipped']);
+
+/**
+ * A `processing` status is a soft lock only while it is fresh. One older than
+ * the use case's stale threshold is a render that died mid-encode (container
+ * restart) and must reach the use case, which re-renders it — otherwise the
+ * session sits at `processing` forever with its frames never recapped.
+ */
+function isLiveRender(timelapse, now) {
+  if (timelapse?.status !== 'processing') return false;
+  const startedAt = timelapse.startedAt ?? null;
+  return startedAt != null && now - startedAt < STALE_PROCESSING_MS;
+}
 
 /**
  * Failures that a retry cannot change. A failed recap is otherwise retried on
@@ -78,9 +92,10 @@ export class RecapSweep {
         }
         if (!session) continue;
 
-        // Already finished / in flight / known no-captures — nothing to do.
+        // Already finished / live in flight / known no-captures — nothing to do.
         const status = session.timelapse?.status || null;
-        if (status && TERMINAL_OR_INFLIGHT.has(status)) continue;
+        if (status && TERMINAL.has(status)) continue;
+        if (isLiveRender(session.timelapse, now)) continue;
         if (status === 'failed' && PERMANENT_FAILURES.has(session.timelapse?.error)) continue;
 
         // Needs camera captures to render anything (mirrors buildFrames' requirement).

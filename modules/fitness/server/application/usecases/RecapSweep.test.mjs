@@ -4,8 +4,11 @@ import { RecapSweep, recentDateStrings } from "./RecapSweep.mjs";
 
 const NOW = new Date('2026-06-18T12:00:00').getTime(); // local noon
 
-function session(id, { status, error, captures = [{ role: 'camera' }] } = {}) {
-  return { sessionId: id, snapshots: { captures }, timelapse: status ? { status, ...(error ? { error } : {}) } : null };
+function session(id, { status, error, startedAt, captures = [{ role: 'camera' }] } = {}) {
+  return {
+    sessionId: id, snapshots: { captures },
+    timelapse: status ? { status, ...(error ? { error } : {}), ...(startedAt != null ? { startedAt } : {}) } : null,
+  };
 }
 
 function harness(byDate, { executeImpl } = {}) {
@@ -51,7 +54,7 @@ test('skips ready / processing / skipped statuses (idempotent)', async () => {
   const { sweep, executed } = harness({
     '2026-06-18': [
       session('ready', { status: 'ready' }),
-      session('processing', { status: 'processing' }),
+      session('processing', { status: 'processing', startedAt: NOW - 60_000 }),
       session('skipped', { status: 'skipped' })
     ]
   });
@@ -59,6 +62,20 @@ test('skips ready / processing / skipped statuses (idempotent)', async () => {
   assert.deepEqual(executed, []);
   assert.equal(stats.triggered, 0);
   assert.equal(stats.scanned, 3);
+});
+
+// 2026-10-06/07: two sessions whose render died mid-encode (container restart)
+// sat at `processing` for days. The use case already re-renders a processing
+// status older than 30 min, but the sweep's pre-filter never handed them over.
+test('hands an abandoned processing render (>30 min old) to the use case', async () => {
+  const { sweep, executed } = harness({
+    '2026-06-18': [
+      session('stale', { status: 'processing', startedAt: NOW - 31 * 60_000 }),
+      session('nostart', { status: 'processing' }),
+    ]
+  });
+  await sweep.run({ now: NOW, lookbackDays: 0 });
+  assert.deepEqual(executed, ['stale', 'nostart']);
 });
 
 test('retries a failed recap (un-recapped, frames still present)', async () => {

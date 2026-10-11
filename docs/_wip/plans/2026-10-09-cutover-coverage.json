@@ -1,6 +1,142 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
+  "actualImageExpandedScopedAccounting20261011": {
+    "schema": "daylight.actual-image-expanded-scoped-accounting/v1",
+    "readinessAccepted": false,
+    "historicalPair": {
+      "referenceImageId": "sha256:fd7060b3217db709832fb13df67b2b579b9bf1f38b412a5800c094c50d7aa3b7",
+      "referenceSource": "026e3cb395d2af66766bb7c89a657a2fc5dd5e94",
+      "candidateImageId": "sha256:956f343edd7fd3ca76b92ac49b3ffd210ecf69f422e47ac36fc1eb491dc77c8e",
+      "candidateSource": "95aa5b0a5aad939ea417fa98d56cc8f09f42520c",
+      "browserImageId": "sha256:ed48fdb2b3bbaac04c6f3c9ba96f45f328dd7a68caeec95d1333c4aa65280073"
+    },
+    "currentProduction": {
+      "backendImageId": "sha256:d5b64e88b4fed0eab6d5bbd20fc3e4decc8c886e62ee983f4390b83b0031eaff",
+      "backendBuildSource": "14261820397a7da679ff030b09948855e292a9a9",
+      "startedAtUtc": "2026-10-11T19:40:54.734370428Z",
+      "browserRestartedAtUtc": "2026-10-11T19:40:48.26823634Z",
+      "testedAgainstHistoricalPair": false,
+      "restorationProposalExecuted": false,
+      "restorationProposalRefreshReceiptSha256": "3d47577bd13e610affa14d71b24baff644b309745488da5702e107cd85073b7b",
+      "restorationArgvPrivateSha256": "68e47399e79045f4c12435162bd30f171ff48327eb936ca5c664dcd1183d905c",
+      "newBackendRetentionVerified": true,
+      "newBackendRetentionReceiptSha256": "c1d5628ccaf8b4068731449e8cc51ad8e216f52a11242b4ac841698233fb4d98",
+      "newBackendArchiveSha256": "8df0cc9f14f8e414c8b72bb21d908e065daea290ceb4d1099daba93f8b846dbc",
+      "newBackendArchiveManifestLayersPresent": 23
+    },
+    "freshMain": {
+      "sourceCommit": "c9a3ea9bd246e4ef507812a96987f18de85e41d6",
+      "fourFitnessCommitsAfter026": true,
+      "includedInHistoricalCandidateImage": false,
+      "requiresNewImageBuildAndAffectedRetest": true,
+      "includedInCandidateSourceByBranchMerge": true,
+      "mergedSourceRequiresNewImageEvidence": true,
+      "focusedIncomingFitnessTests": {"nodeTestPassed": 31, "newVitestPassed": 29, "existingVitestPassed": 120},
+      "priorDocumentationCommit": "23f28fc760f7ddad5315de4c2c3e0d8a3172d42a"
+    },
+    "api": {
+      "sourceLedgerHealthyAcrossRuns": 640,
+      "sourceEligibleStaticTemplates": 396,
+      "sourceParityLinkedStaticTemplates": 373,
+      "sourceTemplateGaps": 23,
+      "expandedAdmitted": 376,
+      "expandedRawStrictPass": 353,
+      "expandedApprovedClockDerivedPass": 3,
+      "expandedAccepted": 356,
+      "expandedSharedUnresolvedFailures": 20,
+      "expandedUntestedAfterRetry": 0,
+      "priorSelectedAccepted": 9,
+      "priorSelectedOverlapExpanded": 5,
+      "separatePhysicalMetadataAccepted": 10,
+      "physicalMetadataOverlapExpanded": 0,
+      "deduplicatedScopedActualImageAcceptedIds": 370,
+      "firstAcceptedSourceCohort": 407,
+      "firstCohortActualImageAccepted": 366,
+      "firstCohortRemainingSharedFailures": 20,
+      "firstCohortDeferred": 21,
+      "physicalMetadataPlaybackCredit": false,
+      "accountingPath": "/tmp/readiness-actual-expanded95aa-v1/ACCOUNTING.json",
+      "accountingSha256": "c2a3320d9dc0bc00887a28346077325bef8abcd8db52f12d7d95d83deabe826a",
+      "expandedDurableArchiveSha256": "679f8e343599d92124e45c0d1d6c398bc993607333e9ca39f1ce56bd1542ed4e",
+      "expandedDurableArchivePayloadsVerified": 250,
+      "physicalMetadataResultPath": "/tmp/readiness-image-metadata95aa-v1/execution/RESULT.json",
+      "physicalMetadataResultSha256": "5fa8615d2142c1ee534a3f7454ae48580316201f0a19eb931a2ce16f3697e346"
+    },
+    "syntheticScopedLifecycle": {
+      "configurationWriteRestartOldImageRead": {
+        "passed": true,
+        "resultPath": "/tmp/readiness-image-write-rollback-proposal95aa-v1/execution/RESULT.json",
+        "resultSha256": "c8a348114265669fc8dda94e5d8485b9413f83df558fc3ec97bbcbdfb2adbd5b",
+        "durableArchiveSha256": "344b265da5230bcfb2b16804bfa63896eef8cb97f13f556bc0ddfe22b615186a",
+        "fullProductionRestorationCredit": false
+      },
+      "archiveRotationProducer": {
+        "passed": true,
+        "resultPath": "/tmp/readiness-image-archive-producer95aa-v1/execution/RESULT.json",
+        "resultSha256": "2c4923f2b507ab2bc10254677571db7dc278120a204e6f1f5a0814eceeb8837c",
+        "durableArchiveSha256": "e942f68c65b35f1a0138b19a7881b11590fc2108b312c0a2cd794bd3cffb6203",
+        "configuredTaskLocalServiceOnly": true
+      },
+      "webSocketOneSyntheticTopic": {
+        "passed": true,
+        "terminalPath": "/tmp/readiness-actual-ws95aa-v1/TERMINAL.json",
+        "terminalSha256": "c36a9bc0a28b0d1f9833f77ef6fa94e5a5a5103c9c96bd273fbd2c4bb1082198",
+        "durableArchiveSha256": "7fa416e11ac403e51250098f137e8132da60ec09f32926e7d5d117bb632a6d3d",
+        "allTopicsOrProductionCredit": false
+      },
+      "fitnessPopulatedBrowser": {
+        "scopedPairDriverPassed": true,
+        "genericBrowserJourneyCredit": false,
+        "genericReadinessAccepted": false,
+        "resultPath": "/tmp/readiness-browser-fitness-populated95aa-v1/execution-v2/BROWSER-RESULT.json",
+        "resultSha256": "547efbc7f3344bfacb3133f213c4362684ad3fb7e1a8d2ca7ac18240128cd200",
+        "executedCorrectedDriverSha256": "6c98bda43a2b709fb94cf8cb31c7a12fe4e2db112dc5289150fa6f4ca505fa43",
+        "initialFailedDriverSha256": "7a132815cf4239a96151a42f46a6fcb679d7651e3bdf3860f8b8cab751a8a23f",
+        "durableArchiveSha256": "10ebf76387e540c5d631df16f2bd107b6ab70b9c01a670f7af56df16dcd2d6a7",
+        "limits": [
+          "synthetic avatar 404",
+          "blocked external fonts",
+          "intermittent boot-error POST unresolved"
+        ]
+      },
+      "pianoPopulatedBrowser": {
+        "scopedPairDriverPassed": true,
+        "genericBrowserJourneyCredit": false,
+        "genericReadinessAccepted": false,
+        "resultPath": "/tmp/readiness-browser-piano-populated95aa-v1/execution/BROWSER-RESULT.json",
+        "resultSha256": "668d93754be356f0293e069dbe757d0a950af3f18ccac058fb82423d04dec571",
+        "durableArchiveSha256": "5d71bbb6ac74d16a2d5e934356d1f5f96245e9145bbd79cbf71a9c18ae9657ab",
+        "limits": [
+          "guest not persistent user",
+          "app config and avatar 404",
+          "Web MIDI denied",
+          "local bridge blocked",
+          "no audio or hardware credit"
+        ]
+      },
+      "schoolStaleSweep": {
+        "producerWorkCredit": false,
+        "referenceNativeRunOnly": true,
+        "sharedSourceWiringGap": "schoolLearnerDirectory not passed into createSchoolLifecycle; listStale returns empty",
+        "resultPath": "/tmp/readiness-image-school-sweep95aa-v2/execution/RESULT.json",
+        "resultSha256": "c05df8c790ec0a98413111aa3ea79985f4da43dfeadc11f4df548645b63d1265",
+        "durableArchiveSha256": "55f6e8e06131b289b149105c86c3e6c4c64cb5c460901918185e7a5fcd677b42"
+      },
+      "jobOptionsLoss": {
+        "openBaselineDefect": true,
+        "effect": "Job.fromObject drops configured options including dryRun:true before scheduler dispatch"
+      }
+    },
+    "remainingReleaseGates": [
+      "build and retest exact candidate after current-main source integration",
+      "reinspect new serving production configuration and installed routes",
+      "rehearse exact current-production restoration from verified retained images and captured configuration",
+      "record baseline School sweep and job options defects while preserving behavior; scope any fix separately",
+      "broader daily-use browser/audio/device/provider paths",
+      "usage-idle gate and authorized deployment"
+    ]
+  },
   "actualImageSelectedReadAccounting20261011": {
     "schema": "daylight.actual-image-selected-read-accounting/v1",
     "referenceImageId": "sha256:fd7060b3217db709832fb13df67b2b579b9bf1f38b412a5800c094c50d7aa3b7",
