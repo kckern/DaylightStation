@@ -103,4 +103,79 @@ describe('GovernanceEngine — unattended child policy', () => {
     expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
     expect(h.engine.challengeState.videoLocked).toBe(false);
   });
+
+  // 2026-10-10 garage session: three kids alone, all-warm passed, then every
+  // hot challenge was skipped by the 20-BPM feasibility check (kids cruising
+  // ~26 BPM under hot). The countdown hit zero and silently reset, forever.
+  it('issues the hot challenge even when every child is far below hot', () => {
+    const h = harness();
+    const hotMin = 160;
+    const zoneConfig = [
+      { id: 'cool', min: 0 }, { id: 'active', min: 100 },
+      { id: 'warm', min: 120 }, { id: 'hot', min: hotMin }, { id: 'fire', min: 180 },
+    ];
+    h.engine.session = {
+      getParticipantProfile: () => ({ heartRate: 134, zoneConfig }),
+    };
+    h.evaluate({ first: 'hot', second: 'active' });
+    h.advance(180_000);
+    h.evaluate({ first: 'active', second: 'active' });
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
+
+    h.advance(180_000);
+    h.evaluate({ first: 'active', second: 'active' });
+    h.evaluate({ first: 'active', second: 'active' });
+    expect(h.engine.challengeState.activeChallenge).toMatchObject({
+      zone: 'hot', rule: 'all', status: 'pending',
+    });
+  });
+});
+
+describe('GovernanceEngine — cyclic selection after an infeasible skip', () => {
+  it('moves past a skipped selection instead of retrying it forever', () => {
+    let now = 100_000;
+    const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
+    engine.configure({
+      governed_labels: ['cardio'],
+      policies: {
+        default: {
+          base_requirement: [{ active: 'all' }],
+          challenges: [{
+            interval: [60, 60],
+            selection_type: 'cyclic',
+            selections: [
+              { zone: 'hot', min_participants: 'all', time_allowed: 60 },
+              { zone: 'warm', min_participants: 'all', time_allowed: 60 },
+            ],
+          }],
+        },
+      },
+      zoneConfig: Object.values(ZONES.zoneInfoMap),
+    });
+    engine.setMedia({ id: 'episode-1', type: 'episode', labels: ['cardio'] });
+    const zoneConfig = [
+      { id: 'cool', min: 0 }, { id: 'active', min: 100 },
+      { id: 'warm', min: 120 }, { id: 'hot', min: 160 }, { id: 'fire', min: 180 },
+    ];
+    engine.session = { getParticipantProfile: () => ({ heartRate: 125, zoneConfig }) };
+    const evaluate = (userZoneMap) => engine.evaluate({
+      activeParticipants: Object.keys(userZoneMap), userZoneMap,
+      totalCount: Object.keys(userZoneMap).length, guestIds: [], ...ZONES,
+    });
+
+    evaluate({ a: 'active', b: 'active' });
+    expect(engine.phase).toBe('unlocked');
+    // Hot comes due and is skipped as infeasible (both 35 BPM under hot).
+    now = engine.challengeState.nextChallengeAt;
+    evaluate({ a: 'active', b: 'active' });
+    evaluate({ a: 'active', b: 'active' });
+    expect(engine.challengeState.activeChallenge).toBeNull();
+    expect(engine.challengeState.nextChallenge?.zone).toBe('warm');
+
+    now = engine.challengeState.nextChallengeAt;
+    evaluate({ a: 'active', b: 'active' });
+    evaluate({ a: 'active', b: 'active' });
+    expect(engine.challengeState.activeChallenge).toMatchObject({ zone: 'warm', status: 'pending' });
+  });
 });

@@ -2941,6 +2941,10 @@ export class GovernanceEngine {
         intervalRangeSeconds: [intervalSeconds, intervalSeconds],
         minParticipants: 1,
         selectionType: 'cyclic',
+        // The kids-alone cycle exists to demand effort on a fixed beat. The
+        // 20-BPM feasibility gate would skip (or downgrade) hot whenever the
+        // children are coasting — which is exactly when it should fire.
+        skipFeasibility: true,
         selections: effectiveChallengeZones.map((zone, index) => ({
           id: `__unattended_${zone}_${index}`,
           type: 'zone',
@@ -4599,7 +4603,7 @@ export class GovernanceEngine {
       }
 
       // Feasibility check: don't start challenges participants can't reach
-      if (!forced && preview.type === 'zone') {
+      if (!forced && preview.type === 'zone' && !challengeConfig.skipFeasibility) {
         const feasibility = this._checkChallengeFeasibility(
           preview.zone, preview.rule, activeParticipants
         );
@@ -4612,6 +4616,12 @@ export class GovernanceEngine {
             preview.zone = feasibility.suggestedZone;
           } else {
             getLogger().info('governance.challenge.skipped_infeasible', { reason: feasibility.reason });
+            // Advance the cyclic cursor past the skipped selection; otherwise
+            // the next pick is the same infeasible selection, every time.
+            if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
+              this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
+            }
+            this.challengeState.nextChallenge = null;
             const nextDelay = this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000;
             queueNextChallenge(nextDelay);
             this._schedulePulse(50);

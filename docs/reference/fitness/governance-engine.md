@@ -606,10 +606,19 @@ non-exempt child reaches the configured startup zone. That achievement is
 latched for the current media item. The engine then replaces the ordinary
 random challenge schedule with cyclic `all` challenges at the configured zones
 on the exact configured interval. By default those targets alternate between
-Warm and the startup zone (normally Hot). A missed challenge locks playback
+Warm and the startup zone (normally Hot). These challenges bypass the 20-BPM
+feasibility check that ordinary policies use: the cycle exists to demand effort
+from children who are coasting, so "nobody is close to Hot right now" is the
+moment to fire, not a reason to skip. A missed challenge locks playback
 until every governed child reaches the target. A superuser joining immediately
 stands this policy down and restores the normal policy; leaving again starts a
 fresh startup gate.
+
+Ordinary (non-unattended) zone challenges are feasibility-checked at start: if
+no participant is within 20 BPM of the target the challenge is skipped
+(`governance.challenge.skipped_infeasible`) and re-queued one interval later.
+In a `cyclic` selection the skip still advances the cursor, so the next attempt
+is the next selection rather than the same infeasible one.
 
 ## Configuration
 
