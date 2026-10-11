@@ -651,6 +651,7 @@ h2 {
 
 // Header with Category and User Cycle
 .gratitude-header {
+  container-type: inline-size;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -704,19 +705,20 @@ h2 {
     }
   }
   
+  // ▲ over ▼ at the picker's edge: one narrow column instead of two.
+  .cycle-arrows {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
   .cycle-arrow {
     opacity: 0.4;
     font-size: 0.7em;
     transition: opacity 0.2s ease;
     flex-shrink: 0;
-    
-    &.up {
-      margin-right: -4px;
-    }
-    
-    &.down {
-      margin-left: -4px;
-    }
   }
   
   .cycle-content {
@@ -1134,8 +1136,15 @@ h2 {
   }
   
   // Font size is the MAXIMUM; useFitText shrinks long entries to fit two lines.
-  .item-text {
+  .item-body {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .item-text {
     min-width: 0;
     font-size: 1.8rem;
     line-height: 1.15;
@@ -1147,9 +1156,6 @@ h2 {
   .date-label {
     font-size: 0.85rem;
     color: #888;
-    flex-shrink: 0;
-    min-width: 50px;
-    text-align: right;
   }
 }
 
@@ -1223,4 +1229,27 @@ h2 {
   height: 100%;
   font-size: 1.5rem;
   color: #888;
+}
+// Narrow header (side-by-side columns on a small screen): give the labels the
+// room the padding and gaps were taking.
+@container (max-width: 480px) {
+  .category-cycle,
+  .user-cycle {
+    padding: 10px 12px;
+    gap: 8px;
+
+    .cycle-content {
+      gap: 8px;
+    }
+
+    .category-icon {
+      width: 24px;
+      height: 24px;
+    }
+  }
+
+  .user-cycle .user-avatar-small {
+    width: 40px;
+    height: 40px;
+  }
 }
