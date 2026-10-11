@@ -126,6 +126,17 @@ describe('YamlSurroundStore totality', () => {
     expect(typeof payload.ms).toBe('number');
   });
 
+  it('skips a station-sequence sidecar quietly: no invalid warn, not counted', () => {
+    write('radio/salt-lake/fm100.yml',
+      'match: { contentId: plex:757556, title: FM100 }\nsequence:\n  head: 1\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.invalid', expect.anything());
+    expect(logger.info.mock.calls[0][1]).toMatchObject({ pieces: 1, skipped: 0 });
+    expect(store.lookup('plex:757556', 'FM100')).toBeNull();
+    expect(store.lookup('plex:663134', '')).not.toBeNull();
+  });
+
   it('keeps indexing after a malformed sidecar', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
