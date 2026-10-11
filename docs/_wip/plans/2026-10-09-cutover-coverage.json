@@ -38644,5 +38644,60 @@
     },
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "post624HealthGuardedReadSliceEvidence": {
+    "schema": "daylight.health-local-guarded-read-slice-accepted/v1",
+    "session": 22227,
+    "outcome": {
+      "path": "/tmp/readiness-health-current-three-v2/OUTCOME.json",
+      "sha256": "79f166d8ad327ceefd16938446b696f97309547e425ced009f338bd182790ada"
+    },
+    "review": {
+      "path": "/tmp/readiness-health-current-three-v2/ROOT-OUTCOME-REVIEW.json",
+      "sha256": "5623a4a06c5645b7a3efed71c9f495e3fdc8a3c148cca96f2591b60206b2b943"
+    },
+    "scope": "Three separate supplemental LOCAL fixture-guarded Health contracts on one native pair; across-run union. Selected historical day, morning shortlist and desktop30-day budget range only; not fullToday/browser/production or global eligibility admission.",
+    "acceptedCaseIds": [
+      "native-health-day-populated",
+      "native-health-morning-shortlist",
+      "native-health-desktop-budget-range"
+    ],
+    "result": "Both roles completeHTTP200 full independently authored JSON (day1360,shortlist760,range13104 bytes) and raw native headers/Content-Length/ETag/Date pass. Actual request intervals remain in presealed LAday. Native4 admission/finalguards,controls,protectedinputs and cleanup accepted.",
+    "physicalGuardEvidence": "Before all3 GETs and after termination, canonical scratch/root and each existing ancestor dev/ino match; nutrition journal absent under BOTH native YAML spellings; Fitness log absent or exactly-empty stable realDIR; all other fixed absence guards preserved. Same evidence in canonical capture,receipt.capture and receipt.proof, with helper/source/proof bindings.",
+    "clientReadLinks": "Same-fixture day row/meal bucket and budget match the Sep7 range day on every shared field; desktop range is30ascending Aug9\u2013Sep7 healthy dates with Sep6+Sep7 populated; shortlist stable favorite food precedes breakfast template and carries exact native ID/type/name/portion/nutrient fields. No wholeToday credit: pending,observations,dashboard/coaching and other buckets remain separate.",
+    "sourceEligibility": "These3 declarations remain globally read-with-effects/blocked-reviewed-durable-or-workflow-effects, production presence unknown. Root reviewed only exact local guarded branch; they are outside current396 eligible-template denominator and23-gap backlog. No global matrix entry changed.",
+    "declarationIds": [
+      "decl-2f0100d22dce3202600d764c-0",
+      "decl-b4b2d17b7d6b18b9228fa99e-0",
+      "decl-a7a537636b50f7115d105f80-0"
+    ],
+    "preservedSetupFailure": {
+      "session": 41617,
+      "outcome": {
+        "path": "/tmp/readiness-health-current-three/OUTCOME.json",
+        "sha256": "64f1c87b0123d2eeb3dd696c53d58be138cfd58d22e661eafaab5bd48c20b758"
+      },
+      "result": "Original runner rejected native nutrilist array root before scratch/bootstrap/HTTP; runs[],candidate notrun,no rawbody/APIcredit. Narrow exact Health packet+literal nutrilist destination admission corrected runner only; existing other array guards unchanged. Cleanup clear.",
+      "credit": 0
+    },
+    "uniqueCaseIncrement": 3,
+    "healthyContractIncrement": 3,
+    "sourceTemplateIncrement": 0,
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 641,
+      "successfulIndependentContracts": 640,
+      "parityLinkedEligibleSourceTemplates": 373,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 23,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "single640CaseRun": false,
+      "original624AndPriorReceiptsUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }

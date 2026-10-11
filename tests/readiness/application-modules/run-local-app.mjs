@@ -1,3 +1,4 @@
+import {healthReadPacket,validateHealthDay,inspectHealthScratch,validateHealthObservation,finishHealthScratch} from './health-read-guards.mjs';
 import {validateGratitudeWindow,validateGratitudeFixture,gratitudeNativeEncodingInputs,gratitudeNativeFontconfigInputs} from './gratitude-png-contract.mjs';
 import {lessonReadinessRequired,waitForPublishedUnit} from './published-unit-readiness.mjs';
 import {validateStudyWindow} from './synthetic-study-grant.mjs';
@@ -46,6 +47,8 @@ const toolRoot = fs.realpathSync(options['--tool-root']);
 const outputRoot = fs.realpathSync(options['--output-root']);
 assert.ok(outputRoot !== sourceRoot && !outputRoot.startsWith(sourceRoot + path.sep), 'Outputs must be outside source');
 const prepared = JSON.parse(fs.readFileSync(fixtureFile, 'utf8'));
+const healthPacket=healthReadPacket(captureExpectations??(options['--manifest']?JSON.parse(fs.readFileSync(options['--manifest'],'utf8')):null),studyFixtureFileSha256);
+if(healthPacket)assert.ok(captureRole,'Health physical guards require native capture mode');
 const gratitudeCase=captureExpectations?.cases.find(c=>c.generatedGratitudePngContract!==undefined);
 const gratitudeFixedFixture=Boolean(gratitudeCase);if(gratitudeFixedFixture)validateGratitudeFixture(prepared);
 const gratitudeEncodingInputs=gratitudeNativeEncodingInputs(gratitudeCase,prepared);
@@ -77,7 +80,7 @@ for (const [relative, value] of Object.entries(prepared.fixtureFiles)) {
   const arcadeGrantArrayPins = {"data/users/user_1/apps/gaming/grants/2026-10-09.yml":"c71438f40925008da4e5070d976ab5747e75d28f3a121c961a51b0b5634fb416","data/users/user_1/apps/gaming/grants/2026-10-08.yml":"6fa0e644ab4c7eefc70995477104e5a09faf68b5a63899b82af7c41883c97bce"};
   const reviewedArcadeGrantArray = Object.hasOwn(arcadeGrantArrayPins, relative) && Array.isArray(value) && createHash('sha256').update(JSON.stringify(value)).digest('hex') === arcadeGrantArrayPins[relative];
   assert.ok(!Object.hasOwn(arcadeGrantArrayPins, relative) || reviewedArcadeGrantArray, 'Changed synthetic arcade grant ledger schema or values');
-  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || reviewedArcadeGrantArray || reviewedArray || reviewedGratitudeHopesArray || reviewedRecipeArray || reviewedStoredArray || ["data/users/user_1/apps/school/language/daily-korean/log/2026-10-08.yml", "data/users/user_1/apps/school/language/daily-korean/log/2026-10-09.yml", "data/users/user_2/apps/school/language/daily-korean/log/2026-10-09.yml", "data/household/school/artifacts/print/cards/1234567.yml", "data/household/school/artifacts/print/cards/7654321.yml", "data/household/school/records/curriculum-exceptions.yml"].includes(relative) || ["data/system/config/jobs.yml", "data/household/gaming/arcade-game-sessions/history/2026-10-09.yml"].includes(relative) || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml" || ["data/household/school/records/print/jobs.yml", "data/household/school/runtime/queues/print.yml"].includes(relative)), 'Only reviewed stored-data or exact School recipes paths may have an array root');
+  assert.ok(value && typeof value === 'object' && (!Array.isArray(value) || (healthPacket && relative === 'data/users/user_1/lifelog/nutrition/nutrilist.yml') || reviewedArcadeGrantArray || reviewedArray || reviewedGratitudeHopesArray || reviewedRecipeArray || reviewedStoredArray || ["data/users/user_1/apps/school/language/daily-korean/log/2026-10-08.yml", "data/users/user_1/apps/school/language/daily-korean/log/2026-10-09.yml", "data/users/user_2/apps/school/language/daily-korean/log/2026-10-09.yml", "data/household/school/artifacts/print/cards/1234567.yml", "data/household/school/artifacts/print/cards/7654321.yml", "data/household/school/records/curriculum-exceptions.yml"].includes(relative) || ["data/system/config/jobs.yml", "data/household/gaming/arcade-game-sessions/history/2026-10-09.yml"].includes(relative) || relative === "data/users/user_1/current/calendar.yml" || relative === "data/household/history/media-plays/2026-10-09.yml" || relative === "data/household/school/runtime/review/synthetic-review-session.yml" || ["data/household/school/records/print/jobs.yml", "data/household/school/runtime/queues/print.yml"].includes(relative)), 'Only reviewed stored-data or exact School recipes paths may have an array root');
 }
 // Explicit runtime timezone matches the reviewed deployment/config contract.
 const runtimeTimezone = prepared.fixtureFiles['data/system/config/system.yml']?.timezone;
@@ -162,7 +165,7 @@ assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe gran
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
 const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F' || kind === 'X').map(([file]) => ({ file, sha256: hash(file) }));
 const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)&&(!nativeBuild||!nativeBuildGitMetadata.has(row.file))).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
-for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'),path.join(directory,'gratitude-png-contract.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
+for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'),path.join(directory,'health-read-guards.mjs'),path.join(directory,'gratitude-png-contract.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
 const c = path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c');
@@ -172,6 +175,7 @@ assert.equal(compile.status, 0, compile.stderr);
 const args = [scratch, fs.realpathSync(process.execPath), manifest, toolRoot, path.join(run, 'transparent-loader.mjs'), path.join(run, entryName), denied, 'readiness-http', 'baseline', nativeBuild?'build-native-git-v1':''];
 const captureStartedAt = Date.now();
 let captured = null, publishedUnitReadiness;
+const healthBeforeRequests=[],healthObservations=[];let healthReadGuards;
 const child = spawn('/usr/bin/timeout', ['--signal=KILL', '75s', binary, ...args], { cwd: scratch, env: { PATH: '/usr/bin:/bin' } });
 let stderr = '', finished = null, comparison = null, comparisonError = null, response = null, referenceIdentityBefore = null, referenceIdentityAfter = null;
 const referenceObservations = [];
@@ -191,8 +195,14 @@ for (let attempt = 0; attempt < 400 && !finished; attempt++) {
         for (const c of captureExpectations.cases) {
           const url = new URL(c.path, 'http://127.0.0.1:43129').href;
           validateStudyWindow(captureExpectations,Date.now());validateGratitudeWindow(captureExpectations,Date.now());
-          captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),
-            observed:await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind,caseId:c.id,...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),manifestSha256:jsonHash(captureExpectations),fixtureFileSha256:studyFixtureFileSha256,captureRole}) });
+          if(healthPacket){
+            const snapshot=inspectHealthScratch(healthPacket,scratch);
+            const checkedAt=Date.now();validateHealthDay(healthPacket,checkedAt);
+            healthBeforeRequests.push({caseId:c.id,checkedAt,snapshot});
+          }
+          const observed=await fetchTransport({url,method:c.method,bodyKind:c.expected.body.kind,caseId:c.id,...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),manifestSha256:jsonHash(captureExpectations),fixtureFileSha256:studyFixtureFileSha256,captureRole});
+          captured.push({ id:c.id,method:c.method,path:c.path,url,bodyKind:c.expected.body.kind, ...(Object.hasOwn(c,'headers')?{headers:c.headers}:{}),observed });
+          if(healthPacket)healthObservations.push(validateHealthObservation(healthPacket,c,observed));
         }
       } else if (options['--manifest']) {
         const { compareApi, fetchTransport } = await import('./api-comparator.mjs');
@@ -244,6 +254,20 @@ const required = ['private read', 'host read', 'source write', 'test results cac
 const controls = cControls && (options['--controls-only'] ? required.every(name => proof?.controls?.includes(name)) : ['private read', 'host read', 'source write', 'test results cache read'].every(name => output.includes(`BOOT CONTROL ${name}: denied`)));
 let gratitudeNativeDependencies;
 if(gratitudeCase){const encodingAfter=gratitudeNativeEncodingInputs(gratitudeCase,prepared),fontconfigAfter=gratitudeNativeFontconfigInputs(gratitudeCase,prepared,gratitudeFontconfigInputs);assert.deepEqual(encodingAfter,gratitudeEncodingInputs,'Native encoding dependency identity drift');gratitudeNativeDependencies={before:{encoding:gratitudeEncodingInputs,fontconfig:gratitudeFontconfigInputs},after:{encoding:encodingAfter,fontconfig:fontconfigAfter}};if(proof)proof.gratitudeNativeDependencies=gratitudeNativeDependencies;}
+if(healthPacket){
+  healthReadGuards={packet:healthPacket,helperSha256:hash(path.join(directory,'health-read-guards.mjs')),beforeRequests:healthBeforeRequests,observations:healthObservations};
+  try{
+    healthReadGuards.afterTermination=finishHealthScratch(healthPacket,scratch,healthBeforeRequests.map(row=>row.snapshot));
+    assert.equal(healthBeforeRequests.length,3,'All Health pre-request guards required');
+    assert.equal(healthObservations.length,3,'All Health raw contracts/day bounds required');
+    healthReadGuards.accepted=true;
+  }catch(error){
+    healthReadGuards.accepted=false;healthReadGuards.error=error.message;
+    comparisonError??={name:error.name,evidence:path.join(run,'health-read-guard-error.txt')};
+    fs.writeFileSync(path.join(run,'health-read-guard-error.txt'),error.stack,{mode:0o600});
+  }
+  if(proof)proof.healthReadGuards=healthReadGuards;
+}
 const protectedInputsUnchanged = sourceInputs.every(row => hash(row.file) === row.sha256);
 const completed = terminal.exitCode === 0 && proof?.completed === true && controls && protectedInputsUnchanged && !comparisonError;
 let capture = null;
@@ -252,14 +276,14 @@ if (captureRole && captured) {
   const record = {schema:'isolated-api-capture-v1', role:captureRole, pairNonce:options['--pair-nonce'],sourceCommit,
     workingTreeSha256,
     runtimeSha256:options['--runtime-sha256'],harnessSha256:options['--harness-sha256'],
-    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,...(gratitudeCase?{gratitudeRuntime:proof.gratitudeRuntime,gratitudeFont:proof.gratitudeFont,gratitudeNativeDependencies}:{}),
+    fixtureFileSha256:hash(fixtureFile),fixtureSha256:jsonHash(fixtureIdentity),runtimeTimezone,...(healthPacket?{healthReadGuards}:{}),...(gratitudeCase?{gratitudeRuntime:proof.gratitudeRuntime,gratitudeFont:proof.gratitudeFont,gratitudeNativeDependencies}:{}),
     manifestSha256:jsonHash(captureExpectations),url:'http://127.0.0.1:43129',
     startedAt:captureStartedAt,endedAt:Date.now(),...(publishedUnitReadiness?{publishedUnitReadiness}:{}),cases:captured};
   const file=path.join(run,'capture.json');
   fs.writeFileSync(file,JSON.stringify(record,null,2),{mode:0o600,flag:'wx'});
   const {cases,...metadata}=record;capture={...metadata,file,sha256:hash(file)};
 }
-const receipt = { capture, sourceCommit, runtimeTimezone, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,'published-unit-readiness.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(fixtureIdentity), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
+const receipt = { capture, sourceCommit, runtimeTimezone, referenceObservations, referenceIdentityBefore, referenceIdentityAfter, executionInputs:sourceInputs.filter(row=>[fileURLToPath(import.meta.url),path.join(directory,'api-comparator.mjs'),path.join(directory,'published-unit-readiness.mjs'),path.join(directory,'health-read-guards.mjs'),path.join(directory,entryName),path.join(directory,'transparent-loader.mjs'),fixtureFile,c,...['--manifest','--targets'].filter(key=>options[key]).map(key=>fs.realpathSync(options[key]))].includes(row.file)), schema: 'local-app-result-v1', readinessAccepted: false, scope: options['--controls-only'] ? 'Synthetic networking controls' : 'Actual assembled application, synthetic configuration, finite reviewed HTTP cases only', ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: comparison?.accepted ?? null, comparisonPath: comparison ? path.join(run, 'comparison.json') : null, comparisonError, proof, response, output, stderr, sourceInputs, fixtureSha256: jsonHash(fixtureIdentity), launcherSha256: hash(c), limits: { port: 43129, bindAddress: '127.0.0.1', addressSpaceGiB: 16, heapMiB: 1024, cpuSeconds: 180, alarmSeconds: 180, wallSeconds: 75, listenerSeconds: 30, fileMiB: 4, descriptors: 128 }, exclusions: ['Landlock constrains port, not bind address; audited driver binds loopback', 'Outbound TCP and standalone Unix sockets denied; existing anonymous IPC allowed', 'Scheduler/MQTT disabled; remaining real timers bounded', 'No production entrypoint, Docker, denied-role auth, live provider or natural shutdown proof'] };
 fs.writeFileSync(path.join(run, 'receipt.json'), JSON.stringify(receipt, null, 2), { mode: 0o600 });
 console.log(JSON.stringify({ receipt: path.join(run, 'receipt.json'), ...terminal, completed, controls, protectedInputsUnchanged, comparisonAccepted: receipt.comparisonAccepted, comparisonError }));
 if (!completed || comparison?.accepted === false) process.exitCode = 1;
