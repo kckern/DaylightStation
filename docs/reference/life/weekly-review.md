@@ -44,6 +44,8 @@ The person is never trapped. From any screen there is always a way to back out, 
 
 The week is laid out as a 4×2 grid of the eight most recent days. Each cell is a living collage of that day's media — the day's photos and videos arranged by quantity (a single photo fills the cell; a busier day tiles into a balanced mosaic; the most photo-filled days show the first items and a "+N" badge). Each cell is also annotated with the date, weekday, weather, and small chips for calendar events and workouts.
 
+Photos and videos tagged **`NoShow`** in Immich never appear anywhere in the review: not in the grid, the day reel, the counts, or the jump to the oldest week. The backend Immich adapter drops them before the frontend sees anything, so tagging an item in Immich is all it takes; the next load leaves it out. The tag list lives in household `weekly-review/config.yml` under `hiddenTags` (read at boot, so restart after editing; `NoShow` is the default when the file or key is missing). Tag names are matched case-insensitively, and a nested tag (e.g. `Private/NoShow`) counts too.
+
 A day counts as having content if it has photos, workouts, *or* calendar events. Days with no media are never blank: instead of an empty tile they surface that day's context — the weather (a large icon and high/low), or, failing that, the weekday name — so the cell still reads as a real day. Days with nothing recorded are visually dimmed so the eye is drawn to the days where something happened.
 
 Every one of the eight days is rendered as a focusable cell, so directional focus can always move within the grid and can never fall out of the view.
