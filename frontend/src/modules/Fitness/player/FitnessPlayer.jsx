@@ -26,6 +26,7 @@ import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovern
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
+import { usePlaybackUnlockGate } from '@/modules/Fitness/player/usePlaybackUnlockGate.js';
 import { useIdentity } from '../identity/useIdentity.js';
 import { shouldBypassGovernance } from './governanceBypass.js';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
@@ -405,6 +406,31 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // the lock is absent/empty we pass no handler ⇒ no button ⇒ today's behavior.
   const governanceUnlockHandler = isLockActive('governance_bypass') ? openGovernanceUnlock : null;
 
+  // Playback unlock: items matching fitness.yml → playback_unlock (labels /
+  // libraries) are held until a user authorized for its named `lock` scans. Separate
+  // from governance — HR gating still applies once the item plays. An item that
+  // FitnessShow tagged nogovern already carries an adult scan, so it passes.
+  // Cancel closes the player; handleClose is defined further down, hence the ref.
+  const handleCloseRef = useRef(null);
+  const playbackUnlockRules = useMemo(() => {
+    const cfg = fitnessConfiguration || {};
+    return cfg.playback_unlock || cfg.fitness?.playback_unlock || null;
+  }, [fitnessConfiguration]);
+  const fetchPlaybackInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
+  const cancelPlaybackUnlock = useCallback(() => handleCloseRef.current?.(), []);
+  const playbackUnlock = usePlaybackUnlockGate({
+    currentItem,
+    active: Boolean(playbackUnlockRules?.lock) && isLockActive(playbackUnlockRules.lock),
+    rules: playbackUnlockRules,
+    preGranted: Boolean(currentItem?.nogovern),
+    registerUnlock,
+    clearUnlock,
+    onCancel: cancelPlaybackUnlock,
+    fetchInfo: fetchPlaybackInfo,
+  });
+  // Everything that holds the video for governance also holds it for the unlock.
+  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || playbackUnlock.blocked;
+
   const [showChart, setShowChart] = useState(true);
 
   // Use participantRoster from context, with session roster as fallback for immediate data
@@ -436,13 +462,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // (GATE_ID.GOVERNANCE) stable now that the arbiter composes N gates. The id
     // is shared with the consumer below via gateIds.js — two bare literals that
     // must match, in code that nothing type-checks across, is drift waiting.
-    gates: [{ blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null }],
+    gates: [{ blocked: videoHeld, id: GATE_ID.GOVERNANCE, seekCeiling: null }],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, videoHeld, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
   // Live governance verdict for callbacks. Handlers handed to <Player> can
@@ -1410,6 +1436,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     closeWatchdog.requested(closeRequestPayload);
     executeClose();
   };
+  handleCloseRef.current = handleClose;
 
   // 4A: Track previous overlay state to detect true→false transition
   const prevOverlayOpenRef = useRef(voiceMemoOverlayState?.open);
@@ -1484,7 +1511,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // SSoT: GovernanceEngine is sole authority for lock decisions.
     // videoLocked=true when media is governed AND phase is pending/locked.
     // Autoplay is allowed when video is not locked (ungoverned, unlocked, or warning phase).
-    const canAutoplay = !effectiveGovernanceState?.videoLocked;
+    const canAutoplay = !videoHeld;
     const stableGuid = String(
       enhancedCurrentItem.guid
         || enhancedCurrentItem.contentId
@@ -1512,7 +1539,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, effectiveGovernanceState?.videoLocked]);
+  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, videoHeld]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
@@ -2238,6 +2265,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         lockLabel={currentItem?.title || currentItem?.label || 'Governed content'}
         unlockedUser={unlockedUser}
         onCancel={closeGovernanceUnlock}
+      />
+      <UnlockPrompt
+        open={playbackUnlock.promptOpen}
+        state={unlockState}
+        lockLabel={currentItem?.grandparentTitle || currentItem?.show || currentItem?.title || 'Kids show'}
+        unlockedUser={unlockedUser}
+        onCancel={playbackUnlock.cancel}
       />
       {/* HRSimTrigger moved to FitnessApp top level so it's visible across
           the whole fitness app, not just when a video is playing. */}
