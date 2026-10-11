@@ -2272,6 +2272,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         lockLabel={currentItem?.grandparentTitle || currentItem?.show || currentItem?.title || 'Kids show'}
         unlockedUser={unlockedUser}
         onCancel={playbackUnlock.cancel}
+        {...(playbackUnlock.promptTimeoutMs ? { timeoutMs: playbackUnlock.promptTimeoutMs } : {})}
       />
       {/* HRSimTrigger moved to FitnessApp top level so it's visible across
           the whole fitness app, not just when a video is playing. */}

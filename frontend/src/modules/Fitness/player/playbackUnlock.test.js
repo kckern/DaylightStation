@@ -15,6 +15,8 @@ describe('playbackUnlock policy', () => {
     expect(r.scope).toBe('item');
     expect(normalizePlaybackUnlockRules({}).lock).toBeNull();
     expect(normalizePlaybackUnlockRules({}).scope).toBe('show');
+    expect(normalizePlaybackUnlockRules({ prompt_timeout_seconds: 60 }).promptTimeoutMs).toBe(60000);
+    expect(normalizePlaybackUnlockRules({}).promptTimeoutMs).toBeNull();
   });
 
   it('requires an unlock for a KidsFun item regardless of label case', () => {

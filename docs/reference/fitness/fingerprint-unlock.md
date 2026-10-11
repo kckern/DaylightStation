@@ -93,6 +93,7 @@ playback_unlock:
   labels: [KidsFun]        # any matching Plex label gates the item (case-insensitive)
   libraries: [TV Shows]    # any item from these Plex libraries is gated
   scope: show              # show = one scan covers the rest of that show; item = every item
+  prompt_timeout_seconds: 60  # scan prompt wait before it gives up (default: the prompt's 10s)
 ```
 
 The gate lives in the fitness player, so every launch path (show page, menu, URL, restored
@@ -100,7 +101,7 @@ queue) passes through it. Labels are read off the queue item; when they don't de
 `libraries` is set, the player looks the item up (`/api/v1/info/plex/:id` →
 `librarySectionTitle`). While that lookup is in flight, or if it fails, the item is held and
 a scan is asked for — fail closed. A matching scan releases the hold; a wrong finger leaves
-the prompt in its denied state; cancel closes the player. Grants live for the player's
+the prompt in its denied state; cancel — or the prompt timing out — closes the player. Grants live for the player's
 lifetime. An item already tagged `nogovern` by a `governance_bypass` scan passes without a
 second scan. HR governance still applies once the video plays. Events:
 `playback_unlock.{required,granted,denied,cancelled,lookup_failed}`.
