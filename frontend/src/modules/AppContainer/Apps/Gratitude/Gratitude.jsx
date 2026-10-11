@@ -5,6 +5,7 @@ import { getChildLogger } from '@/lib/logging/singleton.js';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import { isToday, format } from 'date-fns';
 import "./Gratitude.scss";
+import { useFitText } from "./fitText.js";
 import thanksIcon from "../../../../assets/icons/thanks.svg";
 import hopesIcon from "../../../../assets/icons/hopes.svg";
 
@@ -73,6 +74,10 @@ function GratitudeHeader({
   onCategoryCycle,
   onUserCycle
 }) {
+  // Labels shrink to fit their picker on one line rather than clip.
+  const headerRef = useRef(null);
+  useFitText(headerRef, { selector: '.cycle-label', maxLines: 1, minRatio: 0.55 }, [category, currentUser?.id]);
+
   const handleImageError = (event) => {
     const img = event.currentTarget;
     if (img.dataset.fallback) {
@@ -84,7 +89,7 @@ function GratitudeHeader({
   };
 
   return (
-    <div className={`gratitude-header ${focused ? 'header-focused' : ''}`}>
+    <div ref={headerRef} className={`gratitude-header ${focused ? 'header-focused' : ''}`}>
       <div 
         className={`category-cycle ${focused && headerFocus === 'category' ? 'focused' : ''}`}
         onClick={() => onCategoryCycle('next')}
@@ -141,6 +146,11 @@ function QueueColumn({
   // Combine queue items with session discarded at bottom
   const allItems = [...items, ...sessionDiscarded];
   const totalCount = allItems.length;
+
+  // Each idea shrinks to fit two lines; nothing is clipped or ellipsized.
+  const contentRef = useRef(null);
+  const fitKey = allItems.map((item) => `${item.id}:${item.text}`).join('|');
+  useFitText(contentRef, { selector: '.item-text' }, [fitKey]);
   
   const handleImageError = (event) => {
     const img = event.currentTarget;
@@ -160,7 +170,7 @@ function QueueColumn({
           <span className="count-badge">{totalCount}</span>
         </h3>
       </div>
-      <div className="column-content">
+      <div className="column-content" ref={contentRef}>
         {allItems.length === 0 ? (
           <div className="empty-column">All done!</div>
         ) : (
@@ -232,6 +242,9 @@ function SelectedColumn({
   const { today, past } = splitByToday(items);
   const hasDivider = today.length > 0 && past.length > 0;
   const contentRef = useRef(null);
+  // Each entry shrinks to fit two lines; nothing is clipped or ellipsized.
+  const fitKey = items.map((item) => `${item.id}:${item.text}`).join('|');
+  useFitText(contentRef, { selector: '.item-text' }, [fitKey]);
   
   // Auto-scroll to focused item
   useEffect(() => {
