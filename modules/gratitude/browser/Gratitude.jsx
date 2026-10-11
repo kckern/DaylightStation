@@ -298,13 +298,7 @@ function SelectedColumn({
             onError={handleImageError}
           />
         </div>
-        {/* Date sits under the text so the text gets the row's full width. */}
-        <div className="item-body">
-          <span className="item-text">{item.text}</span>
-          {isPast && item.dateLabel && (
-            <span className="date-label">{item.dateLabel}</span>
-          )}
-        </div>
+        <span className="item-text">{item.text}</span>
       </div>
     );
   };
@@ -336,7 +330,15 @@ function SelectedColumn({
           <>
             {today.map(item => renderItem(item, false))}
             {hasDivider && <div className="past-divider" />}
-            {past.map(item => renderItem(item, true))}
+            {/* Each past date is shown once, above its entries — not per row. */}
+            {past.map((item, i) => (
+              <React.Fragment key={item.id}>
+                {item.dateLabel && item.dateLabel !== past[i - 1]?.dateLabel && (
+                  <div className="date-group">{item.dateLabel}</div>
+                )}
+                {renderItem(item, true)}
+              </React.Fragment>
+            ))}
           </>
         )}
       </div>
