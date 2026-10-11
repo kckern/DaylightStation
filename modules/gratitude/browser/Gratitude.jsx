@@ -76,7 +76,7 @@ function GratitudeHeader({
 }) {
   // Labels shrink to fit their picker on one line rather than clip.
   const headerRef = useRef(null);
-  useFitText(headerRef, { selector: '.cycle-label', maxLines: 1, minRatio: 0.55 }, [category, currentUser?.id]);
+  useFitText(headerRef, { selector: '.cycle-label', stages: [{ lines: 1, minRatio: 0.5 }], minPx: 12 }, [category, currentUser?.id]);
 
   const handleImageError = (event) => {
     const img = event.currentTarget;
@@ -94,7 +94,6 @@ function GratitudeHeader({
         className={`category-cycle ${focused && headerFocus === 'category' ? 'focused' : ''}`}
         onClick={() => onCategoryCycle('next')}
       >
-        <span className="cycle-arrow up">▲</span>
         <div className={`cycle-content ${categoryAnim ? `slide-${categoryAnim}` : ''}`}>
           <img 
             src={category === 'gratitude' ? thanksIcon : hopesIcon} 
@@ -103,14 +102,16 @@ function GratitudeHeader({
           />
           <span className="cycle-label">{category === 'gratitude' ? 'Gratitude' : 'Hopes'}</span>
         </div>
-        <span className="cycle-arrow down">▼</span>
+        <span className="cycle-arrows">
+          <span className="cycle-arrow up">▲</span>
+          <span className="cycle-arrow down">▼</span>
+        </span>
       </div>
       
       <div 
         className={`user-cycle ${focused && headerFocus === 'user' ? 'focused' : ''}`}
         onClick={() => onUserCycle('next')}
       >
-        <span className="cycle-arrow up">▲</span>
         <div className={`cycle-content ${userAnim ? `slide-${userAnim}` : ''}`}>
           <div className="user-avatar-small">
             <img 
@@ -121,7 +122,10 @@ function GratitudeHeader({
           </div>
           <span className="cycle-label">{getUserLabel(currentUser)}</span>
         </div>
-        <span className="cycle-arrow down">▼</span>
+        <span className="cycle-arrows">
+          <span className="cycle-arrow up">▲</span>
+          <span className="cycle-arrow down">▼</span>
+        </span>
       </div>
     </div>
   );
@@ -294,10 +298,13 @@ function SelectedColumn({
             onError={handleImageError}
           />
         </div>
-        <span className="item-text">{item.text}</span>
-        {isPast && item.dateLabel && (
-          <span className="date-label">{item.dateLabel}</span>
-        )}
+        {/* Date sits under the text so the text gets the row's full width. */}
+        <div className="item-body">
+          <span className="item-text">{item.text}</span>
+          {isPast && item.dateLabel && (
+            <span className="date-label">{item.dateLabel}</span>
+          )}
+        </div>
       </div>
     );
   };
