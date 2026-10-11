@@ -14,9 +14,13 @@ for(const directory of [stage,scratch,denied]) fs.mkdirSync(directory);
 const sentinel=path.join(denied,'private.env'); fs.writeFileSync(sentinel,'synthetic private sentinel\n');
 const inventory=spawnSync('/usr/bin/git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024});
 if(inventory.status!==0) throw Error('Source enumeration failed');
-const excluded=/(^|\/)(\.env[^/]*|node_modules|\.git|\.vite|dist|build|coverage|vendor)(\/|$)/;
+const publicInventory=spawnSync('/usr/bin/git',['ls-files','--cached','-z','--','frontend/public'],{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024});
+if(publicInventory.status!==0)throw Error('Tracked public enumeration failed');
+const expectedPublicFiles=publicInventory.stdout.split('\0').filter(Boolean).filter(name=>{const stat=fs.lstatSync(path.join(root,name));return stat.isFile()&&!stat.isSymbolicLink();}).map(name=>name.slice('frontend/public/'.length)).sort();
+const excluded=/(^|\/)(\.env[^/]*|node_modules|\.git|\.vite|dist|build|coverage)(\/|$)/;
+const excludedVendor=name=>/(^|\/)vendor(\/|$)/.test(name)&&!name.startsWith('frontend/public/');
 const files=inventory.stdout.split('\0').filter(name=>{
-  if(!name||excluded.test(name)||!(/^(frontend|shared)\//.test(name)||/^(modules|capabilities)\/[^/]+\/(browser|portable)\//.test(name)))return false;
+  if(!name||excluded.test(name)||excludedVendor(name)||!(/^(frontend|shared)\//.test(name)||/^(modules|capabilities)\/[^/]+\/(browser|portable)\//.test(name)))return false;
   let stat;try{stat=fs.lstatSync(path.join(root,name));}catch(error){if(error.code==='ENOENT')return false;throw error;}
   return stat.isFile()&&!stat.isSymbolicLink();
 });
@@ -48,11 +52,13 @@ const {build}=await import(${JSON.stringify('file://'+path.join(toolRoot,'fronte
 const {default:config}=await import(${JSON.stringify('file://'+path.join(stage,'frontend/vite.config.js'))});
 const settings=config({mode:'production',command:'build'});
 const publicRoot=${JSON.stringify(path.join(stage,'frontend/public'))},dist=${JSON.stringify(path.join(scratch,'dist'))};
-const publicFiles=fs.readdirSync(publicRoot,{recursive:true}).filter(name=>fs.statSync(publicRoot+'/'+name).isFile());
+const publicFiles=fs.readdirSync(publicRoot,{recursive:true}).filter(name=>{const stat=fs.lstatSync(publicRoot+'/'+name);return stat.isFile()&&!stat.isSymbolicLink();}).sort();
+assert.deepEqual(publicFiles,${JSON.stringify(expectedPublicFiles)},'complete tracked native public inputs');
 for(const name of publicFiles){const destination=dist+'/'+name;fs.mkdirSync(destination.slice(0,destination.lastIndexOf('/')),{recursive:true});fs.writeFileSync(destination,fs.readFileSync(publicRoot+'/'+name),{mode:fs.statSync(publicRoot+'/'+name).mode&0o777});}
 const result=await build({...settings,root:${JSON.stringify(path.join(stage,'frontend'))},configFile:false,cacheDir:${JSON.stringify(path.join(scratch,'vite-cache'))},build:{...settings.build,outDir:${JSON.stringify(path.join(scratch,'dist'))},manifest:true,copyPublicDir:false,emptyOutDir:false,rollupOptions:{...settings.build?.rollupOptions,maxParallelFileOps:64}}});
 const outputs=(Array.isArray(result)?result:[result]).flatMap(r=>r.output);
 const generated=new Set(outputs.map(o=>o.fileName));
+for(const name of publicFiles){if(generated.has(name))assert.equal(name,'index.html','only native generated index may replace a public asset');}
 for(const name of publicFiles)if(!generated.has(name))assert(fs.readFileSync(dist+'/'+name).equals(fs.readFileSync(publicRoot+'/'+name)),name+' public byte parity');
 fs.writeFileSync('public-build-output.json',JSON.stringify(publicFiles.map(name=>({file:name,generated:generated.has(name),byteParity:!generated.has(name)})),null,2));
 const isOwned=m=>new RegExp('/(modules|capabilities)/[^/]+/(browser|portable)/').test(m);
@@ -71,7 +77,9 @@ const output=fs.readFileSync(path.join(scratch,'result.txt'),'utf8');
 const controls=output.includes('socket(AF_INET): EPERM\n')&&output.includes('BUILD CONTROLS PASS\n')&&fs.readFileSync(sentinel,'utf8')==='synthetic private sentinel\n'&&fs.readdirSync(denied).length===1;
 const protectedInputsUnchanged=inputs.every(i=>hash(path.join(root,i.file))===i.sha256&&hash(path.join(stage,i.file))===i.sha256);
 const artifact=fs.existsSync(path.join(scratch,'owned-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'owned-build-output.json'),'utf8')):null;
-const receipt={pack:'frontend-production-build',capturedAt:new Date().toISOString(),exitCode:result.status,signal:result.signal,controls,protectedInputsUnchanged,artifact,publicAssets:fs.existsSync(path.join(scratch,'public-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'public-build-output.json'),'utf8')):null,viteOverrides:{configFile:false,copyPublicDir:false,emptyOutDir:false,maxParallelFileOps:64},inputs,launcherSha256,entrySha256:hash(entry),manifestSha256:hash(manifest),command:{executable:'/usr/bin/timeout',args:['--signal=KILL','190s',binary,...args]},output,limitations:['Inventoried frontend/shared and current owner browser/portable source; no original .env or private runtime data','Inherited Landlock/seccomp child confinement; no PID namespace or cgroup quotas','16 GiB address space, 4096 MiB Node old-space,180 CPU seconds,180-second alarm,190-second watchdog,64 MiB per-file,256 descriptors']};
+const publicAssets=fs.existsSync(path.join(scratch,'public-build-output.json'))?JSON.parse(fs.readFileSync(path.join(scratch,'public-build-output.json'),'utf8')):null;
+const publicAssetCompleteness=Array.isArray(publicAssets)&&JSON.stringify(publicAssets.map(row=>row.file).sort())===JSON.stringify(expectedPublicFiles)&&publicAssets.every(row=>row.generated?row.file==='index.html'&&fs.statSync(path.join(scratch,'dist',row.file)).size>0:row.byteParity===true&&hash(path.join(root,'frontend/public',row.file))===hash(path.join(scratch,'dist',row.file)));
+const receipt={pack:'frontend-production-build',capturedAt:new Date().toISOString(),exitCode:result.status,signal:result.signal,controls,protectedInputsUnchanged,artifact,publicAssets,expectedPublicFiles,publicAssetCompleteness,viteOverrides:{configFile:false,copyPublicDir:false,emptyOutDir:false,maxParallelFileOps:64},inputs,launcherSha256,entrySha256:hash(entry),manifestSha256:hash(manifest),command:{executable:'/usr/bin/timeout',args:['--signal=KILL','190s',binary,...args]},output,limitations:['Inventoried frontend/shared and current owner browser/portable source; no original .env or private runtime data','Inherited Landlock/seccomp child confinement; no PID namespace or cgroup quotas','16 GiB address space, 4096 MiB Node old-space,180 CPU seconds,180-second alarm,190-second watchdog,64 MiB per-file,256 descriptors']};
 fs.writeFileSync(path.join(run,'receipt.json'),JSON.stringify(receipt,null,2)+'\n');
-console.log(JSON.stringify({receipt:path.relative(root,path.join(run,'receipt.json')),exitCode:result.status,controls,protectedInputsUnchanged,ownedChunks:artifact?.length}));
-if(result.status!==0||!controls||!protectedInputsUnchanged||!artifact){console.log(output.slice(-6000)+result.stderr);process.exitCode=1;}
+console.log(JSON.stringify({receipt:path.relative(root,path.join(run,'receipt.json')),exitCode:result.status,controls,protectedInputsUnchanged,publicAssetCompleteness,ownedChunks:artifact?.length}));
+if(result.status!==0||!controls||!protectedInputsUnchanged||!artifact||!publicAssetCompleteness){console.log(output.slice(-6000)+result.stderr);process.exitCode=1;}

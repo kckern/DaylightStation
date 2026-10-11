@@ -38722,5 +38722,52 @@
     "scope": "Affected unit suites only; no new HTTP coverage or fresh replay of earlier API cohorts. Earlier receipts remain historical and unchanged.",
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "mergedRevisionHealthAndFrontendBuildEvidence": {
+    "candidateRevision": "5460931ddea07536a5fd117797d1543f975f0dae",
+    "originalRevision": "077a27d830fc4f7caa617f45f0a732cd76f3b154",
+    "healthReusedSmoke": {
+      "outcome": {
+        "path": "/tmp/readiness-health-merged077-three/OUTCOME.json",
+        "sha256": "32d50d2b0a28c3eb4597bdeee2eb5ad58d1d861fdb1848474370aa83c112e157"
+      },
+      "rootReview": {
+        "path": "/tmp/readiness-health-merged077-three/ROOT-OUTCOME-REVIEW.json",
+        "sha256": "3e271d4691a2a16f1ad12c9ea79564a4411b4a7ef7b024b8e787c871d425065b"
+      },
+      "sameThreeFullContractsAndPhysicalGuardsPassed": true,
+      "coverageIncrement": 0
+    },
+    "frontendBuild": {
+      "outcome": {
+        "path": "/tmp/readiness-frontend546-public-complete-build/OUTCOME.json",
+        "sha256": "c0bfdee93693dae82b7ca4bdd2c5ea53afcbcb098e33a108340837d62c8e7713"
+      },
+      "receipt": {
+        "path": "/opt/Code/DaylightStation/.worktrees/application-modules/.superpowers/sdd/2026-10-08-gratitude-module-proof/landlock-runs/build-x4hzz2/receipt.json",
+        "sha256": "85d257766aeae4eab3bc6a6b02101d8742808f671611d84c5d0c31b6f70d179b"
+      },
+      "trackedPublicFilesExpectedAndCopied": 70,
+      "ownedChunks": 109,
+      "productionManifestAndIndexClosurePassed": true,
+      "currentSchoolSourceIncluded": true,
+      "sourceAndDependenciesUnchanged": true,
+      "priorBuild": {
+        "run": "build-2ZofKe",
+        "publicAssets": 69,
+        "expected": 70,
+        "scope": "Immutable partial compile evidence; missing crt-lab/vendor/shaka.js"
+      },
+      "developmentOnlyVerificationPrerequisite": {
+        "path": "/opt/Code/DaylightStation/.worktrees/application-modules/frontend/public/crt-lab/verify.html",
+        "sha256": "9fe6f8da4598631a29dbb060829949906c19ce9d1d3fba4f93652377fbed1f55",
+        "classification": "Explicit dev-only verification page requires absent media/real-sd.mp4 and dev-server /src/modules/Player import/fetch; not a production application regression. Production generated manifest/index closure passes; full public HTML closure not claimed."
+      },
+      "fullPublicHtmlClosureClaimed": false
+    },
+    "coverageIncrement": 0,
+    "countsUnchanged": "641 accepted IDs/640 healthy;373/396 eligible templates;23 template gaps;Life1",
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }
