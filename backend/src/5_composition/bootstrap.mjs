@@ -33,6 +33,7 @@ import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
+import { YamlSequenceStore } from '#adapters/content/sequence/YamlSequenceStore.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
 import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
@@ -653,7 +654,14 @@ export function createContentRegistry(config, deps = {}) {
       mediaProgressMemory,
       configService: deps.configService || null,
       nomusicLabels: config.nomusicLabels || [],
-      musicOverlayPlaylist: config.musicOverlayPlaylist || null
+      musicOverlayPlaylist: config.musicOverlayPlaylist || null,
+      // Station sequences for programs that expand a station playlist (e.g.
+      // music-queue). The queue route reads the same tree via contentApi.
+      sequenceStore: new YamlSequenceStore({
+        rootDir: path.join(listDataPath, 'content', 'surround'),
+        logger: deps.logger || console
+      }),
+      logger: deps.logger?.child?.({ module: 'list-adapter' }) || deps.logger || null
     });
     registry.register(listAdapter, {
       category: listManifest.capability,

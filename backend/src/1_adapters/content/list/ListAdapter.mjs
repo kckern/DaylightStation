@@ -14,6 +14,7 @@ import {
 import { normalizeListItem, extractContentId, normalizeListConfig } from './ListConfigCodec.mjs';
 import { getCurrentDate } from '#system/utils/time.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
+import { sequenceQueue, shuffleItems } from '#domains/content/utils/stationSequence.mjs';
 import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';
 import {
   normalizeListDays,
@@ -102,6 +103,11 @@ export class ListAdapter {
     this.registry = config.registry || null;
     this.mediaProgressMemory = config.mediaProgressMemory || null;
     this.configService = config.configService || null;
+    // Station sequences (pinned jingle + station IDs) for Queue items that
+    // expand a container — see YamlSequenceStore. Optional: absent, Queue
+    // items expand exactly as before.
+    this.sequenceStore = config.sequenceStore || null;
+    this.logger = config.logger || null;
 
     // Overlay config for nomusic items (ported from FolderAdapter)
     this.nomusicLabels = config.nomusicLabels || [];
@@ -1146,6 +1152,8 @@ export class ListAdapter {
             const shouldShuffle = !!item.shuffle;
             tasks.push(async () => {
               const resolved_items = await resolved.adapter.resolvePlayables(canonicalId);
+              const sequenced = await this._applySequence(canonicalId, resolved_items, shouldShuffle);
+              if (sequenced) return sequenced;
               if (shouldShuffle && resolved_items?.length > 1) {
                 for (let i = resolved_items.length - 1; i > 0; i--) {
                   const j = Math.floor(Math.random() * (i + 1));
@@ -1186,6 +1194,55 @@ export class ListAdapter {
     }
 
     return playables;
+  }
+
+  /**
+   * Apply a container's station sequence to its expanded items: pinned head,
+   * shuffled (or ordered) songs, station IDs between them. Returns null when
+   * the container has no sequence or anything fails, so the caller falls back
+   * to its plain expansion.
+   * @private
+   */
+  async _applySequence(containerId, items, shuffle) {
+    if (!this.sequenceStore || !Array.isArray(items) || !items.length) return null;
+    let sequence = null;
+    try { sequence = this.sequenceStore.lookup(containerId); } catch { return null; }
+    if (!sequence) return null;
+    try {
+      const { items: ordered, stats } = await sequenceQueue({
+        items,
+        sequence,
+        random: Math.random,
+        orderRest: async (rest) => (shuffle ? shuffleItems(rest, Math.random) : rest),
+        resolveIds: (ids) => this._resolveIdsToPlayables(ids),
+      });
+      const { unresolved, ...counts } = stats;
+      for (const id of unresolved) this.logger?.warn?.('station.ident.unresolved', { containerId, id });
+      this.logger?.info?.('station.sequence.applied', { containerId, path: 'list', shuffle, ...counts });
+      return ordered;
+    } catch (error) {
+      this.logger?.warn?.('station.sequence.failed', { containerId, error: error?.message });
+      return null;
+    }
+  }
+
+  /**
+   * Resolve each id to its first playable through the registry; null for
+   * anything that does not resolve.
+   * @private
+   */
+  async _resolveIdsToPlayables(ids) {
+    const entries = await Promise.all(ids.map(async (id) => {
+      try {
+        const resolved = this.registry?.resolve(id);
+        if (!resolved?.adapter?.resolvePlayables) return [id, null];
+        const found = await resolved.adapter.resolvePlayables(`${resolved.adapter.source}:${resolved.localId}`);
+        return [id, Array.isArray(found) ? found[0] ?? null : null];
+      } catch {
+        return [id, null];
+      }
+    }));
+    return new Map(entries);
   }
 
   /**
