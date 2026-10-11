@@ -21,7 +21,7 @@ const southDakota = () => ({
   totalPoints: 6, earnedPoints: 5, unscannedItems: [],
 });
 
-function harness({ recordOutcome }) {
+function harness({ recordOutcome, card = southDakota }) {
   let handler = null;
   const spoken = [];
   const printed = [];
@@ -31,10 +31,13 @@ function harness({ recordOutcome }) {
   };
   const consumer = createSchoolPrintScanConsumer({
     realtime,
-    resolveCardScan: { async execute() { return { results: [southDakota()] }; } },
+    resolveCardScan: { async execute() { return { results: [card()] }; } },
     recordCardScanOutcome: { async execute() { return recordOutcome(); } },
     receipts: { async print(document) { printed.push(document); return { printed: true, reason: null }; } },
-    printDocuments: { getPublished: (id, rev) => (id === 'civilization/atlas/ws-ses-4jqdgpr5b3' && rev === 'ca29ac85c' ? { title: 'South Dakota' } : null) },
+    printDocuments: { getPublished: (id, rev) => ({
+      'civilization/atlas/ws-ses-4jqdgpr5b3@ca29ac85c': { title: 'South Dakota' },
+      'scripture/baptism-path/part-1@57124ce28': { title: 'Baptism 1/5 · Jesus Showed the Way' },
+    }[`${id}@${rev}`] ?? null) },
     logger: { info() {}, warn() {}, debug() {}, error() {} },
   });
   return { consumer, spoken, printed, feed: async () => { handler({ testId: '5278294', answers: { 28: 'A' } }); await settle(); } };
@@ -91,5 +94,55 @@ describe('SchoolPrintScanConsumer — a slip for every non-graded feed', () => {
     handler({ testId: '5278294', answers: {} });
     await settle();
     expect(spoken.map((a) => a.kind)).toEqual(['scan-rows-incomplete']);
+  });
+
+  // 2026-10-10: a sheet printed straight from /print/render has no lesson
+  // session. A child's first feed of a 10/10 sheet printed "NOTHING NEW TO
+  // MARK … everything on it was already marked".
+  describe('a sheet with no session behind it', () => {
+    const baptism = ({ learnerId = null, statuses = Array(10).fill('correct') } = {}) => () => ({
+      cardId: '5705644', recordId: 'scripture/baptism-path/part-1@57124ce28:v0:1-10',
+      documentId: 'scripture/baptism-path/part-1', rev: '57124ce28', variant: 0, learnerId,
+      renderedAt: '2026-10-10T04:07:03.422Z', revisionSuperseded: false,
+      results: statuses.map((status, i) => row(i + 1, status)),
+      totalPoints: 10, earnedPoints: statuses.filter((s) => s === 'correct').length, unscannedItems: [],
+    });
+
+    it('prints the score for an anonymous sheet, never "nothing new"', async () => {
+      const { spoken, printed, feed } = harness({
+        card: baptism(), recordOutcome: () => ({ recorded: false, reason: 'unattributed' }),
+      });
+      await feed();
+      expect(spoken.map((a) => a.kind)).toEqual(['scan-scored']);
+      expect(spoken[0]).toMatchObject({ correctCount: 10, totalCount: 10, missedRows: [] });
+      expect(printed).toHaveLength(1);
+      expect(text(printed[0])).toContain('BAPTISM 1/5 · JESUS SHOWED THE WAY — 10 / 10');
+      expect(text(printed[0])).not.toMatch(/nothing new|already marked/i);
+    });
+
+    it('prints the score for a learner-bound sheet that was recorded without a session', async () => {
+      const statuses = Array(10).fill('correct');
+      statuses[2] = 'incorrect';
+      statuses[6] = 'incorrect';
+      const { spoken, printed, feed } = harness({
+        card: baptism({ learnerId: 'learner2', statuses }), recordOutcome: () => ({ recorded: true, attemptIds: ['a'] }),
+      });
+      await feed();
+      expect(spoken.map((a) => a.kind)).toEqual(['scan-scored']);
+      expect(spoken[0]).toMatchObject({ learnerId: 'learner2', correctCount: 8, totalCount: 10, missedRows: [3, 7] });
+      expect(text(printed[0])).toContain('— 8 / 10');
+      expect(text(printed[0])).toContain('Look again at rows 3 and 7.');
+    });
+
+    it('says "not finished yet" when an anonymous sheet has an empty row', async () => {
+      const statuses = Array(10).fill('correct');
+      statuses[9] = 'blank';
+      const { spoken, printed, feed } = harness({
+        card: baptism({ statuses }), recordOutcome: () => ({ recorded: false, reason: 'unattributed' }),
+      });
+      await feed();
+      expect(spoken.map((a) => a.kind)).toEqual(['scan-rows-incomplete']);
+      expect(text(printed[0])).toContain('Row 10 is still empty.');
+    });
   });
 });

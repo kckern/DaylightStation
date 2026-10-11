@@ -38699,5 +38699,28 @@
     },
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "main077SchoolScanIntegrationEvidence": {
+    "mainRevision": "077a27d830fc4f7caa617f45f0a732cd76f3b154",
+    "refactorParent": "3d4ffcf63406379cf238d826dd735b2d163b8491",
+    "handoff": {
+      "path": "/tmp/readiness-main077-school-merge-v1/HANDOFF.json",
+      "sha256": "7505cbb412e5890d4dcd30beff1ede8775cf745f4a61faf5610435f132b58bb4"
+    },
+    "rootReview": {
+      "path": "/tmp/readiness-main077-school-merge-v1/ROOT-REVIEW.json",
+      "sha256": "dcbd95264d0b6b7721ad3015d1539cb536ccacdfa21effee27ac46195a0a89b9"
+    },
+    "changedIncomingPaths": 8,
+    "sameNamedPassingTestsPerRole": 58,
+    "testPopulation": {
+      "scanNotices": 12,
+      "SchoolPrintScanConsumerSlip": 7,
+      "useScanCeremony": 39
+    },
+    "behavior": "Session-less worksheet scans announce and print the score, or incomplete rows, exactly as incoming main. Relocation imports retained.",
+    "scope": "Affected unit suites only; no new HTTP coverage or fresh replay of earlier API cohorts. Earlier receipts remain historical and unchanged.",
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }

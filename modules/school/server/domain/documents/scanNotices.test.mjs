@@ -5,6 +5,14 @@ import { validateDocument } from "./documentValidation.mjs";
 const md = (doc) => doc.blocks.map((block) => block.md ?? '').join('\n');
 
 describe('scanNoticeDocument', () => {
+  it('prints the score for a sheet with no session — the slip IS the result', () => {
+    const doc = scanNoticeDocument({ kind: 'scan-scored', testId: '5705644', title: 'Baptism 1/5', correctCount: 10, totalCount: 10, missedRows: [] });
+    expect(md(doc)).toContain('BAPTISM 1/5 — 10 / 10');
+    expect(md(doc)).toContain('Every answer is right!');
+    const missed = scanNoticeDocument({ kind: 'scan-scored', testId: '5705644', title: 'Baptism 1/5', correctCount: 9, totalCount: 10, missedRows: [4] });
+    expect(md(missed)).toContain('Look again at row 4.');
+  });
+
   it('prints nothing for a graded sheet — its receipt is printed elsewhere', () => {
     expect(scanNoticeDocument({ kind: 'scan-graded', testId: '5278294' })).toBeNull();
   });
