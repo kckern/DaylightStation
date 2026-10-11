@@ -27,7 +27,7 @@ const plexIdOf = (item) => {
  * Grants are remembered per show for the life of the player, so autoplaying
  * the next episode of an unlocked show does not prompt again.
  *
- * @returns {{ blocked: boolean, promptOpen: boolean, cancel: () => void }}
+ * @returns {{ blocked: boolean, promptOpen: boolean, promptTimeoutMs: number|null, cancel: () => void }}
  */
 export function usePlaybackUnlockGate({
   currentItem, active, rules: rawRules, preGranted = false, registerUnlock, clearUnlock, onCancel, fetchInfo,
@@ -116,7 +116,7 @@ export function usePlaybackUnlockGate({
     onCancel?.();
   }, [clearUnlock, onCancel]);
 
-  return { blocked, promptOpen, cancel };
+  return { blocked, promptOpen, promptTimeoutMs: rules.promptTimeoutMs, cancel };
 }
 
 export default usePlaybackUnlockGate;

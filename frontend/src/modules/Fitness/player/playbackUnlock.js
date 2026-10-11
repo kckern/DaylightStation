@@ -9,6 +9,7 @@
  *     labels: [KidsFun]          # any matching Plex label gates the item
  *     libraries: [TV Shows]      # any item from these Plex libraries is gated
  *     scope: show                # show = one scan covers the show; item = every item
+ *     prompt_timeout_seconds: 60 # how long the scan prompt waits before giving up
  *   locks: { kids_playback: [user_1, user_9] }
  * No `lock`, no rules, or an empty lock list ⇒ nothing is gated.
  */
@@ -16,7 +17,7 @@
 const norm = (v) => String(v ?? '').trim().toLowerCase();
 const toSet = (list) => new Set((Array.isArray(list) ? list : []).map(norm).filter(Boolean));
 
-/** @returns {{ lock: string|null, labels: Set<string>, libraries: Set<string>, scope: 'show'|'item' }} */
+/** @returns {{ lock: string|null, labels: Set<string>, libraries: Set<string>, scope: 'show'|'item', promptTimeoutMs: number|null }} */
 export function normalizePlaybackUnlockRules(cfg) {
   const lock = typeof cfg?.lock === 'string' && cfg.lock.trim() ? cfg.lock.trim() : null;
   return {
@@ -24,6 +25,7 @@ export function normalizePlaybackUnlockRules(cfg) {
     labels: toSet(cfg?.labels),
     libraries: toSet(cfg?.libraries),
     scope: norm(cfg?.scope) === 'item' ? 'item' : 'show',
+    promptTimeoutMs: Number(cfg?.prompt_timeout_seconds) > 0 ? Number(cfg.prompt_timeout_seconds) * 1000 : null,
   };
 }
 
