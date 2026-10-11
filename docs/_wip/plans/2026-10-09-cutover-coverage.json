@@ -1,6 +1,75 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
+  "actualImageSelectedReadAccounting20261011": {
+    "schema": "daylight.actual-image-selected-read-accounting/v1",
+    "referenceImageId": "sha256:fd7060b3217db709832fb13df67b2b579b9bf1f38b412a5800c094c50d7aa3b7",
+    "candidateImageId": "sha256:956f343edd7fd3ca76b92ac49b3ffd210ecf69f422e47ac36fc1eb491dc77c8e",
+    "browserImageId": "sha256:ed48fdb2b3bbaac04c6f3c9ba96f45f328dd7a68caeec95d1333c4aa65280073",
+    "basicApiCaseIds": [
+      "node-edge-liveness",
+      "express-api-ping"
+    ],
+    "populatedApiCaseIds": [
+      "admin-config-scenes-app-gratitude",
+      "critical-school-lesson-intro",
+      "life-piano-lesson-index",
+      "life-piano-lesson-drill",
+      "critical-fitness-session-detail-river",
+      "device-home-configuration",
+      "media-policy-dashboard-config"
+    ],
+    "selectedApiIds": 9,
+    "htmlAndStaticJs": "separate observations, excluded from API IDs",
+    "scope": "actual-entrypoint network-isolated synthetic fixture pair only; source-ledger 640 and installed production route denominator separate",
+    "openGates": [
+      "browser/WS journeys",
+      "configuration writes and jobs",
+      "restart persistence and disposable rollback compatibility",
+      "fresh-main integration and usage-idle deployment gate"
+    ]
+  },
+  "actualImageBrowserAccounting20261011": {
+    "schema": "daylight.actual-image-readonly-browser-accounting/v1",
+    "schoolPairedResult": "/tmp/readiness-browser-probe95aa-v1/execution-school-source-card/BROWSER-RESULT.json",
+    "schoolPairedResultSha256": "4029c7d228401374459973573f0bd25ed6bedb6d5f6ecda6463de25bd5d4f2ae",
+    "schoolConfiguredReadPath": {
+      "roles": [
+        "retained-main image fd7060",
+        "candidate image 956f34"
+      ],
+      "realUiSteps": [
+        "school canonical redirect",
+        "synthetic learner user_1 picker",
+        "authored catalog navigation",
+        "Find a unit rate lesson title",
+        "Compute distance per minute objective"
+      ],
+      "jsAssetsEach": 15,
+      "uncaughtPageErrorsEach": 0,
+      "matchingRosterAndCatalogBodies": true,
+      "nonJs404Each": [
+        "synthetic avatar 192/96",
+        "optional agenda preview",
+        "surface certification"
+      ],
+      "externalFontBlocked": true
+    },
+    "pianoFitnessShellObservation": "/tmp/readiness-browser-probe95aa-v1/execution-shell-observation/BROWSER-RESULT.json",
+    "pianoFitnessShellObservationSha256": "ef518eaab4911a121d3f2b221ff81384639e28373fa6ed0e11c72a33a81becea",
+    "fitnessBootDiagnostic": "/tmp/readiness-browser-probe95aa-v1/execution-fitness-boot-diagnostic/BROWSER-RESULT.json",
+    "fitnessBootDiagnosticSha256": "268dabf861e0ff783fdca9219a82a0926b95b6813b85f71eb4562af2e946a962",
+    "fitnessBootReport": "one candidate shell probe attempted a blocked POST to boot-error; later diagnostic did not reproduce; cause and release impact unresolved",
+    "earlyAttempts": "reference setup fixture admission failure then two source-corrected selector admissions; preserved separately, no pass credit",
+    "browserJourneyScope": "one configured School read-only path only; Piano/Fitness shell observations are not populated journeys",
+    "webSocketScope": "attempts observed; connection lifecycle unverified",
+    "readinessAccepted": false,
+    "durableArchive": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/evidence-browser.tar.gz",
+    "durableArchiveSha256": "2f1c15f54e57ea2637d5e62d1a638737ae966fe9ec581eb4881a6944898377f5",
+    "durableArchiveManifestSha256": "2f6cd67681d01626ce6969d88bd72c9515dc8634fc4b7b187cb9f38758b48799",
+    "durableArchiveReceipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/EVIDENCE-BROWSER-ARCHIVE.json",
+    "noHttpWrites": true
+  },
   "stage": "640 healthy disjoint IDs across separately reviewed cohorts; 373/396 static eligible parity-linked templates with 23 gaps. Preserved raw failures and source/harness scope. Production denominator and release readiness remain unproved.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
