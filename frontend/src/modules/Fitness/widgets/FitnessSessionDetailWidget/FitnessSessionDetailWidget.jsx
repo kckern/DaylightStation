@@ -18,6 +18,11 @@ import { mediaDisplayUrl, mediaIdentityKey } from './sessionDetailUtils.js';
 import { selectVideoMarkerEvents } from './timelineOverlay.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
+import { useRecapUnlock } from './useRecapUnlock.js';
+import { useOptionalIdentity } from '@/modules/Fitness/identity/useIdentity.js';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
+import { isKioskEnv } from '@/lib/kioskEnv.js';
+import { DaylightAPI } from '@/lib/api.mjs';
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import getLogger from '@/lib/logging/Logger.js';
@@ -346,7 +351,38 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     };
   }, [sessionData, fitnessCtx?.plexConfig]);
 
-  const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
+  // The recap shows the episode in picture-in-picture, so a session that played
+  // gated content (fitness.yml → playback_unlock, session_recaps) keeps its recap
+  // behind the same fingerprint lock as the episode itself.
+  // No IdentityProvider (widget rendered outside the fitness app): a gated recap
+  // stays locked — there is no reader to unlock it with.
+  const identity = useOptionalIdentity();
+  const registerUnlock = identity?.registerUnlock;
+  const { unlockState, unlockedUser, clearUnlock } = identity || {};
+  const unlockRules = useMemo(() => {
+    const cfg = fitnessCtx?.fitnessConfiguration || {};
+    return cfg.playback_unlock || cfg.fitness?.playback_unlock || null;
+  }, [fitnessCtx?.fitnessConfiguration]);
+  const unlockLockActive = useMemo(() => {
+    const cfg = fitnessCtx?.fitnessConfiguration || {};
+    const locks = cfg.locks || cfg.fitness?.locks || {};
+    const name = unlockRules?.lock;
+    return Boolean(name) && isKioskEnv() && Array.isArray(locks[name]) && locks[name].length > 0;
+  }, [fitnessCtx?.fitnessConfiguration, unlockRules]);
+  const sessionMedia = sessionData?.summary?.media || null;
+  const fetchRecapInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
+  const recapUnlock = useRecapUnlock({
+    sessionId,
+    media: sessionMedia,
+    rules: unlockRules,
+    active: unlockLockActive && !!header?.hasRecap,
+    registerUnlock,
+    clearUnlock,
+    fetchInfo: fetchRecapInfo,
+  });
+  const recapViewable = !!header?.hasRecap && !recapUnlock.locked;
+
+  const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: recapViewable, srcKey: header?.recapUrl });
 
   // The recap is a muted, looping timelapse — glanceable, not scrub-worthy. Tap
   // toggles native (edge-to-edge) fullscreen symmetrically: tap the thumb to ENTER,
@@ -498,7 +534,22 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
         {(header?.thumbUrl || header?.hasRecap) ? (
           <div className="session-detail__thumb">
-            {header?.hasRecap ? (
+            {header?.hasRecap && recapUnlock.locked ? (
+              <button
+                type="button"
+                className="session-detail__recap-locked"
+                onPointerDown={recapUnlock.request}
+                aria-label="Recap locked — scan to watch"
+              >
+                {header.thumbUrl && <img src={header.thumbUrl} alt="" onError={(e) => { e.target.style.display = 'none'; }} />}
+                <span className="session-detail__recap-lock-badge">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="2" fill="none" />
+                  </svg>
+                </span>
+              </button>
+            ) : header?.hasRecap ? (
               <video
                 key={header.recapUrl}
                 ref={recapVideoRef}
@@ -641,6 +692,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       <div className="session-detail__timeline">
         <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
       </div>
+
+      <UnlockPrompt
+        open={recapUnlock.promptOpen}
+        state={unlockState}
+        lockLabel={header?.showTitle || header?.title || 'Session recap'}
+        unlockedUser={unlockedUser}
+        onCancel={recapUnlock.cancel}
+        {...(recapUnlock.promptTimeoutMs ? { timeoutMs: recapUnlock.promptTimeoutMs } : {})}
+      />
     </div>
   );
 }

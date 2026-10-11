@@ -94,6 +94,7 @@ playback_unlock:
   libraries: [TV Shows]    # any item from these Plex libraries is gated
   scope: show              # show = one scan covers the rest of that show; item = every item
   prompt_timeout_seconds: 60  # scan prompt wait before it gives up (default: the prompt's 10s)
+  session_recaps: true     # also lock past sessions' recap videos (below)
 ```
 
 The gate lives in the fitness player, so every launch path (show page, menu, URL, restored
@@ -105,6 +106,14 @@ the prompt in its denied state; cancel — or the prompt timing out — closes t
 lifetime. An item already tagged `nogovern` by a `governance_bypass` scan passes without a
 second scan. HR governance still applies once the video plays. Events:
 `playback_unlock.{required,granted,denied,cancelled,lookup_failed}`.
+
+**Session recaps.** A recap timelapse shows the episode in picture-in-picture, so with
+`session_recaps: true` the Fitness Home session detail locks a recap whenever any video the
+session played (`summary.media`) matches the same labels/libraries. The poster shows with a
+padlock; tapping it opens the scan prompt and a match plays the recap for that session only.
+The recap is locked from the moment a session is selected until it is classified (fail
+closed), and stays locked where no IdentityProvider is mounted. Events:
+`recap_unlock.{locked,requested,granted,denied}`.
 
 `locks` must be surfaced to the fitness config the frontend reads (root or nested `fitness`
 block); the gated surfaces look it up there.
