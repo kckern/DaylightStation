@@ -216,6 +216,18 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('shows the score for a sheet with no lesson session (2026-10-10)', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-scored', testId: '5705644', title: 'Baptism 1/5', correctCount: 8, totalCount: 10, missedRows: [3, 7] });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'success',
+      title: '8 of 10 right',
+      detail: 'Baptism 1/5: look again at rows 3 and 7.',
+    });
+  });
+
   it('names the sheet on a partial scan', () => {
     const { result } = mount();
     act(() => {

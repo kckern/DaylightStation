@@ -66,6 +66,18 @@ export function scanNoticeDocument(announcement = {}) {
       lines.push(`Fill it in on your answer card. ${FEED_AGAIN}`);
       return noticeDocument({ id, headline: headlineFor(announcement.title, 'NOT FINISHED YET'), lines });
     }
+    case 'scan-scored': {
+      // A sheet with no lesson session behind it: no result receipt is coming
+      // from `closeSessionOutcome`, so this slip IS the result.
+      const correct = isNumber(announcement.correctCount) ? announcement.correctCount : null;
+      const total = isNumber(announcement.totalCount) ? announcement.totalCount : null;
+      const score = correct != null && total != null ? `${correct} / ${total}` : 'MARKED';
+      const lines = [];
+      const missed = rowList(announcement.missedRows);
+      if (missed) lines.push(`Look again at ${missed.startsWith('Rows') ? missed.replace(/^Rows/, 'rows') : missed.replace(/^Row/, 'row')}.`);
+      else if (correct != null && correct === total) lines.push('Every answer is right!');
+      return noticeDocument({ id, headline: headlineFor(announcement.title, score), lines });
+    }
     case 'scan-not-recorded': {
       const unfinished = (Array.isArray(announcement.unfinished) ? announcement.unfinished : [])
         .filter((sheet) => sheet && (rowList(sheet.blankRows) || rowList(sheet.ambiguousRows)));
