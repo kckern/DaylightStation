@@ -28,9 +28,11 @@ const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  */
 export class YamlSequenceStore extends ISequenceStore {
   #byContentId = new Map();
-  // Newest mtime the serving index was built from — compared against the tree,
-  // not against a clock, so the check is immune to clock skew.
-  #builtMtime = -1;
+  // Fingerprint (every walked path and its mtime) of the tree the serving index
+  // was built from. Rebuild on ANY difference, not on "newer": the tree is a
+  // Dropbox folder, which preserves source-machine mtimes, so one future-dated
+  // file would otherwise hide every later edit until the clock caught up.
+  #builtFingerprint = null;
   #lastCheckedAt = -Infinity;
 
   /**
@@ -82,16 +84,15 @@ export class YamlSequenceStore extends ISequenceStore {
       this.#lastCheckedAt = now;
 
       const { files, dirs } = this.#walk();
-      // Directories count: a directory mtime is the only trace of a deleted file.
-      let newest = 0;
-      for (const target of [...dirs, ...files.map((f) => f.full)]) {
-        const stats = getStats(target);
-        if (stats) newest = Math.max(newest, Math.floor(stats.mtimeMs));
-      }
-      if (!force && newest <= this.#builtMtime) return;
+      // Directories count: a deleted file changes its directory's mtime, and
+      // drops out of the path list besides.
+      const fingerprint = [...dirs, ...files.map((f) => f.full)]
+        .map((target) => `${target}@${getStats(target)?.mtimeMs ?? 'x'}`)
+        .join('\n');
+      if (!force && fingerprint === this.#builtFingerprint) return;
 
       this.#byContentId = this.#build(files);
-      this.#builtMtime = newest;
+      this.#builtFingerprint = fingerprint;
     } catch (err) {
       // The last good index keeps serving.
       this.logger?.error?.('station.sequence.walk-failed', { message: err?.message ?? String(err) });

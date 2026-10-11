@@ -32,8 +32,10 @@ They are read by their own store, `YamlSequenceStore`
   `surround.sidecar.invalid`. Its tree walk is `<domain>/<group>/<file>.yml`, so
   keep station files at that depth too, ready for the frame.
 
-Edits land without a restart: the store re-checks the tree's mtimes at most
-every 2 s on lookup.
+Edits land without a restart: the store re-checks the tree at most every 2 s
+on lookup and rebuilds on any change to a path or mtime (not only a newer one —
+Dropbox keeps source-machine mtimes). One instance is built in
+`createContentRegistry` and shared by both paths below.
 
 ## Schema
 
@@ -78,7 +80,7 @@ default rather than dropping the station.
 | Path | Code |
 |------|------|
 | Menu tile → `GET /api/v1/queue/plex/<id>` | `ContentAccessService.queue` (`#orderQueue`) |
-| Program `action: Queue` item (e.g. `music-queue.yml`) | `ListAdapter._applySequence` |
+| Program `action: Queue` item (e.g. `music-queue.yml`), watchlist Queue child | `ListAdapter._applySequence` |
 
 The rule itself is pure: `backend/src/2_domains/content/utils/stationSequence.mjs`
 (`normalizeSequence`, `splitHead`, `interleaveIdents`, `sequenceQueue`).

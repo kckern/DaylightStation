@@ -126,8 +126,8 @@ program (music-queue.yml) Queue item
 - Title rebind is **not** in v1: neither queue path has the playlist's title
   in hand. `match.title` is authored for humans and for that later rebind.
 - **`ContentAccessService.queue`** — gains the optional sequence step above,
-  injected `surroundStore` (already composed in `contentApi.mjs`).
-- **`ListAdapter`** — the program/menu Queue expansion consults the same store
+  injected `sequenceStore` (one instance, built in `createContentRegistry` and shared with `ListAdapter`).
+- **`ListAdapter`** — the program/menu and watchlist Queue expansions consult the same store
   (injected) and domain functions before its inline shuffle. Without this, a
   station inside `music-queue.yml` would lose its jingle.
 
@@ -141,7 +141,7 @@ schema, Player.
 | `station.sequence.applied` | info | `containerId, path (queue\|list), head, idents, songs, shuffle` |
 | `station.ident.unresolved` | warn | `containerId, id` |
 | `station.sequence.failed` | warn | `containerId, error` — fell back to the plain queue |
-| `surround.sidecar.invalid` | warn | existing; now also `reason: sequence-*` |
+| `station.sequence.invalid` | warn | `file, problems` — a malformed `sequence:` block |
 
 ## Data
 

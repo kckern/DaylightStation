@@ -646,6 +646,13 @@ export function createContentRegistry(config, deps = {}) {
   // Handles watchlist: prefix (and menu:, program:, query:)
   // Uses listDataPath (root data path) for content/lists/*
   const listDataPath = config.listDataPath || config.dataPath;
+  // Station sequences (pinned jingle + station IDs) live in the surround
+  // sidecar tree. ONE store, shared by ListAdapter (programs) and the queue
+  // route (createApiRouters receives it from the caller).
+  const sequenceLogger = deps.logger?.child?.({ app: 'surround', module: 'station-sequence' }) || deps.logger || null;
+  const sequenceStore = listDataPath
+    ? new YamlSequenceStore({ rootDir: path.join(listDataPath, 'content', 'surround'), logger: sequenceLogger })
+    : null;
   if (listDataPath) {
     const listAdapter = new ListAdapter({
       dataPath: listDataPath,
@@ -655,13 +662,8 @@ export function createContentRegistry(config, deps = {}) {
       configService: deps.configService || null,
       nomusicLabels: config.nomusicLabels || [],
       musicOverlayPlaylist: config.musicOverlayPlaylist || null,
-      // Station sequences for programs that expand a station playlist (e.g.
-      // music-queue). The queue route reads the same tree via contentApi.
-      sequenceStore: new YamlSequenceStore({
-        rootDir: path.join(listDataPath, 'content', 'surround'),
-        logger: deps.logger || console
-      }),
-      logger: deps.logger?.child?.({ module: 'list-adapter' }) || deps.logger || null
+      sequenceStore,
+      logger: sequenceLogger
     });
     registry.register(listAdapter, {
       category: listManifest.capability,
@@ -863,7 +865,7 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
-  return { registry, savedQueryService };
+  return { registry, savedQueryService, sequenceStore };
 }
 
 /**

@@ -111,6 +111,30 @@ describe('YamlSequenceStore', () => {
     expect(store.lookup('plex:757556').head).toBe(3);
   });
 
+  it('picks up a normal edit even when another file is future-dated', () => {
+    const file = write('radio/salt-lake/fm100.yml', FM100);
+    const skewed = write('radio/salt-lake/other.yml', 'match: { contentId: plex:2 }\nsequence: { head: 1 }\n');
+    const future = new Date(Date.now() + 86_400_000);
+    utimesSync(skewed, future, future);
+    let clock = 1_000_000;
+    const store = new YamlSequenceStore({ rootDir: root, logger: makeLogger(), now: () => clock });
+
+    writeFileSync(file, FM100.replace('head: 1', 'head: 4'));
+    const past = new Date(Date.now() - 60_000); // older than the skewed file, but different
+    utimesSync(file, past, past);
+    clock += 5_000;
+    expect(store.lookup('plex:757556').head).toBe(4);
+  });
+
+  it('drops a deleted sidecar after the window', () => {
+    const file = write('radio/salt-lake/fm100.yml', FM100);
+    let clock = 1_000_000;
+    const store = new YamlSequenceStore({ rootDir: root, logger: makeLogger(), now: () => clock });
+    rmSync(file);
+    clock += 5_000;
+    expect(store.lookup('plex:757556')).toBeNull();
+  });
+
   it('never throws on a missing root', () => {
     const store = new YamlSequenceStore({ rootDir: path.join(root, 'nope'), logger: makeLogger() });
     expect(store.lookup('plex:757556')).toBeNull();

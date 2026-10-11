@@ -157,9 +157,12 @@ export function createApiRouters(config) {
   // the same file) but are read by their own store: a pinned head and station
   // IDs are a queue-ordering rule, not a presentation. See
   // docs/reference/player/surround/sequences.md.
-  const sequenceStore = new YamlSequenceStore({
+  // Shared with ListAdapter when the caller passes it (app.mjs does); built
+  // here only for callers that compose the routers on their own.
+  const sequenceLogger = logger?.child?.({ app: 'surround', module: 'station-sequence' }) ?? logger;
+  const sequenceStore = config.sequenceStore ?? new YamlSequenceStore({
     rootDir: path.join(dataPath, 'content/surround'),
-    logger
+    logger: sequenceLogger
   });
 
   // §5 of the surround design: an enriched container imposes its authored order
@@ -343,7 +346,7 @@ export function createApiRouters(config) {
           queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
           sequenceStore,
           random: Math.random,
-          logger,
+          logger: sequenceLogger,
         }),
         queuePresentationService: new QueuePresentationService({
           surroundStore,

@@ -12,6 +12,7 @@ export class ContentAccessService {
     if (!contentIdResolver?.resolve) throw new Error('ContentAccessService requires contentIdResolver');
     if (!contentCatalog?.getItem) throw new Error('ContentAccessService requires contentCatalog');
     this.resolver = contentIdResolver; this.catalog = contentCatalog; this.queueService = queueService;
+    if (sequenceStore && typeof random !== 'function') throw new Error('ContentAccessService: sequenceStore requires an injected random');
     this.sequenceStore = sequenceStore; this.random = random; this.logger = logger;
   }
 
@@ -70,7 +71,7 @@ export class ContentAccessService {
     const plain = () => this.queueService.resolveQueue(playables, source, { shuffle });
     let sequence = null;
     try {
-      if (Array.isArray(playables) && playables.length && this.random) sequence = this.sequenceStore?.lookup(finalId) ?? null;
+      if (Array.isArray(playables) && playables.length) sequence = this.sequenceStore?.lookup(finalId) ?? null;
     } catch { sequence = null; }
     if (!sequence) return plain();
 

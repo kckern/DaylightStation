@@ -1065,7 +1065,10 @@ export class ListAdapter {
           // Queue action: get ALL playables
           if (resolved.adapter.resolvePlayables) {
             const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
-            tasks.push(() => resolved.adapter.resolvePlayables(canonicalId));
+            tasks.push(async () => {
+              const items = await resolved.adapter.resolvePlayables(canonicalId);
+              return (await this._applySequence(canonicalId, items, false)) ?? items;
+            });
           }
         }
       }
