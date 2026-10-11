@@ -97,7 +97,7 @@
 
 - [ ] **Step 1:** Write 11 sidecars to `data/content/surround/radio/salt-lake/` (pools per the spec table) via `docker exec … cat >`.
 - [ ] **Step 2:** Append 11 tiles to `data/content/lists/menus/music.yml` (write the whole file; `label`, `uid` (uuid), `shuffle: true`, `input: plex:<id>`, `action: Queue`).
-- [ ] **Step 3:** Docs: section in `docs/reference/player/surround/design.md` ("Sequence sidecars"); CLAUDE.md nav row. Commit.
+- [ ] **Step 3:** Docs: new `docs/reference/player/surround/sequences.md`; CLAUDE.md nav row. Commit.
 - [ ] **Step 4:** `npm run test:unit:vitest` relevant subsets green; merge to main.
 - [ ] **Step 5:** `./scripts/deploy-gate.sh && ./scripts/build-daylight.sh && ./scripts/deploy-gate.sh && sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight`.
 - [ ] **Step 6:** Live: `curl -s 'localhost:3111/api/v1/queue/plex/757556?shuffle=1'` → item 0 `plex:757863`, FM100 IDs spaced 3–5; same for 757564 (3-ID pool, no back-to-back); `shuffle=0` keeps playlist order with IDs; log store shows `station.sequence.applied`; `/api/v1/list/menu/music` (or the admin page) shows the 11 tiles.

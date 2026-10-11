@@ -156,7 +156,7 @@ export function createApiRouters(config) {
   // Station sequences share the surround tree (a station's frame will live in
   // the same file) but are read by their own store: a pinned head and station
   // IDs are a queue-ordering rule, not a presentation. See
-  // docs/reference/player/surround/design.md "Sequence sidecars".
+  // docs/reference/player/surround/sequences.md.
   const sequenceStore = new YamlSequenceStore({
     rootDir: path.join(dataPath, 'content/surround'),
     logger

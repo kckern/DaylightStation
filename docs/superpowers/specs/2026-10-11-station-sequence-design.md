@@ -183,8 +183,8 @@ schema, Player.
 
 ## Docs
 
-- `docs/reference/player/surround/design.md` — a section on sequence
-  sidecars (frame-less sidecars, `sequence` schema, fail-open rule).
+- `docs/reference/player/surround/sequences.md` — new reference page
+  (`design.md` is the concert-hall visual design, not a home for this).
 - `CLAUDE.md` navigation table — a row pointing at it.
 
 ## Out of scope
