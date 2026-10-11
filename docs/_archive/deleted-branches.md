@@ -626,3 +626,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-09 | fix/crt-sub-sd-pixels | 927d099934 | Player CRT only for sub-SD (<640w and <480h) |
 | 2026-10-09 | fix/piano-household-tz | 77e91ae010 | Piano kiosk curfew/quiet hours in household timezone |
 | 2026-10-09 | fix/printer-slow-link-preflight | dda013e98e | Thermal pre-flight refuses jobs on a late-answering (degraded) link |
+| 2026-10-10 | fix/anonymous-worksheet-scan-slip | 9b59784886 | Score slip for session-less worksheet scans (was 'nothing new to mark') |
