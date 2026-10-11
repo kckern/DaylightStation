@@ -1088,10 +1088,7 @@ h2 {
     .item-text {
       color: white;
     }
-    
-    .date-label {
-      color: rgba(255, 255, 255, 0.7);
-    }
+
   }
   
   &.past {
@@ -1136,15 +1133,8 @@ h2 {
   }
   
   // Font size is the MAXIMUM; useFitText shrinks long entries to fit two lines.
-  .item-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
   .item-text {
+    flex: 1;
     min-width: 0;
     font-size: 1.8rem;
     line-height: 1.15;
@@ -1153,10 +1143,17 @@ h2 {
     color: #e0e0e0;
   }
   
-  .date-label {
-    font-size: 0.85rem;
-    color: #888;
-  }
+}
+
+// Past entries are grouped under one small date heading per day.
+.date-group {
+  flex-shrink: 0;
+  margin: 6px 4px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #888;
 }
 
 // Divider between today and past
