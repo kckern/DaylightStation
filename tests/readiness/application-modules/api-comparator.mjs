@@ -7,6 +7,17 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+const buildPrefix='Build Time: dev (not built)\nCommit: https://github.com/kckern/DaylightStation/commit/';
+export function validateNativeBuildCase(c,fixtureFileSha256){
+ if(c.nativeBuildContract===undefined)return false;
+ assert.equal(c.id,'native-build-source-identity');assert.equal(c.method,'GET');assert.equal(c.path,'/build.txt');
+ assert.deepEqual(c.nativeBuildContract,{kind:'admitted-native-git-v1',fixtureFileSha256:'a3834c2e4354987fa799c26d607ff84275eb93d2bad65e03494435b7f3880929'});
+ if(fixtureFileSha256!==undefined)assert.equal(fixtureFileSha256,c.nativeBuildContract.fixtureFileSha256);
+ assert.deepEqual(c.expected,{status:200,headers:{'content-type':'text/plain; charset=utf-8'},body:{kind:'text',exact:buildPrefix+'<admitted-source-commit>\n'}});
+ assert.deepEqual(c.normalize,{jsonPaths:[],headers:['date','connection','keep-alive']});
+ assert.equal(c.timestampContract,undefined);assert.equal(c.generatedSheetPdfContract,undefined);assert.equal(c.generatedGratitudePngContract,undefined);
+ return true;
+}
 const types = new Set(['string', 'number', 'boolean', 'array', 'object']);
 const kind = value => Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
 
@@ -209,6 +220,7 @@ function validateManifest(manifest, origin) {
     } else assert.equal(typeof e.body.exact, 'string');
     if(c.generatedSheetPdfContract!==undefined)validateSheetPdfCase(c);
     if(c.generatedGratitudePngContract!==undefined)validateGratitudePngCase(c);
+    validateNativeBuildCase(c);
     validateTimestampContract(c);
     validateFitnessClock(c);
     const n = c.normalize ?? { jsonPaths: [], headers: [] };
@@ -255,6 +267,12 @@ function inspect(response, c, context) {
     if(c.generatedSheetPdfContract!==undefined)validateSheetPdf(c,response);
     else assert.equal(createHash('sha256').update(bytes).digest('hex'), c.expected.body.sha256, 'Binary SHA256');
     body = response.bodyBase64; // Exact reference/candidate byte equality, no text decoding.
+  } else if(c.nativeBuildContract){
+    assert.match(context?.sourceCommit??'',/^[a-f0-9]{40}$/);
+    assert.equal(body,buildPrefix+context.sourceCommit+'\n','Exact native role Git identity');
+    assert.ok(headers['content-encoding']===undefined||headers['content-encoding']==='identity');
+    const bytes=Buffer.from(body,'utf8');assert.equal(headers['content-length'],String(bytes.length));
+    assert.equal(headers.etag,`W/"${bytes.length.toString(16)}-${createHash('sha1').update(bytes).digest('base64').slice(0,27)}"`);
   } else assert.equal(body, c.expected.body.exact);
   for (const header of c.normalize?.headers ?? []) delete headers[header];
   return { status: response.status, headers, body };
@@ -267,6 +285,7 @@ export async function compareApi({ manifest, targets, transport }) {
   assert.ok(!manifest.cases.some(c=>c.generatedGratitudePngContract!==undefined),'Fixed PNG policy requires guarded isolated capture');
   assert.ok(!manifest.cases.some(c=>c.generatedSheetPdfContract!==undefined),'Fixed PDF policy requires guarded isolated capture');
   assert.ok(!manifest.cases.some(c=>Object.hasOwn(c,'headers')), 'Synthetic study grants forbidden in live comparison');
+  assert.ok(!manifest.cases.some(c=>c.nativeBuildContract),'Native build contract requires admitted isolated captures');
   validate(manifest, targets);
   return compareValidated({ manifest, targets, transport });
 }
@@ -283,10 +302,17 @@ async function compareValidated({ manifest, targets, transport }) {
       } catch (error) { errors.push({ side, message: error.message }); }
     }
     if (errors.length === 0) {
-      try { assert.deepEqual(inspect(observations.reference, c, targets.reference), inspect(observations.candidate, c, targets.candidate)); }
+      try {
+        const original=inspect(observations.reference,c,targets.reference),candidate=inspect(observations.candidate,c,targets.candidate);
+        if(c.nativeBuildContract){
+          // Full raw observations remain above; differing independently validated commit text/ETag is intentional.
+          const {body:originalBody,...a}=original,{body:candidateBody,...b}=candidate;
+          delete a.headers.etag;delete b.headers.etag;assert.deepEqual(a,b);
+        }else assert.deepEqual(original,candidate);
+      }
       catch (error) { errors.push({ side: 'differential', message: error.message }); }
     }
-    cases.push({ id: c.id, accepted: errors.length === 0, observations, errors });
+    cases.push({ ...(c.nativeBuildContract?{intentionalSourceIdentityDifference:errors.length===0&&targets.reference.sourceCommit!==targets.candidate.sourceCommit}:{}), id: c.id, accepted: errors.length === 0, observations, errors });
   }
   return {
     schema: 'comparator-result-v1', mode: targets.mode ?? 'isolated',
@@ -302,6 +328,7 @@ async function compareValidated({ manifest, targets, transport }) {
 export function validateCaptureManifest(manifest, fixtureFileSha256) {
   const reviewedStudy=validateStudyPacket(manifest,fixtureFileSha256);
   validateManifest(manifest, 'http://127.0.0.1:43129');
+  for(const c of manifest.cases)if(c.nativeBuildContract){assert.match(fixtureFileSha256??'',/^[a-f0-9]{64}$/);validateNativeBuildCase(c,fixtureFileSha256);assert.equal(manifest.cases.length,1,'Fixed native build owner only');}
   for (const c of manifest.cases) {
     assert.equal(c.method, 'GET');
     if(c.generatedSheetPdfContract!==undefined)assert.equal(fixtureFileSha256,c.generatedSheetPdfContract.fixtureFileSha256,'Exact reviewed PDF fixture');

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { validateCaptureManifest, fetchTransport } from './api-comparator.mjs';
+import { validateCaptureManifest, validateNativeBuildCase, fetchTransport } from './api-comparator.mjs';
 import { validateRawFixtures, validateDirectoryFixtures, materializeTimedImageFixtures } from './raw-utf8-fixture.mjs';
 
 import { validateTestMetadata, dependencyReadGrants, assertMetadataDenied } from './runtime-test-metadata.mjs';
@@ -108,6 +108,24 @@ fs.writeFileSync(path.join(scratch, 'probe-input.json'), JSON.stringify({ source
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const jsonHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const grants = new Map();
+const nativeBuildGitMetadata=new Set();
+const nativeBuild=Boolean(captureExpectations?.cases.some(c=>c.nativeBuildContract));
+if(nativeBuild){
+ assert.equal(captureExpectations.cases.length,1);validateNativeBuildCase(captureExpectations.cases[0],studyFixtureFileSha256);
+ // Fixed commands only in the trusted parent; no executable/argument comes from the packet.
+ for(const p of ['/bin/sh','/usr/bin/git'])grants.set(fs.realpathSync(p),'X');
+ for(const p of ['/lib/x86_64-linux-gnu/libpcre2-8.so.0','/lib/x86_64-linux-gnu/libz.so.1'])grants.set(fs.realpathSync(p),'F');
+ const branch=spawnSync('/usr/bin/git',['symbolic-ref','-q','HEAD'],{cwd:sourceRoot,encoding:'utf8'});
+ assert.ok(branch.status===0||branch.status===1);const keys=['HEAD','config','commondir','packed-refs'];
+ if(branch.status===0){assert.match(branch.stdout.trim(),/^refs\/heads\/[A-Za-z0-9_./-]+$/);keys.push(branch.stdout.trim());}
+ for(const key of keys){
+  const lookup=spawnSync('/usr/bin/git',['rev-parse','--git-path',key],{cwd:sourceRoot,encoding:'utf8'});assert.equal(lookup.status,0);
+  const p=path.resolve(sourceRoot,lookup.stdout.trim());if(!fs.existsSync(p))continue;
+  assert.ok(fs.lstatSync(p).isFile()&&!fs.lstatSync(p).isSymbolicLink());assert.equal(fs.realpathSync(p),p);grants.set(p,'F');nativeBuildGitMetadata.add(p);
+ }
+ if(fs.lstatSync(path.join(sourceRoot,'.git')).isFile()){const pointer=path.join(sourceRoot,'.git');grants.set(pointer,'F');nativeBuildGitMetadata.add(pointer);}
+ const nullStat=fs.statSync('/dev/null');assert.ok(nullStat.isCharacterDevice());assert.equal(nullStat.rdev,259);
+}
 for(const row of gratitudeEncodingInputs)grants.set(row.path,'F');
 const testMetadata=validateTestMetadata(toolRoot);
 const inventory = spawnSync('/usr/bin/git', ['ls-files', '-z'], { cwd: sourceRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
@@ -140,8 +158,8 @@ assertMetadataDenied([...grants],testMetadata);
 const manifest = path.join(run, 'read-allowlist.tsv');
 assert.ok([...grants.keys()].every(file => !/[\r\n\t]/.test(file)), 'Unsafe grant path');
 fs.writeFileSync(manifest, [...grants].sort().map(([file, kind]) => `${kind}\t${file}\n`).join(''));
-const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F').map(([file]) => ({ file, sha256: hash(file) }));
-const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
+const sourceInputs = [...grants].filter(([file, kind]) => kind === 'F' || kind === 'X').map(([file]) => ({ file, sha256: hash(file) }));
+const workingTreeSha256 = jsonHash(sourceInputs.filter(row=>row.file.startsWith(sourceRoot+path.sep)&&(!nativeBuild||!nativeBuildGitMetadata.has(row.file))).map(row=>({path:path.relative(sourceRoot,row.file).split(path.sep).join('/'),sha256:row.sha256})).sort((a,b)=>a.path.localeCompare(b.path)));
 for (const file of [fileURLToPath(import.meta.url), path.join(directory, 'api-comparator.mjs'),path.join(directory,'gratitude-png-contract.mjs'), path.join(directory, 'published-unit-readiness.mjs'), path.join(directory, 'raw-utf8-fixture.mjs'), path.join(directory, 'runtime-test-metadata.mjs'), path.join(directory, entryName), path.join(directory, 'transparent-loader.mjs'), fixtureFile, path.resolve(directory, '../../preimplementation/application-modules/tooling/landlock-runner.c'), ...['--manifest', '--targets'].filter(key => options[key]).map(key => fs.realpathSync(options[key]))]) {
   if (!sourceInputs.some(row => row.file === file)) sourceInputs.push({ file, sha256: hash(file) });
 }
@@ -149,7 +167,7 @@ const c = path.resolve(directory, '../../preimplementation/application-modules/t
 const binary = path.join(run, 'landlock-runner');
 const compile = spawnSync('/usr/bin/gcc', ['-O2', '-Wall', '-Wextra', '-Werror', c, '-o', binary], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
 assert.equal(compile.status, 0, compile.stderr);
-const args = [scratch, fs.realpathSync(process.execPath), manifest, toolRoot, path.join(run, 'transparent-loader.mjs'), path.join(run, entryName), denied, 'readiness-http', 'baseline', ''];
+const args = [scratch, fs.realpathSync(process.execPath), manifest, toolRoot, path.join(run, 'transparent-loader.mjs'), path.join(run, entryName), denied, 'readiness-http', 'baseline', nativeBuild?'build-native-git-v1':''];
 const captureStartedAt = Date.now();
 let captured = null, publishedUnitReadiness;
 const child = spawn('/usr/bin/timeout', ['--signal=KILL', '75s', binary, ...args], { cwd: scratch, env: { PATH: '/usr/bin:/bin' } });

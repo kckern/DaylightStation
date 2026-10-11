@@ -38454,5 +38454,106 @@
     "remainingLimits": "Gratitude PNG remains one of25 source-template gaps; Life remains the historical contract gap. Production image/config/mount provenance, installed denominator, nonGET/browser/WS/jobs/rollback/cutover gates remain unproved.",
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "post624NativeDevelopmentBuildEvidence": {
+    "schema": "daylight.post624-native-development-build-evidence/v1",
+    "scope": "One independently validated native development Git build identity contract; original624 immutable and separate; no baked production build identity proof",
+    "acceptedSupplementalCaseIds": [
+      "native-build-source-identity"
+    ],
+    "acceptedSupplementalHealthyContracts": 1,
+    "uniqueCaseIncrement": 1,
+    "sourceTemplateIncrement": 1,
+    "eligibleSourceTemplate": "/build.txt",
+    "actualCandidateCommit": "d2bf8cc67acd4011be90a3acc6c50821ef57f2d6",
+    "originalSourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+    "actualOutcome": {
+      "path": "/tmp/readiness-build-current-four/OUTCOME.json",
+      "sha256": "38fbbe688f0c1ddf75108eebbb3939f553ec99d3e5adc6aaf5ddb945542bcccf"
+    },
+    "actualAcceptance": "Root independently verified both raw body/status/MIME/Content-Length/weak ETag against admitted capture.sourceCommit, exact capture/receipt/result hashes, execution/finalguards/errors[]; accepted LOCAL DEV branch only in session.",
+    "rawPairResult": {
+      "path": "/tmp/readiness-build-one-portable-projection-pair/pair-result.json",
+      "sha256": "1fd9ed947fb39d1431d26b3943f2a1f429cb17a37c82f707420a9a62c7aeb6f0"
+    },
+    "rawComparison": {
+      "path": "/tmp/readiness-build-one-portable-projection-pair/comparison.json",
+      "sha256": "fd94e88ab474dc806f48fbb4e9ef24c498af6384f28d67331a43dc77d9a62215"
+    },
+    "rawRoleEvidence": [
+      {
+        "role": "original",
+        "sourceCommit": "60cb94db60d94fa413a6f2bdc6c2b3bf8b58131c",
+        "capture": {
+          "path": "/tmp/readiness-build-one-portable-projection-pair/original/daylight-local-http-PRhaz4/capture.json",
+          "sha256": "f830b550dba5936b54421686069b5b95793770032223e18ea3ab5ec76ff6a657"
+        },
+        "receipt": {
+          "path": "/tmp/readiness-build-one-portable-projection-pair/original/daylight-local-http-PRhaz4/receipt.json",
+          "sha256": "5adf8148dad8fdaeb9fc9ab3e41c20912b7c35d52d0311d642001bf370d6602d"
+        }
+      },
+      {
+        "role": "candidate",
+        "sourceCommit": "d2bf8cc67acd4011be90a3acc6c50821ef57f2d6",
+        "capture": {
+          "path": "/tmp/readiness-build-one-portable-projection-pair/candidate/daylight-local-http-xCLPZK/capture.json",
+          "sha256": "8e766cda6c3a6c7dd85ab7a9f0a16cad514012432e955f90968156ec26071528"
+        },
+        "receipt": {
+          "path": "/tmp/readiness-build-one-portable-projection-pair/candidate/daylight-local-http-xCLPZK/receipt.json",
+          "sha256": "5fa10313647b092dbe466c8b9652ed3db306d25b4afd40d60bb21769a29a4e2e"
+        }
+      }
+    ],
+    "nativeContract": "Both full200 native BuildMetadataSource development text bodies independently match admitted role commits; exact MIME/Content-Length/Express weak ETag. Original60cb and candidate d2bf raw body/ETag differences remain visible and explicitly intentional, with other normalized headers equal. Mandatory native inventories/source linkage/finalguards and cleanup passed.",
+    "practicalCorrections": [
+      {
+        "failure": {
+          "path": "/tmp/readiness-build-current-one/OUTCOME.json",
+          "sha256": "bfdd3ef0b747bea2c657d85ad4ecc30d9a0389fb853d60ed54bcbe7a8d8c953c"
+        },
+        "reason": "Author supplied candidate as toolRoot instead of existing canonical /opt/Code/DaylightStation; metadata ancestry admission rejected before HTTP. Corrected only argv; no metadata policy relaxation/cache deletion."
+      },
+      {
+        "failure": {
+          "path": "/tmp/readiness-build-current-two/OUTCOME.json",
+          "sha256": "509db34e95df4fef4cbf4aeff8a2e0a4fbf4e71a5deeb2a04d1c7b58a2c42310"
+        },
+        "reason": "Original200 completed but new Git metadata polluted runner SOURCE inventory; coordinator rejected linkage before candidate. Fixed only source projection of the finite metadata set in the validated build case; all metadata remains hashed in sourceInputs/receipt and proof guards."
+      }
+    ],
+    "failedAttemptsCredit": 0,
+    "implementationReview": {
+      "path": "/tmp/readiness-build-native-private-v1/REVIEW.json",
+      "sha256": "e240c883d0a679ed1316e72aa06d70cd464cc341f8fddb0206807b5eeda639b4"
+    },
+    "sourceProjectionProposal": {
+      "path": "/tmp/readiness-build-source-projection-v2/HANDOFF.json",
+      "sha256": "ccaae23652904ab95f02d5757369356ae7325801bd1254a83771e94b9e92368e"
+    },
+    "sourceProjectionApproval": "Root reviewed exact portable two-file delta in session; no additional policy framework",
+    "currentCombinedEvidenceAccounting": {
+      "uniqueAcceptedCaseIds": 637,
+      "successfulIndependentContracts": 636,
+      "parityLinkedEligibleSourceTemplates": 372,
+      "eligibleSourceTemplates": 396,
+      "remainingEligibleSourceTemplateGaps": 24,
+      "remainingHistoricalContractGaps": 1,
+      "remainingHistoricalGapIds": [
+        "life-feedback-period-timestamp-gap"
+      ],
+      "single636CaseRun": false,
+      "original624AndPriorReceiptsUnchanged": true,
+      "productionInstalledCoverageUnproved": true
+    },
+    "limits": [
+      "Development checkout identity only; baked /build.txt production file/image/config/mount provenance remains unproved.",
+      "Exact shell/Git executables and finite Git metadata are case/fixture gated under unchanged write/network confinement; no packet commands or arbitrary executable paths.",
+      "Status startup counters/runtime paths,24 source-template gaps and Life historical contract remain unproved.",
+      "Production installed denominator, nonGET/browser/WS/jobs/restart/rollback/cutover gates remain open."
+    ],
+    "fullSuiteAccepted": false,
+    "readinessAccepted": false
   }
 }
