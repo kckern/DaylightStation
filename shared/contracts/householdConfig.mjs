@@ -84,6 +84,8 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   shutdown:         'shutdown/config',
   sheets:           'sheets/config',
   vehicles:         'automotive/vehicles',
+  // Immich tags whose assets the weekly review never shows (`hiddenTags`).
+  'weekly-review':  'weekly-review/config',
 });
 
 /** Grouped path for an app, or null when the app is not registered. */

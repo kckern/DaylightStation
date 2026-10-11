@@ -100,7 +100,7 @@ parser (`pageidx.py`) and lookup (`find.py`) sit beside it.
 3. Scanning the card grades all five allocations.
 
 First printing (2026-10-09): card `5705644`, rows 1–10 … 41–50, learnerName
-User_3, no learnerId.
+`test-learner`, no learnerId.
 
 ## Renderer fix made alongside
 

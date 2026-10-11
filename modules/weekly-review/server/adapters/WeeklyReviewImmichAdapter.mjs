@@ -6,6 +6,7 @@ export class WeeklyReviewImmichAdapter {
   #priorityPeople;
   #proxyPath;
   #sessionGapMs;
+  #hiddenTags;
   #logger;
 
   constructor(config = {}, deps = {}) {
@@ -16,6 +17,9 @@ export class WeeklyReviewImmichAdapter {
     this.#priorityPeople = (config.priorityPeople || []).map(n => n.toLowerCase());
     this.#proxyPath = config.proxyPath || '/proxy/immich';
     this.#sessionGapMs = (config.sessionGapMinutes || 120) * 60 * 1000;
+    // Assets carrying any of these Immich tags never reach the review. Set from
+    // household `weekly-review/config.yml` → hiddenTags; NoShow when absent.
+    this.#hiddenTags = (config.hiddenTags || ['NoShow']).map(n => n.toLowerCase());
     this.#logger = deps.logger || console;
   }
 
@@ -33,11 +37,16 @@ export class WeeklyReviewImmichAdapter {
     const takenAfter = new Date(`${startDate}T00:00:00.000Z`).toISOString();
     const endPlusOne = new Date(`${endDate}T00:00:00.000Z`);
     endPlusOne.setDate(endPlusOne.getDate() + 1);
+    const takenBefore = endPlusOne.toISOString();
 
+    const hidden = await this.#hiddenAssetIds({ takenAfter, takenBefore });
+
+    // Ask for one row past every hidden asset, so a hidden oldest asset cannot
+    // land the jump on a day that shows nothing.
     const result = await this.#client.searchMetadata({
       takenAfter,
-      takenBefore: endPlusOne.toISOString(),
-      size: 1,
+      takenBefore,
+      size: hidden.size + 1,
       order: 'asc',
     });
 
@@ -45,6 +54,7 @@ export class WeeklyReviewImmichAdapter {
     let oldest = null;
     for (const asset of assets) {
       if (asset.type !== 'IMAGE' && asset.type !== 'VIDEO') continue;
+      if (hidden.has(asset.id)) continue;
       const date = asset.localDateTime?.slice(0, 10);
       if (date && (oldest === null || date < oldest)) oldest = date;
     }
@@ -61,13 +71,15 @@ export class WeeklyReviewImmichAdapter {
 
     this.#logger.debug?.('weekly-review.immich.search', { startDate, endDate, takenAfter, takenBefore });
 
-    const result = await this.#client.searchMetadata({
-      takenAfter,
-      takenBefore,
-      size: 500,
-    });
+    const [result, hidden] = await Promise.all([
+      this.#client.searchMetadata({ takenAfter, takenBefore, size: 500 }),
+      this.#hiddenAssetIds({ takenAfter, takenBefore }),
+    ]);
 
-    const assets = result.items || result || [];
+    const assets = (result.items || result || []).filter(a => !hidden.has(a.id));
+    if (hidden.size > 0) {
+      this.#logger.debug?.('weekly-review.immich.hidden', { startDate, endDate, hidden: hidden.size });
+    }
 
     if (assets.length === 0) {
       this.#logger.warn?.('weekly-review.immich.no-assets', { startDate, endDate });
@@ -106,6 +118,34 @@ export class WeeklyReviewImmichAdapter {
     });
 
     return days;
+  }
+
+  /**
+   * Ids of assets in the window carrying a hidden tag (e.g. `NoShow`).
+   * Search results do not include tags, so the hidden set is fetched with its
+   * own tag-filtered search and subtracted. A failure here propagates: showing
+   * a hidden photo is worse than a review that fails to load.
+   */
+  async #hiddenAssetIds({ takenAfter, takenBefore }) {
+    const ids = new Set();
+    if (this.#hiddenTags.length === 0 || typeof this.#client.getTags !== 'function') return ids;
+
+    const tags = await this.#client.getTags();
+    const tagIds = (tags || [])
+      // `name` is the leaf, `value` the full path — match either so a nested tag counts.
+      .filter(t => [t.name, t.value].some(n => n && this.#hiddenTags.includes(n.toLowerCase())))
+      .map(t => t.id);
+
+    // tagIds on /search/metadata is AND across ids, so search each tag alone.
+    for (const tagId of tagIds) {
+      let page = 1;
+      while (page) {
+        const result = await this.#client.searchMetadata({ takenAfter, takenBefore, tagIds: [tagId], size: 1000, page });
+        for (const asset of result?.items || result || []) ids.add(asset.id);
+        page = result?.nextPage ? Number(result.nextPage) : null;
+      }
+    }
+    return ids;
   }
 
   #processDay(date, assets) {

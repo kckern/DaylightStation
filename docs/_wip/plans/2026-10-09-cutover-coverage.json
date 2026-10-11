@@ -32,7 +32,11 @@
       "requiresNewImageBuildAndAffectedRetest": true,
       "includedInCandidateSourceByBranchMerge": true,
       "mergedSourceRequiresNewImageEvidence": true,
-      "focusedIncomingFitnessTests": {"nodeTestPassed": 31, "newVitestPassed": 29, "existingVitestPassed": 120},
+      "focusedIncomingFitnessTests": {
+        "nodeTestPassed": 31,
+        "newVitestPassed": 29,
+        "existingVitestPassed": 120
+      },
       "priorDocumentationCommit": "23f28fc760f7ddad5315de4c2c3e0d8a3172d42a"
     },
     "api": {
@@ -39060,5 +39064,107 @@
       "required browser/WebSocket/config/write persistence/jobs/restart journeys",
       "disposable candidate-data rollback compatibility rehearsal with retained exact original image/config/data and preservation of production writes"
     ]
+  },
+  "postmergeExactImageEvidence20261011": {
+    "readinessAccepted": false,
+    "sourceCommits": {
+      "reference": "c9a3ea9bd246e4ef507812a96987f18de85e41d6",
+      "candidate": "94ae0adb9ccb7a74d22593cfe7f50d664b320aad"
+    },
+    "images": {
+      "reference": "sha256:02ffa983d7bc42b3c07906fa6b4aaa5c9f5e1e6075945291e699a601a11dfdf2",
+      "candidate": "sha256:2923b3c27ca2b7baf28e07f064c5832cfee1495cc6ceffcfc64c83c0e003b61b"
+    },
+    "toolchainComparison": {
+      "path": "/tmp/readiness-nextbuild-c9a-v1/toolchain-compare/RESULT.json",
+      "sha256": "ce2ee3a466470b5392b2202f4cd072eb0fb733ffcb68e585ab57309b99cafb40",
+      "scope": "Seven paired artifacts: actual Node binary, npm/forever package metadata, APK installed database, and root/frontend/backend installed npm lockfiles; byte-identical. Missing guessed yt-dlp path receives no comparison credit."
+    },
+    "deferred21": {
+      "accountingSha256": "0d07d1476f0c55322840d12fb72925635db8f1c897c9fb91150145cede8ecc5d",
+      "acceptedCaseIds": [
+        "school-language-joins-language-history",
+        "school-language-joins-language-recording",
+        "school-language-joins-sentence-ladder-history",
+        "school-language-joins-sentence-ladder-recording",
+        "school-language-joins-other-history",
+        "school-language-joins-denied-malformed",
+        "school-language-joins-denied-tampered",
+        "school-language-joins-denied-expired",
+        "school-language-joins-denied-wrong-purpose",
+        "school-language-joins-denied-cross-learner",
+        "school-language-joins-denied-cross-corpus",
+        "school-language-joins-missing-recording",
+        "school-language-joins-cross-recording",
+        "school-remaining-cube-issued",
+        "school-remaining-cube-verified",
+        "school-generated-shelf-user_1",
+        "school-generated-shelf-user_2",
+        "models-configured-metadata",
+        "school-stored-progress",
+        "school-stored-progress-filter",
+        "fitness-native-led-metrics"
+      ],
+      "rawFullContractAndDifferentialPassed": 20,
+      "approvedDerivedPassed": 1,
+      "approvedDerivedReceiptSha256": "72b6778cfc0e84fc06cf8096c9c7b5155f40234a6d9553050e4321ae1f38ae17",
+      "archive": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/evidence-deferred21-postmerge94ae.tar.gz",
+      "archiveSha256": "c50897e6daf4868edf14fa7d67cd63c7919b562cad4310bb64fb220253f57124",
+      "independentlyVerifiedArchivePayloads": 89,
+      "rawModelClockDifferentialPreserved": true
+    },
+    "remainingVerification": [
+      "376-case run has no terminal acceptance yet",
+      "Physical metadata ten and four supplemental API cases",
+      "Fresh WebSocket, configuration write/restart/retained-production-image compatibility, archive producer and populated browser journeys",
+      "Remaining route-template coverage and installed production-route proof",
+      "Final current-main and production drift checks, usage-idle gate and exact deployment/restoration procedure"
+    ],
+    "scope": "Task-only isolated main/candidate images. Does not relabel historical 640 source cases or historical fd706/95aa image evidence. No production deployment.",
+    "subsequentDrift": {
+      "observedAt": "2026-10-11T20:50:02.863340+00:00",
+      "main": "cd58cdf6ac0ac5b4f0e9992a7b9ff64f4d050ba9",
+      "production": [
+        {
+          "name": "/daylight-station",
+          "image": "sha256:c98d489edbb04977851199226c659254edbbc5d7a92f27abf4aa9a8912a9665f",
+          "startedAt": "2026-10-11T20:43:46.013901762Z",
+          "health": "healthy"
+        },
+        {
+          "name": "/daylight-browser",
+          "image": "sha256:ed48fdb2b3bbaac04c6f3c9ba96f45f328dd7a68caeec95d1333c4aa65280073",
+          "startedAt": "2026-10-11T20:43:39.478732203Z",
+          "health": "healthy"
+        }
+      ],
+      "receipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/production-refresh-2043/IDENTITY.json",
+      "receiptSha256": "0610a7ef9c088902beed492db51bbc9d0065dc0cc670406f0b9f33d663bb251b",
+      "scope": "Current c9a/94ae test run remains scoped to immutable pins. New six-file net main delta and current rollback image still require integration/retention/affected verification.",
+      "productionBuildSource": "772f5c343d5b82a3c62c05abcd543fb248f2536b",
+      "productionBuildTxtSha256": "b8806e7a45e677380f89247c9a7d7e950b88c02594eea98fead18ed58e7c2acb",
+      "productionBuildSourceTreeMatchesObservedMain": true,
+      "restorationProposalSha256": "ca482ad2ffbfa7a2586775644d2cf97eca299036a916ef1b35fae7623e3b7785",
+      "restorationStatus": "proposal-only-not-executed; effective Config/HostConfig/mount/network settings unchanged apart from image and ephemeral hostname",
+      "integration": {
+        "mainPin": "cd58cdf6ac0ac5b4f0e9992a7b9ff64f4d050ba9",
+        "candidateParent": "94ae0adb9ccb7a74d22593cfe7f50d664b320aad",
+        "status": "resolved-merge-awaiting-original-commit-hooks",
+        "receipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/INTEGRATION-VERIFICATION-cd58.json",
+        "receiptSha256": "38a6165343a921188f13429509c67985a4e275ee0684553095c60701dc6dbb90",
+        "focusedVitestFiles": 24,
+        "focusedVitestTests": 191,
+        "ownersInspected": 9595,
+        "filesParsed": 11739,
+        "fitnessConflictResolution": "Duplicate-history owned files preserved after zero net Fitness delta proof; no Fitness behavior change.",
+        "finalImageBuilt": false
+      },
+      "rollbackRetention": {
+        "receipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/production-refresh-2043/BACKEND-RETENTION.json",
+        "receiptSha256": "612ce5f7262e05578c06c268bef4005f23ea571d3fa0f28c903cff5f8f9ef90d",
+        "archiveSha256": "212c57e8cfe513f66b675c4720e76b98d637e2b13ee7872b508529a79275ce2f",
+        "verifiedLayers": 23
+      }
+    }
   }
 }

@@ -13,7 +13,11 @@ export async function installWeeklyReview({ configService, dataService, immichCo
     const wrImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
     const weeklyReviewAi = scopedGateway(sharedAiGateway, { app: 'weekly-review' });
     const weeklyReviewImmichAdapter = new WeeklyReviewImmichAdapter(
-      { priorityPeople: [], proxyPath: '/api/v1/proxy/immich' },
+      {
+        priorityPeople: [],
+        proxyPath: '/api/v1/proxy/immich',
+        hiddenTags: configService.getHouseholdAppConfig(householdId, 'weekly-review')?.hiddenTags,
+      },
       { client: wrImmichClient, logger: rootLogger.child({ module: 'weekly-review-immich' }) }
     );
 
