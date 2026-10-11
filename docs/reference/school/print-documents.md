@@ -1356,6 +1356,18 @@ true, and read by the child as "done". Two invariants now hold:
 - **A printer fault never delays or swallows the panel ceremony.** The slip
   is fire-and-forget after the broadcast; the outcome is logged as
   `school.print.scan-slip` (`printed`, `reason`).
+- **A sheet with no lesson session gets its score on a `scan-scored` slip.**
+  A worksheet printed straight from `POST /print/render` has no session for
+  `CloseSessionOutcome` to grade, so no result receipt is coming — whether the
+  card is anonymous (`RecordCardScanOutcome` → `unattributed`) or bound to a
+  learner (`recorded: true`, attempts saved, no `session`). The consumer
+  announces `scan-scored` with `{title, correctCount, totalCount,
+  missedRows}`, and the slip prints `TITLE — 8 / 10` plus the rows to look at
+  again; a sheet with empty or double-marked rows gets `scan-rows-incomplete`
+  instead. Before 2026-10-10 both fell through to the `scan-not-recorded`
+  backstop, which told a child on his first feed of a 10/10 sheet that
+  "everything on it was already marked". Logged as
+  `school.print.scan-scored-sessionless`.
 
 ## 8a. The companion gate row
 

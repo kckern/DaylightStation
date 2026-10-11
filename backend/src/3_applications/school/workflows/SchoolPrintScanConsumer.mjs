@@ -883,6 +883,45 @@ export function createSchoolPrintScanConsumer({
                   blankRows,
                   ambiguousRows,
                 });
+              } else if (!sectionOutcome?.session
+                  && (sectionOutcome?.recorded === true || sectionOutcome?.reason === 'unattributed')) {
+                // A SHEET WITH NO SESSION BEHIND IT (2026-10-10). A worksheet
+                // printed straight from /print/render — anonymous, or bound to
+                // a learner but issued by no lesson — has no session to grade,
+                // so nothing above spoke and the backstop printed "NOTHING NEW
+                // TO MARK … everything on it was already marked" over a
+                // child's first feed of a 10/10 sheet. The card's own rows are
+                // the score here; say it, or say what is still unfinished.
+                const { blankRows, ambiguousRows, answered, total } = progressOf(card);
+                const title = await titleFor(card);
+                if (blankRows.length || ambiguousRows.length) {
+                  speak({
+                    event: 'scan-rows-incomplete',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    title,
+                    answered,
+                    total,
+                    blankRows,
+                    ambiguousRows,
+                  });
+                } else {
+                  const correctCount = (card.results ?? []).filter((r) => r.status === 'correct').length;
+                  const missedRows = rowsWith(card, 'incorrect');
+                  logger.info?.('school.print.scan-scored-sessionless', {
+                    testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
+                    recorded: sectionOutcome.recorded === true, correctCount, totalCount: total,
+                  });
+                  speak({
+                    event: 'scan-scored',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    title,
+                    correctCount,
+                    totalCount: total,
+                    missedRows,
+                  });
+                }
               }
             }
           })

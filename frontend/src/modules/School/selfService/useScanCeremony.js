@@ -164,6 +164,21 @@ function buildCeremony(payload) {
         at,
         code: payload.reason ?? null,
       };
+    case 'scan-scored': {
+      // A sheet with no lesson session behind it (printed straight from the
+      // print API). Its slip carries the score, so the toast can too.
+      const right = typeof payload.correctCount === 'number' ? payload.correctCount : null;
+      const of = typeof payload.totalCount === 'number' ? payload.totalCount : null;
+      const missed = listRows(payload.missedRows);
+      return {
+        tone: 'success',
+        title: right != null && of != null ? `${right} of ${of} right` : 'I marked your sheet',
+        detail: missed
+          ? `${payload.title ? `${payload.title}: ` : ''}look again at ${missed.toLowerCase()}.`
+          : `${payload.title ? `${payload.title} — ` : ''}your result is printing.`,
+        at,
+      };
+    }
     case 'scan-not-recorded': {
       // A re-fed card with a sheet that is STILL unfinished says so, by name
       // and by row — the same words the first feed used. "No new result
