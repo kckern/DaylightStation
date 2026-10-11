@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 
 // One independently authored, reviewed three-read slice. No path/grant comes from a packet.
-const fixed = {"fixtureSha256":"917b7af2c3a0295fe5fe56890f78102c171ad8bd2738e380a63aed0e66719dea","cases":[{"id":"native-health-day-populated","path":"/api/v1/health/day?date=2026-09-07","sha256":"a15a935c96a474db80eb6bc5713392b9580754b57850d4df3d344198b8db18c9"},{"id":"native-health-morning-shortlist","path":"/api/v1/health/nutrition/catalog/suggest?bucket=morning&limit=16","sha256":"d4b12b307f0e7d507fc56791504c273652cd29cbf70f46ac5b2fa4a41cb211c3"},{"id":"native-health-desktop-budget-range","path":"/api/v1/health/budget/range?from=2026-08-09&to=2026-09-07","sha256":"566492771441a4a7a89a7c900fd73b6fdea6c27cc39b633a3f69b2d56b870711"}],"start":1791615600000,"end":1791702000000};
+const fixed = {"fixtureSha256":"917b7af2c3a0295fe5fe56890f78102c171ad8bd2738e380a63aed0e66719dea","cases":[{"id":"native-health-day-populated","path":"/api/v1/health/day?date=2026-09-07","sha256":"a67ea3e36af6cbd65348abf17f11472f7e01bb3455b8b73a3376f38a03fbc9b4"},{"id":"native-health-morning-shortlist","path":"/api/v1/health/nutrition/catalog/suggest?bucket=morning&limit=16","sha256":"d4b12b307f0e7d507fc56791504c273652cd29cbf70f46ac5b2fa4a41cb211c3"},{"id":"native-health-desktop-budget-range","path":"/api/v1/health/budget/range?from=2026-08-09&to=2026-09-07","sha256":"566492771441a4a7a89a7c900fd73b6fdea6c27cc39b633a3f69b2d56b870711"}],"start":1791702000000,"end":1791788400000};
 const absent = [
  'data/users/user_1/lifelog/nutrition/ledger-transaction.yml',
  'data/users/user_1/lifelog/nutrition/ledger-transaction.yaml',
@@ -30,7 +30,7 @@ export function healthReadPacket(manifest, fixtureFileSha256) {
  assert.equal(fixtureFileSha256,fixed.fixtureSha256,'Exact reviewed Health fixture');
  assert.equal(cases.length,3,'Exact Health owner/cases');
  for(let i=0;i<3;i++)assert.equal(sha(JSON.stringify(cases[i])),fixed.cases[i].sha256,'Exact complete reviewed Health case');
- return {fixtureFileSha256,manifestSha256:sha(JSON.stringify(manifest)),localDay:'2026-10-10',zone:'America/Los_Angeles',start:fixed.start,end:fixed.end};
+ return {fixtureFileSha256,manifestSha256:sha(JSON.stringify(manifest)),localDay:'2026-10-11',zone:'America/Los_Angeles',start:fixed.start,end:fixed.end};
 }
 
 export function validateHealthDay(packet, ms) {

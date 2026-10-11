@@ -10,6 +10,14 @@
 
 **Spec:** User goal “complete cutover readiness,” with explicit old/new API equivalence and daily-use regression concerns; docs/roadmap/2026-08-31-full-stack-application-modules.md sections 0.5–0.7.
 
+## Reviewed local read-only accounting — 2026-10-11
+
+The reviewed union contains **640 disjoint healthy case IDs: the original 624 plus 16 supplemental cases**. Separate cohorts contribute 407 earlier cases (405 raw passes plus the independently authored, source-derived Life 2 correction), 215 passes from the 217-case continuation, 15 supplemental cases, the separate Gratitude 1 full-PNG contract, and the targeted PlayLedger 2 recovery. The original Life and PlayLedger failures, partial-batch exit codes and Gratitude minute differential remain in their receipts; no empty/null result receives healthy populated-branch credit. The PlayLedger recovery passed both complete contracts with its finite window and cleanup accepted. [The coverage ledger](2026-10-09-cutover-coverage.json) binds exact IDs, outcomes, root reviews and durable evidence.
+
+Earlier 407 cases retain their candidate `48d9bf8` scope. Later cohorts ran candidate `e87656d`, which includes the reviewed main `026e3cb` Fitness frontend change with no backend delta; only the recovery 2 used the final renewed harness. Original `077a27d` is a frozen source reference, not an identified production serving image. This union is neither one fresh 640-case execution nor an atomic supplemental 16-case run.
+
+Existing registry and supplemental proof mappings establish **373/396 static eligible parity-linked route templates, with 23 gaps**; the three guarded Health routes remain outside that generic denominator. Actual production image/configuration/mount identity and installed routes remain unproved. The accepted native Vite build for `e87656d` does not prove a Docker serving image. Docker packaging, browser journeys, WebSocket behavior, configuration writes, jobs, restart and disposable rollback compatibility remain separate open release gates. No cutover approval is recorded.
+
 ## Current phase: read-only live/local parity (latest user direction)
 
 This phase takes precedence over the broader release tasks below. First inventory the read-only API surface across every application; then build and execute the comparison suite. The reference is the currently running live server. The candidate may be a local server from the isolated worktree on a distinct loopback port; building or deploying a Docker image is not a prerequisite.

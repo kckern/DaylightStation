@@ -2,6 +2,8 @@
 
 Status: **Milestones 1 and 2 are checkpointed. Milestone 3 source ownership, selected compatibility, and native calculator artifact acceptance are verified.** Source checkpoint `646caba119` passed the original confined commit hook. No deployment or merge into main is claimed.
 
+The separately reviewed local cohorts now account for 640 disjoint healthy cases, with historical failures and execution provenance retained. See [the current read-only accounting](../plans/2026-10-09-application-modules-cutover-readiness.md#reviewed-local-read-only-accounting--2026-10-11) for static coverage and the production/release gates that remain open.
+
 Gratitude backend, browser/admin UI and assets now have one owner under `modules/gratitude`. The ordered household projection and FamilySelector live under `capabilities/household-identity`. Explicit composition/public entries preserve existing HTTP/UI/storage/config/events and Feed, HomeBot and Fitness consumers; native rendering remains lazy. Canonical backend/frontend dependency identities are retained.
 
 - [Approved scope](../plans/2026-10-08-gratitude-module-proof.md)

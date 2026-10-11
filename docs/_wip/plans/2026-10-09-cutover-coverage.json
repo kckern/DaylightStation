@@ -1,7 +1,7 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
   "readinessAccepted": false,
-  "stage": "Mixed historical633 accepted/624 independent contracts;368of396 eligible parity templates/28 exact gaps. Arcade stored populated2 counted once at pinned60cb/candidate1cda. Health/status actual500 remains zero-credit baseline gap.639 credited-or-baseline diagnostic IDs/641 literal observations. No global readiness/production claim.",
+  "stage": "640 healthy disjoint IDs across separately reviewed cohorts; 373/396 static eligible parity-linked templates with 23 gaps. Preserved raw failures and source/harness scope. Production denominator and release readiness remain unproved.",
   "referenceMain": "c9234d2ba9ffe5a30ba03abf54a94b3b28d0c9df",
   "sourceCheckpointBeforeIntegration": "7c0936d1b5d450c3495fb5c105d7aaf196d3bc54",
   "schoolMainIntegration": {
@@ -38769,5 +38769,91 @@
     "countsUnchanged": "641 accepted IDs/640 healthy;373/396 eligible templates;23 template gaps;Life1",
     "fullSuiteAccepted": false,
     "readinessAccepted": false
+  },
+  "finalReadonly640Evidence": {
+    "status": "ROOT_ACCEPTED_640_HEALTHY_DISJOINT_IDS_ACROSS_SEPARATE_COHORTS_NOT_RELEASE_READINESS",
+    "acceptedHealthyCount": 640,
+    "baseHealthyCount": 624,
+    "complementHealthyCount": 16,
+    "cohorts": [
+      {
+        "scope": "prior405rawplus2source-derivedLife correction;42completedgroups",
+        "healthyCount": 407,
+        "candidate": "48d9bf8e2d3ef897fd3145877b34be3149a3b8cf",
+        "rawFailureIdsPreserved": [
+          "life-piano-priorities-default",
+          "life-piano-priorities-explicit"
+        ]
+      },
+      {
+        "scope": "current217raw215pass2fail",
+        "healthyCount": 215,
+        "candidate": "e87656ddb54bbeb7ab6918cddecc78bbb237d3c9",
+        "rawFailureIdsPreserved": [
+          "ledger-merged-screen-started-by",
+          "ledger-screen-started-by"
+        ]
+      },
+      {
+        "scope": "complement15selected7groups",
+        "healthyCount": 15,
+        "candidate": "e87656ddb54bbeb7ab6918cddecc78bbb237d3c9",
+        "rawFailureIdsPreserved": []
+      },
+      {
+        "scope": "Gratitude1ownfreshwindow",
+        "healthyCount": 1,
+        "candidate": "e87656ddb54bbeb7ab6918cddecc78bbb237d3c9",
+        "rawFailureIdsPreserved": []
+      },
+      {
+        "scope": "PlayLedger2recovery",
+        "healthyCount": 2,
+        "candidate": "e87656ddb54bbeb7ab6918cddecc78bbb237d3c9",
+        "rawFailureIdsPreserved": []
+      }
+    ],
+    "exactCaseIdsAndEvidence": {
+      "archiveManifest": {
+        "path": "/home/ds/.local/state/daylight-readiness/108b30-accepted-evidence/APPEND-final640-readonly-accounting.json",
+        "sha256": "e423367d05aa6feed2b6de8d9e2cfbedf5efb179e9a52d2a3223772f7c627a49"
+      },
+      "blob": "blobs/e4d431e015254aac078b251fa3c09d5d482c475e0563e0ee774c0c7b9f53b302.gz",
+      "uncompressedSha256": "e4d431e015254aac078b251fa3c09d5d482c475e0563e0ee774c0c7b9f53b302",
+      "bytes": 107771
+    },
+    "recovery2RootReview": {
+      "path": "/tmp/readiness-playledger-two-e876-execution/ROOT-RESULT-REVIEW.json",
+      "sha256": "ef8b8322a6e1a6046569c6218b78d7a46b4d752d5e84ac13f28d4268b88570c3"
+    },
+    "recovery2DurableArchive": {
+      "path": "/home/ds/.local/state/daylight-readiness/108b30-accepted-evidence/APPEND-playledger2-e876-recovery-accepted.json",
+      "sha256": "66a139d5902b6567a807598b831f683403f0f27d3f262a4c19bec978d79f0101"
+    },
+    "staticSourceTemplateAccounting": {
+      "archiveManifest": {
+        "path": "/home/ds/.local/state/daylight-readiness/108b30-accepted-evidence/APPEND-final640-readonly-accounting.json",
+        "sha256": "e423367d05aa6feed2b6de8d9e2cfbedf5efb179e9a52d2a3223772f7c627a49"
+      },
+      "blob": "blobs/2ea0e9b624f04d721b3821a48ab1b6fd3a110a031e274c1f69ec13377d476ed7.gz",
+      "uncompressedSha256": "2ea0e9b624f04d721b3821a48ab1b6fd3a110a031e274c1f69ec13377d476ed7",
+      "bytes": 2240
+    },
+    "staticParityLinkedEligibleTemplates": 373,
+    "staticEligibleTemplates": 396,
+    "remainingStaticEligibleGaps": 23,
+    "actualInstalledProductionDenominator": null,
+    "readinessAccepted": false,
+    "notOneFresh640Execution": true,
+    "notAtomic16Execution": true,
+    "original077IsFrozenSourceReferenceNotProductionImage": true,
+    "earlier407NotRelabeledE876Execution": true,
+    "newHarnessOnlyRecovery2": true,
+    "remainingExternalReleaseGates": [
+      "actual Docker build/image identity and tracked secret-free context/runtimedependency layout",
+      "current serving image/config identity/mount identity and actual installed route graph; source registry is not production denominator",
+      "required browser/WebSocket/config/write persistence/jobs/restart journeys",
+      "disposable candidate-data rollback compatibility rehearsal with retained exact original image/config/data and preservation of production writes"
+    ]
   }
 }

@@ -1,6 +1,8 @@
 # Application modules cutover and rollback
 
-Status: preparation only. The current user-requested phase is read-only API inventory and live/local comparison; a separate local candidate is sufficient, and Docker is not a prerequisite for that phase. The deployment gates below apply later, before actual cutover. This runbook has not been executed. The actual Docker build, full-server differential API suite, browser journeys and rollback rehearsal remain required. Structural checkpoint `7c0936d1b5` alone does not authorize or establish a safe deployment.
+Status: preparation only. The current user-requested phase is read-only API inventory and live/local comparison; a separate local candidate is sufficient, and Docker is not a prerequisite for that phase. The deployment gates below apply later, before actual cutover. This runbook has not been executed. The native Vite frontend build for candidate `e87656d` is accepted; the actual Docker serving image, required image-level API comparison, browser journeys and rollback rehearsal remain unproved. Structural checkpoint `7c0936d1b5` alone does not authorize or establish a safe deployment.
+
+The separately reviewed local cohorts account for 640 disjoint healthy cases while preserving their raw failures and source/harness provenance. See [the current read-only accounting](../_wip/plans/2026-10-09-application-modules-cutover-readiness.md#reviewed-local-read-only-accounting--2026-10-11) for the 373/396 static template scope and open production/release gates.
 
 ## Release gate
 
