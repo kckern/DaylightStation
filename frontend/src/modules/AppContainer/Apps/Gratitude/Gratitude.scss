@@ -983,6 +983,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 16px;
   background-color: #333;
   color: #e0e0e0;
@@ -1136,7 +1137,7 @@ h2 {
   .item-text {
     flex: 1;
     min-width: 0;
-    font-size: 1.8rem;
+    font-size: 1.5rem;
     line-height: 1.15;
     letter-spacing: 0.02ex;
     font-weight: 500;
