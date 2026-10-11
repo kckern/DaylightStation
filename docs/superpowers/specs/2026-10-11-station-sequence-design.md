@@ -1,6 +1,6 @@
 # Station sequences — pinned heads and station IDs for shuffled playlists
 
-**Status:** design approved in conversation 2026-10-11; awaiting spec review.
+**Status:** approved 2026-10-11; store split amended during planning (see Units).
 
 ## Problem
 
@@ -34,10 +34,11 @@ barcode.
 Station sequences are Surround sidecars: one YAML per piece of content under
 `data/content/surround/<area>/`, bound by `match: {contentId, title}`, indexed
 by `YamlSurroundStore`, with its title rebind for stale Plex ids and its
-edit-refresh window. The stations live under `surround/radio/`.
+edit-refresh window. The stations live under `surround/radio/salt-lake/` — two
+levels, the `<domain>/<group>/<file>.yml` depth the surround tree is walked at.
 
 ```yaml
-# data/content/surround/radio/fm100.yml
+# data/content/surround/radio/salt-lake/fm100.yml
 match: { contentId: plex:757556, title: FM100 }
 sequence:
   head: 1
@@ -87,7 +88,7 @@ No ID is placed directly after the head, and none after the final song.
 menu Queue tile ─► GET /api/v1/queue/plex/757556?shuffle=1
                      ContentAccessService.queue
                        ├─ catalog.resolvePlayables(container)
-                       ├─ surroundStore.lookupSequence(container)  ◄─ new
+                       ├─ sequenceStore.lookup(container)          ◄─ new
                        ├─ splitHead ─► head | rest                ◄─ new (domain)
                        ├─ queueService.resolveQueue(rest, {shuffle})
                        ├─ resolve ident pool → playables
@@ -96,7 +97,7 @@ menu Queue tile ─► GET /api/v1/queue/plex/757556?shuffle=1
 
 program (music-queue.yml) Queue item
                      ListAdapter queue expansion (≈ ListAdapter.mjs:1141)
-                       └─ same lookupSequence + domain functions  ◄─ new
+                       └─ same sequenceStore.lookup + domain functions ◄─ new
 ```
 
 ### Units
@@ -106,14 +107,24 @@ program (music-queue.yml) Queue item
     fields are dropped with reasons returned for the store to log.
   - `splitHead(items, head) → {head: [], rest: []}`
   - `interleaveIdents(songs, {every, pool}, random) → []`
-- **`ISurroundStore.lookupSequence(contentId, title)`** — new port method;
-  `YamlSurroundStore` implements it off the existing index (same rebind, same
-  refresh, returns a clone). The validator relaxes one rule: a sidecar must
-  carry `surround:` **or** `sequence:` (today `missing-surround` blocks it at
-  `YamlSurroundStore.mjs:1247`). Neither is still `surround.sidecar.invalid`.
-  A sequence-only sidecar is not indexed for frames, so `lookup()` /
-  `lookupByPart()` return exactly what they return today for that id, and
-  `planSurroundQueue` stays a no-op for it.
+- **`YamlSequenceStore`** (`1_adapters/content/sequence/`, port
+  `ISequenceStore.lookup(contentId) → sequence|null`) — a small store of its
+  own, walking the same `data/content/surround/` tree recursively and indexing
+  every file that carries a `sequence:` block by `match.contentId`. Same
+  conventions as the surround store: `_`-prefixed names are reserved, a 2s
+  freshness window with an mtime check so edits land without a restart, never
+  throws, returns a clone.
+
+  *Amended during planning:* the spec first put `lookupSequence` on
+  `ISurroundStore`. That store is a classical-performance engine — every sidecar
+  must name a `work:` in the knowledge corpus and a frame definition, and its
+  resolver is ~1,450 lines with a history of fleet-wide blank rails — so a
+  queue-ordering rule does not belong inside it. The surround store changes by
+  one guard only: a file with `sequence:` and no `surround:` is skipped
+  quietly (not counted, not warned). When the radio frame arrives it is added
+  to these same files and the surround store learns to read them then.
+- Title rebind is **not** in v1: neither queue path has the playlist's title
+  in hand. `match.title` is authored for humans and for that later rebind.
 - **`ContentAccessService.queue`** — gains the optional sequence step above,
   injected `surroundStore` (already composed in `contentApi.mjs`).
 - **`ListAdapter`** — the program/menu Queue expansion consults the same store
@@ -134,7 +145,7 @@ schema, Player.
 
 ## Data
 
-- **11 sidecars** under `data/content/surround/radio/`, `head: 1`,
+- **11 sidecars** under `data/content/surround/radio/salt-lake/`, `head: 1`,
   `idents: {every: [3, 5], pool: <that station's jingles>}`, pools from the
   jingle album:
 
@@ -161,9 +172,9 @@ schema, Player.
   than the playlist; `every` fixed and ranged with a seeded random; no
   back-to-back repeat; one-item pool; empty pool → A; no ID after the head or
   after the last song; `normalizeSequence` rejects bad shapes.
-- **Store** — sequence-only sidecar is indexed for `lookupSequence`, invisible
-  to `lookup`; sidecar with neither is still invalid; title rebind works for a
-  stale id.
+- **Store** — sequence sidecar indexed at any depth; reserved names skipped;
+  edits picked up after the freshness window; invalid blocks warned; the
+  surround store skips a sequence-only file without `surround.sidecar.invalid`.
 - **Integration** — queue route with a fake store: first item is the head;
   idents spaced within range; a store that throws yields the plain queue.
 - **ListAdapter** — a program Queue item over a station keeps its head.
