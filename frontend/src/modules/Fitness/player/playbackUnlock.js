@@ -10,6 +10,8 @@
  *     libraries: [TV Shows]      # any item from these Plex libraries is gated
  *     scope: show                # show = one scan covers the show; item = every item
  *     prompt_timeout_seconds: 60 # how long the scan prompt waits before giving up
+ *     session_recaps: true       # also lock a past session's recap video when any
+ *                                # video it played matches (the recap shows it in PiP)
  *   locks: { kids_playback: [user_1, user_9] }
  * No `lock`, no rules, or an empty lock list ⇒ nothing is gated.
  */
@@ -26,6 +28,7 @@ export function normalizePlaybackUnlockRules(cfg) {
     libraries: toSet(cfg?.libraries),
     scope: norm(cfg?.scope) === 'item' ? 'item' : 'show',
     promptTimeoutMs: Number(cfg?.prompt_timeout_seconds) > 0 ? Number(cfg.prompt_timeout_seconds) * 1000 : null,
+    sessionRecaps: cfg?.session_recaps === true,
   };
 }
 
@@ -62,4 +65,38 @@ export function playbackUnlockScope(item, scope = 'show') {
   if (item.grandparentId) return `show:${item.grandparentId}`;
   if (item.showId) return `show:${item.showId}`;
   return String(item.contentId || item.id);
+}
+
+/**
+ * Decide whether a past session's recap must be unlocked: required when ANY
+ * video the session played is gated. Labels decide synchronously; items whose
+ * labels don't and that could be library-gated are looked up via `fetchInfo`.
+ * A failed lookup counts as gated (fail closed).
+ * @param {Array<{contentId?: string, labels?: string[]}>} mediaList - session summary.media
+ * @returns {Promise<{ required: boolean, reason: string|null }>}
+ */
+export async function classifySessionRecap(mediaList, rules, fetchInfo) {
+  const items = Array.isArray(mediaList) ? mediaList : [];
+  const pending = [];
+  for (const item of items) {
+    const v = classifyPlaybackUnlock(item, rules);
+    if (v.required) return v;
+    if (needsLibraryLookup(item, rules)) pending.push(item);
+  }
+  for (const item of pending) {
+    const cid = String(item.contentId || '');
+    const plexId = cid.startsWith('plex:') ? cid.slice(5) : null;
+    if (!plexId || typeof fetchInfo !== 'function') continue;
+    try {
+      const info = await fetchInfo(plexId);
+      const v = classifyPlaybackUnlock({
+        labels: [...(item.labels || []), ...(info?.labels || [])],
+        librarySectionTitle: info?.librarySectionTitle,
+      }, rules);
+      if (v.required) return v;
+    } catch {
+      return { required: true, reason: 'lookup-failed' };
+    }
+  }
+  return { required: false, reason: null };
 }

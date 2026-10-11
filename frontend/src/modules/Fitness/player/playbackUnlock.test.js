@@ -4,6 +4,7 @@ import {
   classifyPlaybackUnlock,
   playbackUnlockScope,
   needsLibraryLookup,
+  classifySessionRecap,
 } from './playbackUnlock.js';
 
 const RULES = normalizePlaybackUnlockRules({ labels: ['KidsFun'], libraries: ['TV Shows'] });
@@ -52,5 +53,40 @@ describe('playbackUnlock policy', () => {
     expect(playbackUnlockScope(ep1)).toBe(playbackUnlockScope(ep2));
     expect(playbackUnlockScope({ id: 'movie-9', contentId: 'plex:9' })).toBe('plex:9');
     expect(playbackUnlockScope(ep1, 'item')).not.toBe(playbackUnlockScope(ep2, 'item'));
+  });
+
+  it('reads session_recaps from config', () => {
+    expect(normalizePlaybackUnlockRules({ session_recaps: true }).sessionRecaps).toBe(true);
+    expect(normalizePlaybackUnlockRules({}).sessionRecaps).toBe(false);
+  });
+});
+
+describe('classifySessionRecap', () => {
+  const fetchFitness = async () => ({ librarySectionTitle: 'Fitness' });
+
+  it('locks a session if any video it played carries a gated label', async () => {
+    const media = [{ contentId: 'plex:1', labels: [] }, { contentId: 'plex:2', labels: ['kidsfun'] }];
+    expect(await classifySessionRecap(media, RULES, fetchFitness)).toEqual({ required: true, reason: 'label:kidsfun' });
+  });
+
+  it('locks a session that played something from the TV Shows library', async () => {
+    const media = [{ contentId: 'plex:7', labels: [] }];
+    const r = await classifySessionRecap(media, RULES, async () => ({ librarySectionTitle: 'TV Shows' }));
+    expect(r).toEqual({ required: true, reason: 'library:tv shows' });
+  });
+
+  it('leaves an adult workout session open', async () => {
+    const media = [{ contentId: 'plex:696316', labels: [] }];
+    expect((await classifySessionRecap(media, RULES, fetchFitness)).required).toBe(false);
+  });
+
+  it('fails closed when a lookup errors', async () => {
+    const media = [{ contentId: 'plex:9', labels: [] }];
+    const r = await classifySessionRecap(media, RULES, async () => { throw new Error('offline'); });
+    expect(r.required).toBe(true);
+  });
+
+  it('a session with no media is open', async () => {
+    expect((await classifySessionRecap([], RULES, fetchFitness)).required).toBe(false);
   });
 });
