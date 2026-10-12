@@ -66,11 +66,16 @@ default rather than dropping the station.
    on the queue route; plain shuffle inside a program). The jingle is the
    most-replayed track in its playlist, and the watch-aware shuffle would
    otherwise push it to the end.
-2. **IDs are inserted copies.** The pool rotates as a shuffled bag, never the
+2. **A pool track plays only as an ID.** If the playlist also holds a pool
+   track as an ordinary item (the Salt Lake playlists hold each of their
+   station's jingles once), it is taken out of the songs — otherwise the
+   shuffle can drop it right beside an inserted ID. A playlist track that is
+   *not* in the pool stays a song.
+3. **IDs are inserted copies.** The pool rotates as a shuffled bag, never the
    same ID twice in a row when the pool has more than one, never right after
    the head and never after the last song.
-3. **`shuffle: false`** keeps the songs in playlist order; IDs still apply.
-4. **Fails open.** An unresolvable pool id is dropped
+4. **`shuffle: false`** keeps the songs in playlist order; IDs still apply.
+5. **Fails open.** An unresolvable pool id is dropped
    (`station.ident.unresolved`); an empty pool means head-only; any error
    (`station.sequence.failed`) returns the queue exactly as it would be without
    a sidecar.

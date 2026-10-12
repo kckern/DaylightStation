@@ -76,7 +76,9 @@ No ID is placed directly after the head, and none after the final song.
 2. **Shuffle off:** the remainder keeps playlist order. Idents still apply —
    they are part of the station, not of the shuffle.
 3. **IDs are inserted copies.** The playlist is not edited; a pool id that is
-   also the head track simply plays again later, as on air.
+   also the head track simply plays again later, as on air. A pool track the
+   playlist also holds elsewhere is removed from the songs (found live: the
+   playlists hold each station jingle once, and shuffle put them beside IDs).
 4. **Fails open.** An unresolvable pool id is dropped (warn). An empty
    resolved pool means behaviour A. Any error in the sequence path returns the
    queue exactly as it would be without a sidecar. A station never fails to

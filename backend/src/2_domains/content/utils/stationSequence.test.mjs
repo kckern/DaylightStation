@@ -163,6 +163,33 @@ describe('sequenceQueue', () => {
     expect(stats.idents).toBe(0);
   });
 
+  it('plays a pool member the playlist also holds only as an ID, never as a song', async () => {
+    const withJingles = ['j1', 's1', 'j2', 's2', 's3', 's4'].map(item);
+    const orderRest = vi.fn(async (rest) => rest);
+    const { items, stats } = await sequenceQueue({
+      items: withJingles,
+      sequence: { head: 1, idents: { every: [2, 2], pool: ['j1', 'j2'] } },
+      orderRest,
+      resolveIds: async (wanted) => new Map(wanted.map((id) => [id, item(id)])),
+      random: seeded(0),
+    });
+    expect(ids(orderRest.mock.calls[0][0])).toEqual(['s1', 's2', 's3', 's4']);
+    expect(stats.songs).toBe(4);
+    expect(ids(items).filter((id) => id.startsWith('s'))).toEqual(['s1', 's2', 's3', 's4']);
+  });
+
+  it('keeps non-pool tracks among the songs when there are no idents', async () => {
+    const orderRest = vi.fn(async (rest) => rest);
+    await sequenceQueue({
+      items: ['j1', 's1', 'j2'].map(item),
+      sequence: { head: 1, idents: null },
+      orderRest,
+      resolveIds: vi.fn(),
+      random: seeded(0),
+    });
+    expect(ids(orderRest.mock.calls[0][0])).toEqual(['s1', 'j2']);
+  });
+
   it('does not call resolveIds when nothing needs resolving', async () => {
     const resolveIds = vi.fn();
     const { items } = await sequenceQueue({
