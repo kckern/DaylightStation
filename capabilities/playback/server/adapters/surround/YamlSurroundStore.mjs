@@ -23,6 +23,10 @@ const COMPOSER_FILE = '_composer';
 // exists only so a burst of lookups around one play does not repeat it.
 const FRESHNESS_WINDOW_MS = 2000;
 const isReserved = (name) => name.startsWith('_');
+// A station-sequence sidecar (YamlSequenceStore) shares this tree but carries
+// no frame yet. It is not a performance and not a mistake, so the walk skips it
+// without counting or warning — see #resolvePerformance.
+const SEQUENCE_ONLY = Symbol('sequence-only');
 // Titles are compared on letters and digits only. Everything else — guillemets
 // (»«), interpuncts (∙), colons, hyphens, whitespace runs — is separator noise
 // that the Plex title carries and the sidecar's authored title does not. The
@@ -551,6 +555,7 @@ export class YamlSurroundStore extends ISurroundStore {
               skipped += 1;
               continue;
             }
+            if (resolved === SEQUENCE_ONLY) continue;
             if (!resolved) { skipped += 1; continue; }
             pieces.push(resolved);
           }
@@ -1233,7 +1238,8 @@ export class YamlSurroundStore extends ISurroundStore {
    * segments[i]'s start second), which is also how a segment's `note` becomes
    * a synthesized, segment-anchored cue.
    *
-   * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null}
+   * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null|symbol}
+   *   SEQUENCE_ONLY for a station-sequence sidecar, which the walk skips quietly
    * @private
    */
   #resolvePerformance(filePath, domain, definitions, library, file) {
@@ -1242,6 +1248,9 @@ export class YamlSurroundStore extends ISurroundStore {
       this.#invalid(file, [isPresent(doc) ? 'not-a-mapping' : 'yaml-unparseable']);
       return null;
     }
+
+    // A queue-ordering rule with no frame: YamlSequenceStore's file, not ours.
+    if (!doc.surround && isPresent(doc.sequence)) return SEQUENCE_ONLY;
 
     const blocking = [];
     if (!doc.surround) blocking.push('missing-surround');

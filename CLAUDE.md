@@ -218,6 +218,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Coding standards | `docs/reference/core/coding-standards.md` |
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 | Player surround (classical chrome: sidecars, movement detection) | `docs/reference/player/surround/classical/README.md` |
+| Station sequences (playlist pinned head + station IDs between songs; radio-station playlists) | `docs/reference/player/surround/sequences.md` |
 | Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `docs/reference/player/media-source-healing.md` |
 | Home Line video calling (state, signaling, recovery, observability) | `docs/reference/call/README.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |

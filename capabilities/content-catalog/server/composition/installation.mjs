@@ -6,6 +6,8 @@ import { LibbyAdapter } from "#adapters/content/media/libby/LibbyAdapter.mjs";
 import { LocalContentAdapter } from "../adapters/providers/local-content/LocalContentAdapter.mjs";
 import { ScriptureResolver } from "../adapters/providers/readalong/resolvers/scripture.mjs";
 import { ListAdapter } from "../adapters/providers/list/ListAdapter.mjs";
+import { YamlSequenceStore } from "../adapters/persistence/YamlSequenceStore.mjs";
+import path from "node:path";
 import { ImmichAdapter } from "../adapters/providers/gallery/immich/ImmichAdapter.mjs";
 import { AudiobookshelfAdapter } from "../adapters/providers/readable/audiobookshelf/AudiobookshelfAdapter.mjs";
 import { SingalongAdapter } from "../adapters/providers/singalong/SingalongAdapter.mjs";
@@ -24,6 +26,10 @@ import readalongManifest from "../adapters/providers/readalong/manifest.mjs";
 import komgaManifest from "../adapters/providers/readable/komga/manifest.mjs";
 import absManifest from "../adapters/providers/readable/audiobookshelf/manifest.mjs";
 import queryManifest from "../adapters/providers/query/manifest.mjs";
+
+export function createStationSequenceStore(rootDir, logger) {
+  return new YamlSequenceStore({ rootDir, logger });
+}
 
 export function createCatalogSources(config, deps = {}, { curriculumEnrichment } = {}) {
   const { httpClient, mediaProgressMemory, mediaKeyResolver, app } = deps;
@@ -88,6 +94,10 @@ export function createCatalogSources(config, deps = {}, { curriculumEnrichment }
   // Handles watchlist: prefix (and menu:, program:, query:)
   // Uses listDataPath (root data path) for content/lists/*
   const listDataPath = config.listDataPath || config.dataPath;
+  const sequenceLogger = deps.logger?.child?.({ app: 'surround', module: 'station-sequence' }) || deps.logger || null;
+  const sequenceStore = listDataPath
+    ? createStationSequenceStore(path.join(listDataPath, 'content', 'surround'), sequenceLogger)
+    : null;
   if (listDataPath) {
     const listAdapter = new ListAdapter({
       dataPath: listDataPath,
@@ -96,7 +106,9 @@ export function createCatalogSources(config, deps = {}, { curriculumEnrichment }
       mediaProgressMemory,
       configService: deps.configService || null,
       nomusicLabels: config.nomusicLabels || [],
-      musicOverlayPlaylist: config.musicOverlayPlaylist || null
+      musicOverlayPlaylist: config.musicOverlayPlaylist || null,
+      sequenceStore,
+      logger: sequenceLogger
     });
     registry.register(listAdapter, {
       category: listManifest.capability,
@@ -128,7 +140,7 @@ export function createCatalogSources(config, deps = {}, { curriculumEnrichment }
     );
   }
 
-  return { registry, savedQueryService, httpClient, mediaProgressMemory, app };
+  return { registry, savedQueryService, sequenceStore, httpClient, mediaProgressMemory, app };
 }
 
 export function registerRemoteCatalogSources(registry, config, httpClient) {

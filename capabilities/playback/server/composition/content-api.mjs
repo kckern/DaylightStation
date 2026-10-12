@@ -5,6 +5,7 @@ import { QueueService } from "../application/services/QueueService.mjs";
 import { QueuePresentationService } from "../application/QueuePresentationService.mjs";
 import { planSurroundQueue } from "../application/services/surroundQueuePlan.mjs";
 import { YamlSurroundStore } from "../adapters/surround/YamlSurroundStore.mjs";
+import { createStationSequenceStore } from "../../../content-catalog/server/composition/installation.mjs";
 import { SurroundConfigProjection } from "../adapters/surround/SurroundConfigProjection.mjs";
 import { PlayResponseService } from "../application/services/PlayResponseService.mjs";
 import path from "path";
@@ -92,13 +93,19 @@ export function createPlaybackReadOperations({ contentCatalog, contentIdResolver
   return { playbackReadService };
 }
 
-export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, logger }) {
+export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore = null, dataPath, logger }) {
+  const sequenceLogger = logger?.child?.({ app: 'surround', module: 'station-sequence' }) ?? logger;
+  const resolvedSequenceStore = sequenceStore ?? createStationSequenceStore(
+    path.join(dataPath, 'content/surround'), sequenceLogger);
   return createQueueRouter({
         contentExpression: ContentExpression,
         contentAccessService: new ContentAccessService({
           contentIdResolver,
           contentCatalog,
           queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
+          sequenceStore: resolvedSequenceStore,
+          random: Math.random,
+          logger: sequenceLogger,
         }),
         queuePresentationService: new QueuePresentationService({
           surroundStore,

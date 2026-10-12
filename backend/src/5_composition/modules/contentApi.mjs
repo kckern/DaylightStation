@@ -56,7 +56,7 @@ import { ContentAccessPolicyService } from "../../../../modules/arcade/server/ap
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
+  const { registry, sequenceStore = null, mediaProgressMemory, progressSyncService, progressSyncSources, menuMemoryRepository, cacheBasePath, dataPath, mediaBasePath, proxyService, retroarchProxy, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, eventBus = null, economyService = null, reportPlaybackSession = null, playLedger = null, isKnownSpotDevice = null, libbyStreamService = null, libbyCoverService = null, logger = console } = config;
 
   const { contentCatalog, contentIdResolver, aliasResolver, contentQueryService, siblingsService } = createContentQueryContext({ prefixAliases, registry, logger, configService, mediaProgressMemory });
 
@@ -103,7 +103,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ recordPlaybackProgress, playbackReadService, logger }),
       list: createListRouter({ browseCatalog, listBrowse, recordMenuSelection: itemService.recordMenuSelection.bind(itemService), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, logger }),
+      queue: createPlaybackQueueRouter({ contentIdResolver, contentCatalog, mediaProgressMemory, surroundStore, surroundEnforceOrder, sequenceStore, dataPath, logger }),
       local: createLocalMediaRouter({ localMediaAdapter, getLocalMediaResource, getLocalMediaThumbnail, logger }),
       stream: createStreamRouter({
         getContentMediaResource,

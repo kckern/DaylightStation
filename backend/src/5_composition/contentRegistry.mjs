@@ -26,7 +26,7 @@ import appRegistryManifest from "../../../capabilities/content-catalog/server/ad
 
 
 export function createContentRegistry(config, deps = {}) {
-  const { registry, savedQueryService, httpClient, mediaProgressMemory, app } = createCatalogSources(config, deps, { curriculumEnrichment: pianoCurriculumEnrichment });
+  const { registry, savedQueryService, sequenceStore, httpClient, mediaProgressMemory, app } = createCatalogSources(config, deps, { curriculumEnrichment: pianoCurriculumEnrichment });
 
   // Register FreshVideoAdapter for freshvideo: prefix (teded, kidnuz, etc.)
   // Uses FileAdapter for file listing and mediaProgressMemory for watch state
@@ -71,5 +71,5 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
-  return { registry, savedQueryService };
+  return { registry, savedQueryService, sequenceStore };
 }

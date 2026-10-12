@@ -1025,7 +1025,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'libby' }),
   });
 
-  const { registry: contentRegistry, savedQueryService } = createContentRegistry({
+  const { registry: contentRegistry, savedQueryService, sequenceStore } = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Gallery source (photos/videos)
@@ -1127,6 +1127,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
+    sequenceStore,
     menuMemoryRepository: new YamlMenuMemoryRepository({
       filePath: configService.getHouseholdPath('history/menu_memory', householdId),
     }),
