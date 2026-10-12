@@ -1,0 +1,2379 @@
+{
+  "schema": "daylight.current-http-installed-matcher-source-qualification/v1",
+  "acceptedSourceTemplateMatchQualification": true,
+  "scope": "49 exact accepted request branches match their observed task templates using installed router2.2.0/nestedpath-to-regexp8.4.2 byte-identical to the pinned model on serving2217/new160. Template matching is separated from observed execution of a particular handler or live production activation.",
+  "installedFilesPerRole": {
+    "reference": [
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/index.js",
+        "sha256": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+        "bytes": 15866,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/index.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-0.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/package.json",
+        "sha256": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+        "bytes": 1142,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/package.json",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-1.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js",
+        "sha256": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f",
+        "bytes": 14528,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-2.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/node_modules/path-to-regexp/package.json",
+        "sha256": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+        "bytes": 1399,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/package.json",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-3.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/lib/layer.js",
+        "sha256": "569771db2d3ade3d695ae9259063e8b685ed734e78c2e0ff7648e0a6bf436119",
+        "bytes": 4936,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/lib/layer.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-callpath-stopped-v1/reference/installed-0.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/lib/route.js",
+        "sha256": "77e83b1ceca13bdbdaf42b79d90527489c46249db2ad4226e328352dfe68f83d",
+        "bytes": 4552,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/lib/route.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-callpath-stopped-v1/reference/installed-1.raw"
+      }
+    ],
+    "candidate": [
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/index.js",
+        "sha256": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+        "bytes": 15866,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/index.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-0.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/package.json",
+        "sha256": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+        "bytes": 1142,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/package.json",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-1.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js",
+        "sha256": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f",
+        "bytes": 14528,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-2.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/node_modules/path-to-regexp/package.json",
+        "sha256": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+        "bytes": 1399,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/package.json",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-3.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/lib/layer.js",
+        "sha256": "569771db2d3ade3d695ae9259063e8b685ed734e78c2e0ff7648e0a6bf436119",
+        "bytes": 4936,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/lib/layer.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-callpath-stopped-v1/candidate/installed-0.raw"
+      },
+      {
+        "installedPath": "/usr/src/app/backend/node_modules/router/lib/route.js",
+        "sha256": "77e83b1ceca13bdbdaf42b79d90527489c46249db2ad4226e328352dfe68f83d",
+        "bytes": 4552,
+        "localEquivalentPath": "/opt/Code/DaylightStation/backend/node_modules/router/lib/route.js",
+        "stoppedRawPath": "/tmp/readiness-stock-da5-router-callpath-stopped-v1/candidate/installed-1.raw"
+      }
+    ]
+  },
+  "sourceModelControls": {
+    "positive": 3,
+    "negative": [
+      "foreign-prefix",
+      "required-wildcard-absent",
+      "missing-required-source",
+      "extra-fixed-segment"
+    ],
+    "noNativeCalls": true
+  },
+  "requestCases": [
+    {
+      "caseId": "launch-compat-info",
+      "path": "/api/v1/content/readalong/info/synthetic-story",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/:source/info/:id{/:modifiers}",
+              "nativeRouteOrder": 42,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "6f84cbacbff204cba69245d8f7bd7e8b0facb75844eb846543b591fec9ff6db3"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/:source/info/:id{/:modifiers}",
+              "nativeRouteOrder": 42,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "6f84cbacbff204cba69245d8f7bd7e8b0facb75844eb846543b591fec9ff6db3"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "launch-compat-queue",
+      "path": "/api/v1/content/playables/readalong/synthetic/story",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "launch-compat-queue-query",
+      "path": "/api/v1/content/playables/readalong/synthetic/story?shuffle=false&limit=3",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-absent",
+      "path": "/api/v1/piano/bank/readiness-absent-seed",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-instance-ids",
+      "path": "/api/v1/piano/bank/arpeggios/all/instances?limit=5",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-seed-detail",
+      "path": "/api/v1/piano/bank/arpeggios/all",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "gaming-school-assets-party-media",
+      "path": "/api/v1/gaming/media/synthetic-read-assets.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/gaming/media/*splat",
+              "nativeRouteOrder": 417,
+              "routerId": 42,
+              "mountOrders": [
+                1372,
+                1346
+              ],
+              "handlerSha256": [
+                "130d6da341bbad78712c4a22caf52853b78ad31a96471ff820342305a854f396"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/gaming/media/*splat",
+              "nativeRouteOrder": 417,
+              "routerId": 42,
+              "mountOrders": [
+                1372,
+                1346
+              ],
+              "handlerSha256": [
+                "130d6da341bbad78712c4a22caf52853b78ad31a96471ff820342305a854f396"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "gaming-school-assets-flashcard-image",
+      "path": "/api/v1/school/flashcards/assets/media:language/synthetic-read-assets/words/en/star/image.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/school/flashcards/assets/*assetId",
+              "nativeRouteOrder": 807,
+              "routerId": 67,
+              "mountOrders": [
+                1372,
+                1349
+              ],
+              "handlerSha256": [
+                "3fb8f4545dfb8e9cbaac1ddfdfd4ecdc7dbb3667436b9a56566d339e4447b85f"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/school/flashcards/assets/*assetId",
+              "nativeRouteOrder": 807,
+              "routerId": 67,
+              "mountOrders": [
+                1372,
+                1349
+              ],
+              "handlerSha256": [
+                "3fb8f4545dfb8e9cbaac1ddfdfd4ecdc7dbb3667436b9a56566d339e4447b85f"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-art-explicit",
+      "path": "/api/v1/static/art/classic/synthetic-forest/image.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-art-extension",
+      "path": "/api/v1/static/art/classic/synthetic-forest/image",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-art",
+      "path": "/api/v1/static/img/art/classic/synthetic-forest/image.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-equipment",
+      "path": "/api/v1/static/img/equipment/synthetic-pedaler",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-avatar",
+      "path": "/api/v1/static/img/users/user_1.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-loader",
+      "path": "/api/v1/emulator/engine/loader.js",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-locale-en",
+      "path": "/api/v1/emulator/engine/localization/en.json",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-locale-fallback",
+      "path": "/api/v1/emulator/engine/localization/fr.json",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-canvas-room",
+      "path": "/api/v1/canvas/image/synthetic-read-still/blue-room.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-canvas-garden",
+      "path": "/api/v1/canvas/image/synthetic-read-still/garden.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-local-audio",
+      "path": "/api/v1/local/stream/audio/ambient/synthetic-read-calm.wav",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-local-image",
+      "path": "/api/v1/local/stream/img/art/synthetic-read-still/garden.png",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-browse-games",
+      "path": "/api/v1/local/browse/games",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-browse-tiles",
+      "path": "/api/v1/local/browse/games/_common",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-cover-chapter",
+      "path": "/api/v1/local-content/collection-cover/readalong/synthetic-media-navigation/chapter",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-cover-inherited",
+      "path": "/api/v1/local-content/collection-cover/readalong/synthetic-media-navigation/chapter/deeper",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-embedded-cover",
+      "path": "/api/v1/local-content/cover/audio/singalong/synthetic-media-navigation/0001-synthetic-song.mp3",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/cover{/*splat}",
+              "nativeRouteOrder": 64,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/cover{/*splat}",
+              "nativeRouteOrder": 64,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-readalong-audio",
+      "path": "/api/v1/stream/readalong/synthetic-media-navigation/chapter/0001",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/stream/readalong/:collection{/*splat}",
+              "nativeRouteOrder": 88,
+              "routerId": 13,
+              "mountOrders": [
+                1372,
+                1328
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/stream/readalong/:collection{/*splat}",
+              "nativeRouteOrder": 88,
+              "routerId": 13,
+              "mountOrders": [
+                1372,
+                1328
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-poem-comfort",
+      "path": "/api/v1/local-content/poem/synthetic/comfort",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-poem-courage",
+      "path": "/api/v1/local-content/poem/synthetic/courage",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-scripture-synthetic-one",
+      "path": "/api/v1/local-content/scripture/bom/synthetic-one/31103",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-scripture-synthetic-two",
+      "path": "/api/v1/local-content/scripture/bom/synthetic-two/31103",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-talk-01",
+      "path": "/api/v1/local-content/talk/synthetic-conference/01",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-talk-02",
+      "path": "/api/v1/local-content/talk/synthetic-conference/02",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-adapters-yml",
+      "path": "/api/v1/admin/config/files/system/config/adapters.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-auth-yml",
+      "path": "/api/v1/admin/config/files/system/config/auth.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-bots-yml",
+      "path": "/api/v1/admin/config/files/system/config/bots.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-domains-yml",
+      "path": "/api/v1/admin/config/files/system/config/domains.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-readiness-display-yml",
+      "path": "/api/v1/admin/config/files/system/config/readiness-display.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-readiness-library-yml",
+      "path": "/api/v1/admin/config/files/system/config/readiness-library.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-services-yml",
+      "path": "/api/v1/admin/config/files/system/config/services.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-system-yml",
+      "path": "/api/v1/admin/config/files/system/config/system.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-entropy-config-yml",
+      "path": "/api/v1/admin/config/files/household/entropy/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-finance-config-yml",
+      "path": "/api/v1/admin/config/files/household/finance/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-fitness-config-yml",
+      "path": "/api/v1/admin/config/files/household/fitness/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-gratitude-config-yml",
+      "path": "/api/v1/admin/config/files/household/gratitude/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-harvest-config-yml",
+      "path": "/api/v1/admin/config/files/household/harvest/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-media-app-yml",
+      "path": "/api/v1/admin/config/files/household/media/app.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-piano-config-yml",
+      "path": "/api/v1/admin/config/files/household/piano/config.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-integrations-yml",
+      "path": "/api/v1/admin/config/files/household/integrations.yml",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "proxy-media-existing-pcm-wav",
+      "path": "/api/v1/proxy/media/audio/feedback/school/20251001090000_synthetic_reading.wav",
+      "qualifiedTemplateMatches": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/proxy/media{/*splat}",
+              "nativeRouteOrder": 56,
+              "routerId": 6,
+              "mountOrders": [
+                1372,
+                1282
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/proxy/media{/*splat}",
+              "nativeRouteOrder": 56,
+              "routerId": 6,
+              "mountOrders": [
+                1372,
+                1282
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeTemplateMatchQualified": true,
+      "actualHandlerDispatchObserved": false,
+      "productionActivationCredit": false
+    }
+  ],
+  "verified": [
+    "all six installed module/callpath files per role raw bytes/SHA/version equal model",
+    "stopped-only created/notstarted/cleanup and image identities",
+    "Layer actual path-to-regexp match call uses end/sensitive/trailing/decode; fixed request paths have no percent escapes/trailing slashes so matching boolean unaffected by decode/trailing variants",
+    "both captured task graphs model49rows identically; original3positive4negative controls retained"
+  ],
+  "limitations": [
+    "No route-count expansion: templates reference existing captured native orders.",
+    "Opaque/global middleware and application predicates may affect actual dispatch; these are matching candidate joins, not a complete live dispatcher census.",
+    "Production method/template denominator remains null; no new HTTP request permission, safety upgrade or hardware credit."
+  ],
+  "pins": {
+    "/tmp/readiness-stock-da5-router-stopped-v1/RESULT.json": "827d2e6d9389f5137c0d65a389b4518a01d8fb2c8d9cc95549a24402e91a19a1",
+    "/tmp/readiness-stock-da5-router-callpath-stopped-v1/RESULT.json": "3adac18826b496b19c776fb3c85044ae5d61c5fa9d1eb1b189521422ff641672",
+    "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-0.raw": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+    "/opt/Code/DaylightStation/backend/node_modules/router/index.js": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+    "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-1.raw": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+    "/opt/Code/DaylightStation/backend/node_modules/router/package.json": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+    "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-2.raw": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f",
+    "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f",
+    "/tmp/readiness-stock-da5-router-stopped-v1/reference/installed-3.raw": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+    "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/package.json": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+    "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-0.raw": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+    "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-1.raw": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+    "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-2.raw": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f",
+    "/tmp/readiness-stock-da5-router-stopped-v1/candidate/installed-3.raw": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+    "/tmp/readiness-stock-da5-router-callpath-stopped-v1/reference/installed-0.raw": "569771db2d3ade3d695ae9259063e8b685ed734e78c2e0ff7648e0a6bf436119",
+    "/opt/Code/DaylightStation/backend/node_modules/router/lib/layer.js": "569771db2d3ade3d695ae9259063e8b685ed734e78c2e0ff7648e0a6bf436119",
+    "/tmp/readiness-stock-da5-router-callpath-stopped-v1/reference/installed-1.raw": "77e83b1ceca13bdbdaf42b79d90527489c46249db2ad4226e328352dfe68f83d",
+    "/opt/Code/DaylightStation/backend/node_modules/router/lib/route.js": "77e83b1ceca13bdbdaf42b79d90527489c46249db2ad4226e328352dfe68f83d",
+    "/tmp/readiness-stock-da5-router-callpath-stopped-v1/candidate/installed-0.raw": "569771db2d3ade3d695ae9259063e8b685ed734e78c2e0ff7648e0a6bf436119",
+    "/tmp/readiness-stock-da5-router-callpath-stopped-v1/candidate/installed-1.raw": "77e83b1ceca13bdbdaf42b79d90527489c46249db2ad4226e328352dfe68f83d",
+    "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/current-http-wildcard-source-model.json": "080a72b28490674ab7e49475d14252a1727042764a51e0888f0b5924656e7448",
+    "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/project-http-wildcard-model.mjs": "5c5879b6e471b0d2088a883715833ede9f48d4b4c7208e0dc28efb3a99695dd0"
+  }
+}

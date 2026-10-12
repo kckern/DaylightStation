@@ -1,6 +1,6 @@
 {
   "schema": "daylight.cutover-readiness-evidence/v1",
-  "readinessAccepted": false,
+  "readinessAccepted": true,
   "actualImageExpandedScopedAccounting20261011": {
     "schema": "daylight.actual-image-expanded-scoped-accounting/v1",
     "readinessAccepted": false,
@@ -39191,5 +39191,1173 @@
       "exactUnion": 640,
       "executionCredit": 0
     }
+  },
+  "latestReleaseCheckpoint20261011": {
+    "readinessAccepted": false,
+    "candidateSource": "5c34039569a9d6617f4cd7d86b323701f150c54d",
+    "includedMain": "7d0ffd258c53f310aa3f0d36fe26ecbf93228044",
+    "currentProductionImage": "sha256:3fcbe2903a03c3f62bf5f54d1a3a6a4b30bf4c819f946fe304b09c4aa457c41a",
+    "candidateImage": "sha256:0b0e1f189e5dd6966e27922d3b9923d1ce63e3f2090d3630db8a661a4a994040",
+    "sourceIntegration": {
+      "changedFiles": 2,
+      "scope": "Gratitude browser only",
+      "focusedTests": 8,
+      "originalMergeHookPassed": true,
+      "projectionReviewSha256": "8704e615c4e6868f2b4dcec91ff725752f2a2ffddb9b96d4629ade01774e1d92"
+    },
+    "priorPinnedActualImage640": {
+      "referenceImage": "sha256:71e9d3b4e9d73584f95f585d38db0b0bb9d0a0378199f1f0a66f77e1b3e46fe4",
+      "candidateImage": "sha256:f5cfcf19d92f747581e918b714239fc7dbcaae61e532c81c6b4455f7dda88396",
+      "accepted": 640,
+      "ordinaryComparator": 628,
+      "guardedPdf": 1,
+      "builtIdentity": 1,
+      "generatedFields": 9,
+      "timeBoundPng": 1,
+      "missing": 0,
+      "duplicate": 0,
+      "extra": 0,
+      "unresolved": 0,
+      "rootReviewSha256": "6c712bf629e30901669054b2c5fd976f59a05052f7bbd43db96657da6ba2e9b1",
+      "currentReleaseCredit": false
+    },
+    "pending": [
+      "feasible static23 native probes; baseline/external dispositions",
+      "ordered installed method/template graph scoped proof and configured denominator",
+      "strict browser error admission; meaningful remaining daily-use journeys",
+      "task restoration and immutable deployment/restoration recipe",
+      "durable replayable full640 harness verified fresh extraction",
+      "integrate newer main or explicitly resolve release scope; final source/production drift check",
+      "clean documentation commit and final unresolved daily-use regression review; literal usage gate immediately before actual restart"
+    ],
+    "imagePackagingVerification": {
+      "sourceFiles": 10571,
+      "changedPaths": 2,
+      "dependencyArtifacts": 7,
+      "retainedBaseLayers": 23,
+      "buildExitCode": 0,
+      "resourceBoundsVerified": true,
+      "rootReview": "ROOT-FINAL-5C-IMAGE-REVIEW.json",
+      "runtimeAccepted": false
+    },
+    "currentImageRuntimeGates": {
+      "websocketLifecycle": {
+        "passed": true,
+        "rootReview": "ROOT-CURRENT-WS-REVIEW.json"
+      },
+      "configRestartAndOldImageRead": {
+        "passed": true,
+        "scope": "synthetic Gratitude configuration only",
+        "rootReview": "ROOT-CURRENT-PERSISTENCE-REVIEW.json"
+      },
+      "archiveProducerAndRestart": {
+        "passed": true,
+        "scope": "one local synthetic date-keyed archive service",
+        "rootReview": "ROOT-CURRENT-ARCHIVE-PRODUCER-REVIEW.json"
+      },
+      "noShowFiltering": {
+        "passed": true,
+        "scope": "real Immich client against isolated source-authored provider, default and override",
+        "independentReview": {
+          "receipt": "noshow-scoped-review.json",
+          "sha256": "69d0244d1c640cb21a85751ff1d8bcd0df243bfbd8653877e42269f7eb331e70"
+        }
+      },
+      "restorationRehearsal": {
+        "passed": true,
+        "scope": "current captured backend settings with disposable safety remaps;12-file config fixture only",
+        "literalProductionRestored": false,
+        "rootReview": {
+          "receipt": "ROOT-CURRENT-RESTORATION-REVIEW-V2.json",
+          "sha256": "70de9d34b26eb533dc43b670b07089d250e47a29d113b9cc491036ddade89e81"
+        },
+        "apiPingCredit": false
+      }
+    },
+    "currentImageBaselineFailures": [
+      {
+        "case": "Gratitude extreme display label",
+        "bothImagesFailed": true,
+        "clientWidth": 101,
+        "scrollWidth": 320,
+        "minimumFontPx": 12,
+        "migrationRegressionProven": false,
+        "browserPassCredit": false,
+        "rootReview": "ROOT-GRATITUDE-LONG-LABEL-BASELINE.json"
+      }
+    ],
+    "currentImageApi376": {
+      "accepted": 376,
+      "ordinaryPasses": 373,
+      "approvedGeneratedFieldComparisons": 3,
+      "uniqueIds": 376,
+      "clusters": 43,
+      "cleanedRoles": 86,
+      "independentReview": "current376-review.json",
+      "reviewSha256": "77976ba1c64f90ac992af449193cbe3fef0678f67493033636381fb078e0eaaf",
+      "rawFailuresPreserved": true,
+      "full640Accepted": true
+    },
+    "currentImageApi640": {
+      "accepted": 640,
+      "ordinaryComparator": 628,
+      "guardedPdf": 1,
+      "builtIdentity": 1,
+      "generatedFields": 9,
+      "timeBoundPng": 1,
+      "missing": 0,
+      "duplicate": 0,
+      "extra": 0,
+      "unresolved": 0,
+      "independentReview": {
+        "receipt": "current640-review.json",
+        "sha256": "8b5d759538b5238a597ffed25b274d57feae7f5368abb455d131ace60fd43476"
+      },
+      "referenceSource": "7d0ffd258c53f310aa3f0d36fe26ecbf93228044",
+      "candidateSource": "5c34039569a9d6617f4cd7d86b323701f150c54d",
+      "rawFailuresPreserved": true
+    },
+    "newerMain": {
+      "commit": "b0c66593511f71234257519654d331dd16c927a0",
+      "includedInTestedCandidate": false,
+      "scope": "station-sequence backend changes; release disposition unresolved"
+    },
+    "currentImageBrowsers": {
+      "gratitude": {
+        "observedPairAccepted": true,
+        "scope": "feasible label, wrapped queue, dates; exact external font exception independently revalidated",
+        "independentReview": {
+          "receipt": "gratitude-feasible-browser-review.json",
+          "sha256": "b87e869f66a7bb58eccb88ebb8e1826805ee57c2b152a7f3d2b1d10138a44738"
+        }
+      },
+      "schoolDailyReading": {
+        "observedTriggerAndPromptAccepted": true,
+        "strictErrorAdmission": false,
+        "playbackVerified": false,
+        "independentReview": {
+          "receipt": "school-daily-reading-scoped-review.json",
+          "sha256": "9ca80e1cdcefb37b91836a9ed29011b4e266061bf6180ea92e0e815631f3723b"
+        }
+      },
+      "pianoFitnessMediaScreens": {
+        "observedUiAndFitnessVideoAccepted": true,
+        "strictErrorAdmission": false,
+        "independentReview": {
+          "receipt": "browser-three-scoped-review.json",
+          "sha256": "c68a5bc30b9f344f917455b4829b77961c6a1157fbbb48536e320cc1fb06bd7d"
+        }
+      },
+      "mediaScreens": {
+        "observedPairAccepted": true,
+        "strictObservedErrorAdmission": true,
+        "hardwareCastingVerified": false,
+        "independentReview": {
+          "receipt": "media-screens-strict-review.json",
+          "sha256": "ab07cef3d43bd60189c40244970596d6d5e78774c90b4c9ff11fd96a9c50e030"
+        },
+        "reusableErrorGuardReviewed": true
+      }
+    },
+    "durableReplay": {
+      "freshOfflineExact640Verified": true,
+      "sealedControllerReview": {
+        "receipt": "current640-controller-review.json",
+        "sha256": "78a95bb516b7751160cc4502d07ad6096cdba3d1fbeaf709e35c7920f499ab76"
+      },
+      "controller": "replay-current640.private.py",
+      "nativeSixCasePilotEarlierPassed": true,
+      "sealedCommandNativePilotPending": false,
+      "all640RenewedNativeExecution": false,
+      "sealedCommandNativePilot": {
+        "terminalPath": "/tmp/readiness-current640-replay-v1/pilot-sealed-standalone-20261012T0118/native-pilot/TERMINAL.json",
+        "sha256": "1c8e0b7b135dd79126a8134d406a03f515a105212b762e85f570b34df8b1d273",
+        "nativeContracts": 6,
+        "full640Rerun": false,
+        "rootVerifiedTerminalGuardsAndActualCleanup": true
+      }
+    },
+    "static23ScopedSupplement": {
+      "review": {
+        "receipt": "ROOT-CURRENT-STATIC23-SUBSET-REVIEW.json",
+        "sha256": "d4b51fd8700037c3fdad9f68a66138969e6068774593cbc99f8944132bfa5919"
+      },
+      "healthyDefaultContracts": 3,
+      "baselineDefectContracts": 1,
+      "observationsWithoutHealthyCredit": 5,
+      "full23Closure": false,
+      "orderedGraphCredit": false,
+      "dispositions": [
+        {
+          "template": "/api/v1/piano/loop-manifest",
+          "scope": "source-documented empty default only",
+          "nativeHealthyContract": true
+        },
+        {
+          "template": "/api/v1/scheduling/running",
+          "scope": "scheduler disabled empty only",
+          "nativeHealthyContract": true
+        },
+        {
+          "template": "/api/v1/livestream/channels",
+          "scope": "unconfigured empty channels only",
+          "nativeHealthyContract": true
+        },
+        {
+          "template": "/api/v1/entropy/status",
+          "scope": "pre-existing route shadow404",
+          "nativeHealthyContract": false
+        },
+        {
+          "template": "/api/v1/school/certification",
+          "scope": "pre-existing certification lacks select method; fixture-only disposition superseded",
+          "nativeHealthyContract": false
+        }
+      ]
+    },
+    "productionReadonlySmoke": {
+      "script": "tests/readiness/application-modules/production-smoke.mjs",
+      "manifest": "tests/readiness/application-modules/production-smoke-manifest.json",
+      "offlineControlTestsPassed": 6,
+      "rootIndependentlyExecutedControls": true,
+      "sourcePinsIndependentlyVerified": 9,
+      "liveExecuted": true,
+      "scope": "fixed health/ping/bakedcommit/rootasset; optional reviewed local Piano catalogs; no arbitrary paths",
+      "baselineExecution": {
+        "receipt": "production-smoke-reference3fc.private.json",
+        "sha256": "38ea7b388093f754e4ff0483a9b1219daf5d24e950fdced4f590ccf3fd4bd434",
+        "sourceCommit": "7d0ffd258c53f310aa3f0d36fe26ecbf93228044",
+        "referenceImage": "sha256:3fcbe2903a03c3f62bf5f54d1a3a6a4b30bf4c819f946fe304b09c4aa457c41a",
+        "accepted": true,
+        "getRequests": 5,
+        "optionalCatalogsExecuted": false,
+        "newCandidateCredit": false
+      }
+    },
+    "nonHttpSurfaceCensus": {
+      "path": "tests/readiness/application-modules/non-http-surface-census.json",
+      "sha256": "1f35ade8872bea994a9cd16a83f796b9e0f0b4a91b38f3c5583acd8bd8e2c560",
+      "sourceFiles": 31,
+      "targetedRegistrationSites": 204,
+      "rootSourcePinsVerified": true,
+      "completeRuntimeDenominator": false
+    },
+    "currentOrderedGraphObservation": {
+      "terminal": {
+        "path": "/tmp/readiness-current-route-graph-v1/execution/RESULT.json",
+        "sha256": "fd0117c16105585c57d36465c70e7915483b78a94eefa992f2f1096d611ed83d"
+      },
+      "orderedCapturedBytesEqual": true,
+      "graphSha256": "366c0601a699cdcd373c2a0cab66e7d86b24133f55b68c2d639eaeadb61a5f64",
+      "methodTemplateRegistrations": 1067,
+      "childMounts": 105,
+      "registrationEvents": 1258,
+      "fullOrderedGraphAccepted": false,
+      "productionDenominatorAccepted": false,
+      "observerGaps": [
+        "Handler-array mount argument disambiguation incomplete",
+        "Unsupported paths stringified rather than rejected",
+        "No bounds/unknown guards",
+        "Route handler stack and actual method ordering not captured",
+        "Use observer event recorded before original call success"
+      ],
+      "next": "Strengthen observer with controls and new task capture; preserve this narrow observation."
+    },
+    "newerMainIntegration": {
+      "sourceCommit": "0998858ab4b3bc557ddbcd750b5dbfa382e051fc",
+      "includedMain": "b0c66593511f71234257519654d331dd16c927a0",
+      "separateBranch": "refactor/application-modules-station-sequence",
+      "rootMergeReview": {
+        "receipt": "ROOT-STATION-MERGE-REVIEW.json",
+        "sha256": "3fc50b798781be7bd20ebbb733fb6fe664bc0c29574f15a29f5e0c793a088207"
+      },
+      "sourceReviewed": true,
+      "focusedTestsReported": 218,
+      "originalHooksReportedPassed": true,
+      "imageBuilt": true,
+      "runtimeAccepted": false,
+      "image": {
+        "imageId": "sha256:98b7bbfd333a6c85d114713127813c48f9702b0f4dabb02f472cce1698d743ed",
+        "sourceArchiveBytes": 194693120,
+        "sourceArchiveSha256": "2098dcb6c08b34f71cea22d367a5978582ccb8d9a9a60638925a65251a0c1c37",
+        "rootGitArchiveIndependentlyEqual": true,
+        "immutableImageExistsVerified": true,
+        "imageVerification": {
+          "path": "/tmp/readiness-station-sequence-build-v1/verification/VERIFIED-MATCHED-IMAGE.json",
+          "sha256": "8ec370d4d33d19b8b2ddb5d17fdfbaa5dd2640d4a4c6a8e90e59894fe5bf77f4"
+        },
+        "sourceFilesReportedVerified": 10577,
+        "dependencyArtifactsReportedVerified": 7,
+        "retainedBaseLayersReportedVerified": 23,
+        "nativeApiAccepted": false
+      }
+    },
+    "currentStrictOrderedGraph": {
+      "scopedPairedOrderedGraphAccepted": true,
+      "review": {
+        "receipt": "strict-ordered-observer-review-native-v3.json",
+        "sha256": "8421323949c10ba31cdea02dbab4a0dc1823635a090ec44614c331eae5d90d73"
+      },
+      "reconciliation": {
+        "path": "/tmp/readiness-current-route-graph-v2/GRAPH-RECONCILIATION.json",
+        "sha256": "e73a70e3a84a1318fb502745d7f1d4d11dbedea875e5950b2543c641945ce765"
+      },
+      "orderedHandlerEvents": 1283,
+      "reachableRouters": 107,
+      "reachableMethodTemplates": 1086,
+      "detachedRouteRegistrations": 54,
+      "currentProductionPrefixesMatchedInOrder": 81,
+      "productionExactMethodTemplateDenominator": null,
+      "opaqueMiddlewareMounts": [
+        "/device",
+        "/plex_proxy"
+      ],
+      "scope": "current3fc/0b task apps; read-only current production startup/config reconciliation",
+      "historicalRejectedReviewReceipt": {
+        "sha256": "a31113d3d58db6c12aeb10b9a67df70576d7efe940d1af48ecfda7e3353041de",
+        "originalBytesAvailable": false,
+        "reason": "Reviewer overwrote mutable review filename; rejected observer/control artifacts and findings retained, original receipt hash cannot be credited."
+      }
+    },
+    "warmBrowserCutover": {
+      "sourceCommit": "0998858ab4b3bc557ddbcd750b5dbfa382e051fc",
+      "preCompatibilityImage": "sha256:98b7bbfd333a6c85d114713127813c48f9702b0f4dabb02f472cce1698d743ed",
+      "assetDiffReceipt": {
+        "path": "/tmp/readiness-station-sequence-build-v1/verification/FRONTEND-ASSET-DIFF.json",
+        "sha256": "97bf0690ba5831f9de27db3a2418d1b38f1400c5edcaf41fac2c9bb86b1a37e2"
+      },
+      "missingOldHashedJsCss": 211,
+      "oldAssetBytes": 17362907,
+      "samePathChanged": "index.html only",
+      "cutoverContinuityAccepted": false,
+      "remedy": "Exact old public hashed asset compatibility overlay; new index/new assets unchanged; distinct final image and native validation pending",
+      "existingRecoveryLimits": "Dynamic-import reload once with90second cooldown; WebSocket degraded reload after3minutes; not continuity proof",
+      "packagingFixedAndIndependentlyReviewed": true,
+      "finalImage": "sha256:fb4e1f355cdc86536c35fbc949e8072b8d28b79bdfc75ec06dcf1fcd8f63c496"
+    },
+    "finalCompatibilityImage": {
+      "imageId": "sha256:fb4e1f355cdc86536c35fbc949e8072b8d28b79bdfc75ec06dcf1fcd8f63c496",
+      "sourceCommit": "0998858ab4b3bc557ddbcd750b5dbfa382e051fc",
+      "review": {
+        "receipt": "asset-overlay-review-v1.json",
+        "sha256": "75c9afcc05af485fee094d73d418de6d3902a061c5297e25b6cd36f754c90f23"
+      },
+      "distFiles": 601,
+      "newFilesUnchanged": 390,
+      "retainedOldHashedAssets": 211,
+      "retainedOldBytes": 17362907,
+      "warmNativeContinuityAccepted": false,
+      "final640Accepted": false
+    },
+    "finalReleaseCutoff": {
+      "includedMain": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+      "candidateSource": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+      "referenceImage": "sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929",
+      "candidateImage": "sha256:b1c4fdd7c0774d5b2553b5dd93b130e656da318ed09a67e49fb21296716e1fd9",
+      "sourceCutoffPinned": true,
+      "readinessAccepted": false,
+      "packagingReview": {
+        "receipt": "asset-union-image-review-v2.json",
+        "sha256": "587a5987085e77ba80055ae531ef8b6a73e4f0c2169fd7217f863b912d6efa76"
+      },
+      "compiledAssetsUnchanged": 390,
+      "retainedHistoricalHashedAssets": 388,
+      "finalApi640": {
+        "status": "Independent qualified acceptance of all640declared contracts; original raw-false account and source-authored UTC3 supplement preserved.",
+        "ownerNativeSession": 4107,
+        "independentAdmission": {
+          "receipt": "final640-bf-admission-review-v1.json",
+          "sha256": "2838fc2911bed6b00d7b0c1c68aa293d1ce18d559c37057d0208768a967b265f"
+        },
+        "originalOwnerControllerPid": 1680894,
+        "originalFirst376RunnerPid": 1681603,
+        "nativeRunActive": false,
+        "independentActualReview": {
+          "receipt": "final640-bf-actual-review-v1.json",
+          "sha256": "9c1346e43cf8cf85e3fd094521fff641f9d2a453f45d2e08670ae98b7eed46b0"
+        },
+        "acceptedContractCounts": {
+          "ordinary": 628,
+          "guardedPdf": 1,
+          "builtImageIdentity": 1,
+          "generatedFields": 9,
+          "timeBoundPng": 1
+        },
+        "nativeRoleCaptures": 158,
+        "originalRawFailuresPreserved": true,
+        "completeSurfaceCoverageClaim": false,
+        "metadata10Scope": "Full JSON metadata/report bodies and status/header contracts; authored empty media-name files do not prove physical media payload bytes/playback."
+      },
+      "graphAndPlaybackReview": {
+        "receipt": "current-b1c-graph-playback-review-v2.json",
+        "sha256": "df6c1cdfe70a85e42126ff93be5c5e07461c8f8e73667a26711aba5ed4483c32",
+        "scope": "Initial18-file synthetic graph and populated PlaybackHub; superseded configured task graph separately accepted under correctedGraphActualReview."
+      },
+      "warmContinuity": {
+        "scopedObservedFactsAccepted": true,
+        "review": {
+          "receipt": "current-b1c-warm-observation-review-v4.json",
+          "sha256": "0633c683c3a535933aaca2c10ef33e90054da46ae39c36201a0214acda0b7de7"
+        },
+        "originalNativeStrictPass": false,
+        "originalFailurePreserved": true,
+        "acceptedScope": "same document; exact current old lazychunk200/hash; new appWSACK; source-qualified measured outage exceptions; inputs+cleanup",
+        "generalProductionBrowserCredit": false
+      },
+      "storyTime": {
+        "status": "Independently accepted current scoped software pair: natural22s playback\u2192reading credit\u2192summary0to1; strict final error corpus/input/prestart/cleanup qualified.",
+        "healthyCredit": true,
+        "reviewReceipt": "story-current-paired-actual-review-v6.json",
+        "reviewSha256": "be85d4058b88c2022320769e49076b6d94c258c088dc25dc487f2100961d29cf",
+        "candidateThumbnailResponseBodiesCaptured": true,
+        "referenceThumbnailResponseBodiesCaptured": false,
+        "thumbnailByteParityClaim": false,
+        "hardwareProviderProductionCredit": false,
+        "originalNativeFailuresPreserved": true
+      },
+      "portalNotes": {
+        "status": "pre-existing real certification interface mismatch; no fixture-only repair",
+        "healthyCredit": false
+      },
+      "stationFeatureProbe": {
+        "accepted": true,
+        "reviewReceipt": "station-bf-actual-review-v2.json",
+        "reviewSha256": "0aa1d90d364dfa18987a7e0f0e4c1229ee6e7a96f5769200d584c6c2f39cff7d",
+        "nativeRoles": 2,
+        "fullResponses": 4,
+        "extra640CaseCredit": 0
+      },
+      "correctedGraphNativeExecuted": true,
+      "primarySourceFastForwarded": true,
+      "finalImageArchives": {
+        "referenceVerified": true,
+        "candidateVerified": true,
+        "browserExportActive": false,
+        "referenceVerificationSha256": "f572981493cc4562fd40834e8a2d5986fe521b64996ddd01a64c0c27dc7db721",
+        "candidateVerificationSha256": "760fdae326bb4b46452d26af0711bc05251688e119c5e31232573c11cfd46e1e",
+        "allThreeVerified": true,
+        "finalReceiptSha256": "718fdbe73402130e81850e0b676736c6cb3db17e22fabaeab182dca5079acae1"
+      },
+      "correctedGraphActualReview": {
+        "receipt": "ROOT-FINAL-PRODUCTION-PREDICATE-GRAPH-ACTUAL-REVIEW-V4.json",
+        "sha256": "0e5cbb6cc991dfe03a07a945b4ef3d3ac372121872746281ae919d0062550847",
+        "orderedGraphsEqual": true,
+        "routes": 1192,
+        "events": 1374,
+        "inputs": 19,
+        "actualProductionDenominatorProven": false
+      },
+      "syntheticWriteReadDisposableRestoration": {
+        "reviewSha256": "6f41a5ab6dcd1ae9c01df4c26e1ad7ea014b6976df4c85ca555965e6308b7bfd",
+        "accepted": true,
+        "scope": "One synthetic Gratitude config format,12files,finalb1restart\u21922217read\u2192captured-argvtaskrestore; no literalproduction/allformats credit."
+      },
+      "fitnessBrowser": {
+        "accepted": true,
+        "reviewReceipt": "fitness-current-paired-observation-review-v3.json",
+        "reviewSha256": "c644630dae2c53b4931f008870e96f522851326820786f5a51bbbab8999759f7",
+        "scope": "Current-image populated journey with real task video playback; source-qualified external font failures; no physical sensor/provider/cast credit."
+      },
+      "durableReplay": {
+        "sealed": true,
+        "handoffReceipt": "final640-bf-replay-v3-HANDOFF.json",
+        "handoffSha256": "d94f101f235ed935dd6377f5f51a0cedf3919c6fe10f6636ef061c06a3f097cf",
+        "closureReviewSha256": "c117b6f7fdd92264f729e3d2dbcd667be84db0bdd3015788517a8d9bb300bd9b",
+        "scope": "Fresh-directory verification, mixed-six native pilot, missing-input closure controls; same-host dependencies/images required; all not rerun after packaging-only repair.",
+        "rootCaptureIntegrityReview": {
+          "receipt": "ROOT-MIXED-SIX-CAPTURE-INTEGRITY-V1.json",
+          "sha256": "033f037d53abbf09b4495d17ffe527c8b6be8fd8dfbe8bdd03a20fe0c2dc4b70",
+          "scope": "3terminal hashes,6role capture hashes,12response body hashes/byte counts/statuses,6unique IDs/prestart/input checks and actual container absence."
+        }
+      },
+      "trackedNonHttpCensus": {
+        "sourcePolicyScanComplete": true,
+        "tracked": 10725,
+        "included": 6553,
+        "excluded": 4172,
+        "sites": 12625,
+        "parseFailures": 0,
+        "reviewSha256": "d95c2ebd766c1dd749ba1f1b840759e0d3b21df0fcfa7c878bb67fa0da24f305",
+        "runtimeActivationProven": false,
+        "rootSourceReview": {
+          "receipt": "ROOT-NON-HTTP-CENSUS-SOURCE-REVIEW-V1.json",
+          "sha256": "a003968c5ed0562ddd301a02df3d18a104893ffabf99bc09fa1882d2168f3f17",
+          "scope": "Exact Git-tracked partition, all6553included source blob hashes, scanner hash and12offlinecontrols; no activation credit."
+        }
+      },
+      "portalShelfBrowser": {
+        "accepted": true,
+        "reviewReceipt": "portal-current-paired-actual-review-v5.json",
+        "reviewSha256": "ac337e1f952977fb886a72833a1efcb7259f24f504389f8d30b613711324a10c",
+        "nativeCandidateResultSha256": "33fb6827cb5c004e8180ee7c82662349686775a479f72560564b59198a0893ed",
+        "scope": "Learner/grant/populated shelf/ISBN/back/done; complete candidate error corpus; full shelf headers/body and cached cover match qualified reference;27fixture rows unchanged; cleanup. No notes/examples/provider/printer/production credit.",
+        "originalReferenceStrictFailurePreserved": true
+      },
+      "documentationOnlyIntegration": {
+        "checkpoint": "1cabb2f63bc17bf6d38e509cb7fed91a306784d0",
+        "includedMain": "20475b60dcdd4c31581e86c93ce939d73f22245c",
+        "runtimeSourceUnchanged": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+        "originalHookPassed": true,
+        "reviewReceipt": "PRIMARY-DOC-MAIN20475-INTEGRATION-V1.json"
+      },
+      "pianoBrowser": {
+        "status": "Independently accepted scoped current reference qualification plus candidate native journey.",
+        "candidateResultSha256": "ec9692ab7d69b024a6a7cdf56fcad531da84dfd38d633075d70c16b9a342a939",
+        "candidateInputAndCleanupPassed": true,
+        "accepted": true,
+        "physicalMidiBridgeAudioCredit": false,
+        "reviewReceipt": "piano-current-paired-actual-review-v3.json",
+        "reviewSha256": "58af3259706ecddb621ff4d9d73314eface6fd0efee0ccb2a521eb6d13bb98cf",
+        "scope": "current2217 source-qualified captured reference supplement plus b1c actual strict candidate populated Piano catalog/detail/C-E-G/touch C4 journey",
+        "originalReferenceNativeGateFailurePreserved": true,
+        "gameJourneyAccepted": true,
+        "gameJourneyRequirement": "Task4 explicitly requires controls/games; current pair proves catalog/notation/touch only. Real task-only game flow preparation pending.",
+        "gameJourneyStatus": "Independently accepted qualified current-image one-drop Tetris software pair; original reference strict failures and separately captured fallback bodies retained.",
+        "gameReviewReceipt": "piano-tetris-current-paired-actual-review-v4.json",
+        "gameReviewSha256": "4a43b7fe9313f396f668f823cefc5b5515b4ad919227128ea6cb12f2ed5a458e",
+        "gameScope": "One synthetic adult Tetris hard-drop software progression per actual current image",
+        "gameLimitations": [
+          "Reference browser404/503 bodies were not captured by that browser; separately executed body captures remain explicit",
+          "No physical MIDI/8770/audio, healthy optional Plex activity/Piano course, other games, provider/production or full-cutover credit"
+        ],
+        "gameDurableRawEvidence": {
+          "archive": "piano-tetris-current-final-evidence.tar.gz",
+          "sha256": "c922d856f47b46edb3d14ca026fd9f0842ca20a5ce2a493943b7b1c3a5406e17",
+          "payloads": 42,
+          "rootReview": "ROOT-PIANO-TETRIS-ARCHIVE-INTEGRITY-V1.json",
+          "rootReviewSha256": "205cbdd61caa3c86d1e5808ecb129af2654a94ac387b416d55bc8508ed57b24b"
+        }
+      },
+      "remainingEligibleSourceTemplates": {
+        "historicalMatrixGapRows": 28,
+        "post640UnexecutedOrDispositionRows": 23,
+        "laterExecutedTemplateCaseLinks": {
+          "/api/v1/gratitude/card": "gratitude-native-populated-card-png",
+          "/api/v1/nutribot/report": "nutribot-populated-current-day-report",
+          "/api/v1/proxy/media{/*splat}": "proxy-media-existing-pcm-wav",
+          "/api/v1/sheets/:id.pdf": "sheets-native-populated-tare-cards-pdf",
+          "/build.txt": "native-build-source-identity",
+          "/api/v1/playback-hub/config": "Current production-predicate graph V4 full configContract, root review0e5cbb6c"
+        },
+        "threeDefaultBranchesNativeExecuted": true,
+        "exactEvidenceReconciliationReceiptPending": true,
+        "post640AndPlaybackHubUnclosedRows": 22,
+        "prior23RowsMeaning": "Post640 source-only ledger before separate accepted current PlaybackHub config contract.",
+        "reconciliation": {
+          "path": "/tmp/readiness-static-gap-reconciliation-b1c-v1/RECONCILIATION.json",
+          "sha256": "c743aa463ab810899d8aa944aac6d3b4fbee0577b8db713218e6974e297042a0",
+          "independentReviewPending": true,
+          "durableReceipt": "CURRENT-ELIGIBLE-TEMPLATE-RECONCILIATION-V1.json",
+          "rootVerifiedExact28TemplateUnionAndFourInputHashes": true
+        },
+        "threeDefaultBranchesActualReviewPending": false,
+        "threeDefaultBranchesNativeResultSha256": "1a88d467c2ec8ecb99e7e6afe4aaf8161293f8d547b46d4913791c84e70733b6",
+        "currentUnclosedRows": 14,
+        "threeDefaultBranchesReview": {
+          "receipt": "static3-default-native-actual-review-v2.json",
+          "sha256": "4c463881ec917ac7671ce86cabf91011bae5fbc3c0d86539035df80495763a0c",
+          "caseIds": [
+            "livestream-channels-empty",
+            "scheduling-running-zero",
+            "piano-loop-manifest-unimplemented"
+          ],
+          "scope": "current2217/b1c actual3 exact default GET branches only"
+        },
+        "nextTwoReview": {
+          "receipt": "static23-next-two-actual-review-v1.json",
+          "sha256": "b3c0537befa3e910a579ac72a6ba5f9c270dfdd9ca6edd3c36e90d960036af35",
+          "scope": "AI metrics no providers; media started-by no playback; complete default-body/header/native input/cleanup contracts."
+        },
+        "currentSourceDenominatorRenewalRequired": true,
+        "historicalPotentialEligibleSourceCount": 396,
+        "currentConfiguredEligibleDenominator": null,
+        "costBudgetUnavailableBranch": {
+          "acceptedScopedParity": true,
+          "healthyBudgetFeatureCredit": false,
+          "reviewReceipt": "cost-budget-unavailable-actual-review-v1.json",
+          "sha256": "7b861fbed83027d63e15eef38da113f676343c1718069c3fea2551dfa5f8b5d9",
+          "scope": "Configured-unavailable56byte body; fullstatus/header/input/cleanup parity only."
+        },
+        "historicalRowsWithoutAcceptedNativeContract": 13,
+        "healthyCoverageGapCountNotReducedByUnavailableBudget": 14,
+        "arcadeHealthReview": {
+          "receipt": "arcade-health-clock-actual-review-v1.json",
+          "sha256": "272262380bae63d353a420910249db3cb3f10ddcee80fbbf1acc380c6410e18c",
+          "scope": "Zero devices with real active monitor; fulltransport/body and requestbounded clock;11inputguards/cleanup. No active-session/devicecredit."
+        },
+        "gamingDiagnosticsReview": {
+          "receipt": "gaming-diagnostics-populated-actual-review-v1.json",
+          "sha256": "55113e4ff6db05636492a04e4289be0c640cbcab1935d6faacbd93e83fb4ca4a",
+          "scope": "Current2217/b1c synthetic in-memory diagnostic create with populated list/detail reads",
+          "limitations": [
+            "Process-memory diagnostic session only; no persisted producer/provider/device/production/full-cutover or denominator credit"
+          ]
+        }
+      },
+      "backendOnlyController": {
+        "prepared": true,
+        "accepted": false,
+        "executed": false,
+        "rootReviewFindings": [
+          "Pin backend/browser captured config JSON used by drift checks.",
+          "Bound inspect/smoke attempts to360s remaining deadline; anchor toactual container start."
+        ],
+        "independentReviewPending": false,
+        "rootCapturePinAndDeadlineFindingsFixed": true,
+        "frozenControllerSha256": "d012879ee2894cf1957d41a802ccd8cab4fa27b3098615e69cd753f2806e612a",
+        "offlineFailureControlsPassed": 7,
+        "controlsSha256": "04cd96bb17b598406ef9e1e3df8b954f35f39b09e7b5057daaa293666847b84c",
+        "requiresExclusiveDeploymentLane": true,
+        "rootInputIntegrityReview": {
+          "receipt": "current-rollback-2217/ROOT-CONTROLLER-INPUT-INTEGRITY-V1.json",
+          "sha256": "8e264ec94e0d8dbb85d288089192a3745da9f738aa1eca9052ceb8dc1a99c814",
+          "pinnedFilesVerified": 9,
+          "backendCreateArguments": 57,
+          "productionCallsMade": 0
+        },
+        "acceptedPreparedOnly": true,
+        "acceptanceScope": "Prepared controller only; deployment not authorized/performed by this evidence.",
+        "reviewReceipt": "backend-controller-prepared-review-v1.json",
+        "reviewSha256": "415acef1ce7044944ff7d580d1f29ae726034b5d48b66a1483a10a6e54c45718",
+        "exclusiveDeploymentLaneRequired": true,
+        "recoveryCommandFailureOrForeignOwnershipRequiresManualRecovery": true
+      },
+      "packagingRecipeAudit": {
+        "standardDockerfileHasOwnerSourceCopies": true,
+        "standardDockerfileUsedForFinalCandidate": false,
+        "actualRecipe": "Reviewed FROM immutable serving2217 dependency-preserving source build, then asset compatibility layer.",
+        "earlierStockBuildSucceeded": true,
+        "earlierStockBuildApkVersionDifferences": 20,
+        "literalTask3ProductionDockerfileGateClosed": false,
+        "trackedReproducibleCutoverRecipePending": true
+      },
+      "durableActualRawEvidence": {
+        "archive": "final2217-b1c-raw-evidence.tar.gz",
+        "sha256": "58e48ffa20182f35b6a8be5cec61e294c730c119e5a22928a564534b2c946711",
+        "manifestSha256": "e6b9e2c6867568d564a36cc6c74e7a4917f46cbb4110e1aa174c0f660ebbb53d",
+        "payloads": 845,
+        "rootIntegrityReview": "ROOT-FINAL-RAW-ARCHIVE-INTEGRITY-V1.json",
+        "rootReviewSha256": "d6ac99964bb80646209d5413c7790c55e5a73121ce74beeac8a296469eb51ae3",
+        "behaviorCreditUnchanged": true,
+        "lateSupplement": {
+          "archive": "final2217-b1c-append-evidence.tar.gz",
+          "sha256": "63c93cc07381b9577b7704a6aea7966845e9a45dd6e9980a6c4be2fdbf85b362",
+          "payloads": 155,
+          "rootIntegrityReview": "ROOT-LATE-EVIDENCE-ARCHIVE-INTEGRITY-V1.json",
+          "rootReviewSha256": "a85c89fc93f7ac681860481c0ab8012792a445ff457d1e681a4c9310ff702cb4"
+        }
+      },
+      "currentHttpSourceCensus": {
+        "sourceRefs": {
+          "reference": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "candidate": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf"
+        },
+        "rootIntegrityReview": "ROOT-CURRENT-HTTP-SOURCE-CENSUS-INTEGRITY-V1.json",
+        "rootReviewSha256": "905fd2a538dac9927731472b427092ed492fe30d4e56c6569397ab5bdc90faca",
+        "syntaxSitesEach": 1344,
+        "literalLocalDeclarationsEach": 1190,
+        "mountSitesEach": 113,
+        "unresolvedEach": 154,
+        "controlsPassed": 15,
+        "installedProductionDenominator": null,
+        "runtimeActivationCredit": false,
+        "elevenCompositionMountRelocations": {
+          "reviewReceipt": "current-http-eleven-mount-relocation-v1.json",
+          "reviewSha256": "3b1cb2ccb063d9532d5f736ff62090cd03ea2b6e24fcfd2b45d7062d6ae6fd7e",
+          "rootReceiptFourSourceBlobsAndElevenFullCallsVerified": true,
+          "allowedQualifierSymbols": [
+            "schoolReelGrants",
+            "schoolCubeGrants",
+            "schoolBookGrants",
+            "schoolLifecycle"
+          ],
+          "scope": "Mount-call syntax and construction predicates, paired with explicit delegated caller ports; not a production activation/finite-effect/behavior completeness claim"
+        }
+      },
+      "remainingTask4CurrentRuntimeGates": [],
+      "currentWebSocketLifecycle": {
+        "nativeTerminalSha256": "67c4531e9649390b20dc7a442d75b396b624f72312bd2be1df5085e3242a8f82",
+        "nativeOwnerPassed": true,
+        "independentActualReviewPending": false,
+        "scope": "Current2217/b1c disposable WS lifecycle; real open/subscriptionACK/applicationheartbeat/transportpingpong/clean1000close",
+        "acceptedScopedActualPair": true,
+        "reviewReceipt": "current-ws-minimal-actual-review-v1.json",
+        "reviewSha256": "2a02d584917d53f9cb8d155342fcbdbc4e5167e5b4cfe2161cbe59a1a335c991",
+        "limitations": [
+          "No all-topic/full-frame semantic, provider/device/production/full-cutover or denominator credit"
+        ]
+      },
+      "currentNoShow": {
+        "nativeTerminalSha256": "9983fd6dd0f9971b2219074866ee4ab6c6ba2dfdff86227b6302570c61382d10",
+        "nativeOwnerPassed": true,
+        "independentActualReviewPending": false,
+        "scope": "Current2217/b1c four synthetic default/override roles; real ImmichClient synthetic task-provider calls and full independent bootstrap/extent JSON, raw pair bytes, stable full headers, computed ETag/length and canonical request-bounded Date. No live Immich/provider/production/coverage denominator credit.",
+        "accepted": true,
+        "reviewReceipt": "current-noshow-minimal-actual-review-v1.json",
+        "reviewSha256": "eb228d74ac14aac59d80e69cc98109d497e632cd4503386909d6ac886d5a4944"
+      },
+      "currentArchiveProducer": {
+        "nativeOwnerPassed": true,
+        "nativeResultSha256": "8df2554257f1d43e9b63f66c5d7f5c028a1bb3dc3360ca1a197f7c16c81105ec",
+        "independentActualReviewPending": false,
+        "scope": "Disabled realjob manually dispatched on synthetic taskstorage; exactarchive bytes and per-role restart persistence; no production/provider/croncredit.",
+        "acceptedScopedParity": true,
+        "reviewReceipt": "current-archive-producer-actual-review-v1.json",
+        "reviewSha256": "d348fb5d03fd7aff537d4dcf10140a0fd0212d90b64a9cfb1cc83c7277f2d462"
+      },
+      "baselineFiveErrorDefaultComparison": {
+        "nativeOwnerPassed": true,
+        "nativeResultSha256": "40d3d943d3572f13c0a817cca15323328ef39e86d6ff504417a01fa3edefe0f1",
+        "independentActualReviewPending": false,
+        "healthyFeatureCredit": false,
+        "scope": "Five complete GET responses per current old/new image: admin WS unavailable, health baseline error, stale sessions empty, Local roots empty and Local search default shape.",
+        "acceptedScopedParity": true,
+        "reviewReceipt": "baseline-five-error-default-actual-review-v1.json",
+        "reviewSha256": "d69c714fd542b219a1a23e07cb80c234ef88bcc14f6bf88836f25d8fae8d47c0"
+      },
+      "freshMainSourceRecheck": {
+        "receipt": "CURRENT-MAIN-SOURCE-RECHECK-V1.json",
+        "sha256": "67dec1ff5db6c7ff7652caf18890625ecabe7837fa323a8aa03bb880a64596d1",
+        "mainIncluded": true,
+        "runtimeCodeChanged": false,
+        "head": "1cabb2f63bc17bf6d38e509cb7fed91a306784d0",
+        "main": "20475b60dcdd4c31581e86c93ce939d73f22245c"
+      },
+      "currentMediaScreensBrowser": {
+        "admissionReviewed": true,
+        "admissionReviewReceipt": "current-media-screens-strict-browser-admission-review-v2.json",
+        "admissionReviewSha256": "85de576469e691985328be8b7b8c7779370b842e5f9227f343ec4fd22b43a379",
+        "actualNativeAcceptancePending": false,
+        "nativeOwnerPid": 3691595,
+        "nativeOwnerPassed": true,
+        "nativeResultSha256": "fe8f4d7d8634fd79f8e8ca3e7de69852193e7d712d4d8881bf4803db68aa3225",
+        "independentActualReviewPending": false,
+        "scope": "Current old/new real Media screen catalog and visible Admin synthetic device name/room; full final corpus and source-qualified font; no physical device/cast/playback credit.",
+        "acceptedScopedActualPair": true,
+        "reviewReceipt": "current-media-screens-browser-actual-review-v2.json",
+        "reviewSha256": "7e59f75a12c20022eefb16265cbb79c52efbe3b3457a47072ae093a917509f4a"
+      },
+      "currentGratitudeBrowser": {
+        "admissionReviewed": true,
+        "admissionReviewReceipt": "current-gratitude-strict-browser-admission-review-v2.json",
+        "admissionReviewSha256": "85252917ceb9010d219721b133485e6e4a264c1c6f57f3563c39a3ed7671370c",
+        "actualNativeAcceptancePending": false,
+        "nativeOwnerPid": 3702636,
+        "acceptedScopedActualPair": true,
+        "independentActualReviewPending": false,
+        "reviewReceipt": "current-gratitude-browser-actual-review-v2.json",
+        "reviewSha256": "8d40b96ef2652b46cfac8a2295c93a2f65612bc44cf525c648cdf20783bb9f73",
+        "scope": "Populated Parent User fixture bootstrap, multiline long-row, header fit and date groups on current pair; no extreme-header/write/provider/production credit."
+      },
+      "currentStatusGet": {
+        "admissionReviewReceipt": "ROOT-CURRENT-STATUS-ADMISSION-REVIEW-V1.json",
+        "admissionReviewSha256": "f4b903bfbe23aa056997731cd226cbcb5a37be48fa2de0a78501edf4b8481cd9",
+        "actualNativeAcceptancePending": false,
+        "acceptedScopedActualPair": true,
+        "reviewReceipt": "ROOT-CURRENT-STATUS-ACTUAL-REVIEW-V1.json",
+        "reviewSha256": "1783d02f94ddec9fba752eed9046894c28d97bd86aac2e28311a57ea09c4a299",
+        "nativeResultSha256": "415a9b02a9bd65d7e5f2b05e2803b4fc6633f10826430f501ace03df27406690",
+        "scope": "Current2217/b1c configured synthetic status GET: full independent fixed config/routes and nested logging schema with source-bounded counters/state; complete raw body/transport/source input/native cleanup. No installed production denominator credit."
+      },
+      "currentRuntimeEvidenceCompanion": {
+        "acceptedArchiveIntegrity": true,
+        "archiveSha256": "a124ff3509b118f705e09a689e72baba110913888c21e1a12b2660dcee995426",
+        "payloadCount": 187,
+        "rootReviewReceipt": "ROOT-TASK4-COMPANION-ARCHIVE-INTEGRITY-V1.json",
+        "rootReviewSha256": "f2ac2b922fb1ef95332c51d34b1c33f5b717729fb8a523c4e7c28d35587dda7c",
+        "scope": "Durability/integrity of current runtime/API/browser evidence; acceptance scope remains each individual independent review."
+      },
+      "requirementsAudit": {
+        "receipt": "CURRENT-PLAN-REQUIREMENT-AUDIT-V1.json",
+        "sha256": "4496e8ca2430c24c704fa9d62128edee0648e97d63b9b4af6ce6bc992e7ce8fd",
+        "explicitRequirements": 19,
+        "fullGoalCompletionProven": false
+      },
+      "currentSchoolAgendaPng": {
+        "accepted": true,
+        "referenceOnlyFailedOracleAttempt": {
+          "resultPath": "/tmp/readiness-current-school-agenda-png-b1c-v1/execution/RESULT.json",
+          "sha256": "3bc0701d74f67379cd1a45eda41591002d220b80c5f9b21b5220be23227cd1f0",
+          "rolesRun": 1,
+          "candidateStarted": false,
+          "cleanupAbsent": true,
+          "sourceFixtureMismatch": "Six-row receipt expectation omitted teacher-note content present in full fixture; complete source-derived document expectation required."
+        },
+        "scope": "Current2217/b1c populated dry-run School agenda PNG: full source-authored9-row text/layout including teacher notes,580x433, full PNG byte/raster/headers equality; exact1471-byte preview. No printer/session/production or filesystem-metadata parity credit.",
+        "acceptedScopedActualPair": true,
+        "reviewReceipt": "ROOT-SCHOOL-AGENDA-PNG-ACTUAL-REVIEW-V2.json",
+        "reviewSha256": "77bb86b6f3465608d8b4b2545d9b82922bcb6684ff93b200f9855afa43998ffe",
+        "nativeResultSha256": "2181b22b17d8c001e859f1123431f05aa4789ddbdffc64ca94682160a98e22f1",
+        "limitations": [
+          "Cross-role materialized file mtimeNs differ; actual timestamps are preserved in manifests and no identical filesystem metadata claim is made."
+        ]
+      },
+      "productionDockerfileRepair": {
+        "sourceReviewAcceptedForImplementation": true,
+        "draftDockerfileSha256": "ba015f1757c358feb5f3db4ce80a972954924c1c08c977faec28f335180c4d81",
+        "draftDiffIncludingPlaceholderSha256": "018c42149758f8344f55cc924f229925c3bdab0cd2a041b77b213682b55cd291",
+        "scope": "Single-stage optional pinned dependency reuse; default installer/runtime semantics retained with a changed cache graph. Release scripts restored after pruning; retained asset placeholder removed and collisions rejected.",
+        "buildExecuted": true,
+        "remaining": [
+          "Exact pinned388asset/source context validation",
+          "Parser checks",
+          "Genuine source checkpoint commit",
+          "Bounded actual production Dockerfile build and image-bound verification"
+        ],
+        "sourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+        "originalHookPassed": true,
+        "sourceCheckpointReceipt": "PRODUCTION-DOCKERFILE-SOURCE-CHECKPOINT-V1.json",
+        "sourceCheckpointSha256": "fea96187cdfd7f34fadab01c0d42a349ba74a1fe7b7fe73836b972b17b5b8c06",
+        "nativeBuildExitCode": 0,
+        "buildJobPath": "/tmp/readiness-stock-dockerfile-cutover-v1/build-da5b8ec0ed51/BUILD-JOB.json",
+        "buildJobSha256": "c720c3ff4fecc92cc53f4191ed0a6fbacad4d3f955a7c5e667e31fbab86df2e0",
+        "imageId": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+        "sourceArchiveSha256": "0ef669a06e6059bcef1409becb43b064f4db20096625be04beeece27513f8d45",
+        "imageAcceptancePending": false,
+        "acceptedPackagingForNativeValidation": true,
+        "rootReviewReceipt": "ROOT-PRODUCTION-DOCKERFILE-IMAGE-REVIEW-V1.json",
+        "rootReviewSha256": "16f904d8a90e7d3a888fb2ac182ff3685bb501865496304def5b8e7f12a8c8b8"
+      },
+      "newProductionDockerfileCandidate": {
+        "imageId": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+        "sourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+        "priorTestedCandidate": "sha256:b1c4fdd7c0774d5b2553b5dd93b130e656da318ed09a67e49fb21296716e1fd9",
+        "previousActualTestsTransferred": false,
+        "imageBoundValidationRequired": true,
+        "activeBundleNamesChanged": "Source Vite Date.now build version; new active390files, retained388exact; source/dependency/config checks under review.",
+        "productionDeployed": false,
+        "packagingAcceptedForNativeValidation": true,
+        "rootReviewReceipt": "ROOT-PRODUCTION-DOCKERFILE-IMAGE-REVIEW-V1.json",
+        "rootReviewSha256": "16f904d8a90e7d3a888fb2ac182ff3685bb501865496304def5b8e7f12a8c8b8"
+      },
+      "eightHelperNamedProofReview": {
+        "receipt": "ROOT-EIGHT-HELPER-NAMED-PROOF-REVIEW-V2.json",
+        "sha256": "8162033f692460670dcacd96cc42669f6a0feab4c7d17640bcb7b52ef10d3ddb",
+        "qualifiedFacts": 306,
+        "existingFiniteSafeFacts": 160,
+        "scope": "Existing numbered named facts only;160 prior finite-safe facts may retain their classification where all other current handler/helper pins remain exact. Preserve existing conditional/effectful/provider classifications; no queue/provider/general whole-composition upgrade."
+      },
+      "new160RuntimeValidation": {
+        "webSocketLifecycle": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-ws-actual-review-v1.json",
+          "reviewSha256": "448128e2f9a21d5c3049f98d2693b4ab30e97bb2fdc3b33a7256765015670d37",
+          "scope": "Current2217/160 actual open/subscribeACK/transportpong/serverping/applicationheartbeat/clean1000 lifecycle; no alltopics/hardware/production credit."
+        },
+        "noshow": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-noshow-actual-review-v1.json",
+          "reviewSha256": "e1c44b6f89f869582a6ebb02abcefc8d0c2ce377a47030ea0e8501f5d24b050e",
+          "scope": "Serving2217/new160 four synthetic default/override roles and exact full bootstrap/extent contracts. No live Immich, provider, production or denominator credit.",
+          "limitsRetained": true
+        },
+        "archive": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-archive-actual-review-v1.json",
+          "reviewSha256": "b0b6a3f322f9d6471e68fb90ec1e62d02825e3d51b4c89e6a56f4706eb5a7dd5",
+          "scope": "Serving2217/new160 synthetic disabled archive job manually run once per role; output/state bytes and mtimes retained through restart. No cron activation, provider, production or denominator credit.",
+          "limitsRetained": true
+        },
+        "media": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-media-actual-review-v1.json",
+          "reviewSha256": "43a821f6509c9682ef7f4b6a2c29488848015b3748e80a5047dcbf0185a57ce8",
+          "scope": "Actual serving2217/new160 synthetic Media catalog and visible populated Screen Admin row; no cast, device, playback or production credit.",
+          "limitsRetained": true
+        },
+        "gratitude": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-gratitude-actual-review-v1.json",
+          "reviewSha256": "6a20d124f6ddd47c2400ce9e2f9b192d0a3ac3c1d5576a94b511aa4fcde0c40b",
+          "scope": "Actual serving2217/new160 synthetic Gratitude bootstrap, authored multiline long row, Parent User fitting header, Jan1/Jan2 grouped selections; no extreme52-character header pass, write, provider or production credit.",
+          "limitsRetained": true
+        },
+        "full640": {
+          "admissionReviewed": true,
+          "reviewReceipt": "stock-new160-full640-admission-review-v1.json",
+          "reviewSha256": "6476775c106022ff3da7466fc6d18831adf408a9a9d10b6dad47ab5cc3b33dee",
+          "nativeOwnerPid": 116419,
+          "nativeStage": "/tmp/readiness-stock-da5-final640-v1/stage-07-native",
+          "exactCaseCount": 640,
+          "laneCounts": [
+            376,
+            232,
+            21,
+            10,
+            1
+          ],
+          "actualAcceptancePending": false,
+          "scope": "Fresh final-image full640 execution; no credit until terminal and independent actual review.",
+          "acceptedScoped": true,
+          "independentReviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-full640-actual-review-v2.json",
+          "independentReviewSha256": "fca55a757e38e3b547a50ccab3270f73b613e2ef1d50112d1163a89633957558",
+          "accounting": {
+            "uniqueAdmittedIds": 640,
+            "ordinaryRawContracts": 628,
+            "independentPDFContract": 1,
+            "independentBuiltIdentityContract": 1,
+            "preapprovedGeneratedJSONContracts": 9,
+            "fullGratitudePNGMinuteContract": 1,
+            "nativeRoles": 156,
+            "duplicateMissingExtraUnresolved": 0
+          },
+          "limitations": [
+            "Finite isolated synthetic current2217/new160 contracts only; no production reachable denominator or full cutover inference",
+            "Metadata10 exact finite API bodies/headers validated; underlying40empty synthetic media payloads remain unavailable and unverified",
+            "No generic630byte-identity claim: PDF1/built1 use exact source-specific contracts;9generated andPNG1 retain their narrowly approved derivation",
+            "Raw9native differences remain false/preserved and receive only separately source-bound derived credit",
+            "Browser, hardware, provider, physical payload and production restoration gates remain separate"
+          ]
+        },
+        "writeRestartReferenceReadback": {
+          "acceptedScopedActualPair": true,
+          "reviewReceipt": "stock-new160-write-read-actual-review-v1.json",
+          "reviewSha256": "e361d62975c7273716751df925bad877395cedf8cee799cd3affba228b8b7e52",
+          "scope": "Source-authored synthetic Gratitude PUT/read/restart/retained2217 readback; complete body/transport/native input/cleanup. No literal production restoration credit."
+        },
+        "warmClientContinuity": {
+          "reviewReceipt": "stock-new160-warm-observed-actual-review-v1.json",
+          "reviewSha256": "7d8c1e62e3a396d522404ac79423255f6e8f017abb33825262d138eb58ef671d",
+          "scope": "Measured task-only2217\u2192new160 same-document lazy Media chunk and WebSocket reconnect ACK continuity; source-qualified exact three refused attempts during measured gap plus unchanged strict residual font/internal policy. No literal production swap, general error suppression or future reusable-policy completeness credit.",
+          "acceptedScoped": true,
+          "productionExecutionAuthorized": false
+        },
+        "controllerPreparation": {
+          "reviewReceipt": "stock-new160-controller-delta-review-v1.json",
+          "reviewSha256": "128b471cbcbe41aa6531a6dfa70c0162083ab6cf8821aa183822196ba29b1e06",
+          "scope": null,
+          "acceptedScoped": true,
+          "productionExecutionAuthorized": false
+        },
+        "eightJourneys": {
+          "acceptedScopedActualCount": 8,
+          "referenceImageId": "sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929",
+          "candidateImageId": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+          "candidateSourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+          "reviewIndexPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-eight-journey-actual-review-index-v1.json",
+          "reviewIndexSha256": "da8fb88155248cba608b82db0acaeb0b530b19eac6e596042b07d3db0833875e",
+          "scopes": [
+            {
+              "name": "agenda",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-agenda-actual-review-v1.json",
+              "reviewSha256": "bc7446a48e1302a4a524daddee8223936dc3c70d62acb455e03ef4ed1c85a7f2"
+            },
+            {
+              "name": "graph",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-graph-actual-review-v1.json",
+              "reviewSha256": "4084234f2573156ada22f8ab77891818025a99f99600614aad933df4f331f5cd"
+            },
+            {
+              "name": "station",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-station-actual-review-v1.json",
+              "reviewSha256": "085992067cb7f8423653a06fb59018942cb2b1786959f71238d6d52bea95f248"
+            },
+            {
+              "name": "story",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-story-actual-review-v1.json",
+              "reviewSha256": "b3ff38df7759edfa3a2018a25ffd2d8af7c961d21846fe8b9b709bca6904d454"
+            },
+            {
+              "name": "fitness",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-fitness-actual-review-v1.json",
+              "reviewSha256": "cac540559ecad0b52136208c5feaefd050ced57909e77d5548b3b29d5b89e183"
+            },
+            {
+              "name": "piano-controls",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-piano-strict-actual-review-v1.json",
+              "reviewSha256": "8dcddc9831b09ab7be92353ce15c9132ce2314135a06c3c1c31baf5db408a80f"
+            },
+            {
+              "name": "tetris",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-piano-game-actual-review-v1.json",
+              "reviewSha256": "2d0e4e6e15de52e8306e3727a7a39eab8cf68a05f36e9290cccadf9ba66bf2a2"
+            },
+            {
+              "name": "portal",
+              "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-portal-actual-review-v1.json",
+              "reviewSha256": "2cfa27458242df7f95e38b020f4129acc01e4a1f2563fcdae2599f1524997f29"
+            }
+          ],
+          "portalOriginalPairPassed": false,
+          "portalSourceDaySupplementV2Sha256": "d42187072e1898bc2158729322555f130f2142d106fa491098b0f396f278eac3",
+          "limitations": [
+            "Finite isolated synthetic current2217/new160 journeys only",
+            "Portal original pair false and old reference strict failure preserved; exact source-derived two-day-leaf supplement accepted",
+            "Physical hardware, live providers, production cutover and reachable denominator remain uncredited"
+          ]
+        },
+        "sixGapBaselineSupplement": {
+          "acceptedExpectedFailurePlaceholderParityOnly": true,
+          "supplementPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-six-gap-trace-header-supplement-v1.json",
+          "supplementSha256": "5871445e561f6aa850a3c0b3ffb2c96586b9e9c44095f8e488bc70f95837678a",
+          "sourcePinsVerified": 4,
+          "negativeControlsRerunRejected": 8,
+          "originalPairPassed": false,
+          "healthyFeatureCredit": false,
+          "noNativeReplay": true
+        },
+        "eightJourneyEvidenceRetention": {
+          "archivePath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-eight-journey-sixgap-evidence-v1.tar.gz",
+          "archiveSha256": "d20cd9c163bc93a72bae8151aa49b8bf99e54c9ff2d7a97ed34dd705d25b5545",
+          "archiveBytes": 594722,
+          "manifestPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-eight-journey-sixgap-evidence-manifest-v1.json",
+          "manifestSha256": "0956c509eab2e33fe7b338a944c58768707c51df2540ddaf5dffeed13e63526d",
+          "includedRawAndReviewFileCount": 109,
+          "fixtureInputPinsExcludedFromArchive": 27,
+          "allEightReviewsAnd100RawSupplementPinsReverified": true,
+          "limitations": [
+            "Archive omits fixture/input materializations, physical media and keys",
+            "Omitted pinned source files remain prerequisites for full independent rerun"
+          ]
+        }
+      },
+      "new160ImageRetention": {
+        "acceptedArchiveIntegrity": true,
+        "imageId": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+        "archiveSha256": "152917b6f4b59a9f1a196485bc8cf912bcef70e3b987833bc1b1240b741bec02",
+        "archiveBytes": 1732403492,
+        "layerCount": 45,
+        "verifyReceipt": "IMAGE-CANDIDATE160-VERIFY.json",
+        "verifySha256": "b8eb4d491079526fb8e9ae35ac17f454bc8b9aa1137ec7e6706e6d5494ccc3f5",
+        "scope": "Immutable candidate image archive with every layer/config/blob and Docker/OCI closure verified; no production action."
+      },
+      "new160ControllerPreparation": {
+        "preparedOnly": true,
+        "independentReviewPending": false,
+        "controllerSha256": "7cce1bbd7d7a312108983bf15438a324261379c5bd4474eb9a8c1b722a49c4a6",
+        "preparationReceipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160/REBIND-PREPARATION.json",
+        "preparationSha256": "d233de563f73bce5c096a3eca3181827d7e25c9a2d4d80cad4949ddd5e38c68c",
+        "productionExecutionAuthorized": false,
+        "scope": "Frozen controller kernel copied with new candidate identity only. Import/syntax/input integrity verified without Docker calls. Independent review/failure controls pending.",
+        "acceptedPreparedOnly": true,
+        "reviewReceipt": "stock-new160-controller-delta-review-v1.json",
+        "reviewSha256": "128b471cbcbe41aa6531a6dfa70c0162083ab6cf8821aa183822196ba29b1e06"
+      },
+      "sixGapV2Admission": {
+        "acceptedForIsolatedExecution": true,
+        "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/ROOT-SIX-GAP-NATIVE-ADMISSION-REVIEW-V2.json",
+        "reviewSha256": "430dffaecab420a15f7c8b4698b7a748f68698e796cda30f9ba3dc4d20dbcd34",
+        "nativeExecutionPending": true,
+        "healthyFeatureCredit": false
+      },
+      "currentSourceProjectionSupplements": {
+        "receipts": [
+          {
+            "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-http-qualified-renewal-preparation-v2.json",
+            "sha256": "f0f65adc4b0d176fb422cff41b48d6df16b130928590179c8afd752229581a43"
+          },
+          {
+            "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-http-manual-device-preparation-v1.json",
+            "sha256": "4e3d3c39c19387e3a679a20d7610f2935a2871cec96af1e05d34b8a2f0c48463"
+          },
+          {
+            "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-http-installed-matcher-review-v1.json",
+            "sha256": "832879d6739bcbdda0ca988dcf3f68c12577d51c438fc0fe4ecbb2e4729bcba9"
+          }
+        ],
+        "sourceFacts": {
+          "qualifiedFiniteSafe": 270,
+          "unresolvedEffects": 298,
+          "qualifiedNamedRenewals": 160,
+          "manualSourceJoins": 9,
+          "installedMatcherQualifiedTemplateJoins": 49
+        },
+        "productionDenominator": null,
+        "observedHandlerDispatchCredit": false,
+        "independentRootProjectionReviewPending": true
+      },
+      "finalOperationalCorrection": {
+        "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160/FINAL-OPERATIONAL-CLOSURE-CORRECTION.json",
+        "sha256": "02e12059fcfc11908c56dd82c53717f3bf4b575d41c323a024ff44ef74753c8e",
+        "dedicatedReferenceTag": "daylight-cutover-reference:2026-10-12-2217",
+        "dedicatedCandidateTag": "daylight-cutover-candidate:2026-10-12-da5",
+        "productionUnchanged": true,
+        "archiveVerificationReceiptResolved": true,
+        "directDockerControllerReviewPending": false
+      },
+      "finalReleaseUserController": {
+        "acceptedExecutablePreparationOnly": true,
+        "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-final-controller-transport-review-v1.json",
+        "reviewSha256": "6ed676ca75ade03be16568d98e2746d4d91f890cbbccfbc86e7fa76af2b50bf0",
+        "controller": {
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v3/backend-cutover-controller.private.py",
+          "sha256": "f4a25265a789d7a7dddbd3f7b0111275744a79b59e8ebe442ea030a9919ef3b3"
+        },
+        "privateGate": {
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v3/idle-gate-private/deploy-gate.sh",
+          "sha256": "af37a6b7b8440f289d882ea6b632ef1cf1fd177565ba356abadb323672372501"
+        },
+        "pinnedInputs": 13,
+        "offlineRollbackCases": 7,
+        "productionExecutionAuthorized": false,
+        "deploymentTimeObligations": [
+          "Exclusive deployment lane is an external mandatory precondition; no common lock withdeploy-daylight.",
+          "No live idle-gate,Docker restart/removal,deployment or rollback execution performed byreviewer.",
+          "Fresh drift/usage/log checks remain deployment-time obligations."
+        ]
+      },
+      "new160DurableReplay": {
+        "acceptedSameHostPreparation": true,
+        "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-durable-replay-review-v1.json",
+        "reviewSha256": "51ff484d51a3a77f9327e5332e2c51a8f681089e4683ad6652ebaedfb9343f28",
+        "entrypoint": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-final640-replay-v1/restore-and-replay.private.py",
+        "entrypointSha256": "61875a07ff85f55f9e3a21de57b49ef252796468525a4a99c2a19cee1d5378a8",
+        "offlineCaseCount": 640,
+        "restoreNegativeControlsPassed": true,
+        "sameHostLimitations": [
+          "SamehostinstalledNode dependencies andimmutableDocker images required; no host-independent claim.",
+          "Date/auth/PNG admissions regenerate andmustbevalid atfuturelaunch.",
+          "Oldreviewed restore680/38/33 archives reused exactly; no broadsource/API re-review or native repeats."
+        ],
+        "additionalNativeCredit": false
+      },
+      "finalReadiness": {
+        "acceptedForControlledCutover": true,
+        "runtimeSourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+        "referenceImage": "sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929",
+        "candidateImage": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+        "includedMain": "20475b60dcdd4c31581e86c93ce939d73f22245c",
+        "originalRequirementCount": 19,
+        "independentPrecommitRequirementReview": {
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/original-19-final-requirement-audit-v5.json",
+          "sha256": "77c862bdffd46c330575dbb2bbf8e77120d0a389c36919f42cd545c2cd5eda39"
+        },
+        "finalCheckpointReceipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/FINAL-CUTOVER-READINESS-ACCEPTANCE.json",
+        "checkpointAcceptanceCondition": "Valid only after genuine unchanged commit hook succeeds, isolated checkpoint is clean and final main inclusion is verified in the final private receipt.",
+        "productionCutoverPerformed": false,
+        "mergedIntoMain": false,
+        "limitations": [
+          "Finite API and representative journey scopes; no whole-project coverage percentage.",
+          "Pre-existing defects remain explicitly listed and earn no healthy-feature credit.",
+          "Untested, effectful, dynamic and hardware/provider surfaces remain inspectable.",
+          "Fresh usage-idle, drift and exclusive deployment lane checks required before actual cutover."
+        ],
+        "historicalEntriesRetainOriginalImageSourceAndReadinessScope": true
+      }
+    }
+  },
+  "historicalReadinessAcceptedBeforeFinalCheckpoint": false,
+  "currentReadiness": {
+    "acceptedForControlledCutover": true,
+    "runtimeSourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+    "referenceImage": "sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929",
+    "candidateImage": "sha256:160842c79ff43619672617ee451d24c090282d6f4fedb3b645dd148760a8414e",
+    "includedMain": "20475b60dcdd4c31581e86c93ce939d73f22245c",
+    "originalRequirementCount": 19,
+    "independentPrecommitRequirementReview": {
+      "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/original-19-final-requirement-audit-v5.json",
+      "sha256": "77c862bdffd46c330575dbb2bbf8e77120d0a389c36919f42cd545c2cd5eda39"
+    },
+    "finalCheckpointReceipt": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/FINAL-CUTOVER-READINESS-ACCEPTANCE.json",
+    "checkpointAcceptanceCondition": "Valid only after genuine unchanged commit hook succeeds, isolated checkpoint is clean and final main inclusion is verified in the final private receipt.",
+    "productionCutoverPerformed": false,
+    "mergedIntoMain": false,
+    "limitations": [
+      "Finite API and representative journey scopes; no whole-project coverage percentage.",
+      "Pre-existing defects remain explicitly listed and earn no healthy-feature credit.",
+      "Untested, effectful, dynamic and hardware/provider surfaces remain inspectable.",
+      "Fresh usage-idle, drift and exclusive deployment lane checks required before actual cutover."
+    ],
+    "historicalEntriesRetainOriginalImageSourceAndReadinessScope": true
   }
 }

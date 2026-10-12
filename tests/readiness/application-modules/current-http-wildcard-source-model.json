@@ -1,0 +1,2372 @@
+{
+  "schema": "daylight.current-http-wildcard-source-model/v1",
+  "sourceModelOnly": true,
+  "installedImageMatcherFileBytesIndependentlyPinned": false,
+  "scope": "Preparation of49 captured request/template joins using exact local router2.2.0 nested path-to-regexp8.4.2 resolved from backend. This is not native installed matcher byte identity, dispatch admission, a production denominator or HTTP permission.",
+  "modelDependencies": {
+    "routerVersion": "2.2.0",
+    "matcherVersion": "8.4.2",
+    "routerFile": "/opt/Code/DaylightStation/backend/node_modules/router/index.js",
+    "matcherFile": "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js",
+    "lockedMatcherIntegrity": "sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==",
+    "requiredFutureEvidence": "Stopped immutable2217/new160 installed router/index.js and nested path-to-regexp/dist/index.js plus package.json source-byte pins must match this model before native dispatcher joins can be qualified."
+  },
+  "rows": [
+    {
+      "caseId": "launch-compat-info",
+      "path": "/api/v1/content/readalong/info/synthetic-story",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/:source/info/:id{/:modifiers}",
+              "nativeRouteOrder": 42,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "6f84cbacbff204cba69245d8f7bd7e8b0facb75844eb846543b591fec9ff6db3"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/:source/info/:id{/:modifiers}",
+              "nativeRouteOrder": 42,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "6f84cbacbff204cba69245d8f7bd7e8b0facb75844eb846543b591fec9ff6db3"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "launch-compat-queue",
+      "path": "/api/v1/content/playables/readalong/synthetic/story",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "launch-compat-queue-query",
+      "path": "/api/v1/content/playables/readalong/synthetic/story?shuffle=false&limit=3",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/content/playables/:source{/*splat}",
+              "nativeRouteOrder": 29,
+              "routerId": 5,
+              "mountOrders": [
+                1372,
+                1281
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-absent",
+      "path": "/api/v1/piano/bank/readiness-absent-seed",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-instance-ids",
+      "path": "/api/v1/piano/bank/arpeggios/all/instances?limit=5",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "piano-authored-bank-seed-detail",
+      "path": "/api/v1/piano/bank/arpeggios/all",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/piano/bank/*splat",
+              "nativeRouteOrder": 581,
+              "routerId": 58,
+              "mountOrders": [
+                1372,
+                1339
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "gaming-school-assets-party-media",
+      "path": "/api/v1/gaming/media/synthetic-read-assets.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/gaming/media/*splat",
+              "nativeRouteOrder": 417,
+              "routerId": 42,
+              "mountOrders": [
+                1372,
+                1346
+              ],
+              "handlerSha256": [
+                "130d6da341bbad78712c4a22caf52853b78ad31a96471ff820342305a854f396"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/gaming/media/*splat",
+              "nativeRouteOrder": 417,
+              "routerId": 42,
+              "mountOrders": [
+                1372,
+                1346
+              ],
+              "handlerSha256": [
+                "130d6da341bbad78712c4a22caf52853b78ad31a96471ff820342305a854f396"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "gaming-school-assets-flashcard-image",
+      "path": "/api/v1/school/flashcards/assets/media:language/synthetic-read-assets/words/en/star/image.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/school/flashcards/assets/*assetId",
+              "nativeRouteOrder": 807,
+              "routerId": 67,
+              "mountOrders": [
+                1372,
+                1349
+              ],
+              "handlerSha256": [
+                "3fb8f4545dfb8e9cbaac1ddfdfd4ecdc7dbb3667436b9a56566d339e4447b85f"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/school/flashcards/assets/*assetId",
+              "nativeRouteOrder": 807,
+              "routerId": 67,
+              "mountOrders": [
+                1372,
+                1349
+              ],
+              "handlerSha256": [
+                "3fb8f4545dfb8e9cbaac1ddfdfd4ecdc7dbb3667436b9a56566d339e4447b85f"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-art-explicit",
+      "path": "/api/v1/static/art/classic/synthetic-forest/image.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-art-extension",
+      "path": "/api/v1/static/art/classic/synthetic-forest/image",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/art/*splat",
+              "nativeRouteOrder": 381,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "c1c08abfe2a2a01a539bd39a4b196b5238dd5765d6b68e09cfb0eb2be5804274"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-art",
+      "path": "/api/v1/static/img/art/classic/synthetic-forest/image.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-equipment",
+      "path": "/api/v1/static/img/equipment/synthetic-pedaler",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "household-static-generic-avatar",
+      "path": "/api/v1/static/img/users/user_1.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/static/img/*splat",
+              "nativeRouteOrder": 384,
+              "routerId": 39,
+              "mountOrders": [
+                1372,
+                1300
+              ],
+              "handlerSha256": [
+                "a8ce0325dfc59c3e122665ea13291d223433ddbb145f9b1c0fb5d59f5a714530"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-loader",
+      "path": "/api/v1/emulator/engine/loader.js",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-locale-en",
+      "path": "/api/v1/emulator/engine/localization/en.json",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "emulator-stored-locale-fallback",
+      "path": "/api/v1/emulator/engine/localization/fr.json",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/emulator/engine/*splat",
+              "nativeRouteOrder": 450,
+              "routerId": 48,
+              "mountOrders": [
+                1372,
+                1302
+              ],
+              "handlerSha256": [
+                "dae9f0cd359e2b685141627c11a2ec052b44742da8d0dd6237da0224b6a1a02c"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-canvas-room",
+      "path": "/api/v1/canvas/image/synthetic-read-still/blue-room.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-canvas-garden",
+      "path": "/api/v1/canvas/image/synthetic-read-still/garden.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/canvas/image/*splat",
+              "nativeRouteOrder": 1171,
+              "routerId": 95,
+              "mountOrders": [
+                1372,
+                1325
+              ],
+              "handlerSha256": [
+                "04248ff48e1e43574352fe3aed7010f2e06b3dfa7651ef82ef3a09800ae59422"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-local-audio",
+      "path": "/api/v1/local/stream/audio/ambient/synthetic-read-calm.wav",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "stored-media-local-image",
+      "path": "/api/v1/local/stream/img/art/synthetic-read-still/garden.png",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/stream{/*splat}",
+              "nativeRouteOrder": 82,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-browse-games",
+      "path": "/api/v1/local/browse/games",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-browse-tiles",
+      "path": "/api/v1/local/browse/games/_common",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local/browse{/*splat}",
+              "nativeRouteOrder": 81,
+              "routerId": 12,
+              "mountOrders": [
+                1372,
+                1288
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-cover-chapter",
+      "path": "/api/v1/local-content/collection-cover/readalong/synthetic-media-navigation/chapter",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-cover-inherited",
+      "path": "/api/v1/local-content/collection-cover/readalong/synthetic-media-navigation/chapter/deeper",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/collection-cover/:adapter/:collection/*splat",
+              "nativeRouteOrder": 65,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-embedded-cover",
+      "path": "/api/v1/local-content/cover/audio/singalong/synthetic-media-navigation/0001-synthetic-song.mp3",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/cover{/*splat}",
+              "nativeRouteOrder": 64,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/cover{/*splat}",
+              "nativeRouteOrder": 64,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "media-policy-assets-readalong-audio",
+      "path": "/api/v1/stream/readalong/synthetic-media-navigation/chapter/0001",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/stream/readalong/:collection{/*splat}",
+              "nativeRouteOrder": 88,
+              "routerId": 13,
+              "mountOrders": [
+                1372,
+                1328
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/stream/readalong/:collection{/*splat}",
+              "nativeRouteOrder": 88,
+              "routerId": 13,
+              "mountOrders": [
+                1372,
+                1328
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-poem-comfort",
+      "path": "/api/v1/local-content/poem/synthetic/comfort",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-poem-courage",
+      "path": "/api/v1/local-content/poem/synthetic/courage",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/poem/*splat",
+              "nativeRouteOrder": 63,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-scripture-synthetic-one",
+      "path": "/api/v1/local-content/scripture/bom/synthetic-one/31103",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-scripture-synthetic-two",
+      "path": "/api/v1/local-content/scripture/bom/synthetic-two/31103",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/scripture/*splat",
+              "nativeRouteOrder": 59,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-talk-01",
+      "path": "/api/v1/local-content/talk/synthetic-conference/01",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "reading-talk-02",
+      "path": "/api/v1/local-content/talk/synthetic-conference/02",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/local-content/talk/*splat",
+              "nativeRouteOrder": 62,
+              "routerId": 7,
+              "mountOrders": [
+                1372,
+                1287
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-adapters-yml",
+      "path": "/api/v1/admin/config/files/system/config/adapters.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-auth-yml",
+      "path": "/api/v1/admin/config/files/system/config/auth.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-bots-yml",
+      "path": "/api/v1/admin/config/files/system/config/bots.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-domains-yml",
+      "path": "/api/v1/admin/config/files/system/config/domains.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-readiness-display-yml",
+      "path": "/api/v1/admin/config/files/system/config/readiness-display.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-readiness-library-yml",
+      "path": "/api/v1/admin/config/files/system/config/readiness-library.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-services-yml",
+      "path": "/api/v1/admin/config/files/system/config/services.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-system-config-system-yml",
+      "path": "/api/v1/admin/config/files/system/config/system.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-entropy-config-yml",
+      "path": "/api/v1/admin/config/files/household/entropy/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-finance-config-yml",
+      "path": "/api/v1/admin/config/files/household/finance/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-fitness-config-yml",
+      "path": "/api/v1/admin/config/files/household/fitness/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-gratitude-config-yml",
+      "path": "/api/v1/admin/config/files/household/gratitude/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-harvest-config-yml",
+      "path": "/api/v1/admin/config/files/household/harvest/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-media-app-yml",
+      "path": "/api/v1/admin/config/files/household/media/app.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-piano-config-yml",
+      "path": "/api/v1/admin/config/files/household/piano/config.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "admin-config-scenes-file-household-integrations-yml",
+      "path": "/api/v1/admin/config/files/household/integrations.yml",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/admin/config/files{/*splat}",
+              "nativeRouteOrder": 1205,
+              "routerId": 100,
+              "mountOrders": [
+                1372,
+                1327,
+                1208
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    },
+    {
+      "caseId": "proxy-media-existing-pcm-wav",
+      "path": "/api/v1/proxy/media/audio/feedback/school/20251001090000_synthetic_reading.wav",
+      "method": "get",
+      "modelCandidates": [
+        {
+          "role": "reference",
+          "sourceCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+          "matches": [
+            {
+              "template": "/api/v1/proxy/media{/*splat}",
+              "nativeRouteOrder": 56,
+              "routerId": 6,
+              "mountOrders": [
+                1372,
+                1282
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "candidate",
+          "sourceCommit": "9dc4230d5a5c1e7f0f5ff5d394b7c7295d155adf",
+          "matches": [
+            {
+              "template": "/api/v1/proxy/media{/*splat}",
+              "nativeRouteOrder": 56,
+              "routerId": 6,
+              "mountOrders": [
+                1372,
+                1282
+              ],
+              "handlerSha256": [
+                "9900cb32aeb53f3ffb1f667e92719557ab5ae9e6fcf8f4642cdec5fecc26b979"
+              ]
+            }
+          ]
+        }
+      ],
+      "nativeFiniteContractStillAccepted": true,
+      "nativeDispatcherJoinAccepted": false,
+      "disposition": "Exact captured task template matches under local8.4.2 source model. Installed image matcher source-file bytes are not independently pinned; retain dispatch qualification unresolved.",
+      "productionActivationCredit": false
+    }
+  ],
+  "controls": {
+    "positive": 3,
+    "negative": [
+      "foreign-prefix",
+      "required-wildcard-absent",
+      "missing-required-source",
+      "extra-fixed-segment"
+    ],
+    "noNativeCalls": true
+  },
+  "productionMethodTemplateDenominator": null,
+  "pins": {
+    "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/current-http-manual-device-joins.json": "f22063e99399908f3394a2dc44e34adab4ac671bbb258dad6347a2308f1153e9",
+    "/opt/Code/DaylightStation/.worktrees/application-modules/tests/readiness/application-modules/current-http-evidence-projection-v2.json": "a1cf545612d33a7291ea71a89b82cffa33888e82fe49b5efa0df1e7a4d038cbd",
+    "/opt/Code/DaylightStation/backend/node_modules/router/package.json": "b77062595f89476fab6acbcde5fa8dfac3be7d7b9b0b0b69d48c84ebc13c9a06",
+    "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/package.json": "3c37dce1e0587231f7c9f63e137dd0ed4d6f25552c89b5b5939c6a3d36113634",
+    "/opt/Code/DaylightStation/.worktrees/application-modules/backend/package-lock.json": "b1646641606e0d2c92a372ab7b3ec6f5aec4daf025c0d1ab3612486f89ae484e",
+    "/opt/Code/DaylightStation/backend/node_modules/router/index.js": "fcc39d49329e5701e3fbd195060834398434b8e136a59949a654f6f402f6e31b",
+    "/opt/Code/DaylightStation/backend/node_modules/router/node_modules/path-to-regexp/dist/index.js": "f8e7946ca3a4dcc2ed1ea46e3bcffaef014e4abc359a7469a16817f1f79df62f"
+  },
+  "generatorSha256": "5c5879b6e471b0d2088a883715833ede9f48d4b4c7208e0dc28efb3a99695dd0"
+}

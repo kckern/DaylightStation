@@ -1,0 +1,37 @@
+# Isolated proposal only: candidate source on the exact current serving image layers.
+# Do not replace the repository Dockerfile or treat an unbuilt image as acceptance.
+FROM sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929
+WORKDIR /usr/src/app
+
+# Keep the three installed node_modules scopes, Node, APK, Python, and global tools.
+# Clear every old application file in these directories so deleted legacy modules
+# cannot remain visible beneath the candidate overlay.
+RUN for area in backend frontend; do \
+      find "$area" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} \; ; \
+    done \
+    && rm -rf shared modules capabilities cli scripts \
+    && rm -f package.json package-lock.json entrypoint.sh
+
+COPY --chown=node:node shared/ ./shared/
+COPY --chown=node:node backend/ ./backend/
+COPY --chown=node:node frontend/ ./frontend/
+COPY --chown=node:node modules/ ./modules/
+COPY --chown=node:node capabilities/ ./capabilities/
+COPY --chown=node:node cli/ ./cli/
+COPY package*.json ./
+COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
+COPY scripts/setup-owner-dependencies.mjs ./scripts/setup-owner-dependencies.mjs
+RUN node scripts/setup-owner-dependencies.mjs && node scripts/setup-owner-dependencies.mjs --check
+RUN cd frontend && NODE_OPTIONS=--max-old-space-size=4096 npm run build
+COPY docker/entrypoint.sh /usr/src/app/entrypoint.sh
+RUN chmod +x /usr/src/app/entrypoint.sh
+
+ARG BUILD_TIME
+ARG COMMIT_HASH
+RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
+    && echo "Commit: https://github.com/kckern/DaylightStation/commit/${COMMIT_HASH}" >> /build.txt
+ENV NODE_ENV=production
+EXPOSE 3111
+HEALTHCHECK --interval=30s --timeout=8s --start-period=90s --retries=3 \
+  CMD curl -fsS http://localhost:3111/ || exit 1
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]

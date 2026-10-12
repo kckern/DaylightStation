@@ -264,4 +264,14 @@ docs/_wip/audits/**/measurements.json
 # the small curated evidence indexes committed alongside an audit stay.
 docs/_wip/audits/**/*.json
 
+# Large generated application-module inventories. Keep the exact working copies
+# locally for pinned evidence; commit their lossless gzip forms instead.
+tests/readiness/application-modules/current-http-evidence-projection.json
+tests/readiness/application-modules/current-http-evidence-projection-v2.json
+tests/readiness/application-modules/current-http-evidence-projection-v3.json
+tests/readiness/application-modules/current-http-evidence-projection-v4.json
+tests/readiness/application-modules/current-http-source-census.json
+tests/readiness/application-modules/current-http-source-projection.json
+tests/readiness/application-modules/non-http-surface-census.json
+
 !scripts/audit-owner-boundaries.mjs

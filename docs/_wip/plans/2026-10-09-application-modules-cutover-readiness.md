@@ -10,6 +10,33 @@
 
 **Spec:** User goal “complete cutover readiness,” with explicit old/new API equivalence and daily-use regression concerns; docs/roadmap/2026-08-31-full-stack-application-modules.md sections 0.5–0.7.
 
+## Latest readiness checkpoint — 2026-10-12
+
+The immutable comparison pair is reference `2217a991` (main `bf35ca20`) and candidate `160842c7` (source `da5b8ec0`, preserving application integration `9dc4230d` and intervening main/doc history). The candidate was built with the actual production `docker/Dockerfile`. All eight requested final-image renewals are independently accepted: Fitness, Portal shelf, Piano controls, Story-time, Tetris, configured graph/Playback, station and Agenda PNG. Current-image WebSocket, NoShow, archive/restart, Media/Screens, feasible Gratitude, warm-client continuity and synthetic configuration write/restart/reference-readback are separately accepted.
+
+The API suite accepts exactly 640 declared cases: 628 ordinary contracts, one PDF, one build identity, nine generated-field contracts and one full PNG. Original raw differences and narrowly reviewed supplements remain preserved. Portal's original pair comparison remains false; a separate source-pinned supplement qualifies exactly `/studyDay` and `/earliestFinishDay` from each captured study day with a 4am boundary. No other shelf leaf is masked, and the complete cached cover contract matches.
+
+| Original checklist | Readiness disposition | Evidence and remaining action |
+| --- | --- | --- |
+| Task 1, items 1–4: inventory, mapping, contracts, durable summary | Deliverables prepared and inspectable | [Whole current surface map](../../../tests/readiness/application-modules/current-http-evidence-projection-v4.json.gz), [HTTP source census](../../../tests/readiness/application-modules/current-http-source-census.json.gz), [non-HTTP census](../../../tests/readiness/application-modules/non-http-surface-census.json.gz), and the coverage ledger retain every included site's evidence, effect and unresolved disposition. Final scope acceptance is recorded in the coverage ledger. |
+| Task 2, items 5–7: main reconciliation, named tests, independent integration review | Accepted bounded integration evidence | Owned-path integration, retained named test populations and independent composition/import reviews preserve incoming behavior and both histories. Final source inclusion is checked with the release checkpoint. |
+| Task 3, items 8–10: actual production packaging | Accepted | Tracked-only stock Dockerfile build, exact source/image/dependency proofs, 390 active assets with five typed build-ID occurrences and 388 retained legacy assets. The older alternate-recipe limitation is superseded for this image. |
+| Task 4, items 11–15: paired application and representative runtime acceptance | Accepted within explicit scopes | Full 640 accounting; eight final-image renewals; current WebSocket/provider-substitute/job/restart/configuration and lazy-asset proofs. No unresolved candidate-only regression remains in these executed required paths. Baseline defects and untested/external surfaces remain listed below, with no healthy credit. |
+| Task 5, items 16–19: release package and final acceptance | Package prepared; final checkpoint pending | Runbook/controller, direct-Docker fail-closed private usage gate, smoke and rollback preparation are reviewed; roadmap/status updates are owner-maintained. Final acceptance requires the genuine unchanged commit hook, clean isolated checkpoint and final main inclusion recorded in the private checkpoint receipt. Preserve unrelated user work. Production execution is a later, separate action. |
+
+### Current per-surface gaps and dispositions
+
+| Surface or risk | Exact disposition |
+| --- | --- |
+| HTTP declarations and effect safety | Inspect `roles[].declarations[]` by `declarationId`, owner, source pin, predicates, `localEffectPolicy`, test/evidence links and production-reachability disposition. `unresolvedSourceGetDeclarations`, `taskUncoveredGetTemplates`, opaque middleware and detached routes remain inspectable. Effectful/provider-dependent GETs are not a generic read-only permission. |
+| Manual, wrapped and wildcard joins | Nine manual/device source delegations and 49 installed-matcher template matches qualify the previously unmatched finite requests. They add no route objects and do not assert observed selected-handler dispatch. The configured task graph has 1,192 route objects / 1,374 ordered events; neither count is a production eligible-route denominator. |
+| WebSocket/events, jobs and browser entry points | All 12,625 source-policy sites retain source/owner/site and evidence dispositions. Current WS lifecycle, manual disabled-job archive effects and representative browser journeys have actual evidence; other sites remain static-only, untested, dynamic/unresolved or external. Readiness does not require activation of every inventoried site. |
+| Pre-existing HTTP defects and defaults | Both actual images preserve entropy `status` shadowing (404), Fitness receipt argument-shape failure (500), native Journal message-schema export failure (500), unknown Livestream (404), NutriBot's placeholder PNG and School certification selector failure (404). These earn baseline parity only, never healthy feature credit. Additional earlier default/error proofs retain their explicit image scopes. |
+| Daily-use limitations | Portal notes/examples certification is a demonstrated pre-existing limitation in reference and candidate. The extreme Gratitude label overflow remains failed/uncredited. Representative healthy shelf/reading/story-time, Piano controls/game, Fitness/playback, media/screens and feasible Gratitude are covered; these do not certify every feature or optional service. Baseline limitations remain visible for the final release decision. |
+| External/hardware and production | Physical MIDI/8770/audio, sensors, casting, printers, live providers and real cron execution remain unverified. Synthetic provider/job boundaries are explicit. Production eligible denominator/activation and literal forward/rollback execution remain unproved; these are limitations and deployment-time checks, not newly invented readiness tests. |
+
+The immutable exact 19-item audit and receipt pins are retained privately as `original-19-final-requirement-audit-v5.json`. The [coverage ledger](2026-10-09-cutover-coverage.json) records machine outcomes. **Ready for controlled cutover once the committed checkpoint's unchanged hook, clean state and main inclusion are verified in `FINAL-CUTOVER-READINESS-ACCEPTANCE.json`.** This is not a production deployment. Historical sections below preserve their original image/count/failure scopes and must not replace this checkpoint.
+
 ## Reviewed local read-only accounting — 2026-10-11
 
 The reviewed union contains **640 disjoint healthy case IDs: the original 624 plus 16 supplemental cases**. Separate cohorts contribute 407 earlier cases (405 raw passes plus the independently authored, source-derived Life 2 correction), 215 passes from the 217-case continuation, 15 supplemental cases, the separate Gratitude 1 full-PNG contract, and the targeted PlayLedger 2 recovery. The original Life and PlayLedger failures, partial-batch exit codes and Gratitude minute differential remain in their receipts; no empty/null result receives healthy populated-branch credit. The PlayLedger recovery passed both complete contracts with its finite window and cleanup accepted. [The coverage ledger](2026-10-09-cutover-coverage.json) binds exact IDs, outcomes, root reviews and durable evidence.
@@ -76,9 +103,9 @@ The first real run establishes the mechanism, not migration-wide confidence: the
 | Eligible endpoint coverage | 100% of migration-affected read-only endpoints have an executed old/new case with independent expected behavior | Exact case mappings and separate historical runs are in the [coverage ledger](2026-10-09-cutover-coverage.json). Historical receipts do not establish a combined replay or a coverage percentage; this gate remains open. |
 | Successful behavior | At least one meaningful populated/default success per eligible endpoint; a missing-service error does not cover success | Independent contract outcomes and remaining endpoint gaps are recorded in the [coverage ledger](2026-10-09-cutover-coverage.json) and [expected route matrix](../../../tests/readiness/application-modules/http-expected-installed-route-matrix.json). This gate remains open. |
 | Distinct response branches | Cases for supported empty results, missing IDs, invalid input, filters/pagination/order, relevant config variants and permitted identity differences where those change behavior | Branch prerequisites and remaining route templates are maintained in the [expected route matrix](../../../tests/readiness/application-modules/http-expected-installed-route-matrix.json); select cases from reviewed source contracts rather than multiplying parameter combinations. |
-| Critical read journeys | Cover the entire API read sequence of daily-use School, Piano, Fitness/playback, Media, Health and other installed applications, including ownership boundaries | Case-level evidence is in the [coverage ledger](2026-10-09-cutover-coverage.json). Journey-level coverage remains unestablished, so this gate remains open. |
+| Critical read journeys | Cover the entire API read sequence of daily-use School, Piano, Fitness/playback, Media, Health and other installed applications, including ownership boundaries | Case-level evidence is in the [coverage ledger](2026-10-09-cutover-coverage.json). Current Fitness and populated Portal shelf journeys have independently reviewed paired acceptance. Piano software catalog/notation/touch-control acceptance is reviewed; Story-time natural playback/read-credit/summary acceptance is reviewed, with reference thumbnail byte coverage explicitly unavailable; Portal notes/examples has a demonstrated baseline interface defect and no healthy-flow credit. Other journey evidence retains its stated image/source scope, so this gate remains open. |
 | Differential results | Zero unexplained status, header, body, ordering, route or configuration differences in the required population | Current case outcomes and baseline correctness gates are recorded in the [coverage ledger](2026-10-09-cutover-coverage.json) and [local API parity runbook](../../runbooks/application-modules-local-api-parity.md). The historical live-reference checkpoint is not the current installed-production graph; this gate remains open. |
-| Repeatability | A fresh candidate run uses pinned source/tree/config identities, explicit targets, isolated writes, reviewed requests and a machine-readable report | Runner, pack receipts and proof identities are documented in the [coverage ledger](2026-10-09-cutover-coverage.json) and [local API parity runbook](../../runbooks/application-modules-local-api-parity.md). Changed proof inputs require renewed pins; readiness remains open. |
+| Repeatability | A fresh candidate run uses pinned source/tree/config identities, explicit targets, isolated writes, reviewed requests and a machine-readable report | Runner, pack receipts and proof identities are documented in the [coverage ledger](2026-10-09-cutover-coverage.json) and [local API parity runbook](../../runbooks/application-modules-local-api-parity.md). The final current-image replay package is sealed: fresh-directory verification, a six-case native pilot and missing-input closure checks passed. Root verified all six role capture hashes, twelve body hashes/byte counts, input/prestart checks and actual cleanup. Same-host dependencies/images remain prerequisites; packaging-only closure was not followed by another full640 run. Changed proof inputs require renewed pins; overall readiness remains open. |
 
 Treat every installed read route as potentially affected by the composition change until its dependency path proves otherwise. Sampling one endpoint per application is an intermediate checkpoint, not the acceptance gate. Test all distinct endpoint contracts, then select scenarios by observable branches and known regressions rather than aiming at a line-coverage percentage.
 
@@ -104,7 +131,7 @@ This gate covers the user-requested read-only baseline. It does not certify muta
 - No private credentials, household data, physical devices, or live provider side effects in test fixtures. Test mutation flows on fresh disposable data only.
 - Retain existing Landlock profiles for selected tests. A separate isolated container test environment must have task-owned storage and no route to production/provider networks; do not weaken host security or change Docker socket permissions.
 - Preserve all historical failed receipts. Existing known failures are not passing tests and require explicit disposition if they affect a daily-use release gate.
-- For this phase, actual live/local HTTP comparison is required; Docker and browser work are deferred. Vite builds, mocked routers and static checks cannot substitute for live/local evidence.
+- The earlier read-only phase required actual live/local HTTP comparison and deferred Docker/browser work. The current cutover phase additionally requires actual-image and browser evidence; Vite builds, mocked routers and static checks cannot substitute for those executions.
 
 ## Review focus
 
@@ -116,37 +143,37 @@ This gate covers the user-requested read-only baseline. It does not certify muta
 
 ## Task 1: Establish the coverage denominator and comparison contract
 
-- [ ] Inventory actual HTTP routes/methods/mounts and dynamic registration sites; separately enumerate WebSocket/event, jobs and browser entry points. Record unresolved dynamic routes rather than silently omitting them.
-- [ ] Map existing tests and actual executed evidence to each surface: full-server HTTP, router/service with substitutes, browser flow, static-only, untested, or external/hardware-dependent.
-- [ ] Define identical original/candidate fixtures and contract assertions for status, headers, response shape/content, auth, persistence and events. Normalize only specifically reviewed nondeterministic fields; never mask missing/extra fields or errors.
-- [ ] Produce durable `2026-10-09-cutover-coverage.json` and a human-readable coverage/gap summary in this plan’s progress ledger.
+- [x] Inventory actual HTTP routes/methods/mounts and dynamic registration sites; separately enumerate WebSocket/event, jobs and browser entry points. Record unresolved dynamic routes rather than silently omitting them.
+- [x] Map existing tests and actual executed evidence to each surface: full-server HTTP, router/service with substitutes, browser flow, static-only, untested, or external/hardware-dependent.
+- [x] Define identical original/candidate fixtures and contract assertions for status, headers, response shape/content, auth, persistence and events. Normalize only specifically reviewed nondeterministic fields; never mask missing/extra fields or errors.
+- [x] Produce durable `2026-10-09-cutover-coverage.json` and a human-readable coverage/gap summary in this plan’s progress ledger.
 
 ## Task 2: Reconcile current main
 
-- [ ] Pin main SHA and preserve a refactor checkpoint. Integrate School story-time noRepeatDays behavior and all intervening tracked changes into the owned paths; preserve both histories.
-- [ ] Run the relevant original main tests and migrated tests with identical named populations and fixtures in the existing confinement lane. Verify new browser helpers remain discoverable.
-- [ ] Independently review the integration diff, including app composition and incoming imports; do not claim parity with an obsolete pre-feature main.
+- [x] Pin main SHA and preserve a refactor checkpoint. Integrate School story-time noRepeatDays behavior and all intervening tracked changes into the owned paths; preserve both histories.
+- [x] Run the relevant original main tests and migrated tests with identical named populations and fixtures in the existing confinement lane. Verify new browser helpers remain discoverable.
+- [x] Independently review the integration diff, including app composition and incoming imports; do not claim parity with an obsolete pre-feature main.
 
 ## Task 3: Validate real deployment packaging
 
-- [ ] Inspect `docker/Dockerfile`, root `.dockerignore`, owned YAML/assets and dependency setup against actual source/resource consumers. Repair demonstrated omissions with focused regression checks.
-- [ ] Prepare a tracked-only, secret-free build context and invoke the actual production Dockerfile on an accessible approved builder. Record context digest, source revision, image ID and complete build result.
-- [ ] Verify required owned runtime assets and package resolutions inside the image. Resource limits and isolation must protect the host’s ongoing work.
+- [x] Inspect `docker/Dockerfile`, root `.dockerignore`, owned YAML/assets and dependency setup against actual source/resource consumers. Repair demonstrated omissions with focused regression checks.
+- [x] Prepare a tracked-only, secret-free build context and invoke the actual production Dockerfile on an accessible approved builder. Record context digest, source revision, image ID and complete build result.
+- [x] Verify required owned runtime assets and package resolutions inside the image. Resource limits and isolation must protect the host’s ongoing work.
 
 ## Task 4: Differential full-application acceptance
 
-- [ ] Boot original current-main and candidate images with identical disposable fixtures and controlled external provider boundaries. Use actual production entrypoint/server, not a replacement test-only router.
-- [ ] Compare inventoried HTTP contracts, including successful reads/writes, empty/error cases, auth/permissions, persisted results and event effects. Each required surface must have executed evidence or an explicit unresolved release blocker.
-- [ ] Exercise representative daily-use browser journeys through those servers: School portal/reading/story-time, Piano controls/games, Fitness/playback, shared media/screens, and other routinely used surfaces identified by the inventory. Verify real lazy bundles and WebSocket lifecycle.
-- [ ] Exercise startup/readiness, job registration and safe controlled job effects, restart persistence, configuration loading and graceful shutdown. Keep provider/hardware verification limits explicit.
-- [ ] Record exact original/candidate image/source hashes, per-case outcomes and differences; fix candidate regressions and rerun only affected gates plus required integration checks.
+- [x] Boot original current-main and candidate images with identical disposable fixtures and controlled external provider boundaries. Use actual production entrypoint/server, not a replacement test-only router.
+- [x] Compare inventoried HTTP contracts, including successful reads/writes, empty/error cases, auth/permissions, persisted results and event effects. Each required surface must have executed evidence or an explicit unresolved release blocker.
+- [x] Exercise representative daily-use browser journeys through those servers: School portal/reading/story-time, Piano controls/games, Fitness/playback, shared media/screens, and other routinely used surfaces identified by the inventory. Verify real lazy bundles and WebSocket lifecycle.
+- [x] Exercise startup/readiness, job registration and safe controlled job effects, restart persistence, configuration loading and graceful shutdown. Keep provider/hardware verification limits explicit.
+- [x] Record exact original/candidate image/source hashes, per-case outcomes and differences; fix candidate regressions and rerun only affected gates plus required integration checks.
 
 ## Task 5: Cutover and rollback package
 
-- [ ] Write `docs/runbooks/application-modules-cutover.md` with concrete image/source identification, fresh-main reconciliation, deployment readiness and usage-idle gates, smoke checks, rollback trigger and rollback commands preserving intervening main changes.
-- [ ] Refresh the stale roadmap and refactor status to distinguish structural completion, verified readiness and future runtime-framework work.
-- [ ] Review all readiness changes and evidence against this plan; run the unchanged original commit hook, verify a clean local checkpoint and final main inclusion.
-- [ ] Mark readiness complete only after all required actual image/runtime tests pass and no daily-use release blocker remains. Deployment and merging into main remain separate actions.
+- [x] Write `docs/runbooks/application-modules-cutover.md` with concrete image/source identification, fresh-main reconciliation, deployment readiness and usage-idle gates, smoke checks, rollback trigger and rollback commands preserving intervening main changes.
+- [x] Refresh the stale roadmap and refactor status to distinguish structural completion, verified readiness and future runtime-framework work.
+- [x] Review all readiness changes and evidence against this plan; run the unchanged original commit hook, verify a clean local checkpoint and final main inclusion.
+- [x] Mark readiness complete only after all required actual image/runtime tests pass and no daily-use release blocker remains. Deployment and merging into main remain separate actions.
 
 ## Historical initial evidence and constraints
 

@@ -1,0 +1,78 @@
+{
+  "schema": "daylight.production-readonly-smoke-manifest/v1",
+  "sourceCommit": "da5b8ec0ed516cfa020754e9a6a590aba40d9cdb",
+  "sourcePins": [
+    {
+      "path": "backend/src/4_api/serverRequestHandler.mjs",
+      "sha256": "35544e0394b76b7b0661c1c8f0ea698d5e927dcf2275abdbdb58ebbb3ec288eb"
+    },
+    {
+      "path": "backend/src/4_api/v1/routers/api.mjs",
+      "sha256": "5020d62e5d844b482943ae3136237e897a194e6246a497727830782c83055dbd"
+    },
+    {
+      "path": "backend/src/app.mjs",
+      "sha256": "cc0d9ac6173dcd29701cb2e7f8ccb92d8f87d764f4071cd6b99acd6dfbf64a16"
+    },
+    {
+      "path": "docker/Dockerfile",
+      "sha256": "ba015f1757c358feb5f3db4ce80a972954924c1c08c977faec28f335180c4d81"
+    },
+    {
+      "path": "modules/piano/server/api/piano.mjs",
+      "sha256": "c233dfb6756948bf94eaf92ff1483b01516591e52077a350b0c8e94936699587"
+    },
+    {
+      "path": "modules/piano/server/application/PianoLearningService.mjs",
+      "sha256": "8dfcfef7028c4cb28fd57fa549931b6c5506d762bfa7a9be7d122c70a1b0d61d"
+    },
+    {
+      "path": "modules/piano/portable/music/learningPrograms.mjs",
+      "sha256": "9439514b52cd7a4d0f9b5a69627b2d7c2dcefcfb10e3aac11d41d81128add889"
+    },
+    {
+      "path": "modules/piano/portable/music/exerciseCatalog.mjs",
+      "sha256": "3cc8b14d5b57e37d13444bfe60e27037fd4ce156726d0036a620f688bb357e59"
+    },
+    {
+      "path": "backend/src/1_adapters/runtime/BuildMetadataSource.mjs",
+      "sha256": "66fae938a69540e01f296a1fe6c4a7d592dd654b57a324425c5f120e583af450"
+    }
+  ],
+  "fixedRequests": [
+    "GET /healthz",
+    "GET /api/v1/ping",
+    "GET /build.txt",
+    "GET /",
+    "GET one root-declared /assets/<name>.js"
+  ],
+  "optionalCatalogs": {
+    "piano-exercises": "GET /api/v1/piano/bank/catalog",
+    "piano-programs": "GET /api/v1/piano/programs"
+  },
+  "safety": "No cookies/Bearer headers, credentials omitted, no redirects, serial GET-only, five-second total deadline and1MiB body cap per request. Optional catalogs derive from local loaded ExerciseBank; no provider calls/refresh, triggers, user attempt writes, generation endpoint or arbitrary path. Routine server request logging may still occur.",
+  "contract": "Exact health/ping key/type/clock invariants; baked commit URL matches explicit expectedcommit; rootHTML+declaredJS asset MIME/body; local catalog shape/unique IDs/count totals. Full production dataset equality and all API identity are not claimed.",
+  "liveExecuted": true,
+  "sourceReviewedCatalogs": {
+    "piano-exercises": "piano.mjs bankReady and buildExerciseCatalog over loaded ExerciseBank; category/seed expansion pure in portable code.",
+    "piano-programs": "piano.mjs calls PianoLearningService.programs \u2192 buildLearningPrograms over loaded ExerciseBank; no attempt/learning datastore mutation."
+  },
+  "pingSafety": "backend/src/4_api/v1/routers/api.mjs /ping reads Date.now only. No Cookie/Authorization sent: auth request middleware does not update active-session lastSeenAt. Healthz handled before Express/auth. Routine logs are not suppressed.",
+  "baselineExecution": {
+    "expectedCommit": "7d0ffd258c53f310aa3f0d36fe26ecbf93228044",
+    "fixedGetRequests": 5,
+    "accepted": true,
+    "optionalCatalogsExecuted": false,
+    "scope": "Historical live reference only; no current candidate/cutover credit"
+  },
+  "currentReferenceExecution": {
+    "expectedCommit": "bf35ca204168412de03e561db0ecd00e5e7bfcc4",
+    "fixedGetRequests": 5,
+    "accepted": true,
+    "optionalCatalogsExecuted": false,
+    "receiptSha256": "c3a58137b6128ccc22c0d5400603382095c73e48beb5ea15d8ef806185bf2ed7",
+    "scope": "Current live reference only; no candidate/cutover credit"
+  },
+  "candidateProductionSmokeExecuted": false,
+  "sourceBindingScope": "Final da5 source contract; historical and current reference executions below retain their own identities. Candidate production execution is still pending."
+}

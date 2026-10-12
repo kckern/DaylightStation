@@ -1,0 +1,2 @@
+FROM sha256:29400190445cf6cbfde4b236b6a3d2b40be597fbff6b16dfc8330b46dda78dd6
+COPY --chown=node:node overlay/assets/ /usr/src/app/frontend/dist/assets/
