@@ -40277,14 +40277,14 @@
       },
       "finalReleaseUserController": {
         "acceptedExecutablePreparationOnly": true,
-        "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-final-controller-transport-review-v1.json",
-        "reviewSha256": "6ed676ca75ade03be16568d98e2746d4d91f890cbbccfbc86e7fa76af2b50bf0",
+        "reviewPath": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/final-controller-v4-mount-order-review-v1.json",
+        "reviewSha256": "c3008ef1b909676c48bee85e5c4b927f48116625ddc5bcd58d84364aee630d49",
         "controller": {
-          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v3/backend-cutover-controller.private.py",
-          "sha256": "f4a25265a789d7a7dddbd3f7b0111275744a79b59e8ebe442ea030a9919ef3b3"
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v4/backend-cutover-controller.private.py",
+          "sha256": "b76bd631f0a9cb305e858c074a6f2530373a29b230f07aa1397b139c9b9fc8a7"
         },
         "privateGate": {
-          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v3/idle-gate-private/deploy-gate.sh",
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v4/idle-gate-private/deploy-gate.sh",
           "sha256": "af37a6b7b8440f289d882ea6b632ef1cf1fd177565ba356abadb323672372501"
         },
         "pinnedInputs": 13,
@@ -40294,7 +40294,12 @@
           "Exclusive deployment lane is an external mandatory precondition; no common lock withdeploy-daylight.",
           "No live idle-gate,Docker restart/removal,deployment or rollback execution performed byreviewer.",
           "Fresh drift/usage/log checks remain deployment-time obligations."
-        ]
+        ],
+        "previousTransportReview": {
+          "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/stock-new160-final-controller-transport-review-v1.json",
+          "sha256": "6ed676ca75ade03be16568d98e2746d4d91f890cbbccfbc86e7fa76af2b50bf0"
+        },
+        "mountOrderPolicy": "Complete mount objects equal by unique Destination; only array order is ignored. Duplicates, missing/extra mounts and any field drift rejected."
       },
       "new160DurableReplay": {
         "acceptedSameHostPreparation": true,
@@ -40358,6 +40363,14 @@
       "Untested, effectful, dynamic and hardware/provider surfaces remain inspectable.",
       "Fresh usage-idle, drift and exclusive deployment lane checks required before actual cutover."
     ],
-    "historicalEntriesRetainOriginalImageSourceAndReadinessScope": true
+    "historicalEntriesRetainOriginalImageSourceAndReadinessScope": true,
+    "controller": {
+      "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/current-rollback-2217-new160-direct-gate-v4/backend-cutover-controller.private.py",
+      "sha256": "b76bd631f0a9cb305e858c074a6f2530373a29b230f07aa1397b139c9b9fc8a7"
+    },
+    "controllerReview": {
+      "path": "/home/ds/.local/state/daylight-readiness/cutover-2026-10-11/final-controller-v4-mount-order-review-v1.json",
+      "sha256": "c3008ef1b909676c48bee85e5c4b927f48116625ddc5bcd58d84364aee630d49"
+    }
   }
 }
