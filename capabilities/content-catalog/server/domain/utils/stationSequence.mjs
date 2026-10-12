@@ -191,7 +191,10 @@ export async function sequenceQueue({ items, sequence, orderRest, resolveIds, ra
   const unresolved = wanted.filter((id) => !resolved.get(id));
 
   const headItems = head.map((h) => h.item ?? resolved.get(h.id)).filter(Boolean);
-  const songs = await orderRest(rest);
+  // A station ID the playlist also holds as an ordinary track plays only as an
+  // ID: left among the songs it would shuffle in beside an inserted ID.
+  const poolIds = new Set(sequence.idents ? pool : []);
+  const songs = await orderRest(rest.filter((it) => !poolIds.has(idOf(it))));
   const identItems = pool.map((id) => resolved.get(id)).filter(Boolean);
   const body = identItems.length
     ? interleaveIdents(songs, sequence.idents.every, identItems, random)
