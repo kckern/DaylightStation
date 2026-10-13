@@ -124,6 +124,50 @@ describe('active cycle sensor recovery', () => {
     expect(active.phaseProgressMs).toBe(700);
     expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')[0].data).toMatchObject({ challengeId: active.id, equipmentId: 'cycle_ace', unavailableMs: 9999 });
   });
+  it.each([10000, 10001])('cancels neutrally when fresh cadence returns after %i ms of loss', (elapsedMs) => {
+    const f = fixture(); const active = f.engine.challengeState.activeChallenge;
+    const cooldowns = { ...f.engine._cycleCooldowns };
+    f.tick(0, null); f.tick(9999, null);
+    f.tick(elapsedMs - 9999, fresh(f.now() + elapsedMs - 9999));
+    expect(f.engine.challengeState.activeChallenge).toBeNull();
+    expect(f.engine.challengeState.challengeHistory).toEqual([
+      expect.objectContaining({ id: active.id, type: 'cycle', status: 'cancelled', cancelReason: 'sensor_offline' })
+    ]);
+    expect(f.engine._cycleCooldowns).toEqual(cooldowns);
+    expect(f.session.logEvent).toHaveBeenCalledExactlyOnceWith('challenge_cancelled', expect.objectContaining({ challengeId: active.id, type: 'cycle', reason: 'sensor_offline' }), f.now());
+    expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')).toHaveLength(0);
+    expect(logged.filter(l => l.event === 'governance.cycle.cancelled')).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ challengeId: active.id, unavailableMs: elapsedMs }) })
+    ]);
+    f.tick(0);
+    expect(f.session.logEvent).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ['pause', 9999], ['pause', 10000], ['transport stall', 9999], ['transport stall', 10000]
+  ])('uses adjusted loss time when fresh cadence returns after a %s at %i ms', (suspension, elapsedMs) => {
+    const f = fixture(); const active = f.engine.challengeState.activeChallenge;
+    f.tick(0, null); f.tick(4000, null);
+    if (suspension === 'pause') {
+      f.engine.setPlaybackPaused(true); f.tick(30000, null); f.engine.setPlaybackPaused(false);
+    } else {
+      const stalled = { rpm: 80, connected: false, ts: f.now(), transportStalled: true };
+      f.tick(0, stalled); f.tick(30000, stalled); f.tick(0, null);
+    }
+    f.tick(elapsedMs - 4000, fresh(f.now() + elapsedMs - 4000));
+    if (elapsedMs === 9999) {
+      expect(f.engine.challengeState.activeChallenge).toBe(active);
+      expect(active.sensorUnavailable).toBe(false);
+      expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')).toEqual([
+        expect.objectContaining({ data: expect.objectContaining({ challengeId: active.id, unavailableMs: 9999 }) })
+      ]);
+      expect(f.session.logEvent).not.toHaveBeenCalled();
+    } else {
+      expect(f.engine.challengeState.activeChallenge).toBeNull();
+      expect(f.engine.challengeState.challengeHistory.at(-1)).toMatchObject({ id: active.id, status: 'cancelled', cancelReason: 'sensor_offline' });
+      expect(logged.filter(l => l.event === 'governance.cycle.sensor_recovered')).toHaveLength(0);
+      expect(f.session.logEvent).toHaveBeenCalledTimes(1);
+    }
+  });
   it('does not charge recovery time against an existing never-started effort deadline', () => {
     const f = fixture(); const active = f.engine.challengeState.activeChallenge;
     active.cycleState = 'locked'; active.lockReason = 'init'; active._initFailSince = f.now() - 14000;

@@ -3954,10 +3954,13 @@ export class GovernanceEngine {
       return false; // Keep the existing pipeline freeze and its edge logs.
     }
 
-    if (this._hasAvailableCycleCadence(active.equipment, now)) {
+    const unavailableMs = (active.sensorUnavailableMs || 0)
+      + (active.sensorUnavailable && !active._sensorRecoveryTransportStalled
+        ? Math.max(0, now - active._sensorRecoveryLastTs) : 0);
+    // A returning packet cannot revive a challenge whose recovery window expired.
+    if (this._hasAvailableCycleCadence(active.equipment, now)
+        && unavailableMs < CYCLE_SENSOR_RECOVERY_MS) {
       if (active.sensorUnavailable) {
-        const unavailableMs = (active.sensorUnavailableMs || 0)
-          + (active._sensorRecoveryTransportStalled ? 0 : Math.max(0, now - active._sensorRecoveryLastTs));
         // All effort stopwatches resume from the point at which cadence vanished.
         if (Number.isFinite(active._initFailSince)) {
           active._initFailSince += Math.max(0, now - active.sensorUnavailableAt);
@@ -3981,8 +3984,8 @@ export class GovernanceEngine {
       getLogger().warn('governance.cycle.sensor_unavailable', {
         challengeId: active.id, equipmentId: active.equipment, unavailableMs: 0
       });
-    } else if (!active._sensorRecoveryTransportStalled) {
-      active.sensorUnavailableMs += Math.max(0, now - active._sensorRecoveryLastTs);
+    } else {
+      active.sensorUnavailableMs = unavailableMs;
     }
     active._sensorRecoveryTransportStalled = false;
     active._sensorRecoveryLastTs = now;
