@@ -48,6 +48,10 @@ describe('auditContent', () => {
   it('allows documentation-reserved example ranges', () => {
     expect(auditContent('scripts/x.sh', 'curl http://192.0.2.10/\ncurl http://10.0.0.0/8')).toEqual([]);
   });
+
+  it('exempts the audit script itself from content rules (it documents markers)', () => {
+    expect(auditContent('scripts/audit-public-tree.mjs', 'ssh homeserver.local\nkckern.net')).toEqual([]);
+  });
 });
 
 describe('isProbablyBinary', () => {

@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+const SELF = 'scripts/audit-public-tree.mjs';
 const INTERNAL_DOCS = /^__docs\/(_wip|_archive|superpowers|plans|notes|roadmap|marketing)\//;
 const BUILD_JUNK = /(^|\/)(__pycache__\/|.*\.pyc$|.*\.class$|build\/reports\/)/;
 const SCRATCH = /(^|\/)(_tmp_[^/]*|_proto-[^/]*)$/;
@@ -50,6 +51,8 @@ export function auditPaths(paths) {
 const inScope = (path, scope) => scope.some((s) => (s.endsWith('/') ? path.startsWith(s) : path === s));
 
 export function auditContent(path, text) {
+  // Exempt the audit script itself from content rules (it documents the markers).
+  if (path === SELF) return [];
   const out = [];
   const rules = CONTENT_RULES.filter((r) => inScope(path, r.scope));
   if (!rules.length) return out;
