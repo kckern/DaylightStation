@@ -2,6 +2,8 @@
 
 ArtMode is the framed-artwork surface — the home screensaver and an ad-hoc scene. It hangs a single landscape work, or pairs two portraits into a diptych, behind a printed picture frame with a coloured mat and an engraved brass nameplate, optionally over background music. The artwork pool comes from a named **collection**, which resolves either from the local classic-art library on disk or from Immich.
 
+All text within ArtMode, including artwork nameplates and music labels, is unselectable.
+
 For how a screen wires ArtMode as a passive screensaver, and how a scene is dispatched ad hoc to any screen/target, see `screen-configs.md`. This document describes the art source, collection, and selection model behind that surface.
 
 ---
