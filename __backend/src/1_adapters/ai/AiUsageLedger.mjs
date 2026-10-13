@@ -19,6 +19,21 @@ const MONTH_FILE = /^(\d{4})-(\d{2})(?:\.[\w.-]+)?\.jsonl$/;
 const PLUMBING_FRAME = /[\\/]1_adapters[\\/](?:ai|agents)[\\/]|[\\/]node_modules[\\/]|agentUsageRecorder|node:internal|\(<anonymous>\)|^\s*at (?:async )?Promise\b/;
 
 /**
+ * Reduce an absolute frame path to a repo-relative form: strip through
+ * `__backend/src/` (or legacy `backend/src/`), keep `__app_modules/…` and
+ * `__capabilities/…` from their root, and `cli/…` from `cli/`.
+ * @param {string} path
+ * @returns {string}
+ */
+function shortenCallerPath(path) {
+  const src = /^.*(?:^|[\\/])_*backend[\\/]src[\\/]/;
+  if (src.test(path)) return path.replace(src, '');
+  const root = /^.*?(?:^|[\\/])((?:__app_modules|__capabilities)[\\/].*)$/.exec(path);
+  if (root) return root[1];
+  return path.replace(/^.*[\\/](cli[\\/])/, '$1');
+}
+
+/**
  * The first stack frame outside the AI plumbing, as `<path under src>:<line>`
  * plus the function name when V8 gives one — e.g.
  * `3_applications/finance/TransactionCategorizationService.mjs:212 (TransactionCategorizationService.categorize)`.
@@ -39,9 +54,7 @@ export function callerFrame(stack = null) {
     if (!/^\s*at /.test(line) || PLUMBING_FRAME.test(line)) continue;
     const m = /^\s*at (?:async )?(?:(.+?) \()?(?:file:\/\/)?(.+?):(\d+):\d+\)?\s*$/.exec(line);
     if (!m) continue;
-    const file = /[\\/]backend[\\/]src[\\/]/.test(m[2])
-      ? m[2].replace(/^.*[\\/]backend[\\/]src[\\/]/, '')
-      : m[2].replace(/^.*[\\/](cli[\\/])/, '$1');
+    const file = shortenCallerPath(m[2]);
     return m[1] ? `${file}:${m[3]} (${m[1]})` : `${file}:${m[3]}`;
   }
   return null;
