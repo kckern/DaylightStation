@@ -7,7 +7,7 @@ import { validateFlashcardDeck } from "../flashcards/index.mjs";
 import { validateDocumentSource } from "../documents/documentSource.mjs";
 import { buildWordQuizSource, expandLexiconDeck, validateLexicon } from "./index.mjs";
 
-const SEED = fileURLToPath(new URL("../../../../../content/seeds/school/korean-vocab", import.meta.url));
+const SEED = fileURLToPath(new URL("../../../seeds/korean-vocab", import.meta.url));
 const read = (name) => yaml.load(fs.readFileSync(path.join(SEED, name), 'utf8'));
 
 const WEEK_ONE = [

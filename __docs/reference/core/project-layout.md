@@ -41,6 +41,10 @@ Reusable HTTP test transports live in `tests/_lib/memory-http/`.
 Personal data, authoring drafts, logs, coverage, and scratch captures stay out
 of version control. `_deleteme/` is an ignored local quarantine.
 
+School's maintained example decks and vocabulary packages live in
+`__app_modules/school/seeds/`. Their YAML ships with the module in the Docker
+image; installed copies belong in the external data and media directories.
+
 Tool configs live with their workflows: test runners use
 `tests/_infrastructure/config/`, and nodemon uses `scripts/config/`.
 Run one test file with `npm run test:file -- <path>`, or use

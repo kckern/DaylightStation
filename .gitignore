@@ -16,7 +16,7 @@ __backend/node_modules
 !/__app_modules/school/satellites/ti86-app/gui/screens.yml
 !/__app_modules/school/satellites/ti86-app/gui/type.yml
 !/__app_modules/school/satellites/ticalc-relay/config.example.yml
-!content/seeds/**/*.yml
+!/__app_modules/school/seeds/**/*.yml
 !__docs/configuration/*.example.yml
 !docker/docker-compose.test.yml
 /shared/gaming/fixtures/

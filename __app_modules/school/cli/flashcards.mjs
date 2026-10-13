@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { getConfigService } from "../../../cli/_bootstrap.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const seedRoot = path.resolve(here, '../../../content/seeds/school/flashcards');
+const seedRoot = path.resolve(here, '../seeds/flashcards');
 const HELP = `school-flashcards — install tracked example decks\n\nUsage:\n  school.mjs flashcards install-seeds [--data-dir <path>]\n\nInstalls missing seed files into content/school/learning-catalog/flashcard-decks.\nExisting byte-identical files are skipped; conflicting files are never overwritten.\n`;
 
 export async function installSeeds({ dataDir, stdout = process.stdout } = {}) {
