@@ -4,7 +4,7 @@ A push is read on a lock screen by someone who didn't write the code, often
 mid-task and at a glance. Every push DaylightStation sends, directly or through a
 Home Assistant script, follows the rules below. They came out of an audit of 30
 days of real pushes
-(`_wip/audits/2026-09-22-ha-push-notification-audit.md`).
+(`ops:docs/_wip/audits/2026-09-22-ha-push-notification-audit.md`).
 That audit found `None` in 60% of school pushes, raw ids in almost every
 producer, UTC timestamps, and the same event ringing two to six times.
 

@@ -220,7 +220,7 @@ Guests are archived too, with a null player: the history is about what happened 
 
 ### Rebuilding derived records
 
-`cli/chess-backfill.cli.mjs` repairs everything derived from the archive. It moves any games still
+`ops:retired/cli/chess-backfill.cli.mjs` repairs everything derived from the archive. It moves any games still
 in the pre-reorganisation directory (`gaming/log/pianochess/`) into the current one, renaming the
 oldest `user-timestamp.yml` files to the current scheme so filename filters find them. It retires
 per-player scorecards (`apps/chess/games/`, no longer written) once the archive is shown to hold
@@ -260,8 +260,8 @@ Run the dry read first; then, immediately before the write, check that nobody is
 a game recorded between the read and the write would otherwise be overwritten by the write's own
 plan, computed from the read's older archive:
 
-    sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data
-    ./scripts/piano-kiosk-idle.sh && sudo docker exec {env.docker_container} node cli/chess-backfill.cli.mjs --data data --write
+    sudo docker exec {env.docker_container} node ops:retired/cli/chess-backfill.cli.mjs --data data
+    ops:scripts/piano-kiosk-idle.sh && sudo docker exec {env.docker_container} node ops:retired/cli/chess-backfill.cli.mjs --data data --write
 
 It is safe to run again. A second write finds nothing to move and rewrites identical files.
 

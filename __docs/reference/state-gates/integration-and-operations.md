@@ -220,7 +220,7 @@ provenance even after their transition envelopes age out.
   build keeps committing between the CLI run and the container stop — about
   255 commits a day, 2–3 a minute during a workout — and anything committed in
   that window is lost. Do it in this order:
-  1. confirm `./scripts/deploy-gate.sh` reports clear;
+  1. confirm `ops:scripts/deploy-gate.sh` reports clear;
   2. run the converter inside the container:
      `node cli/state-gates-legacy-yaml.cli.mjs data/household/state-gates/current.json data/household/state-gates/current.yml`
   3. immediately stop the container — anything committed between step 2 and

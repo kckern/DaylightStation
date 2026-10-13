@@ -127,7 +127,6 @@
     "test:integrated": "node tests/_infrastructure/harnesses/integrated.harness.mjs",
     "test:unit": "node tests/unit/harness.mjs",
     "test:integration": "node tests/integration/harness.mjs",
-    "test:smoke": "node tests/integration/external/smoke.mjs",
     "school:smoke": "node scripts/school-smoke.mjs",
     "schoolcalc:validate": "node cli/school.mjs calc validate",
     "gaming:assets": "node cli/gaming-assets.cli.mjs",

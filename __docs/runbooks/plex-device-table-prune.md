@@ -44,7 +44,7 @@ streams, and frontend-supplied sessions are untouched.
 ## Clear the backlog
 
 ```bash
-sudo ./scripts/plex-prune-api-devices.sh
+sudo ops:scripts/plex-prune-api-devices.sh
 ```
 
 Plex must be **running** when it starts (it reads safety counts through

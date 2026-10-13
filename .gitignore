@@ -54,7 +54,6 @@ known_hosts
 /_extentions/fitness/node_modules
 /_extentions/fitness/_reference
 *.dev
-/__docs/ops
 __backend/logs/
 /config
 
@@ -103,7 +102,6 @@ config.app-local.yml
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
 /tests/test-results
-/test-results
 /.reports/
 # Runtime test outputs (but track test source files)
 tests/runtime/output/
@@ -119,8 +117,6 @@ CLAUDE.local.md
 /.playwright-mcp
 /coverage
 tests/output/
-/__docs/marketing/jop
-/__docs/ideas
 /_extensions/audio-bridge/app/app/build
 /_extensions/audio-bridge/app/.gradle
 /_extensions/audio-bridge/app/local.properties
@@ -187,7 +183,6 @@ __sabotage_*.mjs
 # sheets.yml + scales.yml and is not byte-stable anyway (pdfkit stamps a creation
 # date), so committing it would churn on every regeneration.
 /*.pdf
-__docs/_moveme/
 /.agents
 # Committed visual baselines the print-design acceptance sweeps compare against
 # (they write a fresh one and FAIL when it is missing, so it must be tracked).
@@ -225,36 +220,10 @@ __app_modules/*/*/satellites/**/node_modules/
 # Playwright screenshot artifacts (visual gates)
 tests/_artifacts/
 
-# The same PIXELS argument, for the two file types it does not cover.
-#
-# `*.png` above already catches every audit screenshot. It does NOT catch the
-# machine-readable sidecar an audit writes beside them, which holds the same
-# telemetry as TEXT — the 2026-09-05 health audit's measurements.json carries a
-# real weight series, body-fat percentage and dated calorie history. Nor does it
-# catch AUDIO: a room recording is household telemetry too, and no scrub can
-# read it.
-#
-# Scratch analysis output, both of them, regenerable from the source capture.
+# Scratch analysis output and room recordings: household telemetry, regenerable
+# from the source capture.
 recording-analysis/
 *.wav
-__docs/_wip/audits/**/measurements.json
-
-# Generated audit LEDGERS. An audit's findings are its markdown; the JSON
-# beside it is machine output from the tooling in
-# tests/preimplementation/*/tooling/, which is committed — so the ledgers are
-# regenerable and do not belong in history.
-#
-# Concretely: the 2026-09-05 application-module audit carried 323 JSON files,
-# 3.19M lines, 121MB, against 42 markdown files totalling 7k lines. Beyond the
-# size, millions of lines of machine-generated NUMBERS collide with the numeric
-# device-id patterns in the push guard: a `"bytes":` field in one ledger
-# happened to equal a real ANT+ sensor id and blocked an unrelated commit on
-# main, because the guard scans every unpushed ref. Each collision costs a full
-# investigation to clear, forever. Keep the findings, drop the ledgers.
-#
-# Already-tracked files are unaffected (gitignore only governs new adds), so
-# the small curated evidence indexes committed alongside an audit stay.
-__docs/_wip/audits/**/*.json
 
 # Personal data authoring and one-off root probes belong outside the code tree.
 /data-drafts/
@@ -303,3 +272,4 @@ node_modules/
 /households/
 /test-results/
 /dev.log*
+

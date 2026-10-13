@@ -2,7 +2,7 @@
 
 This directory owns the presentation and interaction contract for DaylightStation Party Games. The product is a stylized family entertainment-TV app, not a generic dashboard and not a reskin of the rest of DaylightStation.
 
-This guide is normative for new work. Existing code may predate it; an existing exception is not precedent. Track current deviations in the [Party Games UX audit](../../../../../../ops:docs/_wip/audits/2026-08-30-party-games-ux-audit.md).
+This guide is normative for new work. Existing code may predate it; an existing exception is not precedent. Track current deviations in the [Party Games UX audit](ops:docs/_wip/audits/2026-08-30-party-games-ux-audit.md).
 
 Normative words have their usual meaning:
 
@@ -530,4 +530,4 @@ Before registering a new Party Games experience, verify:
 
 ## Review standard
 
-Review Party Games with the project’s [design-system quality rubric](../../../../../../ops:docs/_wip/audits/2026-08-30-design-system-quality-rubric.md). A review must include rendered evidence at the TV and phone targets, content stress states, supported input methods, reduced motion, and source checks. Reading the happy-path JSX alone is not sufficient.
+Review Party Games with the project’s [design-system quality rubric](ops:docs/_wip/audits/2026-08-30-design-system-quality-rubric.md). A review must include rendered evidence at the TV and phone targets, content stress states, supported input methods, reduced motion, and source checks. Reading the happy-path JSX alone is not sufficient.

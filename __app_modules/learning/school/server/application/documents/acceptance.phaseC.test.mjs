@@ -1,7 +1,7 @@
 /**
  * Phase C acceptance sweep — spec §12 items tagged `[C]` (§12.3/§12.4/§12.5),
  * plus the Phase-C slice of §12.10 (see
- * `__docs/_wip/plans/2026-08-04-print-design-system-requirements.md` §12, and
+ * `ops:docs/_wip/plans/2026-08-04-print-design-system-requirements.md` §12, and
  * the Phase C task plan at
  * `.superpowers/sdd/2026-08-04-print-design-system-phase-c-plan/`).
  *

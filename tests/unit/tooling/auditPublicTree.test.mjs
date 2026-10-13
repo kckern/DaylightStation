@@ -61,3 +61,18 @@ describe('isProbablyBinary', () => {
     expect(isProbablyBinary('a.md', Buffer.from('hello'))).toBe(false);
   });
 });
+
+describe('audit CLI cwd', () => {
+  it('audits the whole repo even when invoked from a subdirectory', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const script = new URL('../../../scripts/audit-public-tree.mjs', import.meta.url).pathname;
+    const root = new URL('../../../', import.meta.url).pathname;
+    const scanned = (cwd) => {
+      const out = execFileSync('node', [script], { cwd, encoding: 'utf8' });
+      return Number(/scanned (\d+) tracked files/.exec(out)?.[1]);
+    };
+    const fromRoot = scanned(root);
+    expect(fromRoot).toBeGreaterThan(1000);
+    expect(scanned(root + 'scripts')).toBe(fromRoot);
+  });
+});

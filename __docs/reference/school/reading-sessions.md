@@ -17,7 +17,7 @@
 > ordinary `play-next`: the story played start to finish with no pick and no
 > credit. The grace-window reopen (§9) covers the book that arrives just after a
 > teardown, NOT the one that arrives before the session. The deploy half is
-> fixed outside this document — `scripts/deploy-gate.sh` §5 now refuses to
+> fixed outside this document — `ops:scripts/deploy-gate.sh` §5 now refuses to
 > restart over an open session.
 > On 2026-09-30 a cold TV lost a child twice in one minute. The initial launch
 > card's ACK budget (2 × 8 s) expired 0.5 s after the page — which loaded 11 s
@@ -609,7 +609,7 @@ One known gap remains deliberate:
 
 The full taxonomy — the jobs, which element owns each, and which are
 deliberately absent from which surface — is
-`_wip/plans/2026-09-09-reading-information-taxonomy.md`.
+`ops:docs/_wip/plans/2026-09-09-reading-information-taxonomy.md`.
 The short version:
 
 | Surface | Its question | Carries |

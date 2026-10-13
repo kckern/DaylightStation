@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 const SELF = 'scripts/audit-public-tree.mjs';
 const INTERNAL_DOCS = /^__docs\/(_wip|_archive|superpowers|plans|notes|roadmap|marketing)\//;
@@ -63,7 +64,10 @@ export function auditContent(path, text) {
 }
 
 function main() {
+  // git ls-files prints cwd-relative paths; every anchored rule assumes repo root.
+  process.chdir(resolve(fileURLToPath(import.meta.url), '..', '..'));
   const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }).split('\0').filter(Boolean);
+  console.log(`audit:public scanned ${files.length} tracked files`);
   const violations = auditPaths(files);
   for (const path of files) {
     let buf;

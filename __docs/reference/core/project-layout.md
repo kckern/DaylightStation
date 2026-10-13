@@ -57,7 +57,7 @@ Run one test file with `npm run test:file -- <path>`, or use
 and reading commands keep their existing npm names. Legacy Jest is available
 through `npm run test:jest -- <path>`.
 
-Project history lives in `__docs/project-history.md`; branding sources and
+Project history lives in `ops:docs/project-history.md`; branding sources and
 font licenses live in `__docs/assets/branding/`. The local agent settings
 example is `__docs/ai-context/CLAUDE.local.example.md`. Root agent entry files,
 package manifests, Git/Docker ignore files, `.nvmrc`, and the environment

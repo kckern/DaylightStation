@@ -28,7 +28,7 @@ No host daemon — **firmware only**, config-driven from the household SSOT
 > reintroduce Classic BT here — NimBLE supports none of it, and the Bluedroid
 > stack that does is mutually exclusive with NimBLE (one BLE stack per binary).
 > The retired Classic board is recorded in
-> [`ops:docs/_archive/deleted-extensions.md`](../../ops:docs/_archive/deleted-extensions.md).
+> [`ops:docs/_archive/deleted-extensions.md`](ops:docs/_archive/deleted-extensions.md).
 
 ## Messages sent to the bus
 

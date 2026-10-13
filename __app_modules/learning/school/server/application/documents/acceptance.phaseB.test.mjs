@@ -1,6 +1,6 @@
 /**
  * Phase B acceptance sweep — spec §12 items tagged `[B]`, plus the Phase-B
- * slice of §12.10 (see `__docs/_wip/plans/2026-08-04-print-design-system-requirements.md`
+ * slice of §12.10 (see `ops:docs/_wip/plans/2026-08-04-print-design-system-requirements.md`
  * §12, and the Phase B task plan at
  * `.superpowers/sdd/2026-08-04-print-design-system-phase-b-plan/`).
  *

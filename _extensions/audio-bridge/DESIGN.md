@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-22
 **Status:** Implemented and verified
-**Problem:** [Shield TV USB Audio WebView Audit](../../ops:docs/_wip/audits/2026-02-22-shield-tv-usb-audio-webview-audit.md)
+**Problem:** [Shield TV USB Audio WebView Audit](ops:docs/_wip/audits/2026-02-22-shield-tv-usb-audio-webview-audit.md)
 
 ---
 
