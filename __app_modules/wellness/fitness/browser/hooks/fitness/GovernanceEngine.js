@@ -2105,10 +2105,10 @@ export class GovernanceEngine {
   }
 
   /**
-   * Compute the active audio-duck descriptor (or null) for the current
-   * governance/challenge state. Stateless: returns a stable `token` for the
-   * duration of each cue's lifecycle stage, and the React consumer dedupes by
-   * token — so each cue fires exactly once per stage transition.
+   * Compute a cue event (or null when there is no new cue this tick). Zone/HR
+   * stages use stable tokens; cycle edges and cooldown-gated hurry emit once.
+   * The React consumer dedupes tokens and owns playback through cue completion;
+   * a later null descriptor is not a request to cancel the previous cue.
    *
    * Triggers, in precedence order (highest first):
    *   - governance_warning : the grace phase (screen blur + health bar) begins,
@@ -2137,7 +2137,7 @@ export class GovernanceEngine {
         token,
         ...extra
       }, { maxPerMinute: 12, aggregate: true });
-      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
+      return { cueId: cue.id, trigger: cue.trigger, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
     // Governance grace phase (impending lock) takes precedence over challenge cues.
@@ -2158,6 +2158,10 @@ export class GovernanceEngine {
     // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
     if (!challengeSnapshot) return null;
     if (challengeSnapshot.type === 'cycle') {
+      // Frozen health and decayed RPM during sensor recovery are not effort
+      // failures. Suppress cycle edges/hurry before resolving or consuming its
+      // cooldown; the authoritative base HR warning branch above still applies.
+      if (challengeSnapshot.sensorUnavailable) return null;
       const cycleNow = this._now();
       const { trigger, cooldownUntil } = resolveCycleAudioCue(challengeSnapshot, {
         now: cycleNow,

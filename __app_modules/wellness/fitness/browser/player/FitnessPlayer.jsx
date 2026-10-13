@@ -836,7 +836,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // its lock threshold. Restores volume when the SFX ends.
   useGovernanceAudioDuck({
     videoVolume,
-    audioDuck: effectiveGovernanceState?.audioDuck
+    audioDuck: effectiveGovernanceState?.audioDuck,
+    suppress: !currentItem || governanceBypassed || govStatus === 'locked',
+    suppressCycle: Boolean(effectiveGovernanceState?.challenge?.sensorUnavailable),
+    itemKey: currentItemId
   });
 
   // Unlock the shared cue-audio element on the first user gesture (WebView

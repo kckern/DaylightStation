@@ -57,6 +57,7 @@ vi.mock('./hooks/audioCuePlayer.js', () => ({
 }));
 
 import FitnessPlayer from './FitnessPlayer.jsx';
+import { createCycleAudioEngine } from '../../../../../tests/_fixtures/fitness/cycleAudioEngine.mjs';
 import { useRecapUnlock } from '../widgets/FitnessSessionDetailWidget/useRecapUnlock.js';
 
 const RULES = { lock: 'kids_playback', labels: ['KidsFun'], libraries: ['TV Shows'], session_recaps: true };
@@ -171,7 +172,7 @@ const CYCLE_LOCKED = {
     currentRpm: 0, currentPhaseIndex: 0, totalPhases: 2, phaseProgressPct: 0.4,
     cycleHealthPct: 0, baseReqSatisfiedForRider: true,
   },
-  audioDuck: { cueId: 'cycle_lock', token: 'cycle-1:locked', sound: 'cycle-lock.mp3', duckTo: 0.1 },
+  audioDuck: { cueId: 'cycle_lock', token: 'cycle-1:locked', trigger: 'cycle_fail', sound: 'cycle-lock.mp3', duckTo: 0.1 },
 };
 
 function startCycleScan(items = [KIDS_ITEM]) {
@@ -189,6 +190,11 @@ function startCycleScan(items = [KIDS_ITEM]) {
 describe('FitnessPlayer cycling biometric bypass', () => {
   it('releases playback, the cycle stage, lock audio and active volume duck only after an authorized scan', async () => {
     const { view, resolveScan } = startCycleScan();
+    expect(fixture.duck).toBe(0.1);
+    // Real producer descriptors are transient; no new event must not lift the
+    // active cue before the authorized bypass itself is granted.
+    fixture.context = { ...fixture.context, governanceState: { ...CYCLE_LOCKED, audioDuck: null } };
+    view.rerender(playerNode());
     expect(fixture.duck).toBe(0.1);
     // A second gesture during the same prompt never requests another scan.
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip / Unlock' }));
@@ -243,5 +249,53 @@ describe('FitnessPlayer cycling biometric bypass', () => {
     expect(screen.getByRole('dialog', { name: 'Cycle challenge locked' })).toBeVisible();
     expect(screen.queryByRole('dialog', { name: 'Fingerprint unlock' })).not.toBeInTheDocument();
     expect(fixture.identity.clearUnlock).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('FitnessPlayer real-engine recovery audio', () => {
+  it('keeps an ordinary cycle event through null ticks, then cancels it once for sensor recovery', () => {
+    const f = createCycleAudioEngine();
+    fixture.context.governanceState = f.start();
+    const view = renderPlayer();
+    expect(fixture.duck).toBe(0.2);
+    const next = f.tick(200);
+    expect(next.audioDuck).toBeNull();
+    fixture.context = { ...fixture.context, governanceState: next };
+    view.rerender(playerNode());
+    expect(fixture.duck).toBe(0.2);
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain'; active.cycleHealthMs = 1500;
+    fixture.context = { ...fixture.context, governanceState: f.tick(2700, null) };
+    view.rerender(playerNode());
+    expect(fixture.duck).toBe(1);
+    expect(fixture.cueAudio.pause).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
+    expect(view.container.querySelector('.cycle-lock-screen')).toBeNull();
+    fixture.context = { ...fixture.context, governanceState: f.tick(200, null) };
+    view.rerender(playerNode());
+    expect(fixture.cueAudio.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays base HR warning during sensor recovery and retains its hard-lock audio authority', () => {
+    const f = createCycleAudioEngine();
+    fixture.context.governanceState = f.start();
+    const view = renderPlayer();
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain'; active.cycleHealthMs = 1500;
+    const warning = f.tick(2700, null, 'cool');
+    expect(warning.status).toBe('warning');
+    expect(warning.challenge.sensorUnavailable).toBe(true);
+    fixture.context = { ...fixture.context, governanceState: warning };
+    view.rerender(playerNode());
+    expect(fixture.cueAudio.src).toBe('/media/warning.mp3');
+    expect(fixture.duck).toBe(0.15);
+    const locked = f.tick(2000, null, 'cool');
+    expect(locked.status).toBe('locked');
+    fixture.context = { ...fixture.context, governanceState: locked };
+    view.rerender(playerNode());
+    expect(fixture.duck).toBe(1);
+    expect(view.container.querySelector('.governance-overlay')).not.toBeNull();
+    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
   });
 });

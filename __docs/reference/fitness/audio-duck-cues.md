@@ -30,7 +30,7 @@ model, the duck/restore lifecycle, and the edge cases. For the **config** (the
 ## Architecture
 
 The engine is the **decider** and the hook is the **executor**. The two
-communicate through a single stateless descriptor on the composed governance
+communicate through a cue-event descriptor on the composed governance
 state — the engine never touches a media element, and the hook never inspects
 challenge logic.
 
@@ -38,14 +38,14 @@ challenge logic.
 GovernanceEngine.evaluate()
       ↓
 _computeAudioDuck(challengeSnapshot)        ← decides WHICH cue (if any)
-      ↓  returns { cueId, sound, duckTo, token } | null
-composedState.audioDuck                      ← stateless descriptor
+      ↓  returns { cueId, trigger, sound, duckTo, volume, token } | null
+composedState.audioDuck                      ← cue event; null = no new event
       ↓
-FitnessPlayer  →  useGovernanceAudioDuck({ videoVolume, audioDuck })
+FitnessPlayer  →  useGovernanceAudioDuck({ videoVolume, audioDuck, suppress, suppressCycle, itemKey })
       ↓
   • duck:    videoVolume.setDuck(duckTo)      ← volume system folds the multiplier
-  • play:    new Audio('/media/' + sound)     ← independent track
-  • lift:    videoVolume.setDuck(1)  on SFX 'ended' (or unmount / autoplay-reject / retoken)
+  • play:    shared cue Audio element        ← independent of the video
+  • lift:    videoVolume.setDuck(1)  on SFX 'ended' (or explicit suppression / unmount / error / retoken)
       ↓
 usePersistentVolume  →  every apply path multiplies the stored level by the duck
                         multiplier, so no volume event can override an active duck
@@ -58,29 +58,37 @@ usePersistentVolume  →  every apply path multiplies the stored level by the du
 `GovernanceEngine._computeAudioDuck(challengeSnapshot)` returns either `null` or:
 
 ```js
-{ cueId, sound, duckTo, token }
+{ cueId, trigger, sound, duckTo, volume, token }
 ```
 
-It is **stateless** — it derives purely from the current phase and challenge
-snapshot, computed fresh each `evaluate()` and exposed as
-`composedState.audioDuck`. It does not remember what it already fired; dedupe is
-the hook's job (see below), keyed off `token`.
+The descriptor is computed from the current phase and challenge snapshot and
+exposed as `composedState.audioDuck`. Zone/HR cues use stable stage tokens;
+cycle start/end/fail are snapshot edges, and cycle hurry is an event gated by an
+8-second cooldown. Those cycle descriptors can be followed by `null` on the next
+tick even while their sound is playing. **Null means no new cue this tick**, not
+cancellation. The hook owns playback through completion and dedupes by `token`.
+The `trigger` identifies the cue's channel so recovery can cancel only cycle
+cues even after their event descriptor has disappeared.
 
 ### Priority order
 
 1. **`governance_warning`** — if `phase === 'warning'` (grace period before a
    lock), the warning cue wins over any challenge cue. An impending lock is the
    most important thing to signal.
-2. **Cycle challenges are skipped** — `snapshot.type === 'cycle'` returns `null`;
-   cycle has its own audible-feedback system.
-3. **`challenge_complete`** — status `success`, or `actualCount >= requiredCount`
-   (falls back to `missingUsers.length === 0`).
-4. **`challenge_remaining`** ("hurry") — status `pending` and
+2. **Base HR hard lock** — `phase === 'locked'` emits no cues; the lock overlay
+   owns its audio. The player explicitly suppresses an ongoing governance cue.
+3. **Cycle challenges** — map lifecycle edges to `cycle_start`, `cycle_end`, and
+   `cycle_fail`; below-red RPM with depleted health can emit `cycle_hurry`.
+   While `sensorUnavailable`, skip cycle cue resolution without consuming hurry
+   cooldown. Base HR warning keeps precedence during that same recovery.
+4. **`challenge_complete`** — status `success`, or `actualCount >= requiredCount`
+   (falls back to nonempty `metUsers` and empty `missingUsers`).
+5. **`challenge_remaining`** ("hurry") — status `pending` and
    `remainingSeconds <= thresholdSeconds`. Only fires while the challenge is
    still **unsatisfied** (a met challenge won't lock, so it stays silent).
-5. **`challenge_start`** — pending and not yet in the hurry window.
+6. **`challenge_start`** — pending and not yet in the hurry window.
 
-Challenge **failure** has no cue: the lock screen (which pauses the video)
+Zone challenge **failure** has no cue: the lock screen (which pauses the video)
 already covers it.
 
 ### The `token` — the dedupe key
@@ -93,6 +101,8 @@ window. Token shapes:
 |---|---|---|
 | `governance_warning` | `${cueId}:${warningStartTime}` | a new warning episode starts |
 | `challenge_start` / `challenge_remaining` / `challenge_complete` | `${challengeId}:${cueId}` | a new challenge id appears |
+| `cycle_start` / `cycle_end` / `cycle_fail` | `${challengeId}:${cueId}` | a new challenge id appears |
+| `cycle_hurry` | `${challengeId}:cycle_hurry:${timestamp}` | below-red depleted health after cooldown |
 
 The engine also emits a `governance.audio_cue.fired` log (sampled, 12/min,
 aggregated) each time it produces a descriptor.
@@ -102,53 +112,53 @@ aggregated) each time it produces a descriptor.
 ## The hook (`useGovernanceAudioDuck`)
 
 ```js
-useGovernanceAudioDuck({ videoVolume, audioDuck });
+useGovernanceAudioDuck({
+  videoVolume,
+  audioDuck,
+  suppress: false,
+  suppressCycle: false,
+  itemKey: null
+});
 ```
 
-- **`videoVolume`** — the persistent-volume handle from `usePersistentVolume`; the
-  hook calls its `setDuck(multiplier)` to lower/lift. The hook never touches a
-  media element directly.
-- **`audioDuck`** — the descriptor from the engine (or `null`).
+- **`videoVolume`** — persistent-volume handle; `setDuck(multiplier)` lowers/lifts
+  the video's volume through its single authority.
+- **`audioDuck`** — engine event descriptor or `null`. Ordinary null ticks leave
+  a playing cue alone until `ended`, a real media error, autoplay rejection,
+  explicit cancellation, or unmount.
+- **`suppress`** — stops the active governance cue and prevents new cues. The
+  player sets it when no current item exists, current-video governance is
+  bypassed, or base HR is hard-locked.
+- **`suppressCycle`** — stops/prevents only descriptors whose `trigger` starts
+  with `cycle_`. The player sets it during cadence sensor recovery. Base HR
+  warning cues keep playing and may still start in that recovery window.
+- **`itemKey`** — current item identity; a change stops the prior item's cue.
 
-### React to the *token*, never the descriptor object
+### Event and cancellation lifecycles
 
-This is the load-bearing design decision. The engine rebuilds `audioDuck` (and
-the entire composed governance state) as a **fresh object on every evaluation
-tick**. The effect therefore depends on the **stable primitive `token`**, not the
-object:
+The effect depends on primitive token/lifecycle inputs, never the descriptor
+object. The engine can rebuild an object every tick without cutting or replaying
+the cue. Descriptor fields and the volume handle are read from a current ref when
+an unseen token fires. A bounded set of fired tokens preserves stage deduplication
+through null ticks, warning collisions, locks, and recovery.
 
-```js
-const token = audioDuck?.token || null;
-useEffect(() => {
-  if (!token) return;
-  stopSession(sessionRef.current);             // back-to-back cue: stop the old one
-  sessionRef.current = startSession(latestRef.current);
-}, [token]);                                    // ← token, not audioDuck
-```
-
-The descriptor's other fields (`videoVolume`, `sound`, `duckTo`) are read at
-fire-time from a `latestRef` that a separate every-commit effect keeps current —
-so a re-render never re-runs the duck, it only refreshes the values the *next*
-token will use. The effect returns **no cleanup**: when the cue clears
-(`token → null`) the in-flight SFX is left to finish and lift itself. This is why
-a cue now plays through its whole window instead of being cut on the next tick.
-
-> **The bug this replaced:** the original effect depended on the whole `audioDuck`
-> object and used a `firedTokenRef` guard. The guard stopped *replays* but not
-> *teardown* — React still ran the effect's cleanup every tick, which
-> `audio.pause()`d the SFX and `restore()`d the volume in the same callback. Result:
-> SFX cut almost immediately, and the video volume snapping back up at the exact
-> instant the SFX was cut (they were the same callback). Fixed 2026-06-06.
+Explicit suppression, cycle-only recovery, or item change detaches the retained
+session's listeners and lifts its duck once. That cancellation works even when
+the latest engine descriptor is already null. An active base HR warning is not
+cancelled by cycle-only recovery. A genuinely new token supersedes the previous
+session; an already-fired token does not restart it.
 
 ### Session model
 
-A "session" (`{ token, audio, onEnded, lift }`) owns one cue's lifecycle:
+A session retains the cue's token, trigger, normalized audio source, listeners,
+and an idempotent lift function:
 
 - **`startSession`** — calls `videoVolume.setDuck(duckTo)`, then plays the SFX on
-  its own `Audio` element, lifting on the SFX `ended` event.
-- **`stopSession`** — detaches the listener, `pause()`s + clears the `Audio`
-  (no orphaned decode), and lifts (`setDuck(1)`) if not already lifted. Idempotent
-  via a `lifted` flag.
+  the shared cue `Audio` element, lifting on the SFX `ended` event.
+- **`stopSession`** — detaches its listeners and lifts (`setDuck(1)`) once. It
+  pauses the shared element only while its duck is active and its source still
+  matches. A superseding fingerprint success cue or later independent cue is
+  left playing. The shared source is never cleared.
 
 ---
 
@@ -200,8 +210,14 @@ Consequences:
 - **Synchronous Audio construction/play failure** — wrapped in `try/catch`;
   lifts immediately so the video is never left ducked with no SFX to end it.
 - **Orphaned SFX on re-token** — a new token calls `stopSession()` on the
-  previous session first, `pause()`ing + clearing the old `Audio` so it doesn't
-  keep decoding in the background, and lifting before the new duck.
+  previous session first, stopping its still-owned source and lifting before the
+  new duck.
+- **Bypass/item exit** — explicit all-cue suppression releases the retained
+  session once, even after a null event tick.
+- **Sensor recovery** — the producer emits no cycle event and the consumer
+  releases only a retained cycle cue; base HR warning/lock audio remains active.
+- **Shared success cue** — cancellation checks source ownership before pausing,
+  preserving a newer success sound and its completion callback.
 - **Unmount mid-duck** — a dedicated unmount-only effect calls `stopSession()`,
   lifting exactly once.
 
@@ -212,7 +228,7 @@ Consequences:
 Cues are parsed by `GovernanceEngine._normalizeAudioCues(config.audio_cues)`,
 which **silently drops** entries that are:
 
-- an unknown `trigger` (not one of the four supported),
+- an unknown `trigger` (not one of the eight supported),
 - missing `sound`,
 - a `challenge_remaining` entry with no numeric `threshold_seconds`.
 
@@ -229,10 +245,12 @@ which **silently drops** entries that are:
 - cue parsing — clamp `duck_to` into `[0,1]`, snake/camel alias acceptance,
   negative-clamp-to-zero;
 - `_computeAudioDuck` — descriptor shape, null when no unsatisfied challenge in
-  threshold, null for cycle/no-config;
+  threshold, null without configured cues;
 - priority — `governance_warning` over challenge cues, complete/hurry/start
   selection, token shapes;
-- composed-state exposure of `audioDuck`.
+- composed-state exposure of `audioDuck`, including its trigger;
+- full evaluate/state recovery with partial health and decayed zero RPM,
+  unavailable manual initialization, and preserved base HR warning precedence.
 
 The suite silences the logger during teardown to avoid a teardown-race
 (`8692210e3`).
@@ -241,7 +259,12 @@ The suite silences the logger during teardown to avoid a teardown-race
 element and a `setDuck` spy: `setDuck(duckTo)`+play on a new token, **no re-duck /
 no SFX cut when the descriptor object changes but the token is unchanged** (the
 regression), `setDuck(1)` on natural `ended`, lift on autoplay rejection, stop
-previous + re-duck on a new token, and lift on unmount.
+previous + re-duck on a new token, and lift on unmount. Real-engine start/fail/end/
+hurry events survive later null ticks until ended. Real-engine recovery cancels
+only its active cycle cue once, preserves base HR warning audio, and leaves a
+superseding success cue playing. Real-player tests cover explicit bypass, denial,
+cancel, stale-item results, first-item initialization, next-item reset, recovery,
+and base HR hard-lock authority.
 
 `usePersistentVolume.test.jsx` covers the multiplier: default (no change), folding
 the multiplier into the applied level, the duck surviving a user `setVolume`,
