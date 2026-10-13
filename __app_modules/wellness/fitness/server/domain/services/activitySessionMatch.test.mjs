@@ -155,7 +155,7 @@ describe('classifyActivityVenue', () => {
     // garage session 20260921062242 and filed as a duplicate Strava-only session.
     const workout = {
       type: 'Workout', sport_type: 'Workout', trainer: false,
-      distance: 1110.6, start_latlng: [47.6062, -122.3321],
+      distance: 1110.6, start_latlng: [47.6063, -122.3322],
     };
     expect(classifyActivityVenue(workout)).toBe('indoor');
     expect(classifyActivityVenue({ sport_type: 'WeightTraining', distance: 900 })).toBe('indoor');
