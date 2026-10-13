@@ -130,7 +130,7 @@ function startSession({ videoVolume, audioDuck }) {
     });
     lift('threw');
   }
-  return { token: audioDuck.token, audio, onEnded, onError, lift };
+  return { token: audioDuck.token, audio, onEnded, onError, lift, isActive: () => !lifted };
 }
 
 /** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
@@ -142,7 +142,11 @@ function stopSession(session, reason = 'stopped') {
     if (onError) audio.removeEventListener('error', onError);
     // Do NOT clear src — the element is shared/reused; clearing it fires a
     // spurious 'error' (aborted load) on the next consumer.
-    try { audio.pause(); } catch { /* already released */ }
+    // Once the duck has lifted, another cue owner may be using this shared
+    // element. Detach our listeners without stopping that later playback.
+    if (session.isActive()) {
+      try { audio.pause(); } catch { /* already released */ }
+    }
   }
   lift?.(reason);
 }
@@ -174,7 +178,11 @@ export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
   const token = audioDuck?.token || null;
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      stopSession(sessionRef.current, 'cleared');
+      sessionRef.current = null;
+      return;
+    }
     if (firedTokensRef.current.has(token)) return;
     firedTokensRef.current.add(token);
     if (firedTokensRef.current.size > 200) {

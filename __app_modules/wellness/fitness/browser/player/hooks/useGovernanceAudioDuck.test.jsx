@@ -83,6 +83,42 @@ describe('useGovernanceAudioDuck', () => {
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.1);
   });
 
+  it('clearing the descriptor mid-cue stops its SFX and lifts the active governance duck', () => {
+    const { rerender, unmount } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null });
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    expect(sfx.pauseCalls).toBe(1);
+    expect(sfx.paused).toBe(true);
+    expect(sfx._l.ended).toEqual([]);
+    expect(sfx._l.error).toEqual([]);
+    unmount();
+    expect(sfx.pauseCalls).toBe(1);
+  });
+
+  it('clearing a completed governance cue leaves later playback on the shared element alone', () => {
+    const { rerender } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    act(() => sfx.fire('ended'));
+    sfx.play(); // a later shared-element owner, after governance has lifted its duck
+    rerender({ audioDuck: null });
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    expect(sfx._l.ended).toEqual([]);
+    expect(sfx._l.error).toEqual([]);
+    expect(videoVolume.setDuck).toHaveBeenCalledTimes(2);
+  });
+
+  it('clearing a descriptor with no governance session does not pause audio owned elsewhere', () => {
+    const { rerender } = render(null);
+    const independentAudio = new FakeAudio('independent-voice-memo.mp3');
+    independentAudio.play();
+    rerender({ audioDuck: null });
+    expect(independentAudio.paused).toBe(false);
+    expect(independentAudio.pauseCalls).toBe(0);
+    expect(videoVolume.setDuck).not.toHaveBeenCalled();
+  });
+
   it('lifts the duck on unmount mid-cue', () => {
     const { unmount } = render(descriptor());
     unmount();

@@ -243,7 +243,20 @@ consumer (menu / show / player each own one).
 | Dance Party menu item | `dance_party` | Lock badge; tap → register unlock + prompt → launch the module on a granting finger |
 | Governed show + sequential episode | `governance_bypass`, `skip_content` | "Unlock" affordance / locked-episode pill → on a `governance_bypass` match the whole show is marked to bypass governance; on a `skip_content` match the locked episode plays. State resets on show change |
 | Fitness Home session replay | `playback_unlock.lock` (for example `kids_playback`) | Protected recap stays locked; tap → scan prompt → a match unlocks that session only |
-| In-player governance lock overlay | `governance_bypass` | "Skip / Unlock" button → on a match a **per-item** runtime bypass releases the current lock only (cleared when the next item starts, so one unlock can't disable governance for the rest of the session) |
+| In-player governance and cycling lock/failure overlays | `governance_bypass` | "Skip / Unlock" button → on a match a **per-item** runtime bypass releases the current lock only (cleared when the next item starts, so one unlock can't disable governance for the rest of the session) |
+
+The same “Skip / Unlock” control is available on promoted cycling init, ramp,
+health locks and terminal failure screens when `governance_bypass` is configured.
+It authorizes a bypass for the **current video**, including its governance lock,
+challenge display and lock audio. It does not abandon the challenge or count a
+skipped challenge as success. Denial or cancellation retains the lock; advancing
+to the next item clears the bypass, and a scan started for an earlier item cannot
+unlock the new one.
+
+During cadence sensor recovery, the frozen cycling lock is not promoted and its
+lock audio stops; the recovery dial stays visible. Base heart-rate governance can
+still hold playback and show its normal lock panel and configured fingerprint
+control. A fresh cadence signal restores the original cycling presentation.
 
 A registered unlock shows the shared prompt with `scanning` / `granted` / `denied` states;
 a wrong finger marks *denied* but keeps the prompt open; cancel/close clears the unlock and

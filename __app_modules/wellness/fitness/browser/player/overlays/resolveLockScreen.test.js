@@ -76,3 +76,33 @@ describe('resolveLockScreen — cycle owns all lock/fail presentation', () => {
     expect(d.videoLocked).toBe(false);
   });
 });
+
+
+describe('resolveLockScreen — cadence sensor recovery', () => {
+  it.each(['pending', 'failed'])('does not promote or play cycle audio for a frozen %s challenge during recovery', (status) => {
+    const result = resolveLockScreen({
+      activeChallenge: { type: 'cycle', status, cycleState: 'locked', lockReason: 'health', sensorUnavailable: true },
+      governanceDisplay: { show: false, status: 'unlocked', videoLocked: false }
+    });
+    expect(result).toEqual({ variety: 'none', showGovernanceOverlay: false, showCycleOverlay: true, promoteCycle: false, audioTrack: null, videoLocked: false });
+  });
+
+  it('shows the real base HR lock during recovery and retains the cycle dial', () => {
+    const result = resolveLockScreen({
+      activeChallenge: { type: 'cycle', status: 'pending', cycleState: 'locked', sensorUnavailable: true },
+      governanceDisplay: govShown
+    });
+    expect(result).toEqual({ variety: 'governance', showGovernanceOverlay: true, showCycleOverlay: true, promoteCycle: false, audioTrack: null, videoLocked: true });
+  });
+
+  it('restores the original cycle promotion once a fresh sensor sample arrives', () => {
+    const result = resolveLockScreen({
+      activeChallenge: { type: 'cycle', status: 'pending', cycleState: 'locked', sensorUnavailable: false },
+      governanceDisplay: govShown
+    });
+    expect(result.variety).toBe('cycle-lock');
+    expect(result.promoteCycle).toBe(true);
+    expect(result.showGovernanceOverlay).toBe(false);
+    expect(result.audioTrack).toBe('locked');
+  });
+});
