@@ -1,6 +1,6 @@
 //
 // The house { data, loading, error, reload } fetch hook — promoted from
-// modules/Auto/useAutoApi.js (same semantics: a request whose component
+// __app_modules/Auto/useAutoApi.js (same semantics: a request whose component
 // unmounted mid-flight is discarded rather than written to state).
 //
 // Opt-in stale-while-revalidate (`swr: true`): a module-level cache keyed by

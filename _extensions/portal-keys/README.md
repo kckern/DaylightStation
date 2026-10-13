@@ -422,7 +422,7 @@ the keyboard down with it.
   that machine is disconnected, and it will never bond. Always take the address from
   `bt scan-direct` with the keyboard in pairing mode. Keyboard identities belong in the
   household device registry, never in this repo: see
-  [`docs/configuration/portal-keys-bluetooth.example.yml`](../../docs/configuration/portal-keys-bluetooth.example.yml).
+  [`__docs/configuration/portal-keys-bluetooth.example.yml`](../../__docs/configuration/portal-keys-bluetooth.example.yml).
 
 #### Hangul does not survive the trip — compose in the page
 
@@ -499,7 +499,7 @@ node _extensions/portal-keys/pkctl.mjs lockdown-token '<server-only-secret>'
 ```
 
 The complete, tracked YAML template is
-[`docs/configuration/public-kiosk-shutdown.yml`](../../docs/configuration/public-kiosk-shutdown.yml).
+[`__docs/configuration/public-kiosk-shutdown.yml`](../../__docs/configuration/public-kiosk-shutdown.yml).
 
 ### The grant is the fragility
 

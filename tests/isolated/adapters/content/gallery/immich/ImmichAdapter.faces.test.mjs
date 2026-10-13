@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ListableItem } from "../../../../../../capabilities/content-catalog/server/domain/capabilities/Listable.mjs";
-import { resolveFormat } from "../../../../../../capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
+import { ListableItem } from "../../../../../../__capabilities/content-catalog/server/domain/capabilities/Listable.mjs";
+import { resolveFormat } from "../../../../../../__capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
 
 describe('ImmichAdapter face enrichment', () => {
   const transformPeople = (people) =>

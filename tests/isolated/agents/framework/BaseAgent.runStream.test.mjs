@@ -4,7 +4,7 @@
 // free-form user context is owned by Mastra Memory, persisted by the runtime.
 // These tests cover the streaming contract (chunks, context, error paths).
 import { describe, it, expect, vi } from 'vitest';
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 class FakeAgent extends BaseAgent {
   static id = 'fake';

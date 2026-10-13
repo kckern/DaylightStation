@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PortalSurface } from "../../../../modules/donow/server/application/surfaces/PortalSurface.mjs";
-import { ThermalSurface } from "../../../../modules/donow/server/application/surfaces/ThermalSurface.mjs";
-import { LaserSurface } from "../../../../modules/donow/server/application/surfaces/LaserSurface.mjs";
-import { PlaybackHubSurface } from "../../../../modules/donow/server/application/surfaces/PlaybackHubSurface.mjs";
-import { LivingroomTvSurface } from "../../../../modules/donow/server/application/surfaces/LivingroomTvSurface.mjs";
-import { GarageFitnessSurface } from "../../../../modules/donow/server/application/surfaces/GarageFitnessSurface.mjs";
-import { PianoKioskSurface } from "../../../../modules/donow/server/application/surfaces/PianoKioskSurface.mjs";
+import { PortalSurface } from "../../../../__app_modules/donow/server/application/surfaces/PortalSurface.mjs";
+import { ThermalSurface } from "../../../../__app_modules/donow/server/application/surfaces/ThermalSurface.mjs";
+import { LaserSurface } from "../../../../__app_modules/donow/server/application/surfaces/LaserSurface.mjs";
+import { PlaybackHubSurface } from "../../../../__app_modules/donow/server/application/surfaces/PlaybackHubSurface.mjs";
+import { LivingroomTvSurface } from "../../../../__app_modules/donow/server/application/surfaces/LivingroomTvSurface.mjs";
+import { GarageFitnessSurface } from "../../../../__app_modules/donow/server/application/surfaces/GarageFitnessSurface.mjs";
+import { PianoKioskSurface } from "../../../../__app_modules/donow/server/application/surfaces/PianoKioskSurface.mjs";
 
 const NOW_MS = Date.parse('2026-07-30T10:00:00.000Z');
 const silentLogger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -187,7 +187,7 @@ describe('LaserSurface', () => {
   it('REGRESSION GUARD (spec §5 laser): a real DoNowService call — where requestedBy is a sibling of action, exactly as the router/DoNowService send it — must NOT log requestedBy:null', async () => {
     const info = vi.fn();
     const s = new LaserSurface({ issueOrPrint: { print: vi.fn().mockResolvedValue({ printed: true }) }, logger: { ...silentLogger, info } });
-    const { DoNowService } = await import("../../../../modules/donow/server/application/DoNowService.mjs");
+    const { DoNowService } = await import("../../../../__app_modules/donow/server/application/DoNowService.mjs");
     const service = new DoNowService({
       surfaces: new Map([['laser', s]]),
       datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
@@ -294,7 +294,7 @@ describe('PlaybackHubSurface', () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
       const execute = vi.fn().mockResolvedValue({ applied: ['blue'], skipped: [] });
       const s = new PlaybackHubSurface({ sendHubCommand: { execute }, headsetHubGateway: { getStatus }, logger: silentLogger });
-      const { DoNowService } = await import("../../../../modules/donow/server/application/DoNowService.mjs");
+      const { DoNowService } = await import("../../../../__app_modules/donow/server/application/DoNowService.mjs");
       const service = new DoNowService({
         surfaces: new Map([['playback-hub', s]]),
         datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
@@ -311,7 +311,7 @@ describe('PlaybackHubSurface', () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
       const execute = vi.fn().mockResolvedValue({ applied: ['red'], skipped: [] });
       const s = new PlaybackHubSurface({ sendHubCommand: { execute }, headsetHubGateway: { getStatus }, logger: silentLogger });
-      const { DoNowService } = await import("../../../../modules/donow/server/application/DoNowService.mjs");
+      const { DoNowService } = await import("../../../../__app_modules/donow/server/application/DoNowService.mjs");
       const service = new DoNowService({
         surfaces: new Map([['playback-hub', s]]),
         datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
@@ -329,7 +329,7 @@ describe('PlaybackHubSurface', () => {
     it('DoNowService.occupancyFor(surface, action) — the approve-time re-check hook — re-scopes to the SAME action, not the whole surface', async () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus }, logger: silentLogger });
-      const { DoNowService } = await import("../../../../modules/donow/server/application/DoNowService.mjs");
+      const { DoNowService } = await import("../../../../__app_modules/donow/server/application/DoNowService.mjs");
       const service = new DoNowService({
         surfaces: new Map([['playback-hub', s]]),
         datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },

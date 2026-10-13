@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { TranscodePrewarmService as BaseTranscodePrewarmService } from '#apps/devices/services/TranscodePrewarmService.mjs';
-import { PlayableItem } from "../../../../capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
+import { PlayableItem } from "../../../../__capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
 import { resolvedAdapterContentCatalog } from '../../../_lib/resolvedAdapterContentCatalog.mjs';
 
 class TranscodePrewarmService extends BaseTranscodePrewarmService {

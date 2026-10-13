@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let buildEndSessionRequest;
 
 beforeAll(async () => {
-  const mod = await import("../../../modules/fitness/browser/player/endSessionRequest.js");
+  const mod = await import("../../../__app_modules/fitness/browser/player/endSessionRequest.js");
   buildEndSessionRequest = mod.buildEndSessionRequest;
 });
 

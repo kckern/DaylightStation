@@ -13,7 +13,7 @@ KitchenIQ scale ───────────┴─BLE──▶ shared ATOM 
 ```
 
 Scan payload: `{source:'barcode-relay', type:'scan', device, route, code, ts}` →
-handled by `backend/src/3_applications/hardware/barcodeRelay.mjs`.
+handled by `__backend/src/3_applications/hardware/barcodeRelay.mjs`.
 
 For the scanner protocol gotchas and one-time setup, see
 [`DEV-STATUS.md`](./DEV-STATUS.md).

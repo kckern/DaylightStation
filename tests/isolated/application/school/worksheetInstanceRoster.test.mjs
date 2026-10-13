@@ -18,9 +18,9 @@
  * exactly as it always did.
  */
 import { describe, it, expect } from 'vitest';
-import { SubmitPaperWork } from "../../../../modules/school/server/application/usecases/SubmitPaperWork.mjs";
-import { GradeSubmission } from "../../../../modules/school/server/application/usecases/GradeSubmission.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { SubmitPaperWork } from "../../../../__app_modules/school/server/application/usecases/SubmitPaperWork.mjs";
+import { GradeSubmission } from "../../../../__app_modules/school/server/application/usecases/GradeSubmission.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, fakeGrownUps, silentLogger,

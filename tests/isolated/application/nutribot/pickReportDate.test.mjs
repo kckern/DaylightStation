@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickReportDate } from "../../../../modules/nutribot/server/application/usecases/GenerateDailyReport.mjs";
+import { pickReportDate } from "../../../../__app_modules/nutribot/server/application/usecases/GenerateDailyReport.mjs";
 
 describe('pickReportDate — /report always renders the latest report', () => {
   const TODAY = '2026-07-08';
@@ -31,7 +31,7 @@ describe('pickReportDate — /report always renders the latest report', () => {
   });
 });
 
-import { mostRecentLoggedDate } from "../../../../modules/nutribot/server/application/usecases/GenerateDailyReport.mjs";
+import { mostRecentLoggedDate } from "../../../../__app_modules/nutribot/server/application/usecases/GenerateDailyReport.mjs";
 
 describe('mostRecentLoggedDate — anchor by calendar date, not entry order (back-dating bug)', () => {
   const TODAY = '2026-07-08';

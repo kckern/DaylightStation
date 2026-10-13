@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CoachingToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/CoachingToolFactory.mjs";
+import { CoachingToolFactory } from "../../../../__app_modules/life/server/application/agents/lifeplan-guide/tools/CoachingToolFactory.mjs";
 
 describe('CoachingToolFactory', () => {
   let factory, tools;

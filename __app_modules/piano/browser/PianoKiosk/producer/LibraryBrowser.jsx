@@ -1,0 +1,647 @@
+/**
+ * LibraryBrowser — the full-screen library surface with consonance guardrails.
+ * Replaces the interim LibraryOverlay
+ * at the exact same seam: Producer imports ONE component with the same props.
+ *
+ * Behavior map:
+ * - Pinned top bar: search + facet chips — store (Library / Ours / Prefabs),
+ *   kind (All/Chords/Melody/Bass/Ideas/Grooves), quality (Best/All, defaults
+ *   to Best), genre (top 8 + overflow), feel (groove kind only). 'Ours' shows
+ *   household loops/stacks and 'Prefabs' shows curated read-only stacks.
+ * - Guardrails: when the browse is anchored to a base with a harmonic
+ *   timeline, the grid shows buildCompatibleSet's guardrailed results
+ *   ("Showing what fits your jam · N"). "Show all" lifts the gate for honest
+ *   browsing — non-stackable cards get a small ⚠ but adding them is ALLOWED
+ *   (guardrails are defaults, not prisons; design §4b).
+ * - Cards show readable, transposition-honest identity. Harmonic entries use
+ *   Roman numerals; line/rhythm entries use a title or humanized source id.
+ *   Glyph/staff/feel support identity instead of forcing users to distinguish
+ *   thousands of anonymous pictures.
+ * - Tap card = onPick(entry). Every card also has an explicit Preview/Stop
+ *   control: audition must be discoverable on a kiosk, never hidden behind a
+ *   press-and-hold gesture. Preview is conformed to current key/tempo.
+ * - Perf: the compatible set is built on open + base change (memo),
+ *   NEVER per keystroke — search/facets filter the already-built set. Render
+ *   is capped at 120 cards with a "refine to see more" footer instead of
+ *   virtualization (simple + honest at ~3.2k entries).
+ *
+ * Styles live in the shell's Producer.scss (`piano-producer-mode__overlay*`,
+ * `piano-loop*`).
+ *
+ * @param {object} props
+ * @param {object} props.lib - useLoopLibrary() surface (loops/facets/loadNotes)
+ * @param {Array} props.layers - workspace layers (first library layer anchors the gate)
+ * @param {string|null} [props.initialRole] - pre-filter ('chords' for "Start from a loop")
+ * @param {(entry:object) => void} props.onPick - tap a card → add to the stage
+ * @param {() => void} props.onClose
+ * @param {boolean} [props.isPlaying] - shows the floating now-playing pill
+ * @param {{current:{bar:number,beat:number}}} [props.positionRef]
+ * @param {Array<object>} [props.pillMaterials] - materials for the pill's glyph stack
+ * @param {object} [props.router] - voiceRouter for explicit audition (no router → no preview)
+ * @param {number} [props.bpm] - workspace tempo the peek conforms to
+ * @param {number} [props.keyShift] - workspace keyShift the peek conforms to
+ * @param {() => void} [props.onAudioGesture] - audio unlock, called on card
+ *   pointer-down (the hold TIMER callback is not a browser gesture context)
+ * @param {{loops:Array, crate:Array}} [props.ours] - household pool light
+ *   listings for the 'Ours' facet (Task 8.2). In the ADD-LAYER context only
+ *   LOOPS and STACKS are addable; SECTIONS are a SongView/Crate concern and are
+ *   excluded here (documented scoping).
+ * @param {(kind:'loop'|'stack', item:object) => void} [props.onPickOurs] - add a
+ *   kept loop or load a kept stack.
+ * @param {{stacks:Array}} [props.prefabs] - curated prefab light listings for
+ *   the 'Prefabs' facet (Task 9.1). Only STACKS surface here — prefab SONGS are
+ *   a SongPicker concern (sections/arrangements aren't layers), documented
+ *   scoping mirroring 'Ours'. Read-only: no Delete affordance.
+ * @param {(item:object) => void} [props.onPickPrefab] - load a prefab stack
+ *   (same load path + non-empty-workspace confirm as an 'Ours' stack).
+ */
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { SvgStaffRenderer } from "../../../../../__capabilities/music-notation/browser/index.js";
+import { roleOf } from "../../../../../__capabilities/music-notation/portable/layerMatch.mjs";
+import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
+import { MaterialGlyph } from './MaterialGlyph.jsx';
+import { buildCompatibleSet, rankCompatible, timelineOf, entryIdentity } from './libraryRanking.js';
+import { usePeek } from './usePeek.js';
+import { useKeepScreenAwake } from '../usePianoScreensaverHooks.js';
+
+const STORES = [
+  { key: 'curated', label: 'Library' },
+  { key: 'ours', label: 'Ours' },
+  { key: 'prefabs', label: 'Prefabs' },
+];
+
+const KINDS = [
+  { key: null, label: 'All' },
+  { key: 'chords', label: 'Chords' },
+  { key: 'melody', label: 'Melody' },
+  { key: 'bass', label: 'Bass' },
+  { key: 'idea', label: 'Ideas' },
+  { key: 'groove', label: 'Grooves' },
+];
+
+/** The large families the quality "Best" facet curates. The small line/rhythm
+ *  categories (bass/idea/groove) always show in full — see the filter. */
+const QUALITY_CURATED_TYPES = new Set(['chord-progression', 'melody']);
+
+/** Render cap — refine (search/facets) to see more; no virtualization. */
+const CARD_CAP = 120;
+/** Genre chips shown before the overflow toggle. */
+const GENRE_TOP = 8;
+/** Quality toggle: curated default vs everything. */
+const QUALITIES = [
+  { key: 'best', label: 'Best' },
+  { key: null, label: 'All' },
+];
+/** How often the pill readout syncs from positionRef (≤4Hz — no per-frame state). */
+const PILL_READOUT_MS = 250;
+/** Backward-compatible shortcut; Preview is the primary discoverable control. */
+const HOLD_MS = 150;
+const MOVE_CANCEL_PX = 12;
+
+/**
+ * Lazily loads notes for a melodic entry and renders a staff thumbnail
+ * (moved from the interim LibraryOverlay). Bare staff immediately, notes async.
+ */
+function MelodicStaffThumb({ entry, lib }) {
+  const [pitches, setPitches] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    lib.loadNotes(entry).then((notes) => {
+      if (cancelled || !notes?.notes?.length) return;
+      const seen = new Set();
+      const first8 = [];
+      for (const n of notes.notes) {
+        if (!seen.has(n.midi)) { seen.add(n.midi); first8.push(n.midi); }
+        if (first8.length >= 8) break;
+      }
+      setPitches(first8);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [entry, lib]);
+  return <SvgStaffRenderer targetPitches={pitches} />;
+}
+
+/** Floating "the jam is still looping" pill: glyph stack + bar:beat, tap = close. */
+function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
+  const [pos, setPos] = useState({ bar: 0, beat: 0 });
+  useEffect(() => {
+    const read = () => {
+      const p = positionRef?.current;
+      if (!p) return;
+      setPos((prev) => (prev.bar === p.bar && prev.beat === p.beat ? prev : { bar: p.bar, beat: p.beat }));
+    };
+    read();
+    let raf = 0;
+    let last = 0;
+    const tick = (t) => {
+      if (t - last >= PILL_READOUT_MS) { last = t; read(); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [positionRef]);
+  return (
+    <button type="button" className="piano-producer-mode__pill" aria-label="now playing" onClick={onClose}>
+      <span className="piano-producer-mode__pill-glyphs">
+        {(pillMaterials || []).slice(0, 4).map((m, i) => (
+          <MaterialGlyph key={i} material={m} size={22} />
+        ))}
+      </span>
+      <span className="piano-producer-mode__pill-pos">
+        {Math.max(0, pos.bar) + 1}:{Math.max(0, pos.beat) + 1}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * One library card: glyph-forward identity + kind display.
+ *
+ * Audition is a sibling control rather than a nested button: the main card is
+ * an unambiguous Add action, while Preview toggles only sound.
+ */
+function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
+  const { entry, reasons = [] } = result;
+  const isGroove = entry.type === 'groove';
+  const hasRoman = !!entry.roman?.length;
+  const label = entry.title || entry.slug;
+  const visibleName = hasRoman
+    ? `${entry.roman.join(' · ')} progression`
+    : (entry.title || String(entry.slug || entry.type || 'Loop').replace(/[-_]+/g, ' '));
+
+  const holdRef = useRef(null);
+  const clearHold = () => {
+    if (holdRef.current) clearTimeout(holdRef.current.timer);
+    holdRef.current = null;
+  };
+  useEffect(() => () => {
+    const hold = holdRef.current;
+    holdRef.current = null;
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    if (hold.peeking) onPeekStop(entry);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePointerDown = (event) => {
+    if (holdRef.current) return;
+    event.preventDefault?.();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* old WebView/jsdom */ }
+    onAudioGesture?.();
+    const hold = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      peeking: false,
+      timer: 0,
+    };
+    hold.timer = setTimeout(() => {
+      hold.peeking = true;
+      onPeekStart(entry);
+    }, HOLD_MS);
+    holdRef.current = hold;
+  };
+  const handlePointerMove = (event) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointerId !== event.pointerId || hold.peeking) return;
+    if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > MOVE_CANCEL_PX) clearHold();
+  };
+  const handlePointerUp = (event) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointerId !== event.pointerId) return;
+    clearHold();
+    if (hold.peeking) onPeekStop(entry); else onPick(result);
+  };
+  const handlePointerHalt = () => {
+    const hold = holdRef.current;
+    if (!hold) return;
+    clearHold();
+    if (hold.peeking) onPeekStop(entry);
+  };
+
+  const togglePreview = () => {
+    onAudioGesture?.();
+    if (isPeeking) onPeekStop(entry); else onPeekStart(entry);
+  };
+
+  return (
+    <li className="piano-loop-wrap">
+      <button
+        type="button"
+        className={`piano-loop${isPeeking ? ' is-peeking' : ''}`}
+        aria-label={label}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerHalt}
+        onPointerLeave={handlePointerHalt}
+        onClick={(event) => { if (event.detail === 0 && !holdRef.current) onPick(result); }}
+      >
+        <span className="piano-loop__head">
+          <MaterialGlyph material={entry} size={44} />
+          {warn && (
+            <span className="piano-loop__warn" role="img" aria-label="may clash" title="May clash with your jam">⚠</span>
+          )}
+        </span>
+        <span className="piano-loop__name">{visibleName}</span>
+        {hasRoman && <RomanProgression roman={entry.roman} />}
+        {!hasRoman && !isGroove && (
+          <span className="piano-loop__staff"><MelodicStaffThumb entry={entry} lib={lib} /></span>
+        )}
+        {isGroove && (
+          <span className="piano-loop__chips">
+            {entry.feel && <span className="piano-loop__chip">{entry.feel}</span>}
+            {entry.bpm ? <span className="piano-loop__chip">{entry.bpm} bpm</span> : null}
+          </span>
+        )}
+        {/* Keep the raw source id available as secondary identity for untitled
+            line material; the readable name above remains primary. */}
+        {!hasRoman && !isGroove && !entry.title && (
+          <span className="piano-loop__caption">{entry.slug}</span>
+        )}
+        {reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
+        {entry.quality === 'best' && <span className="piano-loop__tag">best</span>}
+        {entry.tags?.[0] && <span className="piano-loop__tag">{entry.tags[0]}</span>}
+      </button>
+      <button
+        type="button"
+        className="piano-loop__preview"
+        aria-label={`${isPeeking ? 'Stop preview' : 'Preview'} ${label}`}
+        aria-pressed={isPeeking}
+        onClick={togglePreview}
+      >{isPeeking ? '■ Stop' : '▶ Preview'}</button>
+    </li>
+  );
+}
+
+export function LibraryBrowser({
+  lib,
+  layers,
+  initialRole = null,
+  onPick,
+  onClose,
+  isPlaying = false,
+  positionRef,
+  pillMaterials,
+  router = null,
+  bpm,
+  keyShift = 0,
+  onAudioGesture,
+  ours = { loops: [], crate: [] },
+  onPickOurs,
+  prefabs = { stacks: [] },
+  onPickPrefab,
+}) {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
+  const [store, setStore] = useState('curated');
+  const [kind, setKind] = useState(initialRole);
+  const [genre, setGenre] = useState(null);
+  const [feel, setFeel] = useState(null);
+  const [quality, setQuality] = useState('best');
+  const [text, setText] = useState('');
+  const [genresExpanded, setGenresExpanded] = useState(false);
+  const [gateLifted, setGateLifted] = useState(false);
+
+  // Explicit Preview/Stop audition engine. isPlaying doubles as the
+  // "jam is looping underneath" signal: peeks ride over the stack when true,
+  // solo + metronome when false.
+  const { peekingId, startPeek, stopPeek } = usePeek({
+    router, lib, bpm, keyShift, isJamPlaying: isPlaying, layers,
+  });
+  // A solo audition can loop indefinitely while the transport is stopped.
+  // Keep the physical kiosk awake until explicit Stop/unmount silences it.
+  useKeepScreenAwake('producer-preview', peekingId != null);
+  // Identity-scoped stop: stopping one card must not kill a newer preview.
+  const handlePeekStop = useCallback((entry) => stopPeek(entryIdentity(entry)), [stopPeek]);
+
+  const entries = useMemo(() => lib.loops || [], [lib.loops]);
+  const workspaceBase = useMemo(
+    () => layers.find((l) => l.source?.kind === 'library')?.source.entry ?? null,
+    [layers],
+  );
+  const base = workspaceBase;
+  // The gate only exists when the anchor has a harmonic timeline (groove or
+  // unenriched anchors can't gate — buildCompatibleSet passes everything).
+  const gateActive = !!timelineOf(base);
+  const showAll = gateActive && gateLifted;
+
+  useEffect(() => {
+    logger.info('library.open', {
+      base: workspaceBase?.slug ?? null,
+      gate: gateActive,
+      entries: entries.length,
+    });
+    // Open-context snapshot only — later entry changes log via pick.
+  }, [logger, workspaceBase?.slug, gateActive, entries.length]);
+
+  // ── compatible set: rebuilt on base change ONLY, never per keystroke ──
+  const compatible = useMemo(() => buildCompatibleSet({ entries, baseEntry: base }), [entries, base]);
+  const ranked = useMemo(() => rankCompatible(compatible, base), [compatible, base]);
+  const passing = useMemo(
+    () => new Map(compatible.map((r) => [entryIdentity(r.entry), r])),
+    [compatible],
+  );
+
+  // Show-all pool: every entry (minus the anchor), gate verdict kept as a flag
+  // so non-stackable cards can carry the ⚠. Ranked the same way.
+  const pool = useMemo(() => {
+    if (!showAll) return ranked;
+    const baseId = entryIdentity(base);
+    const rows = entries
+      .filter((e) => entryIdentity(e) !== baseId)
+      .map((e) => passing.get(entryIdentity(e)) ?? { entry: e, stackable: false, reasons: [] });
+    return rankCompatible(rows, base);
+  }, [showAll, ranked, entries, passing, base]);
+
+  // ── client-side facet + search filtering of the already-built pool ─────────
+  const existingIds = useMemo(() => new Set(layers.map((l) => l.id)), [layers]);
+  // A jam usually wants ONE chord progression; a second rarely layers cleanly
+  // (the union-consonance gate leaves the Chords tab ~empty once one exists). So
+  // de-emphasise the Chords kind chip when a chord layer is already stacked.
+  const hasChordLayer = useMemo(() => layers.some((l) => l.role === 'chords'), [layers]);
+  const filtered = useMemo(() => {
+    const q = text.trim().toLowerCase();
+    return pool.filter(({ entry }) => {
+      if (existingIds.has(entryIdentity(entry))) return false; // layer ids follow the same path||slug rule
+      if (kind === 'groove') { if (entry.type !== 'groove') return false; }
+      else if (kind && roleOf(entry) !== kind) return false;
+      if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
+      if (feel && (entry.feel || '') !== feel) return false;
+      // The quality "Best" facet curates ONLY the large families (chord
+      // progressions + melodies, 600+ graded each). The small line/rhythm
+      // categories — bass, idea, groove — always show in FULL regardless of
+      // tier: curating an 8–23-item category just makes material un-addable
+      // (the groove/idea/bassline bugs), and bass especially is small and
+      // always wanted. See QUALITY_CURATED_TYPES.
+      if (quality && (entry.harmonyVerified === false || entry.needsReview)) return false;
+      if (quality && QUALITY_CURATED_TYPES.has(entry.type) && (entry.quality || '') !== quality) return false;
+      if (q) {
+        const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || []), ...(entry.roman || [])]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [pool, existingIds, kind, genre, feel, quality, text]);
+
+  const visible = filtered.slice(0, CARD_CAP);
+  const overflow = filtered.length - visible.length;
+
+  // ── facet chip data ─────────────────────────────────────────────────────────
+  const genreChips = useMemo(() => {
+    const counts = Object.entries(lib.facets?.genres || {}).sort((a, b) => b[1] - a[1]);
+    const names = counts.map(([g]) => g);
+    return { top: names.slice(0, GENRE_TOP), rest: names.slice(GENRE_TOP) };
+  }, [lib.facets]);
+  const feelChips = useMemo(
+    () => [...new Set(entries.filter((e) => e.type === 'groove' && e.feel).map((e) => e.feel))],
+    [entries],
+  );
+
+  useEffect(() => {
+    logger.sampled('library.filter', {
+      store, kind: kind ?? 'all', genre, feel, quality, textLen: text.length,
+    }, { maxPerMinute: 30, aggregate: true });
+  }, [store, kind, genre, feel, quality, text, logger]);
+
+  // ── handlers ────────────────────────────────────────────────────────────────
+  const handlePick = useCallback((result) => {
+    logger.info('library.pick', {
+      slug: result.entry.slug,
+      // The asset PATH is the unambiguous file identity — a slug can map to
+      // several voicing files (same progression+rhythm, hash-disambiguated), so
+      // log the path (and roman) to answer "which file did I pick?" from logs.
+      path: result.entry.path,
+      roman: (result.entry.roman || []).join('-') || undefined,
+      stackable: result.stackable,
+      ...(result.fit != null ? { fit: Math.round(result.fit * 100) / 100 } : {}),
+    });
+    onPick(result.entry);
+  }, [logger, onPick]);
+
+  const liftGate = useCallback(() => {
+    logger.info('library.gate-lift', { lifted: !gateLifted });
+    setGateLifted((v) => !v);
+  }, [logger, gateLifted]);
+
+  const clearFilters = useCallback(() => {
+    setKind(null); setGenre(null); setFeel(null); setQuality('best'); setText('');
+  }, []);
+
+  // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
+  // sections/arrangements aren't addable layers, documented scoping). Filtered
+  // by search text; always present (curated content ships with the app).
+  const prefabCards = useMemo(() => {
+    if (store !== 'prefabs') return [];
+    const q = text.trim().toLowerCase();
+    const match = (label) => !q || String(label || '').toLowerCase().includes(q);
+    return (prefabs.stacks || []).filter((it) => match(it.title || it.id));
+  }, [store, prefabs, text]);
+
+  // 'Ours' cards: kept LOOPS + kept STACKS (crate kind==='stack'). Sections are
+  // a SongView/Crate concern (they fill song slots, not the mix), so they're
+  // excluded from the ADD-LAYER surface. Filtered by search text only.
+  const oursCards = useMemo(() => {
+    if (store !== 'ours') return [];
+    const q = text.trim().toLowerCase();
+    const match = (label) => !q || String(label || '').toLowerCase().includes(q);
+    const loops = (ours.loops || [])
+      .filter((it) => match(it.title || it.kind || it.id))
+      .map((it) => ({ ...it, _family: 'loop' }));
+    const stacks = (ours.crate || [])
+      .filter((it) => it.kind === 'stack' && match(it.title || it.id))
+      .map((it) => ({ ...it, _family: 'stack' }));
+    return [...stacks, ...loops];
+  }, [store, ours, text]);
+
+  return (
+    <div className="piano-producer-mode__overlay" role="dialog" aria-label="loop library">
+      <div className="piano-producer-mode__overlay-top">
+        <button type="button" className="piano-producer-mode__overlay-close" aria-label="close library" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+
+      <div className="piano-producer-mode__facets">
+        <input
+          type="search"
+          className="piano-producer-mode__search"
+          aria-label="Search loops"
+          placeholder="Search titles, tags, or creators"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <div className="piano-producer-mode__roles" role="group" aria-label="store">
+          {STORES.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`piano-chip${store === s.key ? ' is-on' : ''}`}
+              onClick={() => setStore(s.key)}
+            >{s.label}</button>
+          ))}
+        </div>
+        <div className="piano-producer-mode__roles" role="group" aria-label="kind">
+          {KINDS.map((k) => {
+            const dim = hasChordLayer && k.key === 'chords';
+            return (
+              <button
+                key={k.label}
+                type="button"
+                className={`piano-chip${kind === k.key ? ' is-on' : ''}${dim ? ' is-dim' : ''}`}
+                title={dim ? 'A chord layer is already in your jam — a second chord progression rarely layers cleanly' : undefined}
+                onClick={() => setKind(k.key)}
+              >{k.label}</button>
+            );
+          })}
+        </div>
+        <div className="piano-producer-mode__roles" role="group" aria-label="quality">
+          {QUALITIES.map((qOpt) => (
+            <button
+              key={qOpt.label}
+              type="button"
+              className={`piano-chip${quality === qOpt.key ? ' is-on' : ''}`}
+              onClick={() => setQuality(qOpt.key)}
+            >{qOpt.label}</button>
+          ))}
+        </div>
+        {(genreChips.top.length > 0) && (
+          <div className="piano-producer-mode__roles" role="group" aria-label="genre">
+            {(genresExpanded ? [...genreChips.top, ...genreChips.rest] : genreChips.top).map((g) => (
+              <button
+                key={g}
+                type="button"
+                className={`piano-chip${genre === g ? ' is-on' : ''}`}
+                onClick={() => setGenre((cur) => (cur === g ? null : g))}
+              >{g}</button>
+            ))}
+            {genreChips.rest.length > 0 && (
+              <button type="button" className="piano-chip" onClick={() => setGenresExpanded((v) => !v)}>
+                {genresExpanded ? 'Less' : `+${genreChips.rest.length} more`}
+              </button>
+            )}
+          </div>
+        )}
+        {kind === 'groove' && feelChips.length > 0 && (
+          <div className="piano-producer-mode__roles" role="group" aria-label="feel">
+            {feelChips.map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={`piano-chip${feel === f ? ' is-on' : ''}`}
+                onClick={() => setFeel((cur) => (cur === f ? null : f))}
+              >{f}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {gateActive && store === 'curated' && (
+        <div className="piano-producer-mode__gate">
+          <span className="piano-producer-mode__gate-note">
+            {gateLifted
+              ? 'Showing everything — ⚠ may clash with your jam'
+              : `Showing what fits your jam · ${filtered.length} loops`}
+          </span>
+          <button type="button" className="piano-chip" onClick={liftGate}>
+            {gateLifted ? 'Show fits' : 'Show all'}
+          </button>
+        </div>
+      )}
+
+      {store === 'ours' ? (
+        oursCards.length === 0 ? (
+          <div className="piano-producer-mode__library-empty">
+            <p>Nothing kept yet — record a loop or keep a stack to the Crate.</p>
+          </div>
+        ) : (
+          <ul className="piano-producer-mode__list piano-producer-mode__list--ours">
+            {oursCards.map((item) => (
+              <li key={`${item._family}:${item.id}`}>
+                <button
+                  type="button"
+                  className="piano-loop"
+                  aria-label={item.title || `${item._family} ${item.id}`}
+                  onClick={() => onPickOurs && onPickOurs(item._family, item)}
+                >
+                  <span className="piano-loop__head">
+                    <MaterialGlyph seed={`ours:${item._family}:${item.id}`} size={44} />
+                  </span>
+                  <span className="piano-loop__name">
+                    {item.title || (item._family === 'stack' ? 'Kept stack' : (item.kind || 'Loop'))}
+                  </span>
+                  <span className="piano-loop__why">
+                    {item._family === 'stack'
+                      ? `${item.layerCount ?? 0} layers`
+                      : [item.kind, item.author].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : store === 'prefabs' ? (
+        prefabCards.length === 0 ? (
+          <div className="piano-producer-mode__library-empty">
+            <p>No prefabs match that search.</p>
+          </div>
+        ) : (
+          <ul className="piano-producer-mode__list piano-producer-mode__list--ours">
+            {prefabCards.map((item) => (
+              <li key={`prefab:${item.id}`}>
+                <button
+                  type="button"
+                  className="piano-loop"
+                  aria-label={item.title || `prefab ${item.id}`}
+                  onClick={() => onPickPrefab && onPickPrefab(item)}
+                >
+                  <span className="piano-loop__head">
+                    <MaterialGlyph seed={`prefab:stack:${item.id}`} size={44} />
+                  </span>
+                  <span className="piano-loop__name">{item.title || 'Prefab stack'}</span>
+                  <span className="piano-loop__why">
+                    {[`${item.layerCount ?? 0} layers`, 'curated'].join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : visible.length === 0 ? (
+        <div className="piano-producer-mode__library-empty">
+          <p>No loops match those filters.</p>
+          <button type="button" className="piano-chip" onClick={clearFilters}>Clear filters</button>
+        </div>
+      ) : (
+        <>
+          <ul className="piano-producer-mode__list">
+            {visible.map((result) => (
+              <LoopCard
+                key={result.entry.path || result.entry.slug}
+                result={result}
+                warn={showAll && !result.stackable}
+                lib={lib}
+                onPick={handlePick}
+                isPeeking={peekingId != null && peekingId === entryIdentity(result.entry)}
+                onPeekStart={startPeek}
+                onPeekStop={handlePeekStop}
+                onAudioGesture={onAudioGesture}
+              />
+            ))}
+          </ul>
+          {overflow > 0 && (
+            <p className="piano-producer-mode__list-footer">
+              {overflow} more — refine your search or facets to see them
+            </p>
+          )}
+        </>
+      )}
+
+      {isPlaying && (
+        <NowPlayingPill positionRef={positionRef} pillMaterials={pillMaterials} onClose={onClose} />
+      )}
+    </div>
+  );
+}
+
+export default LibraryBrowser;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   unreachablePrograms, entryActionIsReachable, declaredEntryActions,
-} from "../../../../modules/school/server/domain/reachability.mjs";
+} from "../../../../__app_modules/school/server/domain/reachability.mjs";
 
 const storyTime = { programId: 'story-time', entryAction: 'reading-session' };
 const pianoCourse = { programId: 'piano-course', entryAction: null };

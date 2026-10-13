@@ -13,9 +13,9 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 const FileIO = await import('#system/utils/FileIO.mjs');
-const { MediaProgress } = await import("../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs");
+const { MediaProgress } = await import("../../../../__capabilities/content-catalog/server/domain/entities/MediaProgress.mjs");
 const { YamlMediaProgressMemory } = await import(
-  "../../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs"
+  "../../../../__capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs"
 );
 
 function makeMemory() {

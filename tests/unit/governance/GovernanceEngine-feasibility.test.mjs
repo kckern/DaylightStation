@@ -5,7 +5,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
 }));
 
-const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
+const { GovernanceEngine } = await import("../../../__app_modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 function makeEngine({ profiles }) {
   const engine = new GovernanceEngine();

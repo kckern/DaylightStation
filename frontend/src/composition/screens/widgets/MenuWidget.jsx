@@ -1,11 +1,11 @@
 // frontend/src/screen-framework/widgets/MenuWidget.jsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { MenuStack } from "../../../../../modules/media/browser/menu.mjs";
-import { MenuSkeleton } from "../../../../../modules/media/browser/menu-skeleton.mjs";
+import { MenuStack } from "../../../../../__app_modules/media/browser/menu.mjs";
+import { MenuSkeleton } from "../../../../../__app_modules/media/browser/menu-skeleton.mjs";
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { usePlayerSessionBinding } from "../../../../../capabilities/playback/browser/sessions.mjs";
-import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";
+import { usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
+import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
 
 /**
  * MenuWidget — screen-framework widget that wraps MenuStack.

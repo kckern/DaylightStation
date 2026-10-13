@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/YouTubeFeedAdapter.test.mjs
 import { vi } from 'vitest';
-import { YouTubeFeedAdapter } from "../../../../modules/feed/server/adapters/sources/YouTubeFeedAdapter.mjs";
+import { YouTubeFeedAdapter } from "../../../../__app_modules/feed/server/adapters/sources/YouTubeFeedAdapter.mjs";
 
 // Mock the injected system HttpClient. get() resolves {ok,status,data};
 // data is the parsed JSON (API) or raw text (RSS).

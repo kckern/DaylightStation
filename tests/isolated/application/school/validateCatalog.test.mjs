@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ValidateCatalog } from "../../../../modules/school/server/application/usecases/ValidateCatalog.mjs";
-import { ICurriculumCatalog } from "../../../../modules/school/server/application/ports/ICurriculumCatalog.mjs";
+import { ValidateCatalog } from "../../../../__app_modules/school/server/application/usecases/ValidateCatalog.mjs";
+import { ICurriculumCatalog } from "../../../../__app_modules/school/server/application/ports/ICurriculumCatalog.mjs";
 
 /**
  * A catalog that lives entirely in memory. An application test never touches

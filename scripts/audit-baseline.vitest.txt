@@ -82,7 +82,7 @@
 #
 #
 # 2026-09-16: the School domain imports a shared contract.
-# `backend/src/2_domains/school/language/transcription.mjs` imports
+# `__backend/src/2_domains/school/language/transcription.mjs` imports
 # `#shared/contracts/language/typeableText.mjs`, which the domain-purity rule
 # forbids — it allows only `#domains/...` and relative paths that stay inside
 # `2_domains`. Introduced by c5c987fa3 (2026-09-14), the commit that created

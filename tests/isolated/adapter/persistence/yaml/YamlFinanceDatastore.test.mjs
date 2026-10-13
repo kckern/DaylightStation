@@ -3,7 +3,7 @@
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { YamlFinanceDatastore } from "../../../../../modules/finance/server/adapters/persistence/YamlFinanceDatastore.mjs";
+import { YamlFinanceDatastore } from "../../../../../__app_modules/finance/server/adapters/persistence/YamlFinanceDatastore.mjs";
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { FeedStateService } from "../../../../modules/feed/server/application/services/FeedStateService.mjs";
+import { FeedStateService } from "../../../../__app_modules/feed/server/application/services/FeedStateService.mjs";
 
 function createStore() {
   let data = { version: 1, items: {}, aliases: {} };

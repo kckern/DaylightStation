@@ -8,7 +8,7 @@ export const rules = [
     severity: 'critical',
     description: 'Domain layer imports from adapters',
     pattern: /from ['"]#adapters/,
-    scope: 'backend/src/1_domains/**/*.mjs',
+    scope: '__backend/src/1_domains/**/*.mjs',
     message: 'Domain layer must not import from adapters - use dependency injection'
   },
   {
@@ -16,7 +16,7 @@ export const rules = [
     severity: 'critical',
     description: 'Domain layer imports from applications',
     pattern: /from ['"]#apps/,
-    scope: 'backend/src/1_domains/**/*.mjs',
+    scope: '__backend/src/1_domains/**/*.mjs',
     message: 'Domain layer must not import from applications - dependency flows inward'
   },
   {
@@ -24,7 +24,7 @@ export const rules = [
     severity: 'high',
     description: 'Adapter layer imports non-port from applications',
     pattern: /from ['"]#apps\/(?![^'"]*\/ports\/)/,
-    scope: 'backend/src/2_adapters/**/*.mjs',
+    scope: '__backend/src/2_adapters/**/*.mjs',
     message: 'Adapter layer should only import ports from applications (use #apps/*/ports/)'
   },
   {
@@ -32,7 +32,7 @@ export const rules = [
     severity: 'medium',
     description: 'Using relative paths to cross layer boundaries',
     pattern: /from ['"]\.\.\/(\.\.\/)*[0-4]_/,
-    scope: 'backend/src/**/*.mjs',
+    scope: '__backend/src/**/*.mjs',
     message: 'Use #aliases instead of relative paths across layers'
   },
   {
@@ -40,7 +40,7 @@ export const rules = [
     severity: 'low',
     description: 'Importing index.mjs explicitly',
     pattern: /from ['"][^'"]+\/index\.mjs['"]/,
-    scope: 'backend/src/**/*.mjs',
+    scope: '__backend/src/**/*.mjs',
     message: 'Import from directory, not index.mjs explicitly'
   },
   {
@@ -48,7 +48,7 @@ export const rules = [
     severity: 'medium',
     description: 'Importing from internal paths instead of barrel',
     pattern: /from ['"]#domains\/[^'"]+\/entities\//,
-    scope: 'backend/src/**/*.mjs',
+    scope: '__backend/src/**/*.mjs',
     message: 'Import from domain barrel (#domains/fitness), not internal paths'
   }
 ];

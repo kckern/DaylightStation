@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import React from 'react';
-import { ScreenOverlayProvider, useScreenOverlay } from '../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import { ScreenOverlayProvider, useScreenOverlay } from '../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 import { ScreenExit } from './ScreenExit.jsx';
 
 function Controls() {

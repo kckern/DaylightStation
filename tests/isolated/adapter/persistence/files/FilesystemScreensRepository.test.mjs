@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { FilesystemScreensRepository } from "../../../../../capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
-import { IScreensRepository } from "../../../../../capabilities/screen-host/server/application/ports/IScreensRepository.mjs";
+import { FilesystemScreensRepository } from "../../../../../__capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
+import { IScreensRepository } from "../../../../../__capabilities/screen-host/server/application/ports/IScreensRepository.mjs";
 
 describe('FilesystemScreensRepository', () => {
   let root;

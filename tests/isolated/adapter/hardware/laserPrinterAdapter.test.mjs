@@ -11,8 +11,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import net from 'net';
 import http from 'http';
 import { execFileSync } from 'node:child_process';
-import { LaserPrinterAdapter } from '../../../../backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
-import { OPS, encodeRequest, decodeResponse } from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
+import { LaserPrinterAdapter } from '../../../../__backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
+import { OPS, encodeRequest, decodeResponse } from '../../../../__backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
 
 // Passes LaserPrinterAdapter's own `%PDF-` header sniff but is not a real
 // parseable PDF — fine for every test except the rasterization path, which

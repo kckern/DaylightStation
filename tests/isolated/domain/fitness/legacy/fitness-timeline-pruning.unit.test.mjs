@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../modules/fitness/browser/hooks/fitness/FitnessTimeline.js";
+import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../__app_modules/fitness/browser/hooks/fitness/FitnessTimeline.js";
 
 /**
  * Tests for FitnessTimeline pruning behavior.
@@ -14,7 +14,7 @@ import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../modules/fitne
  * even though pruning worked perfectly. A test that copies a constant tests
  * the copy.
  *
- * Related: docs/_wip/audits/2026-01-19-fitness-memory-audit.md
+ * Related: __docs/_wip/audits/2026-01-19-fitness-memory-audit.md
  * Related code: frontend/src/hooks/fitness/FitnessTimeline.js
  */
 describe('FitnessTimeline pruning', () => {

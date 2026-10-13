@@ -1,6 +1,6 @@
 // tests/unit/content/services/ContentSourceRegistry.test.mjs
 import { describe, test, expect, beforeEach } from 'vitest';
-import { ContentSourceRegistry } from "../../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { ContentSourceRegistry } from "../../../../../__capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
 
 describe('ContentSourceRegistry', () => {
   let registry;
@@ -92,7 +92,7 @@ describe('ContentSourceRegistry', () => {
 
   test('resolve falls back to media adapter for ID without colon', () => {
     // Production fallback now keys on the "media" source name, not "files"
-    // (see ContentSourceRegistry.resolve at backend/src/2_domains/content/
+    // (see ContentSourceRegistry.resolve at __backend/src/2_domains/content/
     // services/ContentSourceRegistry.mjs:188-192).
     const mediaDefaultAdapter = {
       source: 'media',

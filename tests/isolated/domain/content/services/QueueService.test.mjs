@@ -1,8 +1,8 @@
 // tests/unit/content/services/QueueService.test.mjs
 import { describe, it, test, expect, beforeEach, vi } from 'vitest';
-import { QueueService } from "../../../../../capabilities/playback/server/application/services/QueueService.mjs";
-import { PlayableItem } from "../../../../../capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
-import { MediaProgress } from "../../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
+import { QueueService } from "../../../../../__capabilities/playback/server/application/services/QueueService.mjs";
+import { PlayableItem } from "../../../../../__capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
+import { MediaProgress } from "../../../../../__capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
 
 // Create a mock WatchState class for testing
 class WatchState {

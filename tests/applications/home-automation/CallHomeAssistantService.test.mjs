@@ -9,9 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CallHomeAssistantService } from "../../../capabilities/home-control/server/application/CallHomeAssistantService.mjs";
-import { ApplicationError } from '../../../backend/src/3_applications/common/errors/index.mjs';
-import { InvalidInputError } from '../../../backend/src/3_applications/common/errors/SemanticErrors.mjs';
+import { CallHomeAssistantService } from "../../../__capabilities/home-control/server/application/CallHomeAssistantService.mjs";
+import { ApplicationError } from '../../../__backend/src/3_applications/common/errors/index.mjs';
+import { InvalidInputError } from '../../../__backend/src/3_applications/common/errors/SemanticErrors.mjs';
 
 /**
  * Minimal recording fake of the Home Assistant gateway.

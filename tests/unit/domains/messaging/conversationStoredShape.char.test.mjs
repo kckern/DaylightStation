@@ -1,5 +1,5 @@
 // Characterization test: the STORED YAML SHAPE of a conversation must not change
-// across the serialization-ownership migration (docs/_wip/plans/
+// across the serialization-ownership migration (__docs/_wip/plans/
 // 2026-07-08-serialization-ownership-migration.md, phase 1).
 // It round-trips a conversation with 2 messages through ConversationService +
 // YamlConversationDatastore against a temp data root and asserts the exact

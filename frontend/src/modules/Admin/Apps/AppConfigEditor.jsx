@@ -4,10 +4,10 @@ import { Alert } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import YamlEditor from '../shared/YamlEditor.jsx';
-import FitnessConfig from "../../../../../modules/fitness/browser/admin.mjs";
-import GratitudeConfig from '../../../../../modules/gratitude/browser/admin.mjs';
-import ShoppingConfig from "../../../../../modules/finance/browser/admin/ShoppingConfig.jsx";
-import FinanceConfig from "../../../../../modules/finance/browser/admin.mjs";
+import FitnessConfig from "../../../../../__app_modules/fitness/browser/admin.mjs";
+import GratitudeConfig from '../../../../../__app_modules/gratitude/browser/admin.mjs';
+import ShoppingConfig from "../../../../../__app_modules/finance/browser/admin/ShoppingConfig.jsx";
+import FinanceConfig from "../../../../../__app_modules/finance/browser/admin.mjs";
 import { capitalize } from '../utils/formatters.js';
 import { adminConfigPath } from '../utils/adminConfigPaths.js';
 

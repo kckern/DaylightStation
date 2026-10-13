@@ -7,9 +7,9 @@
 // out of journey stitching for free, so its overlap behaviour is pinned too.
 
 import { describe, it, expect } from 'vitest';
-import { GeoFix } from "../../../../modules/auto/server/domain/value-objects/GeoFix.mjs";
-import { Place } from "../../../../modules/auto/server/domain/value-objects/Place.mjs";
-import { resolvePlace, isAtFuelStop } from "../../../../modules/auto/server/domain/services/PlaceResolverService.mjs";
+import { GeoFix } from "../../../../__app_modules/auto/server/domain/value-objects/GeoFix.mjs";
+import { Place } from "../../../../__app_modules/auto/server/domain/value-objects/Place.mjs";
+import { resolvePlace, isAtFuelStop } from "../../../../__app_modules/auto/server/domain/services/PlaceResolverService.mjs";
 
 // Offset coordinates — never the household's real ones (feedback_no_pii_in_test_fixtures).
 const HOME = new GeoFix({ lat: 47.0, lon: -122.0 });

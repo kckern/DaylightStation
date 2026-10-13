@@ -9,8 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
-import { YamlMediaQueueDatastore } from "../../../../../modules/media/server/adapters/persistence/YamlMediaQueueDatastore.mjs";
-import { MediaQueue } from "../../../../../modules/media/server/domain/entities/MediaQueue.mjs";
+import { YamlMediaQueueDatastore } from "../../../../../__app_modules/media/server/adapters/persistence/YamlMediaQueueDatastore.mjs";
+import { MediaQueue } from "../../../../../__app_modules/media/server/domain/entities/MediaQueue.mjs";
 
 describe('YamlMediaQueueDatastore', () => {
   let store;

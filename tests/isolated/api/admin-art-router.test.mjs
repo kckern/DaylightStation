@@ -5,9 +5,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Jimp } from 'jimp';
-import { createAdminArtRouter } from "../../../modules/art/server/api/admin/art.mjs";
-import { AdminArtService } from "../../../modules/art/server/application/admin/AdminArtService.mjs";
-import { FilesystemArtAdminRepository } from "../../../modules/art/server/adapters/admin/FilesystemArtAdminRepository.mjs";
+import { createAdminArtRouter } from "../../../__app_modules/art/server/api/admin/art.mjs";
+import { AdminArtService } from "../../../__app_modules/art/server/application/admin/AdminArtService.mjs";
+import { FilesystemArtAdminRepository } from "../../../__app_modules/art/server/adapters/admin/FilesystemArtAdminRepository.mjs";
 
 const noop = { warn: () => {}, info: () => {}, debug: () => {}, error: () => {}, child: () => noop };
 let tmp, mediaPath, householdDir, app;

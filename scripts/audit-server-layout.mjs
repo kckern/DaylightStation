@@ -1,7 +1,7 @@
 // Destination layout mapping shared by the static layer and filesystem gates.
 // Keep evidence paths physical; only rule selection uses the legacy layer names.
 import { declaredServerEntry } from './owner-entry-policy.mjs';
-export const DESTINATION_ROOTS = ['modules', 'capabilities'];
+export const DESTINATION_ROOTS = ['__app_modules', '__capabilities'];
 const LEGACY_LAYERS = Object.freeze({
   domain: '2_domains',
   application: '3_applications',
@@ -12,18 +12,18 @@ const LEGACY_LAYERS = Object.freeze({
 });
 
 export function isDestinationServerFile(file) {
-  return /(?:^|\/)(modules|capabilities)\/[^/]+\/server\/.+/.test(file);
+  return /(?:^|\/)(__app_modules|__capabilities)\/[^/]+\/server\/.+/.test(file);
 }
 
 export function destinationServerPath(file) {
-  const match = file?.match(/(?:^|\/)(modules|capabilities)\/([^/]+)\/server\/(domain|application|adapters|api|rendering|composition)\/(.*)$/);
+  const match = file?.match(/(?:^|\/)(__app_modules|__capabilities)\/([^/]+)\/server\/(domain|application|adapters|api|rendering|composition)\/(.*)$/);
   return match ? { tree: match[1], owner: match[2], layer: match[3], suffix: match[4] } : declaredServerEntry(file);
 }
 
 export function matchesAuditLayer(file, legacyLayer) {
   const destination = destinationServerPath(file);
   if (!destination) return file.includes(legacyLayer);
-  return legacyLayer === 'backend/src/' || legacyLayer === `${LEGACY_LAYERS[destination.layer]}/`;
+  return legacyLayer === '__backend/src/' || legacyLayer === `${LEGACY_LAYERS[destination.layer]}/`;
 }
 
 export function targetsAuditLayer(file, legacyLayer) {
@@ -31,5 +31,5 @@ export function targetsAuditLayer(file, legacyLayer) {
   const destination = destinationServerPath(file);
   return destination
     ? LEGACY_LAYERS[destination.layer] === legacyLayer
-    : file.includes(`/backend/src/${legacyLayer}/`);
+    : file.includes(`/__backend/src/${legacyLayer}/`);
 }

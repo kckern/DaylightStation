@@ -58,7 +58,7 @@ function keyboards() {
   const registry = yaml.load(readFileSync(path, 'utf8'));
   const list = registry?.devices?.portal?.bluetooth_input?.keyboards;
   if (!Array.isArray(list) || !list.length) {
-    throw new Error('no devices.portal.bluetooth_input.keyboards in the registry — see docs/configuration/portal-keys-bluetooth.example.yml');
+    throw new Error('no devices.portal.bluetooth_input.keyboards in the registry — see __docs/configuration/portal-keys-bluetooth.example.yml');
   }
   return list;
 }

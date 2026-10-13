@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { validateScanConfig } from "../../../../modules/health/server/application/nutrition/validateScanConfig.mjs";
-import { DEFAULT_CONTAINERS, DEFAULT_DENSITY_LEVELS } from '../../../../modules/health/server/scale-config.mjs';
-import { MAX_DENSITY_LEVEL } from "../../../../modules/health/server/domain/nutrition/index.mjs";
+import { validateScanConfig } from "../../../../__app_modules/health/server/application/nutrition/validateScanConfig.mjs";
+import { DEFAULT_CONTAINERS, DEFAULT_DENSITY_LEVELS } from '../../../../__app_modules/health/server/scale-config.mjs';
+import { MAX_DENSITY_LEVEL } from "../../../../__app_modules/health/server/domain/nutrition/index.mjs";
 
 // `kcal_per_g` VARIES BY RUNG on purpose. It used to be a constant 1 for every
 // level, which was harmless while only `level` was validated — but the printed

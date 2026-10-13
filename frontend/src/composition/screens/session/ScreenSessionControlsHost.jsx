@@ -6,18 +6,18 @@
 // power-cut survival, and renders the on-screen surfaces (screen notes with
 // Put it back, the next-episode countdown, the sleep fade).
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import { getActionBus } from "../../../../../capabilities/screen-host/browser/input.mjs";
-import { useScreenOverlay } from "../../../../../capabilities/screen-host/browser/overlays.mjs";
+import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
 import { ScreenPlayer } from '../publishers/ScreenPlayer.jsx';
-import { useScopedRemoteControls } from "../../../../../capabilities/screen-host/browser/input.mjs";
+import { useScopedRemoteControls } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
-import { getPlayerQueueOpRegistry } from "../../../../../capabilities/playback/browser/contracts.mjs";
-import { setNaturalEndPolicy } from "../../../../../capabilities/playback/browser/contracts.mjs";
+import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
+import { setNaturalEndPolicy } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { getScreenItemActions } from '../actions/screenItemActions.js';
-import { createContinuationResolver } from "../../../../../capabilities/screen-host/browser/session.mjs";
+import { createContinuationResolver } from "../../../../../__capabilities/screen-host/browser/session.mjs";
 import {
   loadPersistedSession, savePersistedSession, updatePersistedSpot, clearPersistedSession, POWER_RESTORE_DELAY_MS,
-} from "../../../../../capabilities/screen-host/browser/session.mjs";
+} from "../../../../../__capabilities/screen-host/browser/session.mjs";
 import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../../../lib/parseAutoplayParams.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import { ScreenPlayerFeaturesHost } from './ScreenPlayerFeaturesHost.jsx';

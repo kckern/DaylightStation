@@ -1,4 +1,4 @@
-import { CardBattleView } from "../../../../modules/party-games/browser/presenter-card-battle.mjs";
+import { CardBattleView } from "../../../../__app_modules/party-games/browser/presenter-card-battle.mjs";
 
 // Composition registry for the generic Gaming runtime. It deliberately lives
 // with experiences so the platform never imports a concrete game presenter.

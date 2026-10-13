@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/RetroArchSyncAdapter.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { RetroArchSyncAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/retroarch/RetroArchSyncAdapter.mjs";
+import { RetroArchSyncAdapter } from "../../../../__capabilities/content-catalog/server/adapters/providers/retroarch/RetroArchSyncAdapter.mjs";
 
 const MOCK_PLAYLIST = {
   items: [

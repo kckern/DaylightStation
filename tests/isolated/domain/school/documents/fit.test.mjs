@@ -6,7 +6,7 @@
  * decision table.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveFitPlan } from "../../../../../modules/school/server/domain/documents/fit.mjs";
+import { resolveFitPlan } from "../../../../../__app_modules/school/server/domain/documents/fit.mjs";
 
 const normalFits = { density: 'normal', pageCount: 1, oversetPt: 0 };
 const normalOverset = { density: 'normal', pageCount: 2, oversetPt: 340 };

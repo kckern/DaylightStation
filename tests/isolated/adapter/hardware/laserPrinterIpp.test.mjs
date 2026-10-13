@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   OPS, encodeRequest, decodeResponse, printJobAttrs,
-} from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
+} from '../../../../__backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
 
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {

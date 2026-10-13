@@ -1,7 +1,7 @@
 // tests/unit/content/ContentQueryService.searchStream.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { ContentQueryService } from "../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
-import { RegistryContentCatalogGateway } from "../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { ContentQueryService } from "../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 
 describe('ContentQueryService.searchStream', () => {

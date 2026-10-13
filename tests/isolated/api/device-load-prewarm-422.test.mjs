@@ -1,6 +1,6 @@
 // tests/isolated/api/device-load-prewarm-422.test.mjs
 import { describe, test, expect, vi } from 'vitest';
-import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
+import { createDeviceRouter } from '../../../__backend/src/4_api/v1/routers/device.mjs';
 import express from 'express';
 import request from 'supertest';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';

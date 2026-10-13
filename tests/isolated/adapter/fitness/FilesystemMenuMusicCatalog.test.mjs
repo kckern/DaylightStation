@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FilesystemMenuMusicCatalog } from "../../../../modules/fitness/server/adapters/FilesystemMenuMusicCatalog.mjs";
-import { IMenuMusicCatalog } from "../../../../modules/fitness/server/application/ports/IMenuMusicCatalog.mjs";
+import { FilesystemMenuMusicCatalog } from "../../../../__app_modules/fitness/server/adapters/FilesystemMenuMusicCatalog.mjs";
+import { IMenuMusicCatalog } from "../../../../__app_modules/fitness/server/application/ports/IMenuMusicCatalog.mjs";
 
 const roots = [];
 afterEach(() => {

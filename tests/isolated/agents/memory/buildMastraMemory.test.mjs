@@ -1,6 +1,6 @@
 // tests/isolated/agents/memory/buildMastraMemory.test.mjs
 import { describe, it, expect } from 'vitest';
-import { buildMastraMemory } from "../../../../capabilities/agent-runtime/server/adapters/MastraAgentMemoryFactory.mjs";
+import { buildMastraMemory } from "../../../../__capabilities/agent-runtime/server/adapters/MastraAgentMemoryFactory.mjs";
 
 describe('buildMastraMemory', () => {
   it('builds a Memory instance with in-memory storage', () => {

@@ -28,7 +28,7 @@ No host daemon — **firmware only**, config-driven from the household SSOT
 > reintroduce Classic BT here — NimBLE supports none of it, and the Bluedroid
 > stack that does is mutually exclusive with NimBLE (one BLE stack per binary).
 > The retired Classic board is recorded in
-> [`docs/_archive/deleted-extensions.md`](../../docs/_archive/deleted-extensions.md).
+> [`__docs/_archive/deleted-extensions.md`](../../__docs/_archive/deleted-extensions.md).
 
 ## Messages sent to the bus
 
@@ -61,9 +61,9 @@ and `barcode-relay`.
 10-byte frame: `FF A5 | weight(uint16 BE) | mirror | b6 | b7 | unit(b8) | checksum`.
 Weight = grams (÷1); b6 `0xAA`=settled/`0xA0`=changing; b8 `0x00`=g/`0x02`=ml;
 checksum = `sum(b2..b8) & 0xFF`. Full write-up:
-`docs/plans/2026-07-10-food-scale-relay-design.md`.
+`__docs/plans/2026-07-10-food-scale-relay-design.md`.
 
-Backend dispatch (`backend/src/3_applications/hardware/foodScaleRelay.mjs`)
+Backend dispatch (`__backend/src/3_applications/hardware/foodScaleRelay.mjs`)
 rebroadcasts and persists two record kinds:
 
 - **settled readings** — a stable, non-empty weight, logged once and not repeated
@@ -76,7 +76,7 @@ rebroadcasts and persists two record kinds:
 ## Nutribot integration
 
 A second, independent consumer of the `food-scale` topic
-(`backend/src/3_applications/nutrition/ObservationService.mjs`) turns weights into
+(`__backend/src/3_applications/nutrition/ObservationService.mjs`) turns weights into
 Telegram density-logging prompts for the household head, recording every signal on a
 durable ledger as it goes. Two paths:
 
@@ -241,7 +241,7 @@ nobody noticed, because nothing watches it. The relays are pass-throughs: the
 `docker logs` resets at container start. A dead board is visible only as history
 that stopped being written.
 
-`backend/src/3_applications/hardware/relayWatchdog.mjs` closes that gap: it
+`__backend/src/3_applications/hardware/relayWatchdog.mjs` closes that gap: it
 watches `onClientMessage` for frames carrying `source: kitchen-relay`, and if
 none arrive for **12 h** it sends one high-urgency `system` notification (which
 routes to Telegram — see `DEFAULT_PREFERENCES` in
@@ -317,7 +317,7 @@ ATOM and BLE controller. Schema/example:
 Routing note: `barcode.route` is only the **default** for a code that claims no
 namespace. Prefixed codes (`sch:`, `go:`, `cmd:`, `nut:`, and legacy
 `dl:`/`ct:`/`rs:`) are dispatched by prefix regardless of route — see
-`backend/src/5_composition/modules/scanDispatch.mjs`.
+`__backend/src/5_composition/modules/scanDispatch.mjs`.
 
 > Unprefixed **content** cards (`living-room:plex:594036+shuffle`) are the
 > exception: they parse as `unknown`, so on this reader — whose route is

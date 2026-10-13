@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
 import { createContentRegistry, createFeedServices } from '#composition/bootstrap.mjs';
-import { HeadlineStoryJudge } from "../../../../modules/feed/server/application/services/HeadlineStoryJudge.mjs";
+import { HeadlineStoryJudge } from "../../../../__app_modules/feed/server/application/services/HeadlineStoryJudge.mjs";
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
@@ -68,7 +68,7 @@ describe('bootstrap', () => {
       // 'watchlist' source; ListAdapter (source 'list') is registered as
       // the alias 'watchlist' via the legacy registry.adapters map only —
       // not the structured #adapterEntries (see ListAdapter wiring in
-      // backend/src/5_composition/bootstrap.mjs:507).
+      // __backend/src/5_composition/bootstrap.mjs:507).
       const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {

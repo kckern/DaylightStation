@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseModifiers } from '../../../../backend/src/4_api/v1/utils/modifierParser.mjs';
+import { parseModifiers } from '../../../../__backend/src/4_api/v1/utils/modifierParser.mjs';
 
 describe('parseModifiers', () => {
   describe('basic parsing', () => {

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import GamingRuntime from "../../../capabilities/gaming/browser/platform/runtime/GamingRuntime.jsx";
+import GamingRuntime from "../../../__capabilities/gaming/browser/platform/runtime/GamingRuntime.jsx";
 import { GAMING_PRESENTERS } from "../composition/gaming/presenterRegistry.js";
 
 export default function GamingApp({ clear = null }) {

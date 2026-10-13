@@ -1,6 +1,6 @@
 // tests/isolated/domain/content/services/CanvasSelectionService.test.mjs
 import { describe, it, expect } from 'vitest';
-import { CanvasSelectionService } from "../../../../../modules/art/server/domain/CanvasSelectionService.mjs";
+import { CanvasSelectionService } from "../../../../../__app_modules/art/server/domain/CanvasSelectionService.mjs";
 
 describe('CanvasSelectionService', () => {
   const service = new CanvasSelectionService();

@@ -1,7 +1,7 @@
 import { describe, test, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createPrewarmRouter } from '../../../backend/src/4_api/v1/routers/prewarm.mjs';
+import { createPrewarmRouter } from '../../../__backend/src/4_api/v1/routers/prewarm.mjs';
 
 describe('prewarm router', () => {
   const mockPrewarmService = {

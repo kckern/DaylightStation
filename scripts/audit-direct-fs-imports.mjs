@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, lstatSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
@@ -10,9 +10,9 @@ import { DESTINATION_ROOTS, isDestinationServerFile } from './audit-server-layou
 
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 const FS_MODULES = new Set(['fs', 'fs/promises', 'node:fs', 'node:fs/promises']);
-const SOURCE_ROOTS = ['backend/src/', 'backend/config/', ...DESTINATION_ROOTS];
-const RUNTIME_ENTRYPOINTS = new Set(['backend/index.js']);
-const ALLOWED_RUNTIME_ROOTS = ['backend/src/0_system/'];
+const SOURCE_ROOTS = ['__backend/src/', '__backend/config/', ...DESTINATION_ROOTS];
+const RUNTIME_ENTRYPOINTS = new Set(['__backend/index.js']);
+const ALLOWED_RUNTIME_ROOTS = ['__backend/src/0_system/'];
 
 function isTestFile(file) {
   return /(^|\/)(__tests__|test|tests|fixtures)(\/|$)/.test(file) ||
@@ -20,7 +20,7 @@ function isTestFile(file) {
 }
 
 function isScannedRuntimeFile(file) {
-  const isRuntimeSource = ['backend/src/', 'backend/config/'].some((root) => file.startsWith(root)) ||
+  const isRuntimeSource = ['__backend/src/', '__backend/config/'].some((root) => file.startsWith(root)) ||
     isDestinationServerFile(file) ||
     RUNTIME_ENTRYPOINTS.has(file);
   return isRuntimeSource && /\.(mjs|js|cjs)$/.test(file) &&
@@ -170,7 +170,7 @@ function run({ staged = false, files: suppliedFiles = null, quiet = false } = {}
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   run({
     staged: process.argv.includes('--staged') || Boolean(stagedFilesArgument),
     files: stagedFilesArgument ? JSON.parse(stagedFilesArgument.slice('--staged-files='.length)) : null,

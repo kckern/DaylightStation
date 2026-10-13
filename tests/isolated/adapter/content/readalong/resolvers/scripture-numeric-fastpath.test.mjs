@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ScriptureResolver } from "../../../../../../capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs";
+import { ScriptureResolver } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs";
 
 // Regression guard for the numeric-verse-id fast path.
 //

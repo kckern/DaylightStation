@@ -4,7 +4,7 @@ import { vi } from 'vitest';
 globalThis.window = { location: { origin: 'http://localhost:3111', protocol: 'http:', host: 'localhost:3111' } };
 
 // Test the pure function directly — no React dependencies needed
-import { buildParticipantDisplayMap } from "../../../../../modules/fitness/browser/hooks/fitness/participantDisplayMap.js";
+import { buildParticipantDisplayMap } from "../../../../../__app_modules/fitness/browser/hooks/fitness/participantDisplayMap.js";
 
 describe('buildParticipantDisplayMap', () => {
   const mockProfiles = [

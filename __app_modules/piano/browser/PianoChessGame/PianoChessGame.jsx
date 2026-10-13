@@ -1,0 +1,1410 @@
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { INITIAL_FEN, legalDestinations } from "../../../../__capabilities/gaming/portable/rulesets/chess/engine.mjs";
+import { normalizeOpponentProfile, normalizeOpponentRoster } from "../../../../__capabilities/gaming/portable/opponents/profile.mjs";
+import { fenToPosition } from "../../../../__capabilities/gaming/portable/rulesets/chess/position.mjs";
+import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
+import ChessBoard from "../../../chess/browser/ChessBoard.jsx";
+import { pieceSource } from "../../../chess/browser/pieceAssets.js";
+import BoardGameFrame from '../game-platform/host/BoardGameFrame.jsx';
+import BoardGameOpening from '../game-platform/host/BoardGameOpening.jsx';
+import { GameRail, GameSlot, GameButton, GameStatusBar } from '../game-platform/chrome/index.js';
+import Icon from '../ui/icons/Icon.jsx';
+import ProfileAvatar from '../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
+import ChordNamePanel from '../components/ChordNamePanel.jsx';
+import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
+import ChordReadout from './ChordReadout.jsx';
+import ChessClock from './ChessClock.jsx';
+import ChessResult from './ChessResult.jsx';
+import { playCue } from './chessSounds.js';
+import { resolveTiming } from './chessClock.js';
+import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
+import { usePlayerLock } from '../PianoKiosk/usePianoPlayback.js';
+import MatchGateContext from '../PianoKiosk/modes/Games/MatchGateContext.js';
+import {
+  archiveGame, beaconArchive, saveGameProgress, beaconProgress, fetchChessConfig, fetchLadder, requestBestMove,
+  requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
+} from './chessApi.js';
+import OpponentPanel from '../game-platform/opponent/OpponentPanel.jsx';
+import GestureCards from './GestureCards.jsx';
+import OpponentRosterSheet from '../game-platform/opponent/OpponentRosterSheet.jsx';
+import { cuesFromConfig } from './chessCues.js';
+import ChessSettingsPanel from './ChessSettingsPanel.jsx';
+import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
+import { isStaffScheme, splitFor, staffAxisMatch } from './staffAddress.js';
+import StaffNoteLabel, { StaffClefLabel } from '../game-platform/families/addressed-board/StaffNoteLabel.jsx';
+import { candidateSquares } from './chordCandidates.js';
+import { destinationBadges } from './chessBadges.js';
+import { recognizeGesture } from './chordGestures.js';
+import { DOUBLE_WINDOW_MS } from './chordSelection.js';
+import {
+  REJECTION_MESSAGES, applySquare, capturedPieces,
+  createChessGameState, isPlayerTurn, projectChessAuthorityState, takeMoveBack,
+  schemeForPly,
+} from './chessGameState.js';
+import { managedAddressingAt } from '../game-platform/addressing/managedAddressing.js';
+import { useChessAuthority } from './useChessAuthority.js';
+import {
+  checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
+} from './takebackBudget.js';
+import { buildChessRailViewModel } from './chessRailViewModel.js';
+import { RoundStanding } from './RoundStanding.jsx';
+import { rimAxisClef, rimStaffExtent } from "../../../../__capabilities/music-notation/browser/renderers/RimStaffRenderer.jsx";
+import { useChessAddressingProgress } from './useChessAddressingProgress.js';
+import { useChessOpponentTurn } from './useChessOpponentTurn.js';
+import { useChessPersistenceLifecycle } from './useChessPersistenceLifecycle.js';
+import { useChessSessionIdentity } from './useChessSessionIdentity.js';
+import { useChessSessionResources } from './useChessSessionResources.js';
+import { useChessHelpController } from './useChessHelpController.js';
+import { useChessInputController } from './useChessInputController.js';
+import './PianoChessGame.scss';
+
+import {
+  DEFAULT_FEEDBACK, chessAddressingFor, minNotesFor,
+} from './chessAddressingModel.js';
+
+/**
+ * Piano Chess — chess played by chords.
+ *
+ * Every square is a chord: the file is the root, the rank is the quality. A move
+ * is the two chords that perform it, played in order — lift, then land. Nothing
+ * here is pointer-driven, because the instrument is the controller.
+ */
+
+const CURSOR_TICK_MS = 25;
+const TOAST_MS = 2600;
+
+/**
+ * The fallback think time, used only when the rung-scaled curve cannot resolve
+ * one — a guest, or a game with no ladder. The real pacing lives in
+ * `opponentPacing.js`, which scales the brood with the rung and treats it as a
+ * floor on the total wait rather than a pause before the request.
+ */
+export const OPPONENT_DELAY_MS = 1200;
+/** How long the opening banner stands before it clears itself. */
+const OPENING_MS = 1600;
+/** How long a piece takes to cross the board, per actor. See `moveDurationMs`. */
+const PLAYER_MOVE_MS = 180;
+const OPPONENT_MOVE_MS = 420;
+/** The order a captured rail reads in: cheapest first, so a queen ends the row. */
+const PIECE_ORDER = ['p', 'n', 'b', 'r', 'q'];
+
+/**
+ * Frozen empties for the idle paths.
+ *
+ * The board is memoized, so a fresh `[]` or `{}` per render defeats its bail-out
+ * exactly as thoroughly as changed data would — and that costs 64 square
+ * subtrees and ~32 images on every MIDI note event.
+ */
+/** The teachable steps, in order, for the "step N of M" counter. */
+const ONBOARD_ORDER = Object.freeze(['find', 'arm', 'lift', 'land']);
+
+/** How long the rewind holds before the exchange plays forward again. */
+const REPLAY_HOLD_MS = 260;
+/** Half speed, so the move that was missed can actually be followed. */
+const REPLAY_MOVE_MS = 840;
+
+const EMPTY_ARRAY = Object.freeze([]);
+const EMPTY_OBJECT = Object.freeze({});
+const BLANK_AXIS = Object.freeze(Array(8).fill(''));
+
+/**
+ * The longest the board waits for the player's own addressing before it opens
+ * on the house fallback. A config read that never answers must not leave a
+ * child staring at a board that ignores the piano; a late answer is still
+ * adopted if nothing has been played.
+ */
+export const ADDRESSING_WAIT_MS = 6000;
+const SETTING_UP_PROMPT = 'Setting up your board…';
+
+let cachedLogger;
+function logger() {
+  if (!cachedLogger) cachedLogger = getLogger().child({ component: 'piano-chess' });
+  return cachedLogger;
+}
+const CHESS_ADDRESSING_CLIENT = Object.freeze({ writeConfig: saveChessConfig });
+const CHESS_PERSISTENCE_GATEWAY = Object.freeze({
+  archiveGame, beaconArchive, saveGameRecord, saveGameProgress, beaconProgress,
+});
+
+export function PianoChessGame({
+  gameConfig = null,
+  addressingPolicy = null,
+  // Supplied by the game platform (PianoVisualizer). Absent only for kiosk
+  // callers that rely on PianoMidiProvider being above them.
+  activeNotes: activeNotesProp = null,
+  connected: connectedProp = null,
+  currentUser = null,
+  playerName = null,
+  playerColor = gameConfig?.player_color ?? 'w',
+  difficulty = gameConfig?.difficulty ?? 'learner',
+  scheme = DEFAULT_CHORD_SCHEME,
+  shuffleEachTurn: shuffleEachTurnProp = gameConfig?.addressing?.shuffle !== 'never',
+  seed = null,
+  feedback = null,
+  // Starting position override. A test seam like `seed`: the game-record test
+  // needs a mate-in-one board, and production callers never pass it.
+  fen = null,
+}) {
+  const {
+    lockedUser,
+    currentUserId,
+    adoptLateIdentity,
+    displayName,
+    playerAvatarId,
+    gameId,
+    gameSeed,
+    beginNextGame,
+  } = useChessSessionIdentity({ currentUser, playerName, initialSeed: seed });
+
+  const authorityUserId = lockedUser || 'household';
+  const {
+    session: chessSession,
+    ready: chessAuthorityReady,
+    move: commitChessMove,
+    takeback: commitChessTakeback,
+    reset: resetChessAuthority,
+  } = useChessAuthority({
+    userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed, playerColor,
+  });
+
+  const playedPliesRef = useRef(0);
+  useEffect(() => {
+    if (!lockedUser && currentUserId && playedPliesRef.current === 0) adoptLateIdentity();
+  }, [lockedUser, currentUserId, adoptLateIdentity]);
+
+  const [game, setGame] = useState(() => createChessGameState({
+    fen: fen ?? undefined,
+    playerColor,
+    scheme,
+    seed: gameSeed,
+    shuffleEachTurn: shuffleEachTurnProp,
+  }));
+
+  const {
+    chessConfig,
+    configReady,
+    ladder,
+    ladderReady,
+    rungId,
+    opponent: ladderOpponent,
+    ladderLevel,
+    updateSetting: applySetting,
+  } = useChessSessionResources({
+    sessionId: gameId,
+    userId: lockedUser,
+    historyLength: game.history.length,
+    readConfig: fetchChessConfig,
+    readLadder: fetchLadder,
+    writeConfig: saveChessConfig,
+    logger: logger(),
+  });
+  playedPliesRef.current = game.history.length;
+  const rosterPack = chessConfig?.ladder?.roster_pack || 'chess';
+  const opponentProfile = useMemo(() => normalizeOpponentProfile(ladderOpponent || {}, {
+    rosterPack, position: (ladderLevel ?? 0) + 1,
+  }), [ladderLevel, ladderOpponent, rosterPack]);
+  const opponentRoster = useMemo(() => normalizeOpponentRoster(ladder?.roster || [], rosterPack), [ladder?.roster, rosterPack]);
+
+  usePlayerLock(!game.status?.game_over, 'Finish the game to switch players');
+
+  // The merged household+user chess config is the single source for the rung
+  // ladder, the cue flags, the opponent delay, and the shuffle preference. The
+  // old gameConfig.feedback path is gone on purpose: two config sources for one
+  // preference is exactly the drift the chess.yml pair exists to prevent.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // The `feedback` prop survives ONLY as a test seam — production callers must
+  // let the chess config speak for itself.
+  const cues = { ...DEFAULT_FEEDBACK, ...cuesFromConfig(chessConfig), ...(feedback ?? {}) };
+  const opponentDelayMs = chessConfig?.opponent_delay_ms ?? OPPONENT_DELAY_MS;
+  // The clock's settings, resolved once here so the board and the archive can
+  // never disagree about which control was in force.
+  const timing = useMemo(() => resolveTiming(chessConfig), [chessConfig]);
+  // Shuffle takes effect on the NEXT game: createChessGameState captures it at
+  // construction, so a mid-game change never re-deals the board mid-read.
+  // Scheme and cadence resolve together, through the addressing layers, so the
+  // board and its shuffle can never come from two different opinions of the
+  // config.
+  // FROZEN FOR THE GAME. This used to take `completedPlayerMoves` as well, so
+  // the memo recomputed on every move and the board got harder as the child
+  // played it — see managedAddressing.js. The pressure is settled when the game
+  // starts and the only thing that can change it is starting another one.
+  const managedAddressing = useMemo(() => managedAddressingAt(addressingPolicy?.config, {
+    learnerId: addressingPolicy?.learnerId,
+    completedGames: addressingPolicy?.completedGames,
+  }), [addressingPolicy]);
+  const loadedAddressing = useMemo(
+    () => (chessConfig ? chessAddressingFor(chessConfig, scheme, gameSeed, managedAddressing) : null),
+    [chessConfig, scheme, gameSeed, managedAddressing],
+  );
+  const shuffleEachTurn = loadedAddressing ? loadedAddressing.shuffleEachTurn : shuffleEachTurnProp;
+  const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
+  // Maps the active rung to a bundled difficulty the same way the server adapter
+  // would, so a dropped request doesn't quietly change who the player is facing.
+  const localFallbackDifficulty = Number.isFinite(rung?.elo) ? 'steady'
+    : (rung?.skill ?? 3) <= 2 ? 'beginner'
+      : (rung?.skill ?? 3) <= 10 ? 'learner' : 'steady';
+
+  // Notes come from whoever mounts this game. The platform hands every game its
+  // `activeNotes` (PianoVisualizer does), and on the office screen that WS feed
+  // is the ONLY source — there is no PianoMidiProvider there, so reaching into
+  // the kiosk context threw and the game died on open the first time the note
+  // launcher made it reachable. Context is the fallback, for kiosk callers that
+  // mount it without passing notes.
+  const ctxNotes = usePianoMidiNotesOptional();
+  const midiCtx = usePianoMidiOptional();
+  const activeNotes = activeNotesProp ?? ctxNotes.activeNotes;
+  // No provider means no connection state to read. The visualizer only appears
+  // once notes are already flowing, so assume attached rather than nagging the
+  // player to connect a piano they are demonstrably playing.
+  const connected = connectedProp ?? midiCtx?.connected ?? true;
+  // The map is re-dealt every turn, so everything that reads chords — the
+  // cursor, the rim, the move log — has to follow state, not the prop.
+  const liveScheme = game.scheme;
+  const reading = isStaffScheme(liveScheme);
+  const gameRef = useRef(game);
+  gameRef.current = game;
+  const terminalSpeechRef = useRef(() => {});
+  // `performance.now()` is monotonic for this browser session. We record each
+  // completed ply here rather than trying to infer it from archive wall times.
+  // A remount cannot continue this clock, so its incomplete ledger is honestly
+  // marked discontinuous when archived.
+  const timingLedgerRef = useRef(null);
+  if (!timingLedgerRef.current || timingLedgerRef.current.gameId !== gameId) {
+    timingLedgerRef.current = {
+      gameId,
+      quality: game.history.length ? 'discontinuous' : (timing.mode === 'off' ? 'off' : 'complete'),
+      lastAt: typeof performance === 'undefined' ? null : performance.now(),
+      byPly: {},
+    };
+  }
+  const recordMoveTiming = useCallback((ply) => {
+    const ledger = timingLedgerRef.current;
+    if (!ledger || ledger.quality === 'off') return;
+    const now = typeof performance === 'undefined' ? null : performance.now();
+    if (now == null || ledger.lastAt == null || !Number.isInteger(ply) || ply < 1) {
+      ledger.quality = 'discontinuous';
+      return;
+    }
+    ledger.byPly[ply] = Math.max(0, Math.round(now - ledger.lastAt));
+    ledger.lastAt = now;
+  }, []);
+  const projectAuthority = useCallback((authoritativeSession, nativeState = gameRef.current) => (
+    projectChessAuthorityState(authoritativeSession.state, {
+      playerColor,
+      scheme: nativeState?.baseScheme || scheme,
+      seed: authoritativeSession.header.seed,
+      shuffleEachTurn: nativeState?.shuffleEachTurn ?? shuffleEachTurnProp,
+    })
+  ), [playerColor, scheme, shuffleEachTurnProp]);
+
+  useEffect(() => {
+    if (!chessSession) return;
+    setGame((current) => projectAuthority(chessSession, current));
+  }, [chessSession, projectAuthority]);
+  // Where the cooldown counts from — the player's own move count at the last
+  // takeback, or null when there has not been one this game.
+  const lastTakebackAtRef = useRef(null);
+  // The tick effect and the takeback callback are both mount-stable, so
+  // everything they read of the render's values has to arrive by ref.
+  const chessConfigRef = useRef(null);
+  chessConfigRef.current = chessConfig;
+  const ladderPolicyRef = useRef(null);
+  ladderPolicyRef.current = ladder?.policy ?? null;
+
+  // Below the game state on purpose: this effect may recreate it. The initial
+  // game is built in the useState initializer — always before this fetch can
+  // resolve — so it captured the prop fallback for the shuffle cadence, and
+  // commitMove re-deals from that CAPTURED value while the rail notice reads
+  // the loaded one. If the player has not touched the game yet, re-deal it
+  // under the loaded preference so the saved setting is real from the first
+  // move; once a chord or move has landed the board must not rearrange under
+  // them, and the captured value stands until the next game.
+  // THE BOARD IS NOT PLAYABLE UNTIL IT SPEAKS THE PLAYER'S VOCABULARY. The
+  // game is built before the player's config can arrive, on the house chord
+  // fallback, and for six weeks the first touch could land on that fallback
+  // and pin it for the whole game — a staff reader handed chord symbols
+  // (2026-09-25). Input now stays closed until this effect has applied the
+  // loaded addressing, or the read has answered with nothing, or the wait
+  // runs out. `addressingReadyFor` is keyed by game so a restart closes it
+  // again until the next game's config has resolved.
+  const [addressingReadyFor, setAddressingReadyFor] = useState(null);
+  const [addressingWaitExpiredFor, setAddressingWaitExpiredFor] = useState(null);
+  const addressingReady = addressingReadyFor === gameId || addressingWaitExpiredFor === gameId;
+
+  useEffect(() => {
+    if (addressingReadyFor === gameId) return undefined;
+    const timer = setTimeout(() => {
+      logger().warn('addressing.wait-expired', { gameId, waitedMs: ADDRESSING_WAIT_MS });
+      setAddressingWaitExpiredFor(gameId);
+    }, ADDRESSING_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [addressingReadyFor, gameId]);
+
+  useEffect(() => {
+      if (!configReady) return;
+      if (!loadedAddressing) {
+        setAddressingReadyFor(gameId);
+        return;
+      }
+      // The addressing vocabulary is a per-player setting, so it can only be
+      // known once that player's config layer has resolved — after the game was
+      // built. Same rule as the shuffle: adopt it while the game is untouched,
+      // never rearrange the board under a player mid-move.
+      //
+      // A LIFTED PIECE IS NOT A PLAYED MOVE. Before any move lands, the game is
+      // rebuilt even with a piece in hand: that lift was made in the fallback
+      // vocabulary, which the player never chose. Gating on `origin` here kept a
+      // staff reader on chord symbols for a whole game (2026-09-25) because he
+      // touched a pawn 250ms before a slow config read came back.
+      //
+      // COMPARE THE BASE SCHEME, NEVER THE DEALT ONE. On a shuffled board
+      // `scheme` is the per-turn deal (`<base>:shuffled:<seed>`) while the loaded
+      // addressing is the base, so comparing `scheme` never matched: every
+      // re-run rebuilt the board, and the kiosk re-runs this on every note
+      // because Games builds `addressingPolicy` inline. Each rebuild put the
+      // lifted piece back, so no child could make a first move (2026-09-25,
+      // 75 `addressing.adopted-over-lift` in one afternoon).
+      const { scheme: loadedScheme, shuffleEachTurn: nextShuffle } = loadedAddressing;
+      const adopted = (state) => state.shuffleEachTurn === nextShuffle
+        && (state.baseScheme ?? state.scheme)?.id === loadedScheme.id;
+      const pending = gameRef.current;
+      if (pending.origin && pending.history.length === 0 && !adopted(pending)) {
+        logger().info('addressing.adopted-over-lift', {
+          origin: pending.origin, from: pending.scheme?.id ?? null, to: loadedScheme.id,
+        });
+      }
+      setGame((current) => {
+        const canAdopt = current.history.length === 0
+          || (!current.origin && managedAddressing && isPlayerTurn(current));
+        if (!canAdopt) return current;
+        if (adopted(current)) return current;
+        if (current.history.length === 0) {
+          return createChessGameState({
+            fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
+          });
+        }
+        const next = { ...current, baseScheme: loadedScheme, shuffleEachTurn: nextShuffle };
+        return { ...next, scheme: schemeForPly(next, current.history.length) };
+      });
+      setAddressingReadyFor(gameId);
+  }, [configReady, loadedAddressing, fen, gameId, gameSeed, managedAddressing, playerColor, game.history.length, game.status?.turn]);
+
+  // Notes reach the game only once the board is addressed in the player's own
+  // vocabulary. The keyboard strip still draws them (it reads `activeNotes`).
+  const heldNotes = useMemo(
+    () => (addressingReady ? [...activeNotes.keys()].sort((a, b) => a - b) : EMPTY_ARRAY),
+    [activeNotes, addressingReady],
+  );
+
+  /**
+   * Every legal move in this position, generated ONCE.
+   *
+   * This is the hot path of the whole screen. `playableSources` and
+   * `destinationsFor` each build a fresh `new Chess(fen)` and run a full verbose
+   * move generation, and four separate places below wanted one or the other —
+   * three of them unmemoized, so they ran on every render. Renders happen on
+   * every MIDI note on AND off, and a held chord is three to five of those
+   * inside about 100ms. That was the reported jank, and the throwaway engines
+   * were also the largest source of GC garbage on a device this old.
+   *
+   * Keyed on the FEN alone: the position is the only thing a move list depends
+   * on. Everything below derives from this map and never touches the engine.
+   */
+  const legalMap = useMemo(() => legalDestinations(game.game.fen), [game.game.fen]);
+  const playerTurn = isPlayerTurn(game);
+  // Stable identities on the idle paths: these feed a memoized board, and a
+  // fresh [] every render defeats the memo just as surely as new data would.
+  const sources = useMemo(
+    () => (playerTurn ? Object.keys(legalMap).sort() : EMPTY_ARRAY),
+    [legalMap, playerTurn],
+  );
+  const originDestinations = useMemo(
+    () => (game.origin ? (legalMap[game.origin] ?? EMPTY_ARRAY) : EMPTY_ARRAY),
+    [legalMap, game.origin],
+  );
+
+  // Gesture recognition runs before square matching, and a recognised cluster
+  // is never chord input: while it is physically down, narrowing is suppressed.
+  const gesture = recognizeGesture(heldNotes);
+  const candidates = useMemo(() => {
+    // Nothing held is the common case — the board sits here between moves — and
+    // it used to build the whole available-set anyway before filtering against
+    // an empty chord.
+    if (gesture || !heldNotes.length) return EMPTY_ARRAY;
+    // Narrow only among squares the player can act on in the current half of
+    // the move. Lighting empty, enemy, or unreachable squares made the board
+    // look random even though the pitch-class subset calculation was correct.
+    const available = new Set(game.origin ? originDestinations : sources);
+    return candidateSquares(heldNotes, liveScheme).filter((square) => available.has(square));
+  }, [game.origin, gesture, heldNotes, liveScheme, originDestinations, sources]);
+
+  const {
+    opening,
+    replay,
+    help,
+    helpUsed,
+    helpUsedRef,
+    addTakeback,
+    resetHelp,
+    matchCounts,
+    demotionArmed,
+  } = useChessHelpController({
+    game,
+    gameRef,
+    gameId,
+    userId: lockedUser,
+    gesture,
+    requestBestMove,
+    logger: logger(),
+    openingMs: OPENING_MS,
+    replayHoldMs: REPLAY_HOLD_MS,
+    replayMoveMs: REPLAY_MOVE_MS,
+    // The ceilings this match is played under, so the rail can say whether it
+    // still counts and warn before a press stops it counting. Absent until the
+    // ladder read answers; the controller reports "not known" rather than yes.
+    policy: ladder?.policy ?? null,
+    level: ladderLevel ?? 0,
+  });
+
+  // A board that silently rearranges itself is a board the player will misread.
+  // The re-deal announces itself, then gets out of the way.
+  const [justDealt, setJustDealt] = useState(false);
+  useEffect(() => {
+    if (!shuffleEachTurn) return undefined;
+    setJustDealt(true);
+    const timer = setTimeout(() => setJustDealt(false), 1600);
+    return () => clearTimeout(timer);
+  }, [liveScheme.id, shuffleEachTurn]);
+
+  /**
+   * THE SCHEME IN PLAY, not the one this component defaults to.
+   *
+   * This logged `scheme.id` — the PROP, whose default is
+   * `DEFAULT_CHORD_SCHEME` — so every chess game ever recorded says
+   * `letters-by-difficulty-v1` whether the child was reading chord symbols or
+   * staff cards. It is the one field an investigator uses to ask which
+   * vocabulary somebody was on, and it always gave the same answer: on
+   * 2026-09-13 it read `chords` for a game whose own `move-played` line carried
+   * staff dyads two lines below it. `liveScheme` is `game.scheme`, the one the
+   * board actually addresses with once `loadedAddressing` has resolved.
+   */
+  useEffect(() => {
+    logger().info('mounted', {
+      player_color: playerColor, difficulty,
+      scheme: liveScheme?.id ?? null,
+      vocabulary: liveScheme?.kind === 'staff' ? 'staff' : 'chords',
+      shuffle: shuffleEachTurn ? 'each_turn' : 'never', seed: gameSeed,
+    });
+    if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
+  }, [difficulty, game.schemeRejected, gameSeed, playerColor, liveScheme?.id, liveScheme?.kind, shuffleEachTurn]);
+
+  /**
+   * The board, said out loud.
+   *
+   * Read through a ref because the callers are mount-stable, and gated on a
+   * config flag rather than on whether audio happens to work — `playCue` is
+   * already a no-op on a WebView that refuses an AudioContext.
+   *
+   * Ordered by importance, not by chronology: a capture that also gives check
+   * announces the check, because that is the thing the player has to answer.
+   */
+  const soundRef = useRef(true);
+  soundRef.current = cues.sound;
+
+  const announce = useCallback((state, kind) => {
+    if (!soundRef.current) return;
+    if (kind === 'rejected') { playCue('refuse'); return; }
+    if (state.status?.game_over) {
+      if (state.status.outcome !== 'checkmate') { playCue('move'); return; }
+      playCue(state.status.winner === state.playerColor ? 'win' : 'lose');
+      return;
+    }
+    if (state.status?.check) { playCue('check'); return; }
+    const last = state.history.at(-1);
+    if (last?.san?.includes('=')) { playCue('promote'); return; }
+    playCue(last?.captured ? 'capture' : 'move');
+  }, []);
+
+  const handleSquare = useCallback((square) => {
+    if (!chessAuthorityReady) return;
+    // The clock reads move timestamps rather than running its own counter, so
+    // "now" is stamped at the moment the move lands and everything downstream —
+    // the clock face, the archived think times, the post-game timing analysis —
+    // derives from these.
+    const { state, event } = applySquare(gameRef.current, square, Date.now());
+    if (event.type === 'rejected') {
+      setGame(state);
+      announce(state, 'rejected');
+      logger().debug('chord-rejected', { square, reason: event.reason });
+    } else if (event.type === 'moved' || event.type === 'game_over') {
+      commitChessMove(event.move).then((authoritativeSession) => {
+        const projected = projectAuthority(authoritativeSession, gameRef.current);
+        // Only a move that actually reaches the authoritative board is part of
+        // the archive. Recording before this promise resolves would leave a
+        // failed network commit masquerading as a completed think.
+        recordMoveTiming(projected.history.length);
+        if (projected.status?.game_over) terminalSpeechRef.current(projected);
+        setGame(projected);
+        announce(projected);
+        logger().info('move-played', { san: event.move.san, chords: projected.history.at(-1)?.chords });
+      }).catch((error) => {
+        setGame((current) => ({ ...current, origin: null }));
+        setToast({ text: 'That move could not be committed. Try again.', seq: `authority-${Date.now()}` });
+        logger().error('authority-move-failed', { error: error.message, from: event.move.from, to: event.move.to });
+      });
+    } else {
+      setGame(state);
+      logger().debug(`chord-${event.type}`, { square });
+    }
+  }, [announce, chessAuthorityReady, commitChessMove, projectAuthority, recordMoveTiming]);
+
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const rejection = game.rejection;
+  useChessAddressingProgress({
+    game,
+    gameId,
+    playerColor,
+    userId: lockedUser,
+    config: chessConfig,
+    client: CHESS_ADDRESSING_CLIENT,
+    logger: logger(),
+  });
+
+  useEffect(() => {
+    if (!rejection || !cues.toast) return undefined;
+    setToast({ text: REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.', seq: rejection.seq });
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [cues.toast, rejection]);
+
+  const {
+    thinking: opponentThinking,
+    thinkMs,
+    effectiveOpponentRef,
+    opponentError,
+    retryOpponent,
+    opponentStalled,
+    wakeOpponent,
+    resetOpponent,
+    speech: opponentSpeech,
+    dialogueRef,
+    showTerminalSpeech,
+  } = useChessOpponentTurn({
+    game,
+    gameRef,
+    gameId,
+    playerColor,
+    ladderReady,
+    ladderLevel,
+    chessConfig,
+    gameSeed,
+    fallbackThinkMs: opponentDelayMs,
+    rungId,
+    userId: lockedUser,
+    localFallbackDifficulty,
+    opponent: opponentProfile,
+    setGame,
+    announce,
+    logger: logger(),
+    requestMove: requestOpponentMove,
+    // Compatibility symbol, shared /dialogue transport (see chessApi.js).
+    requestQuip: requestOpponentQuip,
+    commitAuthorityMove: async (candidate) => {
+      const authoritativeSession = await commitChessMove(candidate);
+      return projectAuthority(authoritativeSession, gameRef.current);
+    },
+    recordMoveTiming,
+  });
+  terminalSpeechRef.current = showTerminalSpeech;
+
+  const {
+    startedAt,
+    finishedRecord,
+    ladderOutcome,
+    endTiming,
+  } = useChessPersistenceLifecycle({
+    game,
+    gameId,
+    userId: lockedUser,
+    rungId,
+    ladderLevel,
+    // The rung this game is being filed against, and whether it is known yet.
+    // A result filed before the read answers carries `level: null`, which the
+    // ladder declines to count — so a genuinely played win would quietly not
+    // advance anyone. The lifecycle waits for this rather than guessing.
+    ladderReady,
+    addressing: reading ? 'staff' : 'chords',
+    opponentRef: effectiveOpponentRef,
+    helpUsed,
+    timing,
+    playerColor,
+    commentary: dialogueRef,
+    timingLedgerRef,
+    logger: logger(),
+    gateway: CHESS_PERSISTENCE_GATEWAY,
+  });
+
+  // Who, if anyone, owns the boundary between one game and the next. Read
+  // through a ref so `restart` keeps a stable identity — it is handed to
+  // `useAnyKeyToContinue` and to the input controller, both of which arm
+  // listeners on it.
+  const matchGate = useContext(MatchGateContext);
+  const matchGateRef = useRef(matchGate);
+  matchGateRef.current = matchGate;
+
+  const restart = useCallback(async () => {
+    // Every route into a new board comes through here: the result card's Play
+    // again, the rail's mid-game Play again, the any-key continue, and the
+    // input controller's restart gesture. All four are the SAME boundary, and
+    // all four are gated — a mid-game abandon that skipped the challenge would
+    // be a one-tap bypass of it (start, abandon, play on), which is exactly
+    // what D12 forbids. Board state is discarded on every one of these paths
+    // anyway, so there is nothing to lose by unmounting instead.
+    const gate = matchGateRef.current;
+    if (gate?.armed) {
+      gate.requestRematch();
+      return;
+    }
+    const nextSession = beginNextGame();
+    // The next game keeps the player's resolved addressing. Rebuilding from the
+    // raw props here used to silently reset a configured player to the shipped
+    // defaults on "play again" — resolved from the ref so a restart never
+    // recomputes the callback, and with the NEW seed so an each_game cadence
+    // actually re-deals.
+    const loaded = chessConfigRef.current
+      ? chessAddressingFor(chessConfigRef.current, scheme, nextSession.seed, managedAddressingAt(addressingPolicy?.config, {
+        learnerId: addressingPolicy?.learnerId,
+        completedGames: addressingPolicy?.completedGames,
+      }))
+      : null;
+    const nativeInitial = createChessGameState({
+      fen: fen ?? undefined,
+      playerColor,
+      scheme: loaded?.scheme ?? scheme,
+      seed: nextSession.seed,
+      shuffleEachTurn: loaded?.shuffleEachTurn ?? shuffleEachTurnProp,
+    });
+    // Clear terminal UI in the same render as the identity changes so the
+    // persistence effect cannot record the finished board under the new id.
+    setGame(nativeInitial);
+    try {
+      const authoritativeSession = await resetChessAuthority(nextSession.seed);
+      setGame(projectAuthority(authoritativeSession, nativeInitial));
+    } catch (error) {
+      logger().error('authority-reset-failed', { error: error.message });
+      setToast({ text: 'A new game could not be started.', seq: `authority-${Date.now()}` });
+      return;
+    }
+    setToast(null);
+    resetHelp();
+    lastTakebackAtRef.current = null;
+    resetOpponent();
+    logger().info('restarted');
+  }, [addressingPolicy, beginNextGame, fen, playerColor, projectAuthority, resetChessAuthority, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
+
+  // "Play again" is a button, and the office screen has no finger for it. Any
+  // fresh key restarts; the keys still down from the mating move do not count,
+  // so the result stays on screen long enough to read.
+  useAnyKeyToContinue({
+    enabled: keyFallbackNeeded(gameConfig) && !!game.status?.game_over,
+    // Preserve the result long enough to read and let queued chord-recognition
+    // work from the mating gesture drain before the keyboard can re-arm.
+    activeNotes, onContinue: restart, minimumDelayMs: 1800,
+  });
+
+
+  /**
+   * The rewind, budget first.
+   *
+   * The budget is checked before the rules are, so a player out of takebacks is
+   * told that rather than being told there is nothing to take back — two very
+   * different sentences, and only one of them is true.
+   */
+  const attemptTakeback = useCallback(async () => {
+    const current = gameRef.current;
+    const used = helpUsedRef.current.takebacks;
+    const since = lastTakebackAtRef.current === null
+      ? null
+      : playerMoveCount(current.history, current.playerColor) - lastTakebackAtRef.current;
+    const check = checkTakeback({ config: chessConfigRef.current, used, movesSinceLast: since });
+    if (!check.allowed) {
+      setToast({ text: takebackRefusalMessage(check), seq: `takeback-${Date.now()}` });
+      logger().info('takeback-refused', { reason: check.reason, remaining: check.remaining });
+      return;
+    }
+
+    const { state, event } = takeMoveBack(current);
+    if (event.type === 'rejected') {
+      setToast({
+        text: REJECTION_MESSAGES[event.reason] ?? 'You cannot take a move back right now.',
+        seq: `takeback-${Date.now()}`,
+      });
+      logger().info('takeback-refused', { reason: event.reason, remaining: check.remaining });
+      return;
+    }
+
+    const willCount = willStillCount({ policy: ladderPolicyRef.current, used });
+    try {
+      const authoritativeSession = await commitChessTakeback(event.plies);
+      setGame(projectAuthority(authoritativeSession, state));
+    } catch (error) {
+      setToast({ text: 'That takeback could not be committed.', seq: `authority-${Date.now()}` });
+      logger().error('authority-takeback-failed', { error: error.message, plies: event.plies });
+      return;
+    }
+    addTakeback();
+    lastTakebackAtRef.current = playerMoveCount(state.history, state.playerColor);
+    setToast({
+      text: `Took back ${event.undone.map((entry) => entry.san).join(' and ')}.`,
+      seq: `takeback-${Date.now()}`,
+    });
+    logger().info('takeback', {
+      plies: event.plies,
+      undone_san: event.undone.map((entry) => entry.san),
+      remaining: check.remaining === null ? null : check.remaining - 1,
+      will_count: willCount,
+    });
+  }, [addTakeback, commitChessTakeback, helpUsedRef, projectAuthority]);
+
+  const { cursor, armed, takebackArmed } = useChessInputController({
+    gameId,
+    game,
+    gameRef,
+    heldNotes,
+    liveScheme,
+    legalMap,
+    setGame,
+    onSquare: handleSquare,
+    onTakeback: attemptTakeback,
+    onRestart: restart,
+    logger: logger(),
+    doubleWindowMs: DOUBLE_WINDOW_MS,
+    cursorTickMs: CURSOR_TICK_MS,
+  });
+
+  // The board takes plain strings; translating chords into them is this layer's
+  // job, which is why ChessBoard never learns what a chord is.
+  const minNotes = minNotesFor(liveScheme);
+
+  /**
+   * The held notes, split into the hand each one belongs to.
+   *
+   * THE RIM ONLY EVER SHOWED THE QUESTION. `SvgStaffRenderer` has always been
+   * able to draw the keys currently down as ghost noteheads and nothing ever
+   * passed them, so the board's whole reply to a wrong press was "that chord is
+   * not on the board" and a child walking up the scale toward a note learned
+   * nothing from getting closer.
+   *
+   * Split rather than handed over whole, for two reasons. A note belongs to one
+   * axis — the scheme's own boundary decides which — so a bass note has no
+   * business appearing on a treble card. And these feed sixteen cards that are
+   * props of a MEMOIZED board: the comment below is there because rebuilding
+   * them per render reconciled all 64 squares on every note event. Splitting
+   * means a left hand at the keys leaves all eight treble cards on one stable
+   * empty array, so they do not reconcile at all.
+   */
+  const { heldFileNotes, heldRankNotes } = useMemo(() => {
+    if (!reading || !cues.ghostNotes || !heldNotes.length) {
+      return { heldFileNotes: EMPTY_ARRAY, heldRankNotes: EMPTY_ARRAY };
+    }
+    const split = splitFor(liveScheme);
+    if (!split) return { heldFileNotes: EMPTY_ARRAY, heldRankNotes: EMPTY_ARRAY };
+    const above = heldNotes.filter((note) => note >= split.boundary);
+    const below = heldNotes.filter((note) => note < split.boundary);
+    const [files, ranks] = split.filesAbove ? [above, below] : [below, above];
+    return {
+      heldFileNotes: files.length ? files : EMPTY_ARRAY,
+      heldRankNotes: ranks.length ? ranks : EMPTY_ARRAY,
+    };
+  }, [reading, cues.ghostNotes, heldNotes, liveScheme]);
+
+  /**
+   * Which hand, if either, is already exactly right.
+   *
+   * A square takes two hands and the board used to answer about both at once,
+   * so a correct right hand earned nothing until the left one landed and got
+   * thrown away and guessed again on every attempt. The card that landed now
+   * goes green and STAYS green while the other hand is worked.
+   */
+  const axisMatch = useMemo(
+    () => (reading && heldNotes.length ? staffAxisMatch(heldNotes, liveScheme) : null),
+    [reading, heldNotes, liveScheme],
+  );
+
+  // In the reading vocabulary the rim IS the lesson: a note drawn on the staff
+  // the player reads it from. ChessBoard renders labels as children, so a node
+  // costs it nothing to accept.
+  // Memoized because these are props of a memoized board: rebuilt every render,
+  // they defeated its bail-out on identity alone, and all 64 squares reconciled
+  // on every note event as a result.
+  const lockedFile = axisMatch?.fileComplete ? axisMatch.file : null;
+  const lockedRank = axisMatch?.rankComplete ? axisMatch.rank : null;
+  // One rim box per axis, measured from every shape that axis can show, so the
+  // staff is the same size on all eight cards and does not resize as notes land.
+  // The file row draws its clef ONCE, in the board's corner, and its eight cards
+  // carry none: they are narrow, and the clef was a third of each one. The rank
+  // column's cards are wide enough to keep theirs.
+  const fileExtent = useMemo(
+    () => (reading ? rimStaffExtent(liveScheme.roots, { clef: false }) : null),
+    [reading, liveScheme],
+  );
+  const rankExtent = useMemo(() => (reading ? rimStaffExtent(liveScheme.qualities) : null), [reading, liveScheme]);
+  const fileClef = useMemo(() => (reading
+    ? <StaffClefLabel clef={rimAxisClef(liveScheme.roots)} extent={fileExtent} />
+    : null), [reading, liveScheme, fileExtent]);
+  const fileLabels = useMemo(() => (reading
+    ? liveScheme.roots.map((midi, index) => (
+      <StaffNoteLabel
+        key={Array.isArray(midi) ? midi.join('-') : midi}
+        midi={midi}
+        held={heldFileNotes}
+        locked={index === lockedFile}
+        extent={fileExtent}
+        clef={false}
+      />
+    ))
+    : liveScheme.roots), [reading, liveScheme, heldFileNotes, lockedFile, fileExtent]);
+  const rankLabels = useMemo(() => (reading
+    ? liveScheme.qualities.map((midi, index) => (
+      <StaffNoteLabel
+        key={Array.isArray(midi) ? midi.join('-') : midi}
+        midi={midi}
+        held={heldRankNotes}
+        locked={index === lockedRank}
+        extent={rankExtent}
+      />
+    ))
+    : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
+  [reading, liveScheme, heldRankNotes, lockedRank, rankExtent]);
+
+  // The marks channel is empty until a gesture asks. "Show legal moves" means
+  // the destinations of the piece being held — or, when none is held yet,
+  // which pieces can move at all. The marks stand until the move they helped
+  // with completes (see the history-length effect above).
+  const hintTargets = useMemo(
+    () => (help.legal ? (game.origin ? originDestinations : sources) : EMPTY_ARRAY),
+    [help.legal, game.origin, originDestinations, sources],
+  );
+  // Recomputed every render off the same inputs the callback reads by ref: the
+  // card and the toast the callback would produce must never disagree about
+  // whether a takeback is currently affordable.
+  const takebackCheck = checkTakeback({
+    config: chessConfig,
+    used: helpUsed.takebacks,
+    movesSinceLast: lastTakebackAtRef.current === null
+      ? null
+      : playerMoveCount(game.history, game.playerColor) - lastTakebackAtRef.current,
+  });
+  const takebackWillCount = willStillCount({ policy: ladder?.policy ?? null, used: helpUsed.takebacks });
+  // The answer to the pick-up: each eligible square wears the chord that
+  // reaches it. Not help and never charged — the double-play that lifted the
+  // piece WAS the request. Config can silence it for players who want the
+  // intersection drill back.
+  const squareLabels = useMemo(
+    () => (cues.showDestinationLabels ? destinationBadges(game, liveScheme, originDestinations) : EMPTY_OBJECT),
+    [cues.showDestinationLabels, game, liveScheme, originDestinations],
+  );
+  const cursorChord = cursor ? squareToChord(cursor, liveScheme) : null;
+  // Only while a piece is held and the cursor names a different square. Capture
+  // targets get a ghost too — most previews the player cares about are captures.
+  const heldPiece = game.origin ? fenToPosition(game.game.fen)?.[game.origin] : null;
+  const ghost = useMemo(
+    () => (heldPiece && cursor && cursor !== game.origin ? { square: cursor, piece: heldPiece } : null),
+    [heldPiece, cursor, game.origin],
+  );
+  const captured = useMemo(() => capturedPieces(game.history), [game.history]);
+  /**
+   * Whose move the board is about to animate.
+   *
+   * The two actors get different tempos. Your own move should feel immediate —
+   * you caused it and already know what it was. Theirs has to be followable by
+   * someone who was reading the rail when it happened, which is the case that
+   * made opponent replies missable in the first place.
+   */
+  const moveDurationMs = game.history.at(-1)?.color === playerColor
+    ? PLAYER_MOVE_MS
+    : OPPONENT_MOVE_MS;
+  /**
+   * The square a pawn just promoted on, for one beat.
+   *
+   * Read off the SAN rather than tracked as state: `=Q` is how chess.js records
+   * it, and a derived value cannot drift out of step with the move list the way
+   * a separately-managed flag would. Only the most recent move counts, so the
+   * reveal plays once and the piece then sits there like any other.
+   */
+  const promotedSquare = useMemo(() => {
+    const last = game.history.at(-1);
+    return last?.san?.includes('=') ? last.to : null;
+  }, [game.history]);
+
+  const {
+    boardTheme,
+    mood,
+    opponentLine,
+    onboardStep,
+    onboardCopy: railOnboardCopy,
+    prompt: railPrompt,
+    pickupDeadline,
+    turnColour,
+    turnLabel,
+    matchBadge,
+    demotionWarning: demotionWarningLine,
+  } = buildChessRailViewModel({
+    game,
+    playerColor,
+    opponent: opponentProfile,
+    opponentThinking,
+    opponentStalled,
+    finishedResult: finishedRecord?.result ?? null,
+    cursor,
+    cursorChord,
+    movableSources: sources,
+    armed,
+    introSeen: chessConfig?.seen_intro === true,
+    reading,
+    takebackArmed,
+    matchCounts,
+    demotionArmed,
+  });
+  // Before the player's config is in, `seen_intro` reads false and the
+  // vocabulary is the fallback, so neither the walkthrough nor the prompt can
+  // be trusted to describe the board they are about to get.
+  const onboardCopy = addressingReady ? railOnboardCopy : null;
+  const prompt = addressingReady ? railPrompt : SETTING_UP_PROMPT;
+  return (
+    <BoardGameFrame
+      gameId="chess"
+      phase={game.status?.game_over ? 'result' : (opening ? 'opening' : 'playing')}
+      className={`piano-chess${reading ? ' piano-chess--reading' : ''}`}
+      /* Arriving at a new character LOOKS like arriving somewhere new. Purely
+         cosmetic: it retints the dark squares and touches nothing else. */
+      style={boardTheme ? { '--pc-dark': boardTheme } : undefined}
+      instrumentClassName="piano-chess__instrument"
+      instrument={{ activeNotes, startNote: 36, endNote: 84, showLabels: true }}
+      stageClassName="piano-chess__stage"
+      leftRail={{ render: ({ settingsTrigger }) => (
+        <GameRail
+          label="Move controls"
+          className="piano-chess__rail piano-chess__rail--state"
+          foot={(
+            <>
+              {/* The result overlay carries "Play again" whenever it is up, and
+                  it is where the eye already is. This is the fallback for a
+                  finished game that produced no record to show a card for — two
+                  identical buttons on screen at once is an ambiguity, not a
+                  convenience. */}
+              {game.status?.game_over && !finishedRecord && (
+                <GameButton variant="ghost" className="piano-chess__cancel" onClick={restart}>
+                  Play again
+                </GameButton>
+              )}
+              {settingsTrigger}
+            </>
+          )}
+        >
+          {/* THE STATE RAIL — what the game is currently thinking. Every row here
+              holds its place whether or not it has something to say: a read-out
+              that resizes as fingers land drags the eye and, worse, moves the
+              board. Fixed rows, fixed rail width, board centred regardless. */}
+          {/* IN HAND. Not a fact table row — a socket, with the piece sitting in
+              it or visibly waiting for one. The way to put it back lives in the
+              same tile, because "Put it back" floating on its own asks "put
+              WHAT back?" every time the socket is empty. */}
+          <GameSlot
+            label={<><Icon name="hand-right" /> Piece</>}
+            /* Measured above the tallest state this socket has, not guessed —
+               see gameChrome.scss. The rail must not step when a piece is
+               picked up. */
+            reserve="6rem"
+            variant={game.origin ? 'active' : null}
+            className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}
+          >
+            <div className="piano-chess__hand-slot">
+              {game.origin && heldPiece ? (
+                /* The SAME artwork the board draws, not a character from a font.
+                   fenToPosition yields "wP" — colour plus an UPPERCASE type — so
+                   every glyph-table lookup missed and drew a literal "?"; and a
+                   unicode chess glyph renders as tofu in the kiosk WebView
+                   anyway. A player who picks up their pawn should see their
+                   pawn. */
+                <img className="piano-chess__hand-piece" src={pieceSource(heldPiece)} alt="" draggable="false" />
+              ) : null}
+            </div>
+            <span className="piano-chess__hand-from">
+              {game.origin ? `from ${game.origin}` : <span aria-label="No piece selected">—</span>}
+            </span>
+          </GameSlot>
+
+          {/* WHAT THE GAME HEARD, in its own voice. It is the game answering
+              you, so it is shaped like speech rather than like a field. */}
+          <GameSlot
+            as="div"
+            variant="lift"
+            /* Above the TALLEST state, measured (two-line prompt + the
+               read-out's square line = 150px). A floor BELOW the tallest state
+               reserves nothing — the box still shrinks for shorter messages,
+               which is the whole defect.
+               Dropped while the onboarding card is up: that card is already
+               taller than the reservation, so holding BOTH heights at once just
+               pushes the last gesture cards off the foot of the rail. The
+               reservation exists to stop the rail stepping, and a slot that is
+               taller than its reservation for four consecutive steps is not
+               stepping. */
+            reserve={onboardCopy ? null : '5.5rem'}
+            className="piano-chess__says"
+          >
+            <ChordReadout
+              heldNotes={heldNotes}
+              chord={reading ? null : cursorChord}
+              square={cursor}
+              connected={connected}
+              settling={heldNotes.length >= minNotes && candidates.length > 0 && !cursor}
+              minNotes={minNotes}
+              isReading={reading}
+              half={axisMatch && !axisMatch.extra.length
+                && axisMatch.fileComplete !== axisMatch.rankComplete
+                ? (axisMatch.fileComplete ? 'file' : 'rank') : null}
+            />
+            {onboardCopy && (
+              <aside className="chess-onboard" key={onboardStep}>
+                <span className="chess-onboard__step">
+                  {`Step ${ONBOARD_ORDER.indexOf(onboardStep) + 1} of ${ONBOARD_ORDER.length}`}
+                </span>
+                <strong className="chess-onboard__title">{onboardCopy.title}</strong>
+              </aside>
+            )}
+            {/* The deadline on that sentence, made visible. Keyed on the arming
+                instant so each fresh hover restarts the run; aria-hidden because
+                the prompt beside it already speaks the instruction, and a bar
+                that announced itself would talk over every hover. */}
+            {pickupDeadline !== null && (
+              <div
+                key={pickupDeadline}
+                /* The key restarts the CSS run; the attribute is that same
+                   instant made observable, so "it re-armed" is a fact a test
+                   can read rather than an animation it has to infer. */
+                data-armed-at={pickupDeadline}
+                className="piano-chess__window"
+                style={{ '--pc-window-ms': `${DOUBLE_WINDOW_MS}ms` }}
+                aria-hidden="true"
+              >
+                <span className="piano-chess__window-bar" />
+              </div>
+            )}
+          </GameSlot>
+
+          {/* WHERE THIS MATCH STANDS WITH THE LADDER. A child used to find out
+              only on the result card, once the round was already gone. Absent
+              entirely until the ladder read answers, and for a guest, because a
+              badge that asserts what it does not know is the defect it exists
+              to remove. */}
+          {matchBadge && (
+            <p className={`piano-chess__match-badge piano-chess__match-badge--${matchBadge.state}`}>
+              {matchBadge.label}
+            </p>
+          )}
+          {demotionWarningLine && (
+            <p className="piano-chess__demotion-warning" role="status">{demotionWarningLine}</p>
+          )}
+
+          {/* WHAT ELSE YOU CAN PLAY. Drawn as keys, because no child can act on
+              "a run of three adjacent semitones". */}
+          <GestureCards
+            /* The rail is carrying the onboarding card too; tighten so the last
+               two gestures stay on screen rather than clipping off the foot. */
+            compact={!!onboardCopy}
+            gestures={[
+              {
+                id: 'octave',
+                pressed: [0, 12],
+                title: 'Put it back',
+                active: !!game.origin,
+                muted: !game.origin,
+              },
+              {
+                id: 'legal',
+                pressed: [0, 1, 2],
+                title: 'Show moves',
+                active: help.legal,
+              },
+              {
+                id: 'best',
+                pressed: [0, 1, 2, 3],
+                title: 'Best move',
+                active: !!help.best,
+              },
+              {
+                id: 'replay',
+                pressed: [0, 1, 2, 3, 4],
+                title: 'Show that again',
+                active: !!replay,
+                muted: !game.history.length,
+              },
+              {
+                id: 'takeback',
+                pressed: [0, 12],
+                repeat: 2,
+                title: 'Take it back',
+                note: takebackNote({
+                  check: takebackCheck,
+                  willCount: takebackWillCount,
+                  opponentName: ladderOpponent ? opponentProfile?.name ?? null : null,
+                }),
+                active: takebackArmed,
+                muted: !takebackCheck.allowed,
+              },
+            ]}
+          />
+        </GameRail>
+      ) }}
+
+      primary={(
+        <ChessBoard
+          fen={replay?.phase === 'rewind' ? replay.fen : game.game.fen}
+          status={game.status}
+          orientation={playerColor === 'b' ? 'black' : 'white'}
+          fileLabels={addressingReady ? fileLabels : BLANK_AXIS}
+          rankLabels={addressingReady ? rankLabels : BLANK_AXIS}
+          corner={addressingReady ? fileClef : null}
+          selected={game.origin}
+          heldSquare={game.origin}
+          /* Shape as well as text. The board has always had a dot-and-ring
+             channel for "you can go here" and this host never passed it, so
+             where a piece could move was answerable only by reading a chord
+             name off each square — and not at all when the labels are
+             configured off. A dot reads across a room; the badge confirms it
+             up close. */
+          destinations={originDestinations}
+          /* Only while the notice is fresh, so the rim announces a re-deal
+             exactly when the caption does and then stops. */
+          dealKey={justDealt ? liveScheme.id : null}
+          promotedSquare={promotedSquare}
+          squareLabels={squareLabels}
+          candidates={candidates}
+          hintTargets={hintTargets}
+          bestMove={help.best}
+          rejectedSquare={cues.flashRejected ? game.rejection?.square ?? null : null}
+          rejectedKey={game.rejection?.seq ?? null}
+          lastMove={game.lastMove}
+          cursorSquare={cursor}
+          ghost={ghost}
+          /* The rewind is scaffolding and snaps; only the forward pass is
+             paced, at half the normal tempo so a missed move can be followed. */
+          moveDurationMs={replay ? (replay.phase === 'rewind' ? 1 : REPLAY_MOVE_MS) : moveDurationMs}
+        />
+      )}
+
+      rightRail={(
+        <GameRail label="Your hands" className="piano-chess__rail piano-chess__rail--chords">
+          {/* THE CHORD RAIL — a mirror of the hands, in both vocabularies at once:
+              the name for the speller, the notation for the reader. It reports;
+              it does not teach theory, which is why there is no circle here. */}
+          {/* Whose game this is, whose turn it is, and which colour you have.
+              All three were already computed and none of them was ever drawn —
+              the first questions anyone asks on sitting down, answered nowhere
+              on the screen. The turn chip carries a state class as well as its
+              words, so "am I up?" is answerable without reading. */}
+          <ChessClock
+            history={game.history}
+            startedAt={startedAt}
+            turn={game.status?.turn}
+            timing={timing}
+            gameOver={!!game.status?.game_over}
+            playerColor={playerColor}
+          />
+          <section className="piano-chess__identity">
+            <span className="piano-chess__identity-player">
+              <ProfileAvatar id={playerAvatarId} name={displayName} size={64} />
+              <span>{displayName}</span>
+            </span>
+            <span
+              className={`piano-chess__turn${game.status?.turn === playerColor ? ' piano-chess__turn--mine' : ''}`}
+            >
+              {game.status?.game_over ? `Game over (${turnColour} to move)` : turnLabel}
+            </span>
+          </section>
+          {/* Who you are playing, and what they are doing. Above the chord
+              read-outs because it is about the game, not about your hands. */}
+          {/* Who you are playing. The ladder names a character; without one
+              (a guest, or before it resolves) the rail still has to say what
+              strength is on the other side of the board, so it falls back to
+              the rung the settings panel sets. */}
+          <GameSlot label="Opponent" className="piano-chess__opponent">
+            {ladderOpponent ? (
+              <OpponentPanel
+                opponent={opponentProfile}
+                level={ladderLevel}
+                status={opponentLine}
+                size="lg"
+                /* The pulse is driven by the REAL think time for this rung,
+                   not a boolean — a strong character visibly broods longer.
+                   The mood is layered on top of it. */
+                thinkMs={thinkMs}
+                mood={mood}
+                speech={opponentSpeech}
+                reactionKey={`mood-${mood}-${game.history.length}`}
+                ladder={{
+                  position: (ladderLevel ?? 0) + 1,
+                  total: opponentRoster.length || 21,
+                  wins: ladder?.status?.wins ?? 0,
+                  needed: ladder?.status?.needed ?? 5,
+                }}
+                onOpenRoster={() => setRosterOpen(true)}
+              />
+            ) : (
+              <p className="piano-chess__opponent-rung">
+                <span className="piano-chess__opponent-rung-name">
+                  {rung?.label ?? (rungId.charAt(0).toUpperCase() + rungId.slice(1))}
+                </span>
+                <span className="pg-opponent__status">{opponentLine}</span>
+              </p>
+            )}
+          </GameSlot>
+
+          <h2 className="pg-slot__label">Playing</h2>
+          <ChordNamePanel midiNotes={heldNotes} />
+          {/* Notation is ink, so it needs paper. Same card the other games put
+              their staves on, rather than staff lines floating on charcoal. */}
+          <div className="piano-chess__staff-card action-staff">
+            <CurrentChordStaff activeNotes={activeNotes} />
+          </div>
+          <div className="piano-chess__captured">
+            {/* A dash for every row is a non-answer taking up the foot of the
+                rail. Nothing taken yet is one quiet line; once there is
+                something to report, only the side that has taken anything
+                speaks. */}
+            {!captured.w.length && !captured.b.length ? (
+              <p className="piano-chess__captured-none">No pieces taken yet</p>
+            ) : ['w', 'b'].filter((color) => captured[color].length).map((color) => (
+              <div key={color} className="piano-chess__captured-row">
+                <span className="pg-slot__label">{color === 'w' ? 'White took' : 'Black took'}</span>
+                <span className="piano-chess__captured-pieces">
+                  {/* Artwork, not unicode chess glyphs — those render as tofu in
+                      the kiosk WebView, which this file already says twelve
+                      lines above GearIcon and then did anyway here.
+                      Sorted cheapest-first so the row reads as a tally and the
+                      biggest thing taken lands at the end. A capture by White
+                      removes a BLACK piece, hence the flip. */}
+                  {[...captured[color]]
+                    .sort((a, b) => PIECE_ORDER.indexOf(a) - PIECE_ORDER.indexOf(b))
+                    .map((piece, index) => (
+                      <img
+                        key={`${piece}-${index}`}
+                        className="piano-chess__captured-piece"
+                        src={pieceSource(`${color === 'w' ? 'b' : 'w'}${piece.toUpperCase()}`)}
+                        alt=""
+                        aria-hidden="true"
+                        draggable="false"
+                      />
+                    ))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </GameRail>
+      )}
+
+      status={(
+        <>
+          <GameStatusBar
+            className="piano-chess__status"
+            aside={shuffleEachTurn
+              ? (justDealt ? 'New chord map — read the edges' : 'Map changes every turn')
+              : null}
+          >
+            <span className="piano-chess__prompt">
+              {opponentError ?? onboardCopy?.body ?? prompt}
+            </span>
+            {opponentError && (
+              <GameButton variant="ghost" onClick={retryOpponent}>Retry</GameButton>
+            )}
+            {/* A WAY OUT OF A TURN THAT NEVER COMES. The board re-asks once on
+                its own first, so most stalls end before anyone reads this; when
+                one does not, the control is already on screen rather than
+                waiting behind an `opponentError` that this failure never sets.
+                A child sat pressing the same square for ten minutes because the
+                only button that could have helped him was invisible. */}
+            {!opponentError && opponentStalled && (
+              <GameButton variant="ghost" onClick={wakeOpponent}>
+                {opponentProfile?.name ? `Wake ${opponentProfile.name} up` : 'Wake opponent up'}
+              </GameButton>
+            )}
+          </GameStatusBar>
+          {/* Hangs from the status band's lower edge. It used to be pinned to
+              the stage's top-left corner, which is where the status band
+              lives, so every refusal covered the instruction it was refusing
+              under. */}
+          {toast && (
+            <output className="piano-chess__toast" key={toast.seq}>{toast.text}</output>
+          )}
+        </>
+      )}
+
+      settings={chessConfig ? {
+        rail: 'left',
+        title: 'Settings',
+        open: settingsOpen,
+        onOpen: () => setSettingsOpen((open) => !open),
+        content: (
+          <ChessSettingsPanel
+            config={chessConfig}
+            rungId={rungId}
+            onChange={applySetting}
+            onClose={() => setSettingsOpen(false)}
+          />
+        ),
+      } : null}
+      opening={opening && !game.status?.game_over ? (
+        <BoardGameOpening
+          opponent={{ name: opponentProfile?.name || rung?.label || 'the engine' }}
+          playerLabel={playerColor === 'w' ? 'White' : 'Black'}
+          turnLabel={playerColor === 'w' ? 'Your move' : 'They open'}
+          className="chess-opening"
+          versusClassName="chess-opening__vs"
+          turnClassName="chess-opening__lead"
+        />
+      ) : null}
+
+      result={game.status?.game_over && finishedRecord ? (
+        <ChessResult
+          result={finishedRecord.result}
+          outcome={game.status.outcome}
+          opponent={opponentProfile}
+          level={ladderLevel}
+          record={finishedRecord}
+          timing={endTiming}
+          ladder={ladderOutcome}
+          speech={opponentSpeech}
+          onPlayAgain={restart}
+        />
+      ) : null}
+    >
+
+      {rosterOpen && ladder?.roster?.length > 0 && (
+        <OpponentRosterSheet
+          roster={opponentRoster}
+          position={(ladder.unlocked_through ?? 0) + 1}
+          onClose={() => setRosterOpen(false)}
+          /* Every win taken in this round, in two rows, above the list of who
+             is left. "I beat him six times and I'm still stuck" is answered
+             here or it is not answered anywhere. */
+          header={(
+            <RoundStanding
+              standing={ladder.standing ?? null}
+              opponentName={opponentProfile?.name ?? null}
+              nextName={opponentRoster[(ladder.unlocked_through ?? 0) + 1]?.name ?? null}
+            />
+          )}
+        />
+      )}
+
+    </BoardGameFrame>
+  );
+}
+
+export default PianoChessGame;

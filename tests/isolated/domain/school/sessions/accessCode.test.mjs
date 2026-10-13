@@ -4,7 +4,7 @@ import {
   SCHOOL_ACCESS_CODE_SPACE,
   mintAccessCode,
   normalizeAccessCode,
-} from "../../../../../modules/school/server/domain/sessions/accessCode.mjs";
+} from "../../../../../__app_modules/school/server/domain/sessions/accessCode.mjs";
 
 const seq = (...values) => { let i = 0; return () => values[i++ % values.length]; };
 const free = () => false;

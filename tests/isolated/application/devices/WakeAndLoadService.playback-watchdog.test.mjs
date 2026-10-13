@@ -1,4 +1,4 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Regression: a play=<container> dispatch (e.g. play=plex:59493, a show) must
 // prewarm just as queue= does, so the receiver-outcome watchdog can match the
 // resolved child state. `WakeAndLoadService.watchdog.test.mjs` owns the

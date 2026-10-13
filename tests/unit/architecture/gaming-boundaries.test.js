@@ -4,9 +4,9 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const experiences = resolve(root, 'modules/party-games/browser/experiences');
-const environment = resolve(root, 'modules/party-games/browser');
-const platform = resolve(root, 'capabilities/gaming/browser/platform');
+const experiences = resolve(root, '__app_modules/party-games/browser/experiences');
+const environment = resolve(root, '__app_modules/party-games/browser');
+const platform = resolve(root, '__capabilities/gaming/browser/platform');
 const inside = (target, directory) => target === directory || target.startsWith(`${directory}/`);
 
 function sourceFiles(directory) {

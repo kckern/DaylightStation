@@ -14,9 +14,9 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { createFreshVideoJobHandler } from "../../../modules/media/server/application/FreshVideoJobHandler.mjs";
-import { YtDlpAdapter } from "../../../modules/media/server/adapters/YtDlpAdapter.mjs";
-import { FilesystemFreshVideoMediaStore } from "../../../modules/media/server/adapters/persistence/FilesystemFreshVideoMediaStore.mjs";
+import { createFreshVideoJobHandler } from "../../../__app_modules/media/server/application/FreshVideoJobHandler.mjs";
+import { YtDlpAdapter } from "../../../__app_modules/media/server/adapters/YtDlpAdapter.mjs";
+import { FilesystemFreshVideoMediaStore } from "../../../__app_modules/media/server/adapters/persistence/FilesystemFreshVideoMediaStore.mjs";
 
 function getBasePath() {
   if (process.env.DAYLIGHT_BASE_PATH) return process.env.DAYLIGHT_BASE_PATH;

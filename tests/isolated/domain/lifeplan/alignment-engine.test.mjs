@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { AlignmentService } from "../../../../modules/life/server/application/services/AlignmentService.mjs";
-import { LifePlan } from "../../../../modules/life/server/domain/entities/LifePlan.mjs";
-import { CadenceService } from "../../../../modules/life/server/domain/services/CadenceService.mjs";
+import { AlignmentService } from "../../../../__app_modules/life/server/application/services/AlignmentService.mjs";
+import { LifePlan } from "../../../../__app_modules/life/server/domain/entities/LifePlan.mjs";
+import { CadenceService } from "../../../../__app_modules/life/server/domain/services/CadenceService.mjs";
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
 
 describe('AlignmentService', () => {

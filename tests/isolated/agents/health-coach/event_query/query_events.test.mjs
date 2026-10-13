@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EventQueryService } from "../../../../../modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
-import { FitnessEventAdapter } from "../../../../../modules/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
+import { EventQueryService } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
+import { FitnessEventAdapter } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
 
 function makeSession({ sessionId, startTime, durationMs, type = 'Run', stravaId = null, hr_avg = 140, hr_max = 175, distance_mi = 4.2 }) {
   return {

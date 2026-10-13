@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { PlayCommand } from "../../../modules/media/server/domain/playback-hub/value-objects/PlayCommand.mjs";
-import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
-import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
+import { PlayCommand } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/PlayCommand.mjs";
+import { QueueRef } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 
 const aQueue = () => new QueueRef({ source: 'plex', id: '670208' });
 

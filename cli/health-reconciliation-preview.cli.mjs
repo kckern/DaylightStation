@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import "../modules/health/cli/health-reconciliation-preview.cli.mjs";
+import "../__app_modules/health/cli/health-reconciliation-preview.cli.mjs";

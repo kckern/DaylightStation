@@ -76,8 +76,8 @@ button map, and content. Two generated artifacts are **gitignored**:
 
 ## Backend contract (DaylightStation side — implemented)
 
-Served at `/api/v1/eink/*` (router: `backend/src/4_api/v1/routers/eink.mjs`,
-orchestration: `backend/src/3_applications/eink/EinkPanelService.mjs`).
+Served at `/api/v1/eink/*` (router: `__backend/src/4_api/v1/routers/eink.mjs`,
+orchestration: `__backend/src/3_applications/eink/EinkPanelService.mjs`).
 
 The panel `id` is a **path segment** (the v1 API convention — `/sessions/:id`,
 `/:deviceId/load`); query strings are reserved for filters/options.
@@ -88,7 +88,7 @@ The panel `id` is a **path segment** (the v1 API convention — `/sessions/:id`,
 | `GET /api/v1/eink/<id>/panel` | **PNG** sized to the panel (1872×1404, or 1404×1872 if `rotation: 270`); dithered on-device. `Cache-Control: no-cache`. Pure on-demand render — **no ETag/304** (change detection lives on `/config`). | the expensive render — pulled only when `image_hash` changed |
 | `GET /api/v1/eink/<id>/action/<next\|prev\|select>` | `{ ok, action, index, view, viewCount }` | advance per-panel view state; firmware then re-polls `/config` |
 
-Rendered server-side in `backend/src/1_rendering/eink/`, keyed by `id`, from the
+Rendered server-side in `__backend/src/1_rendering/eink/`, keyed by `id`, from the
 `content` block of `screens/<id>.yml`. `image_hash` is the SHA-1 of every
 pixel-affecting input (date, view, layout, theme, resolved data feeds, and the
 `RENDERER_VERSION` constant in `1_rendering/eink/index.mjs`) — so it changes when

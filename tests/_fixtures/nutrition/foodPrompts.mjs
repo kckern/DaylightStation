@@ -4,10 +4,10 @@
  * from the real templates.
  */
 import { vi } from 'vitest';
-import { LogFoodFromText } from "../../../modules/nutribot/server/application/usecases/LogFoodFromText.mjs";
-import { LogFoodFromImage } from "../../../modules/nutribot/server/application/usecases/LogFoodFromImage.mjs";
-import { ProcessRevisionInput } from "../../../modules/nutribot/server/application/usecases/ProcessRevisionInput.mjs";
-import { ReviseEntryService } from "../../../modules/health/server/application/health/ReviseEntryService.mjs";
+import { LogFoodFromText } from "../../../__app_modules/nutribot/server/application/usecases/LogFoodFromText.mjs";
+import { LogFoodFromImage } from "../../../__app_modules/nutribot/server/application/usecases/LogFoodFromImage.mjs";
+import { ProcessRevisionInput } from "../../../__app_modules/nutribot/server/application/usecases/ProcessRevisionInput.mjs";
+import { ReviseEntryService } from "../../../__app_modules/health/server/application/health/ReviseEntryService.mjs";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 const empty = JSON.stringify({ items: [] });

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { BuildAgenda } from "../../../../modules/school/server/application/usecases/BuildAgenda.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
-import { isSchoolToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
-import { studyDayWindow } from "../../../../modules/school/server/domain/studyDay.mjs";
-import { BOOK_LOG_PROGRAM_ID } from "../../../../modules/school/server/domain/bookLog.mjs";
+import { BuildAgenda } from "../../../../__app_modules/school/server/application/usecases/BuildAgenda.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
+import { validateDocument } from "../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
+import { isSchoolToken } from "../../../../__app_modules/school/server/domain/sessions/tokens.mjs";
+import { studyDayWindow } from "../../../../__app_modules/school/server/domain/studyDay.mjs";
+import { BOOK_LOG_PROGRAM_ID } from "../../../../__app_modules/school/server/domain/bookLog.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, seededRng, sequentialIds, silentLogger,

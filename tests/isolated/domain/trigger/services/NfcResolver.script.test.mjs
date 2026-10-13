@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NfcResolver } from "../../../../../capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
+import { NfcResolver } from "../../../../../__capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
 
 describe('NfcResolver script', () => {
   it('resolves an endpoint tag to a script intent (endpoint not leaked to params)', () => {

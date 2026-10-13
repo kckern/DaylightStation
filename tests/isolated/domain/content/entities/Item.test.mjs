@@ -1,6 +1,6 @@
 // tests/unit/content/entities/Item.test.mjs
 import { describe, it, test, expect } from 'vitest';
-import { Item } from "../../../../../capabilities/content-catalog/server/domain/entities/Item.mjs";
+import { Item } from "../../../../../__capabilities/content-catalog/server/domain/entities/Item.mjs";
 
 describe('Item entity', () => {
   test('creates item with required fields', () => {

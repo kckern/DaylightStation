@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { FsMidiLibrary } from "../../../../modules/piano/server/adapters/pianoaudio/FsMidiLibrary.mjs";
+import { FsMidiLibrary } from "../../../../__app_modules/piano/server/adapters/pianoaudio/FsMidiLibrary.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 let root, sourceDir, destDir;

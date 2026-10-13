@@ -12,7 +12,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
-const { SingalongAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/singalong/SingalongAdapter.mjs");
+const { SingalongAdapter } = await import("../../../../../__capabilities/content-catalog/server/adapters/providers/singalong/SingalongAdapter.mjs");
 
 describe('SingalongAdapter', () => {
   let adapter;

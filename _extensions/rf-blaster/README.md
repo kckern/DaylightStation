@@ -134,7 +134,7 @@ node firmware/tools/flash.mjs <dataDir>/household/config/rf-blasters.yml disco-l
 
 ## Relation to AmbientLedAdapter
 
-`backend/src/1_adapters/fitness/AmbientLedAdapter.mjs` drives lights through
+`__backend/src/1_adapters/fitness/AmbientLedAdapter.mjs` drives lights through
 `IHomeAutomationGateway` (Home Assistant). This board is the other route: no
 gateway, no HA, DaylightStation → HTTP → radio → light. Use it for gear that has
 no smart-home integration at all, which is exactly the case for a $20 disco

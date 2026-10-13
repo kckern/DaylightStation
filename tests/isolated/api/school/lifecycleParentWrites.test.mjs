@@ -11,13 +11,13 @@
 // though the route itself does no checking at all.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import express from 'express';
-import { createSchoolLifecycleRouter } from "../../../../modules/school/server/api/schoolLifecycle.mjs";
+import { createSchoolLifecycleRouter } from "../../../../__app_modules/school/server/api/schoolLifecycle.mjs";
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
-import { GrownUpGate } from "../../../../modules/school/server/application/GrownUpGate.mjs";
-import { ResolveReviewItem } from "../../../../modules/school/server/application/usecases/ResolveReviewItem.mjs";
-import { SetAssignments } from "../../../../modules/school/server/application/usecases/SetAssignments.mjs";
-import { MarkSessionAbandoned } from "../../../../modules/school/server/application/usecases/MarkSessionAbandoned.mjs";
-import { SchoolLifecycleReadService } from "../../../../modules/school/server/application/services/SchoolLifecycleReadService.mjs";
+import { GrownUpGate } from "../../../../__app_modules/school/server/application/GrownUpGate.mjs";
+import { ResolveReviewItem } from "../../../../__app_modules/school/server/application/usecases/ResolveReviewItem.mjs";
+import { SetAssignments } from "../../../../__app_modules/school/server/application/usecases/SetAssignments.mjs";
+import { MarkSessionAbandoned } from "../../../../__app_modules/school/server/application/usecases/MarkSessionAbandoned.mjs";
+import { SchoolLifecycleReadService } from "../../../../__app_modules/school/server/application/services/SchoolLifecycleReadService.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const clock = () => new Date('2026-07-27T09:00:00.000Z');

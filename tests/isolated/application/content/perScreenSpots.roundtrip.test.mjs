@@ -5,11 +5,11 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { YamlMediaProgressMemory } from "../../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
-import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
-import { RecordPlaybackProgress } from "../../../../capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
-import { MarkContentWatched } from "../../../../capabilities/playback/server/application/usecases/MarkContentWatched.mjs";
-import { openSpotsOf } from "../../../../capabilities/playback/server/domain/services/mediaSpots.mjs";
+import { YamlMediaProgressMemory } from "../../../../__capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
+import { MediaProgress } from "../../../../__capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
+import { RecordPlaybackProgress } from "../../../../__capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
+import { MarkContentWatched } from "../../../../__capabilities/playback/server/application/usecases/MarkContentWatched.mjs";
+import { openSpotsOf } from "../../../../__capabilities/playback/server/domain/services/mediaSpots.mjs";
 
 describe('per-screen spots through the real YAML store', () => {
   let dir; let memory; let tick;

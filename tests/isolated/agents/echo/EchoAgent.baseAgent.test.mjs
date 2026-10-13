@@ -1,8 +1,8 @@
 // tests/isolated/agents/echo/EchoAgent.baseAgent.test.mjs
 
 import { describe, it, expect } from 'vitest';
-import { EchoAgent } from "../../../../capabilities/agent-runtime/server/application/echo/EchoAgent.mjs";
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { EchoAgent } from "../../../../__capabilities/agent-runtime/server/application/echo/EchoAgent.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 function makeAgent(overrides = {}) {
   return new EchoAgent({

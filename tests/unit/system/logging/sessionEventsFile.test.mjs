@@ -6,7 +6,7 @@ import {
   initSessionEventsFileTransport,
   getSessionEventsFileTransport,
   resetSessionEventsFileTransport,
-} from '../../../../backend/src/0_system/logging/transports/sessionEventsFile.mjs';
+} from '../../../../__backend/src/0_system/logging/transports/sessionEventsFile.mjs';
 
 let baseDir;
 beforeEach(() => {

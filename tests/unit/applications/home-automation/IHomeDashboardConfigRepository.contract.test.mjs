@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isHomeDashboardConfigRepository,
-} from "../../../../modules/home/server/application/home-automation/ports/IHomeDashboardConfigRepository.mjs";
+} from "../../../../__app_modules/home/server/application/home-automation/ports/IHomeDashboardConfigRepository.mjs";
 
 describe('IHomeDashboardConfigRepository contract', () => {
   it('recognises an object implementing load', () => {

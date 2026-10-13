@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/canvas/FilesystemCanvasAdapter.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { FilesystemCanvasAdapter } from "../../../../../modules/art/server/adapters/canvas/filesystem/FilesystemCanvasAdapter.mjs";
+import { FilesystemCanvasAdapter } from "../../../../../__app_modules/art/server/adapters/canvas/filesystem/FilesystemCanvasAdapter.mjs";
 
 describe('FilesystemCanvasAdapter', () => {
   let adapter;

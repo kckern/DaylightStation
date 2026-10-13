@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { YamlFeedSessionStore } from "../../../../modules/feed/server/adapters/persistence/YamlFeedSessionStore.mjs";
+import { YamlFeedSessionStore } from "../../../../__app_modules/feed/server/adapters/persistence/YamlFeedSessionStore.mjs";
 
 describe('YamlFeedSessionStore', () => {
   let root;

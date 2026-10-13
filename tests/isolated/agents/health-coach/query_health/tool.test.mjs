@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/query_health/tool.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { HealthQueryToolFactory } from "../../../../../modules/health/server/application/agents/health-coach/tools/HealthQueryToolFactory.mjs";
+import { HealthQueryToolFactory } from "../../../../../__app_modules/health/server/application/agents/health-coach/tools/HealthQueryToolFactory.mjs";
 
 function makeFactory() {
   const queryService = { query: vi.fn(async () => ({ value: 1462, count: 30, meta: { metric: 'calories' } })) };

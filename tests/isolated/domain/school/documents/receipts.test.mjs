@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { agendaDocument, resultDocument, noticeDocument, slugify } from "../../../../../modules/school/server/domain/documents/receipts.mjs";
-import { validateDocument } from "../../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { agendaDocument, resultDocument, noticeDocument, slugify } from "../../../../../__app_modules/school/server/domain/documents/receipts.mjs";
+import { validateDocument } from "../../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
 
 const valid = (doc) => {
   const { errors } = validateDocument(doc);

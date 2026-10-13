@@ -1,0 +1,319 @@
+import express from 'express';
+import { sendInternalError } from '#api/utils/internalError.mjs';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { isValidFen } from "../../../../__capabilities/gaming/portable/rulesets/chess/engine.mjs";
+import { safeSegment } from '#system/utils/safePathSegment.mjs';
+
+/**
+ * Chess API: one move endpoint and the config pair.
+ *
+ * One request per move — there is nothing to stream until a live eval bar
+ * exists, and adding one later does not disturb this contract.
+ *
+ * This Piano-native API is mounted only at `/api/v1/piano-games/chess`.
+ * Chess owns richer analysis, coaching, archive, and commentary operations
+ * than the generic Piano opponent endpoints, without creating a second public
+ * route or transferring Piano composition to the Gaming kernel.
+ */
+export function createChessRouter({
+  engine, configService, archiveStore = null, resumeService = null, ladderService = null,
+  commentaryService = null, rivalryMemory = null, analyst = null, boardGameDayService = null, logger = null,
+}) {
+  const router = express.Router();
+
+  /**
+   * `?user=` becomes a path segment under data/users/<user>/ in DataService, so
+   * an unvalidated value is a read/write primitive anywhere on disk. Same guard
+   * and convention as the emulator router: safeSegment or nothing.
+   * Returns the validated id, null when absent, or responds 400 and returns
+   * undefined — callers must bail when the result is undefined.
+   */
+  const resolveUser = (req, res) => {
+    if (req.query.user === undefined || req.query.user === '') return null;
+    try {
+      return safeSegment(String(req.query.user));
+    } catch {
+      logger?.warn?.('chess.config.unsafe-user-rejected', { user: String(req.query.user) });
+      res.status(400).json({ error: 'invalid_user' });
+      return undefined;
+    }
+  };
+
+  router.post('/move', asyncHandler(async (req, res) => {
+    const user = resolveUser(req, res);
+    if (user === undefined) return undefined;
+    const { fen, rung: rungId, level, gameId } = req.body || {};
+    if (!isValidFen(fen)) return res.status(400).json({ error: 'invalid_fen' });
+    const config = await configService.read(user);
+    // A ladder level takes precedence over a named rung when one is asked for.
+    // The service clamps it to what this player has unlocked — the only place
+    // "no skipping ahead" is actually enforced, since anything on the client
+    // can be bypassed with a crafted request.
+    let rung;
+    let effectiveOpponent;
+    if (level !== undefined && level !== null && ladderService) {
+      const resolved = await ladderService.rungFor(user, level);
+      rung = resolved.rung;
+      effectiveOpponent = { source: 'ladder', level: resolved.level, name: resolved.opponent?.name || null };
+    } else {
+      rung = configService.resolveRung(config, rungId || config.default_rung);
+      effectiveOpponent = { source: 'rung', level: null, name: null };
+    }
+    effectiveOpponent.rung = {
+      id: rung?.id || null,
+      label: rung?.label || null,
+      skill: rung?.skill ?? null,
+      elo: rung?.elo ?? null,
+      movetime_ms: rung?.movetime_ms ?? null,
+      // Which engine answered, and how it was tuned. The archive keeps this, and
+      // without it a reviewed game cannot say whether "level 3" meant the
+      // homegrown opponent or Stockfish — the two are not comparable, and the
+      // ladder's mapping between them changes over time.
+      engine: rung?.engine ?? 'stockfish',
+      depth: rung?.depth ?? null,
+      blunder_rate: rung?.blunder_rate ?? null,
+    };
+    logger?.info?.('chess.move.requested', {
+      userId: user,
+      gameId: gameId || 'default',
+      requested: { rung: rungId || null, level: level ?? null },
+      effective: effectiveOpponent,
+    });
+    const move = await engine.chooseMove({ fen, rung, gameId: gameId || 'default' });
+    if (!move) return res.json({ move: null, opponent: effectiveOpponent });
+    return res.json({ ...move, opponent: effectiveOpponent });
+  }));
+
+  /**
+   * What the best move here is — for hints, and for anything else that needs
+   * the engine's real opinion.
+   *
+   * Deliberately NOT the move endpoint with a strong rung set, which is how
+   * hints used to work. Two reasons that arrangement had to go. A hint is only
+   * useful at full strength, so routing it through the ladder made its quality
+   * depend on config that exists for an entirely different purpose — and once
+   * the bottom rungs stopped being Stockfish at all, "ask the opponent engine
+   * for the best move" would have returned a beginner's guess. Analysis is a
+   * different question from opposition and now has a different door.
+   *
+   * Answers `{ move: null }` rather than 4xx for a finished position: asking for
+   * a hint in a mated position is a thing a child can do, not an error.
+   */
+  router.post('/analyze', asyncHandler(async (req, res) => {
+    if (!analyst) return res.status(501).json({ error: 'analysis_unavailable' });
+    const { fen, depth } = req.body || {};
+    if (!isValidFen(fen)) return res.status(400).json({ error: 'invalid_fen' });
+    const evaluation = await analyst.evaluate(fen, depth ? { depth: Number(depth) } : undefined);
+    if (evaluation.terminal || !evaluation.bestUci) {
+      return res.json({ move: null, terminal: true, cp: null, mate: null });
+    }
+    const uci = evaluation.bestUci;
+    const move = { from: uci.slice(0, 2), to: uci.slice(2, 4), ...(uci[4] ? { promotion: uci[4] } : {}) };
+    logger?.info?.('chess.analyze.served', { depth: evaluation.depth ?? null, cp: evaluation.cp ?? null });
+    return res.json({ move, cp: evaluation.cp, mate: evaluation.mate, depth: evaluation.depth, terminal: false });
+  }));
+
+  /** Cosmetic opponent dialogue. Invalid records fail closed; generation fails open. */
+  router.post('/quip', asyncHandler(async (req, res) => {
+    if (!commentaryService) return res.status(501).json({ error: 'commentary_unavailable' });
+    const user = resolveUser(req, res);
+    if (user === undefined) return undefined;
+    const { gameId, ply, level, playerColor, game, dialogue } = req.body || {};
+    try {
+      const reaction = await commentaryService.react({
+        userId: user, gameId, ply, level, playerColor, game, dialogue,
+      });
+      return res.json(reaction);
+    } catch (error) {
+      if (error?.code === 'invalid_game') return res.status(400).json({ error: 'invalid_game' });
+      throw error;
+    }
+  }));
+
+  router.get('/config', asyncHandler(async (req, res) => {
+    const user = resolveUser(req, res);
+    if (user === undefined) return;
+    res.json(await configService.read(user));
+  }));
+
+  router.put('/config', asyncHandler(async (req, res) => {
+    const userId = resolveUser(req, res);
+    if (userId === undefined) return;
+    if (!userId) return res.status(400).json({ error: 'user_required' });
+    await configService.writeUserLayer(userId, req.body || {});
+    return res.json(await configService.read(userId));
+  }));
+
+  /**
+   * A finished game, folded into the player's ladder.
+   *
+   * No per-game file is written here. The household archive (POST /history)
+   * is the only per-game record; the ladder is derived state, and it is what
+   * this endpoint must get right, so its write is the success condition.
+   */
+  router.post('/games', asyncHandler(async (req, res) => {
+    const userId = resolveUser(req, res);
+    if (userId === undefined) return undefined; // resolveUser already answered
+    if (!userId) return res.status(400).json({ error: 'user_required' });
+    if (!ladderService) return res.status(501).json({ error: 'ladder_unavailable' });
+    const record = req.body || {};
+    // Promotion is decided here, on the server, not by the kiosk: a reloaded tab
+    // mid-write would otherwise lose a rung the child had earned.
+    const ladder = await ladderService.recordGame(userId, record);
+    if (!ladder?.persisted) {
+      logger?.warn?.('chess.game.record-failed', { userId, result: record.result, moves: record.moves });
+      return sendInternalError(res, { error: 'save_failed' });
+    }
+    logger?.info?.('chess.game.recorded', {
+      userId, result: record.result, moves: record.moves, opponent: record.opponent || null,
+      counted: ladder.counted, promoted: ladder.promoted,
+    });
+    // Cosmetic, so it can never turn a saved game into a failure.
+    let headToHead = null;
+    if (rivalryMemory?.headToHead) {
+      try {
+        headToHead = await rivalryMemory.headToHead(userId, record);
+      } catch (error) {
+        logger?.warn?.('chess.game.head-to-head-failed', { userId, reason: error.message });
+      }
+    }
+    const boardGameDay = boardGameDayService?.record({
+      learnerId: userId,
+      gameId: 'chess',
+      gameSessionId: record.game_id,
+      completed: record.completed,
+      result: record.result,
+    }) ?? null;
+    return res.status(201).json({ saved: true, ladder, head_to_head: headToHead, boardGameDay });
+  }));
+
+  /**
+   * The household game archive: every game played on this piano, finished or
+   * not, filed by the day it was played.
+   *
+   * Distinct from POST /games in three ways that matter. It accepts an
+   * unfinished game, because walking away is data. It accepts a guest, because
+   * the archive is about what happened on the instrument rather than about
+   * whose profile it belongs to. And it never fails the caller: a child leaving
+   * the screen must not be held there by a disk error, so a failed write is
+   * logged and answered 202 rather than 500 — the client has already navigated
+   * away and has nothing it could do with the failure.
+   */
+  const fileForResume = async (record) => {
+    if (!resumeService || !record.user_id) return;
+    try {
+      await resumeService.record(record);
+    } catch (error) {
+      logger?.warn?.('chess.resume.record-failed', { user: record.user_id, gameId: record.game_id, error: error.message });
+    }
+  };
+
+  /**
+   * An unfinished game, saved as it is played. Not an archive: it writes no
+   * history file, only refreshes the server's copy of the game so that a
+   * reload, a crash or a deploy cannot lose it. Idempotent by game_id.
+   */
+  router.post('/progress', asyncHandler(async (req, res) => {
+    if (!resumeService) return res.status(501).json({ error: 'resume_unavailable' });
+    const record = req.body || {};
+    if (!record.game_id || !Array.isArray(record.moves) || record.moves.length === 0) {
+      return res.status(400).json({ error: 'no_moves' });
+    }
+    if (!record.user_id) return res.status(202).json({ saved: false, reason: 'guest' });
+    try {
+      record.user_id = safeSegment(String(record.user_id));
+    } catch {
+      return res.status(400).json({ error: 'invalid_user' });
+    }
+    try {
+      const result = await resumeService.record(record);
+      return res.status(result.applied ? 201 : 200).json({ saved: !!result.applied, reason: result.reason ?? null });
+    } catch (error) {
+      logger?.warn?.('chess.resume.record-failed', { user: record.user_id, gameId: record.game_id, error: error.message });
+      return res.status(202).json({ saved: false });
+    }
+  }));
+
+  /** The unfinished game this player resumes on launch, or `{ game: null }`. */
+  router.get('/users/:userId/resumable', asyncHandler(async (req, res) => {
+    if (!resumeService) return res.status(501).json({ error: 'resume_unavailable' });
+    let userId;
+    try {
+      userId = safeSegment(String(req.params.userId));
+    } catch {
+      return res.status(400).json({ error: 'invalid_user' });
+    }
+    const { game, window_days: windowDays } = await resumeService.resumable(userId);
+    logger?.info?.('chess.resumable.served', {
+      userId, gameId: game?.gameId ?? null, pinned: Boolean(game?.pinned),
+      reason: game ? (game.pinned ? 'pinned' : 'newest-open') : 'none-open',
+    });
+    return res.json({
+      window_days: windowDays,
+      game: game ? {
+        game_id: game.gameId, pinned: game.pinned, age_ms: game.ageMs, record: game.record,
+      } : null,
+    });
+  }));
+
+  router.post('/history', asyncHandler(async (req, res) => {
+    if (!archiveStore) return res.status(501).json({ error: 'archive_unavailable' });
+    const record = req.body || {};
+    if (!Array.isArray(record.moves) || record.moves.length === 0) {
+      return res.status(400).json({ error: 'no_moves' });
+    }
+    // The user id lands in a filename, so it gets the same guard as a path
+    // segment even though it is not a directory here.
+    let userSegment = 'guest';
+    if (record.user_id) {
+      try {
+        userSegment = safeSegment(String(record.user_id));
+      } catch {
+        logger?.warn?.('chess.history.unsafe-user-rejected', { user: String(record.user_id) });
+        return res.status(400).json({ error: 'invalid_user' });
+      }
+    }
+    const saved = await archiveStore.save({ ...record, user_id: record.user_id || null }, userSegment);
+    // Leaving keeps a game resumable; finishing or restarting closes it. A
+    // failed archive write must not stop that bookkeeping, and the bookkeeping
+    // must never fail the archive — the child has already left.
+    await fileForResume({ ...record, user_id: record.user_id || null });
+    if (!saved) {
+      logger?.warn?.('chess.history.archive-failed', {
+        user: userSegment, moves: record.moves.length, completed: !!record.completed,
+      });
+      return res.status(202).json({ archived: false });
+    }
+    logger?.info?.('chess.history.archived', {
+      user: userSegment,
+      played_on: record.played_on,
+      moves: record.moves.length,
+      completed: !!record.completed,
+      ended_by: record.ended_by,
+      addressing: record.addressing,
+      opponent: record.opponent || null,
+    });
+    if (record.completed && record.ended_by === 'game_over' && rivalryMemory) {
+      // Rivalry memory is derived from the durable archive. It is cosmetic, so
+      // a memory write can never turn a successfully saved game into a failure.
+      await rivalryMemory.recordArchive(record);
+    }
+    return res.status(201).json({ archived: true });
+  }));
+
+  /**
+   * Where this player stands on the ladder: who they may face, who they are
+   * climbing, and how close they are. A guest gets the bottom of the roster and
+   * an honest `persisted: false` rather than a bar that resets on reload.
+   */
+  router.get('/ladder', asyncHandler(async (req, res) => {
+    if (!ladderService) return res.status(501).json({ error: 'ladder_unavailable' });
+    const user = resolveUser(req, res);
+    if (user === undefined) return undefined;
+    return res.json(await ladderService.read(user));
+  }));
+
+  return router;
+}
+
+export default createChessRouter;

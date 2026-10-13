@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/query/QueryAdapter.composite.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { QueryAdapter } from "../../../../../capabilities/content-catalog/server/adapters/providers/query/QueryAdapter.mjs";
+import { QueryAdapter } from "../../../../../__capabilities/content-catalog/server/adapters/providers/query/QueryAdapter.mjs";
 
 describe('QueryAdapter composite queries', () => {
   describe('titlecard entries', () => {

@@ -13,7 +13,7 @@ vi.mock('../../../frontend/src/lib/logging/Logger.js', () => ({
   getLogger: () => mockLogger,
 }));
 
-import { DataManager } from '../../../capabilities/screen-host/browser/data/DataManager.js';
+import { DataManager } from '../../../__capabilities/screen-host/browser/data/DataManager.js';
 
 describe('DataManager logging', () => {
   let manager;

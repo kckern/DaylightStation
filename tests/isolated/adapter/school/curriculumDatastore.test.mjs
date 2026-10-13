@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlCurriculumDatastore } from "../../../../modules/school/server/adapters/persistence/YamlCurriculumDatastore.mjs";
-import { ICurriculumCatalog } from "../../../../modules/school/server/application/ports/ICurriculumCatalog.mjs";
+import { YamlCurriculumDatastore } from "../../../../__app_modules/school/server/adapters/persistence/YamlCurriculumDatastore.mjs";
+import { ICurriculumCatalog } from "../../../../__app_modules/school/server/application/ports/ICurriculumCatalog.mjs";
 
 let tmp, ds;
 

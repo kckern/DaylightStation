@@ -23,7 +23,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 let FitnessSession;
 
 beforeAll(async () => {
-  ({ FitnessSession } = await import("../../../modules/fitness/browser/hooks/fitness/FitnessSession.js"));
+  ({ FitnessSession } = await import("../../../__app_modules/fitness/browser/hooks/fitness/FitnessSession.js"));
 });
 
 describe('FitnessSession pending-event flush', () => {

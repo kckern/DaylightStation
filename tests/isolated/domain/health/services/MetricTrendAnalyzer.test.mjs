@@ -1,8 +1,8 @@
 // tests/isolated/domain/health/services/MetricTrendAnalyzer.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { MetricTrendAnalyzer } from "../../../../../modules/health/server/application/health/analytics/MetricTrendAnalyzer.mjs";
-import { MetricAggregator } from "../../../../../modules/health/server/application/health/analytics/MetricAggregator.mjs";
-import { PeriodResolver } from "../../../../../modules/health/server/application/health/analytics/PeriodResolver.mjs";
+import { MetricTrendAnalyzer } from "../../../../../__app_modules/health/server/application/health/analytics/MetricTrendAnalyzer.mjs";
+import { MetricAggregator } from "../../../../../__app_modules/health/server/application/health/analytics/MetricAggregator.mjs";
+import { PeriodResolver } from "../../../../../__app_modules/health/server/application/health/analytics/PeriodResolver.mjs";
 
 const NOW = new Date('2026-05-05T12:00:00Z');
 const fixedNow = () => NOW;

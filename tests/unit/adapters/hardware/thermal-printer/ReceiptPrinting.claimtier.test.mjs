@@ -24,8 +24,8 @@
  */
 import { describe, it, expect, jest } from '@jest/globals';
 import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
-import { ReceiptRendererAdapter } from "../../../../../modules/school/server/adapters/documents/DocumentRendererAdapter.mjs";
-import { ReceiptPrinting } from "../../../../../capabilities/printing/server/receipt.mjs";
+import { ReceiptRendererAdapter } from "../../../../../__app_modules/school/server/adapters/documents/DocumentRendererAdapter.mjs";
+import { ReceiptPrinting } from "../../../../../__capabilities/printing/server/receipt.mjs";
 
 /** The live printer's `DLE EOT` replies, probed read-only 2026-08-25. */
 const HEALTHY = [0x16, 0x12, 0x12, 0x12];

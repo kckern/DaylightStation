@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useScreenOverlay } from "../../../../capabilities/screen-host/browser/overlays.mjs";
+import { useScreenOverlay } from "../../../../__capabilities/screen-host/browser/overlays.mjs";
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;

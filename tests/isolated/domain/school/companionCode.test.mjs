@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CODE_LETTERS, ALL_CODES, mintCode, codesMatch, formatCode, parseCode,
-} from "../../../../modules/school/server/domain/companionCode.mjs";
+} from "../../../../__app_modules/school/server/domain/companionCode.mjs";
 
 describe('the finish-code alphabet', () => {
   it('offers every non-empty combination of five letters (D1)', () => {

@@ -2,7 +2,7 @@ import { test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUT_DIR = path.join(process.cwd(), 'docs/_wip/audits/media-app-screens');
+const OUT_DIR = path.join(process.cwd(), '__docs/_wip/audits/media-app-screens');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 async function snap(page, name) {

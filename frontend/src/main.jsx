@@ -13,38 +13,38 @@ import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 // Every route is its own chunk: a page downloads the app it shows, not all
 // of them (the single bundle had grown past 11 MB). A long-lived tab whose
 // chunk hashes rotate under it on a deploy is recovered by chunkReload.js.
-const loadHomeApp = () => import("../../modules/home/browser/kiosk.mjs");
+const loadHomeApp = () => import("../../__app_modules/home/browser/kiosk.mjs");
 const HomeApp = React.lazy(loadHomeApp);
-const loadFinanceApp = () => import("../../modules/finance/browser/kiosk.mjs");
+const loadFinanceApp = () => import("../../__app_modules/finance/browser/kiosk.mjs");
 const FinanceApp = React.lazy(loadFinanceApp);
-const loadHealthApp = () => import("../../modules/health/browser/kiosk.mjs");
+const loadHealthApp = () => import("../../__app_modules/health/browser/kiosk.mjs");
 const HealthApp = React.lazy(loadHealthApp);
-const loadAutoApp = () => import("../../modules/auto/browser/kiosk.mjs");
+const loadAutoApp = () => import("../../__app_modules/auto/browser/kiosk.mjs");
 const AutoApp = React.lazy(loadAutoApp);
-const loadLifeApp = () => import("../../modules/life/browser/kiosk.mjs");
+const loadLifeApp = () => import("../../__app_modules/life/browser/kiosk.mjs");
 const LifeApp = React.lazy(loadLifeApp);
-const loadFitnessApp = () => import("../../modules/fitness/browser/kiosk.mjs");
+const loadFitnessApp = () => import("../../__app_modules/fitness/browser/kiosk.mjs");
 const FitnessApp = React.lazy(loadFitnessApp);
-const loadFeedApp = () => import("../../modules/feed/browser/kiosk.mjs");
+const loadFeedApp = () => import("../../__app_modules/feed/browser/kiosk.mjs");
 const FeedApp = React.lazy(loadFeedApp);
 const loadAdminApp = () => import('./Apps/AdminApp.jsx');
 const AdminApp = React.lazy(loadAdminApp);
-const loadCallApp = () => import("../../modules/homeline/browser/kiosk.mjs");
+const loadCallApp = () => import("../../__app_modules/homeline/browser/kiosk.mjs");
 const CallApp = React.lazy(loadCallApp);
-const loadMediaApp = () => import("../../modules/media/browser/kiosk.mjs");
+const loadMediaApp = () => import("../../__app_modules/media/browser/kiosk.mjs");
 const MediaApp = React.lazy(loadMediaApp);
-const loadLiveStreamApp = () => import("../../modules/livestream/browser/kiosk.mjs");
+const loadLiveStreamApp = () => import("../../__app_modules/livestream/browser/kiosk.mjs");
 const LiveStreamApp = React.lazy(loadLiveStreamApp);
-const loadPianoApp = () => import('../../modules/piano/browser/kiosk.mjs');
+const loadPianoApp = () => import('../../__app_modules/piano/browser/kiosk.mjs');
 const PianoApp = React.lazy(loadPianoApp);
 const loadAppContainer = () => import('./modules/AppContainer/AppContainer.jsx');
 const AppContainer = React.lazy(loadAppContainer);
 const Blank = React.lazy(() => import('./modules/Blank/Blank.jsx'));
-const FilterPoc = React.lazy(() => import('../../modules/media/browser/debug.mjs'));
+const FilterPoc = React.lazy(() => import('../../__app_modules/media/browser/debug.mjs'));
 const SetupWizard = React.lazy(() => import('./modules/Auth/SetupWizard.jsx'));
 const InviteAccept = React.lazy(() => import('./modules/Auth/InviteAccept.jsx'));
-const PartyGamesHost = React.lazy(() => import("../../modules/party-games/browser/host.mjs"));
-const PartyGamesVerifier = React.lazy(() => import("../../modules/party-games/browser/verifier.mjs"));
+const PartyGamesHost = React.lazy(() => import("../../__app_modules/party-games/browser/host.mjs"));
+const PartyGamesVerifier = React.lazy(() => import("../../__app_modules/party-games/browser/verifier.mjs"));
 const loadScreenRenderer = () => import('./composition/screens/index.js');
 const ScreenRenderer = React.lazy(() => loadScreenRenderer().then(module => ({ default: module.ScreenRenderer })));
 // Start this page's chunk NOW, not once SetupCheck's auth request has
@@ -68,7 +68,7 @@ const DecoderSwatches = React.lazy(() => import('./dev/DecoderSwatches/DecoderSw
 const TeacherConsoleRoute = () => (
   <React.Suspense fallback={<div />}> <TeacherConsole /> </React.Suspense>
 );
-import { configurePlaybackLogger } from "../../capabilities/playback/browser/contracts.mjs";
+import { configurePlaybackLogger } from "../../__capabilities/playback/browser/contracts.mjs";
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
 import { interceptConsole } from './lib/logging/consoleInterceptor.js';
@@ -211,7 +211,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />
         <Route path="/health/*" element={<HealthApp />} />
-        {/* Vehicle record system — mobile-first; see docs/_wip/plans/2026-08-12-auto-app-design.md */}
+        {/* Vehicle record system — mobile-first; see __docs/_wip/plans/2026-08-12-auto-app-design.md */}
         <Route path="/auto" element={<AutoApp />} />
         <Route path="/auto/*" element={<AutoApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />

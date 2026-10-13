@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { Dependency } from "../../../../modules/life/server/domain/entities/Dependency.mjs";
-import { LifeEvent } from "../../../../modules/life/server/domain/entities/LifeEvent.mjs";
-import { AntiGoal } from "../../../../modules/life/server/domain/entities/AntiGoal.mjs";
-import { Milestone } from "../../../../modules/life/server/domain/entities/Milestone.mjs";
-import { BeliefOrigin } from "../../../../modules/life/server/domain/entities/BeliefOrigin.mjs";
-import { Shadow } from "../../../../modules/life/server/domain/entities/Shadow.mjs";
-import { Ceremony } from "../../../../modules/life/server/domain/entities/Ceremony.mjs";
-import { CeremonyRecord } from "../../../../modules/life/server/domain/entities/CeremonyRecord.mjs";
-import { Cycle } from "../../../../modules/life/server/domain/entities/Cycle.mjs";
-import { FeedbackEntry } from "../../../../modules/life/server/domain/entities/FeedbackEntry.mjs";
-import { LifePlan } from "../../../../modules/life/server/domain/entities/LifePlan.mjs";
+import { Dependency } from "../../../../__app_modules/life/server/domain/entities/Dependency.mjs";
+import { LifeEvent } from "../../../../__app_modules/life/server/domain/entities/LifeEvent.mjs";
+import { AntiGoal } from "../../../../__app_modules/life/server/domain/entities/AntiGoal.mjs";
+import { Milestone } from "../../../../__app_modules/life/server/domain/entities/Milestone.mjs";
+import { BeliefOrigin } from "../../../../__app_modules/life/server/domain/entities/BeliefOrigin.mjs";
+import { Shadow } from "../../../../__app_modules/life/server/domain/entities/Shadow.mjs";
+import { Ceremony } from "../../../../__app_modules/life/server/domain/entities/Ceremony.mjs";
+import { CeremonyRecord } from "../../../../__app_modules/life/server/domain/entities/CeremonyRecord.mjs";
+import { Cycle } from "../../../../__app_modules/life/server/domain/entities/Cycle.mjs";
+import { FeedbackEntry } from "../../../../__app_modules/life/server/domain/entities/FeedbackEntry.mjs";
+import { LifePlan } from "../../../../__app_modules/life/server/domain/entities/LifePlan.mjs";
 
 describe('Dependency', () => {
   it('creates a prerequisite dependency', () => {

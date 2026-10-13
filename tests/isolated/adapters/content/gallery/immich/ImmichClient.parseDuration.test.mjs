@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ImmichClient } from "../../../../../../capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs";
+import { ImmichClient } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichClient.mjs";
 
 function client() {
   return new ImmichClient(

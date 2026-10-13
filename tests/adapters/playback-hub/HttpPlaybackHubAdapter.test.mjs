@@ -12,18 +12,18 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { listenWith } from '../../preimplementation/application-modules/drivers/playback-hub-memory-transport.mjs';
+import { listenWith } from '../../_lib/memory-http/playback-hub-memory-transport.mjs';
 
-import { HttpPlaybackHubAdapter } from "../../../modules/media/server/adapters/playback-hub/HttpPlaybackHubAdapter.mjs";
-import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
-import { CommandResult } from "../../../modules/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
-import { PlayCommand } from "../../../modules/media/server/domain/playback-hub/value-objects/PlayCommand.mjs";
-import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
-import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { InfrastructureError } from '../../../backend/src/0_system/utils/errors/InfrastructureError.mjs';
+import { HttpPlaybackHubAdapter } from "../../../__app_modules/media/server/adapters/playback-hub/HttpPlaybackHubAdapter.mjs";
+import { SlotStatus } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
+import { CommandResult } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
+import { PlayCommand } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/PlayCommand.mjs";
+import { QueueRef } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { HubDevice } from "../../../__app_modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { InfrastructureError } from '../../../__backend/src/0_system/utils/errors/InfrastructureError.mjs';
 
 /**
  * Build a HubDevice for a given color/class combo. Uses defaults for fields

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { ReportReceiptRenderer } from "../../../../../modules/newsreporter/server/rendering/ReportReceiptRenderer.mjs";
+import { ReportReceiptRenderer } from "../../../../../__app_modules/newsreporter/server/rendering/ReportReceiptRenderer.mjs";
 
 const r = new ReportReceiptRenderer();
 

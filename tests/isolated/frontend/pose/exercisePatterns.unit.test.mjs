@@ -1,5 +1,5 @@
-import { createActionDetector, createCustomActionDetector } from "../../../../modules/fitness/browser/lib/pose/poseActions.js";
-import { JUMPING_JACK, SQUAT, LUNGE, PUSH_UP, PLANK, BURPEE } from "../../../../modules/fitness/browser/lib/pose/exercisePatterns.js";
+import { createActionDetector, createCustomActionDetector } from "../../../../__app_modules/fitness/browser/lib/pose/poseActions.js";
+import { JUMPING_JACK, SQUAT, LUNGE, PUSH_UP, PLANK, BURPEE } from "../../../../__app_modules/fitness/browser/lib/pose/exercisePatterns.js";
 
 describe('exercise pattern definitions', () => {
   // --- Cyclic patterns create valid detectors ---

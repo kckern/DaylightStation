@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pianoRollTitleFromRel } from "../../../../modules/piano/server/domain/pianoaudio/pianoRollTitle.mjs";
+import { pianoRollTitleFromRel } from "../../../../__app_modules/piano/server/domain/pianoaudio/pianoRollTitle.mjs";
 
 describe('pianoRollTitleFromRel', () => {
   it('derives a date/time title from a jamcorder path', () => {

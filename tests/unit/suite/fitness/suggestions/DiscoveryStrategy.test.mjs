@@ -1,5 +1,5 @@
 // tests/unit/suite/fitness/suggestions/DiscoveryStrategy.test.mjs
-import { DiscoveryStrategy } from "../../../../../modules/fitness/server/application/suggestions/DiscoveryStrategy.mjs";
+import { DiscoveryStrategy } from "../../../../../__app_modules/fitness/server/application/suggestions/DiscoveryStrategy.mjs";
 
 function makeShow(id, title) {
   return { id: String(id), title, type: 'show', episodeCount: 10 };

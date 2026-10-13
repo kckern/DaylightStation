@@ -6,7 +6,7 @@ mode is read directly by an M5Stack ATOM Lite (ESP32) acting as a **BLE HID cent
 bonds to the scanner, decodes its HID keyboard reports into the barcode string, and relays each
 scan over WiFi/WebSocket to the DaylightStation event bus as
 `{source:'barcode-relay', type:'scan', device:'ds2278', code, ts}` → broadcast on the
-**`barcode-relay`** topic (handler: `backend/src/3_applications/hardware/barcodeRelay.mjs`).
+**`barcode-relay`** topic (handler: `__backend/src/3_applications/hardware/barcodeRelay.mjs`).
 
 Verified live: scan → `[barcode] living-room:plex:594036+shuffle` on the ESP →
 `✅ BARCODE RELAYED THROUGH BACKEND … device="ds2278"` at the backend subscriber.
@@ -78,4 +78,4 @@ snapshot (up_s, wifi/ws/ble state + RSSI, scan_count, and `last_scan` code/when)
 ## Relationship to food-scale-relay
 `_extensions/barcode-relay` and `_extensions/food-scale-relay` are **independent PlatformIO
 projects → independent firmware images → independent ESP32 devices.** No shared binary, no
-conflict. Each backend ingest handler lives in `backend/src/3_applications/hardware/`.
+conflict. Each backend ingest handler lives in `__backend/src/3_applications/hardware/`.

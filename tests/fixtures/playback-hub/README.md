@@ -1,7 +1,7 @@
 # Playback Hub validator-parity fixtures
 
 Shared between `_extensions/playback-hub/validate_config.py` (Python) and
-`backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs` (JS, future).
+`__backend/src/1_adapters/persistence/yaml/YamlHubConfigDatastore.mjs` (JS, future).
 
 - `invalid/*.yml` — each must be REJECTED by both validators.
   Filename prefix `NN-` = rule index (matches the 11 rules in the design's

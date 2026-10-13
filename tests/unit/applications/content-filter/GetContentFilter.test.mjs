@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GetContentFilter } from "../../../../modules/media/server/application/content-filter/usecases/GetContentFilter.mjs";
+import { GetContentFilter } from "../../../../__app_modules/media/server/application/content-filter/usecases/GetContentFilter.mjs";
 
 describe('GetContentFilter', () => {
   it('requires a content-filter repository', () => {

@@ -4,7 +4,7 @@ import {
   resolvePrefabLayers,
   resolveTerrainFrame,
   terrainInnerCornerKeys,
-} from "../../../capabilities/gaming/portable/assets.mjs";
+} from "../../../__capabilities/gaming/portable/assets.mjs";
 import {
   PRESENTATION_ID,
   assetReference,

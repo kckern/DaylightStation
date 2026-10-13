@@ -5,7 +5,7 @@ import { parse } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 it('M3 composition: sessions changed reaches the producer installed after API construction', () => {
-  const source = fs.readFileSync(new URL('../../../../modules/fitness/server/composition/api-runtime.mjs', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../../../../__app_modules/fitness/server/composition/api-runtime.mjs', import.meta.url), 'utf8');
   let callback;
   traverse(parse(source, { sourceType: 'module' }), {
     ObjectProperty(p) {

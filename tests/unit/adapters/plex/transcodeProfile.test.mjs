@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { resolveTranscodeCaps, buildClientProfileExtra, canDirectStreamVideo, isHighBitDepthVideo, needsAudioDownmix } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectStreamVideo, isHighBitDepthVideo, needsAudioDownmix } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
 
 /**
  * 2026-09-14, plex:697368: AAC-LC 6 channels with `channel_configuration 0` (no
@@ -77,7 +77,7 @@ describe('buildClientProfileExtra', () => {
   });
 });
 
-import { canDirectPlayH264 } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
+import { canDirectPlayH264 } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
 
 describe('canDirectPlayH264', () => {
   const h264Media = {

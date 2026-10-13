@@ -23,10 +23,10 @@ function fixture(t) {
   put('scripts/audit-esm-links.mjs', source);
   put('scripts/index-snapshot.mjs', readFileSync(new URL('../../../scripts/index-snapshot.mjs', import.meta.url), 'utf8'));
   put('package.json', JSON.stringify({ imports: { '#root': './cli/target.mjs' } }));
-  put('backend/package.json', JSON.stringify({ imports: { '#root': './src/target.mjs' } }));
+  put('__backend/package.json', JSON.stringify({ imports: { '#root': './src/target.mjs' } }));
   put('cli/target.mjs', "export const rootValue = 1; throw new Error('Source never evaluated');");
-  put('backend/src/target.mjs', "export const backendValue = 1; throw new Error('Source never evaluated');");
-  put('backend/src/consumer.mjs', "import { backendValue } from '#root'; throw new Error('Never evaluated');");
+  put('__backend/src/target.mjs', "export const backendValue = 1; throw new Error('Source never evaluated');");
+  put('__backend/src/consumer.mjs', "import { backendValue } from '#root'; throw new Error('Never evaluated');");
   execFileSync('git', ['init', '--quiet'], { cwd: root });
   return { root, put, stage(...files) { execFileSync('git', ['add', '--', ...(files.length ? files : ['.'])], { cwd: root }); }, run(staged = false) {
     return spawnSync(process.execPath, [join(root, 'scripts/audit-esm-links.mjs'), ...(staged ? ['--staged'] : [])], { cwd: root, encoding: 'utf8' });
@@ -44,7 +44,22 @@ test('ESM CLI preserves legal legacy roots and accepts absent destination roots 
   }
 });
 
-for (const root of ['modules', 'capabilities']) {
+test('staged ESM CLI handles owner inventories larger than the default subprocess buffer', (t) => {
+  const f = fixture(t);
+  f.stage();
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: f.root, input: '', encoding: 'utf8' }).trim();
+  const entries = Array.from({ length: 4000 }, (_, i) =>
+    `100644 ${blob}\t__app_modules/piano/server/inventory/${i}-${'x'.repeat(220)}.txt\0`).join('');
+  execFileSync('git', ['update-index', '-z', '--index-info'], { cwd: f.root, input: entries });
+  const inventory = execFileSync('git', ['ls-files', '--stage', '-z', '--', '__app_modules'],
+    { cwd: f.root, maxBuffer: 16 * 1024 * 1024 });
+  assert.ok(inventory.length > 1024 * 1024);
+  const result = f.run(true);
+  assert.equal(result.status, 0, result.stderr.slice(0, 1200));
+  assert.match(result.stdout, /3 staged modules checked/);
+});
+
+for (const root of ['__app_modules', '__capabilities']) {
   for (const ext of ['mjs', 'js', 'cjs']) {
     test(`${root}: ${ext} destination source and package aliases obey working/index bytes`, (t) => {
       const f = fixture(t);

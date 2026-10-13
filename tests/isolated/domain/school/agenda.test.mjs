@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { planDailyAgenda } from "../../../../modules/school/server/domain/agenda.mjs";
-import { resolveDayCompletion } from "../../../../modules/school/server/domain/completion.mjs";
+import { planDailyAgenda } from "../../../../__app_modules/school/server/domain/agenda.mjs";
+import { resolveDayCompletion } from "../../../../__app_modules/school/server/domain/completion.mjs";
 
 const NOW = '2026-07-29T16:00:00Z'; // 09:00 PDT
 const TZ = 'America/Los_Angeles';

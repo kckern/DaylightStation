@@ -28,7 +28,7 @@
 ./frontend/dist/*
 
 # Documentation and tests (not needed in production)
-docs/
+__docs/
 tests/
 test-results/
 **/*.md
@@ -42,10 +42,10 @@ AGENTS.md
 **/.env.*
 *.yml
 !config/*.yml
-!backend/config/*.yml
+!__backend/config/*.yml
 # Authored Fitness course YAML must reach the image at its owner path.
 # School Rubiks course data is compiled into courseSource.mjs and needs no YAML exception.
-!modules/fitness/server/adapters/courses/*.yml
+!__app_modules/fitness/server/adapters/courses/*.yml
 secrets.dev.yaml
 values.dev.yaml
 **/charts
@@ -63,6 +63,11 @@ values.dev.yaml
 **/obj
 
 # Data and logs (mounted at runtime)
+_deleteme/
+.pii-scrub/
+.firecrawl/
+.superpowers/
+.worktrees/
 ./data
 ./data/*
 logs/

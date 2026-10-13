@@ -12,8 +12,8 @@
 import { describe, test, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
-import { deviceResolver } from '../../../backend/src/4_api/middleware/deviceResolver.mjs';
+import { createDeviceRouter } from '../../../__backend/src/4_api/v1/routers/device.mjs';
+import { deviceResolver } from '../../../__backend/src/4_api/middleware/deviceResolver.mjs';
 
 const DEVICES = {
   devices: {

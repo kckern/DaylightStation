@@ -6,7 +6,7 @@
 // topic.
 //
 // PROTOCOL (verified against the real unit 2026-07-21; firmware "OMR-1100 -
-// Version 1.04, Wed Oct 2 1996"). Full manuals in ../../docs/recovered/.
+// Version 1.04, Wed Oct 2 1996"). Full manuals in ../../docs/recovered
 //
 //   Link:     9600 baud, 7 data bits, EVEN parity, 1 stop bit.
 //   Download: 0x12 <cmd> 0x12 'E'   (Ctrl-R, command, Ctrl-R, "E" — no ESC)

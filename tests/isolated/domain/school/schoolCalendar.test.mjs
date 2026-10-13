@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSchoolDay, namedDayOff, validateSchedule } from "../../../../modules/school/server/domain/schoolCalendar.mjs";
+import { isSchoolDay, namedDayOff, validateSchedule } from "../../../../__app_modules/school/server/domain/schoolCalendar.mjs";
 
 describe('isSchoolDay', () => {
   it('is true for every day when there is no schedule', () => {

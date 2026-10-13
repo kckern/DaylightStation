@@ -17,6 +17,12 @@ that emerged over time, with extra detail for the twelve months from September
 
 ## The arc of the project
 
+The application-module cutover completed in October 2026. Application code now
+lives in `__app_modules/`, shared features in `__capabilities/`, server
+infrastructure in `__backend/`, and documentation in `__docs/`. Stable commands
+remain in `cli/`. The completed migration's readiness and preparation tooling
+was retired; reusable HTTP test helpers remain under `tests/_lib/`.
+
 | Era | What Daylight Station was becoming |
 | --- | --- |
 | 2023 | A Dockerized React and Node application with its first external data source |

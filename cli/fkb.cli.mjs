@@ -272,7 +272,7 @@ const commands = {
   // when adb-over-wifi is gone). Injects a rAF-fps counter, reloads, reads the
   // count back out of the page <title> via getHtmlSource, restores the normal
   // injected script. Prints the fps and exits non-zero when below the threshold
-  // (default 20) so it can gate a cron/alert. See docs/reference/piano/performance.md.
+  // (default 20) so it can gate a cron/alert. See __docs/reference/piano/performance.md.
   //   node fkb.cli.mjs jank [minFps]
   async jank([min]) {
     const minFps = Number(min) || 20;

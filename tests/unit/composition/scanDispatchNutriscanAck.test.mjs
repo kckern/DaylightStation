@@ -6,11 +6,11 @@
  * that said nothing. The user got a scanner beep, no change on the Telegram
  * prompt, and no way to tell a dead feature from a bad code.
  *
- * @see backend/src/5_composition/modules/scanDispatch.mjs
- * @see backend/src/3_applications/nutribot/lib/routeNutribotScan.mjs
+ * @see __backend/src/5_composition/modules/scanDispatch.mjs
+ * @see __backend/src/3_applications/nutribot/lib/routeNutribotScan.mjs
  */
 import { describe, it, expect } from 'vitest';
-import { swallowNotice } from "../../../modules/nutribot/server/application/lib/routeNutribotScan.mjs";
+import { swallowNotice } from "../../../__app_modules/nutribot/server/application/lib/routeNutribotScan.mjs";
 import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
 
 /**

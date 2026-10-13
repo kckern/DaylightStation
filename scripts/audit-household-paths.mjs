@@ -47,7 +47,7 @@ const HH = path.join(DATA, 'household');
 // full disk sweep of it).
 const CONTENT = path.join(DATA, 'content');
 const DELETED = path.join(DATA, '_deleteme');
-const SCAN_DIRS = ['backend/src', 'cli', 'shared', 'scripts'];
+const SCAN_DIRS = ['__backend/src', 'cli', 'shared', 'scripts'];
 
 /** Roots that are not domains and are excluded from the orphan sweep. */
 const NOT_DOMAINS = new Set(['config', 'auth', 'screens', 'assets']);

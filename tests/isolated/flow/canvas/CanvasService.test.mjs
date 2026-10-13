@@ -1,6 +1,6 @@
 // tests/isolated/flow/canvas/CanvasService.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CanvasService } from "../../../../modules/art/server/application/canvas/services/CanvasService.mjs";
+import { CanvasService } from "../../../../__app_modules/art/server/application/canvas/services/CanvasService.mjs";
 
 describe('CanvasService', () => {
   let service;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateRpmProgress, getRpmZoneColor } from "../../../../../modules/fitness/browser/player/panels/RealtimeCards/rpmUtils.mjs";
+import { calculateRpmProgress, getRpmZoneColor } from "../../../../../__app_modules/fitness/browser/player/panels/RealtimeCards/rpmUtils.mjs";
 
 describe('RpmDeviceAvatar utilities', () => {
   describe('calculateRpmProgress', () => {

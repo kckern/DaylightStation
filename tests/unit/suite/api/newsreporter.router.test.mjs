@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createNewsReporterRouter } from "../../../../modules/newsreporter/server/api/newsreporter.mjs";
+import { createNewsReporterRouter } from "../../../../__app_modules/newsreporter/server/api/newsreporter.mjs";
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 describe('POST /api/v1/newsreporter/:id/run', () => {

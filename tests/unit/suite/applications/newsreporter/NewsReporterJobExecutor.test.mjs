@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { NewsReporterJobExecutor } from "../../../../../modules/newsreporter/server/application/NewsReporterJobExecutor.mjs";
+import { NewsReporterJobExecutor } from "../../../../../__app_modules/newsreporter/server/application/NewsReporterJobExecutor.mjs";
 
 const nullLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };
 

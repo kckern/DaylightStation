@@ -9,11 +9,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-import { createPlaybackHubRouter, statusForError } from '../../../../modules/media/server/api/playbackHub.mjs';
-import { ValidationError } from '../../../../backend/src/2_domains/core/errors/ValidationError.mjs';
-import { DomainInvariantError } from '../../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
-import { EntityNotFoundError } from '../../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
-import { InfrastructureError } from '../../../../backend/src/0_system/utils/errors/InfrastructureError.mjs';
+import { createPlaybackHubRouter, statusForError } from '../../../../__app_modules/media/server/api/playbackHub.mjs';
+import { ValidationError } from '../../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
+import { DomainInvariantError } from '../../../../__backend/src/2_domains/core/errors/DomainInvariantError.mjs';
+import { EntityNotFoundError } from '../../../../__backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
+import { InfrastructureError } from '../../../../__backend/src/0_system/utils/errors/InfrastructureError.mjs';
 
 /**
  * Minimal stub container — each property is an object with an `execute()` fn

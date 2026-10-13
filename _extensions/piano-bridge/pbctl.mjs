@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application owner.
-import "../../modules/piano/satellites/piano-bridge/pbctl.mjs";
+import "../../__app_modules/piano/satellites/piano-bridge/pbctl.mjs";

@@ -2,7 +2,7 @@
  * Cycle Challenge Lifecycle — Runtime Test
  *
  * Exit criterion for cycling-challenge simulator audit
- * (docs/_wip/audits/2026-04-30-cycling-challenge-simulator-unusable-audit.md).
+ * (__docs/_wip/audits/2026-04-30-cycling-challenge-simulator-unusable-audit.md).
  *
  * Walks the full lifecycle:
  *   1. App boots, fitness config loads, equipment catalog includes cycle_ace.

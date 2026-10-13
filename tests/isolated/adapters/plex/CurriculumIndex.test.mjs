@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeEpisode, mergeSeason } from "../../../../modules/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs";
+import { mergeEpisode, mergeSeason } from "../../../../__app_modules/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs";
 
 // Mirrors the real 9-season 676490.json shapes post-reorg.
 const index = {

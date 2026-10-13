@@ -4,10 +4,10 @@ import request from 'supertest';
 import express from 'express';
 
 // Must import from the future file path
-import { createInfoRouter } from "../../../../capabilities/content-catalog/server/api/info.mjs";
-import { resolveFormat } from "../../../../capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
-import { ContentAccessService } from "../../../../capabilities/content-catalog/server/application/ContentAccessService.mjs";
-import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { createInfoRouter } from "../../../../__capabilities/content-catalog/server/api/info.mjs";
+import { resolveFormat } from "../../../../__capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
+import { ContentAccessService } from "../../../../__capabilities/content-catalog/server/application/ContentAccessService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 describe('Info Router', () => {
   let app;

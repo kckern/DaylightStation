@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createArtAdapter } from "../../../../modules/art/server/adapters/ArtAdapter.mjs";
+import { createArtAdapter } from "../../../../__app_modules/art/server/adapters/ArtAdapter.mjs";
 import { Jimp } from 'jimp';
 
 const noopLogger = { warn: () => {}, error: () => {}, debug: () => {}, info: () => {} };

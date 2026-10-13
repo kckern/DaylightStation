@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createHealthRouter } from "../../../modules/health/server/api/routers/health.mjs";
-import { HealthOperations } from "../../../modules/health/server/application/health/HealthOperations.mjs";
+import { createHealthRouter } from "../../../__app_modules/health/server/api/routers/health.mjs";
+import { HealthOperations } from "../../../__app_modules/health/server/application/health/HealthOperations.mjs";
 
 function buildApp(overrides = {}) {
   const items = overrides.items || [];

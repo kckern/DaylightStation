@@ -3,13 +3,13 @@
 // Composition wiring: `ResolveCardScan` joined to the SAME decoded-scan
 // stream `createQuizScanRecorder` already persists (Task 7, spec §9).
 import { describe, it, expect, vi } from 'vitest';
-import { createSchoolPrintScanConsumer } from "../../../modules/school/server/composition/schoolPrintScanConsumer.mjs";
-import { RenderPrintDocument } from "../../../modules/school/server/application/documents/RenderPrintDocument.mjs";
-import { createPrintDocumentRendering } from "../../../modules/school/server/rendering/documents/PrintDocumentRendering.mjs";
-import { PublishPrintDocument } from "../../../modules/school/server/application/documents/PublishPrintDocument.mjs";
-import { ResolveCardScan } from "../../../modules/school/server/application/documents/ResolveCardScan.mjs";
-import { YamlAllocationStore } from "../../../modules/school/server/adapters/documents/YamlAllocationStore.mjs";
-import { DOCUMENT_SOURCE_SCHEMA } from "../../../modules/school/server/domain/documents/documentSource.mjs";
+import { createSchoolPrintScanConsumer } from "../../../__app_modules/school/server/composition/schoolPrintScanConsumer.mjs";
+import { RenderPrintDocument } from "../../../__app_modules/school/server/application/documents/RenderPrintDocument.mjs";
+import { createPrintDocumentRendering } from "../../../__app_modules/school/server/rendering/documents/PrintDocumentRendering.mjs";
+import { PublishPrintDocument } from "../../../__app_modules/school/server/application/documents/PublishPrintDocument.mjs";
+import { ResolveCardScan } from "../../../__app_modules/school/server/application/documents/ResolveCardScan.mjs";
+import { YamlAllocationStore } from "../../../__app_modules/school/server/adapters/documents/YamlAllocationStore.mjs";
+import { DOCUMENT_SOURCE_SCHEMA } from "../../../__app_modules/school/server/domain/documents/documentSource.mjs";
 
 // The calibration sheet scanned 2026-07-30 21:16:43 (quizScanRecorder.test.mjs's
 // own fixture, reused verbatim) — decodes to testId '0123456' with a handful of

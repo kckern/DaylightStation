@@ -1,6 +1,6 @@
 /** Browser journeys never mutate the household. HTTP persistence has its own isolated suite. */
-import { portionFactor, scaleFoodPortion } from "../../../../modules/health/portable/contracts/health/foodQuantity.mjs";
-import { numericFoodPatches } from "../../../../modules/health/portable/contracts/health/foodNumericEdit.mjs";
+import { portionFactor, scaleFoodPortion } from "../../../../__app_modules/health/portable/contracts/health/foodQuantity.mjs";
+import { numericFoodPatches } from "../../../../__app_modules/health/portable/contracts/health/foodNumericEdit.mjs";
 const PIXEL_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN1kAAAAASUVORK5CYII=', 'base64');
 export async function installHealthFixtures(page, { items = [], foods = [], budgetBase = 2000, exercise = 0 } = {}) {
   const state = { items: structuredClone(items), foods: structuredClone(foods), requests: [], unexpected: [], deleted: new Map(), holdCapture: null };

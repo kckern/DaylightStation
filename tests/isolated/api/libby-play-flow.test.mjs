@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
-import request from '../../preimplementation/application-modules/drivers/content-api-request.mjs';
+import request from '../../_lib/memory-http/content-api-request.mjs';
 import { describe, expect, it, vi } from 'vitest';
 import { createContentRegistry } from '#composition/contentRegistry.mjs';
-import { createApiRouters } from "../../../backend/src/5_composition/modules/contentApi.mjs";
+import { createApiRouters } from "../../../__backend/src/5_composition/modules/contentApi.mjs";
 import { LibbyStreamLeaseService } from '#adapters/content/media/libby/LibbyStreamLeaseService.mjs';
 
 describe('Libby browser playback flow', () => {

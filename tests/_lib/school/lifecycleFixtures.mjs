@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
-import { documentPdfTheme } from "../../../modules/school/server/rendering/documents/documentPdfTheme.mjs";
+import { documentPdfTheme } from "../../../__app_modules/school/server/rendering/documents/documentPdfTheme.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, '..', '..', '_fixtures', 'school', 'curriculum');

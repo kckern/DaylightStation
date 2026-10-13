@@ -1,6 +1,6 @@
-import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import request from '../../../_lib/memory-http/request.mjs';
 import express from 'express';
-import { createArtRouter } from "../../../../modules/art/server/api/art.mjs";
+import { createArtRouter } from "../../../../__app_modules/art/server/api/art.mjs";
 
 const noopLogger = { debug: () => {}, warn: () => {}, error: () => {}, info: () => {} };
 

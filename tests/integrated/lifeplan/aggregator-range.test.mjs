@@ -5,8 +5,8 @@
  * with per-day sources, categories, and summaries.
  */
 import { describe, it, expect } from '@jest/globals';
-import { LifelogAggregator } from "../../../capabilities/lifelog/server/application/LifelogAggregator.mjs";
-import { HarvestedLifelogSourceRegistry } from "../../../capabilities/lifelog/server/adapters/HarvestedLifelogSourceRegistry.mjs";
+import { LifelogAggregator } from "../../../__capabilities/lifelog/server/application/LifelogAggregator.mjs";
+import { HarvestedLifelogSourceRegistry } from "../../../__capabilities/lifelog/server/adapters/HarvestedLifelogSourceRegistry.mjs";
 
 describe('LifelogAggregator — range aggregation (integrated)', () => {
   function buildAggregator(fileData = {}) {

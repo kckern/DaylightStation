@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { YamlNutriListDatastore } from "../../../modules/health/server/adapters/persistence/yaml/YamlNutriListDatastore.mjs";
+import { YamlNutriListDatastore } from "../../../__app_modules/health/server/adapters/persistence/yaml/YamlNutriListDatastore.mjs";
 
 describe('YamlNutriListDatastore date guard', () => {
   let tmpDir;

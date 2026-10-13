@@ -9,13 +9,13 @@ module.exports = {
     // jimp ships ESM with dynamic imports that break under Jest's VM transform;
     // point directly to its pre-built CJS dist so require() resolves cleanly.
     '^jimp$': '<rootDir>/node_modules/jimp/dist/commonjs/index.js',
-    '^#system/(.*)$': '<rootDir>/backend/src/0_system/$1',
-    '^#domains/(.*)$': '<rootDir>/backend/src/2_domains/$1',
-    '^#adapters/(.*)$': '<rootDir>/backend/src/1_adapters/$1',
-    '^#rendering/(.*)$': '<rootDir>/backend/src/1_rendering/$1',
-    '^#apps/(.*)$': '<rootDir>/backend/src/3_applications/$1',
-    '^#api/(.*)$': '<rootDir>/backend/src/4_api/$1',
-    '^#backend/(.*)$': '<rootDir>/backend/$1',
+    '^#system/(.*)$': '<rootDir>/__backend/src/0_system/$1',
+    '^#domains/(.*)$': '<rootDir>/__backend/src/2_domains/$1',
+    '^#adapters/(.*)$': '<rootDir>/__backend/src/1_adapters/$1',
+    '^#rendering/(.*)$': '<rootDir>/__backend/src/1_rendering/$1',
+    '^#apps/(.*)$': '<rootDir>/__backend/src/3_applications/$1',
+    '^#api/(.*)$': '<rootDir>/__backend/src/4_api/$1',
+    '^#backend/(.*)$': '<rootDir>/__backend/$1',
     '^#frontend/(.*)$': '<rootDir>/frontend/src/$1',
     '^@/(.*)$': '<rootDir>/frontend/src/$1',
     '^#extensions/(.*)$': '<rootDir>/_extensions/$1',
@@ -45,8 +45,8 @@ module.exports = {
   ],
   // Coverage configuration
   collectCoverageFrom: [
-    'backend/lib/**/*.{js,mjs}',
-    'backend/routers/**/*.{js,mjs}',
+    '__backend/lib/**/*.{js,mjs}',
+    '__backend/routers/**/*.{js,mjs}',
     'frontend/src/**/*.{js,jsx,mjs}',
     '!**/*.test.{js,mjs}',
     '!**/node_modules/**'

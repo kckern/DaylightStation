@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/audit-layer-imports.mjs
 // Layer-import ratchet. Scans legacy backend and destination server layers per
-// docs/reference/core/layers-of-abstraction/. Compares counts to
+// __docs/reference/core/layers-of-abstraction/. Compares counts to
 // scripts/audit-baseline.json; exits 1 if any rule's count INCREASED.
 // Usage:
 //   node scripts/audit-layer-imports.mjs             # check against baseline
@@ -19,7 +19,7 @@ import { declaredServerEntry } from './owner-entry-policy.mjs';
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 
 const IMPORT_RE = /^\s*(?:import\b[^'"]*|export\b[^'"]*from\s*)['"]([^'"]+)['"]/;
-const SOURCE_ROOT = '/backend/src/';
+const SOURCE_ROOT = '/__backend/src/';
 
 // Decision D6: every domain belongs to a dependency level. Feature domains
 // may depend on shared/foundation domains; aggregators may also depend on
@@ -75,7 +75,7 @@ function adapterFamily(filePath) {
 
 // exempt: composition root (5_composition) — the one sanctioned cross-layer zone
 const isCompositionRoot = (f) => matchesAuditLayer(f, '5_composition/');
-const isCompositionSource = (f) => isCompositionRoot(f) || /(?:^|\/)backend\/src\/app\.mjs$/.test(f);
+const isCompositionSource = (f) => isCompositionRoot(f) || /(?:^|\/)__backend\/src\/app\.mjs$/.test(f);
 const isTest = (f) => /(^|\/)(__tests__|test|tests|fixtures)(\/|$)/.test(f) ||
   /\.(test|spec)\.(mjs|js|cjs)$/.test(f);
 
@@ -122,10 +122,10 @@ export const RULES = [
   { rule: 'api-no-node-infrastructure', layer: '4_api/', bad: s => /^(node:)?(fs|fs\/promises|path|os|stream|child_process|crypto)$/.test(s) },
   // Composition binds capabilities; it must not perform persistence or spawn
   // processes itself. Named adapters own those mechanics.
-  { rule: 'composition-no-fileio', layer: 'backend/src/', bad: (s, p, source) => isCompositionSource(source) && /(?:#system\/utils\/FileIO\.mjs$|0_system\/utils\/FileIO\.mjs$)/.test(s) },
-  { rule: 'composition-no-direct-runtime-io', layer: 'backend/src/', bad: (s, p, source) => isCompositionSource(source) && /^(node:)?(fs|fs\/promises|child_process)$/.test(s) },
-  { rule: 'no-applications-alias', layer: 'backend/src/', bad: s => /^#applications\//.test(s) },
-  { rule: 'no-deep-relative-layer-cross', layer: 'backend/src/', bad: s => /^(\.\.\/){3,}.*(0_system|1_adapters|1_rendering|2_domains|3_applications|4_api)\//.test(s) },
+  { rule: 'composition-no-fileio', layer: '__backend/src/', bad: (s, p, source) => isCompositionSource(source) && /(?:#system\/utils\/FileIO\.mjs$|0_system\/utils\/FileIO\.mjs$)/.test(s) },
+  { rule: 'composition-no-direct-runtime-io', layer: '__backend/src/', bad: (s, p, source) => isCompositionSource(source) && /^(node:)?(fs|fs\/promises|child_process)$/.test(s) },
+  { rule: 'no-applications-alias', layer: '__backend/src/', bad: s => /^#applications\//.test(s) },
+  { rule: 'no-deep-relative-layer-cross', layer: '__backend/src/', bad: s => /^(\.\.\/){3,}.*(0_system|1_adapters|1_rendering|2_domains|3_applications|4_api)\//.test(s) },
 ];
 
 // AST semantic rules. These cannot be expressed accurately as line regexes:
@@ -180,11 +180,11 @@ export const CONTENT_RULES = [
   // UserDataService is deprecated (Task P2.8): no NEW runtime consumers outside
   // its home or a composition root. Composition is explicitly allowed to bind
   // its legacy methods to narrow ports while the service is retired.
-  { rule: 'no-userdataservice', layer: 'backend/src/', re: /userDataService/i, exclude: ['0_system/config/', '5_composition/', 'src/app.mjs'] },
+  { rule: 'no-userdataservice', layer: '__backend/src/', re: /userDataService/i, exclude: ['0_system/config/', '5_composition/', 'src/app.mjs'] },
   // Serialization ownership (audit D-3): entities must not define their storage
   // format; datastores own hydration/dehydration. Counts toJSON() method
   // DEFINITIONS (line starts with the method), not `.toJSON()` call sites.
-  // Migration: docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
+  // Migration: __docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
   { rule: 'domains-tojson', layer: '2_domains/', re: /^\s*toJSON\s*\(\s*\)\s*\{/ },
   // Stored-record hydration belongs to adapters/application mappers, not domain
   // entities or value objects. Constructors accept already-reconstituted props.
@@ -208,12 +208,12 @@ export const CONTENT_RULES = [
   //                                    domains and never move
   {
     rule: 'no-storage-paths',
-    // backend/src plus shared/ — library code that several entry points reuse.
+    // __backend/src plus shared/ — library code that several entry points reuse.
     // cli/ is deliberately NOT here: a CLI is its own composition root, so
     // naming a path there is legitimate wiring, not a layer violation. What
     // the chess archive bug actually showed is that a reader and a writer must
     // share one constant; that is `npm run audit:paths`'s job, not this rule's.
-    layer: ['backend/src/', 'shared/'],
+    layer: ['__backend/src/', 'shared/'],
     re: /['"`]household\/[a-z]|'household'\s*,\s*'/,
     exclude: ['1_adapters/', '0_system/config/', '5_composition/', 'src/app.mjs', '3_applications/admin/'],
   },
@@ -433,13 +433,13 @@ const isIndexBarrel = (file, portsOnly = false) => {
 
 function projectSpecifier(filePath, specifier) {
   const aliases = {
-    '#system/': 'backend/src/0_system/',
-    '#adapters/': 'backend/src/1_adapters/',
-    '#rendering/': 'backend/src/1_rendering/',
-    '#domains/': 'backend/src/2_domains/',
-    '#apps/': 'backend/src/3_applications/',
-    '#api/': 'backend/src/4_api/',
-    '#composition/': 'backend/src/5_composition/',
+    '#system/': '__backend/src/0_system/',
+    '#adapters/': '__backend/src/1_adapters/',
+    '#rendering/': '__backend/src/1_rendering/',
+    '#domains/': '__backend/src/2_domains/',
+    '#apps/': '__backend/src/3_applications/',
+    '#api/': '__backend/src/4_api/',
+    '#composition/': '__backend/src/5_composition/',
   };
   for (const [prefix, target] of Object.entries(aliases)) {
     if (specifier.startsWith(prefix)) return resolve(target, specifier.slice(prefix.length));
@@ -627,11 +627,11 @@ function walk(dir, acc = []) {
   return acc;
 }
 
-const SOURCE_ROOTS = ['backend/src', 'shared', ...DESTINATION_ROOTS];
+const SOURCE_ROOTS = ['__backend/src', 'shared', ...DESTINATION_ROOTS];
 function isLayerSource(file) {
   const destination = destinationServerPath(file);
   return !isTest(file) && (destination ? /\.(mjs|js|cjs)$/.test(file) :
-    (file.startsWith('backend/src/') || file.startsWith('shared/') || file.startsWith('cli/')) && file.endsWith('.mjs'));
+    (file.startsWith('__backend/src/') || file.startsWith('shared/') || file.startsWith('cli/')) && file.endsWith('.mjs'));
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

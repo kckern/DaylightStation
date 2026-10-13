@@ -1,0 +1,1298 @@
+/**
+ * SegmentMap — engraved-score barline grammar.
+ *
+ * One hairline rule. One quiet separator between segments. The RULE ROW sits
+ * at the TOP of the band (design wave 4), riding in the footer's overlap so it
+ * reads as the video's own baseline; the names hang BELOW it, tempo term
+ * italic. Progress is read from the FILL — the sounding segment's rule
+ * thickens and sweeps — with the playhead reduced to a plain brass hairline.
+ * Nothing glows.
+ *
+ * THE FUTURE IS VISIBLE. The lane a segment has not reached yet is the shape
+ * of the whole piece, and at wave 3's weight ("--programme-edge", a 28%-alpha
+ * hairline on near-black) it simply was not there: the band showed where we
+ * are and refused to show what is left. The lane is now 2px of `--ink-soft`,
+ * and the ladder that reads progress is elapsed(bright) > future(dim) with the
+ * active segment in brass at double the weight.
+ *
+ * ONE LINE EACH, AND THE SOUNDING ONE GETS ITS ROOM (design wave 7). Nothing on
+ * this rail wraps any more. Heading and gloss are both single lines with an
+ * ellipsis; the segment that is SOUNDING widens until neither of them is cut,
+ * and its neighbours compress. That supersedes the two-line heading clamp (wave
+ * 5) and the two-line gloss container query (the live-defects round) — both are
+ * gone rather than layered under, because a rail with two mechanisms for "the
+ * name did not fit" has no legible rule at all. The widths themselves are
+ * solved in JS (`../band.js`, `accordionShares`); this sheet only says what a
+ * segment looks like and how it moves between two widths.
+ *
+ * Tokens come from .surround-frame; the literal fallbacks keep the module honest
+ * if it is ever rendered outside the frame.
+ */
+
+/* The band's shared literals - the bond's ground and the band's one radius.
+   See `_tokens.scss`: the frame publishes both as custom properties on the
+   band's region, and these are the fallbacks that keep this module honest when
+   it is rendered outside the frame. One literal, one file. */
+@use "../../../../../__capabilities/playback/browser/surround/tokens" as *;
+
+.surround-segment-map {
+  /* NOT `height: 100%`. The band region is content-sized now, so a percentage
+     height here would be circular — the frame stretches this module into its
+     region instead (see `.surround-frame__region--bottom`).
+     The band's own floor, and it is TYPOGRAPHIC: the rule lane, the clearance
+     under it, the segment name, the gloss and the padding below.
+     Border-box, so the padding is inside the number rather than added to it
+     (content-box would have made the band 10px taller without saying so).
+
+     DESIGN WAVE 7 MAKES THIS FLOOR THE WHOLE STORY, not just the short case.
+     Waves 5 and 6 left the module ceiling-less because a heading could wrap to
+     two lines and a gloss to two more, so the band had to be free to grow — and
+     it did, to 89.8px at 1280x720, which is 27px the listening band below never
+     got back. Nothing wraps now, so the band's height is CONSTANT at every
+     screen and every piece: lane (4px) + the row's clearance (0.55em of 1.05rem
+     = 9.24px) + one name line (1.05rem x 1.15 = 19.32px) + the gloss's
+     clearance (0.2em of 0.74rem = 2.37px) + one gloss line (0.74rem x 1.2 =
+     14.21px) + the bottom padding (5.6px) = 54.74px, inside this 62.4px floor
+     with 7.66px of air. The floor is what the band IS now. */
+  min-height: 3.9rem;
+  box-sizing: border-box;          /* the floor is the BAND, padding included */
+  /* NO TOP PADDING. The rule row has to sit tight against the video's bottom
+     edge — the footer already rides up over it by `--band-overlap`, and any
+     padding here would spend that overlap on empty black, which is exactly the
+     gap the user saw. Zero puts the lane inside the overlap zone.
+     The BOTTOM padding is a token because the bond has to reach THROUGH it: the
+     panel and its connector hang below the rule's own box by exactly this much,
+     so their ground meets the listening band's panel at the seam with nothing
+     between. Declaring the number twice is how that join drifts. */
+  --band-pad-bottom: 0.35rem;
+  /* How tall the bond's connector runs along the seam — see `__bond-connector`,
+     where the number is derived from the band's own measured slack. */
+  --bond-shoulder: 10px;
+  padding: 0 1.1rem var(--band-pad-bottom);
+  display: flex;
+  align-items: flex-start;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  color: var(--ink, #2a1d07);
+}
+
+/* THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and the
+   playhead, and nothing else — no names, no glosses, no numeral gutter, because
+   the component renders no text row at all in this density. The floor drops to
+   what that actually needs (the lane's 4px plus the bottom padding), so a
+   bars-only rail is a bars-only rail's height rather than a named rail's height
+   with the type invisible inside it.
+   This is what makes `band.nowHeading: 'auto'` a real decision: with no names
+   on the rule, the listening band is the only surface left that can say what is
+   sounding, so its heading comes back on. Note that a REGION floor authored in
+   the definition (`{ module: segment-map, height: 64 }`) still wins over this
+   one — a definition that turns the rail compact should lower it too. */
+.surround-segment-map--bars {
+  min-height: calc(4px + var(--band-pad-bottom));
+}
+
+/* ---------------------------------------------------------------------------
+   THE GROUP HEADINGS — the composed rail only.
+
+   A container's rail is a PROGRAMME, and a programme names the set once above
+   the works it contains: "Études, Op. 10" over its twelve, "Polonaise No. 6"
+   over its own single entry. The rule and the segment names below it are
+   untouched; this is one row added above them.
+
+   IT COSTS THE RULE ITS TOP EDGE, and that is deliberate. Design wave 4 put the
+   rule tight against the video's bottom edge because there was nothing above it
+   to put; a set heading is content that belongs above the works it names, and
+   the alternative — labels below the segment names — would put a heading under
+   the thing it heads. The band grows by exactly this row (the bottom region's
+   authored height is a FLOOR, so the frame lets it), and only for a rail that
+   has groups: a single work renders no row at all, so the Eroica's geometry is
+   unchanged to the pixel.
+
+   ITS HEIGHT IS RESERVED, NOT CONTENT-DERIVED. One line, `nowrap`, ellipsized,
+   at a fixed height — so a long set title, or a run whose label does not fit,
+   cannot make the band taller mid-programme. That is the frame's no-rug-pull
+   law, and it is the same reason the segment names below stopped wrapping in
+   wave 7.
+   --------------------------------------------------------------------------- */
+.surround-segment-map--grouped {
+  /* The row's reserved height: one line of the label face (0.76rem) at 1.2, plus
+     the clearance that separates it from the rule under it. Constant, and
+     declared once — the min-height below and the rule's own height both read
+     it, so the three cannot drift. */
+  --group-row: 1.2rem;
+  --group-rows: var(--group-row);
+  /* The row and the rule stack; the root is a row-flex everywhere else and one
+     child is all it has ever had. */
+  flex-direction: column;
+  align-items: stretch;
+  /* The named rail's floor plus the row. Not `auto`: the floor is what the band
+     IS (see the block at the top of this file), and a rail with groups has one
+     more line in it. */
+  min-height: calc(3.9rem + var(--group-rows));
+}
+
+.surround-segment-map--grouped .surround-segment-map__groups {
+  flex: 0 0 var(--group-row);
+  height: var(--group-row);
+  display: flex;
+  /* STRETCH, NOT `flex-end`. The labels are seek targets, and an item sized to
+     its own line box gives the row a 16px-tall hit strip inside a much taller
+     band — measured at 702x16 on the office screen, which is a target you have
+     to aim at rather than one you can hit. Each label now fills the row's full
+     height across its own share of the rule, so the whole area above a run's
+     segments seeks into that run. The type still sits on the row's baseline —
+     see `__group`, which does the `flex-end` itself. */
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The rule takes what is left, so `height: 100%` on the segments inside it still
+   resolves against a definite box — the same box they have always had, moved
+   down by the row above. */
+.surround-segment-map--grouped .surround-segment-map__rule {
+  flex: 1 1 auto;
+  height: calc(100% - var(--group-rows));
+}
+
+/* One heading per run. Set in the DISPLAY face, quieter and smaller than the
+   segment names under the rule: the eye should find the work first and the set
+   second, which is the opposite weighting from a title bar.
+
+   NOT SET IN CAPS, AND THAT IS A MEASUREMENT, NOT A TASTE. The first draft was
+   uppercase with 0.06em of tracking, which is the conventional way to set a
+   programme's set heading — and at 1280x720 it cost about a third of the
+   characters. Every one of the seven polonaise headings ellipsized to
+   "POLONAISE NO. …", which names nothing; in mixed case at the same measure
+   they read. A heading nobody can finish reading is not a heading, and the
+   convention is worth less than the words.
+
+   `flex-basis` is the run's share of the rail's sounding time and comes from the
+   component; `min-width: 0` is what lets the ellipsis happen at all inside a
+   flex item. */
+.surround-segment-map__group {
+  flex: 0 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  /* The box is the whole row's height (the hit target — see `__groups`); the
+     TYPE inside it sits on the bottom edge, which is where `align-items:
+     flex-end` on the parent used to put it. The probe overrides this back to
+     `inline-block` so a ruler still measures a plain content-width box. */
+  display: flex;
+  align-items: flex-end;
+  /* The same text inset the segment's own text column carries, so a heading
+     starts on the left edge of the first work it names rather than a hair
+     inside it. */
+  padding-inline: 0.55em 0.5em;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  /* THE FLIP (design wave 10). This label used to be set in `--ink-soft`, which
+     measured 3.4:1 against the label row's ground while the bare movement
+     numerals below it measured 9.4:1 on theirs — the three words that give the
+     piece its shape were the DIMMEST text on the rail and twenty-two integers
+     were the brightest. The ladder is now the other way up: the part and set
+     names are the loudest thing here, and the ordinals are the annotation. */
+  color: var(--ink, #2a1d07);
+  opacity: 0.92;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.surround-segment-map__group--outer {
+  color: var(--ink, #332b20);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.surround-segment-map__group--clickable,
+.surround-segment-map__segment--clickable {
+  cursor: pointer;
+}
+
+/* The staff rule itself. Segments hang from it; the playhead rides over it. */
+.surround-segment-map__rule {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+}
+
+/* No horizontal padding here: the padding used to open a gap in the RULE at
+   every segment boundary, which is exactly the "clutter, fewer gaps" the
+   redesign is removing. The rule now runs unbroken and only the separator marks
+   a segment end; the text inset lives on the text row instead.
+   `flex: 0 0 auto` + an inline width percentage: the ACCORDION sets that
+   percentage.
+
+   THERE IS NO `transition` HERE, AND ITS ABSENCE IS THE FIX (review finding
+   I2). A CSS transition on `width` is a SECOND clock: the widths would ease
+   over 420ms while the playhead — whose position is derived from those same
+   widths — ran on its own 120ms ramp against the FINAL values. Measured on the
+   Eroica at 1280x720, that put the cursor ~70px inside the elapsed fill's
+   still-painted right edge for ~300ms at every segment boundary, which is
+   exactly the desynchronisation the brief forbade. The widths are interpolated
+   in JS instead (`../band.js`, `useEasedShares`) on the frame's own easing, and
+   the segment, the playhead, the bond and the connector are all published from
+   that one array in the same render. Nothing is left for them to drift
+   against. */
+.surround-segment-map__segment {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------------------
+   THE BOND (design wave 7) — the active segment, and the listening band's NOW
+   register, drawn as ONE shape.
+
+   The user's complaint was that the NOW register reprinted the segment heading
+   the rail already prints directly above it: "that seems wasteful". The answer
+   is not a smaller heading, it is to make the RELATIONSHIP visual — a lifted
+   panel under the sounding segment, the same lifted panel under the register,
+   and a shoulder joining them along the band's seam. Once the eye can follow the
+   bond, the name never needs saying twice.
+
+   IT IS ONE MOVING ELEMENT, not a per-segment background that lights and
+   unlights. A highlight that TRAVELS is followed; one that blinks on somewhere
+   else is not, and being followed is the entire mechanism.
+
+   IT HANGS BELOW THE RULE'S BOX by the band's bottom padding, so its ground
+   reaches the region's own bottom edge — which is where the listening band's
+   panel starts. Anything less and there is a hairline of band ground between
+   the two halves of a shape that has to read as continuous.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__bond {
+  position: absolute;
+  top: 0;
+  bottom: calc(var(--band-pad-bottom) * -1);
+  left: var(--bond-left, 0%);
+  width: var(--bond-width, 0%);
+  background: var(--bond-ground, #{$bond-ground});
+  /* Rounded at the TOP only — the band's ONE radius token, and the rule it
+     belongs to: every corner on the OUTSIDE of the bond's silhouette carries
+     `--bond-radius`, every corner where two of its parts weld is square.
+     The bottom edge is not an edge: it is where this panel becomes the waist and
+     then the register's panel, and a radius there would draw a seam across the
+     middle of one shape. */
+  border-radius: var(--bond-radius, #{$bond-radius}) var(--bond-radius, #{$bond-radius}) 0 0;
+  pointer-events: none;
+  /* THERE IS NO `transition` ON `left` OR `width` HERE, and its absence is the
+     fix (design wave 9). Wave 7 kept one, reasoning that the bond TRAVELS
+     between segments rather than tracking one, so only its endpoints had to be
+     right. They were, and the journey was not: the segment widths eased in JS
+     from the first frame while this box did not begin moving until React had
+     committed the new `left`, so the eye read one move as two — the rail
+     right-sizing, and then the highlight sliding into it. The bond's start and
+     width now ride in the same interpolated vector as the shares
+     (`../band.js`, `useEasedVector`), so this element is repositioned every
+     animation frame by the one clock the rest of the rail already moves on.
+     Only the FADE is still a CSS transition, because "nothing is sounding" is a
+     state change rather than a move. */
+  transition: opacity var(--accordion-ms, 420ms) linear;
+}
+
+/* Nothing is sounding — the applause after the final chord. The bond has nothing
+   to bind, so it goes rather than sitting over the last segment telling the
+   viewer it is still playing. */
+.surround-segment-map__bond[data-bonded="false"] {
+  opacity: 0;
+}
+
+/* THE WAIST. The thin middle of the shape, running along the seam and spanning
+   the HULL of the sounding segment and the NOW panel (`bondConnector` in
+   ../band.js) — so the panel's whole top edge and the segment's whole bottom
+   edge are both welded to it, and there is no point-contact anywhere in the
+   bond. Wave 7 ran it only as far as the panel's near edge, which left the two
+   lit areas as diagonal neighbours touching at a corner.
+   ITS HEIGHT IS MEASURED, AND IT IS NOT THE BOTTOM PADDING. The first draft
+   was exactly `--band-pad-bottom` (5.6px), which is the least that reaches the
+   seam — and rendered, it did not read: at ten feet a 5.6px strip of a ground
+   seven points lighter than the band is noise, not a bridge, which is the
+   "must not look like a bug" the brief warns about. The band has 14.89px of
+   empty run below the gloss's baseline (measured: gloss bottom at 49.11px in a
+   64px band), so 10px is a shoulder that reads with 4.9px still clear of the
+   type above it.
+   THE RADII ARE PER-CORNER AND COMPUTED, which is the band's one corner rule
+   applied to the one part of the shape whose corners are not fixed: at each end
+   of the waist either the segment continues upward or the panel continues
+   downward, and the corner that neither continues into is the one on the outside
+   of the silhouette. The component publishes the four; a `0` is a weld.
+   NO `transition` HERE either — it is repositioned every frame from the same
+   interpolated vector the bond and the segments are (design wave 9). */
+.surround-segment-map__bond-connector {
+  position: absolute;
+  bottom: calc(var(--band-pad-bottom) * -1);
+  height: var(--bond-shoulder);
+  left: var(--connector-left, 0%);
+  width: var(--connector-width, 0%);
+  background: var(--bond-ground, #{$bond-ground});
+  border-radius:
+    var(--connector-tl, 0) var(--connector-tr, 0)
+    var(--connector-br, 0) var(--connector-bl, 0);
+  pointer-events: none;
+  transition: opacity var(--accordion-ms, 420ms) linear;
+}
+
+/* Nothing sounding — the applause after the final chord, or the tuning before
+   the first note. There is nothing to bond, so the whole shape goes: the panel,
+   the waist and (in the band below) the NOW register's own panel. */
+.surround-segment-map__bond-connector[data-bonded="false"] {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   THE TEXT ROW — a numeral gutter and a text column.
+
+   Design wave 7. `III. Scherzo. Allegro vivace` used to be one inline run, so
+   the gloss beneath it started at the segment's left edge — UNDER the numeral —
+   and the two lines read as ragged rather than set. The numeral is an INDEX
+   MARK, not the first word of the title, and an index mark belongs in a gutter.
+
+   THE GUTTER IS RESOLVED ONCE PER RAIL. `--numeral-chars` is published by the
+   component as the longest numeral the PIECE has (IV. is 3, VIII. is 5), so
+   every segment on one rail gets the same track and every heading on it starts
+   on the same left edge. Per-segment sizing would have given a rail of I./II./
+   III./IV. four different text edges, which is the defect one level down.
+   `ch` is the right unit for a column of numerals: it is the advance of a
+   figure in the face actually being used, so a font swap moves the gutter with
+   the glyphs instead of leaving them overlapping or adrift.
+   THE COEFFICIENT IS MEASURED. A plain `N * 1ch` is nearly twice too wide —
+   Cormorant's lining figures are far broader than its small-cap I/V/X, and a
+   Roman numeral is not a number. Measured in the harness at the frame's own
+   1.05rem (1ch = 8.00px): I. 7.25 / II. 11.86 / III. 16.48 / IV. 13.86 /
+   VII. 19.48 / VIII. 24.09 px — a clean linear fit of 4.61px per character plus
+   1.03px, i.e. 0.576ch + 0.129ch. 0.63ch + 0.25ch is that fit with ~2-3px of
+   margin at every length in the table, so a face whose Roman letters run up to
+   ~9% wider against its figures still fits its track.
+   The 0.4em is the air AFTER the numeral, and it is `padding-right` ON the
+   numeral rather than part of the track: the mark is right-aligned in its
+   gutter (a numbered list rags on the LEFT, not against the text it numbers),
+   so air added to the track alone would open on the wrong side and leave the
+   numeral touching the name.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__text-row {
+  display: grid;
+  grid-template-columns: var(--numeral-gutter) minmax(0, 1fr);
+  align-items: baseline;
+  min-width: 0;
+  /* The row carries the type size, so the `em`s below (the clearance, the
+     gutter, the insets) all resolve against the heading's own size — which is
+     what keeps the rule lane's clearance the same number it was when it lived
+     on the heading itself. */
+  font-size: 1.05rem;
+  --numeral-gutter: calc(var(--numeral-chars, 3) * 0.63ch + 0.25ch + 0.4em);
+  /* The gap to the rule is PADDING on the row rather than a margin on the
+     heading, because the row is now the box that has to clear the lane — and
+     the runtime gate measures the HEADING's box, which starts after this
+     padding, so the wave-4 clearance law reads exactly what it always did. */
+  padding: 0.55em 0.5em 0 0.55em;
+}
+
+/* THE INDEX MARK'S OWN REGISTER. Small caps and lining figures, at a lower
+   opacity than the name it indexes: it is an ordinal, not content, and at full
+   weight it competed with the title it was supposed to be numbering. Right-
+   aligned in its track so a rail of I./II./III./IV. reads as a numbered list
+   rather than as four marks at four different distances from their names. */
+.surround-segment-map__numeral {
+  grid-column: 1;
+  justify-self: end;
+  font-variant-numeric: lining-nums;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.04em;
+  font-size: 0.92em;
+  font-weight: 600;
+  opacity: 0.5;
+  white-space: nowrap;
+  padding-right: 0.4em;            /* the air BETWEEN the mark and the name */
+}
+
+/* The text column. Heading and gloss both start at ITS left edge — that is the
+   whole job. `min-width: 0` is what lets the ellipses below actually fire
+   inside a grid track. */
+.surround-segment-map__text {
+  grid-column: 2;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   THE RULER (task 6c) — one per rail, and the only thing on it that is measured
+   rather than painted.
+
+   The rail has two questions no rendered segment can answer. How wide is this
+   rail's segment FURNITURE (the numeral's gutter and the text insets), and how
+   wide would each of its names set on one line — including the names of
+   segments that, in chip mode, are rendering no name at all. Measuring the first
+   off a live segment would read a box the accordion had already resized, which
+   is a decision feeding on its own output; measuring the second is impossible,
+   because the element is not there.
+
+   `width: max-content` is what makes it a ruler rather than a copy of a segment:
+   the row's text track sizes to the string instead of to a share of the rule, so
+   the number it reports is the string's own width and the difference between the
+   row and its text column is the furniture. The gutter track is an explicitly
+   sized grid track either way, so it contributes the same chrome here as there.
+
+   `visibility: hidden` rather than `display: none`, for the reason
+   `CueTicker`'s probe carries the same note: a box with no display has no
+   layout, and layout is the entire question being asked. */
+.surround-segment-map__probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+  width: max-content;
+
+  /* AND NOTHING HERE OVERRIDES THE CLIPPING, which is the point of sizing the
+     row to its content rather than to a share of the rule: a box that is already
+     as wide as its text never overflows, so the segment's own
+     `overflow: hidden` and its ellipsis are inert inside the ruler without being
+     turned off. The ruler measures the shipped rules, unaltered. */
+  .surround-segment-map__text-row {
+    width: max-content;
+  }
+
+  /* THE FOLD'S TWO RULERS (design wave 10) — the group label and the count
+     badge, each at its own content width. Both are laid out as flex items where
+     they really live, so they are blockified there; `inline-block` is what gives
+     them the same box here without a flex parent, and `max-width: none` keeps a
+     label from being clipped by a constraint the row imposes and the ruler must
+     not. What is measured is what the rail paints, including the padding — that
+     is the whole width a fold is sized by. */
+  .surround-segment-map__group {
+    display: inline-block;
+    width: max-content;
+    max-width: none;
+    flex: none;
+  }
+
+  /* THE BADGE KEEPS ITS OWN DISPLAY. It is a flex CONTAINER now, not a flex
+     item — the two numbers and the rule between them are laid out by it — so
+     blockifying it here would measure a box the rail never paints. */
+  .surround-segment-map__fold-count {
+    width: max-content;
+    max-width: none;
+    flex: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE CHIP (task 6c, re-sized task 6d) — what an inactive segment wears when
+   the rail cannot afford names.
+
+   TWENTY-ONE NOCTURNES ON A 1280px RULE IS ~61px EACH against names that want
+   ~200px: short by a factor of three before the accordion opens the sounding
+   one, and 21 x this rail's 77px name floor is 1617px of rule that no screen in
+   the fleet has. The floor has not been degraded there, it has RUN OUT, and the
+   rail has to say so rather than quietly drawing 61px segments that claim to be
+   floored.
+
+   A CHIP IS A DIFFERENT THING FROM A TRIMMED NAME. Text at zero opacity, or a
+   name clipped to two glyphs, is a rail still pretending to be a contents page;
+   a numbered mark is a rail that has changed what it is saying — "twenty-one
+   pieces, this is the ninth" — which is a true and useful statement at a width
+   where the name is not. So the name is not rendered at all, and the mark that
+   replaces it is the SAME mark the numeral gutter sets, without its point, so
+   the chip and the sounding segment's own numeral can never disagree.
+
+   THE SWITCH IS ALL OR NOTHING ACROSS THE RAIL (`railWearsChips`), and it is a
+   constant of the piece rather than of this instant — a mix of chips and names,
+   or a rail that changed density at a segment boundary, reads as a bug.
+
+   NO CIRCLE, AND ROOT-SCALED — the task 6d reversal of task 6c's own call.
+   The circle was REM-fixed at 0.62rem/20px, which meant the mark that was
+   supposed to be legible "from across the room" was the one piece of type in
+   this frame that did NOT answer the frame's own ten-foot argument — it read
+   as a smudge on the office screen once the rest of the rail was checked
+   against `labelFloorPx`. This mark IS a label — short, tracked, small-caps,
+   read as a shape — so it now takes the SAME published floor every other
+   label in the frame takes (`--label-floor`, `fit.js`), instead of a second
+   floor invented for it. A circle sized to hold that floor's largest case
+   (two digits at the 1920 root's 17.28px) would be ~30px across, which is
+   BIGGER than the 20px the chip floor (`SEGMENT_CHIP_FLOOR_PX`, `../band.js`)
+   budgets it — the exact "enlarging the chip naively makes the overrun worse"
+   trap the task warned against, on the rail that is already tightest (see
+   `RAIL_CAPACITY` in the measure spec: the 960 root already overruns at the
+   OLD, smaller size). Dropping the ring and the padding it cost removes a
+   fixed cost the mark never needed — a numeral is legible on its own, the
+   ring was reading the mark's own opacity ladder for it — and what is left is
+   exactly as wide as the digits themselves, which is narrower than the old
+   circle at every root including the one where the floor asks for the most
+   room. `align-self: center` still centres it in the segment's bar; nothing
+   about the layout the accordion solves around it changes.
+
+   NO TRANSITION, EITHER WAY. The name-to-chip change is a change of what the
+   rail is rendering, not a move: there is nothing to interpolate between a
+   string and a mark, so `prefers-reduced-motion` has nothing to suppress here
+   and the accordion's own path (`../band.js`, `useEasedVector`) is unchanged.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__chip {
+  align-self: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  /* Clear of the rule lane by the same 0.55em the text row uses, so a chipped
+     rail and a named one hang their content off the same line — in EM, so it
+     stays proportioned to the mark's own (now root-scaled) size rather than
+     opening a gap that grows relative to the digits as the floor climbs. */
+  margin-top: 0.55em;
+  display: block;
+  /* THE TEN-FOOT LABEL FLOOR, MEASURED not invented — see the block comment
+     above. `$label-floor` is the anchor-root fallback for a chip rendered
+     outside the frame (a spec, a storybook); `--label-floor` is what
+     `SurroundFrame` actually publishes, root-scaled. */
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.35);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: lining-nums;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.02em;
+  color: var(--ink, #2a1d07);
+  white-space: nowrap;
+  /* The same three states the names carry, in the same order of loudness: the
+     future is the brighter quiet state, the elapsed the dimmer one.
+     DIMMER SINCE DESIGN WAVE 10 (0.78 -> 0.55, ~9.4:1 -> ~4.9:1). A bare
+     ordinal is the least informative mark on this rail — "35" names nothing on
+     its own — and at 0.78 it was outshouting the group label that names the
+     stretch of music it belongs to. See `__group` for the other half. */
+  opacity: 0.55;
+}
+
+.surround-segment-map__segment--elapsed .surround-segment-map__chip {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.9;
+}
+
+/* THE CHIP'S DISTANCE FROM THE BOND'S EDGE — AND WHY THERE IS NO RULE FOR IT.
+   The office screen showed `29` sitting 5px from the maroon panel's hard edge,
+   because a chip is centred in a segment at the chip floor (24px) and the digits
+   are ~14px of it. The first fix here was `padding-inline: 3px` on the chipped
+   segment, and it was WRONG in a way only the rendered rail shows: the segment's
+   padding insets the RULE LANE too, so the staff rule — which this stylesheet
+   goes out of its way to run unbroken ("No horizontal padding here", see
+   `__segment`) — came back as a dashed line, one dash per segment.
+   THE FOLD IS THE FIX. The reason the chips were at the floor at all is that 53
+   movements were competing for the rule; with the two parts that are not
+   sounding folded, Messiah's sounding group gets ~61px a segment instead of 32,
+   which puts ~23px between the digits and the edge without a rule for it. If a
+   rail ever crowds this way again the answer is the floor, not padding. */
+
+/* ---------------------------------------------------------------------------
+   THE FOLD (design wave 10) — a whole outer group, elided into one block.
+
+   WHY IT EXISTS. Messiah is 53 numbered movements. Chip mode already gave up on
+   names for it, and what was left was a rail spending three quarters of its
+   width setting bare integers for the two parts nobody is listening to, at 32px
+   each, unreadable at ten feet and meaningless up close ("35" names nothing).
+   Every outer group but the sounding one now collapses to one block, and the width that
+   frees goes to the group that is actually playing.
+
+   IT IS SIZED BY ITS LABEL, NOT BY ITS DURATION (`foldWidthPx`, `../band.js`).
+   A fold is an elision: the music it stands for is off the axis, so it has no
+   share of the axis to claim. It is exactly as wide as the wider of the group
+   label sitting above it and the count badge sitting inside it — which is also
+   what makes the label and the block read as one object rather than as a
+   heading floating over 231px of texture.
+
+   THE HATCH IS A LANE, NOT A CURTAIN. Its predecessor painted the full height of
+   the segment — a ~120px wall of diagonals from the rule to the band's floor,
+   the loudest texture on a rail whose actual content is type. It is now exactly
+   the height of the numerals it replaces, sitting on their own line, so a folded
+   run reads as a BREAK IN THAT LINE rather than as a shape behind it.
+
+   ELAPSED AND FUTURE ARE STILL VISIBLE INSIDE IT, which is the thing the first
+   fold lost. Two folds drawn in one texture put 28% of the rail beyond the
+   elapsed/future ladder that is the rail's whole job. The rule and its fill
+   above the block carry the state as they do everywhere else, and the hatch
+   itself is denser for a group already heard than for one still to come.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__segment--fold {
+  /* NO `opacity` ON THE BLOCK. The first fold dimmed the whole segment to .82,
+     which pulled the ELAPSED rule above it from the cream every other elapsed
+     segment paints down to a colour ~18% darker — two elapsed regions at two
+     brightnesses, side by side, with no difference in meaning behind it. What
+     is recessive here is the hatch's own alpha, and nothing else. */
+  --fold-hatch: rgba(233, 223, 200, 0.2);
+}
+
+.surround-segment-map__segment--future.surround-segment-map__segment--fold {
+  --fold-hatch: rgba(233, 223, 200, 0.11);
+}
+
+/* The hatched lane. `1em` of the label floor IS the chip's own height (the chip
+   sets `font-size: var(--label-floor)` at `line-height: 1`), and the same
+   0.55em top margin the chip and the text row use puts it on their line — so a
+   rail that mixes chips and folds hangs both off one baseline. */
+.surround-segment-map__fold-lane {
+  align-self: stretch;
+  font-size: var(--label-floor, #{$label-floor});
+  margin-top: 0.55em;
+  height: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--fold-hatch) 0, var(--fold-hatch) 1px,
+    transparent 1px, transparent 5px
+  );
+  /* The diagonals run to the block's own edges, which is what makes the block a
+     region rather than a rule with texture under it. */
+  overflow: hidden;
+}
+
+/* THE COUNT IS A BADGE, AND IT IS NOT A NUMERAL (design wave 10).
+   Its predecessor set the count in the chip's own face and size, in the chip's
+   own lane, so Messiah's rail read `21 22 23 24 25 26 27` across the first fold
+   boundary and `44 9` across the second: a COUNT and a SEQUENCE POSITION drawn
+   identically, inviting the eye to read one continuous run of numbers. Two
+   independent signals separate them now — the badge is ENCLOSED, and it is set
+   in the annotation sans rather than the Garamond small caps every ordinal on
+   this rail wears. Either one alone would do it; both together survive a screen
+   where the enclosure is a hairline and a viewer who never sees the two side by
+   side. */
+.surround-segment-map__fold-count {
+  /* ONE LINE, ALWAYS. The pair inside is two elements with a rule between them;
+     nothing here may ever be allowed to break it across two. */
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.34em;
+  white-space: nowrap;
+  font-family: var(--surround-annotation, "Roboto Condensed", system-ui, sans-serif);
+  font-size: 0.74em;
+  line-height: 1.15;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  /* NOT small-caps and NOT tracked: those are the ordinal's own signals, and a
+     badge that borrows them is back to looking like one. */
+  letter-spacing: 0;
+  padding: 0 0.5em;
+  /* NOT `--fold-hatch`. The hatch is deliberately at the threshold of visible,
+     and an enclosure at that alpha is an enclosure nobody sees — which loses one
+     of the badge's two signals and leaves it a bare figure again. The border is
+     the ink the badge is set in, at the weight that reads as a drawn edge from
+     across the room. */
+  border: 1px solid rgba(233, 223, 200, 0.42);
+  border-radius: 999px;
+  /* The badge KNOCKS A HOLE IN THE HATCH rather than floating on it: diagonals
+     running behind a two-digit figure at this size is the mark and its ground
+     competing at the same weight. Not a token — the rail's ground is the band's
+     near-black and this is that black at the alpha that stops the hatch without
+     drawing a second edge inside the border. */
+  background: rgba(0, 0, 0, 0.62);
+  color: var(--ink, #2a1d07);
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+.surround-segment-map__segment--elapsed .surround-segment-map__fold-count {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.95;
+}
+
+/**
+ * THE SCENE COUNT, behind a DRAWN DIVIDER.
+ *
+ * A slash was a character in the type stream: it took layout, it could be
+ * broken at, and inside the grid chip it was the thing that ended up alone on
+ * the second line. A rule cannot break and cannot wrap. It is `currentColor`
+ * so it dims with the mark through every state the fold wears (future, elapsed,
+ * chipped) rather than needing a copy of each.
+ *
+ * The `padding-left` matches the flex `gap` on the pill, so the divider sits at
+ * the optical centre of the pair rather than tight against the second number.
+ */
+.surround-segment-map__fold-groups {
+  padding-left: 0.34em;
+  border-left: 1px solid currentColor;
+  font-weight: 400;
+  opacity: 0.62;
+}
+
+.surround-segment-map__group--active {
+  font-weight: 600;
+}
+
+.surround-segment-map__group--collapsed {
+  visibility: hidden;
+}
+
+/* Segment names sit BELOW the rule (design wave 4), clear of the rule lane
+   above.
+   ONE LINE, ELLIPSIS — and the segment widens rather than the name wrapping
+   (design wave 7). Wave 5 gave this a two-line clamp because a short segment
+   gets a narrow segment and "Marcia funebre. Adagio assai" did not fit one; the
+   accordion answers the same problem by giving the SOUNDING segment the width
+   it needs, which is the answer that also fixes the gloss and costs the band no
+   height. `text-overflow: ellipsis` is the correct idiom HERE precisely because
+   this box is single-line again — what wave 5 removed was `text-overflow`
+   sitting beside a line CLAMP, which is a contradiction rather than a choice. */
+.surround-segment-map__heading {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+  font-size: 1em;                  /* the row's 1.05rem */
+  font-weight: 600;
+}
+
+/* THE SHORT LABEL — the same line as the heading it stands in for, in the same
+   face at the same size, so a rail does not change texture as segments take and
+   give up the sounding state. It is a NAME, never a tempo term, so it is set
+   roman: `Heroic` and `Military` are what the piece is called, and the italic in
+   this rail means "this is the tempo marking".
+   It is still `nowrap` + ellipsis. A short label is authored to fit a crowded
+   segment, not guaranteed to — and where it does not, the rail cuts it exactly
+   as it cuts everything else rather than wrapping into the rule above. */
+.surround-segment-map__short {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+  font-size: 1em;
+  font-weight: 600;
+  font-style: normal;
+}
+
+/* THE TRANSLATION (design wave 6) — the editor's gloss, one register down and
+   in a DIFFERENT FACE. Every other word in this frame is one of two Garamonds;
+   a translation set in a third weight of the same family would read as quieter
+   programme rather than as annotation, so this is the one place the design
+   breaks the serif and uses the annotation sans (`--surround-annotation`).
+   Recessive by three means at once — face, size, opacity — because it must not
+   compete with the segment NAME six pixels above it.
+   ONE LINE, LIKE EVERYTHING ELSE ON THE RAIL (design wave 7). The live-defects
+   round gave this a two-line container-query tier to stop the Eroica's Scherzo
+   gloss being cut; that tier is GONE, not disabled — the accordion widens the
+   Scherzo's segment while it is sounding, which shows the gloss whole without
+   costing the band 14px of height at every screen and for every segment. */
+.surround-segment-map__translation {
+  display: block;
+  margin-top: 0.2em;
+  font-family: var(--surround-annotation, ui-sans-serif, system-ui, Arial, sans-serif);
+  /* Deliberately a hair ABOVE the ten-foot floor, and expressed as that
+     relationship rather than as 0.74rem: the floor is measured per root now
+     (`_tokens.scss`), so a literal here would sit above the floor on the office
+     screen and below it on the living room. 74/72 of whatever this root's floor
+     is. */
+  font-size: calc(var(--label-floor, #{$label-floor}) * 74 / 72);
+  font-weight: 400;
+  font-style: normal;              /* it is NOT the term — see __term */
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--ink, #2a1d07);
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.surround-segment-map__title {
+  margin-right: 0.3em;
+}
+
+/* The descriptive half of a heading, set in italic — the convention
+   engraved scores use for a tempo marking, applied to whatever term a
+   corpus authors there. */
+.surround-segment-map__term {
+  font-style: italic;
+}
+
+/* The rule under one segment: a lane carrying an elapsed fill, drawn from the
+   TOP of the segment. The LANE is the same weight everywhere; the FILL is the
+   state.
+   The lane is `--ink-soft` at 2px, not a 28%-alpha `--programme-edge` hairline:
+   the yet-to-come track IS the shape of the piece, and it has to be legible at
+   ten feet or the band shows a position with no context around it. */
+.surround-segment-map__bar {
+  position: relative;
+  display: block;
+  height: 4px;                     /* the lane's box — the rule is drawn inside */
+  width: 100%;
+}
+
+.surround-segment-map__bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;
+}
+
+/* The elapsed fill. This is where progress is read; 120ms linear is one clock
+   tick, so the 10 Hz steps arrive as a sweep rather than as a stutter. Full
+   `--ink` (parchment on the band) so "done" is unmistakably brighter than the
+   dim lane it is drawn over — the two are the same 2px otherwise.
+   IT GLIDES BECAUSE IT IS A TRANSFORM (design wave 5) — see the playhead below
+   for why `width` could not. `scaleX` from the left edge is exactly a width on a
+   solid bar with nothing inside it to distort.
+   THE ACCORDION CANNOT DESYNCHRONISE IT, and that is structural rather than
+   lucky: `--fill` is the fraction of THIS SEGMENT that has sounded and the bar
+   is 100% of THIS SEGMENT, so whatever width the segment is drawn at, the fill
+   still reaches its right edge exactly at the boundary. */
+.surround-segment-map__bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 2px;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  background: var(--ink, #2a1d07);
+  transition: transform 120ms linear;
+}
+
+/* Future — the lane alone, and a name the viewer can actually read. It is
+   RECESSIVE, not hidden: "what is still to come" is context the band exists to
+   give, so the heading is drawn in full parchment at 0.78 rather than in the
+   dimmer `--ink-soft`. Compare the elapsed rule below (0.6): the future is now
+   the brighter of the two quiet states, which is the correct order — a segment
+   already played is the one you no longer need. */
+.surround-segment-map__segment--future .surround-segment-map__heading {
+  color: var(--ink, #2a1d07);
+  opacity: 0.78;
+  font-weight: 600;
+}
+
+/* Elapsed — the segment reads as done: its lane is filled end to end, at the
+   quieter 2px, and the name drops back. */
+.surround-segment-map__segment--elapsed .surround-segment-map__heading {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.6;
+}
+
+/* The gloss recedes with its segment. Only the ELAPSED state moves it: a
+   segment already played needs neither its name nor its translation, and
+   leaving the annotation at full strength under a dimmed name would invert the
+   hierarchy inside one column. Future and active keep the base 0.55 — the
+   translation is a gloss in both, and brightening it under the sounding
+   segment would put a sans line in competition with the brass rule. */
+.surround-segment-map__segment--elapsed .surround-segment-map__translation {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.38;
+}
+
+/* Active — the one thick line on the band. 4px of velvet-lit brass sweeping the
+   segment is the loudest mark the design makes, and it is the one thing the
+   viewer actually needs: how far through THIS segment we are.
+   The numeral comes UP with it (0.5 -> 0.72): the index mark is quiet because
+   it is not content, but on the sounding segment it is the one that says which
+   of the four this is. */
+.surround-segment-map__segment--active .surround-segment-map__heading {
+  color: var(--ink, #2a1d07);
+  font-weight: 600;
+}
+.surround-segment-map__segment--active .surround-segment-map__numeral {
+  opacity: 0.72;
+}
+.surround-segment-map__segment--active .surround-segment-map__bar-fill {
+  height: 4px;
+  background: var(--brass, #c79a3e);
+}
+
+/* Barlines. One quiet separator marks a segment end; terminals close the rule
+   at both ends. The double barline is gone — correct notation, too much ink. */
+.surround-segment-map__barline {
+  position: absolute;
+  top: 0;                          /* the rule row is at the TOP of the band now */
+  width: 1px;
+  height: 0.7em;
+  background: var(--ink-soft, #6b6152);
+  pointer-events: none;
+}
+
+.surround-segment-map__barline--separator {
+  left: 0;
+  opacity: 0.55;
+}
+
+.surround-segment-map__barline--terminal {
+  height: 0.6em;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;                   /* the lane's own weight — one quiet family */
+}
+.surround-segment-map__barline--start { left: 0; }
+.surround-segment-map__barline--end { right: 0; }
+
+/* The playhead: one brass hairline, unlit, in the rule lane only.
+   The rule lane is the bar plus the text row's clearance; names live strictly
+   BELOW it, box and all. The playhead never enters the text band — it is a
+   barline, not a cursor.
+   It GLIDES: positions arrive at 10 Hz, and 120ms linear (one tick) carries it
+   between them without ever running ahead of the clock.
+
+   WHY IT IS A FULL-WIDTH BOX WITH THE MARK ON ITS RIGHT EDGE (design wave 5)
+   -------------------------------------------------------------------------
+   Waves 2-4 positioned this with `left: N%` and transitioned `left`. The
+   transition was there and it did not help, because the property was wrong:
+   Chromium PIXEL-SNAPS a painted box's position, so a 2px bar at `left:
+   25.13%` of 400px paints fully opaque on columns 101-102 and nowhere else.
+   Measured in the harness — at `translateX` the same bar paints 98/99/100 at
+   123/255/133, i.e. antialiased across the pixel boundary. On a 54-minute
+   piece the cursor advances ~0.5px per second, so snapping means it stands
+   still for two seconds and then jumps a whole pixel. That is the "creeps one
+   pixel at a time" of the review, and no transition on `left` can fix it: the
+   value was already continuous, the PAINT was not.
+   A transform can carry sub-pixel offsets, but `translateX(%)` resolves
+   against the element's OWN width — useless for a 2px mark that has to travel
+   the rule. So the element IS the rule's width, it is translated by
+   `(head - 1) x 100%` (at head=1 its right edge is the rule's right edge), and
+   the visible hairline is its `::after`, pinned to that right edge. One
+   compositor-friendly property, sub-pixel all the way, and the box the runtime
+   gate measures for the clearance law keeps the same top and the same height.
+   `--head` is 0..1, published by the component — and since design wave 7 it is
+   derived from the RENDERED segment widths, so the accordion cannot pull the
+   cursor away from the boundary it is supposed to arrive at. */
+.surround-segment-map__playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0.55em;                  /* box-clears the text row's clearance gap */
+  transform: translateX(calc((var(--head, 0) - 1) * 100%));
+  pointer-events: none;
+  /* 120ms — one transport tick — at rest, and ZERO while the accordion is
+     moving: during those 420ms the head is already being recomputed every
+     animation frame from the same interpolated widths the segments use, and a
+     ramp on top of that would make it lag the boundary it sits on. Published
+     by the component (review finding I2). */
+  transition: transform var(--head-ms, 120ms) linear;
+}
+
+.surround-segment-map__playhead::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -1px;
+  width: 2px;
+  height: 100%;
+  background: var(--brass-lit, #f6e3a0);
+}
+
+/* Reduced motion: nothing glides. The fill and the playhead still show the
+   right value — they just arrive at it in one step. The accordion's widths snap
+   too, but that is enforced in JS (`useEasedShares` checks the preference and
+   commits the target in one go) because there is no CSS transition here left to
+   cancel. The bond itself is unaffected: it is state, not
+   motion. It still moves to the sounding segment, it simply gets there in one
+   frame. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-segment-map__bar-fill,
+  .surround-segment-map__playhead,
+  .surround-segment-map__bond,
+  .surround-segment-map__bond-connector {
+    transition: none;
+  }
+}
+
+/**
+ * A FOLDED PART — a marker standing in for numbers that are not drawn.
+ *
+ * It must not read as one segment among the rest, which is exactly what it did
+ * when the gutter handed it the mark "1": a Part of twenty-one numbers looked
+ * like a Part of one. So it is drawn as compressed stock rather than as a
+ * segment — a hatched fill and a count instead of a numeral.
+ *
+ * The count is rendered from `data-fold` so no numeral logic has to learn about
+ * folds; the attribute is set only on collapsed segments.
+ */
+.surround-segment-map__segment--fold {
+  position: relative;
+  /* Diagonal hatching: the visual idiom for "elided", and it survives being
+     29px wide where any glyph would not. Constrained vertically so the
+     hatching stops above the bond shoulder and does not bleed into the
+     listening band below. */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(233, 223, 200, 0.16) 0,
+    rgba(233, 223, 200, 0.16) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  background-size: 100% calc(100% - 0.55rem);
+  background-repeat: no-repeat;
+  opacity: 0.82;
+}
+
+/* THE FOLD'S PILL. The heading row already names the Part; the hatched marker
+   needs only to say HOW MANY numbers it stands in for. A count pill, centred
+   in the segment, at the chip's own size. */
+/**
+ * THE FOLD'S BADGE — a PILL holding two numbers, not a stack holding two rows.
+ *
+ * It was `display: grid; place-items: center` with a bare count, a slash and a
+ * inner-group-count span inside it. A grid auto-places each child in its OWN ROW, so
+ * the band painted "23" over "/17": two lines of numerals in a mark that is
+ * supposed to be one glyph-sized token. `inline-flex` puts them on one line
+ * where they belong, and the enclosure is what makes the pair read as a single
+ * mark rather than as two marks that happen to be adjacent.
+ *
+ * THE ENCLOSURE IS THE `__fold-count` BOX'S, deliberately. That badge (design
+ * wave 10) already argued the case — a bare figure on hatch is a figure nobody
+ * reads as a badge, the border is the ink it is set in at a weight that carries
+ * across the room, and the ground KNOCKS A HOLE IN THE HATCH rather than
+ * floating on it. The chip-mode fold is the same statement at a smaller size,
+ * so it wears the same thing rather than a second design for one.
+ */
+.surround-segment-map__chip--fold {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.34em;
+  min-width: 0;
+  padding: 0.08em 0.5em 0.14em;
+  border: 1px solid rgba(233, 223, 200, 0.42);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-style: normal;
+  opacity: 0.72;
+}
+
+/* The count of movements the fold stands for — the number that was always
+   there, now an element so the divider has something to sit against. */
+.surround-segment-map__fold-segments {
+  font-variant-numeric: inherit;
+}
+
+
+/* ==========================================================================
+   THE VERTICAL AXIS (`orientation: column`)
+   ==========================================================================
+   The rail-carried arrangement, for a picture narrower than the screen. The
+   list runs DOWN a rail beside the video instead of across a band beneath it.
+
+   NOTHING HERE IS A NEW LANGUAGE. It is the same staff rule, the same numeral
+   gutter and the same three states the horizontal rail sets, turned ninety
+   degrees. What it does NOT have is the accordion, the folds and the bond's
+   connector: a column is short of height, not width, and folding buys width.
+
+   EVERY SIZE IS DERIVED FROM `--label-floor`, the frame's published ten-foot
+   floor, rather than set in pixels. A row is two floors tall — one line of
+   type and the air around it — so the list scales with the screen root the way
+   every other floor in the frame does, instead of being right on one screen. */
+.surround-segment-map--column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* THE CHIP HEADER. One mark per group, in a row, at the rail's head. No radius
+   and no glow — the band's standing rule — so a chip is distinguished by ground
+   and weight alone, exactly as the sounding row is. */
+.surround-segment-map--column .surround-segment-map__chips {
+  display: flex;
+  gap: 0.25em;
+  flex: 0 0 auto;
+  padding: 0 0 0.4em;
+}
+
+.surround-segment-map--column .surround-segment-map__chip {
+  flex: 1 1 0;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--programme-edge, #ddd0b4);
+  background: transparent;
+  color: var(--ink-soft, #6b6152);
+  font-family: var(--surround-body);
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  padding: 0.3em 0;
+  cursor: pointer;
+  text-align: center;
+
+  &[data-state="sounding"] {
+    background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+    color: var(--ink, #2a1d07);
+    font-weight: 600;
+  }
+}
+
+/* THE STAFF RULE, TURNED. One hairline down the gutter: lit to the playhead,
+   hairline beyond it. It sits at the rail's INNER edge — the side the picture
+   is on — so the timeline reads as the picture's own edge rather than as
+   furniture beside it. That is the horizontal rule's law (it rides tight
+   against the video's foot), transposed. */
+.surround-segment-map__spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  pointer-events: none;
+
+  /* What is still to come. */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--ink-soft, #6b6152);
+    opacity: 0.35;
+  }
+
+  /* What has elapsed, and the playhead at its foot. The cursor is the LIT
+     EDGE, not a separate mark — design wave 2's rule that progress is read
+     from the fill and the cursor has nothing left to prove. 120ms linear is
+     one transport tick, the same ramp the horizontal head rides. */
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--head, 0) * 100%);
+    background: var(--ink, #332b20);
+    opacity: 0.85;
+    transition: height var(--head-ms, 120ms) linear;
+  }
+}
+
+.surround-segment-map__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(var(--label-floor, 11.52px) * 0.9);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* ONE LINE, ALWAYS. The row is the unit the whole design rests on: eleven of
+   them have to fit, so a row that wrapped would push the last scenes off the
+   rail. The label ellipsises instead — the mark never does, because a mark
+   that cannot be read whole names nothing. */
+.surround-segment-map__row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+  /* THE ROWS BREATHE INTO THE RAIL THEY WERE GIVEN, UP TO A CEILING. Scoping
+     the list to one group (region `scope: group`) is what stops a
+     three-scene play taking a hundred pixels a row in the common case — but
+     scoping is a region author's choice, not a guarantee, and a live
+     measurement caught an unscoped rail of three rows stretching to fill a
+     540px column: 118.4px a row, the label stranded in open space with the
+     progress bar (`position: absolute; bottom: 0`) floating far below it. A
+     row may still grow past its floor to use the room it is given — that is
+     what keeps five scenes in a scoped list from being crushed to their
+     floor — it just stops short of absurd. */
+  flex: 1 1 auto;
+  min-height: calc(var(--label-floor, 11.52px) * 2);
+  max-height: calc(var(--label-floor, 11.52px) * 4);
+  padding: 0 0.3em;
+  font-family: var(--surround-body);
+  font-size: var(--label-floor, 11.52px);
+  line-height: 1.25;
+  color: var(--ink, #332b20);
+  cursor: pointer;
+  border-radius: var(--bond-radius, 3px);
+}
+
+/* THE GUTTER, sized once for the rail by the widest mark it sets — the same
+   decision the horizontal numeral track makes, so every label shares one text
+   edge. Tabular figures keep `I.1` and `IV.10` on that edge. */
+.surround-segment-map__row-mark {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--ink-soft, #6b6152);
+  white-space: nowrap;
+}
+
+.surround-segment-map__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE THREE STATES, in value only — no borders, no second marks. The band's
+   standing rule is that nothing carries an edge; a lit ground against an unlit
+   one divides more strongly at ten feet than a hairline does. */
+.surround-segment-map__row[data-state="played"] { opacity: 0.62; }
+
+.surround-segment-map__row[data-state="ahead"] {
+  opacity: 0.78;
+  color: var(--ink-soft, #6b6152);
+}
+
+/* THE SOUNDING ROW IS THE BOND. There is no connector on this axis — rows sit
+   between the sounding one and the register below, so a weld is geometrically
+   impossible — and the shared GROUND is what binds them instead: this row and
+   the NOW register are lit the same way, which is the whole mechanism the
+   connector existed to serve. */
+.surround-segment-map__row[data-state="sounding"] {
+  background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+  opacity: 1;
+  font-weight: 600;
+
+  .surround-segment-map__row-mark { color: var(--ink, #332b20); }
+}
+
+/* THE SELECTION OUTLINE — the one place on this rail an edge is allowed,
+   because it has to read against both the lit (sounding) and unlit grounds a
+   nav selection can land on. */
+.surround-segment-map__row[data-selected="true"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+}
+
+.surround-segment-map--column .surround-segment-map__chip[data-state="selected"] {
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+  color: var(--ink, #2a1d07);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-segment-map__spine::after { transition: none; }
+}
+
+/* THE ROW'S OWN PROGRESS, in the band's one progress language: a 2px rule that
+   fills. No glow, no gradient — `SegmentMap.jsx` records why the lit tip was
+   removed, and a row is not a licence to reintroduce it. */
+.surround-segment-map__row-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.35;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: scaleX(var(--fill, 0));
+    transform-origin: left center;
+    /* `#2a1d07` is the BASE `--ink` (`SurroundFrame.scss:30`). Several older
+       rules in this sheet carry `#332b20`, which matches no token at all — a
+       literal that drifted. Do not copy it forward for consistency's sake;
+       consistency with a wrong neighbour is not a virtue. */
+    background: var(--ink, #2a1d07);
+    transition: transform var(--head-ms, 120ms) linear;
+  }
+}
+
+.surround-segment-map__row { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-segment-map__row-bar::after { transition: none; }
+}

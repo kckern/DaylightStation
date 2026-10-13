@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-/** Preserve native backend/frontend dependency scopes for installed owners. */
+/** Preserve native __backend/frontend dependency scopes for installed owners. */
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 export function setupOwnerDependencies(root,{check=false}={}) {
   root=path.resolve(root);
   const links=[];
-  for(const area of ['modules','capabilities']) {
+  for(const area of ['__app_modules','__capabilities']) {
     const base=path.join(root,area);
     let baseType;try{baseType=fs.lstatSync(base);}catch(error){if(error.code==='ENOENT')continue;throw error;}
     if(!baseType.isDirectory())continue;
@@ -15,7 +15,7 @@ export function setupOwnerDependencies(root,{check=false}={}) {
         const directory=path.join(base,owner.name,runtime);
         let type;try{type=fs.lstatSync(directory);}catch(error){if(error.code==='ENOENT')continue;throw error;}
         if(!type.isDirectory())continue;
-        const target=runtime==='server'?'../../../backend/node_modules':'../../../frontend/node_modules';
+        const target=runtime==='server'?'../../../__backend/node_modules':'../../../frontend/node_modules';
         const link=path.join(directory,'node_modules');
         let existing;try{existing=fs.lstatSync(link);}catch(error){if(error.code!=='ENOENT')throw error;}
         if(existing&&(!existing.isSymbolicLink()||fs.readlinkSync(link)!==target))throw new Error('Refusing existing dependency directory/link: '+link);

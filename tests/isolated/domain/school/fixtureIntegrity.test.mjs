@@ -28,10 +28,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import yaml from 'js-yaml';
 
-import { validateQuestionBank } from "../../../../modules/school/server/domain/questionBankValidation.mjs";
-import { validateUnit } from "../../../../modules/school/server/domain/curriculum/unitValidation.mjs";
-import { validateManifest } from "../../../../modules/school/server/domain/curriculum/manifestValidation.mjs";
-import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { validateQuestionBank } from "../../../../__app_modules/school/server/domain/questionBankValidation.mjs";
+import { validateUnit } from "../../../../__app_modules/school/server/domain/curriculum/unitValidation.mjs";
+import { validateManifest } from "../../../../__app_modules/school/server/domain/curriculum/manifestValidation.mjs";
+import { validateDocument } from "../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
 import * as lifecycleFixtures from '#testlib/school/lifecycleFixtures.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { VirtualPlaybackAdapter } from '#adapters/hardware/playback/VirtualPlaybackAdapter.mjs';
-import { SlotStatus } from "../../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
+import { SlotStatus } from "../../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 

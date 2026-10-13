@@ -4,7 +4,7 @@
  * fitness.yml), where duration-only matching went wrong both ways.
  */
 import { describe, it, expect } from 'vitest';
-import { HealthAggregator } from "../../../../modules/health/server/domain/health/services/HealthAggregationService.mjs";
+import { HealthAggregator } from "../../../../__app_modules/health/server/domain/health/services/HealthAggregationService.mjs";
 
 const merged = (s, f) => HealthAggregator.mergeWorkouts(s, f).map(w => [w.title, w.calories]);
 

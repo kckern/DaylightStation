@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { userIdInjector, stripUserIdFromSchema } from "../../../../capabilities/agent-runtime/server/application/framework/decorators/UserIdInjector.mjs";
+import { userIdInjector, stripUserIdFromSchema } from "../../../../__capabilities/agent-runtime/server/application/framework/decorators/UserIdInjector.mjs";
 
 describe('userIdInjector', () => {
   it('strips userId from the schema so the model cannot supply it', () => {

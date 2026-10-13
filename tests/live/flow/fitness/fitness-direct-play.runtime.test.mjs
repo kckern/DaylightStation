@@ -150,7 +150,7 @@ test.describe('Fitness Direct Play', () => {
     if (playingCount >= 2) {
       console.log('Video playback confirmed!\n');
     } else if (state.readyState === 0 && !state.src) {
-      // Video element exists but no source loaded - likely backend/Plex issue
+      // Video element exists but no source loaded - likely __backend/Plex issue
       console.log('WARNING: Video source not loaded - check Plex connectivity\n');
       // Still pass if the player UI loaded correctly
       const hasPlayerUI = await sharedPage.locator('.fitness-player, [class*="player"], [class*="scrubber"]').count();

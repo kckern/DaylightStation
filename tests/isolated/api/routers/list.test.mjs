@@ -2,9 +2,9 @@
 import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createListRouter, toListItem } from "../../../../capabilities/content-catalog/server/api/list.mjs";
-import { ListBrowseService } from "../../../../capabilities/content-catalog/server/application/services/ListBrowseService.mjs";
-import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { createListRouter, toListItem } from "../../../../__capabilities/content-catalog/server/api/list.mjs";
+import { ListBrowseService } from "../../../../__capabilities/content-catalog/server/application/services/ListBrowseService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 describe('List API Router', () => {
   let app;

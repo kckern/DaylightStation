@@ -17,8 +17,8 @@
  * a ref already past `created` — is ignored by construction.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DoNowSchoolBridge } from "../../../../modules/school/server/application/DoNowSchoolBridge.mjs";
-import { EventBusSchoolRealtimeAdapter } from "../../../../modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { DoNowSchoolBridge } from "../../../../__app_modules/school/server/application/DoNowSchoolBridge.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../../__app_modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
 import { FakeSessionRepository, fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 
 class FakeEventBus {

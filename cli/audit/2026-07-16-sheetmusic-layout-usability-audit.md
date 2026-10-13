@@ -107,7 +107,7 @@ Items 3 and 4 are small correctness fixes worth doing regardless of any redesign
 
 ## Remediation (2026-07-16)
 
-Implemented on branch `feature/sheetmusic-practice-ux` (16 commits after `ef049bbae`). Reference doc updated: `docs/reference/piano/sheet-music-player.md`.
+Implemented on branch `feature/sheetmusic-practice-ux` (16 commits after `ef049bbae`). Reference doc updated: `__docs/reference/piano/sheet-music-player.md`.
 
 | Finding | Status | How |
 |---------|--------|-----|

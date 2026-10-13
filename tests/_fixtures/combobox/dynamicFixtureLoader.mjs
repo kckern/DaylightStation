@@ -5,7 +5,7 @@
  * Queries the ContentQueryService API to get real, varied test data
  * each run instead of hardcoding the same fixtures.
  *
- * Uses backend/src/3_applications/content/ContentQueryService.mjs
+ * Uses __backend/src/3_applications/content/ContentQueryService.mjs
  * via /api/v1/content/query/search and /api/v1/item endpoints.
  */
 

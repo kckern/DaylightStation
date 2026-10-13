@@ -16,11 +16,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   worksheetInstanceDocument, createWorksheetInstance,
-} from "../../../../../modules/school/server/domain/questionBankV2.mjs";
-import { COMPANION_GATE_ITEM_ID } from "../../../../../modules/school/server/domain/companionCode.mjs";
-import { questionItemIds } from "../../../../../modules/school/server/domain/documents/documentValidation.mjs";
-import { planRows, ROW_MAPPABLE_TYPES } from "../../../../../modules/school/server/domain/documents/allocation.mjs";
-import { validateDocumentSource } from "../../../../../modules/school/server/domain/documents/documentSource.mjs";
+} from "../../../../../__app_modules/school/server/domain/questionBankV2.mjs";
+import { COMPANION_GATE_ITEM_ID } from "../../../../../__app_modules/school/server/domain/companionCode.mjs";
+import { questionItemIds } from "../../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
+import { planRows, ROW_MAPPABLE_TYPES } from "../../../../../__app_modules/school/server/domain/documents/allocation.mjs";
+import { validateDocumentSource } from "../../../../../__app_modules/school/server/domain/documents/documentSource.mjs";
 
 const bank = {
   schema: 'school.question-bank/v2',

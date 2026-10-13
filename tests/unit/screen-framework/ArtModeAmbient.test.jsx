@@ -16,12 +16,12 @@ vi.mock('../../../frontend/src/lib/api.mjs', () => ({
 vi.mock('../../../frontend/src/lib/logging/singleton.js', () => ({
   getChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }),
 }));
-vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
+vi.mock("../../../__app_modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({}),
 }));
 
 import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
-import { ScreenAmbientProvider } from '../../../capabilities/screen-host/browser/ambient/ScreenAmbientContext.jsx';
+import { ScreenAmbientProvider } from '../../../__capabilities/screen-host/browser/ambient/ScreenAmbientContext.jsx';
 
 const officeAmbient = {
   topic: 'ambient:office',

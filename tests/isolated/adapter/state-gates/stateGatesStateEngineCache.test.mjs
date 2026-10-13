@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { YamlStateGatesStateEngine } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
+import { YamlStateGatesStateEngine } from "../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
 
 function countingEngine() {
   const files = new Map();

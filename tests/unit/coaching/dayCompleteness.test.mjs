@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyDay, buildCalendarDays, averageTrusted, resolveMinCalories, shiftDate, DEFAULT_MIN_CALORIES,
   closureStatus, fastedMealsOf,
-} from "../../../modules/health/server/application/coaching/dayCompleteness.mjs";
+} from "../../../__app_modules/health/server/application/coaching/dayCompleteness.mjs";
 
 describe('dayCompleteness', () => {
   it('defaults the threshold to 1200 and accepts a configured value', () => {

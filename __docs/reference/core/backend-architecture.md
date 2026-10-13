@@ -1,0 +1,285 @@
+# Backend Architecture
+
+**Last Updated:** 2026-10-12
+**Status:** Application ownership cutover complete
+
+---
+
+## Overview
+
+Start with the [contributor map](project-layout.md) for the current source
+layout. Application features live in `__app_modules/`, shared features in
+`__capabilities/`, and server infrastructure and installed composition in
+`__backend/`. The numbered layers below describe the retained backend layout;
+owned server code uses named domain, application, adapter, rendering, API, and
+composition directories inside each application or capability.
+
+The backend uses Domain-Driven Design (DDD) with a layered architecture. Code is organized into numbered layers that enforce dependency rules. The number prefix indicates the dependency tier — layers can import from lower-numbered tiers but not higher ones.
+
+```
+__backend/
+├── src/
+│   ├── 0_system/       # Framework, cross-cutting concerns
+│   ├── 1_adapters/     # External integrations
+│   ├── 1_rendering/    # Server-side presentation (thermal, PDF)
+│   ├── 2_domains/      # Business logic (pure, no I/O)
+│   ├── 3_applications/ # Use cases, orchestration
+│   ├── 4_api/          # HTTP routes, handlers
+│   ├── 5_composition/  # Composition root: bootstrap.mjs + per-feature wiring modules
+│   └── app.mjs         # App factory (run via __backend/index.js)
+└── _legacy/            # Legacy code (being phased out)
+```
+
+**Note:** The `1_` prefix appears on two directories — `1_adapters/` and `1_rendering/` are peers at the same dependency tier.
+
+---
+
+## Layer Details
+
+### 0_system/
+
+Cross-cutting concerns shared across all layers.
+
+| Directory | Purpose | Key Files |
+|-----------|---------|-----------|
+| `config/` | Configuration loading | ConfigService.mjs |
+| `logging/` | Structured logging | dispatcher.js, logger.js, transports/ |
+| `eventbus/` | Real-time messaging | WebSocketEventBus.mjs, MqttAdapter.mjs |
+| `scheduling/` | Cron job management | TaskRegistry.mjs |
+| `proxy/` | External service proxy | ProxyService.mjs |
+| `utils/` | Shared utilities | Various helpers |
+
+### 5_composition/
+
+The composition root — the one sanctioned cross-layer zone. `bootstrap.mjs` contains factory functions for creating all domain services with proper dependency injection; `__backend/src/5_composition/modules/` holds per-feature wiring modules (e.g. `lifeplan.mjs`, `deviceLiveness.mjs`, `screenPresence.mjs`) and per-domain API-router wiring. Import via the `#composition/*` alias.
+
+### 1_adapters/
+
+Concrete implementations that connect domains to external systems.
+
+| Category | Adapters | Purpose |
+|----------|----------|---------|
+| `persistence/yaml/` | 12 stores | YAML file persistence |
+| `harvester/` | 16 harvesters | External API data collection |
+| `ai/` | OpenAI, Anthropic | AI completions, transcription |
+| `content/` | Plex, Filesystem, Folder | Media sources |
+| `home-automation/` | HomeAssistant, TV, Kiosk | Smart home |
+| `hardware/` | Printer, TTS, MQTT | Physical devices |
+| `messaging/` | Telegram, Gmail | Messaging platforms |
+| `finance/` | Buxfer | Transaction source |
+| `proxy/` | Plex, Immich, etc. | Service proxying |
+
+**Harvester Categories:**
+- `fitness/` - Garmin, Strava, Withings
+- `productivity/` - Todoist, ClickUp, GitHub
+- `social/` - LastFM, Reddit, Letterboxd, Goodreads, Foursquare
+- `communication/` - Gmail, GCal
+- `finance/` - Shopping (receipt scanning)
+- `other/` - Weather, Scripture
+
+### 1_rendering/
+
+Server-side presentation layer for non-browser output targets (thermal printer, PDF). Peer to `1_adapters/` at the same dependency tier.
+
+| Directory | Purpose |
+|-----------|---------|
+| `lib/` | Shared rendering primitives (canvas, text, layout) |
+| `fitness/` | Fitness receipt renderer + theme |
+| `gratitude/` | Gratitude card renderer + theme |
+
+Additional renderer families now live here:
+
+- **eink framework** (`eink/`) — e-ink display rendering (providers, widgets)
+- **newsreporter** (`newsreporter/`) — scheduled report rendering
+- **qrcode** (`qrcode/`) — QR code generation
+- **timelapse** (`fitness/TimelapseFrameRenderer.mjs`) — fitness timelapse frame rendering
+
+Renderers receive pre-computed domain data via DI callbacks and produce visual output (PNG canvases). They share drawing primitives via `lib/` — unlike adapters, which are domain-isolated.
+
+See [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) for details.
+
+### 2_domains/
+
+Pure business logic with no external dependencies. Each domain has:
+- `entities/` - Data models with validation
+- `services/` - Business logic
+- `value-objects/` - Immutable value types (optional)
+
+| Domain | Purpose | Entities |
+|--------|---------|----------|
+| `content/` | Media browsing/playback | ContentItem, WatchState |
+| `fitness/` | Workout sessions | Session, Participant, Zone |
+| `finance/` | Budget tracking | Budget, Transaction, Account, Mortgage |
+| `messaging/` | Notifications | Message, Conversation, Notification |
+| `nutrition/` | Food logging | FoodLog, NutritionEntry |
+| `journaling/` | Daily journaling | JournalEntry |
+| `journalist/` | Journal chatbot logic | ConversationMessage, QuizQuestion |
+| `health/` | Health metrics | Aggregated health data, `HealthScan` (F-006), `HealthArchiveManifest`, `DailyCoachingEntry` (F-001), services: `PatternDetector` (F-004), `SimilarPeriodFinder` (F-104), `CalibrationConstants` (F-007), `HealthArchiveScope` (F-106), `HealthArchiveIngestion` |
+| `gratitude/` | Gratitude tracking | Selection |
+| `entropy/` | Random content | Entropy reader |
+| `home-automation/` | Smart home control | Device states |
+| `ai/` | AI abstraction | AI-related value objects |
+| `lifeplan/` | Life planning (JOP) | LifePlan, Goal, Belief, Value, Quality |
+| `lifelog/` | Activity aggregation | Lifelog entries |
+| `core/` | Shared value objects | Common types |
+
+### 3_applications/
+
+Use case orchestration, complex workflows, and **port interfaces** (contracts for external dependencies).
+
+| Application | Purpose | Key Components |
+|-------------|---------|----------------|
+| `nutribot/` | Food logging chatbot | 24 use cases, NutribotContainer |
+| `journalist/` | Journal chatbot | 21 use cases, JournalistContainer |
+| `finance/` | Budget workflows | BudgetCompilationService, HarvestService |
+| `fitness/` | Session management | VoiceMemoTranscription |
+| `lifeplan/` | Life planning (JOP) | DriftService, CeremonyService, AlignmentService, RetroService, MetricsService |
+| `health/` | Health workflows + agent personalization | `HealthDashboardUseCase`, `AggregateHealthUseCase`, `ReconciliationProcessor`, `LongitudinalAggregationService`, `PersonalContextLoader` (F-101), `SetDailyCoachingUseCase` (F-001) |
+
+### 4_api/
+
+HTTP layer - Express routers and handlers.
+
+| Directory | Purpose |
+|-----------|---------|
+| `routers/` | 20+ Express routers |
+| `handlers/` | Request handlers for complex endpoints |
+| `middleware/` | Auth, logging |
+
+**Key Routers:**
+- `/api/content`, `/api/list`, `/api/play` - Content domain
+- `/api/fitness` - Fitness sessions
+- `/api/finance` - Budget data
+- `/api/health`, `/api/gratitude` - Health/wellness
+- `/api/life` - Life planning (plan, now, log, health)
+- `/api/nutribot`, `/api/journalist` - Chatbot webhooks
+
+---
+
+## Entry Points
+
+| File | Port | Purpose |
+|------|------|---------|
+| `__backend/index.js` | 3111/3112 | Main application server (webhooks included) |
+
+---
+
+## Dependency Rules
+
+```
+5_composition  → can import from → everything (composition root — the one sanctioned cross-layer zone)
+4_api          → can import from → 3, 2, 1_adapters, 1_rendering, 0
+3_applications → can import from → 2, 1_adapters, 1_rendering, 0
+1_adapters     → can import from → 3 (ports only), 2, 0
+1_rendering    → can import from → 2, 0
+2_domains      → can import from → 0 (minimal)
+0_system       → standalone — no upward imports (sole exemption: pure shared-kernel utils at #domains/core/utils)
+```
+
+**Key Principles:**
+- Domains (`2_domains/`) are **pure** — no imports from adapters, rendering, or applications
+- Applications (`3_applications/`) define **ports** (interfaces) that adapters implement
+- Adapters and rendering are **peers** at tier 1 — they do not import from each other
+- Rendering receives domain data via DI callbacks, not direct service imports
+
+---
+
+## Key Patterns
+
+### Dependency Injection
+
+Services receive dependencies via constructor, not imports:
+
+```javascript
+// Good - DI via bootstrap.mjs
+export function createFitnessServices(config) {
+  const sessionStore = new YamlSessionStore(config);
+  return new SessionService({ sessionStore });
+}
+
+// Bad - Direct import
+import { YamlSessionStore } from '../adapters/...';
+```
+
+### Port/Adapter Pattern
+
+Applications define interfaces (ports), adapters implement them:
+
+```javascript
+// 3_applications/fitness/ports/ISessionDatastore.mjs
+export class ISessionDatastore {
+  async save(session) { throw new Error('Not implemented'); }
+  async findById(id) { throw new Error('Not implemented'); }
+  async listByDate(date) { throw new Error('Not implemented'); }
+}
+
+// 1_adapters/persistence/yaml/YamlSessionDatastore.mjs
+import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
+
+export class YamlSessionDatastore extends ISessionDatastore {
+  async save(session) { /* YAML file I/O */ }
+  async findById(id) { /* YAML file I/O */ }
+}
+```
+
+### Strangler Fig Migration
+
+The strangler-fig migration is complete; the `_legacy/` tree has been deleted. See the decision register (`__docs/reference/core/layers-of-abstraction/decision-register.md`) for the history and rationale.
+
+---
+
+## Admin API Layer
+
+The admin panel has a dedicated router tree mounted at `/api/v1/admin/`. It follows the same factory pattern as other routers but is organized as a composite router with sub-routers for each admin concern.
+
+### Router Index
+
+The entry point is `__backend/src/4_api/v1/routers/admin/index.mjs`, which exports `createAdminRouter(config)`. This factory creates and mounts all sub-routers:
+
+| Sub-router | Mount | Factory | Purpose |
+|------------|-------|---------|---------|
+| Config | `/config` | `createAdminConfigRouter` | Generic YAML config file CRUD |
+| Content | `/content` | `createAdminContentRouter` | List/folder management |
+| Scheduler | `/scheduler` | `createAdminSchedulerRouter` | Cron job management |
+| Household | `/household` | `createAdminHouseholdRouter` | Members, devices, household config |
+| Integrations | `/integrations` | `createAdminIntegrationsRouter` | Integration status and health checks |
+| Apps | `/apps` | `createAdminAppsRouter` | Per-app configuration |
+| Images | `/images` | `createAdminImagesRouter` | Image uploads |
+| Media | `/media` | `createAdminMediaRouter` | Media operations (freshvideo metadata) |
+| EventBus | `/ws` | `createEventBusRouter` | WebSocket/EventBus management |
+
+### Factory Pattern
+
+Each sub-router uses the standard `createXRouter({ configService, logger })` factory signature. The parent `createAdminRouter` injects child loggers:
+
+```javascript
+const configRouter = createAdminConfigRouter({
+  configService,
+  logger: logger.child?.({ submodule: 'config' }) || logger
+});
+router.use('/config', configRouter);
+```
+
+Some sub-routers require additional dependencies (`userDataService`, `mediaPath`, `loadFile`, `eventBus`). The Media and EventBus routers are conditionally mounted based on whether their dependencies are provided.
+
+### Config Sub-router
+
+The config router (`/api/v1/admin/config`) provides generic YAML file CRUD and serves as the backbone for both the YAML editor fallback and purpose-built config forms:
+
+- `GET /files` -- List all editable config files
+- `GET /files/*` -- Read a file (returns both raw YAML and parsed object)
+- `PUT /files/*` -- Write a file (accepts raw YAML string or parsed object)
+
+Access is restricted to allowed directories (`system/config`, `household/config`). Auth-related directories are masked -- they appear in listings but cannot be read or written. Path traversal is blocked.
+
+See [Admin Components Reference](../admin-components.md) for the frontend component library that consumes this API.
+
+---
+
+## Related Documentation
+
+- [DDD File Map](./ddd-file-map.md) - Complete file listing with legacy mapping
+- [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) - Server-side presentation layer
+- [Adapter Layer Guidelines](./adapter-layer-guidelines.md) - External integration layer
+- [Migration Summary](./migration-summary.md) - What was migrated and current status
+- [Admin Components Reference](../admin-components.md) - Frontend component library for admin panel

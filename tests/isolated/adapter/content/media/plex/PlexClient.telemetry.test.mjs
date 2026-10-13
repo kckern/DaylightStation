@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlexClient } from "../../../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexClient.mjs";
-import { PlexAdapter } from "../../../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlexClient } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexClient.mjs";
+import { PlexAdapter } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 
 const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
 

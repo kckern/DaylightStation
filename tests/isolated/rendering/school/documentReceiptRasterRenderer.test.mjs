@@ -10,9 +10,9 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
-import { createDocumentReceiptRasterRenderer } from "../../../../modules/school/server/adapters/documents/DocumentReceiptRasterAdapter.mjs";
-import { createDocumentEscPosRenderer } from "../../../../capabilities/printing/server/esc-pos.mjs";
-import { agendaDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
+import { createDocumentReceiptRasterRenderer } from "../../../../__app_modules/school/server/adapters/documents/DocumentReceiptRasterAdapter.mjs";
+import { createDocumentEscPosRenderer } from "../../../../__capabilities/printing/server/esc-pos.mjs";
+import { agendaDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const TOKEN = 'sch:2K7QVM4X9HRJTBNP';

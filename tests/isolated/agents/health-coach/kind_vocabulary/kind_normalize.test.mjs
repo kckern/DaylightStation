@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeKind } from "../../../../../modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
+import { normalizeKind } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
 
 describe('normalizeKind', () => {
   it('maps runs', () => {

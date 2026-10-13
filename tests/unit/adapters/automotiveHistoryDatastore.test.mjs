@@ -12,7 +12,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlVehicleHistoryDatastore } from "../../../modules/auto/server/adapters/persistence/YamlVehicleHistoryDatastore.mjs";
+import { YamlVehicleHistoryDatastore } from "../../../__app_modules/auto/server/adapters/persistence/YamlVehicleHistoryDatastore.mjs";
 
 const VEHICLE = 'test-vehicle';
 const silent = { debug() {}, info() {}, warn() {} };

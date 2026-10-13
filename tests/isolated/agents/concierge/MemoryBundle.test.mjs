@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryBundle } from "../../../../modules/concierge/server/application/skills/MemoryBundle.mjs";
+import { MemoryBundle } from "../../../../__app_modules/concierge/server/application/skills/MemoryBundle.mjs";
 
 // Minimal WorkingMemoryState stand-in
 function makeMemoryState(initial = {}) {

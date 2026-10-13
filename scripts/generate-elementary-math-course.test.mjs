@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { afterEach, describe, expect, it } from 'vitest';
-import { validateQuestionBank } from "../modules/school/server/domain/questionBankValidation.mjs";
-import { createWorksheetInstance, issueWorksheet, worksheetInstanceDocument } from "../modules/school/server/domain/questionBankV2.mjs";
-import { validateUnit } from "../modules/school/server/domain/curriculum/unitValidation.mjs";
+import { validateQuestionBank } from "../__app_modules/school/server/domain/questionBankValidation.mjs";
+import { createWorksheetInstance, issueWorksheet, worksheetInstanceDocument } from "../__app_modules/school/server/domain/questionBankV2.mjs";
+import { validateUnit } from "../__app_modules/school/server/domain/curriculum/unitValidation.mjs";
 import {
   auditElementaryMathBank, auditElementaryMathCourse, generateElementaryMathCourse, publishElementaryMathCourse,
 } from './generate-elementary-math-course.mjs';

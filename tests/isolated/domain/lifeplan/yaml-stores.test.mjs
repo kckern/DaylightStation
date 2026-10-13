@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { YamlLifePlanStore } from "../../../../modules/life/server/adapters/persistence/YamlLifePlanStore.mjs";
-import { YamlLifeplanMetricsStore } from "../../../../modules/life/server/adapters/persistence/YamlLifeplanMetricsStore.mjs";
-import { YamlCeremonyRecordStore } from "../../../../modules/life/server/adapters/persistence/YamlCeremonyRecordStore.mjs";
-import { LifePlan } from "../../../../modules/life/server/domain/entities/LifePlan.mjs";
+import { YamlLifePlanStore } from "../../../../__app_modules/life/server/adapters/persistence/YamlLifePlanStore.mjs";
+import { YamlLifeplanMetricsStore } from "../../../../__app_modules/life/server/adapters/persistence/YamlLifeplanMetricsStore.mjs";
+import { YamlCeremonyRecordStore } from "../../../../__app_modules/life/server/adapters/persistence/YamlCeremonyRecordStore.mjs";
+import { LifePlan } from "../../../../__app_modules/life/server/domain/entities/LifePlan.mjs";
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

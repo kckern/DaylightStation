@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DeviceContentDispatchService } from '../../../../backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
+import { DeviceContentDispatchService } from '../../../../__backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
 
 describe('cold item-action cancellation', () => {
   function setup() {

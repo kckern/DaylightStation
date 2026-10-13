@@ -141,8 +141,8 @@ describe('extractPathSites — content scope (DataService#content)', () => {
 
   it('reaches the real KomgaFeedAdapter / YamlTocCacheDatastore content.read/write pair and finds no split (proof, not a finding)', () => {
     const files = [
-      'backend/src/1_adapters/persistence/yaml/YamlTocCacheDatastore.mjs',
-      'backend/src/1_adapters/feed/sources/KomgaFeedAdapter.mjs',
+      '__backend/src/1_adapters/persistence/yaml/YamlTocCacheDatastore.mjs',
+      '__backend/src/1_adapters/feed/sources/KomgaFeedAdapter.mjs',
     ];
     const allSites = [];
     for (const rel of files) {

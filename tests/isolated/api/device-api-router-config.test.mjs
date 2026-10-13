@@ -1,6 +1,6 @@
 // tests/isolated/api/device-api-router-config.test.mjs
 import { describe, test, expect, vi } from 'vitest';
-import { createDeviceApiRouter } from '../../../backend/src/5_composition/modules/deviceApi.mjs';
+import { createDeviceApiRouter } from '../../../__backend/src/5_composition/modules/deviceApi.mjs';
 import express from 'express';
 import request from 'supertest';
 

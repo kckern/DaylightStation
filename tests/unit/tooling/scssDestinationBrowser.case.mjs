@@ -39,7 +39,7 @@ test('SCSS CLI preserves legacy imports and accepts absent destination roots wit
   assert.match(result.stdout, /2 entrypoint stylesheet\(s\) compiled/);
 });
 
-for (const root of ['modules', 'capabilities']) {
+for (const root of ['__app_modules', '__capabilities']) {
   test(`${root}: real broken/restored browser Sass is discovered once with shared partials`, (t) => {
     const f = fixture(t);
     f.put('frontend/src/Legacy.js', "import './Legacy.scss'; throw new Error('Must not evaluate');");

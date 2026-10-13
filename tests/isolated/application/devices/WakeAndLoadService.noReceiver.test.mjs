@@ -1,4 +1,4 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Review B3 / PR-10: when nothing is subscribed to the screen's topic, the
 // URL load reports "Screen not connected" and the WebSocket fallback must not
 // turn that into ok with a broadcast nobody hears.

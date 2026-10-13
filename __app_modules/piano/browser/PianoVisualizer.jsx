@@ -1,0 +1,585 @@
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
+import { configure as configureLogger, getLogger } from '../../../frontend/src/lib/logging/Logger.js';
+import { PianoKeyboard } from './components/PianoKeyboard.jsx';
+import { NoteWaterfall } from './components/NoteWaterfall.jsx';
+import { TheoryPanel } from './components/TheoryPanel.jsx';
+import { useMidiSubscription } from './useMidiSubscription.js';
+import { resolveBoardRange } from './noteUtils.js';
+// Piano tokens: the office screen mounts this without Apps/PianoApp.jsx.
+import './tokens-style.mjs';
+import './components/PianoModePlaceholder.scss';
+import './PianoVisualizer.scss';
+import { getGameEntry, getGameIds } from './gameRegistry.js';
+import { buildLauncherSlots } from './game-platform/launcher/launcherNotes.js';
+import { useNoteLauncher } from './game-platform/launcher/useNoteLauncher.js';
+import { comboNotesForKeyboard } from './game-platform/launcher/comboForKeyboard.js';
+import { useNotesHeldAtMount } from './game-platform/input/heldAtMount.js';
+import { useLauncherUser } from './game-platform/launcher/useLauncherUser.js';
+import PlayerConfirm from './game-platform/launcher/PlayerConfirm.jsx';
+import { bindNoteSlots, useNoteSelection, SELECTION_NOTES } from './game-platform/input/useNoteSelection.js';
+import NoteLauncher from './game-platform/launcher/NoteLauncher.jsx';
+import HoldRing from './game-platform/launcher/HoldRing.jsx';
+import GameBoundary from './game-platform/host/GameBoundary.jsx';
+import OfficeGameChrome from './game-platform/chrome/OfficeGameChrome.jsx';
+import { usePianoConfig } from './usePianoConfig.js';
+import { useInactivityTimer } from './useInactivityTimer.js';
+import { useSessionTracking } from './useSessionTracking.js';
+import { useSpamDetection } from './useSpamDetection.js';
+import { useScreenOverlay } from "../../../__capabilities/screen-host/browser/overlays.mjs";
+import useSchoolGameAccess from './PianoKiosk/useSchoolGameAccess.js';
+import { gamesDisabledFor } from './PianoKiosk/gameAccessPolicy.js';
+import GameGate from './PianoKiosk/modes/Games/GameGate.jsx';
+import MatchGateContext from './PianoKiosk/modes/Games/MatchGateContext.js';
+import { gateAppliesTo, gateConfigForLearner } from './PianoKiosk/modes/Games/gateScope.js';
+import PianoUserContext from './PianoKiosk/PianoUserContext.jsx';
+import { ExternalPianoMidiProvider } from './PianoKiosk/PianoMidiContext.jsx';
+import useBoardGameDay from './PianoKiosk/modes/Games/useBoardGameDay.js';
+import { addressingPolicyFor } from './game-platform/addressing/addressingPolicy.js';
+
+/** How long the school-lock verdict stays up before it dismisses itself. */
+const SCHOOL_LOCK_DISMISS_MS = 8000;
+
+const formatDuration = (seconds) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+/**
+ * Renders the running game with the launcher's own selection key masked out.
+ *
+ * Lives inside the keyed GameBoundary so it remounts per launch, which is what
+ * lets `useNotesHeldAtMount` re-capture: the key that picked the game is still
+ * down at that instant, and without this the game read it as the player's first
+ * input — opening Connect Four dropped a disc in the selecting key's column.
+ */
+function MountedGame({ Component, activeNotes, ...rest }) {
+  const live = useNotesHeldAtMount(activeNotes);
+  return <Component activeNotes={live} {...rest} />;
+}
+
+export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
+  const { activeNotes, sustainPedal, sessionInfo, noteHistory, subscribe } = useMidiSubscription();
+  const { spamState, warningVisible, blackoutRemaining, spamEventCount } = useSpamDetection(activeNotes, noteHistory);
+  const { gamesConfig, deviceConfig, appConfig } = usePianoConfig();
+
+  // Launcher slots come from the REGISTRY, not the games config: config only
+  // ever listed the five games that had activation combos, which is why chess,
+  // connect-four and checkers were unreachable here. They take no config —
+  // chess defaults gameConfig to null, the other two never read it.
+  //
+  // Memoized because the slot array is an effect dependency inside the hook:
+  // rebuilt inline it would be a new identity on every render, re-running the
+  // selection effect at MIDI rates.
+  const { slots, dropped } = useMemo(
+    () => buildLauncherSlots(getGameIds().map((id) => ({ id, ...getGameEntry(id) }))),
+    []
+  );
+
+  // "Hold the lowest and highest key" only works if we know which notes those
+  // are on THIS board. The office keyboard is a 76-key (E1..G7); the hardcoded
+  // 88-key pair it used to assume does not physically exist there, so the combo
+  // could never be played. Derived from the configured range, memoized because
+  // the hook takes it as an effect dependency.
+  const launcherOptions = useMemo(
+    () => ({ comboNotes: comboNotesForKeyboard(deviceConfig?.keyboard) }),
+    [deviceConfig?.keyboard],
+  );
+
+  // Who is playing. The kiosk knows from its roster context; this screen has to
+  // be told, so it remembers the last answer and the top key changes it.
+  const { users, currentUser, identityStale, pickerOpen, openPicker, pickUser } = useLauncherUser();
+  // `schoolLearner` comes from the roster the server just served, so the gate
+  // is skipped for a household member School does not track — and skipped on
+  // the SERVER's say-so, not the browser's. Undefined until the roster lands,
+  // which keeps the gate shut in the meantime.
+  // THE THIRD WAY IN. The tile and the /piano/games route are the other two;
+  // this one is a chord on the piano itself, and a policy enforced on the two
+  // that are visible and not on the one that is discovered would be no policy
+  // at all.
+  /**
+   * HOW HARD THE READING IS, AND WHOSE READING IT IS.
+   *
+   * The office screen mounts the same board games the kiosk does, and used to
+   * mount them with no addressing policy at all — so a child reading staff
+   * cards at the piano was handed chord symbols the moment the same game came
+   * up here, because every game defaults the prop to null and chess's built-in
+   * default is `chords`. The ladder is a fact about the player; it does not
+   * belong to a room. Same builder, same day-counter hook as the kiosk.
+   */
+  const boardGameDay = useBoardGameDay(currentUser ?? null, getLogger());
+  const addressingPolicy = useMemo(
+    () => addressingPolicyFor({
+      config: appConfig?.gameAddressing,
+      learnerId: currentUser ?? null,
+      completedGames: boardGameDay.completedGames,
+    }),
+    [appConfig?.gameAddressing, currentUser, boardGameDay.completedGames],
+  );
+
+  const gamesOff = gamesDisabledFor(appConfig?.gameAccess, currentUser ?? null);
+  const schoolGameAccess = useSchoolGameAccess(currentUser ?? null, {
+    schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
+  });
+  // The one answer to "may a game run for this player right now". `gamesOff`
+  // used to reach only the panel copy, so the launcher kept taking game keys
+  // behind "Games are off" and a running game was never ended by it: on
+  // 2026-09-27 a player games are disabled for was bounced once (by the
+  // school verdict's momentary `loading` on the switch), re-picked himself,
+  // and played chess — the school verdict was `complete`, and nothing else
+  // was asked. The tablet's Games mode has always checked both.
+  const gamesAllowed = !gamesOff && schoolGameAccess.unlocked;
+
+  // The roster, laid out as the same row of keys the games use. It was a
+  // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
+  // which is the one screen it exists for.
+  const userSlots = useMemo(
+    () => bindNoteSlots(users, SELECTION_NOTES).slots.map((slot) => ({
+      ...slot,
+      userId: slot.item.id,
+      label: slot.item.group_label || slot.item.name,
+      note: slot.note,
+      noteName: slot.noteName,
+      sharpAfter: false,
+    })),
+    [users],
+  );
+
+
+  // Who, THEN what. Opening the roster with the top key is the deliberate
+  // route; this is the first-run one. Chess files a record per player, so
+  // launching with nobody selected quietly files the game under a guest — which
+  // is exactly what happened: a game was picked and the roster never appeared.
+  //
+  // Deliberately NOT derived from `launcherOpen`: that comes back from the hook
+  // this value is passed into, and the cycle would not resolve. "Does the roster
+  // still owe an answer" is true or false on its own terms; whether it is on
+  // screen is a rendering question, below.
+  //
+  // The THIRD clause is the 2026-09-02 fix. A remembered profile is a fine
+  // default for filing a chess record; it is not a good enough answer to a
+  // question scoped to one study day. On that morning this screen still held a
+  // pick from 08-28, read that child's school day, and told the adult in front
+  // of it to finish schoolwork that was not his.
+  //
+  // Only on a DENIAL, and only on a SETTLED one. An unlocked verdict against a
+  // stale pick costs a misfiled game; a denial costs someone their access, and
+  // that asymmetry is the whole reason to interrupt. `loading` has not decided
+  // yet and `error` is not a verdict about this person at all — asking who they
+  // are answers neither.
+  const staleDenial = identityStale
+    && schoolGameAccess.status === 'ready'
+    && !schoolGameAccess.unlocked;
+  const rosterNeeded = pickerOpen || (!currentUser && users.length > 0) || staleDenial;
+
+  // Picking is one key press against a row of six faces, and the row vanishes
+  // the instant it lands — so nothing said WHO had been chosen. On a shared
+  // instrument, where that answer decides whose record a game is filed under,
+  // "did that pick me or my brother" should not be a question the player holds.
+  const [confirming, setConfirming] = useState(null);
+  useEffect(() => {
+    if (!confirming) return undefined;
+    const t = setTimeout(() => setConfirming(null), 1600);
+    return () => clearTimeout(t);
+  }, [confirming]);
+
+  const currentUserName = useMemo(() => {
+    const u = users.find((x) => x.id === currentUser);
+    return u ? (u.group_label || u.name) : null;
+  }, [users, currentUser]);
+
+  const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
+    useNoteLauncher({
+      activeNotes, slots, initialGame, onRequestUser: openPicker,
+      selectionPaused: rosterNeeded || !gamesAllowed,
+      options: launcherOptions,
+    });
+
+
+
+
+  // Gated on the row being ON SCREEN, not merely on a player being needed.
+  // Enabled by `rosterNeeded` alone, this listened whenever nobody was selected
+  // — so any white key between C4 and G5 silently picked a user with no roster
+  // visible and nothing to say it had happened. Verified live: a note chose
+  // "Learner-Four" while the launcher was closed.
+  const rosterVisible = launcherOpen && rosterNeeded;
+  useNoteSelection({
+    activeNotes, slots: userSlots, enabled: rosterVisible,
+    onSelect: (item, slot) => {
+      const id = slot.userId ?? item.id;
+      // Switching profiles after a "no" stays one key press away: the games
+      // keep per-player history and levels, so there is a real pull toward
+      // your own lane and no case for adding a wall. It is still the switch
+      // worth being able to find afterwards, and an ordinary
+      // `launcher.user-selected` line cannot be told apart from a normal pick.
+      if (!schoolGameAccess.unlocked && schoolGameAccess.status === 'ready' && currentUser && id !== currentUser) {
+        getLogger().child({ component: 'piano-launcher' }).info(
+          'launcher.user-switched-after-deny',
+          { from: currentUser, to: id, deniedState: schoolGameAccess.state },
+        );
+      }
+      pickUser(id);
+      setConfirming({ id, name: item.group_label || item.name });
+    },
+  });
+
+  const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
+  // A gate belongs to the game entry.  The office display is another host for
+  // the same Chess component, not an exemption from Chess's match boundary.
+  // Hold the game while its config is still unknown; briefly mounting it before
+  // the config response is a bypass just as surely as never checking.
+  // ONE GATE PER LAUNCH, unless the config says otherwise. `regate: 'per-day'`
+  // keys on the game and the player, so clearing it once holds for the rest of
+  // the session; the default 'per-launch' folds the launch nonce in, so leaving
+  // a game and opening it again asks again. Back-to-back games were free before
+  // this: the key could not tell a second launch from the first.
+  const regate = appConfig?.gameGate?.regate ?? 'per-launch';
+  const gateKey = activeGameEntry?.exerciseGate && activeGameId
+    ? `${activeGameId}:${currentUser ?? 'guest'}${regate === 'per-launch' ? `:${launchNonce}` : ''}`
+    : null;
+  const gateConfigLoading = Boolean(gateKey) && appConfig === null;
+  const gameGateEnabled = Boolean(gateKey) && !gateConfigLoading
+    && gateAppliesTo(appConfig?.gameGate, { learnerId: currentUser, gameId: activeGameId });
+  const [passedGateKey, setPassedGateKey] = useState(null);
+  const [officeMatchId, setOfficeMatchId] = useState(1);
+  const gatePending = Boolean(gateKey) && (gateConfigLoading || (gameGateEnabled && passedGateKey !== gateKey));
+  const requestOfficeRematch = useCallback(() => {
+    if (gameGateEnabled) setPassedGateKey(null);
+    setOfficeMatchId((value) => value + 1);
+  }, [gameGateEnabled]);
+  const officeMatchGate = useMemo(() => ({
+    armed: gameGateEnabled,
+    requestRematch: requestOfficeRematch,
+    registerCompletion: () => null,
+  }), [gameGateEnabled, requestOfficeRematch]);
+  const isFullscreenGame = gamesAllowed && activeGameEntry?.layout === 'replace';
+
+  // A deep link, a note struck just before a status refresh, or a player
+  // switch must not leave a game alive behind the lock. Rendering is gated in
+  // the same commit; this effect also clears the launcher's internal game id.
+  useEffect(() => {
+    if (activeGameId && !gamesAllowed) exitGame(gamesOff ? 'games-off' : 'school-locked');
+  }, [activeGameId, gamesAllowed, gamesOff, exitGame]);
+
+  // More released games than launcher keys: the extras are silently unreachable,
+  // so say so rather than letting the row read as "everything is here".
+  useEffect(() => {
+    if (dropped.length === 0) return;
+    getLogger().child({ component: 'piano-launcher' }).warn('launcher.slots-overflow', { dropped });
+  }, [dropped]);
+
+  // The school lock reads itself out and then goes. It is a verdict, not a
+  // prompt: there is nothing to answer, and leaving it on screen turns a locked
+  // afternoon into a piano that looks broken.
+  const schoolLocked = launcherOpen && !rosterVisible && !gamesAllowed;
+  useEffect(() => {
+    if (!schoolLocked) return undefined;
+    const timer = setTimeout(() => dismiss('school-locked-timeout'), SCHOOL_LOCK_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [schoolLocked, dismiss]);
+
+  const quitGame = useCallback(() => exitGame('game-exit'), [exitGame]);
+  const quitCrashedGame = useCallback(() => exitGame('crash'), [exitGame]);
+
+  // An open launcher counts as activity: the player is mid-decision, not idle.
+  const { inactivityState, countdownProgress } =
+    useInactivityTimer(activeNotes, noteHistory, isFullscreenGame || launcherOpen, onClose);
+  const { sessionDuration } = useSessionTracking(noteHistory);
+
+  // Escape closes the launcher; a running game swallows it outright.
+  const { registerEscapeInterceptor, unregisterEscapeInterceptor } = useScreenOverlay();
+  useEffect(() => {
+    if (!isFullscreenGame && !launcherOpen) return undefined;
+    registerEscapeInterceptor(() => {
+      // Dismiss only — escape is "never mind", so it must not cost the player
+      // the game that was running underneath the launcher.
+      if (launcherOpen) dismiss('escape');
+      return true;
+    });
+    return () => unregisterEscapeInterceptor();
+  }, [isFullscreenGame, launcherOpen, dismiss, registerEscapeInterceptor, unregisterEscapeInterceptor]);
+
+  // Configure root logger so child components using getLogger() directly
+  // also get sessionLog: true (routes their events to the JSONL session file)
+  useEffect(() => {
+    configureLogger({ context: { app: 'piano', sessionLog: true } });
+    return () => {
+      configureLogger({ context: { sessionLog: false } });
+    };
+  }, []);
+
+  // Draw the keys this board actually has. It used to call
+  // computeKeyboardRange(null), which returns a hardcoded 88 — so the office
+  // 76-key (E1..G7) rendered fifteen keys nobody can press, and a note at either
+  // end landed in the wrong place on screen.
+  const { startNote, endNote } = useMemo(
+    () => resolveBoardRange(deviceConfig?.keyboard),
+    [deviceConfig?.keyboard],
+  );
+
+  useEffect(() => {
+    // A MIDI practice session and a board-game session have different
+    // lifetimes. The screen framework maps this callback to overlay dismissal;
+    // firing it while a replace-game is mounted used to erase a live position
+    // simply because the ambient MIDI timer expired underneath it.
+    if (sessionInfo?.event === 'session_end' && onSessionEnd && !isFullscreenGame) {
+      const timer = setTimeout(() => { onSessionEnd(sessionInfo); }, 2000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [sessionInfo, onSessionEnd, isFullscreenGame]);
+
+  if (spamState === 'blackout') {
+    const mins = Math.floor(blackoutRemaining / 60000);
+    const secs = Math.floor((blackoutRemaining % 60000) / 1000);
+    return (
+      <div className="piano-visualizer">
+        <div className="spam-blackout-overlay">
+          <div className="blackout-content">
+            <h1>Piano Locked</h1>
+            <p className="blackout-timer">{mins}:{String(secs).padStart(2, '0')}</p>
+            <p className="blackout-message">Please be gentle with the piano.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No fullscreen-game modifier class on the root: a `tetris-mode` class used to
+  // be added here and nothing in any stylesheet ever selected it, so it read like
+  // the mechanism that hid the ambient view while doing nothing at all. What a
+  // replace game hides is decided in the JSX below.
+  return (
+    <div className="piano-visualizer">
+      {warningVisible && (
+        <div className="spam-warning-overlay">
+          <div className="warning-content">
+            <h2>Easy on the keys!</h2>
+            <p>Warning {spamEventCount} of 3</p>
+          </div>
+        </div>
+      )}
+      <div className="piano-header">
+        <div className="header-left">
+          <div className="session-timer">
+            <span className="timer-value">{formatDuration(sessionDuration)}</span>
+            <span className="note-count">{noteHistory.length} notes</span>
+          </div>
+          {sustainPedal && <span className="pedal-indicator">Sustain</span>}
+          {inactivityState === 'countdown' && (
+            <div className="inactivity-timer">
+              <div className="timer-bar" style={{ width: `${countdownProgress}%` }} />
+            </div>
+          )}
+        </div>
+        {/* Dropped for a fullscreen game, like the waterfall and keyboard
+            below. It used to stay mounted, so the staff / circle of fifths /
+            chord name kept drawing under the game and showed through wherever
+            the game left a pixel untouched — `.tetris-fullscreen` had no
+            background of its own until this was fixed. It also re-renders at
+            MIDI rates, which is pure waste behind a game. */}
+        {!isFullscreenGame && (
+          <div className="header-center">
+            <TheoryPanel activeNotes={activeNotes} layout="row" />
+          </div>
+        )}
+      </div>
+
+      {!isFullscreenGame && (
+        <div className="waterfall-container">
+          <NoteWaterfall
+            noteHistory={noteHistory}
+            activeNotes={activeNotes}
+            startNote={startNote}
+            endNote={endNote}
+          />
+        </div>
+      )}
+
+      {!isFullscreenGame && (
+        <div className="keyboard-container">
+          <PianoKeyboard
+            activeNotes={activeNotes}
+            startNote={startNote}
+            endNote={endNote}
+            showLabels={true}
+          />
+        </div>
+      )}
+
+      {sessionInfo?.event === 'session_end' && !isFullscreenGame && (
+        <div className="session-summary">
+          <p>Session Complete</p>
+          <p>{sessionInfo.noteCount} notes in {Math.round(sessionInfo.duration)}s</p>
+        </div>
+      )}
+
+      {launcherOpen && !rosterVisible && !gamesOff && schoolGameAccess.unlocked && (
+        <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
+      )}
+
+      {launcherOpen && !rosterVisible && gamesOff && (
+        <div className="note-launcher note-launcher--school-locked" role="status">
+          <div className="nl-lock">
+            <span className="nl-lock__badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="10.5" width="16" height="10.5" rx="2.5" />
+                <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            {/* NOT "locked". A lock names something that would open it, and
+                nothing here does; saying "finish your schoolwork" to a player
+                games are not offered to would be a promise the piano cannot
+                keep, and the child would go and keep their side of it. */}
+            <h2 className="nl-lock__title">Games are off</h2>
+            <p className="nl-lock__reason">Games are not part of this player’s piano.</p>
+          </div>
+        </div>
+      )}
+
+      {launcherOpen && !rosterVisible && !gamesOff && !schoolGameAccess.unlocked && (
+        <div className="note-launcher note-launcher--school-locked" role="status">
+          <div className="nl-lock">
+            <span className="nl-lock__badge" aria-hidden="true">
+              {/* Inline SVG, never a glyph font: this screen also runs on the
+                  kiosk WebView, where a Unicode padlock renders as tofu. */}
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="10.5" width="16" height="10.5" rx="2.5" />
+                <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            <h2 className="nl-lock__title">Games are locked</h2>
+            <p className="nl-lock__reason">
+              {/* NAMED. The old copy said "finish today's schoolwork" to whoever
+                  was standing there, which is how five days of one child's lock
+                  read as a broken piano rather than as his lock. Who the verdict
+                  belongs to is the first thing the reader needs. */}
+              {schoolGameAccess.status === 'error'
+                ? 'School status is unavailable. Games stay locked until it can be checked.'
+                : schoolGameAccess.status === 'loading'
+                  ? 'Checking today’s schoolwork…'
+                  : schoolGameAccess.state === 'indeterminate'
+                    ? `${currentUserName ?? 'This player'}’s school plan needs a grown-up.`
+                    : `${currentUserName ?? 'This player'} still has schoolwork to finish today.`}
+            </p>
+            <p className="nl-lock__hint">
+              Play the highest key to change player, or hold the lowest and highest keys to return to free play.
+            </p>
+            {/* The screen leaves on its own. A verdict that has been read has
+                nothing left to say, and a locked player should not have to know
+                a key combination to get their piano back. */}
+            <span className="nl-lock__timer" aria-hidden="true">
+              <i style={{ animationDuration: `${SCHOOL_LOCK_DISMISS_MS}ms` }} />
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Second level of the pick: who, then what. Same keyboard, same grammar —
+          each player wears the key that chooses them. */}
+      {rosterVisible && (
+        <NoteLauncher
+          slots={userSlots}
+          variant="users"
+          showTimer={false}
+          title="Who's playing? · play their key"
+          playerName={currentUserName}
+          playerId={currentUser}
+        />
+      )}
+
+
+      {/* Sibling of the launcher, not a child: holding the combo with the
+          launcher OPEN toggles it shut and only then quits at 2s, so a ring
+          living inside the overlay would vanish at exactly the moment the
+          player needs to see that holding is doing something. */}
+      {isHolding && <HoldRing holdMs={2000} />}
+
+      {confirming && <PlayerConfirm userId={confirming.id} name={confirming.name} />}
+
+      {isFullscreenGame && activeGameEntry?.LazyComponent && gamesAllowed && (
+        <div className="tetris-fullscreen">
+          {/* This screen has no breadcrumb rail and no user chip, so a game
+              opened into a board that named neither itself nor its player. */}
+          <OfficeGameChrome
+            label={activeGameEntry.label ?? activeGameId}
+            icon={activeGameEntry.icon ?? null}
+            playerName={currentUserName}
+            playerId={currentUser}
+          />
+          {/* THE STAGE — the room the game is actually given.
+              A `replace` game roots itself `position: absolute; inset: 0`, so
+              its containing block is whatever positioned ancestor it finds. That
+              was `.tetris-fullscreen` itself, which spans the chrome's strip too,
+              so chess laid its board out over the full height and the header
+              printed across the eighth rank. The chrome was giving space back
+              that nothing was taking.
+              This is the only positioned box between the two, so `inset: 0` now
+              means "below the chrome" for every game at once, rather than each
+              game having to know a header exists. */}
+          <div className="tetris-fullscreen__stage">
+          {/* A game that throws costs the player that game, not the office
+              screen. PianoVisualizer never had a boundary; any throw inside any
+              game blanked the whole display. */}
+          {/* Keyed on the launch, not just the id: re-picking the game already
+              running must hand back a NEW game, not the finished board that was
+              still on screen. `gameId` is passed separately so the crash log's
+              `game` field stays the plain id — a saved `data.game:"tetris"`
+              query has to find an office-screen crash and a kiosk one under the
+              same name, not "tetris:7" here and "tetris" there. */}
+          {gatePending ? (
+            gateConfigLoading ? <div className="piano-mode__placeholder" role="status">Preparing Chess…</div> : (
+              <ExternalPianoMidiProvider activeNotes={activeNotes}>
+              <PianoUserContext.Provider value={{ currentUser }}>
+                <GameGate
+                  learnerId={currentUser}
+                  gateConfig={gateConfigForLearner(appConfig?.gameGate, currentUser)}
+                  gameId={activeGameId}
+                  gameLabel={activeGameEntry.label ?? activeGameId}
+                  onPassed={() => { setPassedGateKey(gateKey); setOfficeMatchId((value) => value + 1); }}
+                  onLeave={quitGame}
+                />
+              </PianoUserContext.Provider>
+              </ExternalPianoMidiProvider>
+            )
+          ) : <GameBoundary
+            key={`${activeGameId}:${launchNonce}:${officeMatchId}`}
+            resetKey={`${activeGameId}:${launchNonce}`}
+            gameId={activeGameId}
+            label={activeGameEntry.label ?? 'This game'}
+            onExit={quitCrashedGame}
+          >
+            <Suspense fallback={null}>
+              <MatchGateContext.Provider value={officeMatchGate}>
+              <MountedGame
+                Component={activeGameEntry.LazyComponent}
+                activeNotes={activeNotes}
+                noteHistory={noteHistory}
+                /* Note EVENTS, not just note state — a rhythm game scores on the
+                   press and cannot recover the timing from a Map. */
+                subscribe={subscribe}
+                /* The kiosk app config. A game rendered here has no
+                   ActivePianoProvider to read it from. */
+                appConfig={appConfig}
+                gameConfig={gamesConfig?.[activeGameId] ?? null}
+                /* The player's reading ladder, identical to the kiosk's. */
+                addressingPolicy={addressingPolicy}
+                /* Games that keep a record (chess) file it per player. Without
+                   this every office-screen game was played by nobody. */
+                currentUser={currentUser}
+                playerName={currentUserName}
+                onDeactivate={quitGame}
+              />
+              </MatchGateContext.Provider>
+            </Suspense>
+          </GameBoundary>
+          }
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default PianoVisualizer;

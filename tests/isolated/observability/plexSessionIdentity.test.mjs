@@ -10,10 +10,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PlexAdapter, sanitizePlexSessionId } from "../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlexAdapter, sanitizePlexSessionId } from "../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 
 const ADAPTER_SOURCE = fileURLToPath(
-  new URL("../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs", import.meta.url)
+  new URL("../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs", import.meta.url)
 );
 
 function adapter(httpClient = { get: async () => ({}) }) {

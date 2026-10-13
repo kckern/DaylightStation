@@ -1,5 +1,5 @@
 // tests/isolated/application/feed/TierAssemblyService.test.mjs
-import { TierAssemblyService, TIERS } from "../../../../modules/feed/server/application/services/TierAssemblyService.mjs";
+import { TierAssemblyService, TIERS } from "../../../../__app_modules/feed/server/application/services/TierAssemblyService.mjs";
 
 describe('TierAssemblyService', () => {
   let service;

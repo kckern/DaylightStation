@@ -2,8 +2,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createQueriesRouter } from "../../../../capabilities/content-catalog/server/api/queries.mjs";
-import { SavedQueryService } from "../../../../capabilities/content-catalog/server/application/SavedQueryService.mjs";
+import { createQueriesRouter } from "../../../../__capabilities/content-catalog/server/api/queries.mjs";
+import { SavedQueryService } from "../../../../__capabilities/content-catalog/server/application/SavedQueryService.mjs";
 
 describe('Queries CRUD Router', () => {
   let app;

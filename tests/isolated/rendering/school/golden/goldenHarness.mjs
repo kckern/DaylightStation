@@ -53,9 +53,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { createDocumentPdfRenderer } from "../../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
-import { createWorkbookTheme } from "../../../../../modules/school/server/rendering/documents/workbookTheme.mjs";
-import { texToSvg } from "../../../../../modules/school/server/rendering/documents/mathSvg.mjs";
+import { createDocumentPdfRenderer } from "../../../../../__app_modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
+import { createWorkbookTheme } from "../../../../../__app_modules/school/server/rendering/documents/workbookTheme.mjs";
+import { texToSvg } from "../../../../../__app_modules/school/server/rendering/documents/mathSvg.mjs";
 import { requirePdftoppm as requirePoppler, rasterizePdfPages } from '#testlib/school/rasterize.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseSources } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
-import { parseNfcTags } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
-import { buildTriggerRegistry } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/buildTriggerRegistry.mjs";
+import { parseSources } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
+import { parseNfcTags } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
+import { buildTriggerRegistry } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/buildTriggerRegistry.mjs";
 
 // One bad entry must disable only itself. Before this, any per-entry error threw
 // out of the whole load and composition fell back to an EMPTY registry, which

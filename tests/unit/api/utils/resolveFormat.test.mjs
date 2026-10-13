@@ -1,6 +1,6 @@
 // tests/unit/api/utils/resolveFormat.test.mjs
 import { describe, it, expect } from 'vitest';
-import { resolveFormat } from "../../../../capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
+import { resolveFormat } from "../../../../__capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
 
 describe('resolveFormat', () => {
   it('returns item.metadata.contentFormat when present (highest priority)', () => {

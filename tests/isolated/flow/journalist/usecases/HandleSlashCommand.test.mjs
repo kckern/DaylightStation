@@ -47,7 +47,7 @@ describe('HandleSlashCommand', () => {
     };
 
     // Dynamic import after mocks are set up
-    const module = await import("../../../../../modules/journalist/server/application/usecases/HandleSlashCommand.mjs");
+    const module = await import("../../../../../__app_modules/journalist/server/application/usecases/HandleSlashCommand.mjs");
     HandleSlashCommand = module.HandleSlashCommand;
   });
 

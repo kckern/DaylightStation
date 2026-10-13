@@ -27,10 +27,10 @@
  * the unitId, not merely that the call succeeded.
  */
 import { describe, it, expect } from 'vitest';
-import { ResolveAccessCode } from "../../../../modules/school/server/application/usecases/ResolveAccessCode.mjs";
-import { appendAssignedProgramEntries } from "../../../../modules/school/server/application/assignedProgramPlan.mjs";
-import { mintToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
-import { BOOK_LOG_PROGRAM_ID, BOOK_LOG_SHELF_UNIT_ID } from "../../../../modules/school/server/domain/bookLog.mjs";
+import { ResolveAccessCode } from "../../../../__app_modules/school/server/application/usecases/ResolveAccessCode.mjs";
+import { appendAssignedProgramEntries } from "../../../../__app_modules/school/server/application/assignedProgramPlan.mjs";
+import { mintToken } from "../../../../__app_modules/school/server/domain/sessions/tokens.mjs";
+import { BOOK_LOG_PROGRAM_ID, BOOK_LOG_SHELF_UNIT_ID } from "../../../../__app_modules/school/server/domain/bookLog.mjs";
 
 const LEARNER_ID = 'kid1';
 const NOW_ISO = '2026-09-06T18:00:00.000Z';

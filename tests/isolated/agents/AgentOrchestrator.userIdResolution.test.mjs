@@ -1,7 +1,7 @@
 // tests/isolated/agents/AgentOrchestrator.userIdResolution.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { AgentOrchestrator } from "../../../capabilities/agent-runtime/server/application/AgentOrchestrator.mjs";
-import { BaseAgent } from "../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { AgentOrchestrator } from "../../../__capabilities/agent-runtime/server/application/AgentOrchestrator.mjs";
+import { BaseAgent } from "../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 class FakeAgent extends BaseAgent {
   static id = 'fake';

@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/query/QueryAdapter.test.mjs
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { QueryAdapter } from "../../../../../capabilities/content-catalog/server/adapters/providers/query/QueryAdapter.mjs";
+import { QueryAdapter } from "../../../../../__capabilities/content-catalog/server/adapters/providers/query/QueryAdapter.mjs";
 
 // Mock file adapter that returns video items
 function createMockFileAdapter(videos = []) {

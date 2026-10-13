@@ -30,10 +30,10 @@ import express from 'express';
 import {
   createLifecycleHarness, COURSE_ID, DEFAULT_LEARNER,
 } from '#testlib/school/lifecycleHarness.mjs';
-import { LanguageStudyService } from "../../../../modules/school/server/application/LanguageStudyService.mjs";
-import { createSchoolLifecycleRouter } from "../../../../modules/school/server/api/schoolLifecycle.mjs";
+import { LanguageStudyService } from "../../../../__app_modules/school/server/application/LanguageStudyService.mjs";
+import { createSchoolLifecycleRouter } from "../../../../__app_modules/school/server/api/schoolLifecycle.mjs";
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
-import { SchoolLifecycleAgendaResource } from "../../../../modules/school/server/application/services/SchoolLifecycleAgendaResource.mjs";
+import { SchoolLifecycleAgendaResource } from "../../../../__app_modules/school/server/application/services/SchoolLifecycleAgendaResource.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const LANGUAGE_UNIT = 'language-daily';

@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/RssHeadlineHarvester.test.mjs
 import { vi } from 'vitest';
-import { RssHeadlineHarvester } from "../../../../modules/feed/server/adapters/RssHeadlineHarvester.mjs";
+import { RssHeadlineHarvester } from "../../../../__app_modules/feed/server/adapters/RssHeadlineHarvester.mjs";
 
 describe('RssHeadlineHarvester', () => {
   let harvester;

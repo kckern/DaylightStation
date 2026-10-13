@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import ReconciliationProcessor from "../../../../modules/health/server/application/health/ReconciliationProcessor.mjs";
+import ReconciliationProcessor from "../../../../__app_modules/health/server/application/health/ReconciliationProcessor.mjs";
 
 describe('ReconciliationProcessor', () => {
   let processor;

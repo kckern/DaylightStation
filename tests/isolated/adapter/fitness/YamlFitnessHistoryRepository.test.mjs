@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlFitnessHistoryRepository } from "../../../../modules/fitness/server/adapters/YamlFitnessHistoryRepository.mjs";
+import { YamlFitnessHistoryRepository } from "../../../../__app_modules/fitness/server/adapters/YamlFitnessHistoryRepository.mjs";
 
 const ID = '20260919104104';
 const session = (tickCount, duration) => ({

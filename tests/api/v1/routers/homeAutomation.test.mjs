@@ -17,8 +17,8 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-import { createHomeAutomationRouter } from "../../../../modules/home/server/api/homeAutomation.mjs";
-import { LegacyHomeAutomationService } from "../../../../modules/home/server/application/home-automation/LegacyHomeAutomationService.mjs";
+import { createHomeAutomationRouter } from "../../../../__app_modules/home/server/api/homeAutomation.mjs";
+import { LegacyHomeAutomationService } from "../../../../__app_modules/home/server/application/home-automation/LegacyHomeAutomationService.mjs";
 
 const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 

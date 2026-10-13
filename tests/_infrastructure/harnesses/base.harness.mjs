@@ -138,7 +138,7 @@ export function printSummary(label, files, args) {
 /** Browser ownership changes physical paths, not the frontend test population. */
 export function findBrowserColocatedTestFiles(projectRoot, args) {
   const files = findColocatedTestFiles(path.join(projectRoot, 'frontend/src'), args);
-  for (const kind of ['modules', 'capabilities']) {
+  for (const kind of ['__app_modules', '__capabilities']) {
     const ownerRoot = path.join(projectRoot, kind);
     if (!fs.existsSync(ownerRoot) || !fs.lstatSync(ownerRoot).isDirectory()) continue;
     for (const owner of fs.readdirSync(ownerRoot, { withFileTypes: true })) {

@@ -1,6 +1,6 @@
 // tests/isolated/domain/trigger/services/BarcodeResolver.test.mjs
 import { describe, it, expect } from 'vitest';
-import { BarcodeResolver } from "../../../../../capabilities/device-dispatch/server/domain/services/BarcodeResolver.mjs";
+import { BarcodeResolver } from "../../../../../__capabilities/device-dispatch/server/domain/services/BarcodeResolver.mjs";
 
 const registry = { locations: { 'ds2278': { target: 'living-room', default_action: 'queue', actions: ['queue', 'play', 'open'] } } };
 

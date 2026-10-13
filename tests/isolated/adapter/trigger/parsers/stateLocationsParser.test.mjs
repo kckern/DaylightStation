@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseStateLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/stateLocationsParser.mjs";
+import { parseStateLocations } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/stateLocationsParser.mjs";
 
 describe('parseStateLocations', () => {
   it('returns empty for null/undefined/empty input', () => {

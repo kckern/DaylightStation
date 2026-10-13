@@ -1,7 +1,7 @@
 // tests/isolated/agents/framework/AgentTranscript.test.mjs
 import { describe, it, expect } from 'vitest';
-import { AgentTranscript as BaseAgentTranscript } from "../../../../capabilities/agent-runtime/server/application/framework/AgentTranscript.mjs";
-import { AgentTranscriptFileStore } from "../../../../capabilities/agent-runtime/server/adapters/AgentTranscriptFileStore.mjs";
+import { AgentTranscript as BaseAgentTranscript } from "../../../../__capabilities/agent-runtime/server/application/framework/AgentTranscript.mjs";
+import { AgentTranscriptFileStore } from "../../../../__capabilities/agent-runtime/server/adapters/AgentTranscriptFileStore.mjs";
 
 class AgentTranscript extends BaseAgentTranscript {
   constructor(deps) { super({ turnId: 'test-turn', ...deps }); }

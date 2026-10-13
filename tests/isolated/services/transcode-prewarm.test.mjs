@@ -1,7 +1,7 @@
 // tests/isolated/services/transcode-prewarm.test.mjs
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { TranscodePrewarmService as BaseTranscodePrewarmService } from '../../../backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
-import { PlayableItem } from "../../../capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
+import { TranscodePrewarmService as BaseTranscodePrewarmService } from '../../../__backend/src/3_applications/devices/services/TranscodePrewarmService.mjs';
+import { PlayableItem } from "../../../__capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
 import { resolvedAdapterContentCatalog } from '../../_lib/resolvedAdapterContentCatalog.mjs';
 
 class TranscodePrewarmService extends BaseTranscodePrewarmService {

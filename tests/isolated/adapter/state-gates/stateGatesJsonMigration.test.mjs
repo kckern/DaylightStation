@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { YamlStateGatesStateEngine } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
+import { YamlStateGatesStateEngine } from "../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
 
 const JSON_PATH = id => `/virtual/${id}/current.json`;
 const YML_PATH = id => `/virtual/${id}/current.yml`;
@@ -138,7 +138,7 @@ describe('State Gates JSON migration', () => {
   });
 
   it('toLegacyV1 turns JSON state back into a v1 file the migration reads identically', async () => {
-    const { toLegacyV1 } = await import("../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs");
+    const { toLegacyV1 } = await import("../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs");
     const first = engineWith({ yml: legacyV1() });
     const migrated = await first.engine.loadProjection('home');
     await first.engine.commit('home', 2, { ...migrated, householdRevision: 3 }, []);

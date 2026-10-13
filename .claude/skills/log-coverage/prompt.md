@@ -42,7 +42,7 @@ Find error handling code without logging:
 Find Express routes missing request/response logging:
 
 **Patterns to search for:**
-- `router.get/post/put/delete/patch(...)` in `backend/routers/`
+- `router.get/post/put/delete/patch(...)` in `__backend/routers/`
 - Route handler functions
 
 **What to check:**
@@ -195,11 +195,11 @@ Suggested addition:
 Prioritized list of changes to make:
 ```
 ## Critical (Do First)
-- [ ] Add error logging to authentication handler (backend/routers/auth.mjs:45)
-- [ ] Add failure logging to Garmin sync (backend/lib/garmin.mjs:123)
+- [ ] Add error logging to authentication handler (__backend/routers/auth.mjs:45)
+- [ ] Add failure logging to Garmin sync (__backend/lib/garmin.mjs:123)
 
 ## High (Do Soon)
-- [ ] Add request logging to /api/fitness/data endpoint (backend/routers/fitness.mjs:67)
+- [ ] Add request logging to /api/fitness/data endpoint (__backend/routers/fitness.mjs:67)
 ...
 ```
 

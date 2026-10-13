@@ -1,4 +1,4 @@
-import { buildZoneMetadata } from "../../../../../modules/fitness/browser/hooks/fitness/zoneMetadata.js";
+import { buildZoneMetadata } from "../../../../../__app_modules/fitness/browser/hooks/fitness/zoneMetadata.js";
 
 describe('buildZoneMetadata', () => {
   const zoneConfig = [

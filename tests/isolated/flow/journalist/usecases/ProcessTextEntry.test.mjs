@@ -45,7 +45,7 @@ describe('ProcessTextEntry', () => {
     };
 
     // Dynamic import after mocks are set up
-    const module = await import("../../../../../modules/journalist/server/application/usecases/ProcessTextEntry.mjs");
+    const module = await import("../../../../../__app_modules/journalist/server/application/usecases/ProcessTextEntry.mjs");
     ProcessTextEntry = module.ProcessTextEntry;
   });
 

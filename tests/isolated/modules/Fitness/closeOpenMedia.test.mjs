@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findUnclosedMedia } from "../../../../modules/fitness/browser/hooks/fitness/closeOpenMedia.js";
+import { findUnclosedMedia } from "../../../../__app_modules/fitness/browser/hooks/fitness/closeOpenMedia.js";
 
 describe('findUnclosedMedia', () => {
 

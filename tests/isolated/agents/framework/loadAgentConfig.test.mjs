@@ -1,7 +1,7 @@
 // tests/isolated/agents/framework/loadAgentConfig.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { loadAgentConfig } from "../../../../capabilities/agent-runtime/server/application/framework/loadAgentConfig.mjs";
-import { AgentConfigProjection } from '../../../../capabilities/agent-runtime/server/adapters/AgentConfigProjection.mjs';
+import { loadAgentConfig } from "../../../../__capabilities/agent-runtime/server/application/framework/loadAgentConfig.mjs";
+import { AgentConfigProjection } from '../../../../__capabilities/agent-runtime/server/adapters/AgentConfigProjection.mjs';
 
 const project = (configService) => new AgentConfigProjection({ configService });
 

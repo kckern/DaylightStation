@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { test, expect } from '@playwright/test';
-import { WebSocketEventBus } from '../../../../backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
-import { registerClientIngress } from '../../../../backend/src/5_composition/modules/clientIngress.mjs';
+import { WebSocketEventBus } from '../../../../__backend/src/1_adapters/eventbus/WebSocketEventBus.mjs';
+import { registerClientIngress } from '../../../../__backend/src/5_composition/modules/clientIngress.mjs';
 
 // Foundation integration, not whole-story acceptance: real browser providers,
 // receiver hook/controller, branch WebSocket bus and ingress, and caller

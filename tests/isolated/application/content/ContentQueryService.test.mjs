@@ -1,7 +1,7 @@
 // tests/isolated/application/content/ContentQueryService.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ContentQueryService as ApplicationContentQueryService } from "../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
-import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { ContentQueryService as ApplicationContentQueryService } from "../../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 // Keep the rich registry fixtures, but cross the application boundary through
 // the same semantic catalog gateway used by composition.

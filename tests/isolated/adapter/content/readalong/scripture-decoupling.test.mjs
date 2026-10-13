@@ -20,12 +20,12 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 }));
 
 // Mock domains/content index for ItemSelectionService
-vi.mock("../../../../../capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs", () => ({
+vi.mock("../../../../../__capabilities/content-catalog/server/domain/services/ItemSelectionService.mjs", () => ({
   ItemSelectionService: { select: vi.fn(() => []) }
 }));
 
 const { loadContainedYaml, findMediaFileByPrefix } = await import('#system/utils/FileIO.mjs');
-const { ReadalongAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/readalong/ReadalongAdapter.mjs");
+const { ReadalongAdapter } = await import("../../../../../__capabilities/content-catalog/server/adapters/providers/readalong/ReadalongAdapter.mjs");
 
 describe('ReadalongAdapter – scripture decoupling', () => {
   let adapter;
@@ -75,7 +75,7 @@ describe('ReadalongAdapter – scripture decoupling', () => {
   describe('_extractTitles (manifest.titleGenerator)', () => {
     it('uses generateReference when manifest.titleGenerator is "scripture-reference" and verseId exists', () => {
       // generateReference is imported from scripture-guide inside the adapter.
-      // Since it's in backend/node_modules, vi.mock may not intercept it.
+      // Since it's in __backend/node_modules, vi.mock may not intercept it.
       // Instead we test the observable behavior: title should be a scripture reference format.
       const manifest = { titleGenerator: 'scripture-reference' };
       const titleSource = { headings: { heading: 'The Word is a Seed' } };

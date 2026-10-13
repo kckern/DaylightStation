@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SubmitPaperWork } from "../../../../modules/school/server/application/usecases/SubmitPaperWork.mjs";
-import { GradeSubmission } from "../../../../modules/school/server/application/usecases/GradeSubmission.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { questionItemIds } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { SubmitPaperWork } from "../../../../__app_modules/school/server/application/usecases/SubmitPaperWork.mjs";
+import { GradeSubmission } from "../../../../__app_modules/school/server/application/usecases/GradeSubmission.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
+import { questionItemIds } from "../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, fakeGrownUps, silentLogger,

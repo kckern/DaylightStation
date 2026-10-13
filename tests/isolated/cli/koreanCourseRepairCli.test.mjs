@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import yaml from 'js-yaml';
-import {assembleKoreanCourse} from "../../../modules/school/cli/lib/korean-course.mjs";
-import {publishDocument} from "../../../modules/school/server/domain/documents/documentSource.mjs";
+import {assembleKoreanCourse} from "../../../__app_modules/school/cli/lib/korean-course.mjs";
+import {publishDocument} from "../../../__app_modules/school/server/domain/documents/documentSource.mjs";
 const fixture=new URL('../../_fixtures/school/korean-3-2/',import.meta.url);
 const read=n=>yaml.load(fs.readFileSync(new URL(n,fixture),'utf8'));
 it('previews without base mutation, refuses stale save and retains original published keys on apply',()=>{

@@ -1,6 +1,6 @@
 // tests/isolated/agents/framework/buildAgentEventQueryService.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { buildAgentEventQueryService } from "../../../../modules/health/server/application/agents/buildAgentEventQueryService.mjs";
+import { buildAgentEventQueryService } from "../../../../__app_modules/health/server/application/agents/buildAgentEventQueryService.mjs";
 
 describe('buildAgentEventQueryService', () => {
   it('returns null when adapters map is null', () => {

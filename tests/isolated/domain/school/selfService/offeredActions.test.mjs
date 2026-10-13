@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { offeredActions, cardSentence } from "../../../../../modules/school/server/domain/selfService/offeredActions.mjs";
-import { TRANSITIONS } from "../../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { offeredActions, cardSentence } from "../../../../../__app_modules/school/server/domain/selfService/offeredActions.mjs";
+import { TRANSITIONS } from "../../../../../__app_modules/school/server/domain/sessions/sessionEvents.mjs";
 
 /**
  * What `school.yml selfService.mediaSurface` actually emits: a BARE SURFACE ID.

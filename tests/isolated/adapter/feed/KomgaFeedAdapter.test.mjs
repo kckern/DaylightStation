@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/KomgaFeedAdapter.test.mjs
 import { vi } from 'vitest';
-import { KomgaFeedAdapter } from "../../../../modules/feed/server/adapters/sources/KomgaFeedAdapter.mjs";
+import { KomgaFeedAdapter } from "../../../../__app_modules/feed/server/adapters/sources/KomgaFeedAdapter.mjs";
 
 // Mock dataService
 const mockDataService = {

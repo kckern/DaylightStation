@@ -2,10 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 
-// Small local copy of backend/src/0_system/utils/deepMerge.mjs's semantics.
+// Small local copy of __backend/src/0_system/utils/deepMerge.mjs's semantics.
 // Duplicated (not imported) on purpose: vite.config.js loads at Vite startup
 // via frontend/'s own package.json, which has no "#backend/*" subpath import,
-// so reaching into backend/ here would mean a brittle relative cross-package
+// so reaching into __backend/ here would mean a brittle relative cross-package
 // path. Keep this in sync with the backend original if its merge rules change.
 //   - `undefined` override values are skipped (base value preserved).
 //   - Arrays are replaced wholesale (override wins), never concatenated.

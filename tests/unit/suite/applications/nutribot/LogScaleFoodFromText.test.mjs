@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { LogScaleFoodFromText } from "../../../../../modules/nutribot/server/application/usecases/LogScaleFoodFromText.mjs";
+import { LogScaleFoodFromText } from "../../../../../__app_modules/nutribot/server/application/usecases/LogScaleFoodFromText.mjs";
 
 const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 

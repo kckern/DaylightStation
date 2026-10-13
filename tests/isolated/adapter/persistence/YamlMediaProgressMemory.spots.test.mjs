@@ -7,8 +7,8 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { MediaProgress } from "../../../../capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
-import { YamlMediaProgressMemory } from "../../../../capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
+import { MediaProgress } from "../../../../__capabilities/content-catalog/server/domain/entities/MediaProgress.mjs";
+import { YamlMediaProgressMemory } from "../../../../__capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
 
 describe('YamlMediaProgressMemory per-screen spots', () => {
   let tempDir;

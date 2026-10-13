@@ -14,7 +14,7 @@ vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: (...args) => postMock(...args),
 }));
 
-import { useZoneLedSync } from "../../../../modules/fitness/browser/hooks/fitness/useZoneLedSync.js";
+import { useZoneLedSync } from "../../../../__app_modules/fitness/browser/hooks/fitness/useZoneLedSync.js";
 
 describe('useZoneLedSync characterization', () => {
   beforeEach(() => {

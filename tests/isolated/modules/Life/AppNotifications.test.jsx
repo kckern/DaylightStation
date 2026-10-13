@@ -19,7 +19,7 @@ vi.mock('#frontend/hooks/useWebSocket.js', () => ({
   },
 }));
 
-import { useAppNotifications } from "../../../../modules/life/browser/hooks/useAppNotifications.js";
+import { useAppNotifications } from "../../../../__app_modules/life/browser/hooks/useAppNotifications.js";
 
 /** Exposes the current path so an actionable-toast navigation can be asserted. */
 const LocationProbe = () => {

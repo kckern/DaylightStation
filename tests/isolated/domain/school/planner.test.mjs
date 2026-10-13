@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { planLearnerWork, PLAN_STATUSES } from "../../../../modules/school/server/domain/planner.mjs";
-import { planDailyAgenda } from "../../../../modules/school/server/domain/agenda.mjs";
-import { resolveDayCompletion } from "../../../../modules/school/server/domain/completion.mjs";
+import { planLearnerWork, PLAN_STATUSES } from "../../../../__app_modules/school/server/domain/planner.mjs";
+import { planDailyAgenda } from "../../../../__app_modules/school/server/domain/agenda.mjs";
+import { resolveDayCompletion } from "../../../../__app_modules/school/server/domain/completion.mjs";
 
 const NOW = '2026-07-27T09:00:00.000Z';
 

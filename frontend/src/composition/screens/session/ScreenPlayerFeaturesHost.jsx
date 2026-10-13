@@ -7,15 +7,15 @@
 // what interrupted, from where, and when the programme comes back) and the
 // music plaque.
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { getActionBus } from "../../../../../capabilities/screen-host/browser/input.mjs";
-import { getPlayerQueueOpRegistry } from "../../../../../capabilities/playback/browser/contracts.mjs";
-import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../capabilities/playback/browser/contracts.mjs";
-import { getPlayerSessionRegistry } from "../../../../../capabilities/playback/browser/sessions.mjs";
+import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
+import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../__capabilities/playback/browser/contracts.mjs";
+import { getPlayerSessionRegistry } from "../../../../../__capabilities/playback/browser/sessions.mjs";
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
-import { musicBehindVerdict } from "../../../../../capabilities/playback/browser/contracts.mjs";
-import { Player as Player } from "../../../../../modules/media/browser/playback.mjs";
-import CameraOverlay from "../../../../../modules/camera/browser/overlay.mjs";
-import { MusicBehindLayer } from "../../../../../capabilities/playback/browser/music-behind.mjs";
+import { musicBehindVerdict } from "../../../../../__capabilities/playback/browser/contracts.mjs";
+import { Player as Player } from "../../../../../__app_modules/media/browser/playback.mjs";
+import CameraOverlay from "../../../../../__app_modules/camera/browser/overlay.mjs";
+import { MusicBehindLayer } from "../../../../../__capabilities/playback/browser/music-behind.mjs";
 import { requestRestore } from './ScreenSessionControlsHost.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
 import './ScreenPlayerFeatures.css';

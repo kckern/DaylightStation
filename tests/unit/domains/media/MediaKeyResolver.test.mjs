@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 
-import { MediaKeyResolver } from "../../../../modules/media/server/domain/MediaKeyResolver.mjs";
-import { UnknownMediaSourceError, UnresolvableMediaKeyError } from "../../../../modules/media/server/domain/errors.mjs";
+import { MediaKeyResolver } from "../../../../__app_modules/media/server/domain/MediaKeyResolver.mjs";
+import { UnknownMediaSourceError, UnresolvableMediaKeyError } from "../../../../__app_modules/media/server/domain/errors.mjs";
 
 describe('MediaKeyResolver', () => {
   let resolver;

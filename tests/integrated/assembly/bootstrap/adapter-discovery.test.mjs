@@ -6,7 +6,7 @@ import path from 'node:path';
 
 // Jest transforms ESM test modules, so import.meta is not a stable way to
 // locate repository fixtures here. Integrated tests always run from repo root.
-const adaptersRoot = path.resolve(process.cwd(), 'backend/src/1_adapters');
+const adaptersRoot = path.resolve(process.cwd(), '__backend/src/1_adapters');
 const execFileAsync = promisify(execFile);
 
 describe('Adapter Discovery Integration', () => {

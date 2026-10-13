@@ -1,2 +1,2 @@
 // Stable command entry; implementation belongs to its application.
-export * from "../modules/media/cli/_tmp_plex_verify.mjs";
+export * from "../__app_modules/media/cli/_tmp_plex_verify.mjs";

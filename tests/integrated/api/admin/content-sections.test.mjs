@@ -19,10 +19,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'js-yaml';
-import { createAdminContentRouter } from "../../../../capabilities/content-catalog/server/api/admin/content.mjs";
-import { ListManagementService } from "../../../../capabilities/content-catalog/server/application/services/ListManagementService.mjs";
-import { YamlListDatastore } from "../../../../capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
-import { ListConfigCodec } from "../../../../capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
+import { createAdminContentRouter } from "../../../../__capabilities/content-catalog/server/api/admin/content.mjs";
+import { ListManagementService } from "../../../../__capabilities/content-catalog/server/application/services/ListManagementService.mjs";
+import { YamlListDatastore } from "../../../../__capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
+import { ListConfigCodec } from "../../../../__capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ function buildApp(dataDir) {
   // Mount the SAME error middleware production mounts, not a hand-rolled double.
   // createAdminContentRouter has no error handler of its own (unlike its sibling
   // admin routers), so in production its thrown errors are mapped by the
-  // app-level errorHandlerMiddleware() in backend/src/app.mjs. That handler maps
+  // app-level errorHandlerMiddleware() in __backend/src/app.mjs. That handler maps
   // by err.name, because the application errors ListManagementService throws
   // (#apps/common/errors/SemanticErrors.mjs) are deliberately transport-neutral
   // and carry no HTTP status of their own.

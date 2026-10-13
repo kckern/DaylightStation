@@ -28,12 +28,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { agendaDocument, resultDocument, noticeDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
+import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
 
 const RECEIPTS_SRC_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../../..',
-  'backend/src/2_domains/school/documents/receipts.mjs',
+  '__backend/src/2_domains/school/documents/receipts.mjs',
 );
 
 /** Strips comments so the structural count below only sees real code. */

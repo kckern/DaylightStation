@@ -2,8 +2,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
-import { WeeklyReviewService } from "../../../../modules/weekly-review/server/application/WeeklyReviewService.mjs";
-import { FilesystemWeeklyReviewStore } from "../../../../modules/weekly-review/server/adapters/persistence/FilesystemWeeklyReviewStore.mjs";
+import { WeeklyReviewService } from "../../../../__app_modules/weekly-review/server/application/WeeklyReviewService.mjs";
+import { FilesystemWeeklyReviewStore } from "../../../../__app_modules/weekly-review/server/adapters/persistence/FilesystemWeeklyReviewStore.mjs";
 
 describe('WeeklyReviewService', () => {
   let service;

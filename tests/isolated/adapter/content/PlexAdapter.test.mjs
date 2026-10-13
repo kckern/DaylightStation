@@ -1,7 +1,7 @@
 // tests/unit/adapters/content/PlexAdapter.test.mjs
 import { vi } from 'vitest';
-import { PlexAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
-import { PlexClient } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexClient.mjs";
+import { PlexAdapter } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlexClient } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexClient.mjs";
 
 // Helper to create mock httpClient
 const createMockHttpClient = () => ({ get: vi.fn(), post: vi.fn() });

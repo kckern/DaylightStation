@@ -66,7 +66,7 @@ describe('vite.ports resolvePorts — local-over-base merge (regression: local f
   });
 });
 
-describe('deepMerge — matches backend/src/0_system/utils/deepMerge.mjs semantics', () => {
+describe('deepMerge — matches __backend/src/0_system/utils/deepMerge.mjs semantics', () => {
   test('undefined override values are skipped, base preserved', () => {
     expect(deepMerge({ a: 1 }, { a: undefined, b: 2 })).toEqual({ a: 1, b: 2 });
   });

@@ -1,0 +1,412 @@
+# Piano Kiosk — Performance and jank
+
+The piano tablet (Samsung SM-T590, Android 10, ~3 GB RAM) runs the app full-screen in
+Fully Kiosk Browser. The SPA is light, so when it feels slow the cause is almost never
+React render load — and it turned out not to be the GPU's raw speed either. This document
+records what actually limited frame rate, how to diagnose it on-device, and the watchdog
+that observes frame health.
+
+## The root cause: a forced single hardware layer
+
+The dominant historical symptom was brutal, systemic jank — **every** mode (menu, games,
+waterfall, Music) stuttering with "a little flash," frames landing at 60–300ms, and the
+state persisting until the WebView was reloaded or the device rebooted. It looked like a
+CPU or GPU ceiling, but it was neither:
+
+- **CPU was idle** during the jank — `top -H` showed ~6 of 8 cores idle; no thread pegged.
+- **The GPU draws fast** — `dumpsys gfxinfo` showed only a handful of "Slow issue draw
+  commands"; many frames rendered in 5ms (the panel is capable of 200fps).
+- **Yet nearly every frame did a "Slow bitmap upload"** of a single **full-screen
+  (1920×1200×4 ≈ 9.2 MB) texture.**
+
+That fingerprint is **Fully Kiosk's `graphicsAccelerationMode = 1`**, which calls
+`WebView.setLayerType(LAYER_TYPE_HARDWARE)` and collapses the entire WebView into one
+Android hardware layer. That **bypasses Chromium's tiled compositing**: instead of
+re-uploading only the dirty 256×256 tiles, Android's hwui `RenderThread` re-captures and
+re-uploads the **whole screen** as one 9.2 MB texture on every invalidate. The CPU and GPU
+sit idle waiting on that wholesale DMA upload — hence idle cores, fast draws, and 60–300ms
+frames, on every screen at once.
+
+**The fix is `graphicsAccelerationMode = 0`** (system default — hardware-accelerated *with*
+tiled partial updates). Measured impact, same session, same interaction:
+
+| | mode = 1 (forced HW layer) | mode = 0 (default, tiled) |
+|---|---|---|
+| Slow bitmap uploads | 299 / 371 frames | **0 / 234** |
+| Slow UI thread | 306 | 16 |
+| Missed Vsync | 241 | 2 |
+| 50th pct frame | 77 ms | 27 ms |
+| 90th pct frame | 300 ms | 38 ms |
+
+> `graphicsAccelerationMode` is a per-device Fully Kiosk setting (persists across reboots).
+> It must be **0** on the piano tablet. A value of **1** (forced hardware) is the trap —
+> it sounds faster but disables tiling; **2** is software rendering. Set via the FKB REST
+> API: `node cli/fkb.cli.mjs set graphicsAccelerationMode 0` then restart FKB.
+
+### Measuring jank (the right way — and a pitfall)
+
+**`node cli/fkb.cli.mjs jank [minFps]`** is the canonical check: it injects a `requestAnimationFrame`
+counter, reads the steady-state fps back out of an offscreen DOM node via `getHtmlSource`, and exits
+non-zero below the threshold (default 20). It is **pure FKB REST — no ADB** — so it works after a
+reboot (adb-over-wifi is non-persistent and dies on reboot; FKB's REST on `:2323` comes back on its
+own). Healthy steady-state on this tablet is **~60 fps**. Cron it to catch regressions.
+
+> **Measurement pitfalls (2026-07-01):** (1) the older `fkb.cli fps` (screenshot) probe samples rAF
+> only ~2.5 s after a cold `loadStartUrl` — during the SPA's load/hydration burst — and under-reads a
+> healthy page; measure at steady state (the `jank` command waits ~10 s). (2) Always confirm
+> `screenOn:true` first — rAF throttles to ~1 fps while the FKB backlight is off. (3) **Both CLI
+> probes reload the page, and a fresh page can read 60 fps while the aged page the user actually
+> lives on has decayed to ~10 fps** (see the keep-alive regression below). Spot probes only measure
+> the latch state; aged-page decay is only visible in the passive `piano.watchdog` telemetry.
+> (4) Do NOT test via `injectJsCode` experiments containing `history.pushState`: FKB re-evaluates the
+> injected JS on history changes, so such probes multiply into an instance storm on an SPA.
+
+### The 2026-07-01 finding: an OS-level input-recency throttle (page-side unfixable)
+
+Late-evening conclusion after instrumented elimination. The SM-T590 clamps the WebView's
+**main-thread frame delivery to ~4-8 fps** when there has been no **touch** input for a while:
+
+- **Everything main-thread** (rAF, React commits, key highlights) hits a hard ~120-250 ms/frame
+  floor; **compositor-thread CSS animations stay smooth at 60** (visibly: the header pill is
+  butter while the app janks) — so "the CSS driver looks fine" proves nothing about the app.
+- **BLE-MIDI is NOT user activity** to Android/Chromium — only touch/keys are. A piano kiosk is
+  "idle" *while being played*: measured MIDI→pixels lag ≈ 250 ms avg / 0.8 s worst during play.
+- **Real touch lifts it to 60 fps instantly** (adb `input tap` test: idle 2.5 → 60 fps, 0% janky);
+  load/navigation and reboot give a temporary boost window — which is why fresh-page probes lie.
+
+**Page-side levers all FAILED** (each verified live via the always-on telemetry): compositor CSS
+animation ✗, playing muted video (silent-AAC track, exempt from the video-only power-pause) ✗,
+30 Hz `setInterval` canvas main-thread paint damage ✗, **unmuted audible playback** (subsonic
+40 Hz @ −35 dB, FKB `autoplayAudio=true`) ✗. The keep-alive stack in `KeepAliveVideo.jsx` is kept
+(harmless, and it still covers the older starvation modes), but no page content defeats this
+throttle.
+
+**Next steps (require a one-time USB/ADB session at the tablet):**
+1. Re-enable adb-over-wifi (`adb tcpip 5555`) — it does not survive reboots.
+2. During throttle, capture mechanism: `dumpsys gfxinfo`, CPU freqs (`cat /sys/devices/system/cpu/*/cpufreq/scaling_cur_freq`),
+   renderer cgroup/priority — distinguishes Chromium renderer scheduling vs Samsung touch-boost DVFS.
+3. Try WebView command-line flags (`/data/local/tmp/webview-command-line`).
+4. **The designed fix (IMPLEMENTED 2026-07-02, pending on-device validation):** `PianoTouchService`
+   (an `AccessibilityService` in the piano-bridge APK) + `TouchPulser` dispatch a tiny corner
+   micro-swipe on each MIDI note (cadence-limited via `tapCadenceMs`) — the bridge already owns
+   `MidiManager`, so *playing* becomes the OS-level input that un-throttles the UI. It ships entirely
+   over the LAN — **no USB**: the bridge SELF-INSTALLS the new APK (`/update` → PackageInstaller) and
+   SELF-ENABLES the service via `WRITE_SECURE_SETTINGS` (`SettingsControl.enableAccessibilityService`,
+   the ADB-free `settings put secure enabled_accessibility_services`). All knobs are live-tunable via
+   `pbctl config set` (`tapWakeEnabled`, `tapCadenceMs`, `tapX/tapY/tapLen`).
+   **OPEN QUESTION:** whether an accessibility-INJECTED gesture is treated as touch by the input-
+   recency throttle is not yet confirmed on hardware — validate by toggling `tapWakeEnabled` and
+   watching `perf.diagnostics` fps during play. If injection doesn't un-throttle, this is the wrong
+   lever and the gfxinfo/cpufreq capture (step 2) is needed to find the real one.
+
+### The 2026-07-07 live check: Adaptive power saving found ARMED; the throttle is episodic, not a constant idle clock
+
+A remote settings audit (via the piano-bridge — see "no-ADB settings channel" below) plus a
+controlled aged-page measurement, run while the kiosk was healthy:
+
+| Check | Result |
+|---|---|
+| `low_power` / `low_power_sticky` (battery saver) | 0 / 0 at check time |
+| **`adaptive_power_saving_setting`** | **1 — ARMED. Samsung flips battery saver on/off autonomously by "usage patterns."** Disabled 2026-07-07: `pbctl setsetting global adaptive_power_saving_setting 0` (revert: set 1). **Must stay 0.** |
+| `app_standby_enabled` | 1 (usage buckets active — a never-touched kiosk can decay buckets; bucket read needs adb) |
+| GOS (`com.samsung.android.game.gos`) | present; whether FKB is game-classified is unchecked (needs adb) |
+| Thermal | all sensors ~26 °C, battery 24.9 °C — ruled out with data |
+| CPU | all cores at max 1.8 GHz |
+| `stay_on_while_plugged_in`=7, `wifi_sleep_policy`=2 | keepawake settings intact |
+
+**Why adaptive power saving matters:** Chromium changes *main-thread* scheduling when the OS
+reports power-save (timer wake-up alignment/throttling) while **compositor-thread animations
+keep running** — exactly the observed signature (keep-alive dot smooth, app unresponsive).
+And the Samsung automation is (a) episodic by design and (b) a **persisted setting that
+survives reboot** — matching both "the jank comes and goes with no page-side cause" and
+"sometimes a reboot doesn't fix it."
+
+**Control measurement that reframes the throttle:** a **2.5-hour-old page** (screen off in
+daydream ~2 h) was woken via FKB REST `screenOn` — *not touch* — and immediately read
+**60 fps, held at every 1-minute sample for a full 10 minutes with zero input**. So the 4–8 fps clamp is NOT
+a constant "no-touch-for-N-minutes" clock; it is **episodic**, active only under some system
+state — consistent with power-save-gated scheduling. The earlier "input-recency" framing
+likely described the *boost that masks* the state, not the throttle's own timer. During the
+next live episode the FIRST command to run is:
+`pbctl getsetting global low_power` (1 = smoking gun).
+
+**The no-ADB settings channel:** adb-over-wifi dies on reboot, but the piano-bridge APK
+(`pbctl`) reads/writes Android settings without it — `getsetting/setsetting <global|secure|system> <key>`
+(per-key reads work from the app uid; `exec settings list` is permission-blocked) plus
+`exec`, `diag` (thermal/battery/cpu), and `kiosk` (beat-derived fps **without reloading the
+page** — the only honest aged-page probe; the CLI `jank`/`fps` probes reload and reset page age).
+
+**Follow-ups:**
+1. **Settings sentry (recommended):** the watchdog beat-check should assert
+   `low_power == 0` and `adaptive_power_saving_setting == 0` and correct drift — One UI
+   surfaces can re-arm them.
+2. **One USB session** to re-arm `adb tcpip 5555` unlocks the deep checks: `dumpsys
+   batterystats` power-save transitions correlated against `piano.watchdog.jank-start`
+   timestamps (the historical H1 test), `am get-standby-bucket` for FKB *and*
+   `com.google.android.webview`, GOS classification, and a perfetto capture during a live
+   episode.
+3. **Watchdog refinement:** a screen-off daydream session was classified `DEAD` and burned
+   55 L1 touch-bursts against a dark screen. Screen-off should classify as `SLEEPING` (beats
+   legitimately stop when rAF suspends) with L1 skipped.
+
+Full hypothesis set, the compositor-alive/main-dead constraint analysis, and the ordered
+attack plan: [`__docs/_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md`](../../_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md).
+
+### The 2026-08-23 live episode: it's THERMAL — a hot WiFi PA gets the GPU/memory clamped
+
+A ~2-hour 2-5 fps episode, worked entirely over the LAN (no ADB, nobody home), finally
+produced a mechanism that fits every observation. The forensics, all via `pbctl`-plane
+`/exec`, `/getsetting`, FKB REST, and screenshot diffing:
+
+| Ruled OUT, with data | Evidence |
+|---|---|
+| Power-save scheduling (07-07's prime suspect) | `PowerManager.isPowerSaveMode()` = **false** DURING the episode (p13 exposes it) |
+| Every Samsung power toggle | `low_power` 0, `adaptive_power_saving_setting` 0, `restricted_device_performance` 0,0 (found 1,1 once, repaired — repair changed nothing) |
+| Page decay / FKB state / device state | Episode survived page reload, `restartApp`, full reboot, screen-off/on cycle |
+| a11y-injected touch (07-01's designed fix) | **CONFIRMED NOT A LEVER**: neither the 34px micro-swipe nor a 400px/250ms swipe raised fps — Samsung's touch boost hooks the touchscreen driver, below a11y injection. `TouchPulser` cannot un-throttle |
+| The keep-alive dot / shimmer / page content | Hiding the dot changed nothing; `about:blank` idles the GPU (0%) — the page only *reveals* the state, per-frame cost is the disease |
+| CPU clamp / thermal on CPU sensors | All cores pinned 1.8 GHz, tsens ~42°C |
+| WebView 151 update (landed 08-19) | Episodes predate it all week (`piano.watchdog.jank-start` daily 08-17..08-23) |
+
+**What was measured:** every produced frame cost ~250 ms of GPU time regardless of damage
+(523 changed pixels/s on a static menu, yet GPU 60-99% busy; screenshot-diff proved how
+little was repainting). Meanwhile **`pa_therm0` — the WiFi power-amp thermistor — sat at
+80-84°C** (everything else ~42°C), `getCurrentThermalStatus()` = LIGHT, WiFi RTT to a LAN
+peer spiked 240ms-2.3s, and **the GPU sat at 320-400 MHz of 600 under 99% load** with
+`thermal_pwrlevel` still 0 — a cap applied *outside* the kgsl thermal knob, i.e. Samsung's
+thermal engine. A 2x frequency cap alone can't make a menu frame cost 250 ms; the working
+theory for the amplifier is the same mitigation clamping **DDR/bus bandwidth votes**, which
+makes the per-frame full-screen texture upload crawl. As the radio recovered (RTT back to
+5-120 ms), fps drifted 2 → 13 with zero config changes — the episode breathes with the
+radio, not with anything in software.
+
+**Causal chain:** struggling WiFi link → radio TX duty/power maxed → PA thermistor 80°C+ →
+Samsung thermal engine caps GPU freq (and, per the 250 ms/frame math, memory bandwidth) →
+every WebView frame costs 5-10x → main-thread frame delivery floors at 2-5 fps while
+compositor-only animation stays smooth. All software levers downstream of that are noise.
+
+**Standing instrumentation (payloads p13-p15):** every bridge heartbeat now carries
+`pageRafFps`, `thermalStatus`, `powerSaveMode`, `hotZone`/`hotZoneC` (hottest thermal zone,
+normalized), `gpuMhz`, `gpuBusyPct`. The correlation that took hours to dig out is now one
+LogsQL query: `context.app:piano-bridge AND _msg:bridge.heartbeat | fields _time, data.pageRafFps, data.hotZoneC, data.gpuMhz`.
+
+**Remedies (mostly physical — flag to the operator):** improve the tablet's WiFi situation
+(AP placement/band; the link is chronically poor), give the tablet airflow (it runs
+plugged-in at 100% against the piano), and consider trimming the kiosk's log-shipping
+volume during episodes (radio duty cycle is the heat source; `perf.diagnostics` densifies
+to 2s cadence exactly when the radio is already struggling — a feedback loop worth
+breaking). If `hotZoneC` reads a flat 80-84 for days regardless of load, suspect a
+degraded/stuck sensor pinning the thermal engine in mitigation — that would need service.
+
+Cleanups done the same day: FKB `injectJsCode` held a `history.pushState` back-button trap
+— the exact pattern this doc's own pitfall (4) warns multiplies into an instance storm on
+the SPA — now cleared; `webviewMixedContent` was 2 (blocked the page's `fetch` to
+`http://localhost:8770`, silently breaking the Operator drawer's Force Reset button) — now
+1. Neither was the jank cause; both were real defects.
+
+### The 2026-07-01 regression: removing the keep-alive video
+
+Commit `7de308f70` ("gut KeepAliveVideo to CSS-only vsync driver") shipped in the 12:31 build on
+2026-07-01; the first `piano.watchdog.jank-start` fired at 13:03 — 32 minutes later — and sustained
+~8–10 fps episodes (a hard ~100 ms/frame floor, `frameMs min ≈ 100`) recurred all day. The observed
+shape: **pages load at ~60 fps and decay to ~10 as they age**; prolonged decayed operation can latch
+the whole WebView (fresh pages read ~8 too; survives reload and `restartApp`; a device reboot clears
+it until pages decay again). CPU idle, RAM free, cool, heap/DOM flat — a throttled frame clock, not
+load. The working theory: the CSS driver's near-invisible animation (`opacity 0.012`) is eventually
+classified imperceptible by the current WebView (Chrome 149) and unscheduled.
+
+**Fix: belt-and-suspenders keep-alive, both drivers compositor-perceptible** (KeepAliveVideo.jsx):
+a muted looping 2 KB near-black H.264 video (`public/vsync-keepalive.mp4`, 48 px, opaque, parked in
+the dark header band — FKB has `autoplayVideos=true` so no gesture is needed; the old video's real
+defects were a broken source, 6 px size, and a needless gesture gate) **plus** the CSS transform
+driver, now opaque near-background color instead of ghost opacity. Telemetry (`keepalive.playing` /
+`keepalive.play-blocked` / `keepalive.stalled`) shows whether the media path is live on-device.
+Do not remove either driver based on a fresh-page measurement — validate on an **aged page**
+(>30 min) via `piano.watchdog` before believing any "X alone is sufficient" claim.
+
+> **Current state (diverges from the above):** the belt-and-suspenders pair was later
+> consolidated — per direction, for aesthetics — to a **single 3×2 px CSS crawl dot at
+> `rgba(255,255,255,0.22)`** (`KeepAliveVideo.jsx`, `.piano-keepalive-crawl` in
+> `PianoApp.scss`). The video driver and its telemetry are gone. Note the risk this section
+> itself documents: a deliberately minimal-contrast animation is in the same class as the
+> ghost-opacity driver that Chrome 149 unscheduled as imperceptible (and the dot's own
+> `z-index` comment records that occlusion-culling already defeated one iteration). If
+> aged-page decay episodes recur, the cheap first experiment is raising the dot's
+> contrast/opacity before deeper work — see the 2026-07-07 hypotheses doc, § 5.
+
+### Self-heal a dead kiosk page
+
+A transient load failure (e.g. the app restarts mid-load) can strand the WebView on Chrome's
+**"Webpage not available"** page. Because our JS is gone at that point, nothing in the SPA can
+recover it — the screensaver, MIDI wake, everything is dead until the page reloads. The
+symptom looks like "the screensaver stopped working" (screen stuck on), but the whole app is
+down. Confirm by fetching the DOM (`getHtmlSource` shows `<title>Webpage not available</title>`
+instead of `id="root"`); recover immediately with `node cli/fkb.cli.mjs reload` (`loadStartUrl`).
+
+FKB's own auto-reload settings prevent it from getting stuck: run **`node cli/fkb.cli.mjs
+recovery`** (idempotent — re-run after any re-provision, like `keepawake`). It sets
+`reloadPageFailure=30` (retry a failed load after 30s — the key one), `reloadOnInternet` /
+`reloadOnWifiOn` / `waitInternetOnReload` (recover on connectivity return), and asserts
+`reloadOnIdle`/`reloadEachSeconds` **off** so a healthy idle session (e.g. a paused video) is
+never force-reloaded. These are per-device FKB settings and persist across reboots.
+
+## Diagnosing on-device (what worked, what misled)
+
+The decisive tools were **adb** (via the in-container `AdbAdapter`, `cli/pianobridge.cli.mjs`
+for the no-adb fallback) and Fully's REST/JS channel:
+
+- **`adb shell dumpsys gfxinfo de.ozerov.fully`** — the breakthrough. Its per-stage counters
+  (*Slow UI thread*, *Slow bitmap uploads*, *Slow issue draw commands*) split the frame time
+  into CPU-UI vs texture-upload vs GPU-draw. "Slow bitmap uploads on nearly every frame" +
+  a single full-screen texture in the GPU cache named the cause directly.
+- **`adb shell top -H`** — per-thread CPU. Showed the render threads *blocked*, not burning
+  CPU (idle cores), proving it was an upload/wait stall, not compute.
+- **What misled:** the **JS Self-Profiling API** (`window.Profiler`, enabled via the
+  `Document-Policy: js-profiling` header) showed the JS main thread ~idle, and the in-page
+  rAF probe showed low fps — both true but both pointed *away* from JS, because the stall
+  was in the native upload path the JS profiler can't see. Heap and DOM node counts were
+  flat (ruling out leaks). Do not conclude "compositor ceiling / weak hardware" from a
+  low-fps + idle-JS reading; confirm with `gfxinfo` before blaming paint cost or the GPU.
+
+The bridge's own `cpu`/`exec` diagnostics are limited to its own process (SELinux blocks
+other-app `/proc` from `untrusted_app`); FKB CPU needs adb (shell uid). When adb-over-wifi
+is off (it does not survive reboots on this tablet), re-enable it (Developer Options →
+wireless debugging / `adb tcpip 5555`); the container's `AdbAdapter` reaches it from there.
+
+## Paint cost is the secondary lever
+
+With tiling restored, frames sit at ~27ms during interaction — usable but short of 60. The
+remaining cost is ordinary paint, and the playbook in
+[`webview-paint-performance.md`](../core/webview-paint-performance.md) applies: flat colors
+over gradients, no per-element `box-shadow`/`filter: blur` on repeated elements,
+`transform`-only animation, and `contain: layout style paint` to bound repaints. The
+keyboard (rendered in every mode) was flattened — solid key fills instead of gradients, the
+per-note blurred glow dropped — and the Music cover-wash blur cut from 40px to 8px. These
+trim the per-frame paint that tiling now has to do.
+
+## How jank is measured in-app
+
+Two in-app instruments sample `requestAnimationFrame`:
+
+- **The render watchdog** (`useRenderWatchdog`) runs for the life of the app as a passive
+  sensor, logging jank **episodes** (`piano.watchdog.jank-start` / `jank-end` with worst
+  fps). Its self-heal restart is **gated off** (`SELF_HEAL_RESTART = false`): restarting the
+  WebView did not recover frame presentation and degenerated into a remount loop (every
+  ~40s), which was its own felt lag — a separate bug fixed by disabling the restart.
+- **Process diagnostics** (`perf.diagnostics`, from the shared logger) periodically report
+  fps, frame timing, jank-frame count, heap, and DOM node count.
+
+These give fps and rule out JS/memory, but they cannot see the native upload stall — that is
+what `dumpsys gfxinfo` is for.
+
+**The fatal limitation of the in-app instruments:** they live *inside* the WebView and report
+over WebSocket *to the DS backend*. When the WebView latches or its JS loop starves, the sensor
+stops firing and its telemetry channel dies with it — so the in-app tools can never call time of
+death. And the whole SPA (and its telemetry) dies if the bridge process it depends on dies. On
+2026-07-03 the piano-bridge APK crashed; the kiosk decayed to the throttle with no sound, and
+*why the bridge died was unrecoverable* — `Diag` is an in-memory ring that died with the process.
+
+## The out-of-process watchdog (2026-07-03)
+
+The fix for that blind spot: move health-sensing to the one process that **survives** WebView
+failure — the piano-bridge APK — and give it authority to act. See
+`__docs/_wip/plans/2026-07-03-piano-kiosk-out-of-process-watchdog.md`.
+
+- **Heartbeat (page → bridge).** `useRenderWatchdog` POSTs a per-second beat
+  (`{fps, visibility, url}`) to `http://localhost:8770/kiosk/beat`. Beat *silence* is itself the
+  DEAD signal; decayed fps in the beats is the DECAYED signal. This is the only liveness view
+  that reflects the WebView's real event-loop health.
+- **`KioskWatchdog` (in the APK).** Classifies `HEALTHY | DECAYED | DEAD` and runs an escalation
+  ladder **immediately** on stall: **L1** `TouchPulser.burst` (invisible un-throttle) → **L2**
+  `loadStartUrl` (reload) → **L3** `restartApp` (renderer respawn) → **L4** `rebootDevice` (FKB
+  REST — the only rung that clears the hard latch). L2–L4 are suppressed inside the quiet window;
+  L4 is capped and its timestamp **persisted** so a reboot can't boot-loop.
+- **Durable death log (`CrashLog`).** Uncaught-exception handler + a running-marker that flags an
+  unclean previous death, all on disk so the *next* incident is diagnosable.
+- **Diagnostics API.** `pbctl diag` → `GET /diagnostics`: one snapshot of time, CPU, memory,
+  thermal, battery, bridge state, and **both** kiosk views (the WebView watchdog verdict *and*
+  FKB's own `deviceInfo` — distinguishing "WebView stalled" from "FKB app itself wedged").
+  `pbctl kiosk` / `pbctl crashlog` surface the watchdog state and durable death record.
+
+> Config (all live via `pbctl config set`, no rebuild): `watchdogMinFps`, `watchdogSustainSec`,
+> `watchdogBeatTimeoutMs`, `watchdogRecoverEnabled` (false = observe-only), `watchdogRebootEnabled`,
+> `watchdogRebootMinGapMs`. **`fkbPassword` MUST be set** or the L2–L4 FKB REST calls 401.
+
+The in-app `SELF_HEAL_RESTART` stays **off** — the bridge-hosted ladder is the self-heal now, and
+unlike the in-app restart it can escalate past `restartApp` to a real reboot when nothing else works.
+
+## Playback timing vs. rendering (sheet music)
+
+MIDI playback rhythm must never depend on the frame clock — on this tablet rAF is the
+throttled clock. The 2026-07-06 audit found the score transport ticking on rAF with
+untimestamped `send()`s (rhythm inherits every frame stall) plus a per-note whole-kiosk
+React render cascade via the MIDI context.
+
+> **Status: IMPLEMENTED** on branch `worktree-piano-playback-decoupling` (2026-07-06). All
+> Piano + MusicNotation unit tests green (157 files / 1583 tests). **On-device timing is NOT
+> yet validated** — see the caveat below. Audit + finding→commit map:
+> [`__docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`](../../_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md).
+
+**The design (two clocks).** The **audio plane** — MIDI note sends — is scheduled ~400 ms
+ahead as timestamped Web-MIDI sends off a coarse `setInterval` (NOT rAF), so Chromium's
+browser-process MIDI service dispatches them on time even if the page's main thread freezes.
+The **visual plane** — cursor and key light-up — fires at musical due-time and is *allowed to
+be late*. The metronome click likewise moved onto the **AudioContext clock** (lookahead beat
+scheduling). Separately, the R1 note-store change moved live-note state out of the MIDI
+context value so note events no longer re-render the whole kiosk — only the leaf consumers
+that display live notes. OSMD geometry extraction is **time-boxed (8 ms/slice)** and
+**deferred while the transport is playing** (a stale-layout guard hides overlays until the
+geometry walk catches up).
+
+**Two-stage pause flush (contract).** Sends already handed to the MIDI service can't be
+reliably recalled, so pause does two things: an **immediate** silence (note-offs for sounding
+notes), then a **delayed `sendPanic()`** (CC120+123) after `lookahead + 60 ms` to sweep any
+notes whose scheduled timestamp had already left. A quick resume **cancels** that pending
+delayed panic (so resuming inside the window doesn't cut the resumed notes). Worst case on
+pause: ≤ one lookahead window of tail notes clipped — same felt behavior as before.
+
+**Telemetry to watch on-device.** `score.playback.stats` now carries `meanLeadMs` /
+`minLeadMs` / `schedLate`. Success = leads stay ~300–400 ms and `schedLate ≈ 0` **even while
+the frame-drift telemetry stays ugly under the throttle** (that divergence is the whole
+point: rhythm healthy, visuals frame-bound). Extraction defer/release emits
+`musicxml.extract-deferred` / `musicxml.extract-released`.
+
+> **HONEST CAVEAT — unvalidated on hardware.** The unit tests prove the *logic* (two-plane
+> scheduling, pause-flush ordering, telemetry math, store equivalence, metronome, extraction
+> budgeting). They **cannot** prove on-device timing. Two OPEN QUESTIONS from the audit remain
+> UNVALIDATED on the physical tablet + Jamcorder chain:
+> 1. **Whether Chrome-149 WebView Web-MIDI honors future timestamps faithfully over Android
+>    BLE-MIDI.** If the BLE-MIDI packet timestamps aren't honored, rhythm immunity is only
+>    *partial* (the main-thread jitter is removed, but BLE/link jitter remains). Ear-test a
+>    scheduled dense passage on the MDG-400.
+> 2. **Whether the OS input-recency rAF throttle still degrades VISUALS during hands-on-keys
+>    play.** The audio plane is immune by design; the **cursor is not** and will still stutter
+>    at 4–8 fps until the `PianoTouchService` tap-wake (or another OS lever) is validated.
+>
+> Run the audit's on-device validation checklist (aged-page protocol, dense score ≥120 bpm
+> hands-off + while zooming, pull `score.playback.stats`, confirm `schedLate ≈ 0` while
+> frame-drift stays ugly, ear-test the pause tail, confirm no stuck notes) before believing
+> the rhythm fix on this hardware.
+
+## Sheet Music Learn recovery contract
+
+Learn progress unlocks choices; it never removes them. Opening a segment, including through a
+`learnRung` deep link, stops at the chooser. Completed drills remain available, and Make your own
+offers Right hand, Left hand, or Together with No beat, Keep a beat, or Play on time. Beat modes
+include an Extra slow 15% stage.
+
+The lab always exposes 64px-or-larger Pause/Resume, Start over, and Change practice controls.
+Pause freezes the assessment clock, MIDI observations, timeouts, misses, and click. Resume keeps
+the exact score position and gives a visible two-beat count-in. Restart and configuration changes
+discard only the active take; they do not bank a rep or record a failure.
+
+All modes paint durable pitch verdicts and show a textual/symbol tally for Right and Wrong. Play
+on time additionally reports Early, Late, and Missed; Keep a beat is intentionally pitch-only.
+The notation, tally, result evidence, and telemetry are projections of the assessment runtime's
+record. Unwritten wrong pitches remain in summary evidence even when the score cannot draw a
+notehead for them. Learn telemetry records chooser, launch, controls, tempo changes, and terminal
+outcomes with score/revision/configuration/run identity; it must never include raw MIDI events.
+
+---
+
+*Subsystem overview: [README.md](./README.md). Hardware and tablet setup: [kiosk-setup.md](./kiosk-setup.md).*

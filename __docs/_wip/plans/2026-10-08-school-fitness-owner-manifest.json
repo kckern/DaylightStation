@@ -1,0 +1,1244 @@
+{
+  "schema": "daylight.owner-move-manifest/v1",
+  "snapshot": "759be3aaf7dc36424e9bddcfe3746c3cff14a024",
+  "scope": "School and Fitness source ownership only; no execution, data migration or complete-M3 claim",
+  "rule_semantics": {
+    "input": "git ls-tree -r --name-only <snapshot>; tracked regular source/resources only, never filesystem empty directories or node_modules",
+    "directory": "literal source prefix ending slash; append unchanged suffix to destination",
+    "stem": "literal stem followed by dot; includes implementation, variants and colocated tests; append unchanged suffix",
+    "exact": "exact tracked path",
+    "precedence": "longest matching source; fail duplicate destination; matched populations SHA256 UTF-8 newline-joined sorted tracked paths + final newline",
+    "apply": "refresh against final M2 HEAD, refuse drift without reviewed census; move only rules; rewrite static imports, package aliases, CLI wrappers and resource references separately"
+  },
+  "rules": [
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/2_domains/school/",
+      "destination": "__app_modules/school/server/domain/",
+      "tracked_count": 240,
+      "population_sha256": "d34c2f3f9d16cf06b31b958210a0c1ebd21fa62ab10a2bbc0ac30db9dc5c8153"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/3_applications/school/",
+      "destination": "__app_modules/school/server/application/",
+      "tracked_count": 452,
+      "population_sha256": "60acacbfc822eddbdd918c022aac7c94e5218623898d7f455eaa492ab0475f22"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/1_adapters/school/",
+      "destination": "__app_modules/school/server/adapters/",
+      "tracked_count": 92,
+      "population_sha256": "bf764fdc06b5d29d8b62a8f59b2c15757916b30c3831e7e809aa652ac0a9c560"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/1_rendering/school/",
+      "destination": "__app_modules/school/server/rendering/",
+      "tracked_count": 43,
+      "population_sha256": "6b52e11b72f601f2831a14f6accedd524565a43574f50357e028a076065d3d22"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "frontend/src/modules/School/",
+      "destination": "__app_modules/school/browser/",
+      "tracked_count": 604,
+      "population_sha256": "01eff7843e6d2c119a2dc5100d34aa646af85ae67d734712fef0a6c035cb51ca"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "__backend/src/2_domains/fitness/",
+      "destination": "__app_modules/fitness/server/domain/",
+      "tracked_count": 55,
+      "population_sha256": "9e22c5739cdfecf2dc52af03643f4cd3c7a304fe6388c157459c726f3bcfe182"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "__backend/src/3_applications/fitness/",
+      "destination": "__app_modules/fitness/server/application/",
+      "tracked_count": 118,
+      "population_sha256": "0f6b4d4053cc500b519d123146ffa7f551ac2138a60fc1f2a24d903a8c30062f"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "__backend/src/1_adapters/fitness/",
+      "destination": "__app_modules/fitness/server/adapters/",
+      "tracked_count": 31,
+      "population_sha256": "d45df1c7361e7bec631901f2a1b52d0b89929eb22ed16c6baf1ce22547057d93"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "__backend/src/1_rendering/fitness/",
+      "destination": "__app_modules/fitness/server/rendering/",
+      "tracked_count": 6,
+      "population_sha256": "7a1e2ebcab662d189963bb3d4e48e0396e7570a2c3e0f15071c8fd453e65e721"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "frontend/src/modules/Fitness/",
+      "destination": "__app_modules/fitness/browser/",
+      "tracked_count": 871,
+      "population_sha256": "9797f0444122b762ca1d24a395ae44bb52b37b2c7ffe6b6c5516688f7e80eb1f"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "frontend/src/modules/Admin/School/",
+      "destination": "__app_modules/school/browser/admin/",
+      "tracked_count": 12,
+      "population_sha256": "12093c82cdac0de89d1cf64a126a185279bac2c6df58b84e6847e6794483f4dd"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/3_applications/quizzes/",
+      "destination": "__app_modules/school/server/application/quizzes/",
+      "tracked_count": 3,
+      "population_sha256": "6a258ad063d37dcbe245f96949e6f518827a7f06f85d89c40de0238cc76be087"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/3_applications/agents/card-ladder-tuner/",
+      "destination": "__app_modules/school/server/application/agents/card-ladder-tuner/",
+      "tracked_count": 4,
+      "population_sha256": "cb21979847c75ff569df27f4a294e27fc9bccf8ec7d43d77bbd0a3d349c0e23a"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "__backend/src/1_adapters/schoolcalc/",
+      "destination": "__app_modules/school/server/adapters/schoolcalc/",
+      "tracked_count": 24,
+      "population_sha256": "3ac9cea2c546b53ad66707ac1aef5e498b404e1bf34348a2ae661c02ac94796a"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "frontend/src/hooks/fitness/",
+      "destination": "__app_modules/fitness/browser/hooks/fitness/",
+      "tracked_count": 149,
+      "population_sha256": "2e080ddb8b97f52ef49461ce837f1365f39941dfd9cdced89f95ead9281e2f08"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/context/FitnessContext",
+      "destination": "__app_modules/fitness/browser/context/FitnessContext",
+      "tracked_count": 5,
+      "population_sha256": "050f0eb0d92ca3303f6cfb305056517858454425c935a7b0fa4137ae306f197c"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/context/fitnessBtActions",
+      "destination": "__app_modules/fitness/browser/context/fitnessBtActions",
+      "tracked_count": 2,
+      "population_sha256": "7128d1d57ee5766eed543bde388b7980bf3ab201f068df379d62285fe7695743"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/context/fitnessConfigBridge",
+      "destination": "__app_modules/fitness/browser/context/fitnessConfigBridge",
+      "tracked_count": 2,
+      "population_sha256": "6b1a82302b846612d6f102b6abba6f32ab9528e8750b2d4aec5dab3a6ae7a292"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/context/fitnessPressureMat",
+      "destination": "__app_modules/fitness/browser/context/fitnessPressureMat",
+      "tracked_count": 2,
+      "population_sha256": "0d57cb80a5ccec5e59d7e1520e93ee4872aa28850dfe4e1cd83f6c7c1d4e0a65"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/Apps/FitnessApp",
+      "destination": "__app_modules/fitness/browser/FitnessApp",
+      "tracked_count": 2,
+      "population_sha256": "bcc797b2b63b18dc9ee49f6e879025b33f567c6bef0d9ba0eeb065881831788f"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/Apps/fitnessSessionPersistence",
+      "destination": "__app_modules/fitness/browser/fitnessSessionPersistence",
+      "tracked_count": 2,
+      "population_sha256": "26d873241be776373f7d35d9f05773b4789d93d5384ab0d2b10b657ea869effb"
+    },
+    {
+      "owner": "fitness",
+      "kind": "exact",
+      "source": "frontend/src/Apps/FITNESS_TESTS.md",
+      "destination": "__app_modules/fitness/browser/FITNESS_TESTS.md",
+      "tracked_count": 1,
+      "population_sha256": "487e73ee459d68375716214572d7e8e6c339729479c1538a5631315917fa0304"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/hooks/useFitnessSession",
+      "destination": "__app_modules/fitness/browser/hooks/useFitnessSession",
+      "tracked_count": 1,
+      "population_sha256": "71edb438ca5d106863c6570d50590630bb4c0ef8ef77471b8649aaac507a1d6b"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "frontend/src/modules/Admin/Apps/FitnessConfig",
+      "destination": "__app_modules/fitness/browser/admin/FitnessConfig",
+      "tracked_count": 1,
+      "population_sha256": "faa2070f9d5d6aa38a881f2560468bb538e125797bf1d66b5e6846af400588af"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlAcademicPeriodStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlAcademicPeriodStore",
+      "tracked_count": 1,
+      "population_sha256": "e51465a2993b5af3ec8f09946414ac6be904606f3b64e8524084de3ff6073c6b"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlAgendaCooldownStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlAgendaCooldownStore",
+      "tracked_count": 1,
+      "population_sha256": "9af75f702c2b6f53c12df7fdaf89b62e8ee64543cc80e2d61b74fd8bc23fe827"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlAssignmentStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlAssignmentStore",
+      "tracked_count": 2,
+      "population_sha256": "2b2bcb18da10ea372156a567c8678277b20fedca9c2da4b739f28b5a124b39b5"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlAttestationLog",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlAttestationLog",
+      "tracked_count": 1,
+      "population_sha256": "f8d6809d6fca77f7eda5551c7df7c0e40e86302038d9c2a2b3b989ecc22c8da8"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlBookLogStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlBookLogStore",
+      "tracked_count": 2,
+      "population_sha256": "19a793d304f3cb4f08272da872a88dc2770962c33776bd4daf240d74e88f2920"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlCompanionCodeStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlCompanionCodeStore",
+      "tracked_count": 2,
+      "population_sha256": "6dcd8c6ae02fc8dc3ba690be3ba62c2caaefa0a65a5781777f43776bb6875972"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlCurriculumDatastore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlCurriculumDatastore",
+      "tracked_count": 2,
+      "population_sha256": "57668f21bec83b136c4df98f3d56ba8eff89bbf1c14b17f0de6cabf77b40eaab"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlCurriculumExceptionStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlCurriculumExceptionStore",
+      "tracked_count": 2,
+      "population_sha256": "5676b239a3de554c664f519299f57d11eb74eda03798468b2c0cd77c5639d799"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlEnrichmentLog",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlEnrichmentLog",
+      "tracked_count": 1,
+      "population_sha256": "157adc5ba598118c18cc1c904995e0fcc1a56b93df5d3507d83ed058e7f1adbd"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlFitnessCourseProjectionStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlFitnessCourseProjectionStore",
+      "tracked_count": 1,
+      "population_sha256": "ed33fefa540d750abe7d3a7594bd654a5531fd23f7382baf4d8a1cc304497ff6"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlFlashcardProgressStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlFlashcardProgressStore",
+      "tracked_count": 1,
+      "population_sha256": "74aec4c070a4869c8720e6433aafa786870e5802095d8b640797dcef5a2fb875"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlFormMapStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlFormMapStore",
+      "tracked_count": 2,
+      "population_sha256": "67c40716e86cc18451af35479e94e6d3477d434e1ada041e898a2c2c446b2605"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlIssuedArtifactStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlIssuedArtifactStore",
+      "tracked_count": 2,
+      "population_sha256": "cbfaf79ac16f1c20df058339a5dfa1406f2e43a33d075e79eb26ac6dbcbdfd8e"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlLanguageStudyDatastore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlLanguageStudyDatastore",
+      "tracked_count": 2,
+      "population_sha256": "32e87d6992dcdd76cf7ef34d8a75df0dc2d193ea51805533ab4e944af0c2726d"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlLessonCompanionStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlLessonCompanionStore",
+      "tracked_count": 2,
+      "population_sha256": "e11aa27fbe9cd4d09c814263f7da9b82938c2f60baf1ca9cd9dd50be627d7d68"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlMaterialSnapshotStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlMaterialSnapshotStore",
+      "tracked_count": 2,
+      "population_sha256": "13b25e7cce51157b06b9c91b5067c3885f620f702a5d83ca8d8e891d6e4f423a"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlMilestoneStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlMilestoneStore",
+      "tracked_count": 1,
+      "population_sha256": "3c4a23e7b49856c150091fdafe80d9ac299498cde19d1ee656267cbb7b170494"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlPassOverrideStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlPassOverrideStore",
+      "tracked_count": 1,
+      "population_sha256": "a11d00d726549e0f9c25ed5b3d6b08b80e8e69f569b8ade249396572b4072133"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlProgramDayBypassStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlProgramDayBypassStore",
+      "tracked_count": 2,
+      "population_sha256": "0be543951adf36dc24717eecb28834d69b268fa287d83d2ad01137cba0055e7c"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlReadingLogStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlReadingLogStore",
+      "tracked_count": 1,
+      "population_sha256": "a25ba30478fdd7ddbef587107d7eb9f42ec9bb2e7bf47109c2a0924768762df1"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlReadingSessionStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlReadingSessionStore",
+      "tracked_count": 1,
+      "population_sha256": "ba14cac386043897f3adbde4864988307cdbfc75086afbbff8dcb36820a0a276"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlReadingSessionTimelineStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlReadingSessionTimelineStore",
+      "tracked_count": 1,
+      "population_sha256": "a6f26c9b0f6efcb734d705a53da3cbef9998c916fbc68ff97578202333877949"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlReassignmentLog",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlReassignmentLog",
+      "tracked_count": 2,
+      "population_sha256": "eb19afe34210b3cc9bcd14a307a3417769271f083851b964c3f29f40f133cc90"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlReviewQueue",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlReviewQueue",
+      "tracked_count": 1,
+      "population_sha256": "43644d7a1f0428805ed3bf4761af93b7925b5191f5042289e72ecf03b9928f11"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlSchoolDatastore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlSchoolDatastore",
+      "tracked_count": 1,
+      "population_sha256": "48db2fdfee3b8bcd3a0c3965bad2828e64a88d06046264cb971d2a13453ce3f9"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlSessionResultArtifactStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlSessionResultArtifactStore",
+      "tracked_count": 2,
+      "population_sha256": "f470ae77fac9059e3b10ad75ee20d19ae706b53e3affb0c2a45e413728ff2d64"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlSittingStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlSittingStore",
+      "tracked_count": 1,
+      "population_sha256": "24dbd9447a3762fb933927e926d70fc053434e34b2fe2975fb1667bced0482fd"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlSyllabusStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlSyllabusStore",
+      "tracked_count": 2,
+      "population_sha256": "cc7feeca41cbb2c46d8c486b3cf328a28c337eabf50f9f28eb1c4d43e6ab35bb"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlTeacherActionReceiptStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlTeacherActionReceiptStore",
+      "tracked_count": 2,
+      "population_sha256": "b6398962195b4e29af87bc587c9ff291b2cc5a205ae26b79a4b8200b48cd27b9"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlTeacherNotes",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlTeacherNotes",
+      "tracked_count": 1,
+      "population_sha256": "a62deae3d3be089aeee8886cb23e146079bc37142b7bab0974c4490a693605b8"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlTermVerdictCache",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlTermVerdictCache",
+      "tracked_count": 1,
+      "population_sha256": "bebd78898f72dcea3cd438c29fdb29d53b92819a160edb361506cc5050387701"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlTimingAnchorStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlTimingAnchorStore",
+      "tracked_count": 1,
+      "population_sha256": "b6aa4d1839aa86a2756b55059d384009b904e624a9585163da589f1c070b1d75"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlTokenRegistry",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlTokenRegistry",
+      "tracked_count": 1,
+      "population_sha256": "1ac50b07dd903d5d021176753fd782e60fc1abfc31e9b8a30686b8272aca54a4"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlWorkSessionDatastore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlWorkSessionDatastore",
+      "tracked_count": 3,
+      "population_sha256": "7ac444be7d671d7f47d8e37f17379d71dc2d127e023a434b0c12910a628f749d"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlWorksheetInstanceStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlWorksheetInstanceStore",
+      "tracked_count": 2,
+      "population_sha256": "1af3692773fe234ba8b954ae073d33aa808b7a779b348e443063104203bb32a8"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlDecodedQuizScanStore",
+      "destination": "__app_modules/school/server/adapters/persistence/YamlDecodedQuizScanStore",
+      "tracked_count": 1,
+      "population_sha256": "f3859fcdaf1891f5623719b745a084c010821726f431bb771d97ad8bc62bae9b"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlFitnessPlayableSnapshotStore",
+      "destination": "__app_modules/fitness/server/adapters/persistence/YamlFitnessPlayableSnapshotStore",
+      "tracked_count": 2,
+      "population_sha256": "3f76a1154259d10c44375ecbf0394085ff50907c7dcb7a705f5bbfd4932cafa9"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlFitnessSchoolAttemptStore",
+      "destination": "__app_modules/fitness/server/adapters/persistence/YamlFitnessSchoolAttemptStore",
+      "tracked_count": 1,
+      "population_sha256": "9be96b1555ae325b2dc171906bd0944f83ac1917ae7c0ac2389a9df462728009"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlCycleRaceDatastore",
+      "destination": "__app_modules/fitness/server/adapters/persistence/YamlCycleRaceDatastore",
+      "tracked_count": 2,
+      "population_sha256": "8bdd1f9ae9b411ae5a376181dd48a3ba602946803524b004ca044489bd8bdcfb"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlEmergencyLockDatastore",
+      "destination": "__app_modules/fitness/server/adapters/persistence/YamlEmergencyLockDatastore",
+      "tracked_count": 2,
+      "population_sha256": "c7642bf44de7c6c18124107e209b1d3957017ae7f35246b09845fdf0e79f3df4"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlRecapSnapshotStore",
+      "destination": "__app_modules/fitness/server/adapters/persistence/YamlRecapSnapshotStore",
+      "tracked_count": 2,
+      "population_sha256": "137c7857efbabbb90dd032d24d1bd6a4cbb73427d26c3c3c1d5fa031c11825f4"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/eventbus/EventBusSchoolRealtimeAdapter",
+      "destination": "__app_modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter",
+      "tracked_count": 2,
+      "population_sha256": "b2e23dadeaff9590f5027c863b80ff974a27b62c09ea36a6e0f149cccc3421d3"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/logging/SchoolLedgerTransport",
+      "destination": "__app_modules/school/server/adapters/logging/SchoolLedgerTransport",
+      "tracked_count": 2,
+      "population_sha256": "bc1638ea4a099b7f8d4b4c3ec607599c28024977b4ff43b44abded3a4780e90d"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/eventbus/FitnessEmergencyPublications",
+      "destination": "__app_modules/fitness/server/adapters/eventbus/FitnessEmergencyPublications",
+      "tracked_count": 1,
+      "population_sha256": "b4eb17dec306e70534e113ebdba9c74ca05f30ef5b9aae742726832608fcd0a0"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/eventbus/FitnessIdentityChannel",
+      "destination": "__app_modules/fitness/server/adapters/eventbus/FitnessIdentityChannel",
+      "tracked_count": 1,
+      "population_sha256": "3a0c940abd9840af45d242af3917c4ea32671355d4f93bfbfefa374421ca2911"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/1_adapters/eventbus/FitnessSchoolPublications",
+      "destination": "__app_modules/fitness/server/adapters/eventbus/FitnessSchoolPublications",
+      "tracked_count": 1,
+      "population_sha256": "787988560d84196a4a985ec7ec9b5a7ab76e319629ed8a3e66910ad063c075a4"
+    },
+    {
+      "owner": "fitness",
+      "kind": "exact",
+      "source": "__backend/src/1_adapters/ai/transcriptionProfiles/fitness.mjs",
+      "destination": "__app_modules/fitness/server/adapters/ai/transcriptionProfiles/fitness.mjs",
+      "tracked_count": 1,
+      "population_sha256": "288308a4c8b0876107d85f81391e22ba22d423b414837dbf070d1620cb264e5f"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "shared/contracts/fitness/",
+      "destination": "__app_modules/fitness/portable/contracts/",
+      "tracked_count": 1,
+      "population_sha256": "e2cbf1d546013bf734ba9be59e4da69c13bafa1a57f9b8b829d3ab8b0b8d543d"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/cardLadderTuning",
+      "destination": "__app_modules/school/server/composition/cardLadderTuning",
+      "tracked_count": 2,
+      "population_sha256": "b6019d38031c8965c9ca1f22819a7adbac211d7b5a5ad37a0038c8026a8eabc7"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/learnerCardActions",
+      "destination": "__app_modules/school/server/composition/learnerCardActions",
+      "tracked_count": 1,
+      "population_sha256": "b52ea8bddcfb3e10086de38ed421e2ea2e72ea27daf07d7189f494d7445fcfd1"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolApi",
+      "destination": "__app_modules/school/server/composition/schoolApi",
+      "tracked_count": 1,
+      "population_sha256": "4c85c84bcc60a6a71c98f30b95be5e7ce2ae44c51b74064d463dc868a830af58"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolBookScans",
+      "destination": "__app_modules/school/server/composition/schoolBookScans",
+      "tracked_count": 1,
+      "population_sha256": "0f45a45bb2f943339e39566846de76863a1e99b534017cf1747596f6cde33bb0"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolCalc",
+      "destination": "__app_modules/school/server/composition/schoolCalc",
+      "tracked_count": 1,
+      "population_sha256": "72c6cbd59a46da09bd3c1882e5900e1c8d372a7e9f5e7f151b43d2a403fc1383"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolCatalog",
+      "destination": "__app_modules/school/server/composition/schoolCatalog",
+      "tracked_count": 2,
+      "population_sha256": "c879c281ee2e2db40d3d549e81a1bfaf2a924e30246b8a4e47288ddcf9a6ee97"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolLanguage",
+      "destination": "__app_modules/school/server/composition/schoolLanguage",
+      "tracked_count": 2,
+      "population_sha256": "82feaa666812a2c73f34b614485edfca7f2d7adacbafbde19fd5128740342590"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolLearning",
+      "destination": "__app_modules/school/server/composition/schoolLearning",
+      "tracked_count": 2,
+      "population_sha256": "d5e952b0015a8c31c6cb512828623c0a092c808cbb0a27f8bba92ee305333616"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolLifecycle",
+      "destination": "__app_modules/school/server/composition/schoolLifecycle",
+      "tracked_count": 1,
+      "population_sha256": "aa7b70686a117187a6d69e7a200670e125c18193e6b8c79dc34892f887299403"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolPrintScanConsumer",
+      "destination": "__app_modules/school/server/composition/schoolPrintScanConsumer",
+      "tracked_count": 3,
+      "population_sha256": "add7a3d41eadd79f9f4f1e14c2a7d7efcb4fa56517380cd5a371e8f21edbe22f"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolReachability",
+      "destination": "__app_modules/school/server/composition/schoolReachability",
+      "tracked_count": 1,
+      "population_sha256": "97642bc37464344c77043050b9bba233e670804106d381d5cb6ed06bc9ca7ac6"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/schoolSurfaces",
+      "destination": "__app_modules/school/server/composition/schoolSurfaces",
+      "tracked_count": 1,
+      "population_sha256": "60bd0f5d996520b4881a783ca518daec288cb5e97afe241763b3be864558bc02"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/studentNames",
+      "destination": "__app_modules/school/server/composition/studentNames",
+      "tracked_count": 2,
+      "population_sha256": "c3a368d112efcf425ed5ce9027d17912cf75ab8e25d9fe2173a9faf9f7418864"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/5_composition/modules/fitnessApi",
+      "destination": "__app_modules/fitness/server/composition/fitnessApi",
+      "tracked_count": 3,
+      "population_sha256": "e58b1969c7850f37805f7b9dac63769b567e6066a35f40f309064419e747ac34"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/school",
+      "destination": "__app_modules/school/server/api/school",
+      "tracked_count": 23,
+      "population_sha256": "0c9d37c5dc606e165847cb4bf8ddaf2d5ad6c830bb9b47c6d3211edc405047b6"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/schoolBookScans",
+      "destination": "__app_modules/school/server/api/schoolBookScans",
+      "tracked_count": 2,
+      "population_sha256": "b652cbbe1b2c2ae577871d9af28dc85c329b206a3da5f4f0cd9e2ab77a91a4a2"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/schoolBooks",
+      "destination": "__app_modules/school/server/api/schoolBooks",
+      "tracked_count": 2,
+      "population_sha256": "b2b56306fe8fd51bee8f744bd65caae8bd54b31ea132fc0edb334f4e87976b2d"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/schoolCalc",
+      "destination": "__app_modules/school/server/api/schoolCalc",
+      "tracked_count": 2,
+      "population_sha256": "1f734610656f951a7f599ea7c29b750e5271e70509a0c96a3d6ae21ba0d091df"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/schoolLifecycle",
+      "destination": "__app_modules/school/server/api/schoolLifecycle",
+      "tracked_count": 5,
+      "population_sha256": "749c2703e38956afd88afb6c7cea56b188fef3dfd554bbc0321fbe96dd53a83f"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/schoolVirtualDevices",
+      "destination": "__app_modules/school/server/api/schoolVirtualDevices",
+      "tracked_count": 1,
+      "population_sha256": "e413d48b2459a8638f0a34a3a36489cda79acffd89b6d2ab30f39dcc4e543c69"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/language",
+      "destination": "__app_modules/school/server/api/language",
+      "tracked_count": 2,
+      "population_sha256": "d1ef156bd7f233aeaa51cd3a655717c8e1b6a84e04cea2d672e509dfc2c69552"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/languageReels",
+      "destination": "__app_modules/school/server/api/languageReels",
+      "tracked_count": 1,
+      "population_sha256": "0684db9a2bfc474b388676a22c5d41f4a13dd44d1fbf6fe156474ef1733ce0ac"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/mediaLesson",
+      "destination": "__app_modules/school/server/api/mediaLesson",
+      "tracked_count": 1,
+      "population_sha256": "64c69d6483519baf3c467d8483eb2c829c77a98b9da2b9e4e4fcb9f28b2bd861"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/reading",
+      "destination": "__app_modules/school/server/api/reading",
+      "tracked_count": 1,
+      "population_sha256": "07fb8cbbc279ef1120d0a033a62f0d473056d1b500b26b74460319c05e7cdd22"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/rubiksCube",
+      "destination": "__app_modules/school/server/api/rubiksCube",
+      "tracked_count": 2,
+      "population_sha256": "b333ef86e5e49c39b89cd3a3e30455b15c291841a2de898cbeccd8139755a18e"
+    },
+    {
+      "owner": "school",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/sentenceLadder",
+      "destination": "__app_modules/school/server/api/sentenceLadder",
+      "tracked_count": 1,
+      "population_sha256": "8ba706d4852d82915b85aca0febcb55735c12b612cf7c10f2eb9f3ef908ff3a1"
+    },
+    {
+      "owner": "fitness",
+      "kind": "stem",
+      "source": "__backend/src/4_api/v1/routers/fitness",
+      "destination": "__app_modules/fitness/server/api/fitness",
+      "tracked_count": 13,
+      "population_sha256": "d115664f1f0af5bf0d4414f16ed757b6b6bd725d50874b94c28d2550770ab741"
+    },
+    {
+      "owner": "school",
+      "kind": "exact",
+      "source": "cli/school.mjs",
+      "destination": "__app_modules/school/cli/school.mjs",
+      "tracked_count": 1,
+      "population_sha256": "a2db54af57089ac0dc9482b39bf0778bbdf4a5a5fec967dd176a883a1064c2ba"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "cli/school/",
+      "destination": "__app_modules/school/cli/",
+      "tracked_count": 31,
+      "population_sha256": "f8a0ca88c688c96c008e8a1ea6e9929f092e4d85dadb40fae1ec74e02bc00d2c"
+    },
+    {
+      "owner": "school",
+      "kind": "directory",
+      "source": "cli/curriculum/",
+      "destination": "__app_modules/school/cli/curriculum/",
+      "tracked_count": 14,
+      "population_sha256": "53b3b807e1d299a407664a538b71bd6dffbf79153996348a027b48c3bb619689"
+    },
+    {
+      "owner": "fitness",
+      "kind": "exact",
+      "source": "cli/fitness.cli.mjs",
+      "destination": "__app_modules/fitness/cli/fitness.cli.mjs",
+      "tracked_count": 1,
+      "population_sha256": "fb2054f1d2676159c1a768889318894740438327f61537b3f0a4e22938ba81d4"
+    },
+    {
+      "owner": "fitness",
+      "kind": "directory",
+      "source": "cli/lib/fitness/",
+      "destination": "__app_modules/fitness/cli/lib/",
+      "tracked_count": 33,
+      "population_sha256": "9ad47e5fb75f0640eccf225083b9f996271c058e81918f4068b2ff34f31ad962"
+    }
+  ],
+  "totals": {
+    "school": 1641,
+    "fitness": 1312
+  },
+  "existing_oracle_groups": [
+    {
+      "owner": "school",
+      "source": "__backend/tests/_fixtures/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "school",
+      "source": "tests/_fixtures/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 36
+    },
+    {
+      "owner": "school",
+      "source": "tests/_lib/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 12
+    },
+    {
+      "owner": "school",
+      "source": "tests/integration/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/adapter/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 17
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/api/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 6
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/application/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 54
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/applications/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 5
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/domain/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 49
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/e2e/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 7
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/flow/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/frontend/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 4
+    },
+    {
+      "owner": "school",
+      "source": "tests/isolated/rendering/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 40
+    },
+    {
+      "owner": "school",
+      "source": "tests/live/flow/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 5
+    },
+    {
+      "owner": "school",
+      "source": "tests/unit/applications/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 8
+    },
+    {
+      "owner": "school",
+      "source": "tests/unit/domains/school/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 7
+    },
+    {
+      "owner": "fitness",
+      "source": "__backend/tests/unit/adapters/harvester/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/_fixtures/data/household-test/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/_fixtures/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/integrated/api/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 2
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/integrated/domain/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/integrated/flow/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/adapter/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 10
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/adapter/harvester/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 3
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/application/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 14
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/domain/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 59
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/flow/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 1
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/isolated/hooks/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 3
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/live/api/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 2
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/live/flow/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 48
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/unit/adapters/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 2
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/unit/applications/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 3
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/unit/domains/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 4
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/unit/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 27
+    },
+    {
+      "owner": "fitness",
+      "source": "tests/unit/suite/fitness/",
+      "action": "retain-oracle-path-update-imports-and-resource-references",
+      "tracked_count": 17
+    }
+  ],
+  "existing_oracle_leaves": [
+    "__backend/tests/unit/agents/health-coach/FitnessContentToolFactory.test.mjs",
+    "__backend/tests/unit/composition/schoolSurfaces.profileRoot.test.mjs",
+    "tests/_fixtures/data/users/_alice/lifelog/fitness.yml",
+    "tests/_infrastructure/generators/fitness.generator.mjs",
+    "tests/_infrastructure/generators/realtime/fitness.simulator.mjs",
+    "tests/_infrastructure/harnesses/fitness-mat-hearts.mjs",
+    "tests/_lib/FitnessSimHelper.mjs",
+    "tests/_lib/fitness-test-utils.mjs",
+    "tests/isolated/agents/health-coach/adapters/fitness_adapter.test.mjs",
+    "tests/isolated/api/fitness-screenshot-contract.test.mjs",
+    "tests/isolated/api/routers/fitness-debug-voice-memo.test.mjs",
+    "tests/isolated/api/routers/fitness-menu-music.test.mjs",
+    "tests/isolated/api/routers/fitness-voice-memo-durability.test.mjs",
+    "tests/isolated/composition/schoolLifecyclePrinterOptions.test.mjs",
+    "tests/isolated/composition/schoolLifecycleWiring.test.mjs",
+    "tests/isolated/composition/schoolPrintScanConsumer.test.mjs",
+    "tests/isolated/composition/schoolPrintScanConsumerHook.test.mjs",
+    "tests/isolated/modules/Fitness/FitnessSessionDetailWidgetDelete.test.jsx",
+    "tests/isolated/modules/Fitness/FitnessSidebarMenuTimeout.test.jsx",
+    "tests/unit/applications/FitnessSimulationService.test.mjs",
+    "tests/unit/composition/schoolCalc.test.mjs"
+  ],
+  "retain_and_defer": [
+    {
+      "source": "__backend/src/app.mjs; __backend/src/5_composition bootstrap/registrations; frontend/src/main.jsx",
+      "owner": "platform composition",
+      "action": "retain installed routes/providers; consume narrow typed owner factories/admin/kiosk entries; no eager universal barrel"
+    },
+    {
+      "source": "__backend/src/2_domains/exercise/; shared/music/exerciseBank*,exerciseCatalog*",
+      "owner": "shared exercise mechanism; Music/Piano music vocabulary",
+      "action": "retain until separate capability ownership batch; Fitness governance does not move to playback"
+    },
+    {
+      "source": "frontend/src/lib/kioskEnv*; frontend/src/lib/userDisplayName*",
+      "owner": "generic kiosk environment; household identity",
+      "action": "retain public contracts; do not absorb utility code by caller location"
+    },
+    {
+      "source": "frontend/src/modules/Piano/PianoKiosk/useSchoolGameAccess* (now relocated Piano); frontend/src/modules/Feed/Scroll/cards/bodies/FitnessBody.jsx",
+      "owner": "Piano; Feed",
+      "action": "retain consumer policy/presentation, update public owner contracts"
+    },
+    {
+      "source": "__backend/src/1_adapters/lifelog/extractors/FitnessExtractor.mjs; __backend/src/3_applications/agents/health-coach/services/adapters/FitnessEventAdapter.mjs; __backend/src/3_applications/agents/health-coach/tools/FitnessContentToolFactory.mjs",
+      "owner": "Lifelog; Health",
+      "action": "retain; consume Fitness public queries/contracts, not private implementation"
+    },
+    {
+      "source": "__backend/src/3_applications/donow/presence/FitnessPresenceTracker.mjs; __backend/src/3_applications/donow/surfaces/GarageFitnessSurface.mjs",
+      "owner": "DoNow",
+      "action": "retain product-specific orchestration"
+    },
+    {
+      "source": "__backend/src/3_applications/measures/fitnessRingsProvider.mjs; __backend/src/1_adapters/harvester/fitness/",
+      "owner": "consumer/provider integration review",
+      "action": "defer movement; review ring projection vs Fitness authority and FitnessSyncer/Strava vs Withings provider/Health boundaries independently"
+    },
+    {
+      "source": "_extensions/fitness/",
+      "owner": "Fitness satellite bridge",
+      "action": "attribute Fitness; defer physical relocation until separate image, Python requirements and deployment service resource closure is captured"
+    },
+    {
+      "source": "_extensions/ti86-app/*schoolcalc*; _extensions/ticalc-relay/**/SchoolCalc*; **/test_schoolcalc*",
+      "owner": "School concrete calculator program",
+      "action": "attribute School; defer extension move, retain generic TI device transport/relay"
+    },
+    {
+      "source": "scripts/school/",
+      "owner": "School build/maintenance tooling",
+      "action": "retain command locations during first batch; review executable wrappers/resources before later owner tooling move"
+    },
+    {
+      "source": "__backend/src/1_adapters/persistence/yaml/YamlObservationStore*; YamlUserVideoProgressStore*; YamlPianoGameBudgetStore*",
+      "owner": "Health/nutrition; Piano; Piano",
+      "action": "excluded from School/Fitness persistence rules"
+    },
+    {
+      "source": "__backend/src/1_rendering/pdf/; raw OMR device relay; generic VoiceTranscriptionService",
+      "owner": "generic rendering/device/AI mechanisms",
+      "action": "retain shared mechanism; School decoded quiz meanings and Fitness transcription profile are owned above"
+    },
+    {
+      "source": "__backend/src/4_api/v1/routers/admin*; generic jobs/schedulers, feature registration and maintenance CLIs outside named selectors",
+      "owner": "platform integration with possible product handlers",
+      "action": "retain host wiring; inspect each School/Fitness handler before claiming full closure, no blanket admin/job move"
+    }
+  ],
+  "resource_hazards": [
+    {
+      "source": "__backend/src/1_adapters/school/documents/FilesystemSchoolAssetResolver.mjs",
+      "hazard": "createSubjectIconResolver default resolves ../../../../../frontend/src/modules/School/home/icons/svg relative to import.meta.url",
+      "required": "rewrite or inject owner browser icon directory after both moves; include icons in backend image; preserve subject-icon security/currentColor and authored cfg.assets.dir/dataDir/content/assets paths"
+    },
+    {
+      "source": "__backend/src/1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs",
+      "hazard": "workerPath defaults sibling kociembaWorker.mjs via HERE",
+      "required": "move worker with adapter, retain worker URL/thread behavior and server dependency resolution; include worker in image"
+    },
+    {
+      "source": "frontend/src/modules/School/geography/flags/; home/icons/; quiz/clickable/assets/",
+      "hazard": "SVG/CSS/query imports and prepare-us-states tool",
+      "required": "move all tracked colocated resources and snapshots unchanged; rewrite relative imports; no invented authored-data migration"
+    },
+    {
+      "source": "frontend/src/modules/Fitness/domain/pose/PoseDetectorService.js",
+      "hazard": "tfBackendWasm.setWasmPaths(/) uses frontend/public/tfjs-backend-wasm*.wasm",
+      "required": "retain public assets and URLs; source relocation must preserve Vite asset copy/dependency identity"
+    },
+    {
+      "source": "frontend/public/fonts/kongtext.ttf; Fitness apps/fitness/ux audio and memorymedia URLs",
+      "hazard": "public font/data-backed sounds not local source-relative assets",
+      "required": "preserve current URL/data-root contracts; do not move external data with source"
+    },
+    {
+      "source": "School/Fitness CLI and YAML fixture resources",
+      "hazard": "fileURLToPath/import.meta.url, cwd, fixture paths and authored YAML/image ignore rules",
+      "required": "check moved CLI relative references, keep compatibility wrappers and existing fixture oracle paths; copy only tracked owner resources, never live data"
+    }
+  ],
+  "public_seams_required": [
+    {
+      "owner": "School",
+      "facets": [
+        "server/composition.mjs:composition",
+        "server/api.mjs:api",
+        "server/queries.mjs:application",
+        "server/documents.mjs:rendering",
+        "server/print-gateway.mjs:adapters",
+        "browser/kiosk.mjs",
+        "browser/admin.mjs",
+        "browser/learning.mjs",
+        "browser/assets.mjs"
+      ],
+      "status": "proposed exact facets; implement only actual incoming needs and declare static policy before consumers switch"
+    },
+    {
+      "owner": "Fitness",
+      "facets": [
+        "server/composition.mjs:composition",
+        "server/api.mjs:api",
+        "server/school-attempts.mjs:application",
+        "server/contracts.mjs:domain",
+        "browser/kiosk.mjs",
+        "browser/admin.mjs",
+        "browser/session.mjs",
+        "browser/contracts.mjs",
+        "portable/contracts/strapColors.mjs"
+      ],
+      "status": "proposed exact facets; governance stays Fitness, use existing playback/screen-host public facets"
+    },
+    {
+      "interface": "School\u2194Fitness course assessment",
+      "required": "School owns YamlFitnessCourseProjectionStore; Fitness owns YamlFitnessSchoolAttemptStore; use accepted/assessed event and narrow queries, one writer per store; School FitnessCourseCurriculumCatalog/FitnessSchoolAssessmentBridge remain School"
+    },
+    {
+      "interface": "School\u2194Piano",
+      "required": "use Piano browser/learning entry for pianoLearningApi rather than private PianoKiosk/modes/Exercises path; game-access hook stays Piano"
+    },
+    {
+      "interface": "Fitness\u2194playback/screen-host/gaming experiences",
+      "required": "use reviewed playback/screen-host facet entries; installed emulator/widget experiences stay product composition; Fitness session/governance policy stays owner; preserve lazy loads"
+    },
+    {
+      "interface": "platform, Admin, Feed, Health, DoNow, Lifelog consumers",
+      "required": "record incoming imports before each batch, export only reviewed exact narrow facets, reject private imports through aliases/reexports/literal dynamic/require using audit:owners"
+    }
+  ],
+  "coverage_limits": [
+    "This is complete selection for the explicitly listed owner source groups, not a complete global M3 census.",
+    "Generic admin/jobs/harvester/provider/extension deployment closure and nameless utility policy require the listed followup disposition; they are not silently moved.",
+    "No runtime discovery/enablement, database migrations, authored config relocation, product evaluation or tests were launched for this inventory."
+  ],
+  "batch_prerequisites": [
+    "Use existing setupOwnerDependencies(root,{check:true}) and canonical __backend/frontend dependency links; no root dependency fallback or duplicate React/moment.",
+    "Refresh manifest population hashes against final M2 source snapshot before applying; no moves from stale working-tree filesystem.",
+    "Capture and run focused existing owner oracles only through approved isolated runner; tests/live entries are inventory, not permission to exercise devices/network.",
+    "Update image/build source copies and exact public entry policy plus import aliases alongside moves; preserve CLI external command compatibility."
+  ]
+}

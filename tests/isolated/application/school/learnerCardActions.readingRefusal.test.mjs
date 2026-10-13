@@ -19,8 +19,8 @@
  * which must fail loudly if the exemption is ever widened.
  */
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from "../../../../modules/school/server/application/ReadingSessionService.mjs";
-import { makeReadingSessionHandler } from "../../../../modules/school/server/application/workflows/LearnerCardActions.mjs";
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../../__app_modules/school/server/application/ReadingSessionService.mjs";
+import { makeReadingSessionHandler } from "../../../../__app_modules/school/server/application/workflows/LearnerCardActions.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

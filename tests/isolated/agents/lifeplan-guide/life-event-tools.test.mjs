@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PlanToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
+import { PlanToolFactory } from "../../../../__app_modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
 
 function tools(overrides = {}) {
   const deps = {

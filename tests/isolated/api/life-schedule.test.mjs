@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createScheduleRouter from "../../../modules/life/server/api/life/schedule.mjs";
-import { LifePlanOperations } from "../../../modules/life/server/application/LifePlanOperations.mjs";
+import createScheduleRouter from "../../../__app_modules/life/server/api/life/schedule.mjs";
+import { LifePlanOperations } from "../../../__app_modules/life/server/application/LifePlanOperations.mjs";
 
 function appWith(plan) {
   const plans = { load: vi.fn(() => plan) };

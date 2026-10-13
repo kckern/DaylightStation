@@ -3,8 +3,8 @@ import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const retiredRoutingRoot = path.join(repoRoot, 'backend/src/0_system/routing');
-const appEntry = path.join(repoRoot, 'backend/src/app.mjs');
+const retiredRoutingRoot = path.join(repoRoot, '__backend/src/0_system/routing');
+const appEntry = path.join(repoRoot, '__backend/src/app.mjs');
 
 async function pathExists(target) {
   try {

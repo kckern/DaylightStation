@@ -18,7 +18,7 @@ import path from 'node:path';
 import { PlaybackStallDetector } from '#apps/devices/services/PlaybackStallDetector.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 // Relative rather than `#shared-contracts/…`: that subpath import is declared in
-// backend/package.json, and tests/isolated resolves against the repo root.
+// __backend/package.json, and tests/isolated resolves against the repo root.
 import { DEVICE_STATE_TOPIC } from '../../../shared/contracts/media/topics.mjs';
 
 function makeBus() {

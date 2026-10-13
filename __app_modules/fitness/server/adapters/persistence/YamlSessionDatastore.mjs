@@ -1,0 +1,845 @@
+/**
+ * YamlSessionDatastore - YAML-based session persistence
+ *
+ * Implements ISessionDatastore port for fitness session storage.
+ * Sessions are stored at: household[-{id}]/fitness/log/{YYYY-MM-DD}/{sessionId}.yml
+ * Screenshots at: {mediaRoot}/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
+ */
+import path from 'path';
+import moment from 'moment-timezone';
+import {
+  ensureDir,
+  dirExists,
+  loadYamlSafe,
+  saveYaml,
+  listYamlFiles,
+  listDirsMatching,
+  deleteYaml,
+  deleteDir,
+  readFile,
+  writeFile,
+  getStats
+} from '#system/utils/FileIO.mjs';
+import { ISessionDatastore } from "../../application/ports/ISessionDatastore.mjs";
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { ItemId } from "../../../../../__capabilities/content-catalog/server/domain/value-objects/ItemId.mjs";
+import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from "../../domain-services-select-primary-media.mjs";
+import { hydrateTimeline, dehydrateTimeline } from "./SessionTimelineCodec.mjs";
+import { stampIntegrity } from "../../domain-services-session-integrity.mjs";
+
+// ── Session list index (derived read cache) ──────────────────────────────
+// The /sessions?since=Nd and /suggestions endpoints build per-session summaries
+// by reading+parsing every session YAML in the window. That cost grows linearly
+// with history. The index caches each day's computed summaries in a per-month
+// JSON shard so a range query reads ~one shard per month instead of hundreds of
+// YAML files. It lives in a sibling `_index/` dir (NOT inside the day folders) so
+// writing it never disturbs the day-folder mtimes the staleness check relies on.
+const INDEX_DIR_NAME = '_index';
+// Bump when the cached summary shape changes — a mismatch is treated as empty
+// (rebuilt on demand), so old shards never serve stale-shaped data.
+// v4: primary-media selection became longest-wins (near-tie recency tiebreak),
+//     so every cached list summary's title had to be re-derived.
+// v5: media.primary carries the episode's description (Health's exercise rows).
+// v6: each participant carries hrAvg (Health credits home sessions from it).
+const INDEX_VERSION = 6;
+
+/**
+ * Derive session date from sessionId
+ * @param {string} sessionId - YYYYMMDDHHmmss format
+ * @returns {string|null} YYYY-MM-DD date string
+ */
+function deriveSessionDate(sessionId) {
+  if (!sessionId) return null;
+  // Defensive: strip any non-digit prefix (e.g. "fs_20260601192802") so the
+  // date is always derived from the canonical 14-digit timestamp. Without this
+  // a prefixed id slices to a bogus date and points at a non-existent dir.
+  const digits = String(sessionId).replace(/\D/g, '');
+  if (digits.length < 8) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+export function dehydrateSessionRecord(session) {
+  if (typeof session?.getDurationMs !== 'function') return session;
+  const hasV3Session = !!session.session;
+  const hasV3Participants = Object.keys(session.participants).length > 0;
+  const result = { version: session.version, sessionId: session.sessionId.toString() };
+  if (hasV3Session) result.session = session.session;
+  if (session.timezone) result.timezone = session.timezone;
+  if (hasV3Participants) result.participants = session.participants;
+  if (!hasV3Session) Object.assign(result, { startTime: session.startTime, endTime: session.endTime, durationMs: session.durationMs });
+  if (!hasV3Participants) result.roster = session.roster;
+  result.timeline = dehydrateTimeline(session.timeline);
+  if (session.events.length > 0 && !(session.timeline?.events?.length > 0)) result.events = session.events;
+  if (session.treasureBox) result.treasureBox = session.treasureBox;
+  if (session.summary) result.summary = session.summary;
+  if (session.strava) result.strava = session.strava;
+  if (session.strava_notes) result.strava_notes = session.strava_notes;
+  if (session.finalized) result.finalized = session.finalized;
+  if (session.provisional) result.provisional = session.provisional;
+  if (session.entities.length > 0) result.entities = session.entities;
+  const hasSnapshots = session.snapshots && ((Array.isArray(session.snapshots.captures) && session.snapshots.captures.length > 0) || session.snapshots.updatedAt != null);
+  if (hasSnapshots) result.snapshots = session.snapshots;
+  if (session.metadata && Object.keys(session.metadata).length > 0) result.metadata = session.metadata;
+  if (session.timelapse) result.timelapse = session.timelapse;
+  if (session.strength?.runs?.length > 0) result.strength = session.strength;
+  return result;
+}
+
+/**
+ * Parse timestamp to unix milliseconds
+ * @param {unknown} value - Timestamp value (number or string)
+ * @param {string} timezone - Timezone for parsing strings
+ * @returns {number|null}
+ */
+function parseToUnixMs(value, timezone = 'UTC') {
+  if (Number.isFinite(Number(value))) return Number(value);
+  if (typeof value !== 'string') return null;
+  const tz = timezone || 'UTC';
+  const parsed = moment.tz(value, 'YYYY-MM-DD h:mm:ss a', tz);
+  const ms = parsed?.valueOf?.();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export class YamlSessionDatastore extends ISessionDatastore {
+  /**
+   * @param {Object} config
+   * @param {Object} config.configService - ConfigService instance for path resolution
+   * @param {string} config.mediaRoot - Base media directory
+   */
+  constructor(config) {
+    super();
+    if (!config.configService) throw new InfrastructureError('YamlSessionDatastore requires configService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'configService'
+      });
+    this.configService = config.configService;
+    this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
+    this.logger = config.logger || null;
+  }
+
+  /**
+   * Get storage paths for a session
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @returns {{sessionDate: string, sessionsDir: string, sessionFilePath: string, screenshotsDir: string}}
+   */
+  getStoragePaths(sessionId, householdId) {
+    const sessionDate = deriveSessionDate(sessionId);
+    if (!sessionDate) return null;
+
+    // Defensive: derive every path component from the canonical digit id so a
+    // prefixed id (e.g. "fs_20260601192802") resolves to the same dir/file as
+    // the bare id. SessionService already sanitizes, this is belt-and-suspenders.
+    const canonicalId = String(sessionId).replace(/\D/g, '');
+
+    const sessionsDir = path.join(
+      this.configService.getHouseholdPath('fitness/log', householdId),
+      sessionDate
+    );
+
+    const sessionFilePath = path.join(sessionsDir, canonicalId);
+
+    const screenshotsDir = path.join(
+      this.mediaRoot,
+      'fitness',
+      'sessions',
+      sessionDate,
+      canonicalId,
+      'screenshots'
+    );
+
+    // Relative path for API responses
+    const screenshotsRelativeBase = `fitness/sessions/${sessionDate}/${canonicalId}/screenshots`;
+
+    // Soft-delete destination: frames are moved here (not hard-deleted) after a
+    // confirmed recap, then aged out by the trash-retention sweep. Mirrors the
+    // session layout under a sibling `_trash` root so entries stay date/id keyed.
+    const trashDir = path.join(
+      this.mediaRoot,
+      'fitness',
+      '_trash',
+      sessionDate,
+      canonicalId
+    );
+
+    // The snapshot manifest indexes the frames in screenshotsDir, so it is stored
+    // beside them rather than inside the session file. Inline it is by far the
+    // largest thing in data/: one measured session was 294 lines of history and
+    // 90,849 lines of manifest. data/ has to stay committable; an index of media
+    // assets is media.
+    const snapshotsFilePath = path.join(
+      this.mediaRoot,
+      'fitness',
+      'sessions',
+      sessionDate,
+      canonicalId,
+      'snapshots'
+    );
+
+    return {
+      sessionDate,
+      sessionsDir,
+      sessionFilePath,
+      screenshotsDir,
+      screenshotsRelativeBase,
+      snapshotsFilePath,
+      trashDir
+    };
+  }
+
+  /**
+   * Save a session
+   * @param {Object} session - Session entity or plain object
+   * @param {string} householdId
+   * @returns {Promise<void>}
+   */
+  async save(session, householdId) {
+    const data = dehydrateSessionRecord(session);
+    const paths = this.getStoragePaths(data.sessionId, householdId);
+    if (!paths) throw new InfrastructureError('Invalid sessionId', {
+        code: 'VALIDATION_ERROR'
+      });
+
+    ensureDir(paths.sessionsDir);
+    ensureDir(paths.screenshotsDir);
+
+    // Split the frame manifest out to media before the session hits data/.
+    // `snapshots` is destructured off a shallow copy so the caller's entity is
+    // not mutated by having been saved.
+    const { snapshots, ...unstamped } = data;
+    // Integrity stamp (see sessionIntegrity.mjs). Home sessions autosave during
+    // the workout, so a violation logs at debug; the stamp in the file is the
+    // durable signal, recomputed on every save.
+    const history = stampIntegrity(unstamped, new Date());
+    if (history?.integrity) {
+      this.logger?.debug?.('fitness.session.integrity_violation', {
+        sessionId: data.sessionId,
+        source: 'home',
+        checks: history.integrity.violations.map(v => v.check),
+      });
+    }
+    // Same predicate Session.toJSON uses to decide the field is worth emitting —
+    // an empty captures array with an updatedAt still counts, so it must not be
+    // dropped on the way to the sidecar.
+    const hasManifest = !!snapshots
+      && ((Array.isArray(snapshots.captures) && snapshots.captures.length > 0)
+        || snapshots.updatedAt != null);
+    if (hasManifest) saveYaml(paths.snapshotsFilePath, snapshots);
+
+    saveYaml(paths.sessionFilePath, history);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
+  }
+
+  /**
+   * Append a retroactive voice memo to a historical session's YAML.
+   *
+   * Writes to BOTH `summary.voiceMemos` (the read path's primary source)
+   * and `timeline.events` (the fallback source) so the memo survives
+   * regardless of which surface a later reader consults. This is a narrow
+   * read-modify-write on the raw YAML — it intentionally skips the Session-
+   * entity normalization path that `save()` uses, to avoid reshaping other
+   * fields while adding a single memo.
+   *
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @param {{ transcriptClean?: string, transcriptRaw?: string, durationSeconds?: number, createdAt?: string, memoId?: string }} memo
+   * @returns {Promise<Object|null>} The appended memo, or null if session not found.
+   */
+  async appendVoiceMemo(sessionId, householdId, memo) {
+    const paths = this.getStoragePaths(sessionId, householdId);
+    if (!paths) return null;
+    const data = loadYamlSafe(paths.sessionFilePath);
+    if (!data) return null;
+
+    const transcript = memo?.transcriptClean || memo?.transcriptRaw || '';
+    if (!transcript) return null;
+
+    const canonicalMemo = {
+      transcript,
+      durationSeconds: Number.isFinite(memo?.durationSeconds) ? memo.durationSeconds : 0,
+      createdAt: memo?.createdAt || new Date().toISOString(),
+      ...(memo?.memoId ? { memoId: String(memo.memoId) } : {}),
+    };
+
+    if (!data.summary || typeof data.summary !== 'object') data.summary = {};
+    if (!Array.isArray(data.summary.voiceMemos)) data.summary.voiceMemos = [];
+
+    // Idempotent by memoId. The retry worker can crash between appending a
+    // recovered memo and marking its artifact done; when it comes back it must
+    // find the memo already here rather than add a second copy of the same
+    // sentence. A memo with no id keeps the old append-always behaviour.
+    if (canonicalMemo.memoId) {
+      const existing = data.summary.voiceMemos.find(
+        (entry) => entry && String(entry.memoId) === canonicalMemo.memoId,
+      );
+      if (existing) return existing;
+    }
+    data.summary.voiceMemos.push(canonicalMemo);
+
+    if (!data.timeline || typeof data.timeline !== 'object') data.timeline = {};
+    if (!Array.isArray(data.timeline.events)) data.timeline.events = [];
+    data.timeline.events.push({
+      type: 'voice_memo',
+      timestamp: Date.now(),
+      data: {
+        transcript: canonicalMemo.transcript,
+        durationSeconds: canonicalMemo.durationSeconds,
+        retroactive: true,
+        ...(canonicalMemo.memoId ? { memoId: canonicalMemo.memoId } : {}),
+      },
+    });
+
+    saveYaml(paths.sessionFilePath, data);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
+    return canonicalMemo;
+  }
+
+  /**
+   * Find session by ID
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @returns {Promise<Object|null>}
+   */
+  async findById(sessionId, householdId) {
+    const paths = this.getStoragePaths(sessionId, householdId);
+    if (!paths) return null;
+
+    const data = loadYamlSafe(paths.sessionFilePath);
+    if (!data) return null;
+
+    // Rehydrate the frame manifest from media so consumers (TimelapseFrameMapper,
+    // YamlRecapSnapshotStore) see the same shape they always did. An inline
+    // manifest wins: every session written before the split still carries one, and
+    // those files are left alone until migrated.
+    if (!data.snapshots) {
+      const sidecar = loadYamlSafe(paths.snapshotsFilePath);
+      if (sidecar) data.snapshots = sidecar;
+    }
+
+    // Parse timestamps to unix ms for API compatibility
+    // New v3 files use session.start/end; older files use root startTime/endTime
+    const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
+    const startMs = parseToUnixMs(data.startTime, tz)
+      || parseToUnixMs(data.session?.start, tz);
+    const endMs = parseToUnixMs(data.endTime, tz)
+      || parseToUnixMs(data.session?.end, tz);
+    if (startMs != null) data.startTime = startMs;
+    if (endMs != null) data.endTime = endMs;
+
+    data.timeline = hydrateTimeline(data.timeline);
+
+    // Derive durationMs from session block if missing at root
+    if (data.durationMs == null && data.session?.duration_seconds != null) {
+      data.durationMs = data.session.duration_seconds * 1000;
+    }
+
+    // Parse event timestamps (timeline.events)
+    if (data.timeline?.events && Array.isArray(data.timeline.events)) {
+      data.timeline.events = data.timeline.events.map(evt => {
+        if (!evt || typeof evt !== 'object') return evt;
+        const ts = parseToUnixMs(evt.timestamp, tz) || parseToUnixMs(evt.at, tz);
+        if (ts == null) return evt;
+        return { ...evt, timestamp: ts };
+      });
+    }
+
+    // Parse event timestamps (root events with 'at' field from v3 format)
+    if (Array.isArray(data.events)) {
+      data.events = data.events.map(evt => {
+        if (!evt || typeof evt !== 'object') return evt;
+        const ts = parseToUnixMs(evt.at, tz) || parseToUnixMs(evt.timestamp, tz);
+        if (ts == null) return evt;
+        return { ...evt, timestamp: ts };
+      });
+    }
+
+    // Compatibility: synthesize roster from v2 participants if missing
+    if ((!Array.isArray(data.roster) || data.roster.length === 0) &&
+        data.participants && typeof data.participants === 'object') {
+      data.roster = synthesizeRosterFromParticipants(data.participants);
+    }
+
+    return data;
+  }
+
+  /**
+   * List all dates that have sessions
+   * @param {string} householdId
+   * @returns {Promise<string[]>}
+   */
+  async listDates(householdId) {
+    const sessionsRoot = this.configService.getHouseholdPath('fitness/log', householdId);
+
+    return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
+      .sort()
+      .reverse();
+  }
+
+  /**
+   * Find sessions by date
+   * @param {string} date - YYYY-MM-DD format
+   * @param {string} householdId
+   * @returns {Promise<Object[]>}
+   */
+  async findByDate(date, householdId) {
+    const sessionsDir = path.join(
+      this.configService.getHouseholdPath('fitness/log', householdId),
+      date
+    );
+
+    if (!dirExists(sessionsDir)) return [];
+
+    // Selection config (warmup / deprioritized labels) for re-deriving primary
+    // media below — must match what the frontend detail view uses so the list
+    // and detail agree. Best-effort: config-less selection still filters audio
+    // and keys on played time.
+    const fitnessCfg = this.configService.getHouseholdAppConfig?.(householdId, 'fitness');
+    const selectionConfig = buildSelectionConfig(fitnessCfg?.content || fitnessCfg?.plex);
+
+    const baseNames = listYamlFiles(sessionsDir);
+    const sessions = [];
+
+    for (const baseName of baseNames) {
+      const basePath = path.join(sessionsDir, baseName);
+      const data = loadYamlSafe(basePath);
+      if (!data) continue;
+
+      const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
+      const startTime = parseToUnixMs(data.startTime, tz)
+        || parseToUnixMs(data.session?.start, tz);
+      const endTime = parseToUnixMs(data.endTime, tz)
+        || parseToUnixMs(data.session?.end, tz);
+
+      // Derive durationMs: root field → session.duration_seconds → computed from timestamps
+      const durationMs = Number.isFinite(Number(data.durationMs))
+        ? Number(data.durationMs)
+        : (data.session?.duration_seconds != null
+            ? data.session.duration_seconds * 1000
+            : (startTime && endTime ? Math.max(0, endTime - startTime) : null));
+
+      const summary = data.summary;
+
+      // Build participants — displayName + per-zone minutes (the momentum widget
+      // credits active/warm/hot/fire and omits cool, so it needs the breakdown).
+      const participants = {};
+      for (const [slug, info] of Object.entries(data.participants || {})) {
+        const p = summary?.participants?.[slug];
+        participants[slug] = {
+          displayName: info.display_name || slug,
+          zoneMinutes: p?.zone_minutes || null,
+          // PER-PARTICIPANT RINGS. Already computed and stored; it simply was
+          // never surfaced, so the only ring figure the API exposed was the
+          // session-wide `totalRings`. Summing a week per learner without this
+          // would mean decoding every session's series — far too heavy for a
+          // board that repaints every five minutes.
+          //
+          // `coins` is the pre-2026-08-26 name and is read until the migration
+          // clears it (cli/rings-migration.mjs). `?? null` distinguishes "no
+          // ring data recorded" from a real zero.
+          rings: p?.rings ?? p?.coins ?? null,
+          // Average heart rate over the session — what the Health budget needs
+          // to credit a workout Strava has not caught up with yet.
+          hrAvg: Number.isFinite(Number(p?.hr_avg)) && Number(p.hr_avg) > 0 ? Number(p.hr_avg) : null,
+        };
+      }
+
+      // Build media from summary block: { primary, others }
+      let media = null;
+      const summaryMediaObjects = (summary?.media || []).filter(m => typeof m === 'object' && m !== null);
+      if (summaryMediaObjects.length > 0) {
+        // Re-derive primary from the played-time cascade rather than trusting a
+        // stored `primary` flag — old sessions carry stale flags on the wrong
+        // item (a bleed-over episode or a music track). Only correct a session
+        // that HAD a flag: when none was ever set (all-audio, or a degenerate
+        // title-less stub), keep the prior behavior and fall through to the
+        // timeline-event derivation below rather than inventing a primary.
+        const storedPrimary = summaryMediaObjects.find(m => m.primary);
+        const primaryItem = storedPrimary
+          ? (selectPrimaryMediaSummary(summaryMediaObjects, selectionConfig) || storedPrimary)
+          : null;
+        const formatMedia = (m) => {
+          const source = ItemId.extractSource(m.contentId);
+          return {
+            contentId: ItemId.normalize(m.contentId, source),
+            title: m.title,
+            showTitle: m.showTitle,
+            seasonTitle: m.seasonTitle,
+            grandparentId: ItemId.normalize(m.grandparentId, source),
+            parentId: ItemId.normalize(m.parentId, source),
+          };
+        };
+        media = {
+          primary: primaryItem ? formatMedia(primaryItem) : null,
+        };
+      }
+
+      // Patch: if summary.media has null grandparentId/parentId, try filling from timeline events
+      if (media?.primary && (!media.primary.grandparentId || !media.primary.parentId)) {
+        const matchingEvt = (data.timeline?.events || []).find(e =>
+          e.type === 'media' && e.data?.contentId && ItemId.normalize(e.data.contentId, ItemId.extractSource(e.data.contentId)) === media.primary.contentId
+        );
+        if (matchingEvt?.data) {
+          const evtSource = ItemId.extractSource(matchingEvt.data.contentId);
+          if (!media.primary.grandparentId && matchingEvt.data.grandparentId) {
+            media.primary.grandparentId = ItemId.normalize(matchingEvt.data.grandparentId, evtSource);
+          }
+          if (!media.primary.parentId && matchingEvt.data.parentId) {
+            media.primary.parentId = ItemId.normalize(matchingEvt.data.parentId, evtSource);
+          }
+        }
+      }
+
+      // Fallback: if no structured summary.media, try extracting from timeline.events
+      if (!media && data.timeline?.events?.length > 0) {
+        const mediaEvents = (data.timeline.events || []).filter(e => e.type === 'media');
+        if (mediaEvents.length > 0) {
+          const formatFromEvent = (evt) => {
+            const d = evt.data || {};
+            const source = ItemId.extractSource(d.contentId);
+            return {
+              contentId: ItemId.normalize(d.contentId, source),
+              title: d.title,
+              showTitle: d.grandparentTitle,
+              seasonTitle: d.parentTitle,
+              grandparentId: ItemId.normalize(d.grandparentId, source),
+              parentId: ItemId.normalize(d.parentId, source),
+            };
+          };
+          // Primary derivation is a domain policy (4-tier cascade); delegate to
+          // the fitness domain service rather than duplicating a "pick longest"
+          // loop here. Falls back to the first media event only when the domain
+          // returns null (every event is audio) to preserve the prior contract
+          // that a session with media events always surfaces a primary.
+          const primaryEvent = selectPrimaryMedia(mediaEvents) || mediaEvents[0];
+          media = {
+            primary: formatFromEvent(primaryEvent),
+          };
+        }
+
+        // Second fallback: extract from media_start events (older v3 sessions)
+        if (!media) {
+          const videoStarts = (data.timeline.events || [])
+            .filter(e => e.type === 'media_start' && e.data?.source === 'video_player');
+          if (videoStarts.length > 0) {
+            // Pick longest-duration video as primary
+            let primaryIdx = 0;
+            for (let i = 1; i < videoStarts.length; i++) {
+              if ((videoStarts[i].data?.durationSeconds || 0) > (videoStarts[primaryIdx].data?.durationSeconds || 0)) {
+                primaryIdx = i;
+              }
+            }
+            const d = videoStarts[primaryIdx].data || {};
+            const contentId = ItemId.normalize(d.contentId) || (d.plexId ? `plex:${d.plexId}` : null);
+            media = {
+              primary: {
+                contentId,
+                title: d.title,
+                showTitle: d.show,
+                seasonTitle: d.season,
+                grandparentId: null,
+                parentId: null,
+              },
+            };
+          }
+        }
+      }
+
+      // The primary episode's own description, from its timeline media event —
+      // the summary block does not keep it. Flattened and capped for list use.
+      if (media?.primary?.contentId && !media.primary.description) {
+        const described = (data.timeline?.events || []).find(e => e?.type === 'media' && e.data?.description
+          && ItemId.normalize(e.data.contentId, ItemId.extractSource(e.data.contentId)) === media.primary.contentId);
+        if (described) media.primary.description = String(described.data.description).replace(/\s+/g, ' ').trim().slice(0, 400);
+      }
+
+      // Extract suffer scores and corresponding activityId across participants
+      let maxSufferScore = null;
+      let totalSufferScore = 0;
+      let stravaActivityId = null;
+      for (const [slug, info] of Object.entries(data.participants || {})) {
+        const ss = info.strava?.sufferScore;
+        if (ss != null) {
+          totalSufferScore += ss;
+          if (maxSufferScore === null || ss > maxSufferScore) {
+            maxSufferScore = ss;
+            stravaActivityId = info.strava?.activityId || null;
+          }
+        }
+      }
+
+      // Extract session-level strava display data
+      let strava = null;
+      if (data.strava?.name || data.strava?.type) {
+        strava = {
+          name: data.strava.name || null,
+          type: data.strava.type || null,
+          sportType: data.strava.sportType || null,
+          distance: data.strava.distance || 0,
+          trainer: data.strava.trainer ?? true,
+          avgHeartrate: data.strava.avgHeartrate || 0,
+          elevation: data.strava.totalElevationGain || 0,
+          hasMap: !!(data.strava.map?.polyline),
+          ...(data.strava.map?.polyline ? { mapPolyline: data.strava.map.polyline } : {}),
+          ...(data.strava.map?.startLatLng ? { mapStart: data.strava.map.startLatLng } : {}),
+        };
+      }
+
+      // Legacy `coins` read alongside `rings` — see the participant block above.
+      const totalRings = summary?.rings?.total ?? summary?.coins?.total
+        ?? data.treasureBox?.totalRings ?? data.treasureBox?.totalCoins ?? 0;
+
+      // Voice memos: prefer summary, fall back to timeline events
+      let rawMemos = summary?.voiceMemos;
+      if ((!rawMemos || rawMemos.length === 0) && data.timeline?.events?.length > 0) {
+        rawMemos = data.timeline.events
+          .filter(e => e.type === 'voice_memo' && e.data)
+          .map(e => ({
+            transcript: e.data.transcript || e.data.transcriptPreview || '',
+            durationSeconds: e.data.durationSeconds ?? e.data.duration_seconds ?? 0,
+            timestamp: e.timestamp,
+          }));
+      }
+      const voiceMemos = (rawMemos || [])
+        .filter(m => m.transcript)
+        .map(m => ({
+          transcript: typeof m.transcript === 'string' ? m.transcript.slice(0, 300) : '',
+          durationSeconds: m.durationSeconds ?? 0,
+        }));
+
+      // Extract strava_notes text if present
+      const stravaNotes = data.strava_notes?.text || null;
+
+      sessions.push({
+        sessionId: data.sessionId || baseName,
+        date: date,
+        startTime: startTime || null,
+        durationMs,
+        timezone: data.timezone,
+        participants,
+        media,
+        totalRings,
+        maxSufferScore,
+        totalSufferScore,
+        stravaActivityId,
+        strava,
+        voiceMemos,
+        stravaNotes,
+        hasVideo: deriveHasVideo(data),
+      });
+    }
+
+    // Sort by startTime descending
+    return sessions.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+  }
+
+  /**
+   * Find sessions in date range
+   * @param {string} startDate - YYYY-MM-DD
+   * @param {string} endDate - YYYY-MM-DD
+   * @param {string} householdId
+   * @returns {Promise<Object[]>}
+   */
+  async findInRange(startDate, endDate, householdId) {
+    const dates = await this.listDates(householdId);
+    const filtered = dates.filter(d => d >= startDate && d <= endDate);
+
+    // Per-month shards are read/written once each, even though we iterate per day.
+    const shardCache = new Map(); // 'YYYY-MM' -> shard object (fresh per call)
+    const dirtyMonths = new Set();
+    const getShard = (yyyymm) => {
+      if (!shardCache.has(yyyymm)) shardCache.set(yyyymm, this.#loadIndexShard(householdId, yyyymm));
+      return shardCache.get(yyyymm);
+    };
+
+    const sessions = [];
+    for (const date of filtered) {
+      const yyyymm = date.slice(0, 7);
+      const shard = getShard(yyyymm);
+      const mtimeMs = this.#dayDirMtimeMs(householdId, date);
+      const entry = shard.days?.[date];
+
+      let daySessions;
+      if (entry && entry.mtimeMs === mtimeMs && Array.isArray(entry.sessions)) {
+        daySessions = entry.sessions; // HIT — folder unchanged since indexed
+      } else {
+        // MISS (new/changed day, unindexed day, or external Dropbox sync): rebuild
+        // this one day from the YAML files and refresh its shard entry.
+        daySessions = await this.findByDate(date, householdId);
+        shard.days = shard.days || {};
+        shard.days[date] = { mtimeMs, sessions: daySessions };
+        dirtyMonths.add(yyyymm);
+      }
+      // findByDate already stamps `date`; ensure it for safety on cached entries.
+      for (const s of daySessions) sessions.push(s.date ? s : { ...s, date });
+    }
+
+    for (const yyyymm of dirtyMonths) {
+      this.#saveIndexShard(householdId, yyyymm, shardCache.get(yyyymm));
+    }
+
+    return sessions.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+  }
+
+  // ── Index internals ─────────────────────────────────────────────────────
+
+  /**
+   * Path to a month's index shard: fitness/log/_index/{YYYY-MM}.json
+   * @param {string} householdId
+   * @param {string} yyyymm - 'YYYY-MM'
+   * @returns {string}
+   */
+  #indexShardPath(householdId, yyyymm) {
+    return path.join(
+      this.configService.getHouseholdPath('fitness/log', householdId),
+      INDEX_DIR_NAME,
+      `${yyyymm}.json`
+    );
+  }
+
+  /**
+   * Load a month shard, or an empty shard if missing/corrupt/version-mismatched.
+   * The index is a disposable cache — any problem reading it just means a rebuild.
+   * @returns {{ version: number, days: Record<string, { mtimeMs: number|null, sessions: Object[] }> }}
+   */
+  #loadIndexShard(householdId, yyyymm) {
+    const empty = { version: INDEX_VERSION, days: {} };
+    const raw = readFile(this.#indexShardPath(householdId, yyyymm));
+    if (!raw) return empty;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== INDEX_VERSION || typeof parsed.days !== 'object' || parsed.days === null) {
+        return empty;
+      }
+      return parsed;
+    } catch {
+      return empty;
+    }
+  }
+
+  /**
+   * Persist a month shard. Failures are swallowed: the index is derived data, so
+   * a read-only mount or transient write error must never break the read path
+   * (the next read simply rebuilds the affected days).
+   */
+  #saveIndexShard(householdId, yyyymm, shard) {
+    try {
+      writeFile(this.#indexShardPath(householdId, yyyymm), JSON.stringify(shard));
+    } catch {
+      // intentionally ignored — see doc comment
+    }
+  }
+
+  /**
+   * mtime of a day's session folder. Changes whenever a session file is added or
+   * removed in that day, which is the staleness signal the cache checks against.
+   * @returns {number|null} mtimeMs, or null if the folder doesn't exist
+   */
+  #dayDirMtimeMs(householdId, date) {
+    const dir = path.join(
+      this.configService.getHouseholdPath('fitness/log', householdId),
+      date
+    );
+    const stats = getStats(dir);
+    return stats ? stats.mtimeMs : null;
+  }
+
+  /**
+   * Drop a day from its month shard so the next read rebuilds it. Called after
+   * every local mutation (save/appendVoiceMemo/delete) so in-place edits — which
+   * don't change the day-folder mtime — are still reflected. No-op if the shard
+   * or day entry is absent.
+   * @param {string|null} date - 'YYYY-MM-DD'
+   * @param {string} householdId
+   */
+  #invalidateIndexDay(date, householdId) {
+    if (!date) return;
+    const yyyymm = date.slice(0, 7);
+    const shard = this.#loadIndexShard(householdId, yyyymm);
+    if (shard.days && Object.prototype.hasOwnProperty.call(shard.days, date)) {
+      delete shard.days[date];
+      this.#saveIndexShard(householdId, yyyymm, shard);
+    }
+  }
+
+  /**
+   * Find active (not ended) sessions
+   * @param {string} householdId
+   * @returns {Promise<Object[]>}
+   */
+  async findActive(householdId) {
+    // Check recent dates for active sessions
+    const dates = await this.listDates(householdId);
+    const recentDates = dates.slice(0, 7); // Last 7 days
+
+    const active = [];
+    for (const date of recentDates) {
+      const sessions = await this.findByDate(date, householdId);
+      for (const summary of sessions) {
+        if (summary.endTime === null) {
+          const session = await this.findById(summary.sessionId, householdId);
+          if (session) active.push(session);
+        }
+      }
+    }
+
+    return active;
+  }
+
+  /**
+   * Delete a session
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @returns {Promise<void>}
+   */
+  async delete(sessionId, householdId) {
+    const paths = this.getStoragePaths(sessionId, householdId);
+    if (!paths) return;
+
+    deleteYaml(paths.sessionFilePath);
+    // Also remove the screenshots directory (one level up to get the session dir)
+    const sessionMediaDir = path.dirname(paths.screenshotsDir);
+    deleteDir(sessionMediaDir);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
+  }
+}
+
+/**
+ * Synthesize a normalized roster from the v2 `participants` map (keyed by slug).
+ *
+ * Downstream (TimelapseFrameMapper) keys EVERY per-participant series off the
+ * roster entry's `id` — HR (`{id}:hr`), zone (`{id}:zone`), avatar (`avatarBuffers[id]`),
+ * and the coin curve — and reads the label from `display_name`. The slug IS that id,
+ * so it must be carried through. Dropping it (the previous bug) made every name
+ * resolve to "Unknown" and every HR collapse onto the first participant's series.
+ */
+export function synthesizeRosterFromParticipants(participants) {
+  if (!participants || typeof participants !== 'object') return [];
+  return Object.entries(participants)
+    .map(([slug, entry]) => {
+      if (!entry || typeof entry !== 'object') return null;
+      return {
+        id: slug,
+        name: entry.display_name || slug,
+        display_name: entry.display_name || slug,
+        color: entry.color || null,
+        avatarRef: slug,
+        hrDeviceId: entry.hr_device || null,
+        isGuest: entry.is_guest === true,
+        isPrimary: entry.is_primary === true
+      };
+    })
+    .filter(Boolean);
+}
+
+/**
+ * True iff a persisted session doc has a finished, playable timelapse recap.
+ * Powers the lightweight `hasVideo` flag on the list summary so the Fitness home
+ * can badge recap-bearing sessions without loading each full session file.
+ * @param {object|null|undefined} data - parsed session YAML doc
+ * @returns {boolean}
+ */
+export function deriveHasVideo(data) {
+  return data?.timelapse?.status === 'ready' && !!data?.timelapse?.videoPath;
+}
+
+export default YamlSessionDatastore;

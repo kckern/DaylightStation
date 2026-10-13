@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldArmStartupDeadline } from '../../../../capabilities/playback/browser/player/lib/shouldArmStartupDeadline.js';
+import { shouldArmStartupDeadline } from '../../../../__capabilities/playback/browser/player/lib/shouldArmStartupDeadline.js';
 
 /**
  * Tests for startup deadline gating.

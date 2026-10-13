@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CameraLedgerStore } from "../../../../modules/camera/server/adapters/CameraLedgerStore.mjs";
+import { CameraLedgerStore } from "../../../../__app_modules/camera/server/adapters/CameraLedgerStore.mjs";
 
 describe('CameraLedgerStore', () => {
   it('writes and reads the established per-camera JSONL shape', () => {

@@ -109,18 +109,18 @@ export default {
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
       '**/_deleteme/**',
-      // `backend/shared` and `backend/shared-contracts` are SYMLINKS up to
+      // `__backend/shared` and `__backend/shared-contracts` are SYMLINKS up to
       // `shared/`. Every spec under them is the same file twice, and vitest
       // treats a path passed on the command line as a FILTER rather than a
       // literal file — so `shared/x.test.mjs` also matches the symlinked
-      // `backend/shared/x.test.mjs` and both copies run. That stayed invisible
+      // `__backend/shared/x.test.mjs` and both copies run. That stayed invisible
       // while `shared/` was outside the gate's ROOTS; when it was added
       // (2026-09-16) the gate reported a population/run mismatch of exactly the
       // 36 duplicated files and refused to grade the sweep. Excluding the
       // symlink side keeps one copy — the real path, which is the one the
       // gate's own walk collects.
-      '**/backend/shared/**',
-      '**/backend/shared-contracts/**',
+      '**/__backend/shared/**',
+      '**/__backend/shared-contracts/**',
       // `node:test` files, not vitest ones. A directory-glob vitest run
       // collects them and reports "no test suite found", which reads as a
       // failure and trains everyone to skim past the gate's failing list —
@@ -149,7 +149,7 @@ export default {
       // under `node --test` it fails 3 of 5 real tests (OpponentLadder
       // rejects entries built by PianoGamesContainer.recordGame, plus a
       // 'Level 1' vs 'Diglett' mismatch). That is a genuine bug, not glob
-      // noise — see docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
+      // noise — see __docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
       // entries-rejected.md. Excluding it would hide the failure instead of
       // just fixing how it is reported.
     ],

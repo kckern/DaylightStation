@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   encodeLaunchPreviewLink,
   decodeLaunchPreviewLink,
-} from "../../../../../modules/school/server/application/services/launchPreviewLink.mjs";
+} from "../../../../../__app_modules/school/server/application/services/launchPreviewLink.mjs";
 
 describe('launch preview link — round trip', () => {
   it('encodes a learner and subject into a url-safe segment and reads it back', () => {

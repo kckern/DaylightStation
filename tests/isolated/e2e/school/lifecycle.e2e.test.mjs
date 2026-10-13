@@ -44,7 +44,7 @@ describe('scenario 1 — the video unit, end to end', () => {
     expect(agenda).toContain('Equivalent Fractions and Common Denominators');
     // The card's footer instruction names what THIS scan does. A video unit's
     // scan plays a film, so the line must not say "print" — see "Agenda and
-    // result-receipt language" in docs/reference/school/print-documents.md.
+    // result-receipt language" in __docs/reference/school/print-documents.md.
     expect(agenda).toMatch(/WATCH OR LISTEN/i);
 
     const offered = h.tokensInLastReceipt();

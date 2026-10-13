@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let computeHistorySnapshotAction;
 
 beforeAll(async () => {
-  const mod = await import("../../../modules/fitness/browser/widgets/FitnessChart/historyMode.js");
+  const mod = await import("../../../__app_modules/fitness/browser/widgets/FitnessChart/historyMode.js");
   computeHistorySnapshotAction = mod.computeHistorySnapshotAction;
 });
 

@@ -1,0 +1,124 @@
+// __backend/src/3_applications/content/SavedQueryService.mjs
+
+/**
+ * Application-layer service for managing saved query definitions.
+ * Reads/writes query YAML files via injected I/O functions (no direct file access).
+ *
+ * Query definitions are YAML files stored in the queries/ subdirectory
+ * of the lists config path. Each defines a type (e.g., 'freshvideo')
+ * and type-specific parameters (e.g., sources: []).
+ */
+export class SavedQueryService {
+  #readQuery;
+  #listQueries;
+  #writeQuery;
+  #deleteQuery;
+
+  #listQueriesDetailed;
+
+  /**
+   * @param {Object} deps
+   * @param {(name: string) => Object|null} deps.readQuery - Read a query definition by name
+   * @param {() => string[]} [deps.listQueries] - List all query names
+   * @param {() => Array<{name: string, origin: string, username?: string}>} [deps.listQueriesDetailed] - List queries with origin metadata
+   * @param {(name: string, data: Object) => void} [deps.writeQuery] - Write a query definition
+   * @param {(name: string) => void} [deps.deleteQuery] - Delete a query definition
+   */
+  constructor({ readQuery, listQueries, listQueriesDetailed, writeQuery, deleteQuery } = {}) {
+    this.#readQuery = readQuery;
+    this.#listQueries = listQueries || null;
+    this.#listQueriesDetailed = listQueriesDetailed || null;
+    this.#writeQuery = writeQuery || null;
+    this.#deleteQuery = deleteQuery || null;
+  }
+
+  /**
+   * Get a normalized query definition.
+   * @param {string} name - Query name (e.g., 'dailynews')
+   * @returns {{ title: string, source: string, filters: Object } | null}
+   */
+  getQuery(name) {
+    const raw = this.#readQuery(name);
+    if (!raw) return null;
+
+    const base = {
+      title: raw.title || name,
+      ...(raw.audio != null && { audio: raw.audio }),
+      // Menu-tile image for the query as a whole. Not `image`, which a flat
+      // titlecard query already uses for the card's own picture.
+      ...(raw.cover != null && { cover: raw.cover }),
+    };
+
+    // Composite query — items array provided
+    if (raw.items) {
+      return { ...base, items: raw.items };
+    }
+
+    // Flat query — wrap into single-element items array
+    return {
+      ...base,
+      items: [{
+        source: raw.type,
+        filters: { sources: raw.sources || [] },
+        params: raw.params || {},
+        ...(raw.type === 'titlecard' && {
+          type: 'titlecard',
+          template: raw.template,
+          duration: raw.duration,
+          text: raw.text,
+          ...(raw.effect != null && { effect: raw.effect }),
+          ...(raw.zoom != null && { zoom: raw.zoom }),
+          ...(raw.image != null && { image: raw.image }),
+          ...(raw.theme != null && { theme: raw.theme }),
+          ...(raw.css != null && { css: raw.css }),
+        }),
+        ...(raw.sort != null && { sort: raw.sort }),
+        ...(raw.take != null && { take: raw.take }),
+        ...(raw.exclude != null && { exclude: raw.exclude }),
+        ...(raw.slideshow != null && { slideshow: raw.slideshow }),
+      }],
+    };
+  }
+
+  /**
+   * List all saved query names.
+   * @returns {string[]}
+   */
+  listQueries() {
+    if (!this.#listQueries) return [];
+    return this.#listQueries();
+  }
+
+  /**
+   * List all saved queries with origin metadata (household vs user).
+   * @returns {Array<{name: string, origin: string, username?: string}>}
+   */
+  listQueriesDetailed() {
+    if (this.#listQueriesDetailed) return this.#listQueriesDetailed();
+    // Fallback: wrap flat list with unknown origin
+    return this.listQueries().map(name => ({ name, origin: 'household' }));
+  }
+
+  /**
+   * Save a query definition.
+   * @param {string} name - Query name
+   * @param {Object} data - Query definition (type, sources, etc.)
+   */
+  saveQuery(name, data) {
+    if (!this.#writeQuery) {
+      throw new Error('SavedQueryService: write not configured');
+    }
+    this.#writeQuery(name, data);
+  }
+
+  /**
+   * Delete a query definition.
+   * @param {string} name - Query name
+   */
+  deleteQuery(name) {
+    if (!this.#deleteQuery) {
+      throw new Error('SavedQueryService: delete not configured');
+    }
+    this.#deleteQuery(name);
+  }
+}

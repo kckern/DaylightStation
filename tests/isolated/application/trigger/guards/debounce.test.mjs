@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDebounce } from "../../../../../capabilities/device-dispatch/server/application/guards/debounce.mjs";
+import { createDebounce } from "../../../../../__capabilities/device-dispatch/server/application/guards/debounce.mjs";
 
 describe('createDebounce', () => {
   it('first check passes, repeat within window is debounced', () => {

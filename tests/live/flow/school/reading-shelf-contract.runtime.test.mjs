@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUT_DIR = path.join(process.cwd(), 'docs/_wip/audits/user_4-reading-shelf');
+const OUT_DIR = path.join(process.cwd(), '__docs/_wip/audits/user_4-reading-shelf');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const VIEWPORT = { width: 1280, height: 800 };

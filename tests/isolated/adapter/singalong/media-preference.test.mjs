@@ -27,7 +27,7 @@ vi.mock('music-metadata', () => ({
 
 // Import mocked modules so we can control return values per test
 const FileIO = await import('#system/utils/FileIO.mjs');
-const { SingalongAdapter } = await import("../../../../capabilities/content-catalog/server/adapters/providers/singalong/SingalongAdapter.mjs");
+const { SingalongAdapter } = await import("../../../../__capabilities/content-catalog/server/adapters/providers/singalong/SingalongAdapter.mjs");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

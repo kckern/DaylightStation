@@ -70,5 +70,5 @@ if [ -d "/usr/src/app/media" ]; then
 fi
 
 # Drop privileges and start app
-cd backend
+cd __backend
 exec su-exec node forever index.js

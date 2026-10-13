@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createPianoScreenPowerSync, _resetForTests as resetPsas } from '../../../modules/piano/server/composition/screen-power-sync.mjs';
-import { createPianoMidiWake, _resetForTests as resetMidi } from '../../../modules/piano/server/composition/midi-wake.mjs';
+import { createPianoScreenPowerSync, _resetForTests as resetPsas } from '../../../__app_modules/piano/server/composition/screen-power-sync.mjs';
+import { createPianoMidiWake, _resetForTests as resetMidi } from '../../../__app_modules/piano/server/composition/midi-wake.mjs';
 import { getScreenOverrideService, _resetForTests as resetOverride } from '#composition/modules/screenOverride.mjs';
 
 afterEach(() => { resetPsas(); resetMidi(); resetOverride(); });

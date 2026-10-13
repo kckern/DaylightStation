@@ -1,0 +1,329 @@
+/**
+ * Media API Router
+ *
+ * Endpoints:
+ * - GET    /config                 — Load media browse config
+ * - GET    /queue                  — Load current queue
+ * - PUT    /queue                  — Replace entire queue
+ * - POST   /queue/items            — Add items to queue
+ * - DELETE  /queue/items/:queueId  — Remove item from queue
+ * - PATCH  /queue/items/reorder    — Reorder an item
+ * - PATCH  /queue/position         — Set playback position
+ * - PATCH  /queue/state            — Update shuffle / repeat / volume
+ * - DELETE  /queue                 — Clear the queue
+ *
+ * Household media memory (__docs/reference/media/media-app-technical.md §2.4):
+ * - GET    /household/recent       — Played on any screen, newest first
+ * - GET    /household/carry-on     — Unfinished + next episodes; nowOn
+ * - GET    /household/favourites   — Household favourites
+ * - POST   /household/favourites   — Add {id, kind?, title?, thumbnail?, type?}
+ * - DELETE /household/favourites   — Remove {id} (body or ?id=)
+ * - GET    /household/removed      — Ids removed from the household list
+ * - POST   /household/removed      — Remove {id} from the household list
+ * - DELETE /household/removed      — Restore {id} (undo)
+ * - POST   /household/watched      — Mark {contentId, watched: boolean}
+ * - GET    /household/plays        — Play ledger (?deviceId=&from=&to=&limit=)
+ */
+import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
+
+function serializeMediaQueue(queue) {
+  return {
+    position: queue.position,
+    shuffle: queue.shuffle,
+    repeat: queue.repeat,
+    volume: queue.volume,
+    items: queue.items.map((item) => ({ ...item })),
+    shuffleOrder: [...queue.shuffleOrder],
+  };
+}
+
+/**
+ * Factory function that returns an Express Router for media queue endpoints.
+ *
+ * @param {Object} config
+ * @param {Object} config.mediaQueueService - MediaQueueService instance
+ * @param {Object} config.mediaSurfaceConfig - Semantic browse config service
+ * @param {Function} config.contentIdResolver - Resolves content IDs (reserved for future use)
+ * @param {Object} config.mediaQueueEvents
+ * @param {Object} config.logger - Structured logger
+ * @returns {express.Router}
+ */
+export function createMediaRouter(config) {
+  const {
+    mediaQueueService,
+    mediaSurfaceConfig,
+    contentIdResolver,
+    mediaQueueEvents,
+    createMediaQueue,
+    householdMediaMemory = null,
+    logger = console,
+  } = config;
+  if (typeof createMediaQueue !== 'function') throw new Error('createMediaRouter requires createMediaQueue');
+
+  const router = express.Router();
+
+  // ── Internal helpers ───────────────────────────────────────────
+
+  /**
+   * Extract household ID from query params (optional).
+   * @param {express.Request} req
+   * @returns {string|undefined}
+   */
+  function resolveHid(req) {
+    return req.query.household || undefined;
+  }
+
+  /**
+   * Broadcast a queue mutation to all connected clients.
+   * @param {MediaQueue} queue
+   * @param {string} [mutationId]
+   */
+  function broadcast(queue, mutationId) {
+    mediaQueueEvents.changed(serializeMediaQueue(queue), mutationId);
+  }
+
+  /**
+   * Returns true if value is a non-negative integer (0, 1, 2, ...).
+   * Rejects floats, negatives, strings, null, undefined.
+   */
+  function isNonNegativeInt(value) {
+    return Number.isInteger(value) && value >= 0;
+  }
+
+  /**
+   * Returns true if value is an integer (includes negatives, for step).
+   */
+  function isInt(value) {
+    return Number.isInteger(value);
+  }
+
+  // ── 0. GET /config ────────────────────────────────────────────
+
+  router.get('/config', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    // The media config retirement SWAPS what the key `media` means: today it is
+    // the SURFACE (browse/searchScopes, at media/config.yml) and `media-app` is
+    // the DOMAIN (plex.host, at config/media-app.yml); after the data move the
+    // surface lives at media/app.yml (= `media-app`) and `media` is the domain.
+    // Both files are valid YAML objects, so reading the wrong one throws
+    // NOTHING — it just yields `undefined` for every key and this endpoint
+    // serves empty arrays. Read whichever entry actually carries the surface so
+    // the endpoint is correct on both sides of the move; Phase E drops the
+    // legacy half with the other fallbacks.
+    res.json(mediaSurfaceConfig.get(hid));
+  }));
+
+  // ── 1. GET /queue ──────────────────────────────────────────────
+
+  router.get('/queue', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const queue = await mediaQueueService.load(hid);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 2. PUT /queue ──────────────────────────────────────────────
+
+  router.put('/queue', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { items, position, shuffle, repeat, volume, mutationId } = req.body;
+    const queue = createMediaQueue({ items, position, shuffle, repeat, volume });
+    await mediaQueueService.replace(queue, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 3. POST /queue/items ───────────────────────────────────────
+
+  router.post('/queue/items', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { items, placement, mutationId } = req.body;
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items must be an array' });
+    }
+
+    const added = await mediaQueueService.addItems(items, placement || 'end', hid);
+    const queue = await mediaQueueService.load(hid);
+    broadcast(queue, mutationId);
+    res.json({ added, queue: serializeMediaQueue(queue) });
+  }));
+
+  // ── 4. DELETE /queue/items/:queueId ────────────────────────────
+
+  router.delete('/queue/items/:queueId', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { queueId } = req.params;
+    const mutationId = req.body?.mutationId || req.query.mutationId;
+    const queue = await mediaQueueService.removeItem(queueId, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 5. PATCH /queue/items/reorder ──────────────────────────────
+
+  router.patch('/queue/items/reorder', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { queueId, toIndex, mutationId } = req.body;
+    const queue = await mediaQueueService.reorder(queueId, toIndex, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 6. POST /queue/advance ─────────────────────────────────────
+  // Delegates to MediaQueue.advance() — honours repeat, shuffle, and step direction.
+  // Use this instead of PATCH /queue/position for end-of-track and manual skip.
+
+  router.post('/queue/advance', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { step = 1, auto = false, mutationId } = req.body;
+
+    if (!isInt(step)) {
+      return res.status(400).json({ error: 'step must be an integer' });
+    }
+
+    const queue = await mediaQueueService.advance(step, { auto }, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 7. PATCH /queue/position ───────────────────────────────────
+  // Direct position setter — use only for jump-to-index (tapping a queue item).
+  // For next/prev/auto-advance use POST /queue/advance.
+
+  router.patch('/queue/position', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { position, mutationId } = req.body;
+
+    if (!isNonNegativeInt(position)) {
+      return res.status(400).json({ error: 'position must be a non-negative integer' });
+    }
+
+    const queue = await mediaQueueService.setPosition(position, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 7. PATCH /queue/state ──────────────────────────────────────
+
+  router.patch('/queue/state', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const { shuffle, repeat, volume, mutationId } = req.body;
+
+    // Only include defined fields in the state object
+    const state = {};
+    if (shuffle !== undefined) state.shuffle = shuffle;
+    if (repeat !== undefined) state.repeat = repeat;
+    if (volume !== undefined) state.volume = volume;
+
+    const queue = await mediaQueueService.updateState(state, hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── 8. DELETE /queue ───────────────────────────────────────────
+
+  router.delete('/queue', asyncHandler(async (req, res) => {
+    const hid = resolveHid(req);
+    const mutationId = req.body?.mutationId || req.query.mutationId;
+    const queue = await mediaQueueService.clear(hid);
+    broadcast(queue, mutationId);
+    res.json(serializeMediaQueue(queue));
+  }));
+
+  // ── Household media memory ─────────────────────────────────────
+  // Ids travel in the body or query, never the path: content ids carry ':'
+  // and often '/' (files:clips/pullup).
+
+  function requireHouseholdMemory(res) {
+    if (householdMediaMemory) return true;
+    res.status(501).json({ error: 'Household media memory not configured' });
+    return false;
+  }
+
+  function idFrom(req, field = 'id') {
+    const raw = req.body?.[field] ?? req.query?.[field];
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  }
+
+  router.get('/household/recent', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.recent({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/carry-on', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.carryOn({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/plays', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const { deviceId, from, to, limit } = req.query;
+    for (const [name, value] of [['from', from], ['to', to]]) {
+      if (value !== undefined && !Number.isFinite(Date.parse(value))) {
+        return res.status(400).json({ error: `${name} must be an ISO-8601 timestamp` });
+      }
+    }
+    res.json(await householdMediaMemory.plays({
+      deviceId: typeof deviceId === 'string' && deviceId ? deviceId : null,
+      from: from || null,
+      to: to || null,
+      limit,
+    }));
+  }));
+
+  router.get('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.listFavourites(resolveHid(req)));
+  }));
+
+  router.post('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const { kind, title, thumbnail, type } = req.body || {};
+    res.json(await householdMediaMemory.addFavourite(resolveHid(req), { id, kind, title, thumbnail, type }));
+  }));
+
+  router.delete('/household/favourites', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.removeFavourite(resolveHid(req), id));
+  }));
+
+  router.get('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.listRemoved(resolveHid(req)));
+  }));
+
+  router.post('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.removeFromList(resolveHid(req), id));
+  }));
+
+  router.delete('/household/removed', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const id = idFrom(req);
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await householdMediaMemory.restoreToList(resolveHid(req), id));
+  }));
+
+  router.post('/household/watched', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const contentId = idFrom(req, 'contentId');
+    const { watched } = req.body || {};
+    if (!contentId) return res.status(400).json({ error: 'contentId is required' });
+    if (typeof watched !== 'boolean') return res.status(400).json({ error: 'watched must be a boolean' });
+    if (householdMediaMemory.canMarkWatched === false) {
+      return res.status(501).json({ error: 'Watched marks not configured' });
+    }
+    res.json(await householdMediaMemory.markWatched(contentId, watched));
+  }));
+
+  return router;
+}
+
+export default createMediaRouter;

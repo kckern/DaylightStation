@@ -1,8 +1,8 @@
 import { it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createDeviceRouter } from '../../../backend/src/4_api/v1/routers/device.mjs';
-import { DeviceContentDispatchService } from '../../../backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
+import { createDeviceRouter } from '../../../__backend/src/4_api/v1/routers/device.mjs';
+import { DeviceContentDispatchService } from '../../../__backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
 
 it('validates and forwards the exact item operation and exposes cold cancellation before claim', async () => {
   const queue = vi.fn(async () => ({ ok: true }));

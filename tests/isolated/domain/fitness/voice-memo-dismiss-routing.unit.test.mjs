@@ -6,7 +6,7 @@ import { describe, test, expect } from 'vitest';
  * recorderState: 'recording' | 'processing' | 'idle' | 'ready' | 'errored'
  * returns: 'stop_and_transcribe' | 'cancel_and_close'
  */
-import { resolveDismissAction } from "../../../../modules/fitness/browser/player/overlays/voiceMemoOverlayUtils.js";
+import { resolveDismissAction } from "../../../../__app_modules/fitness/browser/player/overlays/voiceMemoOverlayUtils.js";
 
 describe('Voice memo dismiss routing', () => {
   describe('backdrop tap', () => {

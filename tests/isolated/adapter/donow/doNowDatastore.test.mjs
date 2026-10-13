@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlDoNowDatastore } from "../../../../modules/donow/server/adapters/persistence/YamlDoNowDatastore.mjs";
+import { YamlDoNowDatastore } from "../../../../__app_modules/donow/server/adapters/persistence/YamlDoNowDatastore.mjs";
 
 let tmp, ds;
 

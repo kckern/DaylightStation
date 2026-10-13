@@ -1,0 +1,134 @@
+// __backend/src/5_composition/modules/homeApi.mjs
+// Composition wiring for HomeAutomation API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
+
+import { createHomeAutomationRouter } from "../api/homeAutomation.mjs";
+import { HomeAutomationContainer } from "../application/home-automation/HomeAutomationContainer.mjs";
+import { CallHomeAssistantService } from "../../../../__capabilities/home-control/server/application/CallHomeAssistantService.mjs";
+import { HomeStateService } from "../application/home-automation/HomeStateService.mjs";
+import { LegacyHomeAutomationService } from "../application/home-automation/LegacyHomeAutomationService.mjs";
+import { createHomeAutomationAdapters } from "../../../../__backend/src/5_composition/bootstrap.mjs";
+import { YamlHomeDashboardConfigRepository } from "../adapters/persistence/YamlHomeDashboardConfigRepository.mjs";
+import { createHomeDashboardRouter } from "../api/home-dashboard.mjs";
+import { dataService } from "../../../../__backend/src/5_composition/runtimePersistence.mjs";
+import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
+import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
+import { HouseholdHomeStateRepository } from "../adapters/HouseholdHomeStateRepository.mjs";
+
+/**
+ * Create home automation API router
+ * @param {Object} config
+ * @param {Object} config.adapters - Adapters from createHomeAutomationAdapters
+ * @param {Function} [config.loadFile] - Function to load state files
+ * @param {Function} [config.saveFile] - Function to save state files
+ * @param {string} [config.householdId] - Household ID
+ * @param {Object} [config.entropyService] - Entropy service for data freshness
+ * @param {Object} [config.configService] - Config service for user lookup
+ * @param {Object} [config.eventAggregationService] - Event aggregation service
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createHomeAutomationApiRouter(config) {
+  const {
+    adapters,
+    loadFile,
+    saveFile,
+    householdId,
+    entropyService,
+    configService,
+    eventAggregationService,
+    immichAdapter,
+    artAdapter,
+    logger = console
+  } = config;
+
+  // HA-call use case: wraps haGateway.callService for the /ha/call and
+  // /ha/script/:scriptId endpoints. Constructed inline because there's no
+  // home-automation container that owns it yet; if more HA-call call sites
+  // appear, lift this into HomeAutomationContainer.
+  const callHomeAssistantService = adapters.haGateway
+    ? new CallHomeAssistantService({ haGateway: adapters.haGateway, logger })
+    : null;
+
+  const weatherRepository = dataService
+      ? new YamlWeatherDatastore({ dataService, configService, householdId, logger })
+      : null;
+  const stateRepository = typeof loadFile === 'function'
+    ? new HouseholdHomeStateRepository({ load: loadFile, save: saveFile })
+    : null;
+  const homeStateService = stateRepository
+    ? new HomeStateService({
+      repository: stateRepository,
+      remoteExecGateway: adapters.remoteExecAdapter,
+      weatherRepository,
+    })
+    : null;
+  const homeAutomationService = new LegacyHomeAutomationService({
+    tvGateway: adapters.tvAdapter,
+    kioskGateway: adapters.kioskAdapter,
+    taskerGateway: adapters.taskerAdapter,
+    remoteExecGateway: adapters.remoteExecAdapter,
+    homeStateService,
+    gallerySource: immichAdapter,
+    artSource: artAdapter,
+    buildPhotoTitle,
+    formatPhotoDate,
+    orderPeopleByFace,
+    logger,
+  });
+
+  return createHomeAutomationRouter({
+    homeAutomationService,
+    householdId,
+    getEntropyReport: entropyService
+      ? () => entropyService.getReport(configService.getHeadOfHousehold())
+      : null,
+    eventAggregationService,
+    callHomeAssistantService,
+    logger
+  });
+}
+
+/**
+ * Create the home-dashboard Express router for /api/v1/home-dashboard.
+ *
+ * Composes the YAML config repository and the HomeAutomationContainer,
+ * then produces a thin Express router. Returns `null` when `haGateway`
+ * is unavailable (HA not configured) — caller should skip mounting.
+ *
+ * @param {Object} config
+ * @param {Object} [config.haGateway] - Home Assistant gateway
+ * @param {Object} config.configService - ConfigService for household resolution
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {import('express').Router|null}
+ */
+export function createHomeDashboardApiRouter(config) {
+  const { haGateway, configService, logger = console } = config;
+
+  if (!haGateway) {
+    logger.warn?.('home.dashboard.disabled', { reason: 'no haGateway' });
+    return null;
+  }
+
+  const configRepository = new YamlHomeDashboardConfigRepository({
+    dataService,
+    configService,
+    logger,
+  });
+
+  const container = new HomeAutomationContainer({
+    configRepository,
+    haGateway,
+    logger,
+  });
+
+  return createHomeDashboardRouter({
+    operations: {
+      getConfig: container.getDashboardConfig(),
+      getState: container.getDashboardState(),
+      getHistory: container.getDashboardHistory(),
+      toggleEntity: container.toggleDashboardEntity(),
+      activateScene: container.activateDashboardScene(),
+    },
+    logger,
+  });
+}

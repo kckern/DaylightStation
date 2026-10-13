@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-export * from '../modules/chess/cli/chess-resume-pin.cli.mjs';
+export * from '../__app_modules/chess/cli/chess-resume-pin.cli.mjs';

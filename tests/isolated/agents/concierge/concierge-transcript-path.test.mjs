@@ -3,7 +3,7 @@
 // Verifies that concierge callers can persist transcript records through the
 // application output port without coupling the collector to filesystem APIs.
 import { describe, it, expect } from 'vitest';
-import { AgentTranscript as BaseAgentTranscript } from "../../../../capabilities/agent-runtime/server/application/framework/AgentTranscript.mjs";
+import { AgentTranscript as BaseAgentTranscript } from "../../../../__capabilities/agent-runtime/server/application/framework/AgentTranscript.mjs";
 
 class AgentTranscript extends BaseAgentTranscript {
   constructor(deps) { super({ turnId: 'test-turn', ...deps }); }

@@ -125,7 +125,7 @@ function routeByImports(jestFiles, vitestFiles) {
 
 function findOwnerIsolatedFiles(targets, args, options = {}) {
   const files = [];
-  for (const scope of ['modules', 'capabilities']) {
+  for (const scope of ['__app_modules', '__capabilities']) {
     const owners = path.join(ROOT_DIR, scope);
     if (!fs.existsSync(owners) || fs.lstatSync(owners).isSymbolicLink()) continue;
     for (const owner of fs.readdirSync(owners, { withFileTypes: true })) {

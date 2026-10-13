@@ -7,10 +7,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import { CanvasRenderingContext2D } from 'canvas';
-import { createDocumentReceiptRenderer } from "../../../../modules/school/server/rendering/documents/DocumentReceiptRenderer.mjs";
-import { documentReceiptTheme as theme } from "../../../../modules/school/server/rendering/documents/documentReceiptTheme.mjs";
-import { texToSvg } from "../../../../modules/school/server/rendering/documents/mathSvg.mjs";
-import { createSubjectIconResolver } from "../../../../modules/school/server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
+import { createDocumentReceiptRenderer } from "../../../../__app_modules/school/server/rendering/documents/DocumentReceiptRenderer.mjs";
+import { documentReceiptTheme as theme } from "../../../../__app_modules/school/server/rendering/documents/documentReceiptTheme.mjs";
+import { texToSvg } from "../../../../__app_modules/school/server/rendering/documents/mathSvg.mjs";
+import { createSubjectIconResolver } from "../../../../__app_modules/school/server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
 
 // Vitest resolves every canvas import to its root copy so the all-repository
 // run never loads two native GIO modules. Import through that same resolver:

@@ -1,7 +1,7 @@
 // Data-integrity test for the singalong content tree (hymns + primary songs).
 //
 // Every one of the nine defect classes found in the 2026-08-16 audit
-// (docs/_wip/audits/2026-08-16-singalong-yaml-format-audit.md) was a malformed
+// (__docs/_wip/audits/2026-08-16-singalong-yaml-format-audit.md) was a malformed
 // `verses` block that the app renders without complaint: `SingalongAdapter`
 // passes `metadata.verses` straight through, and `SingalongScroller` does
 // `data.map(stanza => stanza.map(line => <p>{line}</p>))`. A null line paints an

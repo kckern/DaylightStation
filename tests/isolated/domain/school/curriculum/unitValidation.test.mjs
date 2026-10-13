@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { GRADES } from "../../../../../modules/school/server/domain/grades.mjs";
-import { SUBJECT_IDS, isPublishable, validateUnit } from "../../../../../modules/school/server/domain/curriculum/unitValidation.mjs";
+import { GRADES } from "../../../../../__app_modules/school/server/domain/grades.mjs";
+import { SUBJECT_IDS, isPublishable, validateUnit } from "../../../../../__app_modules/school/server/domain/curriculum/unitValidation.mjs";
 // The real registered adapter, not a hand-rolled stand-in: `launch:` validation
 // exists precisely so a unit cannot publish naming a surface/payload its own
 // adapter would reject at dispatch time, and a fake validator could drift from
 // that contract without anyone noticing.
-import { GarageFitnessSurface } from "../../../../../modules/donow/server/application/surfaces/GarageFitnessSurface.mjs";
+import { GarageFitnessSurface } from "../../../../../__app_modules/donow/server/application/surfaces/GarageFitnessSurface.mjs";
 
 const refs = () => ({
   bankIds: new Set(['math-fractions']),

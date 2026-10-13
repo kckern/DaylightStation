@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/user_model/loader.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { UserModelService } from "../../../../../modules/health/server/application/agents/health-coach/services/UserModelService.mjs";
+import { UserModelService } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/UserModelService.mjs";
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 

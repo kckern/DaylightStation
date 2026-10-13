@@ -12,9 +12,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createFileAssetResolver, svgDimensions } from "../../../../modules/school/server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
-import { createDocumentPdfRenderer } from "../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
-import { UnresolvedAssetError } from "../../../../modules/school/server/rendering/documents/measure.mjs";
+import { createFileAssetResolver, svgDimensions } from "../../../../__app_modules/school/server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
+import { createDocumentPdfRenderer } from "../../../../__app_modules/school/server/rendering/documents/DocumentPdfRenderer.mjs";
+import { UnresolvedAssetError } from "../../../../__app_modules/school/server/rendering/documents/measure.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const STRIPS = '<svg viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="24"/></svg>';

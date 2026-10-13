@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseForwardAction } from "../../../../modules/school/server/domain/documents/forwardAction.mjs";
+import { chooseForwardAction } from "../../../../__app_modules/school/server/domain/documents/forwardAction.mjs";
 
 const section = (subject, over = {}) => ({
   subject, servedToday: false, next: null, ...over,

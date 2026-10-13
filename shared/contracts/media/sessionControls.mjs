@@ -8,7 +8,7 @@
 //     on `device-start:<deviceId>` so every house-view row can show it
 //     (RQ-HOUSE-04), not only the device that started it.
 //
-// See docs/reference/media/media-app-technical.md §6.2.6, §6.6 and §9.14–9.15.
+// See __docs/reference/media/media-app-technical.md §6.2.6, §6.6 and §9.14–9.15.
 // This module must not import shapes.mjs (shapes imports it).
 import {
   PLAYER_FEATURE_ACTIONS, validatePlayerFeatureParams, validatePlayerFeatureControls,

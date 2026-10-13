@@ -4,7 +4,7 @@
 > correctly.** The reader is a **Chatsworth Data OMR-1100** (firmware
 > `Version 1.04, Wed Oct 2 1996`). Link is **9600 7E1**, and a conversion mode
 > must be downloaded before the reader emits anything at all. Vendor manuals are
-> archived in [`docs/recovered/`](./docs/recovered/).
+> archived in [`__docs/recovered/`](./docs/recovered/).
 >
 > **Update 2026-07-29:** extension renamed `scantron-relay` → `omr-relay` (bus
 > topic `scantron` → `omr`, source `scantron-relay` → `omr-relay`, config
@@ -25,13 +25,13 @@
 >
 > **Cards are ORDERED (2026-07-22)** — one 500-pack of Lincolnshire `3705`,
 > invoiced 7/24. The long-standing card-sourcing blocker is closed; see
-> [sourcing](../../docs/reference/omr/README.md#sourcing-cards--solved--ordered-2026-07-24)
+> [sourcing](../../__docs/reference/omr/README.md#sourcing-cards--solved--ordered-2026-07-24)
 > for the `SD`-suffix / infrared caveat before reordering.
 >
 > **System reference — protocol, card spec, troubleshooting, and where to buy
-> cards — is `docs/reference/omr/README.md` in the main repo docs; that doc
+> cards — is `__docs/reference/omr/README.md` in the main repo docs; that doc
 > is authoritative.** This README covers building and flashing the relay.
-> Remaining work: `docs/_wip/plans/2026-07-21-omr-relay-bringup.md`.
+> Remaining work: `__docs/_wip/plans/2026-07-21-omr-relay-bringup.md`.
 
 An **M5Stack ATOM Lite** (ESP32-PICO-D4) taps the **RS-232 serial output** of a
 **Chatsworth Data OMR-1100** optical-mark-recognition (bubble-sheet / scantron)
@@ -132,7 +132,7 @@ see Step 0b in the bring-up checklist.
 
 Unit: **OMR-1100, firmware "Version 1.04, Wed Oct 2 1996"**. Vendor manuals and
 DOS utilities recovered from the Wayback Machine and archived in
-[`docs/recovered/`](docs/recovered/) — `OMR1100Manual.pdf`,
+[`__docs/recovered/`](__docs/recovered/) — `OMR1100Manual.pdf`,
 `OMR1100commandsB.pdf` (factory command set), `omr1102_techmanual.pdf` (48pp,
 the richest: download commands, Appendix A card/strobe spec, Hollerith + binary
 tables).
@@ -379,7 +379,7 @@ how the last life ended; the sequence tells you whether the board is cycling.
 > **Ask the board, not the bus.** One curl answers it; inference does not.
 
 Both fields are also pushed on the `relay-status` message the relay sends on
-every (re)connect — see [Bus message](../../docs/reference/omr/README.md#bus-message).
+every (re)connect — see [Bus message](../../__docs/reference/omr/README.md#bus-message).
 **That is the channel that matters during a fault:** when this board is
 browning out, `curl http://<ip>/health` is exactly what stops answering, so the
 only report that still gets out is the one the board sends itself.
@@ -444,7 +444,7 @@ back you'll see the frame. No USB cable, no serial monitor, from anywhere on the
 LAN.
 
 Backend dispatch **exists** at
-`backend/src/3_applications/hardware/omrRelay.mjs`, wired in `app.mjs`: it
+`__backend/src/3_applications/hardware/omrRelay.mjs`, wired in `app.mjs`: it
 rebroadcasts on `omr` and persists sheets + reader errors. See Step 5.
 
 ## Build & flash — BUILDS CLEAN ✅ (2026-07-29)
@@ -675,7 +675,7 @@ data *from* the reader. The ATOM base drops into exactly the dongle's slot, so
 it takes the same assignment.
 
 **No handshake lines are needed.** This unit's EEPROM flags byte reads `00` —
-flow control off (see `docs/reference/omr/command-reference.md`). `DCD`, `DTR`,
+flow control off (see `__docs/reference/omr/command-reference.md`). `DCD`, `DTR`,
 `DSR`, `RTS`, `CTS`, `RI` all go unconnected. This matters because the ATOM base
 *has* no handshake lines: the Linux dongle asserted DTR/RTS and the ATOM won't.
 Only the `00` flags byte makes that difference harmless. If flow control is ever
@@ -781,7 +781,7 @@ transported happily and read as nothing: the strobe geometry has to match
 Appendix A of `omr1102_techmanual.pdf`, not merely look like a bubble sheet.
 
 `tools/gen-test-strip.py` emits a spec-exact printable strip
-(`docs/omr1100-test-strip.pdf`) — 3.25" wide, black ticks 0.125"×0.060" flush to
+(`__docs/omr1100-test-strip.pdf`) — 3.25" wide, black ticks 0.125"×0.060" flush to
 the strobe edge on 0.250" centers, first tick 0.375" from the leading edge, 12
 rows on 0.250" centerlines, plus a walking-diagonal pattern whose decode is
 self-evident. **Print at 100% / Actual Size** and cut on the outline. This is
@@ -796,7 +796,7 @@ timeout is only a truncation backstop). Command acks (`G`) and error echoes
 
 ### Step 5 — Backend dispatch: DONE ✅ (2026-07-29)
 
-`backend/src/3_applications/hardware/omrRelay.mjs` (mirrors
+`__backend/src/3_applications/hardware/omrRelay.mjs` (mirrors
 `foodScaleRelay.mjs`), wired in `app.mjs` next to `createFoodScaleRelay`.
 Re-broadcasts on `omr` and persists completed reads to
 `household/history/omr/<reader-id>/<YYYY-MM-DD>.yml`. 20 tests in

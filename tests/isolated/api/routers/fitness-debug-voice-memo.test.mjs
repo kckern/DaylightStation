@@ -5,14 +5,14 @@ import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createFitnessRouter } from "../../../../modules/fitness/server/api/fitness.mjs";
-import { writeBinary } from '../../../../backend/src/0_system/utils/FileIO.mjs';
-import { SaveDebugVoiceMemo } from "../../../../modules/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
+import { createFitnessRouter } from "../../../../__app_modules/fitness/server/api/fitness.mjs";
+import { writeBinary } from '../../../../__backend/src/0_system/utils/FileIO.mjs';
+import { SaveDebugVoiceMemo } from "../../../../__app_modules/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
 
 // NOTE: c2880857f "refactor(api/fitness): webhook policy + FS + household-id
 // out of router (audit API-3)" (2026-07-07) moved this route's filesystem
 // write behind a semantic SaveDebugVoiceMemo use case (mirrors the real wiring
-// in backend/src/5_composition/modules/fitnessApi.mjs) so the router itself
+// in __backend/src/5_composition/modules/fitnessApi.mjs) so the router itself
 // never operates a store. This test was written 55c080b41 (2026-04-23), before
 // that refactor, and never supplied the capability, so
 // every request 503'd on "Debug voice-memo store not configured". Added a

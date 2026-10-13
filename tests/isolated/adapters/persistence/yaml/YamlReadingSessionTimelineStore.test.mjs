@@ -2,7 +2,7 @@ import os from 'os';
 import path from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { describe, it, expect } from 'vitest';
-import { YamlReadingSessionTimelineStore } from "../../../../../modules/school/server/adapters/persistence/YamlReadingSessionTimelineStore.mjs";
+import { YamlReadingSessionTimelineStore } from "../../../../../__app_modules/school/server/adapters/persistence/YamlReadingSessionTimelineStore.mjs";
 
 describe('YamlReadingSessionTimelineStore', () => {
   it('preserves a reading timeline across a new store instance', async () => {

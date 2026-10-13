@@ -1,10 +1,10 @@
 import { shortId } from '#system/utils/id.mjs';
-import * as producerRecords from '../../modules/piano/server/application/producerRecords.mjs';
-import { createPianoApiServices } from '../../modules/piano/server/application/PianoApiServices.mjs';
-import { PianoContainer } from '../../modules/piano/server/application/PianoContainer.mjs';
-import { YamlPianoStudioDatastore } from '../../modules/piano/server/adapters/YamlPianoStudioDatastore.mjs';
-import { PianoConfigProjection } from "../../modules/piano/server/adapters/PianoConfigProjection.mjs";
-import { EventBusPianoCompletionPublisher } from '../../modules/piano/server/adapters/EventBusPianoCompletionPublisher.mjs';
+import * as producerRecords from '../../__app_modules/piano/server/application/producerRecords.mjs';
+import { createPianoApiServices } from '../../__app_modules/piano/server/application/PianoApiServices.mjs';
+import { PianoContainer } from '../../__app_modules/piano/server/application/PianoContainer.mjs';
+import { YamlPianoStudioDatastore } from '../../__app_modules/piano/server/adapters/YamlPianoStudioDatastore.mjs';
+import { PianoConfigProjection } from "../../__app_modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { EventBusPianoCompletionPublisher } from '../../__app_modules/piano/server/adapters/EventBusPianoCompletionPublisher.mjs';
 
 export function withPianoRouterServices(config = {}) {
   const {

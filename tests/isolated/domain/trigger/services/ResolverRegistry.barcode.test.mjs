@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ResolverRegistry } from "../../../../../capabilities/device-dispatch/server/domain/services/ResolverRegistry.mjs";
+import { ResolverRegistry } from "../../../../../__capabilities/device-dispatch/server/domain/services/ResolverRegistry.mjs";
 
 describe('ResolverRegistry barcode', () => {
   it('routes barcode to BarcodeResolver with the barcode slice', () => {

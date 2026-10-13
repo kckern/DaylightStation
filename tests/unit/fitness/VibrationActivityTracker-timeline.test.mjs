@@ -12,7 +12,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   })
 }));
 
-const { VibrationActivityTracker } = await import("../../../modules/fitness/browser/hooks/fitness/VibrationActivityTracker.js");
+const { VibrationActivityTracker } = await import("../../../__app_modules/fitness/browser/hooks/fitness/VibrationActivityTracker.js");
 
 describe('VibrationActivityTracker timeline series', () => {
   it('produces series-ready values from snapshot', () => {

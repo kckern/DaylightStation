@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
-import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
+import { SlotStatus } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
+import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 
 const baseFields = {
   position: 1,

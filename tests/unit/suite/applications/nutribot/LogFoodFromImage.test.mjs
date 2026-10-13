@@ -1,6 +1,6 @@
 // tests/unit/suite/applications/nutribot/LogFoodFromImage.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { LogFoodFromImage } from "../../../../../modules/nutribot/server/application/usecases/LogFoodFromImage.mjs";
+import { LogFoodFromImage } from "../../../../../__app_modules/nutribot/server/application/usecases/LogFoodFromImage.mjs";
 
 describe('LogFoodFromImage', () => {
   let useCase;

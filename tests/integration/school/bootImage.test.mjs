@@ -147,7 +147,7 @@ describe('school composition root boots against an image-shaped tree', () => {
     // the `.gitignore`/`.dockerignore` negation for this exact file (or a
     // reintroduction of a file read at that path) cannot silently stop being
     // exercised by this guard.
-    const leaked = path.join(imageDir, 'backend/src/3_applications/school/rubiksCube/course.yml');
+    const leaked = path.join(imageDir, '__backend/src/3_applications/school/rubiksCube/course.yml');
     expect(existsSync(leaked)).toBe(false);
   });
 

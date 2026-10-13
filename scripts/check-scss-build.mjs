@@ -106,7 +106,7 @@ function isDirectory(dir) {
 
 function* sourceRoots() {
   yield SRC;
-  for (const name of ['modules', 'capabilities']) {
+  for (const name of ['__app_modules', '__capabilities']) {
     const root = path.join(ROOT, name);
     if (!isDirectory(root)) continue;
     for (const owner of fs.readdirSync(root, { withFileTypes: true })) {

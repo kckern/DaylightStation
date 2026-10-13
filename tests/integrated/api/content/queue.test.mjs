@@ -4,12 +4,12 @@ import express from 'express';
 import request from 'supertest';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createQueueRouter, toQueueItem } from "../../../../capabilities/playback/server/api/queue.mjs";
-import { ContentSourceRegistry } from "../../../../capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
-import { ContentIdResolver } from "../../../../capabilities/content-catalog/server/application/ContentIdResolver.mjs";
+import { createQueueRouter, toQueueItem } from "../../../../__capabilities/playback/server/api/queue.mjs";
+import { ContentSourceRegistry } from "../../../../__capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
+import { ContentIdResolver } from "../../../../__capabilities/content-catalog/server/application/ContentIdResolver.mjs";
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { QueueService } from "../../../../capabilities/playback/server/application/services/QueueService.mjs";
-import { ContentExpression } from "../../../../capabilities/content-catalog/server/domain/ContentExpression.mjs";
+import { QueueService } from "../../../../__capabilities/playback/server/application/services/QueueService.mjs";
+import { ContentExpression } from "../../../../__capabilities/content-catalog/server/domain/ContentExpression.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');

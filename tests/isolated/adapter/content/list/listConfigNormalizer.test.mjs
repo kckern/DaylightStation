@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/list/listConfigNormalizer.test.mjs
 import { describe, it, expect } from 'vitest';
-import { normalizeListItem, extractContentId, normalizeListConfig, serializeListConfig, applyCascade, denormalizeItem, INHERITABLE_FIELDS } from "../../../../../capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
+import { normalizeListItem, extractContentId, normalizeListConfig, serializeListConfig, applyCascade, denormalizeItem, INHERITABLE_FIELDS } from "../../../../../__capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
 
 describe('normalizeListItem', () => {
 

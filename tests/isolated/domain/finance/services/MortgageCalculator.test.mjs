@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/services/MortgageCalculator.test.mjs
-import { MortgageCalculator } from "../../../../../modules/finance/server/domain/services/MortgageCalculator.mjs";
+import { MortgageCalculator } from "../../../../../__app_modules/finance/server/domain/services/MortgageCalculator.mjs";
 
 describe('MortgageCalculator', () => {
   let calculator;

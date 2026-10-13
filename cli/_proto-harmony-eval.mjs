@@ -1,2 +1,2 @@
 // Stable command entry; implementation belongs to its application.
-export * from "../modules/piano/cli/_proto-harmony-eval.mjs";
+export * from "../__app_modules/piano/cli/_proto-harmony-eval.mjs";

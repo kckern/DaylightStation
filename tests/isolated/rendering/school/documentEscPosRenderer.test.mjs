@@ -7,9 +7,9 @@
  * transcript (what the e2e suite and the operator log read) was empty.
  */
 import { describe, it, expect } from 'vitest';
-import { createDocumentEscPosRenderer, ReceiptBlockError } from "../../../../capabilities/printing/server/esc-pos.mjs";
-import { agendaDocument, resultDocument, noticeDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
-import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { createDocumentEscPosRenderer, ReceiptBlockError } from "../../../../__capabilities/printing/server/esc-pos.mjs";
+import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
+import { validateDocument } from "../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
 import { VirtualThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs';
 import fs from 'node:fs';
 import os from 'node:os';

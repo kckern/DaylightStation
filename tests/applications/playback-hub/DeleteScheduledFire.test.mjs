@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DeleteScheduledFire } from "../../../modules/media/server/application/playback-hub/usecases/DeleteScheduledFire.mjs";
-import { FakeHubConfigRepository } from "../../../modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
-import { HubConfig } from "../../../modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
-import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { ScheduledFire } from "../../../modules/media/server/domain/playback-hub/entities/ScheduledFire.mjs";
-import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { VolumeBounds } from "../../../modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
-import { DayPattern } from "../../../modules/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
-import { QueueRef } from "../../../modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
-import { EntityNotFoundError } from '../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
+import { DeleteScheduledFire } from "../../../__app_modules/media/server/application/playback-hub/usecases/DeleteScheduledFire.mjs";
+import { FakeHubConfigRepository } from "../../../__app_modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
+import { HubConfig } from "../../../__app_modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
+import { HubDevice } from "../../../__app_modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { ScheduledFire } from "../../../__app_modules/media/server/domain/playback-hub/entities/ScheduledFire.mjs";
+import { SlotPosition } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { DayPattern } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
+import { QueueRef } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
 
 const makeDevice = (color = 'red') => new HubDevice({
   position: new SlotPosition(1),

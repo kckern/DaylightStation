@@ -1,7 +1,7 @@
 // tests/isolated/domain/content/services/RelevanceScoringService.test.mjs
 import { describe, it, expect } from 'vitest';
-import { RelevanceScoringService } from "../../../../../capabilities/content-catalog/server/domain/services/RelevanceScoringService.mjs";
-import { ContentCategory } from "../../../../../capabilities/content-catalog/server/domain/value-objects/ContentCategory.mjs";
+import { RelevanceScoringService } from "../../../../../__capabilities/content-catalog/server/domain/services/RelevanceScoringService.mjs";
+import { ContentCategory } from "../../../../../__capabilities/content-catalog/server/domain/value-objects/ContentCategory.mjs";
 
 const item = (title, category, extra = {}) => ({
   title,

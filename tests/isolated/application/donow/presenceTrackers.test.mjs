@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MidiPresenceTracker } from "../../../../modules/donow/server/application/presence/MidiPresenceTracker.mjs";
-import { FitnessPresenceTracker } from "../../../../modules/donow/server/application/presence/FitnessPresenceTracker.mjs";
-import { PlaybackPresenceTracker } from "../../../../modules/donow/server/application/presence/PlaybackPresenceTracker.mjs";
+import { MidiPresenceTracker } from "../../../../__app_modules/donow/server/application/presence/MidiPresenceTracker.mjs";
+import { FitnessPresenceTracker } from "../../../../__app_modules/donow/server/application/presence/FitnessPresenceTracker.mjs";
+import { PlaybackPresenceTracker } from "../../../../__app_modules/donow/server/application/presence/PlaybackPresenceTracker.mjs";
 
 const START_MS = Date.parse('2026-07-30T10:00:00.000Z');
 

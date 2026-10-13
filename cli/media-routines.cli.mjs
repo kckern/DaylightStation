@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 /** Stable command; owned implementation retains original dispatch. */
-import '../modules/media/cli/media-routines.cli.mjs';
+import '../__app_modules/media/cli/media-routines.cli.mjs';

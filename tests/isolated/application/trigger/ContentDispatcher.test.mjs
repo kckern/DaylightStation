@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ContentDispatcher } from "../../../../capabilities/device-dispatch/server/application/ContentDispatcher.mjs";
+import { ContentDispatcher } from "../../../../__capabilities/device-dispatch/server/application/ContentDispatcher.mjs";
 
 describe('ContentDispatcher.optimistic', () => {
   it('broadcasts to the screen and does NOT fall back when an ack arrives', async () => {

@@ -14,7 +14,7 @@ import {
   resolveAllDisplayNames,
   getPriorityChain,
   resolveUserDisplayName,
-} from "../../../modules/fitness/browser/hooks/fitness/DisplayNameResolver.js";
+} from "../../../__app_modules/fitness/browser/hooks/fitness/DisplayNameResolver.js";
 
 describe('resolveUserDisplayName (device-agnostic)', () => {
   it('prefers the group label when requested (User_1 → Dad)', () => {

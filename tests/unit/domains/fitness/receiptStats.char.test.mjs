@@ -15,7 +15,7 @@ import {
   normalizeSessionEvents,
   dedupeChallengeEvents,
   discoverParticipants,
-} from "../../../../modules/fitness/server/domain/services/SessionStatsService.mjs";
+} from "../../../../__app_modules/fitness/server/domain/services/SessionStatsService.mjs";
 
 // ─── Fixtures (identical to the derivation run) ─────────────────────────────
 

@@ -228,7 +228,7 @@ card appears after the first session step and remains present (dormant or sensor
 unavailable) until the session ends. The workout timeline samples totals and SPM
 every five seconds; it does not duplicate the raw transition stream already
 stored here. Typed `activity_rate` governance and `step` challenges are documented
-in [the governance engine reference](../../docs/reference/fitness/governance-engine.md#step-mat-lifecycle).
+in [the governance engine reference](../../__docs/reference/fitness/governance-engine.md#step-mat-lifecycle).
 
 Mat traffic alone never starts a Fitness session. During HR-confirmed startup,
 up to ten seconds of recent mat deltas are retained across the asynchronous

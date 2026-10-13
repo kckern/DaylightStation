@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSources } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
+import { parseSources } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
 
 describe('parseSources', () => {
   it('partitions nfc and state sources into internal slices', () => {

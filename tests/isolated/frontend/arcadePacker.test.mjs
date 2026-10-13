@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands, scoreLayout, DEFAULT_TALL_AREA_CAP } from "../../../modules/media/browser/menu/arcadePacker.js";
+import { packLayout, classifyItems, solveSingleBand, solveDoubleBand, solveTripleBand, buildBands, renderBands, scoreLayout, DEFAULT_TALL_AREA_CAP } from "../../../__app_modules/media/browser/menu/arcadePacker.js";
 
 // Deterministic LCG so attempts/shuffle/mirror are reproducible.
 function seededRandom(seed = 1) {

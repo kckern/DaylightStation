@@ -6,27 +6,27 @@ import { render, act } from '@testing-library/react';
 // a video replacing them stops it; a person's Stop from another device that
 // chose Keep leaves it; the TV remote / a routine stops it too.
 const bus = new Map();
-vi.mock('../../../../../capabilities/screen-host/browser/input/ActionBus.js', () => ({
+vi.mock('../../../../../__capabilities/screen-host/browser/input/ActionBus.js', () => ({
   getActionBus: () => ({
     subscribe: (t, fn) => { bus.set(t, fn); return () => bus.delete(t); },
     capture: () => () => {},
     emit: vi.fn(),
   }),
 }));
-vi.mock('../../../../../capabilities/playback/browser/player/lib/queueOpRegistry.js', () => ({ getPlayerQueueOpRegistry: () => ({ dispatch: vi.fn() }) }));
-vi.mock('../../../../../capabilities/playback/browser/player/lib/trackPolicy.js', () => ({
+vi.mock('../../../../../__capabilities/playback/browser/player/lib/queueOpRegistry.js', () => ({ getPlayerQueueOpRegistry: () => ({ dispatch: vi.fn() }) }));
+vi.mock('../../../../../__capabilities/playback/browser/player/lib/trackPolicy.js', () => ({
   registerTrackOwner: () => () => {}, createTrackPreferenceStore: () => ({ get: () => null, set: () => {} }),
 }));
-vi.mock('../../../../../capabilities/playback/browser/sessions/playerSessionRegistry.js', () => ({ getPlayerSessionRegistry: () => ({ getCurrent: () => null }) }));
-vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => null }));
-vi.mock("../../../../../modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => null }));
-vi.mock('../../../../../capabilities/playback/browser/player/components/MusicBehindLayer.jsx', () => ({
+vi.mock('../../../../../__capabilities/playback/browser/sessions/playerSessionRegistry.js', () => ({ getPlayerSessionRegistry: () => ({ getCurrent: () => null }) }));
+vi.mock('../../../../../__capabilities/playback/browser/player/Player.jsx', () => ({ default: () => null }));
+vi.mock("../../../../../__app_modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => null }));
+vi.mock('../../../../../__capabilities/playback/browser/player/components/MusicBehindLayer.jsx', () => ({
   MusicBehindLayer: () => <div data-testid="music-layer" />,
 }));
 vi.mock('./ScreenSessionControlsHost.jsx', () => ({ requestRestore: vi.fn() }));
 
 import { ScreenPlayerFeaturesHost } from './ScreenPlayerFeaturesHost.jsx';
-import { createScreenPlayerFeatures } from '../../../../../capabilities/screen-host/browser/session/screenPlayerFeatures.js';
+import { createScreenPlayerFeatures } from '../../../../../__capabilities/screen-host/browser/session/screenPlayerFeatures.js';
 
 const photo = { contentId: 'immich:1', format: 'image' };
 let snap;

@@ -21,7 +21,7 @@ const fakeBus = (() => {
   };
 })();
 
-vi.mock('../../../../capabilities/screen-host/browser/input/ActionBus.js', () => ({ getActionBus: () => fakeBus }));
+vi.mock('../../../../__capabilities/screen-host/browser/input/ActionBus.js', () => ({ getActionBus: () => fakeBus }));
 
 import { wsService } from '../../services/WebSocketService.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';

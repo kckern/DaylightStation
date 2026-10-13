@@ -36,7 +36,7 @@ import {
 } from '#testlib/school/opticalHarness.mjs';
 import { pxToPt } from '#testlib/school/opticalScan.mjs';
 import { requirePdftoppm } from '#testlib/school/rasterize.mjs';
-import { documentPdfTheme } from "../../../../modules/school/server/rendering/documents/documentPdfTheme.mjs";
+import { documentPdfTheme } from "../../../../__app_modules/school/server/rendering/documents/documentPdfTheme.mjs";
 import { GOLDEN_CASES, renderCase, createGoldenRenderer } from './golden/goldenHarness.mjs';
 
 const OMR_CASE = GOLDEN_CASES.find((c) => c.formMapSnapshot);

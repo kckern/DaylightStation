@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { BeliefCascadeProcessor } from "../../../../modules/life/server/domain/services/BeliefCascadeProcessor.mjs";
-import { Belief } from "../../../../modules/life/server/domain/entities/Belief.mjs";
-import { Value } from "../../../../modules/life/server/domain/entities/Value.mjs";
-import { Quality } from "../../../../modules/life/server/domain/entities/Quality.mjs";
-import { Purpose } from "../../../../modules/life/server/domain/entities/Purpose.mjs";
+import { BeliefCascadeProcessor } from "../../../../__app_modules/life/server/domain/services/BeliefCascadeProcessor.mjs";
+import { Belief } from "../../../../__app_modules/life/server/domain/entities/Belief.mjs";
+import { Value } from "../../../../__app_modules/life/server/domain/entities/Value.mjs";
+import { Quality } from "../../../../__app_modules/life/server/domain/entities/Quality.mjs";
+import { Purpose } from "../../../../__app_modules/life/server/domain/entities/Purpose.mjs";
 
 describe('BeliefCascadeProcessor', () => {
   const processor = new BeliefCascadeProcessor();

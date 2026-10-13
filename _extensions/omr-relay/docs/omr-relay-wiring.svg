@@ -117,5 +117,5 @@
   <text x="422" y="555" font-family="Helvetica" font-size="9.5" fill="#a03000">its terminals for the FAR device, not for the ESP32. Wired the</text>
   <text x="422" y="568" font-family="Helvetica" font-size="9.5" fill="#a03000">intuitive way (2&#8594;R, 3&#8594;T) the link is totally silent.</text>
 
-  <text x="752" y="592" text-anchor="end" font-family="Helvetica" font-size="8" fill="#999999">_extensions/omr-relay &#183; source: docs/omr-relay-wiring.svg</text>
+  <text x="752" y="592" text-anchor="end" font-family="Helvetica" font-size="8" fill="#999999">_extensions/omr-relay &#183; source: __docs/omr-relay-wiring.svg</text>
 </svg>

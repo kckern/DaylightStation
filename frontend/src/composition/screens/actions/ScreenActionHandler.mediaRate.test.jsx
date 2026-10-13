@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { dispatchCyclePlaybackRate } from '../../../../../capabilities/screen-host/browser/actions/cyclePlaybackRate.js';
+import { dispatchCyclePlaybackRate } from '../../../../../__capabilities/screen-host/browser/actions/cyclePlaybackRate.js';
 
 describe('dispatchCyclePlaybackRate', () => {
   let received;

@@ -6,14 +6,14 @@
 // as the single source of truth: ZoneService's default thresholds must agree with
 // the Zone entity's default zones for every zone, there must be exactly one
 // ZONE_ORDER, and zone colors must come from one domain palette.
-import { ZoneService } from "../../../../modules/fitness/server/domain/services/ZoneService.mjs";
+import { ZoneService } from "../../../../__app_modules/fitness/server/domain/services/ZoneService.mjs";
 import {
   ZONE_ORDER,
   ZONE_NAMES,
   createDefaultZones,
   getDefaultThresholds,
   ZONE_COLORS,
-} from "../../../../modules/fitness/server/domain/entities/Zone.mjs";
+} from "../../../../__app_modules/fitness/server/domain/entities/Zone.mjs";
 
 describe('Zone SSOT (audit X-5)', () => {
   const service = new ZoneService();

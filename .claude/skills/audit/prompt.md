@@ -40,7 +40,7 @@ This returns JSON with all detected violations.
 
 ### 3. Load Baseline
 
-Read `docs/_wip/audits/baseline.yml` to get:
+Read `__docs/_wip/audits/baseline.yml` to get:
 - `known`: Previously identified violations
 - `exceptions`: Intentionally ignored violations
 - `resolved`: Recently fixed violations
@@ -59,7 +59,7 @@ Also identify FIXED: items in baseline.known not in current scan.
 
 ### 5. Generate Report
 
-Create markdown report at `docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`:
+Create markdown report at `__docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`:
 
 ```markdown
 # Code Standards Audit Report
@@ -146,5 +146,5 @@ Rules are defined in `cli/audit/rules/`:
 - `errors.mjs` - Generic errors, silent swallow
 - `domain.mjs` - Domain purity (no new Date(), no fs, etc.)
 
-Full coding standards: `docs/reference/core/coding-standards.md`
-Full domain guidelines: `docs/reference/core/layers-of-abstraction/domain-layer-guidelines.md`
+Full coding standards: `__docs/reference/core/coding-standards.md`
+Full domain guidelines: `__docs/reference/core/layers-of-abstraction/domain-layer-guidelines.md`

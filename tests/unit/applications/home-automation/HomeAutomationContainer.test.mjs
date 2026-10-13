@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HomeAutomationContainer } from "../../../../modules/home/server/application/home-automation/HomeAutomationContainer.mjs";
+import { HomeAutomationContainer } from "../../../../__app_modules/home/server/application/home-automation/HomeAutomationContainer.mjs";
 
 const fakeRepo = { load: async () => ({ summary: {}, rooms: [] }) };
 const fakeGateway = {

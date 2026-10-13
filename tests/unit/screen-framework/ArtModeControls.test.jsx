@@ -5,7 +5,7 @@ import { render, act, cleanup } from '@testing-library/react';
 const { musicNext, musicPrev, musicToggle, musicSeek } = vi.hoisted(() => ({
   musicNext: vi.fn(), musicPrev: vi.fn(), musicToggle: vi.fn(), musicSeek: vi.fn(),
 }));
-vi.mock("../../../modules/art/browser/music/useBackgroundMusic.js", () => ({
+vi.mock("../../../__app_modules/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({ track: null, next: musicNext, prev: musicPrev, toggle: musicToggle, seek: musicSeek }),
 }));
 const apiCalls = [];
@@ -20,7 +20,7 @@ vi.mock('../../../frontend/src/lib/logging/singleton.js', () => ({
 vi.mock('../../../frontend/src/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: vi.fn() }));
 
 import ArtMode from '../../../frontend/src/composition/screens/widgets/ArtMode.jsx';
-import { getActionBus } from '../../../capabilities/screen-host/browser/input/ActionBus.js';
+import { getActionBus } from '../../../__capabilities/screen-host/browser/input/ActionBus.js';
 
 const featuredCalls = () => apiCalls.filter((u) => u.includes('art/featured')).length;
 

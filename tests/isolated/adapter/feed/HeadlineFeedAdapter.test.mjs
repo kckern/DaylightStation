@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { HeadlineFeedAdapter } from "../../../../modules/feed/server/adapters/sources/HeadlineFeedAdapter.mjs";
-import { IFeedSourceAdapter } from "../../../../modules/feed/server/application/ports/IFeedSourceAdapter.mjs";
+import { HeadlineFeedAdapter } from "../../../../__app_modules/feed/server/adapters/sources/HeadlineFeedAdapter.mjs";
+import { IFeedSourceAdapter } from "../../../../__app_modules/feed/server/application/ports/IFeedSourceAdapter.mjs";
 
 describe('HeadlineFeedAdapter', () => {
   it('implements IFeedSourceAdapter', () => {

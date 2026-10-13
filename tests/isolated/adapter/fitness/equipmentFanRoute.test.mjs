@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createFitnessRouter } from "../../../../modules/fitness/server/api/fitness.mjs";
-import { FitnessHardwareService } from "../../../../modules/fitness/server/application/services/FitnessHardwareService.mjs";
+import { createFitnessRouter } from "../../../../__app_modules/fitness/server/api/fitness.mjs";
+import { FitnessHardwareService } from "../../../../__app_modules/fitness/server/application/services/FitnessHardwareService.mjs";
 
 function mountApp(equipmentFanController) {
   const configService = {

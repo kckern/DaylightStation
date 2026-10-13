@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { YamlTriggerConfigRepository } from "../../../../capabilities/device-dispatch/server/adapters/YamlTriggerConfigRepository.mjs";
+import { YamlTriggerConfigRepository } from "../../../../__capabilities/device-dispatch/server/adapters/YamlTriggerConfigRepository.mjs";
 import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
 
 describe('YamlTriggerConfigRepository', () => {

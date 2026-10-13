@@ -5,7 +5,7 @@
  * Usage: node tests/lib/migrate-imports.mjs [--dry-run]
  *
  * Converts:
- *   - Relative paths (../../backend/...) to #backend/...
+ *   - Relative paths (../../__backend/...) to #backend/...
  *   - Old @ prefix (@backend/...) to #backend/...
  *
  * The # prefix works with package.json "imports" field for both
@@ -84,15 +84,15 @@ const patterns = [
   // === Convert relative paths to # prefix ===
   // Relative backend imports
   {
-    regex: /from\s+['"](\.\.\/)+(backend\/[^'"]+)['"]/g,
+    regex: /from\s+['"](\.\.\/)+(__backend\/[^'"]+)['"]/g,
     replace: (match, dots, path) => `from '#backend/${path.replace(/^backend\//, '')}'`
   },
   {
-    regex: /import\s*\(\s*['"](\.\.\/)+(backend\/[^'"]+)['"]\s*\)/g,
+    regex: /import\s*\(\s*['"](\.\.\/)+(__backend\/[^'"]+)['"]\s*\)/g,
     replace: (match, dots, path) => `import('#backend/${path.replace(/^backend\//, '')}')`
   },
   {
-    regex: /mockModule\s*\(\s*['"](\.\.\/)+(backend\/[^'"]+)['"]/g,
+    regex: /mockModule\s*\(\s*['"](\.\.\/)+(__backend\/[^'"]+)['"]/g,
     replace: (match, dots, path) => `mockModule('#backend/${path.replace(/^backend\//, '')}'`
   },
   // Relative frontend imports
@@ -129,12 +129,12 @@ const patterns = [
   {
     regex: /from\s+['"](\.\.\/)+(tests\/lib\/[^'"]+|lib\/[^'"]+)['"]/g,
     replace: (match, dots, path) => {
-      // Only convert if it's the tests/lib, not backend/lib
+      // Only convert if it's the tests/lib, not __backend/lib
       if (path.includes('tests/lib/') || (path.startsWith('lib/') && !path.includes('backend'))) {
         const libPath = path.replace(/^(tests\/)?lib\//, '');
         return `from '#testlib/${libPath}'`;
       }
-      return match; // Don't convert backend/lib references
+      return match; // Don't convert __backend/lib references
     }
   }
 ];

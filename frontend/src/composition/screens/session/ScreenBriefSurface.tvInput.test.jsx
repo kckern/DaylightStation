@@ -1,11 +1,11 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
-import { createScreenPlayerFeatures } from '../../../../../capabilities/screen-host/browser/session/screenPlayerFeatures.js';
+import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
+import { createScreenPlayerFeatures } from '../../../../../__capabilities/screen-host/browser/session/screenPlayerFeatures.js';
 
-vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({ default: () => <div data-testid="clip-player" /> }));
-vi.mock("../../../../../modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => <div data-testid="camera" /> }));
+vi.mock('../../../../../__capabilities/playback/browser/player/Player.jsx', () => ({ default: () => <div data-testid="clip-player" /> }));
+vi.mock("../../../../../__app_modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => <div data-testid="camera" /> }));
 
 import { ScreenBriefSurface } from './ScreenPlayerFeaturesHost.jsx';
 

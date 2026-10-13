@@ -329,5 +329,5 @@ describe('FileAdapter', () => {
   // NOTE: household-scoped watch state suite removed — FileAdapter no longer
   // owns the householdsBasePath/_loadWatchState code path. Watch state is now
   // sourced via the configService injection pathway (see constructor at
-  // backend/src/1_adapters/content/media/files/FileAdapter.mjs:71-72).
+  // __backend/src/1_adapters/content/media/files/FileAdapter.mjs:71-72).
 });

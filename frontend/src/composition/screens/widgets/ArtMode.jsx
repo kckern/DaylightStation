@@ -8,11 +8,11 @@ import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fill
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
-import { useScreenAmbient } from "../../../../../capabilities/screen-host/browser/ambient.mjs";
+import { useScreenAmbient } from "../../../../../__capabilities/screen-host/browser/ambient.mjs";
 import { resolveAmbient } from './resolveAmbient.js';
-import { useScreenAction } from "../../../../../capabilities/screen-host/browser/input.mjs";
-import { useScreenScene } from "../../../../../capabilities/screen-host/browser/providers.mjs";
-import { useBackgroundMusic } from "../../../../../modules/art/browser/music/useBackgroundMusic.js";
+import { useScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { useScreenScene } from "../../../../../__capabilities/screen-host/browser/providers.mjs";
+import { useBackgroundMusic } from "../../../../../__app_modules/art/browser/music/useBackgroundMusic.js";
 import MusicPlaque from './MusicPlaque.jsx';
 import ArtLayer from './ArtLayer.jsx';
 import ArtPlacards from './ArtPlacards.jsx';

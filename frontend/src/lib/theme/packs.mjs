@@ -36,7 +36,7 @@ export const PACKS = Object.freeze({
   media: Object.freeze({
     name: 'media',
     character: 'Amber-on-near-black theater chrome (product-owned; extends '
-      + 'the base further in modules/Media/theme/mediaTheme.js during Phase 6).',
+      + 'the base further in __app_modules/Media/theme/mediaTheme.js during Phase 6).',
     primaryColor: 'orange',
     accent: '#e5a00d', // AMBER[5] — was #f0a05a, drifted from the palette
   }),

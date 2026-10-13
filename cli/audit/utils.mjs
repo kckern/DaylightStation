@@ -17,7 +17,7 @@ export async function getFilesForScope(scope, options = {}) {
   if (changedOnly || changedFrom) {
     const base = changedFrom || 'HEAD~1';
     try {
-      const cmd = `git diff --name-only ${base} -- 'backend/src/**/*.mjs'`;
+      const cmd = `git diff --name-only ${base} -- '__backend/src/**/*.mjs'`;
       const output = execSync(cmd, { encoding: 'utf-8' });
       const files = output.trim().split('\n').filter(f => f.length > 0);
 
@@ -37,13 +37,13 @@ export async function getFilesForScope(scope, options = {}) {
   if (scope) {
     // Check if it's a layer (0_system, 1_domains, etc)
     if (/^\d_/.test(scope)) {
-      pattern = `backend/src/${scope}`;
+      pattern = `__backend/src/${scope}`;
     } else {
       // Assume it's a domain name
-      pattern = `backend/src/1_domains/${scope}`;
+      pattern = `__backend/src/1_domains/${scope}`;
     }
   } else {
-    pattern = 'backend/src';
+    pattern = '__backend/src';
   }
 
   // Use find command instead of glob

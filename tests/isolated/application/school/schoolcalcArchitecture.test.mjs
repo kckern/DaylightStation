@@ -4,16 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
-const DOMAIN_ROOT = path.join(ROOT, 'backend/src/2_domains');
+const DOMAIN_ROOT = path.join(ROOT, '__backend/src/2_domains');
 const SCHOOL_DOMAIN = path.join(DOMAIN_ROOT, 'school');
-const SCHOOLCALC_APP = path.join(ROOT, 'backend/src/3_applications/school/schoolcalc');
-const SCHOOL_PORTS = path.join(ROOT, 'backend/src/3_applications/school/ports');
-const SCHOOLCALC_ADAPTERS = path.join(ROOT, 'backend/src/1_adapters/schoolcalc');
-const PAPER_ADAPTER = path.join(ROOT, 'backend/src/1_adapters/school/paper');
-const SCREEN_ADAPTER = path.join(ROOT, 'backend/src/1_adapters/school/screen');
+const SCHOOLCALC_APP = path.join(ROOT, '__backend/src/3_applications/school/schoolcalc');
+const SCHOOL_PORTS = path.join(ROOT, '__backend/src/3_applications/school/ports');
+const SCHOOLCALC_ADAPTERS = path.join(ROOT, '__backend/src/1_adapters/schoolcalc');
+const PAPER_ADAPTER = path.join(ROOT, '__backend/src/1_adapters/school/paper');
+const SCREEN_ADAPTER = path.join(ROOT, '__backend/src/1_adapters/school/screen');
 const SCHOOLCALC_API = [
-  path.join(ROOT, 'modules/school/server/api/handlers/schoolcalc'),
-  path.join(ROOT, 'backend/src/4_api/v1/routers/schoolCalc.mjs'),
+  path.join(ROOT, '__app_modules/school/server/api/handlers/schoolcalc'),
+  path.join(ROOT, '__backend/src/4_api/v1/routers/schoolCalc.mjs'),
 ];
 
 const FAMILY_OR_WIRE_TOKEN = /\b(?:TI-?86|TI-?89|Z80|ESP32|M5Stack|GraphLink|Silent Link|SCR1|SCP1|SCI1|SCC1|SCD1|SCQ1|SCA1|SCM1|SCL1|DSINFO|DSCAT|DSQ|DSACK|DSSYNC)\b/i;
@@ -42,7 +42,7 @@ describe('SchoolCalc DDD and product boundaries', () => {
     const violations = importsFrom(files).filter(({ file, specifier }) => {
       if (specifier === 'node:crypto' || specifier === '#apps/common/stableRecord.mjs'
           || specifier.startsWith('#domains/')) return false;
-      if (specifier.startsWith('.')) return !inside(resolveImport(file, specifier), path.join(ROOT, 'backend/src/3_applications/school'));
+      if (specifier.startsWith('.')) return !inside(resolveImport(file, specifier), path.join(ROOT, '__backend/src/3_applications/school'));
       return true;
     });
     expect(violations, format(violations)).toEqual([]);
@@ -90,8 +90,8 @@ describe('SchoolCalc DDD and product boundaries', () => {
   it('does not encode ranking, ability-tier, or permanent-placement outputs in School production code', () => {
     const files = [
       ...productionFiles(SCHOOL_DOMAIN),
-      ...productionFiles(path.join(ROOT, 'backend/src/3_applications/school')),
-      path.join(ROOT, 'backend/src/4_api/v1/routers/school.mjs'),
+      ...productionFiles(path.join(ROOT, '__backend/src/3_applications/school')),
+      path.join(ROOT, '__backend/src/4_api/v1/routers/school.mjs'),
     ];
     const forbiddenField = /\b(?:abilityTier|abilityLevel|learnerRank|rankings)\s*:/;
     const violations = files.flatMap((file) => {
@@ -125,7 +125,7 @@ describe('SchoolCalc DDD and product boundaries', () => {
     const files = SCHOOLCALC_API.flatMap((entry) => (statSync(entry).isDirectory() ? productionFiles(entry) : [entry]));
     const violations = importsFrom(files).filter(({ file, specifier }) => {
       if (specifier === 'express' || specifier === '#system/http/middleware/index.mjs') return false;
-      if (specifier.startsWith('.')) return !inside(resolveImport(file, specifier), path.join(ROOT, 'backend/src/4_api'));
+      if (specifier.startsWith('.')) return !inside(resolveImport(file, specifier), path.join(ROOT, '__backend/src/4_api'));
       return true;
     });
     const implementationLeak = files.flatMap((file) => {
@@ -138,7 +138,7 @@ describe('SchoolCalc DDD and product boundaries', () => {
   });
 
   it('mounts the child API through an injected router rather than importing its implementation', () => {
-    const source = readFileSync(path.join(ROOT, 'backend/src/4_api/v1/routers/school.mjs'), 'utf8');
+    const source = readFileSync(path.join(ROOT, '__backend/src/4_api/v1/routers/school.mjs'), 'utf8');
     expect(source).toContain('schoolCalcRouter = null');
     expect(source).toContain("router.use('/calc', schoolCalcRouter)");
     expect(source).not.toMatch(/from ['"][^'"]*schoolCalc/i);

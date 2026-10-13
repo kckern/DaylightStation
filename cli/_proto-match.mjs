@@ -1,2 +1,2 @@
 // Stable command entry; implementation belongs to its application.
-export * from "../modules/piano/cli/_proto-match.mjs";
+export * from "../__app_modules/piano/cli/_proto-match.mjs";

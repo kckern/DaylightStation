@@ -8,8 +8,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
-import SchoolApp from "../../../../../modules/school/browser/SchoolApp.jsx";
-import { REJECT_WORD } from "../../../../../modules/school/browser/selfService/Keypad.jsx";
+import SchoolApp from "../../../../../__app_modules/school/browser/SchoolApp.jsx";
+import { REJECT_WORD } from "../../../../../__app_modules/school/browser/selfService/Keypad.jsx";
 
 // Capture the WS subscribers PER TOPIC AS A LIST, so a `school.launch`
 // broadcast can be pushed through the REAL useSchoolLaunch hook.
@@ -37,7 +37,7 @@ vi.mock('#frontend/hooks/useWebSocket.js', () => ({
 
 const selfServiceLog = vi.fn();
 const selfServiceErrorLog = vi.fn();
-vi.mock("../../../../../modules/school/browser/schoolLog.js", () => ({
+vi.mock("../../../../../__app_modules/school/browser/schoolLog.js", () => ({
   schoolLog: {
     profile: vi.fn(), session: vi.fn(), answer: vi.fn(), answerError: vi.fn(),
     bank: vi.fn(), nav: vi.fn(), home: vi.fn(), materials: vi.fn(), materialsError: vi.fn(),
@@ -55,7 +55,7 @@ const actMock = vi.fn();
 const openSessionMock = vi.fn();
 const screenConfigMock = vi.fn();
 
-vi.mock("../../../../../modules/school/browser/schoolApi.js", () => ({
+vi.mock("../../../../../__app_modules/school/browser/schoolApi.js", () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
     banks: vi.fn(async () => ({
@@ -91,7 +91,7 @@ vi.mock("../../../../../modules/school/browser/schoolApi.js", () => ({
 
 const coursesMock = vi.fn();
 const dayMock = vi.fn();
-vi.mock("../../../../../modules/school/browser/Programs/SentenceLadder/languageApi.js", () => ({
+vi.mock("../../../../../__app_modules/school/browser/Programs/SentenceLadder/languageApi.js", () => ({
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: (...a) => dayMock(...a),

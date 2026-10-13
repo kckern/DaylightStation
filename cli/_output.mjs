@@ -4,7 +4,7 @@
  * Success: single JSON value on stdout, newline-terminated, exit 0.
  * Error:   single JSON envelope on stderr, newline-terminated, non-zero exit.
  *
- * Exit codes match the spec at docs/superpowers/specs/2026-05-02-dscli-design.md.
+ * Exit codes match the spec at __docs/superpowers/specs/2026-05-02-dscli-design.md.
  */
 
 export const EXIT_OK      = 0;

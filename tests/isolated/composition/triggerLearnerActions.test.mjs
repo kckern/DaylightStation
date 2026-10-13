@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createLearnerActions } from "../../../capabilities/device-dispatch/server/application/learnerActions.mjs";
-import { TriggerDispatchService } from "../../../capabilities/device-dispatch/server/application/TriggerDispatchService.mjs";
-import { makePrintAgendaHandler, makeReadingSessionHandler } from "../../../modules/school/server/composition/learnerCardActions.mjs";
-import { ReadingSessionService as ProductionReadingSessionService } from "../../../modules/school/server/application/ReadingSessionService.mjs";
+import { createLearnerActions } from "../../../__capabilities/device-dispatch/server/application/learnerActions.mjs";
+import { TriggerDispatchService } from "../../../__capabilities/device-dispatch/server/application/TriggerDispatchService.mjs";
+import { makePrintAgendaHandler, makeReadingSessionHandler } from "../../../__app_modules/school/server/composition/learnerCardActions.mjs";
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../__app_modules/school/server/application/ReadingSessionService.mjs";
 
 const TEST_RUNTIME = {
   createDispatchId: () => 'dispatch-test-id',

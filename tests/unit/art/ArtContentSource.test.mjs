@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createArtContentSource } from "../../../modules/art/server/adapters/ArtContentSource.mjs";
-import { validateAdapter } from "../../../capabilities/content-catalog/server/application/ports/IContentSource.mjs";
+import { createArtContentSource } from "../../../__app_modules/art/server/adapters/ArtContentSource.mjs";
+import { validateAdapter } from "../../../__capabilities/content-catalog/server/application/ports/IContentSource.mjs";
 
 const fakeArtAdapter = (over = {}) => ({
   getThumbnailUrl: async (preset) => (preset === 'july-4th' ? '/media/img/art/americana/flag/flag.jpg' : null),

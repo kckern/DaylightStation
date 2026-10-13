@@ -1,4 +1,4 @@
-import { readBuxferCredsDirect } from '../modules/finance/cli/access.mjs';
+import { readBuxferCredsDirect } from '../__app_modules/finance/cli/access.mjs';
 /**
  * Lazy memoized factories for dscli command implementations.
  *
@@ -17,11 +17,11 @@ import { execSync } from 'node:child_process';
 import axios from 'axios';
 import { initConfigService, getConfigService as getInstance, resetConfigService } from '#system/config/index.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
-import { HomeAssistantAdapter } from "../capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs";
+import { HomeAssistantAdapter } from "../__capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs";
 import { JevAdapter } from '#adapters/ai/JevAdapter.mjs';
 import { createSecretsProvider } from '#adapters/secrets/createSecretsProvider.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
-import { assertHomeAutomationGateway } from "../capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs";
+import { assertHomeAutomationGateway } from "../__capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs";
 import { createWriteAuditor } from './_writeAudit.mjs';
 
 const _isDocker = existsSync('/.dockerenv');
@@ -48,7 +48,7 @@ let _healthAnalyticsInitPromise = null;
 let _decisionGateway;
 
 /**
- * Resolve the data directory the same way backend/index.js does:
+ * Resolve the data directory the same way __backend/index.js does:
  *   - /usr/src/app/data inside Docker (/.dockerenv present)
  *   - $DAYLIGHT_BASE_PATH/data otherwise
  */
@@ -109,7 +109,7 @@ export function getHttpClient() {
  * system/auth/jev.yml has no api_key. Callers must treat null as
  * "no model" and keep their non-model behaviour.
  *
- * Mirrors the fallback wiring in backend/src/app.mjs (decisionGateway).
+ * Mirrors the fallback wiring in __backend/src/app.mjs (decisionGateway).
  *
  * @param {{ logger?: Object }} [opts]
  * @returns {Promise<import('#apps/common/ports/IDecisionGateway.mjs').IDecisionGateway|null>}
@@ -128,7 +128,7 @@ export async function getDecisionGateway({ logger } = {}) {
  * Returns an IHomeAutomationGateway (the port — never the concrete adapter).
  * Throws if HA isn't configured; commands map that to EXIT_CONFIG.
  *
- * Mirrors the wiring in backend/src/0_system/registries/IntegrationLoader.mjs
+ * Mirrors the wiring in __backend/src/0_system/registries/IntegrationLoader.mjs
  * #buildAdapterConfig — host comes from services.yml via resolveServiceUrl(),
  * token comes from household auth.
  */
@@ -173,7 +173,7 @@ export async function getHaGateway() {
  * Other content sources (immich, audiobookshelf, etc.) are not wired into the
  * CLI yet; they'll be added when their commands need them.
  *
- * Mirrors backend/src/app.mjs createContentRegistry() call (line ~496),
+ * Mirrors __backend/src/app.mjs createContentRegistry() call (line ~496),
  * stripped to just plex + mediaBasePath.
  */
 export async function getContentQuery() {
@@ -192,7 +192,7 @@ export async function getContentQuery() {
     }
 
     const { createContentRegistry } = await import('#composition/bootstrap.mjs');
-    const { ContentQueryService } = await import("../capabilities/content-catalog/server/application/ContentQueryService.mjs");
+    const { ContentQueryService } = await import("../__capabilities/content-catalog/server/application/ContentQueryService.mjs");
 
     const result = createContentRegistry(
       {
@@ -231,7 +231,7 @@ export async function getMemory() {
   _memoryInitPromise = (async () => {
     const cfg = await getConfigService();
     const dataService = new DataService({ configService: cfg });
-    const { createConciergeMemoryAccess } = await import('../modules/concierge/server/memory-access.mjs');
+    const { createConciergeMemoryAccess } = await import('../__app_modules/concierge/server/memory-access.mjs');
     const memory = await createConciergeMemoryAccess({ dataService });
     _memory = memory;
     return _memory;
@@ -251,7 +251,7 @@ export async function getFinance() {
   if (_financeInitPromise) return _financeInitPromise;
 
   _financeInitPromise = (async () => {
-    const { createFinanceAccess } = await import('../modules/finance/cli/access.mjs');
+    const { createFinanceAccess } = await import('../__app_modules/finance/cli/access.mjs');
     _finance = await createFinanceAccess({ getConfigService, getHttpClient });
     return _finance;
   })();
@@ -271,7 +271,7 @@ export async function getWriteAuditor() {
 
   _writeAuditorInitPromise = (async () => {
     const cfg = await getConfigService();
-    // Append-only, unbounded, and read by nobody in backend/src, cli or
+    // Append-only, unbounded, and read by nobody in __backend/src, cli or
     // frontend/src — an operator-inspectable trail, which is a log. Logs live in
     // media, not the committable tree. `cli` also named the mechanism rather
     // than a domain, so its old home failed the folder rule twice over.
@@ -327,7 +327,7 @@ export async function getConciergeConfig() {
  */
 export async function getFinanceDirect() {
   if (_financeDirect) return _financeDirect;
-  const { createDirectFinanceAccess } = await import('../modules/finance/cli/access.mjs');
+  const { createDirectFinanceAccess } = await import('../__app_modules/finance/cli/access.mjs');
   _financeDirect = await createDirectFinanceAccess({ getHttpClient });
   return _financeDirect;
 }
@@ -340,7 +340,7 @@ export { readBuxferCredsDirect as _readBuxferCredsDirect };
  * subcommands. Uses the same domain service the in-process HealthCoachAgent
  * uses — one set of analytics, two transports.
  *
- * Wiring (mirrors backend/src/5_composition/bootstrap.mjs around line 2587):
+ * Wiring (mirrors __backend/src/5_composition/bootstrap.mjs around line 2587):
  *   healthStore     ← YamlHealthDatastore({ dataService, configService })
  *   healthService   ← AggregateHealthUseCase({ healthStore })   (exposes getHealthForRange)
  *   periodResolver  ← new PeriodResolver()
@@ -355,7 +355,7 @@ export async function getHealthAnalytics() {
     const cfg = await getConfigService();
 
     const dataService                = new DataService({ configService: cfg });
-    const { createHealthCliAnalytics } = await import("../modules/health/server/composition/cli-analytics.mjs");
+    const { createHealthCliAnalytics } = await import("../__app_modules/health/server/composition/cli-analytics.mjs");
     _healthAnalytics = await createHealthCliAnalytics({ configService: cfg, dataService });
     return _healthAnalytics;
   })();
@@ -365,7 +365,7 @@ export async function getHealthAnalytics() {
 
 /**
  * Resolve the directory where ConciergeTranscript writes per-request transcript
- * JSON files. Mirrors backend/src/app.mjs which sets
+ * JSON files. Mirrors __backend/src/app.mjs which sets
  *   mediaLogsDir = path.join(configService.getMediaDir(), 'logs')
  * and ConciergeTranscript writes to {mediaLogsDir}/concierge/...
  */

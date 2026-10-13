@@ -11,7 +11,7 @@ import { DaylightAPI } from './api.mjs';
  * precisely that panel: School's Sentence Ladder read it as unable to type and
  * withheld its Dictation and Interpretation rungs, telling a child sitting in
  * front of a Korean/English keyboard to "continue on another device". The whole
- * in-page Hangul IME (`modules/School/ime/`) was built for that panel and could
+ * in-page Hangul IME (`__app_modules/School/ime/`) was built for that panel and could
  * not be reached on it.
  *
  * So this asks the question three ways and takes any yes. None of the three is

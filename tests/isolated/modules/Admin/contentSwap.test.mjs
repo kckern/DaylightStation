@@ -4,7 +4,7 @@ import {
   IDENTITY_FIELDS,
   swapContentPayloads,
   ITEM_DEFAULTS
-} from "../../../../capabilities/content-catalog/browser/admin/listConstants.js";
+} from "../../../../__capabilities/content-catalog/browser/admin/listConstants.js";
 
 describe('CONTENT_PAYLOAD_FIELDS', () => {
   it('should not overlap with IDENTITY_FIELDS', () => {

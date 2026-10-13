@@ -26,11 +26,11 @@
  * Every backdate case below is asserted against both.
  */
 import { describe, expect, it } from 'vitest';
-import { RecordBookProgress } from "../../../../modules/school/server/application/usecases/RecordBookProgress.mjs";
-import { OpenBookShelfItem } from "../../../../modules/school/server/application/usecases/OpenBookShelfItem.mjs";
+import { RecordBookProgress } from "../../../../__app_modules/school/server/application/usecases/RecordBookProgress.mjs";
+import { OpenBookShelfItem } from "../../../../__app_modules/school/server/application/usecases/OpenBookShelfItem.mjs";
 import {
   isPlausiblePage, isBackdateAllowed, MAX_BACKDATE_DAYS,
-} from "../../../../modules/school/server/domain/bookShelf.mjs";
+} from "../../../../__app_modules/school/server/domain/bookShelf.mjs";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 

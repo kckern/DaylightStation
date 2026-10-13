@@ -8,7 +8,7 @@ import {
   computeBuckets,
   computeHRStats,
   buildStravaSessionTimeline,
-} from "../../../../../modules/fitness/server/domain/services/StravaSessionBuilder.mjs";
+} from "../../../../../__app_modules/fitness/server/domain/services/StravaSessionBuilder.mjs";
 
 describe('StravaSessionBuilder', () => {
   describe('resampleHR', () => {

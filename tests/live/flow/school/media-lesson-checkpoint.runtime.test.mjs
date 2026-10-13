@@ -47,7 +47,7 @@
 // `RecordMediaCompletion` refusing `media_completed` while checkpoints are
 // outstanding (409), are the hard guarantee — a client that lost its checkpoint
 // list still cannot claim the lesson. Those live in
-// `backend/src/2_domains/school/mediaCheckpoints.test.mjs` and the use cases'
+// `__backend/src/2_domains/school/mediaCheckpoints.test.mjs` and the use cases'
 // own suites. This file is about the half that only a browser can prove: that
 // the picture actually stops in front of the child, and actually starts again.
 //

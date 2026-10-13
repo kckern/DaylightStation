@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Assertion, PolicyGraph, PeriodRef, SubjectRef, decideEntitlement, evaluateGate, fourState,
-} from "../../../../capabilities/state-gates/server/domain/index.mjs";
+} from "../../../../__capabilities/state-gates/server/domain/index.mjs";
 
 const timezone = 'America/Los_Angeles';
 const now = Date.parse('2026-08-29T12:00:00-07:00');
