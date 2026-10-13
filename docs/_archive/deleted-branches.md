@@ -630,3 +630,4 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 | 2026-10-11 | main-superseded-20261011 (laptop) | 78b07772e | Pre-rewrite local main; superseded by PII-scrubbed history pushed as cd58cdf6ac |
 | 2026-10-11 | backup/pre-pii-scrub-20261011 (homeserver) | 772f5c343d | Homeserver main before the learner-name rewrite; tree identical to cd58cdf6ac |
 | 2026-10-11 | feature/station-sequence | bf35ca2041 | Station sequences: pinned jingle + station IDs for radio playlists (merged) |
+| 2026-10-12 | feature/progress-glide | f25c73f677 | Player progress bar: validated data + WAAPI glide (merged) |
