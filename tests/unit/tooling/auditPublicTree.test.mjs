@@ -21,6 +21,17 @@ describe('auditPaths', () => {
     expect(v.map((x) => x.path).sort()).toHaveLength(11);
   });
 
+  it('flags agent and session scratch directories at the repo root', () => {
+    const v = auditPaths([
+      '.superpowers/sdd/plan/report.md',
+      '.claire/worktrees/x/a.mjs',
+      '.playwright-mcp/shot.png',
+      '_deleteme/old.mjs',
+    ]);
+    expect(v.map((x) => x.rule)).toEqual(['agent-scratch', 'agent-scratch', 'agent-scratch', 'agent-scratch']);
+    expect(auditPaths(['__app_modules/x/superpowers/a.mjs', 'docs/_deleteme.md'])).toEqual([]);
+  });
+
   it('does not flag public files that merely contain the same words', () => {
     expect(auditPaths([
       '__docs/reference/school/README.md',

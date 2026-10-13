@@ -14,12 +14,14 @@ const SELF = 'scripts/audit-public-tree.mjs';
 const INTERNAL_DOCS = /^__docs\/(_wip|_archive|superpowers|plans|notes|roadmap|marketing)\//;
 const BUILD_JUNK = /(^|\/)(__pycache__\/|.*\.pyc$|.*\.class$|build\/reports\/)/;
 const SCRATCH = /(^|\/)(_tmp_[^/]*|_proto-[^/]*)$/;
+const AGENT_SCRATCH = /^(\.superpowers|\.claire|\.playwright-mcp|_deleteme)\//;
 const PRIVATE_FILES = new Set(['docker/nginx/logs.kckern.net.conf']);
 
 export const PATH_RULES = [
   { id: 'internal-docs', test: (p) => INTERNAL_DOCS.test(p), why: 'internal docs live in DaylightStation-ops' },
   { id: 'build-junk', test: (p) => BUILD_JUNK.test(p), why: 'build output is not source' },
   { id: 'scratch-file', test: (p) => SCRATCH.test(p), why: '_tmp_/_proto- files are scratch' },
+  { id: 'agent-scratch', test: (p) => AGENT_SCRATCH.test(p), why: 'agent/session scratch is never published' },
   { id: 'private-file', test: (p) => PRIVATE_FILES.has(p), why: 'private infrastructure config' },
 ];
 
