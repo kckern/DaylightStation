@@ -24,6 +24,14 @@ keep:
   - tests/_fixtures/exercise-library/**
   - tests/_fixtures/media/**
   - tests/_fixtures/midi/groove-*.mid
+  # School print goldens: 8-bit grey 150 dpi pages of our own renderer. Pixel tolerance
+  # means a hash cannot replace them; regenerate with UPDATE_GOLDEN=1 / UPDATE_PROOF=1.
+  - tests/isolated/rendering/school/golden/snapshots/*.png
+  - __app_modules/learning/school/server/application/documents/__proof__/phase-a/proof-standard-p02.png
+  - __app_modules/learning/school/server/application/documents/__proof__/phase-b/kitchen-sink-student-p01.png
+  - __app_modules/learning/school/server/application/documents/__proof__/phase-c/card-continuation-student-p01.png
+  # Synthetic JamCorder recording, built by make-jamcorder-fixture.mjs (1 KB).
+  - tests/fixtures/jamcorder/Jmx-A00005-Jan-02-2001.mid
 
 # Text >= 100 KB that legitimately stays: lockfiles, one authored GUI source, and
 # hand-written source/docs that are simply large (found by scanning HEAD; adding
@@ -60,11 +68,6 @@ largeText:
 # Still tracked, scheduled for removal by a later asset-externalization task.
 # Each entry names the task that removes it; task C6 asserts this list is empty.
 pending:
-  # C5: goldens and real-data fixtures
-  - { path: tests/isolated/rendering/school/golden/snapshots/*.png, task: C5 }
-  - { path: __app_modules/learning/school/server/application/documents/__proof__/**/*.png, task: C5 }
-  - { path: __app_modules/household/camera/server/domain/fixtures/search-*.json, task: C5 }
-  - { path: tests/fixtures/jamcorder/Jmx-A00005-Jan-02-2026.mid, task: C5 }
   # C6: deletions and NUL-byte hygiene
   - { path: __docs/assets/branding/static/*.ttf, task: C6 }
   - { path: _extensions/omr-relay/docs/omr-relay-wiring.pdf, task: C6 }

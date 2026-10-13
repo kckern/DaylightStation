@@ -784,7 +784,7 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
       };
       continuationResult = await useCase.execute({ document: published2, context: context2 });
       continuationTeacherResult = await useCase.execute({ document: published2, context: { ...context2, teacher: true } });
-      continuationPages = rasterizePdfPages(continuationResult.bytes, { dpi: 150, name: 'phaseC-card-continuation' });
+      continuationPages = rasterizePdfPages(continuationResult.bytes, { dpi: 150, gray: true, name: 'phaseC-card-continuation' });
 
       // Commit PDFs + every continuation-sheet page PNG as reviewable evidence.
       // Content is fully deterministic (pinned CreationDate, fixed rng/clock in

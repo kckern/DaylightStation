@@ -505,8 +505,8 @@ describe('Phase A acceptance sweep (spec §12, items tagged [A])', () => {
       requirePdftoppm();
       standardResult = await renderProof('standard');
       youngResult = await renderProof('young');
-      standardPages = rasterizePdfPages(standardResult.bytes, { dpi: 150, name: 'phaseA-proof-standard' });
-      youngPages = rasterizePdfPages(youngResult.bytes, { dpi: 150, name: 'phaseA-proof-young' });
+      standardPages = rasterizePdfPages(standardResult.bytes, { dpi: 150, gray: true, name: 'phaseA-proof-standard' });
+      youngPages = rasterizePdfPages(youngResult.bytes, { dpi: 150, gray: true, name: 'phaseA-proof-young' });
 
       // Commit the full PDFs + every rasterized page as reviewable evidence.
       // Content is fully deterministic (pinned CreationDate, no randomness),

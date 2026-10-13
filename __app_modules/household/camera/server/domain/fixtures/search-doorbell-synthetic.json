@@ -1,0 +1,308 @@
+[
+  {
+    "cmd": "Search",
+    "code": 0,
+    "value": {
+      "SearchResult": {
+        "File": [
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 0,
+              "sec": 30
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 0,
+              "sec": 0
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_080000_080030_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 1,
+              "sec": 20
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 0,
+              "sec": 50
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_080050_080120_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 2,
+              "sec": 35
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 2,
+              "sec": 5
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_080205_080235_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 5,
+              "sec": 5
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 4,
+              "sec": 35
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_080435_080505_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 7,
+              "sec": 36
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 7,
+              "sec": 6
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_080706_080736_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 18,
+              "sec": 6
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 17,
+              "sec": 36
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_081736_081806_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 19,
+              "sec": 6
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 18,
+              "sec": 36
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_081836_081906_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 21,
+              "sec": 36
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 21,
+              "sec": 6
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_082106_082136_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 27,
+              "sec": 6
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 26,
+              "sec": 36
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_082636_082706_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 27,
+              "sec": 51
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 27,
+              "sec": 21
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_082721_082751_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 30,
+              "sec": 22
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 29,
+              "sec": 52
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_082952_083022_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          },
+          {
+            "EndTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 31,
+              "sec": 52
+            },
+            "StartTime": {
+              "year": 2001,
+              "mon": 1,
+              "day": 1,
+              "hour": 8,
+              "min": 31,
+              "sec": 22
+            },
+            "frameRate": 0,
+            "height": 0,
+            "name": "Mp4Record/2001-01-01/RecS07_DST20010101_083122_083152_0_00000000_000000.mp4",
+            "size": "1100000",
+            "type": "sub",
+            "width": 0
+          }
+        ],
+        "Status": [
+          {
+            "mon": 1,
+            "table": "1000000000000000000000000000000",
+            "year": 2001
+          }
+        ],
+        "channel": 0
+      }
+    }
+  }
+]

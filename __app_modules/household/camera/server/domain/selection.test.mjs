@@ -1,7 +1,8 @@
 /**
- * Selection tests against REAL captured search metadata (2026-07-17).
+ * Selection tests against SYNTHETIC search metadata (fixtures/make-search-fixtures.mjs).
  *
- * The fixtures are the evidence this design was derived from. The central
+ * The fixtures are invented (a made-up day, 2001-01-01) but keep the shape of the
+ * Reolink `Search` reply and the cases the design was derived from. The central
  * assertion is the night-vs-evening inversion: a naive duration ranking puts an
  * 86-minute 01:37 session (rain / insects at the floodlight) above a 28-minute
  * 18:01 session of actual yard activity. The density gate is what fixes that,
@@ -28,7 +29,7 @@ const SCORING = {
   densityPenalty: 0.1,
 };
 
-const driveway = () => loadFixture('search-driveway-2026-07-17.json').map((r) => toClip(r));
+const driveway = () => loadFixture('search-driveway-synthetic.json').map((r) => toClip(r));
 
 function sessionStartingAt(sessions, hour, minute) {
   return sessions.find((s) => s.start.getHours() === hour && s.start.getMinutes() === minute);
@@ -57,11 +58,11 @@ describe('toClip', () => {
 });
 
 describe('sessionize', () => {
-  it('clusters the real day into far fewer sessions than clips', () => {
+  it('clusters the synthetic day into far fewer sessions than clips', () => {
     const clips = driveway();
-    expect(clips.length).toBe(573);
+    expect(clips.length).toBe(63);
     const sessions = sessionize(clips, { maxGapSeconds: 120 });
-    expect(sessions.length).toBe(100);
+    expect(sessions.length).toBe(9);
   });
 
   it('splits when the gap exceeds the threshold and merges when it does not', () => {
@@ -228,15 +229,15 @@ describe('selectSessions', () => {
 
 describe('doorbell fixture', () => {
   it('sessionizes the doorbell day', () => {
-    const clips = loadFixture('search-doorbell-2026-07-17.json').map((r) => toClip(r));
-    expect(clips.length).toBe(147);
-    expect(sessionize(clips, { maxGapSeconds: 120 }).length).toBe(61);
+    const clips = loadFixture('search-doorbell-synthetic.json').map((r) => toClip(r));
+    expect(clips.length).toBe(12);
+    expect(sessionize(clips, { maxGapSeconds: 120 }).length).toBe(5);
   });
 });
 
 describe('nvr fixture', () => {
   it('collapses continuous hourly segments into one session', () => {
-    const segs = loadFixture('search-nvr-ch1-2026-07-17.json').map((r) => toClip(r));
+    const segs = loadFixture('search-nvr-ch1-synthetic.json').map((r) => toClip(r));
     expect(segs.length).toBe(26);
     expect(segs.every((s) => s.name === null)).toBe(true);
     // Continuous recording has no gaps, so it is one session for the whole day.

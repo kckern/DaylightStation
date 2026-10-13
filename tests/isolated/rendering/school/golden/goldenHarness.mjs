@@ -3,7 +3,7 @@
  *
  * WHAT IT DOES
  *   Renders each corpus document, rasterizes every page with poppler's
- *   `pdftoppm -png -r 150`, and compares the result pixel-by-pixel against a
+ *   `pdftoppm -gray -r 150` (8-bit grey PNG; snapshots are committed grey), and compares the result pixel-by-pixel against a
  *   committed snapshot. A page differing by more than 0.5% of its pixels fails,
  *   and the failure writes `<snapshot>.diff.png` beside the snapshot so the
  *   change can be looked at rather than guessed at.
@@ -213,7 +213,7 @@ export const requirePdftoppm = requirePoppler;
  * @returns {Buffer[]} page images in order
  */
 export function rasterizePages(pdf, name) {
-  return rasterizePdfPages(pdf, { dpi: RENDER_DPI, name });
+  return rasterizePdfPages(pdf, { dpi: RENDER_DPI, name, gray: true });
 }
 
 /**

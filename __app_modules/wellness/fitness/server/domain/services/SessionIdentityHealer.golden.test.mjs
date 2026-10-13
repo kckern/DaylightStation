@@ -1,5 +1,5 @@
 /**
- * Golden-parity fixture test — real session 20260627195941 (2026-06-27,
+ * Golden-parity fixture test — real session 20010101100000 (2001-01-01,
  * Jane Fonda "Complete Workout"), trimmed to the 3 human occupants sharing
  * HR-strap device 10001: grannie (primary, full continuous trace, 966
  * rings), learner1 (2 HR samples then dropped strap), parent-two (1 HR sample
@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest';
 import { planHeal } from "./SessionIdentityHealer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixturePath = path.join(__dirname, '__fixtures__', 'session-20260627195941.yml');
+const fixturePath = path.join(__dirname, '__fixtures__', 'session-20010101100000.yml');
 
 function loadFixture() {
   const fixture = yaml.load(readFileSync(fixturePath, 'utf8'));
@@ -31,7 +31,7 @@ function loadFixture() {
   return fixture;
 }
 
-describe('SessionIdentityHealer golden parity — session 20260627195941', () => {
+describe('SessionIdentityHealer golden parity — session 20010101100000', () => {
   it('removes the two ghost occupants (parent-two, learner1) and keeps grannie', () => {
     const sessionObj = loadFixture();
     const plan = planHeal(sessionObj);
@@ -42,8 +42,8 @@ describe('SessionIdentityHealer golden parity — session 20260627195941', () =>
   });
 });
 
-describe('SessionIdentityHealer — 2026-09-23 split (session 20260923183528, scrubbed)', () => {
-  const load = () => yaml.load(readFileSync(path.join(__dirname, '__fixtures__', 'session-20260923183528.yml'), 'utf8'));
+describe('SessionIdentityHealer — 2001-01-02 split (session 20010102100000, scrubbed)', () => {
+  const load = () => yaml.load(readFileSync(path.join(__dirname, '__fixtures__', 'session-20010102100000.yml'), 'utf8'));
 
   it('plans the split repair back to kid-a and removes the empty kid-d / kid-e', () => {
     const plan = planHeal(load());

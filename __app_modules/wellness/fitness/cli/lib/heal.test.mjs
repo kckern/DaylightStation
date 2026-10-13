@@ -10,10 +10,10 @@ import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, i
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(
   __dirname,
-  '../../server/domain/services/__fixtures__/session-20260627195941.yml'
+  '../../server/domain/services/__fixtures__/session-20010101100000.yml'
 );
-const DATE = '2026-06-27';
-const SESSION_ID = '20260627195941';
+const DATE = '2001-01-01';
+const SESSION_ID = '20010101100000';
 
 let baseDir;
 let sessionFile;
@@ -34,10 +34,10 @@ describe('resolveSessionPath / isValidDate / isValidSessionId', () => {
   });
 
   it('validates date and session id formats', () => {
-    expect(isValidDate('2026-06-27')).toBe(true);
+    expect(isValidDate('2001-01-01')).toBe(true);
     expect(isValidDate('2026-6-27')).toBe(false);
     expect(isValidDate('not-a-date')).toBe(false);
-    expect(isValidSessionId('20260627195941')).toBe(true);
+    expect(isValidSessionId('20010101100000')).toBe(true);
     expect(isValidSessionId('123')).toBe(false);
     expect(isValidSessionId('abcdefghijklmn')).toBe(false);
   });
@@ -79,7 +79,7 @@ describe('foldOccupantSeries', () => {
   });
 });
 
-describe('heal() — golden fixture 20260627195941', () => {
+describe('heal() — golden fixture 20010101100000', () => {
   beforeEach(setUpTempSession);
   afterEach(async () => {
     if (baseDir) await rm(baseDir, { recursive: true, force: true });
@@ -225,7 +225,7 @@ describe('heal() — merges path (known-user device swap) folds coins ADDITIVELY
 // --sweep
 // ---------------------------------------------------------------------------
 
-const CLEAN_SESSION_ID = '20260627200000';
+const CLEAN_SESSION_ID = '20010101110000';
 
 function buildCleanSessionObj(sessionId, date) {
   return {
@@ -272,8 +272,8 @@ describe('parseSinceArg / cutoffDateString', () => {
   });
 
   it('computes a YYYY-MM-DD cutoff N days before now', () => {
-    expect(cutoffDateString(new Date('2026-06-28T00:00:00Z'), 1)).toBe('2026-06-27');
-    expect(cutoffDateString(new Date('2026-06-28T00:00:00Z'), 400)).toBe('2025-05-24');
+    expect(cutoffDateString(new Date('2001-01-02T00:00:00Z'), 1)).toBe('2001-01-01');
+    expect(cutoffDateString(new Date('2001-01-02T00:00:00Z'), 400)).toBe('1999-11-29');
   });
 });
 
@@ -338,8 +338,8 @@ describe('sweep() — golden + clean sessions in the same date dir', () => {
 });
 
 describe('sweep() — --since filtering excludes out-of-window date dirs', () => {
-  const OLD_DATE = '2025-01-01';
-  const OLD_SESSION_ID = '20250101120000';
+  const OLD_DATE = '2000-01-01';
+  const OLD_SESSION_ID = '20000101120000';
 
   let sweepBaseDir;
 
@@ -360,7 +360,7 @@ describe('sweep() — --since filtering excludes out-of-window date dirs', () =>
   });
 
   it('excludes the out-of-window session but includes the in-window one', async () => {
-    const now = new Date('2026-06-28T00:00:00Z'); // 1 day after DATE, ~1.5yr after OLD_DATE
+    const now = new Date('2001-01-02T00:00:00Z'); // 1 day after DATE, 1 year after OLD_DATE
     const { candidates } = await sweep({ baseDir: sweepBaseDir, apply: false, sinceDays: 5, now });
 
     expect(candidates.some((c) => c.date === OLD_DATE)).toBe(false);
@@ -375,10 +375,10 @@ describe('sweep() — --since filtering excludes out-of-window date dirs', () =>
   });
 });
 
-describe('heal — 2026-09-23 split repair (session 20260923183528, scrubbed)', () => {
-  const SPLIT_FIXTURE = path.join(__dirname, '../../server/domain/services/__fixtures__/session-20260923183528.yml');
-  const SPLIT_DATE = '2026-09-23';
-  const SPLIT_ID = '20260923183528';
+describe('heal — 2001-01-02 split repair (session 20010102100000, scrubbed)', () => {
+  const SPLIT_FIXTURE = path.join(__dirname, '../../server/domain/services/__fixtures__/session-20010102100000.yml');
+  const SPLIT_DATE = '2001-01-02';
+  const SPLIT_ID = '20010102100000';
   let splitBase;
 
   beforeEach(async () => {
@@ -444,13 +444,13 @@ describe('heal — list index', () => {
     await setUpTempSession();
     const indexDir = path.join(baseDir, 'data', 'household', 'fitness', 'log', '_index');
     await mkdir(indexDir, { recursive: true });
-    const shardFile = path.join(indexDir, '2026-06.json');
-    await writeFile(shardFile, JSON.stringify({ version: 5, days: { [DATE]: { mtimeMs: 1, sessions: [{ id: 'stale' }] }, '2026-06-01': { mtimeMs: 2, sessions: [] } } }));
+    const shardFile = path.join(indexDir, '2001-01.json');
+    await writeFile(shardFile, JSON.stringify({ version: 5, days: { [DATE]: { mtimeMs: 1, sessions: [{ id: 'stale' }] }, '2001-01-02': { mtimeMs: 2, sessions: [] } } }));
     const res = await heal(DATE, SESSION_ID, { apply: true, baseDir });
     expect(res.changed).toBe(true);
     const shard = JSON.parse(await readFile(shardFile, 'utf8'));
     expect(shard.days).not.toHaveProperty(DATE);
-    expect(shard.days).toHaveProperty('2026-06-01');
+    expect(shard.days).toHaveProperty('2001-01-02');
     await rm(baseDir, { recursive: true, force: true });
   });
 });

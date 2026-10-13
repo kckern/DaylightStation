@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { HarvestMidiRecordings } from '#apps/midi/HarvestMidiRecordings.mjs';
 
-const FIXTURE = readFileSync(new URL('../../../fixtures/jamcorder/Jmx-A00005-Jan-02-2026.mid', import.meta.url));
-const refA = { recordingId: '/JAMC/2026/s1/A.mid' };
-const refB = { recordingId: '/JAMC/2026/s1/B.mid' };
+const FIXTURE = readFileSync(new URL('../../../fixtures/jamcorder/Jmx-A00005-Jan-02-2001.mid', import.meta.url));
+const refA = { recordingId: '/JAMC/2001/s1/A.mid' };
+const refB = { recordingId: '/JAMC/2001/s1/B.mid' };
 
 function fakeArchive(seen = new Set()) {
   const saved = [];
@@ -13,7 +13,7 @@ function fakeArchive(seen = new Set()) {
     hasRecording: (recordingId) => seen.has(recordingId),
     archiveRecording: vi.fn(async (ref, artifact) => {
       if (artifact.toString() === 'garbage') throw new Error('invalid MIDI artifact');
-      const relPath = '2026/2026-01/2026-01-02 18.17.40.mid';
+      const relPath = '2001/2001-01/2001-01-02 18.17.40.mid';
       saved.push({ relPath, len: artifact.length });
       seen.add(ref.recordingId);
       return { archiveId: relPath };
@@ -29,7 +29,7 @@ describe('HarvestMidiRecordings', () => {
     const res = await new HarvestMidiRecordings({ source, archive, logger: silent }).execute();
     expect(res).toEqual({ count: 1, status: 'success' });
     expect(archive.archiveRecording).toHaveBeenCalledTimes(1);
-    expect(archive.saved[0].relPath).toBe('2026/2026-01/2026-01-02 18.17.40.mid');
+    expect(archive.saved[0].relPath).toBe('2001/2001-01/2001-01-02 18.17.40.mid');
     expect(archive.archiveRecording).toHaveBeenCalledWith(refA, FIXTURE);
   });
 

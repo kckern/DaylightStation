@@ -525,7 +525,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
       const context = { learnerName: 'Proof Learner', date: '2026-08-04' };
       studentResult = await useCase.execute({ document, context });
       teacherResult = await useCase.execute({ document, context: { ...context, teacher: true } });
-      studentPages = rasterizePdfPages(studentResult.bytes, { dpi: 150, name: 'phaseB-kitchen-sink-student' });
+      studentPages = rasterizePdfPages(studentResult.bytes, { dpi: 150, gray: true, name: 'phaseB-kitchen-sink-student' });
 
       // Commit the full PDFs + every student page PNG as reviewable
       // evidence. Content is fully deterministic (pinned CreationDate, no
