@@ -343,7 +343,7 @@ Until a source is confirmed, `gen-test-strip.py` output is the only card known
 to work, and a custom print run is the likely end state.
 
 `_extensions/omr-relay/tools/gen-test-strip.py` generates a spec-exact
-printable strip (`__docs/omr1100-test-strip.pdf` in that extension) carrying a
+printable strip (the PDF is not tracked: regenerate it on demand with `python3 _extensions/omr-relay/tools/gen-test-strip.py omr1100-test-strip.pdf`) carrying a
 walking-diagonal pattern whose decode is self-evident. Print at **100% / actual
 size** — any "fit to page" scaling breaks the 0.250 in pitch — and cut on the
 outline with a straightedge. That strip is also the starting geometry for

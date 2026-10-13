@@ -1,0 +1,98 @@
+{
+  "_comment": "Generated at prebuild into svg/generated/ by frontend/scripts/prepare-public-assets.mjs. id -> Solar (Bold) icon in @iconify-json/solar. Optional mirror:true flips horizontally. Authored (non-Solar) icons live as tracked files in svg/.",
+  "icons": {
+    "back": {
+      "solar": "alt-arrow-left-bold"
+    },
+    "close": {
+      "solar": "close-circle-bold"
+    },
+    "connection": {
+      "solar": "bluetooth-square-bold"
+    },
+    "family-synths": {
+      "solar": "soundwave-bold"
+    },
+    "family-world": {
+      "solar": "global-bold"
+    },
+    "game": {
+      "solar": "gamepad-bold"
+    },
+    "home": {
+      "solar": "home-2-bold"
+    },
+    "lessons": {
+      "solar": "square-academic-cap-2-bold"
+    },
+    "minus": {
+      "solar": "minus-circle-bold"
+    },
+    "next": {
+      "solar": "skip-next-bold"
+    },
+    "pause": {
+      "solar": "pause-bold"
+    },
+    "play": {
+      "solar": "play-bold"
+    },
+    "play-along": {
+      "solar": "keyboard-bold"
+    },
+    "plus": {
+      "solar": "add-circle-bold"
+    },
+    "previous": {
+      "solar": "skip-previous-bold"
+    },
+    "queue": {
+      "solar": "playlist-2-bold"
+    },
+    "record": {
+      "solar": "record-bold"
+    },
+    "repeat": {
+      "solar": "repeat-bold"
+    },
+    "settings": {
+      "solar": "settings-bold"
+    },
+    "shuffle": {
+      "solar": "shuffle-bold"
+    },
+    "singalong": {
+      "solar": "microphone-large-bold"
+    },
+    "skip-back-15": {
+      "solar": "alt-arrow-left-bold"
+    },
+    "skip-back-30": {
+      "solar": "rewind-back-bold"
+    },
+    "skip-forward-15": {
+      "solar": "alt-arrow-right-bold"
+    },
+    "skip-forward-30": {
+      "solar": "rewind-forward-bold"
+    },
+    "speed": {
+      "solar": "playback-speed-bold"
+    },
+    "star": {
+      "solar": "star-bold"
+    },
+    "stop": {
+      "solar": "stop-bold"
+    },
+    "trash": {
+      "solar": "trash-bin-trash-bold"
+    },
+    "volume-down": {
+      "solar": "volume-small-bold"
+    },
+    "volume-up": {
+      "solar": "volume-loud-bold"
+    }
+  }
+}

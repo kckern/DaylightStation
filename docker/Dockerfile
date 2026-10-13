@@ -85,7 +85,11 @@ RUN node scripts/setup-owner-dependencies.mjs && node scripts/setup-owner-depend
 # transforming all ~12k modules, so every deploy failed at the last moment.
 # The Docker VM has ~7.7 GB, so 4 GB leaves ample headroom for the rest of the
 # build. If this is hit again the bundle needs splitting, not a bigger number.
-RUN cd frontend && NODE_OPTIONS=--max-old-space-size=4096 npm run build
+#
+# `npm run build` runs the frontend `prebuild` hook first: it derives the wasm,
+# shaka, flag, Solar icon and demo-media assets (frontend/scripts/prepare-public-assets.mjs).
+# PREPARE_ASSETS_STRICT=1 makes a missing ffmpeg fatal (it is installed above).
+RUN cd frontend && PREPARE_ASSETS_STRICT=1 NODE_OPTIONS=--max-old-space-size=4096 npm run build
 
 # Layer 9: Setup entrypoint and permissions
 COPY docker/entrypoint.sh /usr/src/app/

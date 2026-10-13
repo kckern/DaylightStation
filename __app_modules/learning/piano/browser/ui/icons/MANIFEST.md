@@ -3,6 +3,16 @@
 Source: [Solar icon set](https://icon-sets.iconify.design/solar/) (MIT, by 480 Design) via Iconify API.
 All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 
+## Where the files come from
+
+- **Generated (not tracked):** every icon listed in [`icons.manifest.json`](icons.manifest.json) is written to
+  `svg/generated/` at frontend `prebuild` (`npm run prepare:assets`) from the `@iconify-json/solar` devDependency.
+  Manifest rows are `id -> { solar: "<name>", mirror?: true }`. `icons.registry.test.js` fails if generation did not run.
+- **Authored (tracked, `svg/*.svg`):** icons with no Solar equivalent (instrument families, game tiles, loop marks, metronome,
+  quill, mode glyphs and others that were redrawn). Add a Solar icon by adding a manifest row and deleting the authored file.
+- The table below predates this split: where a row's file also exists as a tracked `svg/<id>.svg`, the tracked file wins the
+  description; where the id is in the manifest, the manifest is the source of truth.
+
 | Group | Concept | File | Solar name |
 |-------|---------|------|------------|
 | menu | video | `menu/video.svg` | solar:videocamera-record-bold |

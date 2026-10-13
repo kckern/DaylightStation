@@ -2,10 +2,12 @@
 // the office-screen surfaces. One coherent Solar (Bold) set.
 // Icons are loaded as raw SVG strings and rendered inline so `currentColor`
 // inherits the button's text color and no SVG-loader plugin is required.
-const mods = import.meta.glob('./svg/*.svg', { eager: true, query: '?raw', import: 'default' });
-const ICONS = {};
+// Two sources: authored icons tracked in ./svg, and the Solar icons generated
+// at prebuild into ./svg/generated (icons.manifest.json; gitignored).
+const mods = import.meta.glob(['./svg/*.svg', './svg/generated/*.svg'], { eager: true, query: '?raw', import: 'default' });
+export const ICONS = {};
 for (const [path, raw] of Object.entries(mods)) {
-  const name = path.replace('./svg/', '').replace('.svg', '');
+  const name = path.slice(path.lastIndexOf('/') + 1).replace('.svg', '');
   ICONS[name] = raw;
 }
 

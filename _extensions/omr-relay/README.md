@@ -781,7 +781,7 @@ transported happily and read as nothing: the strobe geometry has to match
 Appendix A of `omr1102_techmanual.pdf`, not merely look like a bubble sheet.
 
 `tools/gen-test-strip.py` emits a spec-exact printable strip
-(`__docs/omr1100-test-strip.pdf`) — 3.25" wide, black ticks 0.125"×0.060" flush to
+(not tracked; generate with `python3 tools/gen-test-strip.py omr1100-test-strip.pdf`) — 3.25" wide, black ticks 0.125"×0.060" flush to
 the strobe edge on 0.250" centers, first tick 0.375" from the leading edge, 12
 rows on 0.250" centerlines, plus a walking-diagonal pattern whose decode is
 self-evident. **Print at 100% / Actual Size** and cut on the outline. This is

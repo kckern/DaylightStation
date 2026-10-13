@@ -61,15 +61,6 @@ largeText:
 # Still tracked, scheduled for removal by a later asset-externalization task.
 # Each entry names the task that removes it; task C6 asserts this list is empty.
 pending:
-  # C2: build-copy assets derived at prebuild
-  - { path: frontend/public/tfjs-backend-wasm.wasm, task: C2 }
-  - { path: frontend/public/tfjs-backend-wasm-simd.wasm, task: C2 }
-  - { path: frontend/public/tfjs-backend-wasm-threaded-simd.wasm, task: C2 }
-  - { path: frontend/public/crt-lab/vendor/shaka.js, task: C2 }
-  - { path: frontend/public/crt-lab/media/motion-480.mp4, task: C2 }
-  - { path: frontend/public/crt-lab/media/testcard-480.mp4, task: C2 }
-  - { path: frontend/public/filter-poc/clip.webm, task: C2 }
-  - { path: _extensions/omr-relay/docs/omr1100-test-strip.pdf, task: C2 }
   # C3: browser assets served from /vendor
   - { path: frontend/public/webaudiofont/*.js, task: C3 }
   - { path: frontend/public/fonts/scripture.woff2, task: C3 }
