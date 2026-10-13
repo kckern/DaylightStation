@@ -1,5 +1,5 @@
 // Characterization test: the STORED YAML SHAPE of the food catalog must not
-// change across the serialization-ownership migration (docs/_wip/plans/
+// change across the serialization-ownership migration (__docs/_wip/plans/
 // 2026-07-08-serialization-ownership-migration.md, phase 2 — nutrition group).
 // It drives YamlFoodCatalogDatastore over an in-memory dataService stub and
 // asserts the exact plain-object array written to the catalog file key.
@@ -10,8 +10,8 @@
 // BEFORE (entry.toJSON path) and AFTER (datastore #dehydrate path) the refactor.
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
-import { YamlFoodCatalogDatastore } from "../../../../modules/health/server/adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs";
-import { FoodCatalogEntry } from "../../../../modules/health/server/domain/health/entities/FoodCatalogEntry.mjs";
+import { YamlFoodCatalogDatastore } from "../../../../__app_modules/wellness/health/server/adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs";
+import { FoodCatalogEntry } from "../../../../__app_modules/wellness/health/server/domain/health/entities/FoodCatalogEntry.mjs";
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const USER = 'kckern';

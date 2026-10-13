@@ -1,0 +1,3708 @@
+// School.scss — dark theme for the School kiosk (Portal panel, 1280x800,
+// touch-only). Local tokens ONLY: identity.scss owns its own --piano-*
+// fallbacks, so nothing here redefines those. No animation — the kiosk
+// WebView drops frames under transitions/keyframes.
+// Inside the screen framework the app is a widget in a fixed-resolution
+// `.screen-root` box (e.g. the Portal's 1280x800). There `height: 100dvh`
+// measures the VIEWPORT, not that box, so the app's bottom ran past the
+// screen-root baseline whenever the two differ (letterboxing / scaling). As a
+// flex child of the column-flex `.screen-widget`, fill the parent's height
+// instead — the app's baseline then coincides with screen-root's and never
+// overshoots it. The standalone `/app/school` route (no `.screen-root`
+// ancestor) keeps the 100dvh rule below.
+// A scroll affordance that does not outrank the content it scrolls. The shelf
+// is book covers on a dark field; a default native scrollbar is a bright bar
+// across the full width and wins that contrast fight outright.
+@mixin school-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--school-border) transparent;
+  &::-webkit-scrollbar { width: 8px; height: 8px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: var(--school-border); border-radius: 999px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+}
+
+.screen-root .school-app {
+  height: auto; min-height: 0; flex: 1 1 auto; align-self: stretch;
+}
+
+.school-app {
+  --school-bg: #16161b;
+  --school-surface: #1f1f26;
+  --school-surface-2: #2a2a33;
+  --school-border: #34343f;
+  --school-fg: #f1f1f4;
+  --school-muted: #9a9aa6;
+  --school-accent: #2ec46f;
+  --school-accent-ink: #07210f;
+  --school-danger: #e05a4f;
+  --school-warn: #e0a83a;
+  // The locked Portal's Today board is a wall fixture in its own warm palette
+  // (cream on dark), not app chrome — so it gets named tokens rather than
+  // reusing --school-accent, which is the interactive green and would make a
+  // non-interactive board look tappable. Naming the pair also means "done" and
+  // "not yet" are one edit each instead of four literals scattered downfile.
+  --school-board-ink: #efe9dc;
+  --school-board-done: #7fb069;
+  // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
+  // is the one pairing on this board with no contrast to spare.
+  --school-board-done-ink: #16260f;
+  // Not-yet discs. Deliberately lighter than the 22% they carried as hairline
+  // bars: at bar height the fill was a hint, at disc size it is the backdrop
+  // an icon has to read against, and 22% left the glyph swimming.
+  --school-board-pending: color-mix(in srgb, var(--school-board-ink) 34%, transparent);
+  // Scanned, under the pass threshold. Amber, not red: this panel is read by
+  // siblings walking past, and the message is "try again", not "you failed".
+  // It has to be separable from the sage done-disc at a glance and from across
+  // the room, which rules out anything olive or yellow-green.
+  --school-board-retry: #e2a33c;
+  --school-board-retry-ink: #2a1a05;
+  // A day the house took off, on the term grid. Blue, the one colour the board
+  // did not already use: a vacation is not a miss (grey) and not done (green),
+  // and it has to read as neither from across the room.
+  --school-board-exempt: #4f8fd6;
+  --kind-video: #5b8dd6;  // blue — watch
+  --kind-audio: #b085e6;  // violet — listen
+  --kind-app:   #3fbfae;  // teal — do
+  --kind-deck:  #d9a441;  // gold — practice
+  // THE LAUNCH CARD IS READ STANDING, at arm's length, on a 1280x800 wall
+  // panel. Every size it uses is set for that distance and named here so the
+  // card's type scale is one block to read rather than a dozen literals spread
+  // down the file. The lesson title (clamped, in the card's own rules) is the
+  // one thing set at display scale; nothing else on the card goes below
+  // --school-launch-fine.
+  --school-launch-crumb-size: 1.2rem;
+  --school-launch-crumb-icon: 1.7rem;
+  --school-launch-unit-size: 1.35rem;
+  --school-launch-body-size: 1.25rem;
+  --school-launch-fine: 1.1rem;
+  --school-launch-action-icon: 1.6rem;
+  // The item being WORKED, on a progress rail — distinct from the finished
+  // ones (accent) and from the untouched track. Warm, half-strength: standing
+  // in unit 2 is not the same claim as having finished it.
+  --school-launch-underway: color-mix(in srgb, var(--school-warn) 72%, transparent);
+
+  width: 100%;
+  // 100dvh, not 100%: nothing above this sets a height (body is auto), so
+  // `height: 100%` collapsed the whole app to its content and left the bottom
+  // of an 800px panel black. Same reason and same fix as Admin.scss — a fixed
+  // height is also what makes the body's overflow-y actually engage.
+  height: 100dvh;
+  display: flex; flex-direction: column;
+  background: var(--school-bg); color: var(--school-fg);
+  // Chrome paints a translucent box over ANY interactive element the moment a
+  // finger lands on it — over tiles, crumbs and transport buttons alike. It
+  // fires before (and regardless of) our own :active styling, so on the panel
+  // every tap flashed blue. The property inherits, so declaring it here covers
+  // the whole app; each control's :active state is the press feedback.
+  -webkit-tap-highlight-color: transparent;
+  // Nothing in School is text to select. Every surface here is touched, and a
+  // press-and-hold or a jab that slides a few pixels otherwise raises the
+  // selection handles and the magnifier over a wall panel that has no keyboard
+  // to dismiss them with. Inherits, so this covers the app; a future surface
+  // with genuinely selectable prose can opt back in locally.
+  user-select: none; -webkit-user-select: none;
+  // A touch-only app: never wait to see whether a tap was the first half of a
+  // double-tap zoom.
+  touch-action: manipulation;
+
+  &--loading { align-items: center; justify-content: center; color: var(--school-muted); }
+
+  // 80px is measured, not chosen for looks: the Portal is 1280x800 and the
+  // header is the only chrome left (the screen framework's touch lane is not
+  // drawn under this app), so the body below it IS the video stage. 800 - 80
+  // = 720 == exactly 16:9 at 1280 wide. Change this and 16:9 material starts
+  // letterboxing again — keep the two numbers in step.
+  &__header {
+    flex: 0 0 80px;
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--school-border);
+    background: var(--school-surface);
+  }
+  // Breadcrumb trail: fixed apple home anchor on the left, then the crumbs.
+  // The apple always returns to the subject wall; ancestor crumbs are buttons,
+  // the current (deepest) crumb is plain text. Modelled on piano-chrome.
+  &__crumbs {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 0.4rem;
+    overflow: hidden;
+  }
+  &__home {
+    flex: 0 0 auto; min-width: 56px; min-height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--school-fg);
+    font-size: 1.9rem; cursor: pointer;
+  }
+  &__crumb-sep { flex: 0 0 auto; color: var(--school-muted); font-size: 1.1rem; }
+  &__crumb {
+    flex: 0 1 auto; min-width: 0;
+    border: none; background: transparent; padding: 0.2rem 0.15rem;
+    color: var(--school-muted); font-size: 1.15rem; font-weight: 700;
+    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    &--current { color: var(--school-fg); }
+  }
+  button.school-app__crumb:hover { color: var(--school-fg); }
+  &__chip {
+    flex: 0 0 auto; margin-left: auto; min-height: 56px;
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;
+    .piano-avatar { width: 2rem; height: 2rem; }
+  }
+  // Positioned so a full-bleed takeover (the material player) can fill THIS
+  // body via position:absolute — staying inside the screen-framework's
+  // fixed-resolution screen-root instead of escaping to the viewport.
+  &__body { position: relative; flex: 1; overflow: auto; padding: 1rem; }
+}
+
+// --- bank browser ---
+.school-browse {
+  &--loading, &--empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--school-muted); text-align: center; gap: 0.5rem; }
+  &__notice { margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  &__card { display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); }
+  &__title { margin: 0; font-size: 1.2rem; }
+  &__meta { margin: 0; color: var(--school-muted); }
+  &__hint { color: var(--school-muted); font-size: 0.9rem; }
+  &__actions {
+    display: flex; gap: 0.5rem; margin-top: auto;
+    button { flex: 1; min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer; }
+  }
+}
+
+// --- browse shelves (the tiles) ---
+// These were 140px slabs of mostly empty space with the text pinned to the top
+// corner. Sized to their content now, and they are shelves rather than the
+// front door, so they do not need to shout.
+.school-home {
+  &__grid {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  }
+  &__tile {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;
+    min-height: 96px; padding: 1rem 1.15rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__label { margin: 0; font-size: 1.1rem; font-weight: 700; }
+  &__hint { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
+}
+
+// --- quiz / flashcard items ---
+.school-item {
+  display: flex; flex-direction: column; gap: 1rem;
+  // Couch-legible type (audit #5): the question outranks everything else.
+  &__prompt { font-size: 2rem; line-height: 1.3; margin: 0; font-weight: 800; }
+  &__choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem; }
+  &__choice, &__check, &__chip { min-height: 84px; border: 1px solid var(--school-border); border-radius: 14px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1.3rem; font-weight: 700; cursor: pointer; }
+  &__choice--right { border-color: var(--school-accent); color: var(--school-accent); }
+  &__choice--armed { border: 3px solid var(--school-accent); background: color-mix(in srgb, var(--school-accent) 12%, var(--school-surface-2)); }
+  &__choice--dim { opacity: 0.5; }
+  &__chip { width: 100%; &--selected { border-color: var(--school-accent); } &--paired { opacity: 0.5; } }
+  &__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  &__col { display: flex; flex-direction: column; gap: 0.5rem; }
+  &__input { min-height: 64px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); color: var(--school-fg); font-size: 1.1rem; &--inline { display: inline-block; width: 8rem; } }
+  &__expected { color: var(--school-muted); }
+}
+
+// --- runner chrome (quiz + flashcards) ---
+.school-runner {
+  // TV layout (design audit #5): centered, generous, couch-legible — no more
+  // phone column marooned left-of-center on a television.
+  display: flex; flex-direction: column; gap: 1.25rem; max-width: 860px;
+  margin: 0 auto; padding: 2rem 1rem 3rem; justify-content: center; min-height: 60vh;
+  &__progress { display: flex; align-items: center; justify-content: space-between; color: var(--school-muted); font-weight: 700; }
+  &__guest-chip {
+    padding: 0.15rem 0.7rem; border: 1px dashed var(--school-border); border-radius: 999px;
+    color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
+  }
+  // Mid-quiz resume (Task 17): a quiet one-liner beside the progress count.
+  &__resume-chip {
+    padding: 0.15rem 0.7rem; border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem; font-weight: 700;
+  }
+  &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  // The advance is NEUTRAL ink (audit #5): green belongs to CORRECT alone —
+  // it must never celebrate you into the next question you just missed.
+  &__next {
+    min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1.15rem; font-weight: 800; cursor: pointer;
+  }
+  &__done, &__again { min-height: 64px; border: none; border-radius: 12px; background: var(--school-accent); color: var(--school-accent-ink); font-size: 1.1rem; font-weight: 700; cursor: pointer; padding: 0 1.6rem; }
+  &__again { background: var(--school-surface-2); color: var(--school-fg); border: 1px solid var(--school-border); }
+  &__summary-actions { display: flex; gap: 0.75rem; justify-content: center; }
+  &__score--display { font-size: 4rem; letter-spacing: 0.02em; }
+  &__dots { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+  &__dot { width: 18px; height: 18px; border-radius: 50%;
+    &.is-right { background: var(--school-accent); }
+    &.is-missed { background: transparent; border: 2px solid var(--school-warn); }
+    &.is-unknown { background: transparent; border: 2px dashed var(--school-border); }
+  }
+  &--summary { text-align: center; align-items: center; }
+  &__grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; button { min-height: 64px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; } }
+  &__missed { border: 1px solid var(--school-danger); background: transparent; color: var(--school-danger); }
+  &__again-later { border: 1px solid var(--school-border); background: var(--school-surface-2); color: var(--school-fg); span { display: block; color: var(--school-muted); font-size: 0.72em; } }
+  &__got { border: none; background: var(--school-accent); color: var(--school-accent-ink); }
+  &__score { font-size: 2rem; font-weight: 800; margin: 0; }
+  &__loading, &__hint, &__cards-seen, &__unrecorded-summary { color: var(--school-muted); }
+
+  // --- wave-7 student-advocacy additions ---
+  &__guest { padding: 0.6rem 1rem; border-radius: 10px; background: var(--school-surface-2); border: 1px dashed var(--school-border); color: var(--school-muted); font-weight: 700; }
+  &__cheer { font-size: 1.15rem; font-weight: 800; margin: 0; }
+  &__passbar { margin: 0; font-weight: 700; }
+  &__skipped, &__flag { color: var(--school-muted); margin: 0; }
+  &__retake { color: var(--school-accent); font-weight: 700; margin: 0; }
+  &__retake-btn, &__flag-btn {
+    min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface); color: var(--school-fg); font-weight: 700; cursor: pointer;
+  }
+  &__tutor-btn {
+    min-height: 60px; padding: 0 1.25rem; border: none; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink); font-weight: 800; cursor: pointer;
+  }
+  &__tutor-status { margin: 0; color: var(--school-muted); }
+  &__stop {
+    min-height: 40px; padding: 0 0.9rem; margin-left: auto; border: 1px solid var(--school-border);
+    border-radius: 999px; background: transparent; color: var(--school-muted); font-weight: 700; cursor: pointer;
+  }
+  &__skip {
+    min-height: 48px; border: 1px dashed var(--school-border); border-radius: 10px;
+    background: transparent; color: var(--school-muted); font-weight: 700; cursor: pointer;
+  }
+  &--error { text-align: center; }
+  .school-runner__progress { display: flex; align-items: center; gap: 0.6rem; }
+}
+
+.school-probe__out-of-tries { color: var(--school-muted); margin: 0; }
+
+.school-item__choice--chosen-wrong { border: 2px solid var(--school-warn); opacity: 1; }
+.school-item__confirm { display: block; margin-top: 0.2rem; font-size: 0.72em; color: var(--school-accent); }
+.school-item__choice-hint { margin: -0.3rem 0 0; text-align: center; color: var(--school-muted); font-size: 0.9rem; }
+.school-item__you { font-size: 0.8em; color: var(--school-muted); }
+.school-item__verdict { margin: 0.35rem 0 0; font-weight: 700; }
+
+.school-rail__feedback-new {
+  margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+  background: var(--school-accent); color: var(--school-accent-ink);
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+.school-print__ask { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+.school-print__ask-status { color: var(--school-muted); font-weight: 700; }
+.school-print__ask.is-denied .school-print__ask-status { color: var(--school-danger); }
+
+
+.school-probe {
+  &__header {
+    display: flex; justify-content: space-between; align-items: start; gap: 1rem;
+    padding-bottom: 0.6rem; border-bottom: 1px solid var(--school-border);
+  }
+  &__header > div { display: flex; flex-direction: column; gap: 0.15rem; }
+  &__header span, &__eyebrow, &__improvement { color: var(--school-muted); }
+  &__header > div > span, &__eyebrow { text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  &__feedback {
+    display: grid; gap: 0.5rem; padding: 1rem; border-radius: 12px;
+    border: 1px solid var(--school-border); background: var(--school-surface-2);
+  }
+  &__feedback.is-correct { border-color: var(--school-accent); }
+  &__feedback.is-corrective { border-color: var(--school-warn); }
+  &__feedback p, &__improvement { margin: 0; }
+  &__actions { display: flex; gap: 0.65rem; flex-wrap: wrap; }
+  &__actions button {
+    min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border);
+    border-radius: 10px; background: var(--school-surface); color: var(--school-fg);
+    font-weight: 700; cursor: pointer;
+  }
+  &__actions button:first-child { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &__actions button:disabled { opacity: 0.55; cursor: default; }
+}
+
+// --- authored Catalog: the same Course → Unit → Lesson structure served to
+// every School surface. Subjects are content, never hard-coded UI branches. ---
+.school-learning-catalog {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 980px; margin: 0 auto;
+  &.is-status, &__status { color: var(--school-muted); }
+  &__trail { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+  &__trail > span { display: flex; align-items: center; gap: 0.45rem; }
+  &__trail button {
+    min-height: 44px; padding: 0 0.65rem; border: none; background: transparent;
+    color: var(--school-muted); font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+  &__trail span:last-child button { color: var(--school-fg); }
+  &__error { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  &__grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem;
+  }
+  &__grid > button {
+    min-height: 92px; display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem;
+    padding: 1rem; text-align: left; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__grid strong { font-size: 1.1rem; }
+  &__grid span, &__grid small { color: var(--school-muted); }
+  &__lesson { display: grid; grid-template-columns: minmax(210px, 0.8fr) minmax(320px, 1.2fr); gap: 1rem; }
+  &__lesson > header { padding: 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); }
+  &__lesson h2, &__lesson p { margin-top: 0; }
+  &__badge {
+    display: inline-block; margin-left: 0.5rem; padding: 0.15rem 0.55rem; vertical-align: middle;
+    border: 1px solid var(--school-border); border-radius: 999px; background: var(--school-surface-2);
+    color: var(--school-muted); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  &__lesson header > p { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
+  &__modules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }
+  &__modules button {
+    width: 100%; min-height: 72px; display: grid; grid-template-columns: 2.4rem 1fr auto; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 1rem; text-align: left; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+  }
+  &__modules button > span:nth-child(2) { display: flex; flex-direction: column; gap: 0.15rem; }
+  &__modules small { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  &__calculator-code {
+    margin-top: 0.25rem; color: var(--school-accent) !important;
+    text-transform: none !important; letter-spacing: normal !important;
+    font-size: 0.78rem;
+  }
+  &__module-index {
+    width: 2.2rem; height: 2.2rem; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--school-surface); color: var(--school-muted); font-weight: 800;
+  }
+}
+
+.school-learning-reader {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 760px; margin: 0 auto;
+  & > header p { margin-bottom: 0.2rem; color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  & > header h2 { margin-top: 0; }
+  &__body { display: flex; flex-direction: column; gap: 0.8rem; }
+  &__body > * { margin: 0; padding: 1rem; border: 1px solid var(--school-border); border-radius: 10px; background: var(--school-surface); }
+  &__body table { width: 100%; border-collapse: collapse; }
+  &__body th, &__body td { padding: 0.5rem; border: 1px solid var(--school-border); text-align: left; }
+  &__step::before { content: '› '; color: var(--school-accent); font-weight: 800; }
+}
+
+.school-reflection {
+  display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem;
+  border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface);
+  & p, & h3 { margin: 0; }
+  & > div:first-child p { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  &__choices, &__strategies, &__confidence, &__actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  &__confidence > span { color: var(--school-muted); margin-right: 0.25rem; }
+  &__choices button, &__strategies button, &__confidence button, &__actions button {
+    min-height: 48px; padding: 0 0.85rem; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg); font-weight: 700; cursor: pointer;
+  }
+  button[aria-pressed='true'] { border-color: var(--school-accent); color: var(--school-accent); }
+  &__actions { justify-content: flex-end; }
+  &__actions button:last-child { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &__actions button:disabled { opacity: 0.5; cursor: default; }
+  &__error { color: var(--school-danger); }
+}
+
+@media (max-width: 720px) {
+  .school-learning-catalog__lesson { grid-template-columns: 1fr; }
+}
+
+.school-card {
+  display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem;
+  border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface);
+  &__prompt { font-size: 1.4rem; margin: 0; }
+  &__answer { font-size: 1.2rem; color: var(--school-accent); margin: 0; }
+}
+
+// --- materials catalog grid (spec §2b/§3) ---
+.school-materials {
+  &--empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--school-muted); }
+  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  &__tile {
+    display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;
+    min-height: 64px; padding: 0; text-align: left; overflow: hidden;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__poster { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: var(--school-surface-2); }
+  &__poster--placeholder {
+    display: flex; align-items: center; justify-content: center; padding: 0.75rem;
+    text-align: center; font-weight: 700; color: var(--school-muted);
+  }
+  &__title { margin: 0 0.75rem; font-size: 1.05rem; }
+  &__meta { margin: 0 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.9rem; }
+
+  // Square tiles for anthologies (collection) and their works — an abstract
+  // shelf, not a single cover — smaller than the portrait poster grid.
+  &__grid--square {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    list-style: none; margin: 0; padding: 0;
+  }
+  &__tile--square .school-materials__poster { aspect-ratio: 1 / 1; }
+}
+
+// --- material detail: unit list (spec §2b/§5/§6) ---
+// FitnessShow-style two-panel browser: poster + context left, thumbnail
+// unit grid right. Full-width — the old 720px single-column cap wasted the
+// panel's horizontal space.
+.school-material-detail {
+  display: flex; flex-direction: column; gap: 0.75rem;
+  &__back {
+    align-self: flex-start; min-height: 64px; padding: 0 1rem;
+    border: none; background: transparent; color: var(--school-fg); font-size: 1.1rem; cursor: pointer;
+  }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__loading, &__empty { color: var(--school-muted); }
+  &__retry {
+    margin-top: 0.75rem; min-height: 48px; padding: 0 1.25rem;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+
+  // Poster column is sized to the poster (not a wide 1fr) so it doesn't leave a
+  // big gap before the works/chapters; the content takes the rest.
+  &__layout {
+    display: grid; grid-template-columns: minmax(180px, 230px) 1fr; gap: 1.25rem;
+    align-items: start;
+  }
+
+  &__info {
+    display: flex; flex-direction: column; gap: 0.6rem;
+    position: sticky; top: 0;
+  }
+  // Reserve the poster box BEFORE the image loads so the rail never reflows on
+  // load (no "rug-pull"). Video/course posters are portrait 2:3 (same as the
+  // shelf tiles and the actual Plex art); audio covers are square. object-fit
+  // keeps the image undistorted inside the reserved box.
+  &__poster {
+    display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+    border-radius: 14px; border: 1px solid var(--school-border);
+    background: var(--school-surface-2);
+  }
+  &__poster--square { aspect-ratio: 1 / 1; }
+
+  // Works browser grid (a collection's plays/books): four per row, uniform
+  // tile height with the title clamped to two lines so a long name doesn't
+  // grow one tile taller than its neighbours. Bottom padding keeps the last
+  // row clear of the scroll edge.
+  &__works {
+    list-style: none; margin: 0; padding: 0 0 1.5rem;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem;
+    li { display: flex; }
+    .school-materials__tile { flex: 1; }
+    .school-materials__title {
+      font-size: 0.95rem; line-height: 1.25; min-height: 2.4em;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .school-materials__meta { font-size: 0.82rem; }
+  }
+  &__title { margin: 0; font-size: 1.35rem; font-weight: 800; }
+
+  // Progress: a % bar, then one dot per unit (hollow = not started, amber =
+  // partial, green = done). No "N of M done" line, no per-unit lock note.
+  &__progress { display: flex; flex-direction: column; gap: 0.4rem; }
+  // Bar and % share one row; the bar flexes, the % sits at its right.
+  &__progress-top { display: flex; align-items: center; gap: 0.5rem; }
+  &__progress-bar {
+    position: relative; flex: 1 1 auto; height: 7px; border-radius: 999px;
+    background: var(--school-surface-2); overflow: hidden;
+  }
+  &__progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--school-accent); border-radius: 999px; }
+  &__progress-pct { flex: 0 0 auto; font-size: 0.8rem; font-weight: 800; color: var(--school-fg); }
+  // Tight dots, capped in height so a 40-chapter course scrolls its dot grid
+  // instead of pushing the poster/description off the page.
+  &__dots {
+    // Dot size / gap / row width are all set inline by the balancing pass (see
+    // MaterialDetail), which shrinks the dots so every balanced row fits inside
+    // max-height — so this NEVER scrolls (overflow hidden is just a backstop).
+    // The listed values are the pre-measure fallback / upper bound.
+    --dot-size: 9px; --dot-border: 1.5px;
+    list-style: none; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+    width: fit-content; max-width: 100%; margin: 0 auto;
+    max-height: 4.5rem; overflow: hidden;
+  }
+  &__dot {
+    box-sizing: border-box;
+    width: var(--dot-size); height: var(--dot-size); border-radius: 999px;
+    border: var(--dot-border) solid var(--school-muted); background: transparent;
+    &.is-done { background: var(--school-accent); border-color: var(--school-accent); }
+    &.is-partial { background: var(--school-warn); border-color: var(--school-warn); }
+  }
+  &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.78rem; line-height: 1; }
+
+  // Chapter-quiz sequence position ("Quiz 2 of 5") for units gated by
+  // several rolled-up chapter banks.
+  &__quiz-sequence { margin: 0.35rem 0 0; color: var(--school-muted); font-size: 0.9rem; font-weight: 700; }
+
+  &__quiz-request {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+  }
+  &__quiz-request-text { margin: 0; font-size: 0.95rem; }
+  &__quiz-request-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
+  &__quiz-request-button {
+    min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-fg); border-radius: 10px;
+    background: transparent; color: var(--school-fg);
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    &:disabled { border-color: var(--school-border); color: var(--school-muted); cursor: default; }
+  }
+
+  &__group-title { margin: 1rem 0 0.25rem; color: var(--school-muted); font-size: 1rem; }
+  &__units {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.85rem;
+  }
+  &__unit {
+    width: 100%; display: flex; flex-direction: column; gap: 0.45rem;
+    padding: 0; border: none; border-radius: 12px;
+    background: transparent; color: var(--school-fg); font-size: 1rem; text-align: left; cursor: pointer;
+    &--current .school-material-detail__thumb { outline: 3px solid var(--school-fg); outline-offset: -3px; }
+    &--locked { cursor: default; opacity: 0.5; }
+    &--done .school-material-detail__thumb img { opacity: 0.75; }
+  }
+  &__thumb {
+    position: relative; display: block; width: 100%; aspect-ratio: 16 / 9;
+    border-radius: 10px; overflow: hidden;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  }
+  &__thumb-fallback {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    color: var(--school-muted); font-size: 1.8rem; font-weight: 800;
+  }
+  &__thumb-lock {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.45); color: var(--school-fg);
+  }
+  &__thumb-done {
+    position: absolute; top: 6px; right: 6px;
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--school-fg); color: var(--school-bg);
+  }
+  &__thumb-duration {
+    position: absolute; bottom: 6px; right: 6px;
+    padding: 0.1rem 0.45rem; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 0.8rem; font-weight: 700;
+  }
+  &__thumb-progress {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+    background: rgba(255, 255, 255, 0.25);
+    span { display: block; height: 100%; background: var(--school-fg); }
+  }
+  &__unit-title { font-size: 0.95rem; line-height: 1.3; }
+  &__unit-index { color: var(--school-muted); font-weight: 700; margin-right: 0.45rem; }
+
+  // Audio chapters: no thumbnails, so a two-column list that fills the panel's
+  // vertical space (few chapters stretch to fill via the auto-rows). Locked
+  // rows are inert and greyed; the current row is outlined.
+  &__units-panel { display: flex; flex-direction: column; min-height: 100%; }
+  &__chapters {
+    list-style: none; margin: 0; padding: 0; flex: 1;
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: minmax(56px, 1fr); gap: 0.6rem;
+    li { display: flex; }
+  }
+  &__chapter {
+    flex: 1; width: 100%; display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0.9rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;
+    &.is-current { outline: 2px solid var(--school-fg); outline-offset: -2px; }
+    &.is-locked { opacity: 0.5; cursor: default; }
+    &.is-done { color: var(--school-muted); }
+  }
+  &__chapter-index {
+    flex: 0 0 auto; min-width: 1.75rem; height: 1.75rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--school-surface);
+    color: var(--school-muted); font-weight: 800; font-size: 0.9rem;
+  }
+  &__chapter-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+  &__chapter-title { font-size: 1rem; font-weight: 700; line-height: 1.25; }
+  &__chapter-lockreason { color: var(--school-muted); font-size: 0.82rem; font-style: italic; }
+  &__chapter-status { flex: 0 0 auto; color: var(--school-muted); font-size: 0.85rem; display: flex; align-items: center; }
+}
+
+// Loading skeleton for the show/program level — static dimmed blocks that
+// mirror the poster + grid/list layout (no keyframe animation; the kiosk
+// WebView drops frames under animation, and a subtle 2-tone is enough to read
+// as "loading").
+.school-skel {
+  &__poster { width: 100%; aspect-ratio: 2 / 3; max-width: 230px; border-radius: 14px; background: var(--school-surface-2); }
+  &__poster--square { aspect-ratio: 1 / 1; } // audio detail: match the square cover so skeleton→loaded doesn't shift
+  &__line { height: 0.9rem; border-radius: 6px; background: var(--school-surface-2); }
+  &__line--sm { width: 45%; }
+  &__tile { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: var(--school-surface-2); }
+  &__chapter { display: block; flex: 1; min-height: 56px; border-radius: 10px; background: var(--school-surface-2); }
+}
+
+.school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
+
+// --- materials player (spec §2b/§6): shared Player wrap + quiz handoff ---
+// The shared Player measures its container on mount and fills it 100%. Nested
+// inline in a subject page (auto-height wrappers), that container measured 0 —
+// the Player rendered into a zero-height box, so audio played but nothing (no
+// video frame, no progress bar, no controls) was visible. Filling the school
+// body via position:absolute gives the Player a definite size AND keeps it
+// inside the screen-framework's fixed-resolution screen-root (a fixed overlay
+// would escape to the viewport and ignore the centered screen bounds). The
+// header breadcrumb sits above the body, so it stays visible for back-nav.
+.school-material-player {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; background: #000;
+  &__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+  &__loading, &__placeholder {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--school-muted); padding: 1rem;
+  }
+  // Video: a full-stage overlay ABOVE the video (translateZ(0) forces its own
+  // compositor layer so it paints over the GPU-promoted <video>, which
+  // otherwise covers z-index'd siblings). It ALWAYS captures taps; the control
+  // bar fades in/out at the bottom while the tap zones stay live underneath.
+  &__overlay {
+    position: absolute; inset: 0; z-index: 50; transform: translateZ(0);
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  // Rewind | play-pause | forward, in equal thirds across the WHOLE stage —
+  // absolute, not a flex row above the bar, so the bottom strip is a live
+  // zone too once the bar has faded out (pointer-events:none below).
+  &__zones { position: absolute; inset: 0; display: flex; }
+  &__zone {
+    flex: 1; min-width: 0; padding: 0;
+    border: none; background: transparent; color: transparent;
+    cursor: pointer; // tap highlight already killed at .school-app
+    // The only feedback a bare zone can give that the tap landed.
+    &:active { background: rgba(255,255,255,0.07); }
+  }
+  // position:relative keeps the bar painting ABOVE the absolute zones (equal
+  // stacking, later sibling wins) so its own buttons get the tap first.
+  &__overlay-chrome {
+    position: relative;
+    background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+    padding-top: 3rem;
+    transition: opacity 0.15s;
+  }
+  &__overlay.is-hidden &__overlay-chrome { opacity: 0; pointer-events: none; }
+  // We supply the whole transport; hide the shared Player's own chrome so it
+  // isn't a second, partial progress bar underneath ours.
+  .audio-player .progress-bar, .audio-player .audio-timing,
+  .video-player .progress-bar, & .player .progress-bar { display: none; }
+}
+
+// --- player chrome: transport bar (audio) / tap overlay (video) -------------
+// The progress bar spans the FULL width (edge to edge); the button row is
+// padded. Used for both the persistent audio bar and the video tap overlay.
+.school-chrome {
+  display: flex; flex-direction: column; gap: 0;
+  &--audio {
+    background: var(--school-surface); border-top: 1px solid var(--school-border);
+  }
+  &__bar {
+    position: relative; height: 10px; border-radius: 0;
+    background: rgba(255,255,255,0.25); cursor: pointer;
+  }
+  &--audio .school-chrome__bar { background: var(--school-surface-2); }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; background: var(--school-fg); }
+  // Video only: the progress numbers float centered just above the seek bar.
+  &__time-float {
+    display: flex; justify-content: center; padding: 0 1rem 0.35rem;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  &__row { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem 0.9rem; }
+  &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  &--audio .school-chrome__time { color: var(--school-muted); }
+  // On the light audio bar the video's dark text-shadow reads as grime; drop it.
+  &--audio .school-chrome__time-float { text-shadow: none; }
+  // The X exit sits at the far right of the video control row.
+  &__btn--exit { font-size: 1.25rem; }
+  &__spacer { flex: 1; }
+  &__btn {
+    flex: 0 0 auto; min-width: 48px; min-height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: #fff; font-size: 1.35rem; cursor: pointer;
+    border-radius: 10px;
+    &:disabled { opacity: 0.35; cursor: default; }
+    &.is-on { color: var(--school-fg); background: rgba(255,255,255,0.15); }
+  }
+  &--audio .school-chrome__btn { color: var(--school-fg); }
+  &__btn--play { font-size: 1.7rem; min-width: 56px; min-height: 56px; }
+  &__volume { position: relative; flex: 0 0 auto; }
+  &__volume-pop {
+    position: absolute; bottom: calc(100% + 6px); right: 0;
+    display: flex; gap: 0.25rem; padding: 0.35rem;
+    background: var(--school-surface-2); border: 1px solid var(--school-border); border-radius: 10px;
+  }
+  &__vol-step {
+    min-width: 40px; min-height: 40px; border-radius: 8px;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    font-size: 0.85rem; font-weight: 700; cursor: pointer;
+    &.is-active { border-color: var(--school-fg); background: var(--school-fg); color: var(--school-bg); }
+  }
+}
+
+// Read-along viewer (1280x800 touch kiosk, child users). Layout follows the
+// screen-framework playbook (PanelRenderer.css): a definite height at the top,
+// then nested flex with min-height:0 at every level. `height: 100%`, NOT
+// `min-height: 100%` — a min-height leaves the container's own height
+// indefinite, so the percentage chain hanging below the stage
+// (.player{height:100%} → .content-scroller{height:100%}) resolved to auto and
+// the verse panel collapsed to nothing: the stage stretched, its content
+// didn't, and ~460px of the 800px viewport rendered as bare background.
+.readalong-playlist {
+  height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--school-bg); color: var(--school-fg);
+
+  // One bar answers "where am I": each chapter chip is the picker AND that
+  // chapter's progress bar. (This replaces the old three overlapping
+  // representations: segment bars + numbered picker + header counter.)
+  &__topbar {
+    flex: 0 0 auto; display: flex; align-items: stretch; gap: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--school-border); background: var(--school-surface);
+  }
+  &__back {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    min-height: 56px; min-width: 56px; padding: 0 1.1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer;
+    svg { width: 22px; height: 22px; }
+  }
+  &__chapters { flex: 1 1 auto; min-width: 0; display: flex; gap: 0.5rem; }
+  &__chapter {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 0.35rem;
+    min-height: 56px; padding: 0.4rem 0.8rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-muted);
+    font: inherit; font-size: 1.05rem; font-weight: 700; text-align: left; cursor: pointer;
+    &.is-current { border-color: var(--school-accent); color: var(--school-fg); cursor: default; }
+    &.is-complete { color: var(--school-fg); }
+  }
+  &__chapter-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__chapter-fill {
+    display: block; height: 6px; border-radius: 999px; overflow: hidden;
+    background: color-mix(in srgb, var(--school-fg) 14%, transparent);
+    i { display: block; height: 100%; background: var(--school-accent); }
+  }
+
+  // The verse text owns everything between the two bars. Flex stretch (the
+  // framework pattern) makes the stage's child definite-height, which is what
+  // lets the scroller's internal percentage sizing work.
+  &__stage {
+    flex: 1 1 auto; min-height: 0; position: relative; display: flex;
+    > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+  }
+  &__empty { align-self: center; margin: 0 auto; color: var(--school-muted); font-size: 1.2rem; }
+
+  // The completion card. OVER the stage, not instead of it: the reading stays
+  // mounted behind, so "Keep going" puts a child straight back into it.
+  &__finish {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
+    padding: 2rem; text-align: center;
+    background: var(--school-surface);
+  }
+  &__finish-lead { margin: 0; max-width: 34ch; font-size: 1.6rem; font-weight: 700; line-height: 1.35; }
+  &__finish-action {
+    min-height: 64px; min-width: 160px; padding: 0 2rem;
+    border: 1px solid transparent; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink);
+    font: inherit; font-size: 1.15rem; font-weight: 700; cursor: pointer;
+  }
+  // The letters a child copies onto paper, from across a table, on a 1280x800
+  // kiosk. Everything else on this card exists to point at them, so they are
+  // deliberately enormous — and letter-spaced, because a gate row is filled in
+  // one bubble per letter and the code has to read as separate marks.
+  &__code {
+    margin: 0; padding: 0.5rem 2rem;
+    border-radius: 16px; background: var(--school-surface-2);
+    font-size: clamp(5rem, 18vh, 9rem); font-weight: 800; line-height: 1.1;
+    letter-spacing: 0.18em; text-indent: 0.18em; // trailing tracking, re-centred
+    color: var(--school-fg);
+  }
+
+  // One transport row: icon + word on every control, 64px minimum targets.
+  &__controls {
+    flex: 0 0 auto; display: flex; justify-content: center; align-items: stretch; gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--school-border); background: var(--school-surface);
+  }
+  &__control {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+    min-width: 108px; min-height: 64px; padding: 0.4rem 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+    svg { width: 26px; height: 26px; }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+  &__control--primary {
+    min-width: 150px;
+    border-color: transparent; background: var(--school-accent); color: var(--school-accent-ink);
+  }
+
+  // Scoped adjustments to the shared ContentScroller, kiosk only.
+  .content-scroller {
+    // Title and superscription read as one deliberate left-aligned line
+    // instead of a centered title fighting a right-parked superscription.
+    .scroller-header { justify-content: flex-start; gap: 1.25rem; }
+    .scroller-header-title { margin: 0; font-size: 2.3rem; }
+    .scroller-header-subtitle { flex: 1 1 auto; min-width: 0; text-align: left; }
+    // Seek strip tall enough for a child's finger (tap-to-seek; the discrete
+    // ±15s controls below remain the primary seek affordance).
+    .controls { height: 2.75rem; }
+  }
+}
+
+// --- program report: every program x every learner, one shape ---------------
+// Renders purely from the closed report contract, so nothing here is specific
+// to quizzes, courses or the sentence ladder. No animation (kiosk WebView).
+.school-report {
+  display: flex; flex-direction: column; gap: 1.5rem;
+
+  &__status { color: var(--school-muted); text-align: center; padding: 2rem 0; }
+  &__all {
+    align-self: flex-start; min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; cursor: pointer;
+  }
+
+  &__learner-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+  &__learner-name {
+    min-height: 56px; padding: 0 0.5rem;
+    border: none; background: transparent; color: var(--school-fg);
+    font-size: 1.2rem; font-weight: 800; cursor: pointer;
+  }
+  &__flag {
+    padding: 0.2rem 0.6rem; border-radius: 999px;
+    background: var(--school-warn); color: #241a05;
+    font-size: 0.9rem; font-weight: 700;
+  }
+
+  // Cards flow; each is its own program row. min() keeps a single card from
+  // stretching the full 1280px and stranding its content on the left.
+  &__cards {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  }
+  &__card {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    padding: 1rem; border-radius: 12px;
+    background: var(--school-surface);
+    // Only a blocked program earns a coloured edge; everything else stays
+    // quiet so "needs attention" means something.
+    border-left: 4px solid transparent;
+    &.is-blocked { border-left-color: var(--school-warn); }
+    &.is-active  { border-left-color: var(--school-accent); }
+  }
+  &__card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  &__program { margin: 0; font-size: 1.05rem; font-weight: 700; }
+  &__state { font-size: 0.9rem; color: var(--school-muted); }
+  &__state.is-blocked { color: var(--school-warn); }
+  &__headline { margin: 0; font-size: 0.9rem; color: var(--school-muted); }
+
+  // The field the whole view exists for, so it is the loudest thing here.
+  &__next {
+    display: flex; flex-direction: column; gap: 0.15rem;
+    margin: 0.25rem 0 0; padding: 0.6rem 0.75rem;
+    border-radius: 8px; background: var(--school-surface-2);
+    &.is-blocked { background: var(--school-warn); color: #241a05; }
+  }
+  &__next-label { font-size: 1.05rem; font-weight: 700; }
+  &__next-detail { font-size: 0.9rem; color: var(--school-muted); }
+  &__next.is-blocked &__next-detail { color: #241a05; }
+
+  &__metrics { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-top: 0.25rem; }
+  &__seen { margin: 0; font-size: 0.9rem; color: var(--school-muted); }
+
+  // "Today" strip (GetTeacherToday): attempts, sessions in flight, and the
+  // needs-marking badge, one per learner, above that learner's cards.
+  &__today {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.85rem;
+    margin-bottom: 0.6rem; padding: 0.6rem 0.85rem;
+    border-radius: 10px; background: var(--school-surface-2);
+    font-size: 0.9rem;
+  }
+  &__today-error { color: var(--school-danger); background: none; padding: 0; }
+  &__today-empty { color: var(--school-muted); }
+  &__today-stat { font-weight: 700; }
+  &__today-sessions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  &__today-session {
+    padding: 0.15rem 0.5rem; border-radius: 999px;
+    background: var(--school-surface); color: var(--school-muted);
+    font-size: 0.82rem;
+  }
+  &__today-badge {
+    display: inline-flex; align-items: center; min-height: 40px; padding: 0 0.75rem;
+    margin-left: auto; border-radius: 999px;
+    background: var(--school-warn); color: #241a05;
+    font-size: 0.85rem; font-weight: 700; text-decoration: none;
+  }
+}
+
+.school-metric {
+  display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem;
+
+  &__label { font-size: 0.9rem; color: var(--school-muted); }
+  &__value { font-size: 1.05rem; }
+  &__value--figure { font-size: 1.35rem; font-weight: 700; }
+  &__unit { font-size: 0.9rem; font-weight: 400; color: var(--school-muted); }
+  &__unknown { color: var(--school-muted); }
+
+  &__bar {
+    width: 100%; min-width: 9rem; height: 8px;
+    border-radius: 999px; overflow: hidden; background: var(--school-surface-2);
+  }
+  &__bar-fill { height: 100%; background: var(--school-accent); }
+  &__spark { width: 120px; height: 28px; color: var(--school-accent); }
+}
+
+// Evidence-backed My Progress summary. Program cards remain below it; this
+// layer provides cross-program time/curriculum slices and exact recent scores.
+.school-progress {
+  display: flex; flex-direction: column; gap: 0.85rem;
+  padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__filters { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+  &__filters label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--school-muted); font-size: 0.85rem; }
+  &__filters select {
+    min-height: 44px; min-width: 10rem; padding: 0 0.65rem;
+    border: 1px solid var(--school-border); border-radius: 9px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit;
+  }
+  &__check { min-height: 44px; flex-direction: row !important; align-items: center; gap: 0.5rem !important; }
+  &__check input { width: 22px; height: 22px; }
+
+  &__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.65rem; }
+  &__figure {
+    display: flex; flex-direction: column; gap: 0.2rem; padding: 0.7rem;
+    border-radius: 10px; background: var(--school-surface);
+    span { color: var(--school-muted); font-size: 0.85rem; }
+    strong { font-size: 1.45rem; }
+    &.is-pending { border: 1px solid var(--school-warn); }
+  }
+
+  &__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+  &__actions button {
+    min-height: 48px; padding: 0 1rem; border: none; border-radius: 10px;
+    background: var(--school-accent); color: #07100d; font-weight: 800; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  &__recent h3 { margin: 0 0 0.45rem; font-size: 1rem; }
+  &__score-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 0.5rem; }
+  &__score {
+    display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.6rem;
+    padding: 0.65rem 0.75rem; border-radius: 9px; background: var(--school-surface);
+  }
+  &__score-learner, &__score-when { color: var(--school-muted); font-size: 0.82rem; }
+  &__score-value { font-weight: 800; }
+  &__pending { color: var(--school-warn); font-size: 0.8rem; font-weight: 700; }
+}
+
+// Shared adaptive-remediation client. Connection state is explicit because a
+// retained idempotent action must never look like an ordinary disabled button.
+.school-tutor {
+  width: min(52rem, 100%); margin: 0 auto; padding: 1rem;
+  display: flex; flex-direction: column; gap: 0.85rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  &__header h2 { margin: 0.1rem 0 0; }
+  &__eyebrow { color: var(--school-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  &__back, &__empty button, &__pending button, &__controls button {
+    min-height: 44px; padding: 0.55rem 0.8rem;
+    border: 1px solid var(--school-border); border-radius: 9px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit; cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__connection {
+    display: flex; align-items: center; gap: 0.45rem;
+    color: var(--school-muted); font-size: 0.85rem;
+  }
+  &__connection > span {
+    width: 0.7rem; height: 0.7rem; border-radius: 50%;
+    background: var(--school-muted);
+  }
+  &__connection.is-connected > span { background: var(--school-accent); }
+  &__connection.is-sending > span, &__connection.is-retrying > span { background: var(--school-warn); }
+  &__connection.is-disconnected > span { background: #d35f5f; }
+  &__mastery {
+    display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0.6rem;
+  }
+  &__mastery progress { width: 100%; accent-color: var(--school-accent); }
+  &__mastery small { color: var(--school-muted); }
+  &__notice, &__pending, &__feedback, &__terminal, &__empty {
+    margin: 0; padding: 0.75rem; border-radius: 10px; background: var(--school-surface);
+  }
+  &__notice { border-left: 4px solid var(--school-warn); }
+  &__turn { display: flex; flex-direction: column; gap: 0.8rem; }
+  &__turn h3, &__turn p, &__terminal h3, &__terminal p, &__feedback p { margin: 0; }
+  &__explanation { white-space: pre-wrap; line-height: 1.5; }
+  &__primary {
+    min-height: 50px; padding: 0.65rem 1rem; border: none; border-radius: 10px;
+    background: var(--school-accent); color: #07100d; font: inherit; font-weight: 800; cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+  &__choices button {
+    min-height: 58px; padding: 0.65rem; display: flex; align-items: center; gap: 0.65rem;
+    text-align: left; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit; cursor: pointer;
+    &:hover:not(:disabled), &:focus-visible { border-color: var(--school-accent); }
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__choices kbd { color: var(--school-accent); font: inherit; font-weight: 800; }
+  &__controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  &__controls .is-stop { margin-left: auto; }
+  &__feedback { border-left: 4px solid var(--school-accent); }
+  &__feedback.is-review { border-left-color: var(--school-warn); }
+  &__feedback strong { display: block; margin-bottom: 0.2rem; }
+  &__pending { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  &__terminal { border: 1px solid var(--school-accent); }
+  &__pause-note { margin: 0; color: var(--school-muted); font-size: 0.82rem; }
+}
+
+// Dense overview + movable focus + stable inspector. This interaction grammar
+// is shared by curriculum history and future long-set School tools; it carries
+// no subject-specific knowledge.
+.school-overview-detail {
+  display: flex; flex-direction: column; gap: 0.55rem;
+
+  &__inspector {
+    min-height: 7.25rem; padding: 0.75rem;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface);
+  }
+  &__overview {
+    display: grid; grid-template-columns: repeat(var(--school-overview-columns), minmax(0, 1fr));
+    gap: 0.38rem;
+  }
+  &__item {
+    position: relative; min-width: 0; min-height: 64px; padding: 0.5rem;
+    display: grid; grid-template-columns: auto 1fr; align-content: center;
+    gap: 0.12rem 0.4rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 8px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+    overflow: hidden;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 1px; }
+    &.is-selected {
+      border-color: var(--school-accent);
+      box-shadow: inset 0 0 0 1px var(--school-accent);
+      background: var(--school-surface-2);
+    }
+  }
+  &.is-list &__item { padding-left: calc(0.65rem + var(--school-overview-depth) * 1.1rem); }
+}
+
+.school-progress-history {
+  display: flex; flex-direction: column; gap: 0.55rem;
+
+  &__head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
+  &__head h3 { margin: 0; font-size: 1rem; }
+  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
+  &__head button {
+    flex: 0 0 auto; min-height: 44px; padding: 0 0.75rem;
+    border: 1px solid var(--school-border); border-radius: 8px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__trail {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--school-muted); font-size: 0.8rem;
+  }
+  &__inspect-main {
+    display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr);
+    align-items: end; gap: 0.75rem; margin-top: 0.45rem;
+  }
+  &__inspect-main > div { display: flex; flex-direction: column; gap: 0.12rem; }
+  &__inspect-main > div span, &__node-kind { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  &__inspect-main > div strong { font-size: 1.15rem; }
+  &__inspect-main dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+  &__inspect-main dl div { min-width: 0; }
+  &__inspect-main dt { color: var(--school-muted); font-size: 0.72rem; }
+  &__inspect-main dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  &__marker {
+    grid-row: 1 / span 3; align-self: center;
+    width: 0.62rem; height: 0.62rem; border-radius: 50%;
+    border: 2px solid var(--school-accent); background: transparent;
+  }
+  .is-selected &__marker { background: var(--school-accent); }
+  &__node-kind, &__node-stat, .school-overview-detail__item strong {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__node-stat { color: var(--school-muted); font-size: 0.78rem; }
+  &__unscoped { margin: 0; color: var(--school-muted); font-size: 0.8rem; }
+}
+
+.school-insights {
+  display: flex; flex-direction: column; gap: 0.55rem;
+  padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__head h3 { margin: 0; font-size: 1rem; }
+  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
+  &__marker {
+    grid-row: 1 / span 3; align-self: center;
+    width: 0.62rem; height: 0.62rem; border-radius: 50%;
+    border: 2px solid var(--school-muted); background: transparent;
+    &.is-review_instruction, &.is-review_pacing { border-color: var(--school-warn); background: var(--school-warn); }
+    &.is-monitor, &.is-met { border-color: var(--school-accent); background: var(--school-accent); }
+  }
+  &__kind, &__signal {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .school-overview-detail__item strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__signal { font-size: 0.76rem; text-transform: none; letter-spacing: normal; }
+  &__inspector { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr); gap: 0.75rem; align-items: end; }
+  &__inspector > div { display: flex; flex-direction: column; gap: 0.12rem; }
+  &__inspector > div span { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; }
+  &__inspector > div strong { font-size: 1.15rem; }
+  &__inspector > div small { color: var(--school-muted); }
+  &__inspector dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+  &__inspector dt { color: var(--school-muted); font-size: 0.72rem; }
+  &__inspector dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  &__basis {
+    grid-column: 1 / -1; display: grid; gap: 0.15rem; padding-top: 0.55rem;
+    border-top: 1px solid var(--school-border);
+  }
+  &__basis > strong { font-size: 0.78rem; }
+  &__basis > span, &__basis > small { color: var(--school-muted); font-size: 0.76rem; }
+}
+
+@media (max-width: 700px) {
+  .school-progress__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-overview-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-progress-history__inspect-main { grid-template-columns: 1fr; }
+  .school-progress-history__inspect-main dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-insights__inspector { grid-template-columns: 1fr; }
+  .school-insights__inspector dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-tutor__header, .school-tutor__pending { align-items: stretch; flex-direction: column; }
+  .school-tutor__mastery { grid-template-columns: auto 1fr auto; }
+  .school-tutor__mastery progress { grid-column: 1 / -1; }
+  .school-tutor__choices { grid-template-columns: 1fr; }
+  .school-tutor__controls .is-stop { margin-left: 0; }
+}
+
+// --- the home: subject shelves left, meta rail right -----------------------
+// Nine fixed subjects (3×3) on the left two-thirds; the student panel and
+// Library on the right third. One home for claimed and unclaimed — the panel
+// carries the claim affordance. No animation (kiosk WebView).
+.school-home2 {
+  display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;
+  // Fixed, no-scroll view: the 3×3 wall is a fixed panel, so bound it to the
+  // body height and clip — never let the icons grow it into a scroll.
+  height: 100%; min-height: 0; overflow: hidden;
+
+  &__subjects {
+    display: grid; gap: 0.85rem;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr; min-height: 0;
+  }
+
+  &__subject {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 0.5rem;
+    padding: 1.25rem; text-align: center; overflow: hidden; min-height: 0;
+    border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+
+    // Greyed, not hidden: the curriculum's shape stays visible even where
+    // nothing is shelved yet (the registry convention).
+    &.is-empty { opacity: 0.45; cursor: default; }
+  }
+
+  // Prominent and monochrome: the icon IS the tile's identity, so let it grow
+  // to fill the space left after the label/hint, bounded only by the tile's own
+  // ~1.25rem padding. The subject SVGs ship at an intrinsic `1em`; override that
+  // so the glyph scales to the icon area (default preserveAspectRatio keeps it
+  // undistorted). Scoped to the wall — small chip `.school-icon`s are untouched.
+  &__subject-icon {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1; color: var(--school-fg);
+    // Fill the space the tile leaves, but capped so a row of tiles never needs
+    // to grow (which is what forced the scroll). Prominent, not dominating.
+    svg { width: auto; height: 100%; max-height: 5.5rem; max-width: 100%; }
+  }
+  // A splash of colour per slot: off-white / pastel / sun-washed tints so the
+  // wall reads as nine distinct subjects at a glance. The SVGs fill with
+  // currentColor, so tinting the icon element is enough (order follows
+  // subjects.js: english, writing, math, history, scripture, science,
+  // language, skills, arts).
+  &__subject:nth-child(1) &__subject-icon { color: #f6b8c4; } // english — pink
+  &__subject:nth-child(2) &__subject-icon { color: #f7cba4; } // writing — peach
+  &__subject:nth-child(3) &__subject-icon { color: #f2e2a6; } // math — butter
+  &__subject:nth-child(4) &__subject-icon { color: #cfe0a8; } // history — sage
+  &__subject:nth-child(5) &__subject-icon { color: #ffffff; } // scripture — white (center)
+  &__subject:nth-child(6) &__subject-icon { color: #aed4f0; } // science — sky
+  &__subject:nth-child(7) &__subject-icon { color: #86d5c8; } // language — teal
+  &__subject:nth-child(8) &__subject-icon { color: #93d9a8; } // skills — green
+  &__subject:nth-child(9) &__subject-icon { color: #cdbde9; } // arts — lavender
+  &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
+  &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
+
+  &__rail { display: flex; flex-direction: column; gap: 0.85rem; min-height: 0; }
+
+  &__library {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+    padding: 1rem 1.25rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+  }
+}
+
+// --- typing tutor (barebones drill) -----------------------------------------
+.school-typing {
+  display: flex; flex-direction: column; gap: 1.25rem; max-width: 900px; margin: 0 auto;
+  &__bar { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; color: var(--school-muted); }
+  &__lesson { font-size: 1rem; font-weight: 700; }
+  &__stats { display: flex; gap: 1.25rem; font-size: 1.05rem; strong { color: var(--school-fg); font-size: 1.3rem; } }
+  &__target {
+    margin: 0; padding: 1.5rem 1.75rem; border-radius: 16px;
+    background: var(--school-surface); border: 1px solid var(--school-border);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 2rem; line-height: 1.7; letter-spacing: 0.02em; word-break: break-word;
+  }
+  &__char {
+    color: var(--school-muted);
+    &.is-correct { color: var(--school-fg); }
+    &.is-incorrect { color: #fff; background: var(--school-danger); border-radius: 3px; }
+    &.is-space.is-incorrect { background: var(--school-danger); }
+    &.is-caret { box-shadow: inset 2px 0 0 var(--school-fg); background: var(--school-surface-2); }
+    &.is-space { white-space: pre; }
+  }
+  &__hint { margin: 0; color: var(--school-muted); font-size: 1rem; }
+  &__linedone {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1rem 1.25rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border); font-weight: 700;
+  }
+  &__linedone-actions { display: flex; gap: 0.6rem; }
+  &__button {
+    min-height: 56px; padding: 0 1.4rem; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 1rem;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    &--primary { border-color: var(--school-fg); }
+  }
+  &--done { align-items: center; text-align: center; justify-content: center; min-height: 60vh; }
+  &__done-title { margin: 0; font-size: 2rem; font-weight: 800; }
+  &__done-sub { margin: 0; color: var(--school-muted); }
+}
+
+// --- print center: worksheet grid + quota + parent approvals ----------------
+.school-print {
+  display: flex; flex-direction: column; gap: 1rem;
+  &__quota {
+    display: flex; align-items: baseline; gap: 0.5rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+  }
+  &__quota-count { font-size: 1.5rem; font-weight: 800; color: var(--school-fg); }
+  &__quota-label { color: var(--school-muted); font-size: 0.95rem; }
+  &__muted { color: var(--school-muted); }
+  &__flash {
+    padding: 0.85rem 1rem; border-radius: 12px; font-weight: 700;
+    &--ok { background: var(--school-surface-2); border-left: 4px solid var(--school-fg); color: var(--school-fg); }
+    &--wait { background: var(--school-warn); color: #241a05; }
+    &--error { background: var(--school-danger); color: #fff; }
+  }
+  &__grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.85rem;
+  }
+  &__card {
+    width: 100%; display: flex; align-items: center; gap: 0.75rem;
+    padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface); color: var(--school-fg); text-align: left; cursor: pointer;
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+  &__card-icon { font-size: 1.8rem; flex: 0 0 auto; }
+  &__card-body { flex: 1; display: flex; flex-direction: column; gap: 0.2rem; }
+  &__card-label { font-size: 1.1rem; font-weight: 800; }
+  &__card-meta { color: var(--school-muted); font-size: 0.9rem; }
+  &__card-action {
+    flex: 0 0 auto; padding: 0.4rem 0.9rem; border-radius: 10px;
+    border: 1px solid var(--school-fg); font-weight: 700; font-size: 0.95rem;
+  }
+  &__approvals { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; }
+  &__approvals-heading { margin: 0; font-size: 1.15rem; font-weight: 800; }
+  &__approvals-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  &__approval {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+  }
+  &__approval-text { flex: 1; }
+  &__approval-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; }
+  // A plain link, not a button — opening the sheet in a new tab is a read,
+  // never a decision, so it must never look like Allow/No's weight.
+  &__preview { color: var(--school-muted); font-weight: 700; font-size: 0.9rem; text-decoration: underline; }
+  &__approve, &__deny {
+    min-height: 48px; padding: 0 1.1rem; border-radius: 10px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
+  &__approve { border-color: var(--school-fg); }
+  &__deny { color: var(--school-muted); }
+}
+
+// --- the student panel: identity + up-next + facts --------------------------
+.school-rail {
+  &__student {
+    flex: 1; display: flex; flex-direction: column; gap: 0.75rem;
+    padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface);
+
+    &--unclaimed { align-items: center; justify-content: center; text-align: center; }
+  }
+
+  &__ask { margin: 0; font-size: 1.3rem; font-weight: 800; }
+
+  // The unclaimed panel's face row: every roster face, tap-to-claim. 2-up
+  // fits four kids on the 1280x800 panel without scrolling the rail.
+  &__faces {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;
+    width: 100%;
+  }
+  &__face {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    padding: 0.85rem 0.5rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    .piano-avatar { width: 4rem; height: 4rem; }
+  }
+
+  &__claim {
+    min-height: 64px; padding: 0 1.5rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1.05rem; font-weight: 700; cursor: pointer;
+  }
+
+  &__identity {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.25rem 0; border: none; background: transparent;
+    color: var(--school-fg); cursor: pointer; text-align: left;
+  }
+  &__name { font-size: 1.15rem; font-weight: 800; flex: 1; }
+  &__more { color: var(--school-muted); font-size: 0.9rem; }
+
+  // Neutral, not green: the home rail carries no accent chrome; the button's
+  // size and position already say "this is the action".
+  &__next {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+    padding: 1rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+
+    // Blocked shows its remedy AS the action — a detour, not a failure.
+    &.is-blocked { background: var(--school-warn); color: #241a05; }
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+  &__next-tag { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; }
+  &__next-course { font-size: 0.95rem; opacity: 0.85; }
+  &__next-action { font-size: 1.25rem; font-weight: 800; line-height: 1.25; }
+  &__next-count { font-size: 0.9rem; opacity: 0.85; }
+
+  &__done {
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border-left: 4px solid var(--school-fg);
+  }
+  &__done-mark { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--school-fg); }
+  &__done-sub { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
+
+  &__facts {
+    display: flex; flex-direction: column; gap: 0.25rem; margin-top: auto;
+    color: var(--school-muted); font-size: 0.9rem;
+  }
+
+  // Today's dry-run plan (debt W7a) — same omit-quietly rule as standing
+  // and feedback below: no sections, no block, never an empty-state scold.
+  &__today {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem; border-radius: 12px; background: var(--school-surface-2);
+  }
+  &__today-title {
+    margin: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--school-muted);
+  }
+  &__today-list {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  &__today-item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+  &__today-subject { font-weight: 600; }
+  &__today-next { color: var(--school-muted); }
+
+  // Kid-visible standing + feedback delivery (Task 9, spec R7 / adequacy
+  // SHOULD 9) — both sections omit entirely rather than render empty, so no
+  // "nothing here" chrome of their own is needed.
+  &__standing, &__feedback {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 0.75rem; border-radius: 12px; background: var(--school-surface-2);
+  }
+  &__standing-title, &__feedback-title {
+    margin: 0; font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--school-muted);
+  }
+  &__standing-list, &__feedback-list {
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem;
+  }
+  &__standing-item {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+  &__standing-label { font-weight: 600; }
+  &__standing-percent { color: var(--school-muted); font-weight: 700; }
+
+  &__feedback-item {
+    display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.9rem;
+    &.is-correct .school-rail__feedback-verdict { color: var(--school-fg); }
+    &.is-incorrect .school-rail__feedback-verdict { color: var(--school-warn); }
+  }
+  &__feedback-verdict { flex: 0 0 auto; font-weight: 800; }
+  &__feedback-note { color: var(--school-muted); }
+}
+
+// --- subject / library pages -------------------------------------------------
+.school-subject {
+  display: flex; flex-direction: column; gap: 1rem;
+  height: 100%; min-height: 0;
+
+  &--empty { align-items: center; justify-content: center; min-height: 60%; color: var(--school-muted); }
+
+  &__group { display: flex; flex-direction: column; gap: 0.5rem; }
+  &__heading {
+    margin: 0; font-size: 0.85rem; color: var(--school-muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+}
+
+// --- subject shelves: content-aware shelf packing (shelfLayout.js) -----------
+// Bands stack vertically; a band is a flex row of one wide shelf, or several
+// narrow shelves sharing the width in proportion to their item counts. Aspect
+// ratios are the tiles' own (video 2:3, audio 1:1). Scroll is allowed but a
+// wide "large collection" shelf caps to one row (+ See more), so nothing floods.
+.school-shelves {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: 1.5rem;
+  // Centre the bands in the fold so a sparse subject sits in the middle rather
+  // than pinned top-left; `safe` falls back to top-align when content overflows
+  // (dense subjects) so nothing scrolls out of reach.
+  justify-content: safe center;
+}
+// Narrow shelves centre in their band and wrap; a wide shelf owns its band.
+.school-shelf-band { display: flex; flex-wrap: wrap; gap: 1.5rem 1.75rem; align-items: flex-start; justify-content: safe center; }
+
+.school-shelf {
+  min-width: 0; display: flex; flex-direction: column; gap: 0.5rem;
+  &.is-wide { flex: 1 1 100%; }
+  // Narrow shelves size to their content (one row of tiles) and sit next to
+  // each other; posters can't grow to fill width (2:3 would grow too tall), so
+  // leftover space stays to the right rather than as a gap between shelves.
+  &.is-narrow { flex: 0 1 auto; }
+
+  &__head { display: flex; align-items: center; gap: 0.5rem; }
+  &__icon { font-size: 1.3rem; line-height: 1; }
+  &__verb { margin: 0; font-size: 1.05rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__count { color: var(--school-muted); font-size: 0.9rem; }
+  &__more {
+    margin-left: auto; border: none; background: transparent;
+    color: var(--school-accent); font-weight: 700; font-size: 0.9rem; cursor: pointer;
+  }
+
+  &__grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+
+  // Poster shelves.
+  // Narrow (few items): one row of aspect-correct tiles whose width comes from
+  // the band (`--tile-w`, computed to fill the fold), so a sparse subject uses
+  // big tiles instead of leaving most of the space empty.
+  &--video &__grid, &--audio &__grid {
+    grid-auto-flow: column; grid-auto-columns: var(--tile-w, 160px);
+  }
+  // Wide (large collection): one capped row stretched across the full band.
+  &--video.is-wide:not(.is-expanded) &__grid,
+  &--audio.is-wide:not(.is-expanded) &__grid {
+    grid-auto-columns: minmax(130px, 1fr);
+  }
+  // Wide + expanded ("See more"): wrap every tile into a full-width grid.
+  &--video.is-wide.is-expanded &__grid,
+  &--audio.is-wide.is-expanded &__grid {
+    grid-auto-flow: row; grid-auto-columns: auto;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+  // App / deck shelves: a fixed-width column of banners / cards.
+  &--apps.is-narrow, &--decks.is-narrow { width: 320px; }
+  &--apps &__grid, &--decks &__grid { grid-template-columns: 1fr; }
+}
+
+
+// --- kind section (sticky headers over grid) --------------------------------
+.school-kind-section {
+  &__head { position: sticky; top: 0; z-index: 5; display: flex; align-items: baseline; gap: 0.5rem; padding: 0.6rem 0; background: var(--school-bg); }
+  &__icon { font-size: 1.4rem; line-height: 1; }
+  &__verb { margin: 0; font-size: 1.15rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__descriptor { color: var(--school-muted); font-size: 0.9rem; }
+  &__grid { list-style: none; margin: 0 0 1.25rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.85rem; }
+}
+
+// --- per-kind tiles (Phase 3) ------------------------------------------------
+// Shared base: each kind's tile is an <li> wrapping a full-bleed <button>.
+// Kind colour is confined to the chip/underline/edge-band/action buttons —
+// never a tile background. No CSS animation (kiosk WebView drops frames).
+.school-tile {
+  display: flex;
+  min-width: 120px;
+
+  &__button {
+    display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;
+    flex: 1; min-height: 120px; padding: 0; text-align: left; overflow: hidden;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+    position: relative;
+  }
+  &__title {
+    margin: 0 0.75rem 0.75rem; font-size: 1rem; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  // --- video: portrait poster + play chip + progress underline ---
+  &--video {
+    .school-tile__poster-wrap { position: relative; }
+    .school-tile__poster { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: var(--school-surface-2); }
+    .school-tile__poster--placeholder {
+      display: flex; align-items: center; justify-content: center; padding: 0.75rem;
+      text-align: center; font-weight: 700; color: var(--school-muted);
+    }
+    .school-tile__chip {
+      position: absolute; top: 0.5rem; right: 0.5rem;
+      display: flex; align-items: center; justify-content: center;
+      width: 2rem; height: 2rem; border-radius: 999px;
+      background: var(--school-surface); box-shadow: 0 0 0 1px var(--school-border);
+    }
+    .school-tile__progress { display: block; height: 4px; margin: 0 0.75rem 0.6rem; }
+  }
+
+  // --- audio: square art + headphones chip + works/chapters meta ---
+  &--audio {
+    .school-tile__poster-wrap { position: relative; }
+    .school-tile__poster { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--school-surface-2); }
+    .school-tile__poster--placeholder {
+      display: flex; align-items: center; justify-content: center; padding: 0.75rem;
+      text-align: center; font-weight: 700; color: var(--school-muted);
+    }
+    .school-tile__chip {
+      position: absolute; top: 0.5rem; right: 0.5rem;
+      display: flex; align-items: center; justify-content: center;
+      width: 2rem; height: 2rem; border-radius: 999px;
+      background: var(--school-surface); box-shadow: 0 0 0 1px var(--school-border);
+    }
+    .school-tile__meta { margin: -0.25rem 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.85rem; }
+  }
+
+  // --- app: wide banner row, not a poster grid tile ---
+  &--app {
+    grid-column: 1 / -1;
+
+    .school-tile__button {
+      flex-direction: row; align-items: center; gap: 0.85rem;
+      min-height: 84px; padding: 0 1rem 0 0;
+    }
+    .school-tile__edge { flex: 0 0 6px; align-self: stretch; }
+    .school-tile__app-icon { flex: 0 0 auto; font-size: 1.6rem; line-height: 1; }
+    .school-tile__app-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+    .school-tile__app-label {
+      font-size: 1.05rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .school-tile__app-blurb {
+      color: var(--school-muted); font-size: 0.9rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .school-tile__app-open { flex: 0 0 auto; color: var(--school-muted); font-weight: 700; font-size: 0.9rem; }
+  }
+
+  // --- deck: card-stack motif (static offset borders, no animation) ---
+  // The card body does not navigate — only the two action buttons act — so
+  // this variant skips the shared &__button entirely.
+  &--deck {
+    .school-tile__stack {
+      position: relative; flex: 1; min-height: 120px;
+      // Two static borders behind the card read as a stack. No animation.
+      &::before, &::after {
+        content: ''; position: absolute; left: 0; right: 0; border-radius: 12px;
+        border: 1px solid var(--school-border); background: var(--school-surface);
+      }
+      &::before { top: 8px; left: 6px; right: -6px; bottom: -8px; z-index: 0; }
+      &::after { top: 4px; left: 3px; right: -3px; bottom: -4px; z-index: 1; }
+    }
+    .school-tile__card {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column; gap: 0.5rem;
+      min-height: 120px; padding: 1rem;
+      border: 1px solid var(--school-border); border-radius: 12px;
+      background: var(--school-surface); color: var(--school-fg);
+    }
+    .school-tile__title { margin: 0; font-size: 1rem; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+    .school-tile__meta { margin: 0; color: var(--school-muted); font-size: 0.85rem; }
+    .school-tile__deck-actions {
+      display: flex; gap: 0.5rem; margin-top: auto;
+      button {
+        flex: 1; min-height: 64px; border: 1px solid var(--kind-deck); border-radius: 12px;
+        background: transparent; color: var(--kind-deck); font-size: 1rem; font-weight: 700; cursor: pointer;
+      }
+    }
+  }
+}
+
+.school-clickable {
+  width: 100%;
+  svg { width: 100%; height: auto; display: block; }
+  [data-region-id] { fill: var(--school-surface-2); stroke: var(--school-border); stroke-width: 0.5; cursor: pointer; transition: fill 0.12s; }
+  &:not(.is-locked) [data-region-id]:hover { fill: var(--school-accent-weak, #cfe0a8); }
+  [data-region-id].is-selected { fill: var(--school-accent); }
+  [data-region-id].is-right { fill: var(--school-accent); }
+  [data-region-id].is-wrong { fill: var(--school-warn); }
+  [data-region-id].is-expected { stroke: var(--school-accent); stroke-width: 2; }
+  &.is-locked [data-region-id] { cursor: default; }
+  &__callout {
+    cursor: pointer;
+    rect { fill: var(--school-surface-2); stroke: var(--school-border); }
+    text { fill: var(--school-text); font-size: 10px; font-weight: 700; }
+  }
+}
+
+.school-item__prompt-image { display: flex; justify-content: center; margin: 0.5rem 0; }
+.school-choice__flag { width: 96px; height: 72px; object-fit: contain; border: 1px solid var(--school-border); border-radius: 6px; }
+.school-item__choices--asset { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+
+.school-geo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; padding: 1rem; }
+.school-geo-tile { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1.25rem 1rem; border: 1px solid var(--school-border); border-radius: 14px; background: var(--school-surface); color: var(--school-text); cursor: pointer;
+  &__icon { font-size: 2.5rem; }
+  &__label { font-weight: 700; text-align: center; }
+  &--soon { opacity: 0.5; cursor: default; }
+  &__soon { font-size: 0.7rem; color: var(--school-muted); }
+}
+
+.school-app__leave-confirm {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+  padding: 0.6rem 1rem; background: var(--school-warn, #c98a1b); color: #241a02;
+  font-weight: 800; text-align: center;
+}
+
+// --- wave-9 design remediation: THE empty-state pattern + practice browse ---
+.school-learning-catalog__grid .school-empty { grid-column: 1 / -1; } // one pattern, one optical center (M9 fix 4)
+
+.school-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.5rem; padding: 3.5rem 1.5rem; text-align: center; min-height: 40vh;
+}
+.school-empty__icon { font-size: 3rem; opacity: 0.5; }
+.school-empty__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.school-empty__hint { margin: 0; color: var(--school-muted); max-width: 34rem; }
+.school-empty__action {
+  margin-top: 0.6rem; min-height: 52px; padding: 0 1.4rem; border: none; border-radius: 12px;
+  background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; cursor: pointer;
+}
+.school-empty--loading .school-empty__title { color: var(--school-muted); font-weight: 700; }
+
+.school-home2__library-icon { margin-right: 0.4rem; vertical-align: -0.12em; }
+
+.school-shelf__count {
+  margin-left: 0.45rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted);
+  font-size: 0.78rem; font-weight: 800;
+}
+
+.school-browse__group { margin-bottom: 1.4rem; }
+.school-browse__group-head {
+  display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem;
+  font-size: 1.15rem; font-weight: 800;
+}
+.school-browse__group-count {
+  padding: 0.05rem 0.55rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted); font-size: 0.8rem;
+}
+.school-browse__more {
+  margin-top: 0.5rem; min-height: 44px; padding: 0 1rem; border: 1px solid var(--school-border);
+  border-radius: 10px; background: transparent; color: var(--school-fg); font-weight: 700; cursor: pointer;
+}
+
+.school-progress__score-value, .school-progress__score-when { white-space: nowrap; }
+
+// Poster placeholders SHIMMER while art loads (design audit: five seconds of
+// identical dark rectangles reads as broken on a television).
+.school-poster-frame { display: block; width: 100%; height: 100%; }
+.school-skel__poster, .school-poster--loading {
+  position: relative; overflow: hidden; background: var(--school-surface-2);
+  &::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%);
+    animation: school-shimmer 1.4s infinite;
+  }
+}
+@keyframes school-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+// ---------------------------------------------------------------------------
+// Locked self-service panel (design §3)
+// ---------------------------------------------------------------------------
+// Sized for the Portal at 1280x800, touched by a child standing at a wall: the
+// keys are the biggest thing on the screen and nothing else competes with them.
+// The panel has no header in this mode, so the body owns the whole viewport.
+// PURE BLACK, not the app's near-black. The locked panel is what the school
+// room screen shows all day between codes — closer to a screensaver than to a
+// page — so the ground goes to #000: least light thrown into the room, least
+// burn-in on a panel holding one static layout for hours, and the keypad reads
+// as the only lit thing on the wall. The surfaces come down with it so the
+// slots and keys still sit ON something rather than glowing off a black field.
+// Scoped to the modifier: the browsable app keeps its own softer dark theme.
+.school-app--locked {
+  --school-bg: #000;
+  --school-surface: #0a0a0d;
+  --school-surface-2: #16161c;
+  --school-border: #2a2a33;
+  background: #000;
+}
+.school-app--locked .school-app__body {
+  display: block; padding: 0; overflow: hidden;
+}
+
+.school-selfservice {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: clamp(0.45rem, 1.1vh, 0.7rem);
+  width: min(32rem, 100%);
+}
+.school-selfservice__title {
+  margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.01em;
+}
+.school-selfservice__entry {
+  display: flex; gap: clamp(0.35rem, 1.1vw, 0.55rem); width: 100%;
+  // The refusal happens HERE, in the slots the digits were just typed into —
+  // nothing appears below them, so the pad never moves under a child's finger.
+  &.is-shaking { animation: school-selfservice-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+}
+/**
+ * KONGTEXT — the code face, shared with paper.
+ *
+ * The six-digit companion code is printed on receipt tape in Kongtext (see
+ * `documentReceiptTheme.mjs`: fixed-width, unmistakably "input", heavy square
+ * pixels that survive 203dpi thermal) and typed here. Setting the slots in the
+ * same face makes the sheet in the child's hand and the pad on the wall
+ * obviously the same object; a proportional face here meant the digits they
+ * were copying and the digits they were entering looked like two systems.
+ *
+ * Scoped to the code slots and the pad's digits — the one deliberate exception
+ * to the app's own type, exactly as it is on the receipt. The moment it appears
+ * anywhere prose is set, that rule is gone.
+ *
+ * codeman38 / zone38.net; licence in `__backend/assets/fonts/kongtext/LICENSE.txt`,
+ * which permits bundling in free and commercial projects and forbids only
+ * resale as a font collection.
+ */
+@font-face {
+  font-family: 'Kongtext';
+  src: url('/fonts/kongtext.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  // The pad must be typeable before the face lands — a blank keypad is worse
+  // than a keypad in the wrong font for one paint.
+  font-display: swap;
+}
+
+.school-selfservice__slot {
+  flex: 1 1 0; aspect-ratio: 1 / 1; display: grid; place-items: center;
+  border: 2px solid var(--school-border); border-radius: 10px;
+  background: var(--school-surface); line-height: 1;
+  // Kongtext advances exactly 1em per glyph, so it sets noticeably wider than
+  // the proportional face it replaced — sized down to keep six of them inside
+  // the same row.
+  font-family: 'Kongtext', ui-monospace, monospace;
+  font-size: clamp(1.3rem, 3.6vw, 2rem);
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+  &.is-filled { border-color: var(--school-accent); }
+  // A turned-over slot: red, STAMPED rather than faded in (so six of them in
+  // sequence read as one deliberate answer instead of a slow dissolve), then
+  // left pulsing. The pulse is what carries the hold — six static red letters
+  // sitting there look like a rendering bug; six breathing ones are obviously
+  // the panel talking, and they stay legible from across the room.
+  &.is-reject {
+    border-color: var(--school-danger); color: #ff7063;
+    background: color-mix(in srgb, var(--school-danger) 16%, var(--school-surface));
+    font-weight: 800; letter-spacing: 0.02em;
+    animation:
+      school-selfservice-stamp 180ms ease-out both,
+      school-selfservice-glow 620ms ease-in-out 180ms infinite;
+  }
+}
+// Every slot goes red the instant the answer lands, before the first letter
+// turns — the colour is the news, the letters are the sentence.
+.school-selfservice__entry.is-rejected .school-selfservice__slot { border-color: var(--school-danger); }
+
+// Visually hidden, but announced: the refusal is a picture, and this is the
+// same news for anyone who cannot see it.
+.school-selfservice__sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+// FIXED height, not min-height. This row sits between the slots and the pad, so
+// anything that appears in it (the outage sentence, its retry button) must not
+// shove the keys down the screen mid-tap. It reserves room for BOTH controls:
+// the old 3.5–4.5rem row was shorter than the 52px button by itself, so a
+// wrapped outage sentence made the retry button overflow into the keypad.
+.school-selfservice__status {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.45rem; width: 100%; height: clamp(7.25rem, 15vh, 8rem);
+}
+.school-selfservice__message {
+  max-width: calc(100% - 1rem); margin: 0; font-size: clamp(1rem, 2.5vw, 1.25rem); font-weight: 700;
+  color: var(--school-warn); text-align: center;
+  line-height: 1.2; white-space: nowrap;
+  &.is-degraded { color: var(--school-danger); }
+}
+.school-selfservice__retry {
+  flex: 0 0 52px; min-height: 52px; padding: 0 1.6rem; border: 1px solid var(--school-border);
+  border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg);
+  font-size: 1.1rem; font-weight: 700; cursor: pointer;
+}
+.school-selfservice__pad {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.45rem, 1.4vh, 0.7rem); width: 100%;
+}
+.school-selfservice__key {
+  min-height: clamp(3.75rem, 8.5vh, 4.5rem); border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface); color: var(--school-fg);
+  // The digits a child copies and the digits they press are one alphabet.
+  font-family: 'Kongtext', ui-monospace, monospace;
+  font-size: 1.6rem; font-weight: 400; cursor: pointer;
+  // Fires on pointerdown (see Keypad.jsx); `manipulation` drops the browser's
+  // 300ms double-tap-to-zoom wait so the press feedback lands with the finger.
+  touch-action: manipulation;
+  &:active { background: var(--school-surface-2); transform: scale(0.97); }
+  &:disabled { opacity: 0.45; }
+  // Clear/backspace are WORDS, not codes — back to the app's own face.
+  &--clear, &--back {
+    font-family: inherit; font-size: 1.2rem; font-weight: 700; color: var(--school-muted);
+  }
+}
+
+// The reading shelf's number pad (books/NumberPad.jsx). Keypad's vocabulary
+// (same keys, same Kongtext digits, same slots) with none of its behaviour:
+// no auto-submit, the entry survives a submit, the length is the caller's,
+// and the glyph size follows the slot count so thirteen fit the panel's 32rem.
+.school-books-pad {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.45rem, 1.2vh, 0.75rem);
+}
+// One line, always: "Type the number under the barcode" wrapped at 1280 and
+// pushed the pad down a row. Sized to the pad's own width, never the viewport.
+.school-books-pad__label {
+  @extend .school-selfservice__title; text-align: center;
+  white-space: nowrap; font-size: clamp(1.15rem, calc(min(32rem, 100vw) / 15), 1.9rem);
+}
+.school-books-pad__entry { @extend .school-selfservice__entry; }
+.school-books-pad__slot {
+  @extend .school-selfservice__slot;
+  // Sized from the slot count, not the viewport. The row is `min(32rem, 100%)`
+  // wide; twelve gaps take about a fifth of that and each slot spends 4px on
+  // its border, so thirteen 1em-advance Kongtext glyphs fit at ~24px where
+  // the inherited `3.6vw` would have set 32px into a 27px cell. Six or fewer
+  // slots hit the 2rem ceiling, matching Keypad.
+  font-size: clamp(0.85rem, calc((min(32rem, 100vw) * 0.8 / var(--slots, 6) - 4px) * 0.9), 2rem);
+}
+.school-books-pad__keys { @extend .school-selfservice__pad; gap: clamp(0.35rem, 1vh, 0.55rem); }
+// TALLER KEYS, 4:3. The pad is a thing a child holds the panel to reach; a
+// key with real height under the thumb beats a strip of wide bars, and the
+// rows still clear the panel's 800px with the entry above them. THE GLYPH
+// GROWS WITH THE KEY: sized from the key's own height (a third of the pad's
+// width at 4:3), so a tall key does not carry a small digit in its middle.
+.school-books-pad__key {
+  @extend .school-selfservice__key;
+  aspect-ratio: 4 / 3; min-height: 0;
+  font-size: clamp(1.6rem, calc(min(32rem, 100vw) / 3 * 0.75 * 0.42), 3.6rem);
+  &--blank { visibility: hidden; pointer-events: none; }
+  // There is no `Clear number` key any more: it sat above the `3`, fired on
+  // pointerdown like everything here, and got fat-fingered mid-ISBN. Clearing
+  // is a HOLD on ⌫ now (NumberPad.jsx), and this tint is the only sign that
+  // the hold is running — the child sees the key change before it wipes.
+  &--back.is-holding {
+    border-color: var(--school-danger); color: var(--school-danger);
+    background: var(--school-surface-2);
+  }
+}
+.school-books-pad__submit {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+  border-color: var(--school-accent);
+  &:disabled { opacity: 0.45; cursor: default; }
+}
+.school-books-pad__hint {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
+
+// The shelf's day picker (books/DayPicker.jsx): three rolling weeks per page,
+// with navigation up to a year back, weekday first, no month breaks. The
+// weekday header is the headline, the day of the month is the small print,
+// and the month is a footnote where it changes.
+.school-books-days {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+}
+.school-books-days__summary {
+  // `Today · Wed 2` is words, so the app's face; only the day number inside
+  // a cell is a code (Kongtext, via __day).
+  margin: 0; font-size: clamp(1.1rem, 3vw, 1.6rem); font-weight: 700;
+  text-align: center; color: var(--school-fg);
+}
+.school-books-days__toggle, .school-books-days__confirm {
+  @extend .school-selfservice__key;
+  font-family: inherit; font-size: 1.2rem; font-weight: 700;
+}
+.school-books-days__toggle { color: var(--school-muted); }
+.school-books-days__confirm { min-height: 64px; border-color: var(--school-accent); }
+.school-books-days button:disabled { opacity: 0.5; cursor: default; }
+.school-books-days__nav {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+  button {
+    min-height: 44px; border: 0; background: transparent; color: var(--school-muted);
+    font-family: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  }
+}
+.school-books-days__grid { display: flex; flex-direction: column; gap: clamp(0.3rem, 1vh, 0.5rem); }
+.school-books-days__row {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: clamp(0.3rem, 1vh, 0.5rem);
+}
+.school-books-days__head {
+  text-align: center; color: var(--school-muted); font-size: 0.85rem; font-weight: 700;
+}
+.school-books-days__cell {
+  @extend .school-selfservice__key;
+  position: relative; padding: 0;
+  // The button itself speaks the app's face so the month caption (a word)
+  // inherits it; only the day number (a code) is Kongtext, via __day.
+  font-family: inherit;
+  &.is-today { border-width: 2px; border-color: var(--school-fg); }
+  &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); border-color: var(--school-accent); }
+}
+.school-books-days__day { font-family: 'Kongtext', ui-monospace, monospace; font-size: 1.3rem; }
+.school-books-days__month {
+  position: absolute; top: 2px; left: 6px;
+  font-size: 0.7rem; font-weight: 700; opacity: 0.8;
+}
+.school-books-days__spacer { visibility: hidden; }
+
+// The reading shelf itself (books/BookShelf.jsx, ShelfTile.jsx, History.jsx):
+// two horizontal shelves of book cards - what is being read (the add card
+// last), then everything the child is done with - with `See all history`
+// under them and an always-visible Done above.
+//
+// THE PANEL IS THE CONTAINER; THE COLUMN IS AN INSET.
+//
+// This used to be a 64rem box centred with `margin: 0 auto`, which meant every
+// row STOPPED at 64rem however wide the panel was - a history shelf ending in
+// whitespace reads as "that is all of them", which is exactly what it is not.
+// So the element spans the panel and the text column is drawn with padding
+// instead: headings and the header sit at `--shelf-inset`, and the ROWS take
+// the same inset as scroll padding, so a row starts on the column's left edge
+// and runs off the panel's right one.
+.school-books {
+  --shelf-pad: clamp(0.6rem, 2vh, 1.2rem);
+  // The distance from the panel edge to the text column. `50%` resolves
+  // against this element's own width, so on a narrow panel the column is the
+  // panel and the max() collapses to the plain gutter.
+  --shelf-inset: max(var(--shelf-pad), calc(50% - 32rem + var(--shelf-pad)));
+  width: 100%; margin: 0; height: 100%;
+  display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  padding: var(--shelf-pad) 0; box-sizing: border-box;
+  color: var(--school-fg);
+}
+// Everything that belongs to the text column rather than to the panel.
+.school-books__header,
+.school-books__fault,
+.school-books__shelf-heading,
+.school-books__shelf-title,
+.school-books-history__heading,
+.school-books__loading,
+.school-books-update,
+.school-books-add,
+.school-books-receipt { padding-inline: var(--shelf-inset); }
+.school-books__header {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.school-books__who { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+.school-books__title { margin: 0; font-size: 1.6rem; font-weight: 800; }
+// The shelf's header is the shared `ScreenHeader` (shared/screenHeader.scss);
+// only the text-column inset above is the shelf's own.
+// THE DAY'S QUESTION, INSIDE THE HEADING THAT ASKS IT. "Today" and its pips
+// on one line: the pips are the obligation (one per book owed, filled as each
+// is finished — `reading/pips.scss`), in the shelf's own accent so they are
+// the same object the living-room rail and the close draw in amber on
+// oxblood. The old chip put a sentence above the shelf, away from the row it
+// was about.
+.school-books__shelf-heading {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 1rem; min-width: 0;
+  .school-books__shelf-title { padding-inline: 0; }
+}
+.school-books__pips {
+  --pip-size: 1.5rem;
+  --pip-gap: 0.5rem;
+  --pip-ink: var(--school-accent);
+  --pip-label-size: 1rem;
+}
+.school-books__loading, .school-books__empty {
+  margin: auto; text-align: center; color: var(--school-muted); font-size: 1.2rem;
+}
+.school-books__fault {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.6rem 1rem; border: 1px solid var(--school-danger); border-radius: 12px;
+}
+.school-books__fault-text { margin: 0; font-weight: 700; }
+.school-books__retry {
+  @extend .school-selfservice__key;
+  min-height: 52px; font-family: inherit; font-size: 1.1rem; font-weight: 700; padding: 0 1.2rem;
+}
+.school-books__back {
+  @extend .school-selfservice__key;
+  min-height: 52px; font-family: inherit; font-size: 1.05rem; font-weight: 600;
+  color: var(--school-fg); background: transparent;
+  border-color: var(--school-border); padding: 0 1.1rem;
+  align-self: flex-start;
+  &:disabled { opacity: 0.45; cursor: default; }
+}
+
+// One image policy everywhere: the card reserves a familiar portrait slot,
+// while the artwork itself is letterboxed. Recognition beats decorative crop
+// for square board books, landscape picture books and unusually tall covers.
+.school-books-cover {
+  object-fit: contain; object-position: center;
+  border: 1px solid var(--school-border);
+  background: var(--school-surface-2);
+  box-sizing: border-box;
+}
+// NO ART: the title IS the cover (see BookCover.jsx). Drawn from a hue the
+// title itself decides, so a book lands on the same colour every time and
+// two coverless books side by side are told apart before either is read.
+// Deliberately a BOOK and not an error state: a spine-dark edge down the
+// left, the title set large, the whole thing the size of the art it stands
+// in for — a blank grey square was the one book a child could not find.
+.school-books-cover--drawn {
+  display: grid; align-items: center; justify-items: center;
+  // A DEEPER TOP INSET than the other three sides. The outcome mark rides the
+  // top-left corner of the art, which costs a photographic cover nothing —
+  // almost none carry their title up there — but a drawn cover's title fills
+  // the whole box, and the badge was landing on its first letter
+  // ("3lueberries for Sal"). The text starts below the badge instead.
+  padding: 1rem 0.45rem 0.55rem 0.6rem;
+  border-color: hsl(var(--drawn-hue, 210) 45% 28%);
+  border-left: 0.35rem solid hsl(var(--drawn-hue, 210) 55% 24%);
+  background:
+    linear-gradient(150deg,
+      hsl(var(--drawn-hue, 210) 42% 32%) 0%,
+      hsl(var(--drawn-hue, 210) 38% 22%) 100%);
+  overflow: hidden;
+}
+.school-books-cover__drawn-title {
+  // Scales with the slot: the same component draws a 5rem shelf card and a
+  // 7rem update-view cover, and a fixed size would overflow one or swim in
+  // the other.
+  font-size: clamp(0.62rem, 15cqw, 1.05rem);
+  font-weight: 800; line-height: 1.18; text-align: center;
+  color: hsl(var(--drawn-hue, 210) 30% 94%);
+  text-shadow: 0 1px 2px hsl(var(--drawn-hue, 210) 45% 12% / 0.7);
+  // `break-word`, NOT `anywhere`: `anywhere` breaks wherever it makes the box
+  // narrowest, which split titles mid-word beside a perfectly good space
+  // ("Goodnigh / t Moon"). This breaks a word only when the word alone will
+  // not fit, which is the case it is actually for.
+  overflow-wrap: break-word; hyphens: auto;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+
+// A book card IS ITS COVER. It used to be art on the left and a text column on
+// the right — title, author, caption — which on a shelf of picture books made
+// a grid that was mostly words about books rather than books. The words moved
+// to the panel a tap opens; only the Add tile still carries any, because an
+// empty frame has nothing to be recognised by.
+//
+// NOTHING here fixes a card's height: the art sets it, and a fixed height
+// sliced the covers of unusually tall books.
+.school-books-tile {
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center;
+  align-items: start; text-align: center; padding: 0.6rem 0.5rem 0.55rem;
+  // No card frame and no fill. The cover supplies its own edge, and a card
+  // drawn around it put a second rectangle around every book — which is what
+  // made the shelf read as a form rather than as a shelf.
+  border: 0; background: transparent; color: var(--school-fg);
+  font-family: inherit; font-size: 1.05rem; cursor: pointer; touch-action: manipulation;
+  min-width: 0; box-sizing: border-box;
+  &:active { transform: scale(0.96); }
+  &--still { cursor: default; &:active { transform: none; } }
+}
+.school-books-tile__text {
+  display: flex; flex-direction: column; gap: 0.3rem; min-width: 0;
+}
+// The art and its outcome mark are one object. The 2:3 BOX is the wrapper's,
+// not the image's: `aspect-ratio` on a replaced element is negotiated against
+// its intrinsic size, and one 128x191 thumbnail came out 184px tall and
+// stretched every other card in the row with it. A plain block obeys.
+// `container-type` is for the DRAWN cover: its title sets its size in `cqw`,
+// so it scales with whatever slot it was dropped into rather than needing a
+// size per caller.
+.school-books-tile__art {
+  position: relative; display: block; width: 5rem; aspect-ratio: 2 / 3;
+  container-type: inline-size;
+}
+.school-books-tile__cover {
+  display: block; width: 100%; height: 100%; object-fit: contain; object-position: center;
+  border-radius: 8px; box-sizing: border-box;
+}
+// A green check is the one symbol every child in the house already reads as
+// "done". It rides the top-left corner of the art, where no cover has its
+// title, and carries a ring in the card colour so it stays legible on any art.
+.school-books-tile__mark {
+  position: absolute; top: -0.35rem; left: -0.35rem;
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 999px; box-shadow: 0 0 0 2px var(--school-surface-2);
+  font-size: 1.5rem; line-height: 1;
+  &.is-finished { color: var(--school-accent); background: var(--school-accent-ink); }
+  &.is-set-aside { color: var(--school-warn); background: var(--school-bg); font-size: 1.15rem; }
+}
+// The launch card's poster placeholder, stripped of the launch card. Its accent
+// radial and Georgia serif were built for a large tile; at 5rem they read as a
+// warning state on the books whose covers could not be found.
+.school-books-tile .school-selfservice-card__poster-placeholder {
+  border-radius: 8px; padding: 0.35rem;
+  background: var(--school-surface); font: 700 1.4rem/1 inherit; color: var(--school-border);
+}
+.school-books-tile__title {
+  font-weight: 700; line-height: 1.3;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.school-books-tile__bar { display: block; height: 0.5rem; border-radius: 999px; background: var(--school-border); overflow: hidden; }
+.school-books-tile__fill { display: block; height: 100%; background: var(--school-accent); }
+// Words, not a code. The Kongtext pixel face belonged to the ISBN pad, where a
+// child copies digits; a caption reading "Finished Sep 6" is prose.
+.school-books-tile__caption { font-size: 0.85rem; color: var(--school-muted); }
+.school-books-tile__tag { font-size: 0.75rem; color: var(--school-muted); }
+
+// The add card is a book with nothing in it yet: same footprint, same 2:3 slot,
+// drawn in the accent so it is the one thing on the shelf that invites a tap.
+.school-books-tile--add {
+  // No card: the frame IS the tile. Cover-first, like the history cards, so
+  // the plus stands where the next cover will.
+  border: none; background: transparent; padding: 0.55rem 0.25rem;
+  grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; row-gap: 0.5rem;
+  .school-books-tile__art { width: 6.25rem; }
+  .school-books-tile__text { align-items: center; gap: 0.2rem; }
+  .school-books-tile__title { color: var(--school-accent); font-weight: 750; }
+  &:active { background: transparent; .school-books-tile__slot { background: var(--school-accent-ink); } }
+}
+.school-books-tile__slot {
+  display: grid; place-items: center;
+  border: 2px dashed var(--school-accent); border-radius: 8px;
+  background: var(--school-accent-ink);
+}
+.school-books-tile__plus { font-size: 2.6rem; line-height: 1; color: var(--school-accent); }
+
+// BOOK HISTORY: one wrapping shelf, newest day first, each day opened by a
+// BOOKEND tile carrying its date. The scroll box is THE vertical scroll
+// container for a child's whole reading year (`min-height: 0` is what lets a
+// flex child shrink below its content and actually scroll).
+.school-books-history {
+  flex: none; display: flex; flex-direction: column; gap: 0.2rem;
+  margin-top: clamp(0.4rem, 1.2vh, 0.8rem);
+}
+.school-books-history__scroll { padding: 0.35rem var(--shelf-inset) 1rem; }
+.school-books-history__flow {
+  // `flex-start`, NOT `stretch`: a stretched row makes every cell as tall as
+  // its tallest, and the Add tile carries two lines of words no book card
+  // does — which dragged each spine on that row a full text-block below the
+  // covers it opens, so the day's colour ran on past the end of the day.
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  // NO COLUMN GAP — THAT IS WHAT MAKES THE RAIL A RAIL.
+  //
+  // The day's colour used to be a border along the top of each card, which a
+  // 0.7rem gap chopped into one stripe per book: a dashed line, not a rail.
+  // With the columns closed up, the borders of a day's cards meet and run as
+  // ONE unbroken rail the width of the day — and it breaks exactly where the
+  // day wraps, because a new row starts a new run. The breathing room moved
+  // inside the cards, where it costs the rail nothing.
+  row-gap: 0.9rem; column-gap: 0;
+  // Cards are cover-first on this shelf; the tile's own history modifier
+  // does the layout, this only fixes the width the flow wraps by.
+  .school-books-tile {
+    flex: 0 0 9.5rem; min-height: 0;
+    .school-books-tile__art { width: 6.5rem; }
+  }
+  // The Add tile is not part of any day and wears no rail: it is the empty
+  // place on the shelf, not a book someone finished.
+  .school-books-tile:not(.school-books-tile--add) {
+    border-top: 5px solid var(--day-colour, var(--school-border));
+    border-top-left-radius: 0; border-top-right-radius: 0;
+  }
+  // The ends of a run are the only rounded corners, so a day reads as one
+  // bar with two finished ends rather than a row of separate caps.
+  .school-books-history__opening > .school-books-tile { border-top-left-radius: 0; }
+  .school-books-history__day > .school-books-tile:last-child { border-top-right-radius: 8px; }
+}
+// The spine and the day's first book, as ONE flow item — see `Opening` in
+// BookHistory.jsx. The gap before it is what separates two days; inside it
+// there is none, so the spine's rail runs straight into the first cover's.
+.school-books-history__opening {
+  // `stretch` HERE is what makes the spine exactly as tall as the cover it
+  // opens — the pair sizes itself, rather than the row sizing it.
+  display: flex; align-items: stretch; gap: 0;
+  margin-left: 0.6rem;
+  &:first-child { margin-left: 0; }
+}
+// A day keeps its spine and its books together in the DOM; the flow lays
+// them out as siblings. `--day-colour` is set here and inherits through.
+.school-books-history__day { display: contents; }
+// THE SPINE: a slim partition in the day's colour — the day-of-month large
+// and upright at its top, the weekday running down it. Prominent by colour
+// and size, not by width; the gap before it keeps two days from reading as
+// one shelf.
+.school-books-history__bookend {
+  flex: 0 0 2.75rem; box-sizing: border-box;
+  margin: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  padding: 0.45rem 0.2rem 0.6rem;
+  border-top: 5px solid var(--day-colour, var(--school-border));
+  // Square on the right: the rail carries on into the first cover from here.
+  border-radius: 0 0 0 12px;
+  background: color-mix(in srgb, var(--day-colour, var(--school-border)) 14%, var(--school-surface));
+  color: var(--school-fg);
+}
+.school-books-history__bookend-top {
+  font-size: 1.35rem; font-weight: 900; line-height: 1; letter-spacing: -0.02em;
+  color: var(--day-colour, var(--school-fg)); white-space: nowrap; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+// The month, only when the month is not this one. Its own line, small and
+// muted: it qualifies the numeral above it rather than competing with it,
+// and it cannot push that numeral off its baseline the way "19 Aug" did.
+.school-books-history__bookend-month {
+  font-size: 0.7rem; font-weight: 800; line-height: 1; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--school-muted); white-space: nowrap;
+  margin-top: -0.2rem;
+}
+.school-books-history__bookend-bottom {
+  writing-mode: vertical-rl; text-orientation: mixed;
+  font-size: 1rem; font-weight: 800; letter-spacing: 0.06em; line-height: 1;
+  color: var(--school-fg); white-space: nowrap;
+  flex: 1 1 auto; display: flex; align-items: center;
+}
+// The sentinel the history watches to reveal another week of days.
+.school-books-history__more { height: 1px; }
+
+// The update overlay (books/UpdateBook.jsx): cover and title, ONE control
+// matched to the mode, `I finished it` beside it, `set it aside` small and
+// low. The progress line is a button — tapping it opens the mode chooser.
+.school-books-update {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-update__book {
+  display: flex; align-items: center; gap: 1rem; width: min(32rem, 100%); margin: 0 auto;
+}
+.school-books-update__cover {
+  flex: 0 0 auto; width: clamp(4rem, 12vw, 6rem); aspect-ratio: 2 / 3; object-fit: contain;
+  border-radius: 8px; background: var(--school-surface);
+}
+.school-books-update .school-selfservice-card__poster-placeholder { border-radius: 8px; font-size: 1.6rem; }
+.school-books-update__meta { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; flex: 1 1 auto; }
+.school-books-update__title {
+  margin: 0; font-size: 1.4rem; font-weight: 800; line-height: 1.15;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.school-books-update__author {
+  margin: 0; color: var(--school-muted); font-size: 0.95rem; font-weight: 650;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.school-books-update__progress {
+  display: flex; flex-direction: column; gap: 0.35rem; align-items: stretch;
+  min-height: 52px; padding: 0.4rem 0.6rem; border: 1px dashed var(--school-border); border-radius: 10px;
+  background: transparent; color: var(--school-fg); text-align: left; cursor: pointer;
+  touch-action: manipulation;
+  &[aria-expanded='true'] { border-style: solid; border-color: var(--school-accent); }
+}
+.school-books-update__bar { display: block; }
+.school-books-update__caption { font-family: 'Kongtext', ui-monospace, monospace; font-size: 0.9rem; }
+.school-books-update__prompt { @extend .school-selfservice__title; text-align: center; }
+.school-books-update__check, .school-books-update__finish, .school-books-update__chooser {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-update__checkin, .school-books-update__mode, .school-books-update__finished {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+}
+.school-books-update__checkin { border-color: var(--school-accent); }
+.school-books-update__mode.is-current { border-color: var(--school-accent); }
+.school-books-update__outcomes {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: clamp(0.5rem, 1.4vh, 0.8rem);
+}
+.school-books-update__finished { width: 100%; }
+// A real outcome, not the thing a thumb lands on: still ≥52px tall, but
+// quiet — no border, muted, smaller word.
+.school-books-update__aside, .school-books-update__quiet {
+  min-height: 52px; padding: 0 1rem; border: none; border-radius: 10px;
+  background: transparent; color: var(--school-muted);
+  font-size: 1rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+.school-books-update__fault {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
+
+// The add flow (books/AddBook.jsx): the pad, the card, the three doors, then
+// the pad or the day picker. Every step keeps `‹ back` at the top.
+.school-books-add {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-add__number, .school-books-add__where, .school-books-add__page, .school-books-add__when {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+.school-books-add__retry { align-self: center; }
+// Scan-only (`books.manualEntry: false`): the barcode mark and one sentence,
+// centred in the space the pad used to fill.
+.school-books-add__scan-only { flex: 1 1 auto; justify-content: center; align-items: center; }
+.school-books-add__scan-icon { font-size: clamp(5rem, 16vh, 9rem); color: var(--school-accent, currentColor); }
+.school-books-add__card {
+  width: min(32rem, 100%); margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+}
+.school-books-add__cover {
+  width: clamp(7rem, 24vw, 11rem); aspect-ratio: 2 / 3; object-fit: contain;
+  border-radius: 8px; background: var(--school-surface);
+}
+.school-books-add .school-selfservice-card__poster-placeholder { border-radius: 8px; font-size: 2rem; }
+.school-books-add__about { text-align: center; display: flex; flex-direction: column; gap: 0.3rem; }
+.school-books-add__title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.school-books-add__author { margin: 0; color: var(--school-muted); font-size: 1.05rem; font-weight: 700; }
+.school-books-add__description {
+  margin: 0; color: var(--school-muted); font-size: 0.95rem; line-height: 1.35;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+}
+.school-books-add__prompt { @extend .school-selfservice__title; text-align: center; }
+.school-books-add__answers {
+  display: grid; grid-template-columns: 1fr 1fr; gap: clamp(0.45rem, 1.4vh, 0.7rem); width: 100%;
+}
+.school-books-add__yes, .school-books-add__no {
+  @extend .school-selfservice__key;
+  min-height: 64px; font-family: inherit; font-size: 1.25rem; font-weight: 700;
+}
+.school-books-add__yes { border-color: var(--school-accent); }
+.school-books-add__no { color: var(--school-muted); }
+// The three doors (AddBook `where`) are SQUARES, not stacked bars: a
+// pre-reader picks the one whose mark they recognise, so the mark is most of
+// the tile and the words sit under it. Three across, filling the row, sized
+// off the row's own width so they stay square on any panel.
+.school-books-add__doors {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.45rem, 1.4vh, 0.7rem);
+}
+.school-books-add__door {
+  @extend .school-selfservice__key;
+  aspect-ratio: 1; padding: clamp(0.4rem, 1.5vh, 0.9rem) 0.35rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(0.25rem, 1vh, 0.55rem);
+  // Words, so the app's own face — emphasis comes from size and weight.
+  font-family: inherit; font-size: 1rem; font-weight: 750; line-height: 1.15; text-align: center;
+}
+.school-books-add__door-icon {
+  // Percentages of a square tile: the mark is well over half its height at
+  // every panel width, without guessing at a viewport.
+  flex: 0 0 auto; display: flex; width: 56%; height: 56%; line-height: 1;
+  color: var(--school-accent);
+  svg { width: 100%; height: 100%; }
+}
+.school-books-add__door-label {
+  // Two lines of a condensed face at this size; `anywhere` is the safety net
+  // for a long word rather than the expected wrap.
+  font-size: clamp(0.75rem, 2.2vw, 1rem); overflow-wrap: anywhere;
+}
+.school-books-add__book { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.school-books-add__thumb {
+  flex: 0 0 auto; width: 2.6rem; aspect-ratio: 2 / 3; object-fit: contain; border-radius: 6px;
+  background: var(--school-surface);
+  &.school-selfservice-card__poster-placeholder { font-size: 1rem; }
+}
+.school-books-add__line {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  font-size: 1.1rem; min-width: 0; overflow: hidden;
+  strong, span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  strong { font-weight: 750; }
+  span { color: var(--school-muted); font-size: 0.9rem; font-weight: 650; }
+}
+.school-books-add__fault {
+  margin: 0; text-align: center; font-weight: 700; color: var(--school-danger);
+}
+
+// Saved reading stays on the shelf, with its correction beside the result.
+.school-books-receipt {
+  flex: 0 0 auto; min-width: 0; display: flex; align-items: center;
+  gap: 1rem; padding: 0.65rem 0.9rem; border: 1px solid var(--school-accent);
+  border-radius: 14px; background: var(--school-surface);
+}
+.school-books-receipt__message { display: flex; align-items: center; gap: 0.75rem; min-width: 0; flex: 1; }
+.school-books-receipt__mark { color: var(--school-accent); font-size: 1.6rem; font-weight: 900; }
+.school-books-receipt__cover { width: 2.5rem; height: 3.5rem; border-radius: 5px; flex: 0 0 auto; }
+.school-books-receipt__copy {
+  min-width: 0;
+  h3 { margin: 0; font-size: 1.1rem; }
+  p { margin: 0.15rem 0 0; font-size: 0.9rem; }
+}
+.school-books-receipt__title { font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.school-books-receipt__author { display: none; }
+.school-books-receipt__detail { color: var(--school-muted); }
+.school-books-receipt__actions { display: flex; gap: 0.5rem; }
+.school-books-receipt__back, .school-books-receipt__history, .school-books-receipt__undo {
+  @extend .school-selfservice__key;
+  min-height: 52px; padding: 0 1rem; font-family: inherit; font-size: 1rem; font-weight: 750;
+}
+.school-books-receipt__undo { color: var(--school-danger); }
+.school-books-receipt__fault { color: var(--school-danger); }
+
+// The Today shelf and, under it, the history stack. The column grows so the
+// history can take the rest of the panel and scroll within it; the Today row
+// is `flex: none`, so the growth is the history's alone.
+// THE PAGE SCROLLS, not a box inside it: Today's row and the whole history
+// are one column that scrolls under the fixed header.
+.school-books__collections {
+  @include school-scrollbar;
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.school-books__shelf-title {
+  margin: 0.4rem 0 0; font-size: 1.05rem; font-weight: 650; color: var(--school-muted);
+  letter-spacing: 0.02em; text-transform: uppercase;
+}
+.school-books__recent { margin: 0; }
+
+// COVER FIRST on the history shelf: the art on top at about twice the Today
+// row's size, the title beneath at up to three lines. A finished book is
+// remembered by its cover, and a title cut at two lines lost the word a
+// child was looking for.
+// The repeat count: the same book finished N times that day, one card. The
+// opposite corner from the outcome mark, in the surface colour so it reads as
+// a tag on the cover rather than a second mark.
+.school-books-tile__times {
+  position: absolute; top: -0.4rem; right: -0.4rem;
+  min-width: 1.6rem; height: 1.6rem; padding: 0 0.4rem; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: var(--school-fg); color: var(--school-bg);
+  box-shadow: 0 0 0 2px var(--school-surface-2);
+  font-size: 0.8rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+}
+// Every card on this shelf is cover-first now, so the history modifier is
+// left holding only what is actually different about a finished book: a
+// bigger cover, and a mark that clears its corner.
+.school-books-tile--history {
+  .school-books-tile__art { width: 6.5rem; }
+  .school-books-tile__mark { top: -0.4rem; left: -0.4rem; }
+}
+.school-books__finish-context p { margin: 0.35rem 0; }
+.school-books__recorded { color: var(--school-muted); font-size: 0.85rem; }
+.school-books-update__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: min(32rem, 100%); margin: 0 auto; }
+.school-books-update__actions .school-books-add__door { max-height: 12rem; }
+.school-books-completed__again { width: 12rem; max-height: 12rem; margin: 1rem auto; }
+.school-books-add__card {
+  width: min(42rem, 100%); display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr); align-items: center; gap: 1rem;
+}
+.school-books-add__cover { width: 7rem; max-height: 10.5rem; }
+.school-books-add__about { text-align: left; }
+.school-books-add__description { -webkit-line-clamp: 3; }
+.school-books-add__choices { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 0.4rem; }
+.school-books-add__doors { width: min(32rem, 100%); margin: 0 auto; }
+.school-books-add__door { max-height: 11rem; }
+.school-books-update__outcomes { gap: 0; }
+
+.school-selfservice__screen-off {
+  // IN FLOW, under the keypad it belongs to. Pinned to the viewport it landed
+  // in the board's corner and forced that pane to reserve a strip for it.
+  margin: 1.5rem auto 0; display: flex; align-items: center; justify-content: center; gap: .5rem;
+  // FIXED WIDTH: the label changes when the control arms, and a button that
+  // resizes under a finger already resting on it is a different button.
+  width: 14rem; box-sizing: border-box;
+  min-height: 44px; padding: 0.45rem 1rem; border: 1px solid var(--school-border);
+  border-radius: 10px; background: transparent; color: var(--school-muted);
+  font-size: 0.95rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  &.is-armed {
+    border-color: var(--school-warn); color: var(--school-warn);
+    background: color-mix(in srgb, var(--school-warn) 10%, transparent);
+  }
+  &:disabled { opacity: 0.45; cursor: default; }
+}
+.school-selfservice__screen-off-icon { font-size: 1.15rem; line-height: 1; }
+.school-selfservice__screen-off-status {
+  // Follows the button rather than floating: it is that button's own sentence.
+  width: min(30rem, 100%); margin: .5rem auto 0; color: var(--school-danger);
+  font-size: 0.9rem; font-weight: 700; text-align: center;
+}
+.school-selfservice__sleep {
+  position: fixed; bottom: 16px; right: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.35);
+  font-size: 0.8rem; cursor: pointer;
+  touch-action: manipulation;
+  &:active { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); }
+}
+
+@keyframes school-selfservice-shake {
+  10%, 90% { transform: translateX(-3px); }
+  20%, 80% { transform: translateX(6px); }
+  30%, 50%, 70% { transform: translateX(-11px); }
+  40%, 60% { transform: translateX(11px); }
+  100% { transform: translateX(0); }
+}
+@keyframes school-selfservice-stamp {
+  from { transform: scale(1.35); opacity: 0.2; }
+  to { transform: scale(1); opacity: 1; }
+}
+// The red is literal rgb rather than the token: these are alpha shadows, and a
+// hex custom property cannot be dropped into rgba(). Keep in step with
+// --school-danger (#e05a4f) if that ever moves.
+@keyframes school-selfservice-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(224, 90, 79, 0);
+    text-shadow: 0 0 6px rgba(224, 90, 79, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(224, 90, 79, 0.7), inset 0 0 20px rgba(224, 90, 79, 0.35);
+    text-shadow: 0 0 20px rgba(255, 112, 99, 0.95);
+  }
+}
+// The refusal must still READ without motion: the letters, the red and a
+// steady glow stay; the shake, the stamp and the pulse go.
+@media (prefers-reduced-motion: reduce) {
+  .school-selfservice__entry.is-shaking { animation: none; }
+  .school-selfservice__slot.is-reject {
+    animation: none;
+    box-shadow: 0 0 20px rgba(224, 90, 79, 0.5);
+    text-shadow: 0 0 14px rgba(255, 112, 99, 0.8);
+  }
+  .school-selfservice__key:active { transform: none; }
+}
+
+.school-selfservice-card {
+  display: flex; flex-direction: column; gap: clamp(0.8rem, 1.8vh, 1.25rem);
+  width: min(68rem, 100%); min-height: 100%; margin: 0 auto;
+  padding: clamp(0.25rem, 1vh, 0.75rem); box-sizing: border-box;
+}
+// The card's header (see CardHeader): subject icon, subject, chevron, course,
+// spanning BOTH columns above the poster and the copy. It is one fact about the
+// whole card, so it is drawn once across the top rather than as an eyebrow
+// inside the right column — where it competed with the title for the same
+// reading position. Muted throughout: it is where the lesson comes from, never
+// what the lesson is.
+.school-selfservice-card__crumbs {
+  grid-column: 1 / -1; min-width: 0;
+  display: flex; align-items: center; gap: 0.6rem;
+  padding-bottom: clamp(0.6rem, 1.4vh, 0.95rem);
+  border-bottom: 1px solid var(--school-border);
+  color: var(--school-muted);
+  ol {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 0.3rem 0.45rem; list-style: none; margin: 0; padding: 0;
+    font-size: var(--school-launch-crumb-size); font-weight: 700; line-height: 1.25;
+  }
+  li { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+  // The separator carries no meaning of its own, so it sits below even the
+  // crumbs it divides.
+  li > span[aria-hidden='true'] { opacity: 0.5; }
+}
+.school-selfservice-card__crumbs-icon {
+  flex: 0 0 auto; font-size: var(--school-launch-crumb-icon); line-height: 0;
+  color: var(--school-accent);
+  svg { display: block; }
+}
+// PREVIEW. A grown-up may open a launch card on the Portal itself — the same
+// glass a child stands in front of all day — so "this is not live" has to be
+// readable from across the room, not a subtitle. Warning-yellow, full width,
+// above the card and outside it: it is chrome around the card, never part of
+// what a child would have seen.
+//
+// The dimmed card underneath is deliberate. Disabled buttons alone are a detail
+// you have to walk up to; a card that is visibly held back reads as inert at a
+// glance, and the band explains why.
+.school-selfservice-card__preview {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 0.75rem clamp(1rem, 2.5vw, 1.5rem);
+  border: 2px solid #b78103; border-radius: 16px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(214, 158, 15, 0.22) 0 14px,
+    rgba(214, 158, 15, 0.10) 14px 28px
+  );
+  color: var(--school-fg);
+}
+.school-selfservice-card__preview-copy {
+  display: flex; align-items: baseline; gap: 0.6rem 1rem; flex-wrap: wrap; min-width: 0;
+  strong {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  span { font-size: 1.05rem; font-weight: 650; }
+}
+.school-selfservice-card__preview-scope {
+  padding: 0.15rem 0.6rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted);
+}
+.school-selfservice-card__preview-leave {
+  flex: 0 0 auto; min-height: 56px; padding: 0 1.4rem;
+  border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface); color: var(--school-fg);
+  font-size: 1.05rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  &:focus-visible { outline: 3px solid var(--school-fg); outline-offset: 3px; }
+}
+// Every control inside a preview card is dead, so the card reads dead: held
+// back from the band above it, which is the one thing on screen at full
+// strength.
+.school-selfservice-card[data-preview='true'] .school-selfservice-card__shell {
+  opacity: 0.82;
+  box-shadow: none;
+  border-style: dashed;
+}
+
+// THREE AREAS, NOT TWO COLUMNS. The header spans the full width above both,
+// which is why this is an explicit template: auto-placing a `grid-column: 1/-1`
+// child works, but leaves the row sizing to chance, and the copy column has to
+// be the one that takes the slack (`minmax(0, 1fr)`) so the actions land on the
+// bottom edge of the card rather than wherever the poster ends.
+.school-selfservice-card__shell {
+  flex: 1 1 auto; min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(12rem, 15.5rem) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'head head'
+    'art  copy';
+  column-gap: clamp(1.25rem, 3vw, 2.25rem);
+  row-gap: clamp(0.9rem, 2vh, 1.4rem);
+  align-items: stretch;
+  padding: clamp(1.2rem, 3vw, 2rem);
+  border: 1px solid var(--school-border); border-radius: 22px;
+  background: var(--school-surface);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.24);
+}
+.school-selfservice-card__crumbs { grid-area: head; }
+// TOP-aligned, not centred. The poster is the first thing in the card's left
+// column and the title is the first thing in its right one; centring the art
+// against a column whose height is set by the actions below it floated the
+// cover down the card and broke the line the two columns should start on.
+.school-selfservice-card__art {
+  grid-area: art; min-width: 0; align-self: start;
+  display: flex; flex-direction: column; gap: clamp(0.6rem, 1.6vh, 1rem);
+}
+// The lesson's own still, under the course cover: the poster says which course,
+// the still says which lesson, and a child who has watched the first minute of
+// it recognises the frame faster than they read the title. Absent for most of
+// School's work, which is why it is a sibling rather than an overlay — nothing
+// shifts when there is none.
+.school-selfservice-card__still {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover;
+  border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface-2);
+}
+.school-selfservice-card__poster,
+.school-selfservice-card__poster-placeholder {
+  display: flex; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+  align-items: center; justify-content: center; box-sizing: border-box;
+  border: 1px solid var(--school-border); border-radius: 16px;
+  background: var(--school-surface-2);
+}
+.school-selfservice-card__poster-placeholder {
+  padding: 1rem; color: var(--school-muted); font: 800 1.2rem/1.25 Georgia, serif;
+  text-align: center;
+  background:
+    radial-gradient(circle at 30% 22%, color-mix(in srgb, var(--school-accent) 24%, transparent), transparent 42%),
+    var(--school-surface-2);
+}
+// DISTRIBUTED, NOT BOTTOM-PINNED. The actions used to be the only thing that
+// grew: `__interaction` took `flex: 1` and pushed itself to the end, so on a
+// 1280x800 panel roughly 150px of nothing opened up between the progress rails
+// and the buttons — a hole exactly where the eye travels from "how far along am
+// I" to "what do I press". Nothing now grows; the slack is shared out between
+// the three blocks, so the column reads as three deliberate bands whatever the
+// lesson's description happens to be worth.
+.school-selfservice-card__content {
+  grid-area: copy; min-width: 0;
+  display: flex; flex-direction: column; justify-content: space-between;
+  gap: clamp(0.9rem, 2vh, 1.3rem);
+}
+// THE CARD IS READ AT ARM'S LENGTH, standing, on a 1280x800 wall panel — not
+// at a desk. Every size below is set for that distance: the smallest text on
+// the card is 1.1rem, and the one thing a child must not misread (the lesson
+// title) is roughly three times that.
+.school-selfservice-card__head { text-align: left; }
+.school-selfservice-card__learner {
+  display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+  padding: 0.35rem 1rem 0.35rem 0.35rem;
+  border: 1px solid var(--school-border); border-radius: 999px;
+  background: var(--school-surface-2); font-size: 1.2rem; font-weight: 800;
+  .piano-avatar { width: 3rem; height: 3rem; }
+}
+// The unit, immediately above the title it contains. Set between the crumbs and
+// the heading in both size and weight: it is the last piece of context before
+// the lesson's own name, and a child scanning the card should be able to stop
+// here and know which unit they are in without reading the rail.
+.school-selfservice-card__unit {
+  margin: 0; font-size: var(--school-launch-unit-size); font-weight: 750;
+  line-height: 1.25; color: var(--school-fg); text-wrap: balance;
+}
+// The one thing on the card set at display scale. Negative tracking because at
+// this size the default spacing reads loose and the title starts to come apart
+// into separate words across the room.
+.school-selfservice-card__title {
+  margin: 0.35rem 0 0; font-size: clamp(2.2rem, 4.2vw, 3.1rem);
+  line-height: 1.03; font-weight: 800; letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+// The lesson's own blurb, under the title. Two or three short lines: what this
+// lesson introduces, in the words the course itself uses. Capped upstream at
+// 400 characters precisely so it can never grow into the space the rails and
+// the buttons need.
+.school-selfservice-card__description {
+  display: flex; flex-direction: column; gap: 0.25rem;
+  margin: 0.65rem 0 0; color: var(--school-muted);
+  font-size: var(--school-launch-body-size); line-height: 1.35; text-wrap: pretty;
+  > span { display: block; }
+}
+.school-selfservice-card__progress { display: grid; gap: 0.9rem; }
+.school-selfservice-card__progress-row { display: grid; gap: 0.4rem; }
+// The row the learner is actually standing in. Its label comes up to full
+// foreground and its rail thickens — the ancestor rows stay context.
+.school-selfservice-card__progress-row.is-current {
+  .school-selfservice-card__progress-copy span:first-child {
+    color: var(--school-fg); font-weight: 800;
+  }
+  .school-selfservice-card__progress-track { height: 16px; }
+}
+.school-selfservice-card__progress-copy {
+  display: flex; justify-content: space-between; gap: 1rem;
+  color: var(--school-muted); font-size: var(--school-launch-fine); font-weight: 700;
+  // "Unit 2 of 18" is the answer to the question the row asks, so it is the
+  // half that gets the foreground.
+  span:last-child { color: var(--school-fg); font-weight: 800; }
+}
+.school-selfservice-card__progress-track {
+  position: relative; height: 12px; overflow: hidden;
+  border-radius: 999px; background: var(--school-surface-2);
+  > span { position: absolute; top: 0; bottom: 0; }
+  .is-complete { left: 0; background: var(--school-accent); }
+  // The item being worked: one segment past the finished ones, in the warm
+  // token at part strength. It used to be a hatched stripe, which at 12px tall
+  // reads as texture rather than as a distinct state; a solid, dimmer band says
+  // "this one, not yet done" at arm's length.
+  .is-underway { background: var(--school-launch-underway); }
+}
+// Not `flex: 1` — see `__content`. The buttons sit at the end of the column
+// because they are last, not because they were pushed there.
+.school-selfservice-card__interaction {
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 1rem;
+  flex: 0 0 auto;
+}
+.school-selfservice-card__sentence {
+  margin: 0; padding: 1rem 1.25rem; border-radius: 12px;
+  background: var(--school-surface-2); font-size: 1.5rem; line-height: 1.35;
+  text-align: center; text-wrap: pretty;
+}
+.school-selfservice-card__confirm,
+.school-selfservice-card__outcome { display: grid; gap: 1rem; }
+.school-selfservice-card__actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem; width: 100%;
+  > :only-child { grid-column: 1 / -1; }
+}
+// The lock-mode exit for a mounted SECTION (a program). Runners carry their
+// own onExit; a section does not, and lock mode has no header to fall back on.
+.school-app__locked-exit {
+  position: absolute; right: 1rem; bottom: 1rem; z-index: 5;
+  flex: 0 0 auto; min-height: 56px; padding: 0 1.5rem;
+}
+.school-app--locked .school-app__body { position: relative; }
+
+// ONE OBVIOUS ACTION. Primary and secondary used to differ only in fill: same
+// size, same weight, same width, both at full foreground — so "Start the
+// lesson" and "Close" arrived as a pair of equals and a child had to read both
+// to find out which one was the point. The green one is now bigger, heavier and
+// brighter than anything beside it; the way out is legible, reachable at the
+// same 72px+ target, and quiet.
+//
+// EVERY BUTTON CARRIES A MARK. The icon is read before the words are, which is
+// what lets a child find the green one without reading both. Inline SVG, never
+// a unicode glyph: this WebView renders tofu for those.
+.school-selfservice-card__action {
+  min-width: 0; min-height: 84px; padding: 0.75rem 1.5rem;
+  display: flex; align-items: center; justify-content: center; gap: 0.7rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  font-size: 1.2rem; line-height: 1.15; font-weight: 700; cursor: pointer;
+  touch-action: manipulation;
+  .school-selfservice-card__action-icon {
+    flex: 0 0 auto; font-size: var(--school-launch-action-icon); line-height: 0;
+    svg { display: block; }
+  }
+  &.is-primary {
+    border-color: transparent; background: var(--school-accent); color: var(--school-accent-ink);
+    font-size: 1.5rem; font-weight: 800; letter-spacing: -0.005em;
+  }
+  &.is-secondary { background: transparent; color: var(--school-muted); }
+  &:active { transform: scale(0.99); }
+  &:disabled { opacity: 0.5; cursor: default; transform: none; }
+  // The panel is touch-first, but a bonded BK-3001 keyboard can reach these.
+  // Nothing else in this card draws a focus ring, so it has to be unmissable.
+  &:focus-visible {
+    outline: 3px solid var(--school-fg); outline-offset: 3px;
+  }
+}
+
+// "Did it print?" — the ~15s clock, drawn INSIDE the Yes button so the thing
+// filling up is the thing that will happen. The fill is a scaled pseudo-layer
+// rather than an animated `width`: width would lay the button out again on
+// every tick (and this panel is a low-end tablet WebView), while `transform`
+// stays on the compositor. Never animate `filter` here or anywhere in this
+// codebase — it repaints the whole subtree.
+//
+// Decorative only: `useSelfService` owns the countdown and the resolution, so
+// a WebView that drops the transform changes nothing about when the panel
+// moves on. The label sits above it in its own stacking context so the fill
+// can never wash the word out.
+.school-selfservice-card__action[data-countdown='running'] {
+  position: relative; overflow: hidden; isolation: isolate;
+}
+.school-selfservice-card__action-fill {
+  position: absolute; inset: 0; z-index: 0;
+  transform-origin: left center; transform: scaleX(0);
+  // Matches the hook's tick so the fill reads as continuous rather than
+  // stepped; `linear` because a child is reading it as a clock, not an
+  // animation.
+  transition: transform 250ms linear;
+  background: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+}
+.school-selfservice-card__action-label { position: relative; z-index: 1; }
+// Says out loud what the fill implies. Without it, a screen that moves on by
+// itself reads as the panel losing the child's work.
+.school-selfservice-card__confirm-hint {
+  margin: 0; text-align: center; font-size: 1.1rem; color: var(--school-muted);
+}
+
+@media (max-width: 720px) {
+  .school-selfservice-card { min-height: auto; }
+  .school-selfservice-card__shell {
+    grid-template-columns: 6rem minmax(0, 1fr); gap: 1rem; padding: 1rem;
+  }
+  .school-selfservice-card__content { display: contents; }
+  .school-selfservice-card__head { grid-column: 2; }
+  .school-selfservice-card__progress,
+  .school-selfservice-card__interaction { grid-column: 1 / -1; }
+  .school-selfservice-card__title { font-size: 1.75rem; }
+  .school-selfservice-card__actions { grid-template-columns: 1fr; }
+  .school-selfservice-card__actions > * { grid-column: 1; }
+}
+
+// Scan ceremony (Slice D2, omr-grading-integrity design). A tone-coloured
+// role="status" banner over whatever the panel is currently showing — the
+// keypad, the launch card, or (unlocked mode) the browsable wall. `.school-app
+// __body` is `position: relative` unconditionally (both locked and unlocked),
+// so this banner works pinned to either. Sized to read across the room on the
+// Portal's 1280x800 screen — this is the ONLY feedback channel a child
+// scanning alone has, so it is deliberately the loudest thing on the panel
+// short of the sound itself.
+.school-scan-ceremony {
+  // z-index MUST stay above `.school-material-player` (z-index: 40) AND its
+  // own `__overlay` (z-index: 50) — both live in this same stacking context
+  // (`.school-app__body`, z-index: auto) and a code-launched video renders
+  // outside the lock branch, so a scan landing mid-playback must still be
+  // visible over it. Do not let this regress back under 50.
+  position: absolute; top: 0; left: 0; right: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  padding: 1.6rem 2rem; text-align: center;
+  border-bottom: 5px solid var(--school-accent);
+  background: color-mix(in srgb, var(--school-accent) 22%, var(--school-bg) 88%);
+  color: var(--school-fg);
+  cursor: pointer;
+  touch-action: manipulation;
+
+  &--warn {
+    border-bottom-color: var(--school-warn);
+    background: color-mix(in srgb, var(--school-warn) 22%, var(--school-bg) 88%);
+  }
+  &--error {
+    border-bottom-color: var(--school-danger);
+    background: color-mix(in srgb, var(--school-danger) 24%, var(--school-bg) 88%);
+  }
+}
+.school-scan-ceremony__title {
+  margin: 0; font-size: clamp(1.8rem, 4.5vw, 2.6rem); font-weight: 800; letter-spacing: 0.01em;
+}
+.school-scan-ceremony__detail {
+  margin: 0; font-size: clamp(1.1rem, 2.6vw, 1.5rem); font-weight: 600; line-height: 1.35;
+  max-width: 42rem;
+}
+// Secondary detail only — see the Slice D brief: a code is a footnote a
+// grown-up can read off, never the headline a child has to parse.
+.school-scan-ceremony__code {
+  margin: 0; font-size: 0.9rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--school-muted); font-family: monospace;
+}
+
+/* ---------------------------------------------------------------------------
+ * Locked kiosk split home (wave 5): keypad in one pane, the read-only
+ * AgendaStatusBoard in the other. `data-side` flips the grid direction every
+ * 90s for burn-in — a layout flip only, no remounts, so keypad entry state
+ * survives. The board pane never intercepts a tap.
+ * ------------------------------------------------------------------------- */
+.school-lock-split {
+  display: grid;
+  // ONE THIRD KEYPAD, TWO THIRDS BOARD. Four learner cards in four quarters
+  // each need the width; a six-digit pad does not. The keypad is the first
+  // child and column 1 in flow order on both sides of the burn-in flip (the
+  // flip is `direction: rtl`, which mirrors placement, not the template), so
+  // the 1fr always lands on the pad and the 2fr on the board.
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  width: 100%; height: 100%;
+
+  &[data-side='keypad-right'] { direction: rtl; > * { direction: ltr; } }
+  &[data-side='keypad-left'] > * { direction: ltr; }
+  > .school-selfservice {
+    justify-self: center; align-self: center;
+    padding: clamp(1.25rem, 3vw, 3rem); box-sizing: border-box;
+  }
+}
+// A COLUMN, not a canvas. The door was absolutely positioned here first and
+// landed on the last learner's card AND on the fixed "Turn off screen" button
+// underneath — neither of which jsdom can see. In flow, the board takes the
+// space that is left and the door keeps its own.
+.school-lock-split__board {
+  pointer-events: none;
+  user-select: none;
+  display: flex; flex-direction: column; gap: .75rem;
+  min-width: 0; min-height: 0;
+  padding: clamp(1.25rem, 2.5vw, 2.25rem); box-sizing: border-box;
+  border-left: 1px solid var(--school-border);
+}
+.school-lock-split__board > .school-status-board { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+// The date and time the board is headed with, and the door that rides right.
+.school-board-header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  min-width: 0;
+}
+.school-board-header__when { min-width: 0; }
+.school-board-header__time { margin: 0; font-size: clamp(1.6rem, 3.2vw, 2.4rem); line-height: 1.1; display: flex; align-items: center; gap: 0.45em; }
+.school-board-header__lang { font-size: 0.5em; }
+.school-board-header__date { margin: .15rem 0 0; color: var(--school-muted); font-size: clamp(.9rem, 1.6vw, 1.05rem); }
+
+// The one tappable thing in this pane, and NOT part of the board: the status
+// rows stay read-only (see AgendaStatusBoard's header), and this still stands
+// on a day the board itself draws nothing.
+.school-book-door {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: .5rem;
+  min-height: 3.5rem; padding: .5rem 1rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface); color: inherit; font: inherit; font-weight: 700;
+  cursor: pointer; touch-action: manipulation; white-space: nowrap;
+}
+.school-book-door__icon { font-size: 1.75rem; line-height: 1; }
+.school-book-door__label { font-size: 1rem; }
+.school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
+// No reserved lane any more: "Turn off screen" used to be pinned to the
+// VIEWPORT's bottom-right, which is the board's corner, so the board had to
+// keep a strip clear for a control that is not its own. It sits in the keypad
+// column now (see `.school-selfservice__screen-off`) and overlaps nothing.
+// The board OWNS its pane: a column of equal-height student cards that split
+// the available height between them, whatever each card has to say. A card
+// with no plan keeps the same footprint — four matching cards are the point.
+.school-status-board {
+  color: var(--school-board-ink);
+  display: flex; flex-direction: column;
+  width: 100%; height: 100%; min-height: 0;
+
+  &__title { margin: 0 0 clamp(0.5rem, 1.5vh, 1rem); font: 700 clamp(1.3rem, 2.6vh, 1.7rem)/1.1 Georgia, serif; opacity: 0.8; flex: 0 0 auto; }
+  &__rows {
+    list-style: none; margin: 0; padding: 0;
+    flex: 1 1 0; min-height: 0;
+    display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  }
+  &__row {
+    flex: 1 1 0; min-height: 0;
+    // FOUR EQUAL QUARTERS, a hairline between each. Time widens left to right
+    // — who, today, this week, the term — and the card is cut evenly so the
+    // eye finds the same column on every row. The day quarter alone may grow
+    // past its share: a nine-pin day needs a four-pin base, and the pins are
+    // the one thing here that cannot shrink into illegibility.
+    display: grid;
+    // Not quite even quarters: the face needs less than a fourth, the pins
+    // and the sixteen-week grid need more, and the week strip is seven
+    // squares and a number.
+    grid-template-columns: 0.8fr minmax(max-content, 1.2fr) 0.75fr 1.35fr;
+    align-items: stretch; column-gap: 0;
+    padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
+    --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
+    --disc-gap: clamp(0.15rem, 0.5vh, 0.3rem);
+    border: 1px solid var(--school-border); border-radius: 16px;
+    background: var(--school-surface);
+    transition: border-color 400ms ease, background-color 400ms ease;
+  }
+  // WHO, as one block: the name sits over the face and the pair is the card's
+  // left rail. The name used to run along the top of the whole card, which
+  // both split the identity in two and capped how large the avatar could be —
+  // the face had to fit under a line of type it was not attached to.
+  // THE NAME IS A NAMEPLATE, straddling the foot of the portrait.
+  //
+  // It used to sit above the avatar as a plain line of type, which cost the
+  // portrait vertical room and read as two stacked things rather than one
+  // labelled thing. Riding the bottom edge — half on the face, half off —
+  // makes the pair a single object, the way a plaque belongs to the portrait
+  // it is screwed to.
+  //
+  // The rail keeps the nameplate's lower half in its own box (the padding
+  // below), so the chip never collides with the card's edge or the row below.
+  &__rail {
+    position: relative;
+    flex: 0 0 auto; min-width: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding-bottom: clamp(0.7rem, 1.6vh, 1.05rem);
+
+    // Bigger than it was (13vh → 15vh, 7rem → 8rem): the face is WHO, and on
+    // a board of four it is the one thing a child finds their own row by.
+    .piano-avatar {
+      width: clamp(4rem, 14vh, 7.5rem); height: clamp(4rem, 14vh, 7.5rem);
+      font-size: clamp(1.3rem, 4.3vh, 2.2rem);
+    }
+  }
+  // FOUR PARTITIONS, time widening left to right: who · today · this week ·
+  // the term. Each is a column with its own number INSIDE it. The old card
+  // stacked a count, the rings and a strip of discs in one right-hand block,
+  // so the count sat away from the discs it counted and a busy day made the
+  // strip longer, not taller.
+  // Every partition after the first wears the divider on its left edge.
+  &__day, &__week, &__term {
+    min-width: 0; min-height: 0;
+    border-left: 1px solid var(--school-border);
+    padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: clamp(0.25rem, 0.8vh, 0.5rem);
+    // The title sits on ONE LINE across the row — at the top of every
+    // partition — and the content centres in what is left beneath it.
+    > :nth-child(2) { margin-top: auto; }
+    > :last-child { margin-bottom: auto; }
+  }
+  // A quiet title on each timed partition; the face needs none.
+  &__part-title {
+    margin: 0; flex: none; line-height: 1;
+    font-size: clamp(0.65rem, 1.5vh, 0.85rem); font-weight: 700;
+    color: var(--school-muted); letter-spacing: 0.02em;
+  }
+  &__day {
+    // The pins size themselves from THIS box's height (container units
+    // below), so it has to be a size container.
+    container-type: size;
+    // This partition has NO title, unlike its two neighbours, so the shared
+    // "title on the top line, content centred beneath it" rule above has
+    // nothing to skip past and would centre the BAR instead of the pins.
+    // Here the pins are the content and they get the whole box.
+    justify-content: center;
+    > :nth-child(2) { margin-top: 0; }
+    > :last-child { margin-bottom: 0; }
+  }
+  // Anchored to the rail's padded box, then pulled down by half its own height
+  // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
+  // does both the centring and the straddle, so the overlap stays half however
+  // the clamped type resolves.
+  &__name {
+    position: absolute;
+    left: 50%;
+    bottom: clamp(0.7rem, 1.6vh, 1.05rem);
+    transform: translate(-50%, 50%);
+    z-index: 1;
+    max-width: calc(clamp(4rem, 14vh, 7.5rem) + 0.8rem);
+    padding: 0.18em 0.6em;
+    border-radius: 999px;
+    background: var(--school-surface);
+    border: 1px solid var(--school-border);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+    font-weight: 800; font-size: clamp(0.8rem, 1.9vh, 1.1rem); line-height: 1.2;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  // On a cleared card the plate picks up the done colour, so the nameplate
+  // belongs to the green card rather than looking punched out of it.
+  &__row[data-complete='true'] &__name {
+    border-color: var(--school-board-done);
+    background: color-mix(in srgb, var(--school-board-done) 22%, var(--school-surface));
+  }
+  // Discs, one per ASSIGNMENT, each wearing its subject's icon off the wall,
+  // packed as BOWLING PINS: rows from `triangleRows`, the base at the bottom.
+  //
+  // This was a stretched meter, then a single row that divided the card's
+  // width by the disc count — so the learner with the most work got the
+  // widest, flattest strip, and a two-assignment day sat in a corner. A
+  // triangle is at most five wide where the row was up to nine, so the disc
+  // has ONE size, board-wide, set by the three-row worst case, and a busy day
+  // grows taller inside the card's height rather than longer across it.
+  //
+  // Circle over rounded-square (the household's own suggestion, taken): these
+  // sit inside a 16px-radius card, and a small rounded rectangle in there reads
+  // as a nested card rather than a state marker, while a disc reads as a bead
+  // — which is exactly what "3 of 7 done" is. A circle only inscribes ~71% of
+  // its box, so the diameter is sized for the ICON and the disc is what's left.
+  &__pins {
+    display: flex; flex-direction: column; align-items: center; flex: none;
+    // HEX PACKING, EXACTLY. Discs in adjacent rows are offset by half a
+    // pitch, so with centre-to-centre distance p = disc + gap the rows sit
+    // p·√3/2 apart and every disc TOUCHES its neighbours and overlaps none.
+    // The 0.78 pitch this replaced was a guess, and at 0.78 the rows bit
+    // into each other.
+    //
+    // THE DISC IS SIZED FROM WHAT THE PARTITION ACTUALLY HAS: `--rows` and
+    // `--base` come from the component; the height is the day box's own
+    // (`cqh`) less the title and the meter; the width is the box's (`cqw`).
+    // A one-row day gets the cap; a three-row day gets whatever fits.
+    // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
+    // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
+    // height is disc·(1 + stack) + gap·stack.
+    // What the bar and the gap above it take. This was 3.7rem when the
+    // partition also carried a "Today" heading and the bar carried "2 of 7"
+    // underneath — two lines of type that repeated what the pins and the card's
+    // own green already said, and charged the pins ~2.5rem of height for it.
+    // Both are gone; the discs got the height.
+    --room-h: calc(100cqh - 1.2rem);
+    --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
+    --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
+    --disc: min(var(--disc-cap), var(--disc-by-height), var(--disc-by-width));
+  }
+  &__pills {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; min-width: 0;
+    gap: var(--disc-gap);
+    // Row pitch = factor × (disc + gap), measured centre to centre; the
+    // margin is what is left after the disc above.
+    & + & { margin-top: calc((var(--disc) + var(--disc-gap)) * var(--pitch, 1) - var(--disc)); }
+  }
+  &__pill {
+    flex: 0 0 auto;
+    position: relative;
+    width: var(--disc); aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--school-board-pending);
+    color: var(--school-board-ink);
+
+    // The subject SVGs ship at an intrinsic 1em, which ignores the disc
+    // entirely; scale them off it instead. 58% keeps the glyph inside the
+    // circle's inscribed square (~71%) with breathing room, and the SVGs'
+    // own viewBoxes letterbox rather than stretch.
+    .school-icon { display: flex; width: 58%; height: 58%; line-height: 1; }
+    svg { width: 100%; height: 100%; }
+
+    // FOUR STATES: worksheet outcome, whether the child has STARTED it, or
+    // pending. `pending` is the base style above (grey), and it means work on
+    // the plan that has not been begun — NOT a sheet already in the child's
+    // hands, which is amber. Printing the agenda creates sessions, so `created`
+    // is on the grey side; everything past it is on the amber one.
+    &[data-state='passed'], &[data-done='true'] {
+      background: var(--school-board-done);
+      color: var(--school-board-done-ink);
+    }
+    // Needs-retry and partly-complete program work are both amber rather than
+    // red. The accessible label distinguishes "try again" from "in progress";
+    // the shared colour says only that the assignment is not complete yet.
+    &[data-state='needs-retry'], &[data-state='in-progress'] {
+      background: var(--school-board-retry, #e2a33c);
+      color: var(--school-board-retry-ink, #2a1a05);
+    }
+
+    // In flight: a disc-shaped hole with a shimmer crossing it. The panel used
+    // to render NOTHING until the slowest learner's plan returned — up to a
+    // second of blank pane with no sign it was working.
+    &--skeleton {
+      background: linear-gradient(
+        100deg,
+        var(--school-board-pending) 40%,
+        color-mix(in srgb, var(--school-board-pending) 55%, var(--school-fg)) 50%,
+        var(--school-board-pending) 60%
+      );
+      background-size: 300% 100%;
+      animation: school-board-shimmer 1.4s ease-in-out infinite;
+    }
+  }
+  // The disc as a button, in a grown-up's browser only: the same disc, the
+  // whole disc, no chrome of its own — the cursor is the only tell.
+  &__pill-door {
+    all: unset; display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 100%; border-radius: 50%; cursor: pointer;
+    // The board pane is `pointer-events: none` (it never intercepts a tap on
+    // the panel); like the book door, the button alone takes them back.
+    pointer-events: auto;
+    .school-icon { display: flex; width: 58%; height: 58%; line-height: 1; }
+    &:focus-visible { outline: 2px solid var(--school-board-ink); outline-offset: 2px; }
+  }
+  // Completed work beyond the assignment stays visible without becoming a
+  // second disc. The badge is absolutely positioned so it never enters the
+  // flex count, changes `--disc`, or makes the row wrap.
+  &__extra {
+    position: absolute;
+    top: -0.35em; right: 0;
+    z-index: 1;
+    min-width: 1.55em; height: 1.55em;
+    padding: 0 0.32em;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 2px solid var(--school-surface);
+    border-radius: 999px;
+    background: var(--school-fg);
+    color: var(--school-surface);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+    font-size: clamp(0.65rem, 1.6vh, 0.9rem);
+    font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  // The name is real from the first paint (the roster is known synchronously);
+  // only the day's own facts shimmer.
+  &__row.is-loading .school-status-board__status { opacity: 0.3; }
+  &__status {
+    flex: 0 0 auto;
+    font-size: clamp(0.7rem, 1.7vh, 0.95rem); font-weight: 700;
+    opacity: 0.75; letter-spacing: 0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  // THE METER: one segment per assignment, filled as each is done. Green
+  // segments are the day's done discs restated as a bar a doorway can read; the
+  // hollow ones are what is left. No words under it — the segments are the
+  // count, and the count is on the progressbar's aria-label for anyone who
+  // needs it read out.
+  &__meter {
+    flex: none; width: min(100%, 11rem);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  &__bar {
+    width: 100%; height: clamp(0.4rem, 1.1vh, 0.6rem);
+    display: grid; grid-template-columns: repeat(var(--segments, 1), 1fr); gap: 2px;
+  }
+  &__segment {
+    border-radius: 999px; background: var(--school-board-pending);
+    &.is-done { background: var(--school-board-done); }
+  }
+  &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
+  // A DAY OFF reads as an answer, not a gap, so it is not dimmed like
+  // "No plan to show". The hint sits under it, smaller, for a child who wants more.
+  &__status--rest {
+    display: flex; flex-direction: column; align-items: center; gap: 0.2em;
+    text-transform: none; letter-spacing: normal; font-weight: 600;
+  }
+  &__status-hint { font-weight: 500; font-size: 0.85em; opacity: 0.7; }
+
+  // (The "DONE" chip that used to replace the count at 100% is gone. A
+  // finished row already turns green end to end — nameplate, card and every
+  // disc — so the chip was a third statement of the same fact, and it was
+  // taking the height from the discs that make the first one.)
+
+  // RINGS THIS WEEK. Sits under the "x of y" readout in the card's right
+  // column: a second, independent fact (how much the child MOVED) beside the
+  // school-work count, not a competitor to it. Quieter than the status line on
+  // purpose — the discs and their count are still what this board is for.
+  // THIS WEEK as seven squares — the term's current column on its side, the
+  // same cell size, the weekday letters under it. The ring and its count sit
+  // beneath both.
+  &__week-strip {
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    --grid-cell: clamp(7px, 1.35vh, 12px);
+    --grid-gap: 2px;
+  }
+  &__grid--week { --grid-cell: inherit; --grid-gap: inherit; }
+  &__week-letters {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(7, var(--grid-cell)); gap: var(--grid-gap);
+    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
+    color: var(--school-muted); text-align: center;
+  }
+  &__rings {
+    flex: 0 0 auto;
+    display: flex; flex-direction: row; align-items: center; gap: 0.35em;
+    font-size: clamp(1rem, 2.6vh, 1.4rem); font-weight: 800;
+    color: var(--school-muted);
+    line-height: 1;
+  }
+  &__rings-count { font-variant-numeric: tabular-nums; }
+
+  // THE TERM GRID. Seven rows × one column per week, ~11px cells on the
+  // 1280x800 Portal: eighteen weeks fit in ~230px beside the pins. The grid's
+  // own palette is the household's (green/amber/grey) plus blue for a day
+  // the house took off; the count is never shown here — the card is read from
+  // across a room, and a number in an 11px square is noise.
+  // The grid and its two axes share one column template, declared once on
+  // the plot and read by all three, so a month label can only ever sit over
+  // its own week.
+  &__term-plot {
+    --grid-cell: clamp(6px, 1.3vh, 12px);
+    --grid-gap: 1px;
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  &__term-axis {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
+    height: 0.7em;
+    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
+    color: var(--school-muted); font-variant-numeric: tabular-nums;
+    li { overflow: visible; white-space: nowrap; }
+    &--months { margin-top: 2px; }
+  }
+  &__grid {
+    // The day grid declares its own defaults on its root; the plot's values
+    // have to be pulled through explicitly or a 1rem cell comes back.
+    --grid-cell: inherit;
+    --grid-gap: inherit;
+    --grid-radius: 2px;
+    --grid-met: var(--school-board-done);
+    --grid-partial: var(--school-board-retry, #e2a33c);
+    --grid-none: var(--school-board-pending);
+    --grid-exempt: var(--school-board-exempt, #4f8fd6);
+    --grid-unknown-edge: color-mix(in srgb, var(--school-board-ink) 22%, transparent);
+    --grid-current: var(--school-board-ink);
+    justify-content: flex-end;
+  }
+  // The same footprint as an 18-week grid, so the card does not jump when the
+  // term lands. Shimmers like the pins.
+  &__grid--skeleton {
+    width: calc(16 * (clamp(6px, 1.3vh, 12px) + 1px));
+    height: calc(7 * (clamp(6px, 1.3vh, 12px) + 1px));
+    border-radius: 3px;
+    background: linear-gradient(
+      100deg,
+      var(--school-board-pending) 40%,
+      color-mix(in srgb, var(--school-board-pending) 55%, var(--school-fg)) 50%,
+      var(--school-board-pending) 60%
+    );
+    background-size: 300% 100%;
+    animation: school-board-shimmer 1.4s ease-in-out infinite;
+    opacity: 0.5;
+  }
+
+  // A CLEARED DAY, VISIBLE FROM THE DOORWAY — and STILL.
+  //
+  // This has now been two kinds of motion and neither earned its place. It was
+  // a breathing glow, which reads as blinking from the corner of the eye
+  // because it changes brightness; that was replaced with a slow dot crawl,
+  // which holds luminance but still draws the eye on a fixture that is up all
+  // day. Both were distracting for the same underlying reason: a wall panel is
+  // in your peripheral vision constantly, and anything that moves there is
+  // asking for attention it does not need.
+  //
+  // Colour alone carries it. A green card with a green rim is legible from the
+  // doorway without ever moving, which is the whole requirement. KC,
+  // 2026-08-26.
+  &__row[data-complete='true'] {
+    border-color: var(--school-board-done);
+    background: color-mix(in srgb, var(--school-board-done) 14%, var(--school-surface));
+
+    .school-status-board__status { color: var(--school-board-done); opacity: 1; }
+  }
+}
+
+@keyframes school-board-shimmer {
+  0% { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
+// The cleared-day card no longer animates at all, so only the in-flight
+// skeleton shimmer is left to silence here.
+@media (prefers-reduced-motion: reduce) {
+  .school-status-board__pill--skeleton, .school-status-board__grid--skeleton { animation: none; }
+}
+/* On a portrait/narrow mount the split stacks; the board hides on very short
+ * viewports so the keypad always fits. */
+@media (max-width: 820px) {
+  .school-lock-split { grid-template-columns: 1fr; }
+  .school-lock-split__board { display: none; }
+}
+
+// Bulk variant — one code covers every subject with a print left today, so
+// the card lists them instead of naming a single subject/title.
+.school-selfservice-card--bulk {
+  text-align: left;
+}
+.school-selfservice-card__items {
+  list-style: none; margin: 0.6rem 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  width: 100%; text-align: left;
+}
+.school-selfservice-card__item {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--school-border);
+  font-size: 1.15rem;
+}
+.school-selfservice-card__item-subject {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.95rem; color: var(--school-muted);
+}
+.school-selfservice-card__item-title {
+  font-weight: 600;
+}
+// Grouped answer-sheet identity review (separate from item grading).
+.answer-sheet-pairing {
+  display: grid;
+  gap: 1rem;
+
+  &__case,
+  &__candidate {
+    border: 1px solid var(--teacher-border, #c8c3b8);
+    border-radius: 0.65rem;
+    padding: 0.85rem;
+  }
+
+  &__candidates {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+  }
+
+  &__candidate {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.75rem;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    gap: 0.5rem;
+  }
+}
+
+.answer-sheet-identicon {
+  display: grid;
+  grid-template-columns: repeat(5, 0.34rem);
+  grid-template-rows: repeat(5, 0.34rem);
+  gap: 1px;
+  padding: 0.2rem;
+  border: 1px solid currentColor;
+  width: max-content;
+  height: max-content;
+
+  &__cell { background: transparent; }
+  &__cell--on { background: currentColor; }
+}
+
+// Reading tasks keep identity/Done in the shelf header and give context and
+// controls their own columns on the landscape Portal. Narrow mounts stack.
+.school-books-task { display: flex; flex-direction: column; gap: 1rem; width: 100%; }
+.school-books-task__context { min-width: 0; }
+.school-books-task__controls { display: flex; flex-direction: column; gap: .65rem; min-width: 0; width: 100%; }
+.school-books-add__card.school-books-task { display: flex; }
+.school-books-add__card > .school-books-task__context { display: flex; align-items: center; gap: 1rem; }
+
+// THE FOUND BOOK: the cover as the stage. On the landscape Portal the
+// task-view grid puts the stage in column 1 and the words in column 2; here
+// the stage is the cover as tall as the pane allows with the three doors
+// straddling its foot, and the words are a quiet column — title, author,
+// then the blurb left-aligned in a box that scrolls rather than a clamp
+// that cuts.
+.school-books-found {
+  .school-books-found__stage { position: relative; display: flex; flex-direction: column; align-items: center; }
+  // Three selectors deep on purpose: the task-view's landscape rule sizes
+  // every context cover at 10rem, and this one has to outrank it.
+  .school-books-task__context .school-books-found__cover,
+  .school-books-found__cover {
+    width: auto; max-width: 100%;
+    height: clamp(14rem, 58vh, 30rem); max-height: none;
+    aspect-ratio: 2 / 3; object-fit: contain;
+    border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  }
+  // Straddling: the doors sit half over the cover's bottom edge, on their own
+  // plinth so the cover's art never shows through the gaps between them.
+  .school-books-found__doors {
+    width: min(100%, 21rem); margin-top: -2.4rem; padding: 0.35rem; box-sizing: border-box;
+    border-radius: 16px; background: var(--school-bg);
+    position: relative; z-index: 1;
+  }
+  .school-books-found__doors .school-books-add__door { max-height: 6.5rem; }
+  .school-books-found__about {
+    text-align: left; align-items: stretch; min-height: 0;
+    .school-books-add__title { text-align: left; -webkit-line-clamp: 3; font-size: 1.5rem; }
+    .school-books-add__author { text-align: left; }
+  }
+  .school-books-found__blurb {
+    @include school-scrollbar;
+    flex: 1 1 auto; min-height: 0; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain;
+    padding-right: 0.5rem;
+  }
+  .school-books-found__description {
+    display: block; overflow: visible; -webkit-line-clamp: unset;
+    font-size: 0.95rem; line-height: 1.45; color: var(--school-muted); text-align: left;
+  }
+}
+
+// Anonymous scan overlay never replaces an active School workspace.
+// `pointer-events` INHERITS, and the panel door mounts this dialog from inside
+// `.school-lock-split__board`, which is `pointer-events: none`. Fixed
+// positioning and z-index 150 are not enough on their own: without this the
+// faces draw on top of the keypad and every tap falls straight through to the
+// keys behind them.
+.school-book-scan { pointer-events: auto; position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: var(--school-bg); overflow: auto; padding: 1.5rem; box-sizing: border-box; }
+.school-book-scan__preview { display: flex; flex-direction: column; gap: 1rem; width: 100%; text-align: center; }
+.school-book-scan__preview h2, .school-book-scan__preview h3, .school-book-scan__preview p { margin: 0; }
+.school-book-scan__layout { display: flex; flex-direction: column; gap: 1.5rem; }
+.school-book-scan__book, .school-book-scan__actions { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; min-width: 0; }
+.school-book-scan__book h3 { font-size: 1.5rem; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.school-book-scan__book > p { color: var(--school-muted); }
+.school-book-scan__preview .school-books-add__cover { max-height: none; width: min(18rem, 100%); flex-shrink: 0; }
+
+// "WHO'S READING?" AS A SCREEN. The shelf's header (Back is the way out), a
+// title that can be read from the doorway with the English shelf's mark
+// beside it, and the faces in ONE ROW — tall tiles, the face most of the
+// tile, the name under it — because a child picks their own face, and four
+// faces in a row is a line-up they already know how to read.
+.school-book-scan--who {
+  display: block; padding: var(--shelf-pad, 1rem) 0;
+  .school-book-scan__screen {
+    display: flex; flex-direction: column; gap: clamp(0.8rem, 2.4vh, 1.6rem);
+    width: 100%; height: 100%; box-sizing: border-box;
+    padding-inline: max(1rem, calc(50% - 32rem + 1rem));
+  }
+  .school-book-scan__ask {
+    display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+    margin-top: clamp(0.25rem, 2vh, 1.25rem);
+  }
+  .school-book-scan__ask-icon { display: flex; font-size: clamp(2rem, 5vh, 2.8rem); color: var(--school-accent); svg { width: 1em; height: 1em; } }
+  .school-book-scan__ask-title { margin: 0; font-size: clamp(1.8rem, 4.6vh, 2.6rem); font-weight: 800; letter-spacing: -0.01em; }
+  .school-book-scan__learners {
+    flex: 1 1 auto; min-height: 0;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column;
+    gap: clamp(0.6rem, 1.6vw, 1.2rem); align-content: center;
+  }
+  .school-book-scan__learners button {
+    flex-direction: column; justify-content: center; gap: clamp(0.5rem, 1.6vh, 1rem);
+    min-height: clamp(12rem, 52vh, 26rem); padding: clamp(0.75rem, 2vh, 1.4rem) 0.5rem;
+    font-size: clamp(1.2rem, 2.6vh, 1.6rem);
+  }
+  .school-book-scan__learners .piano-avatar {
+    width: clamp(7rem, 30vh, 14rem); height: clamp(7rem, 30vh, 14rem); flex: 0 0 auto;
+  }
+  .school-book-scan__error { margin: 0; text-align: center; color: var(--school-danger); font-weight: 700; }
+}
+.school-book-scan__actions > p { font-size: 1.2rem; }
+.school-book-scan__actions > .school-books__back { align-self: center; }
+.school-book-scan__learners { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: .75rem; }
+.school-book-scan__learners button { display: flex; align-items: center; gap: .75rem; background: var(--school-surface); color: inherit; border: 1px solid var(--school-border); border-radius: 12px; padding: .75rem; min-height: 96px; min-width: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 1.15rem; }
+.school-book-scan__learners button span { overflow-wrap: anywhere; }
+.school-book-scan__learners .piano-avatar { width: 72px; height: 72px; flex: 0 0 72px; }
+// The deferred-scan corner card. Nothing else is pinned to this corner any
+// more — "Turn off screen" moved into the keypad column — so it sits at the
+// bottom inset rather than lifted clear of it.
+.school-book-scan__notice {
+  position: fixed; right: 1rem; z-index: 140;
+  bottom: max(1rem, calc(env(safe-area-inset-bottom) + 1rem));
+  display: flex; align-items: center; gap: .75rem;
+  width: min(24rem, calc(100% - 2rem)); box-sizing: border-box;
+  padding: .75rem 1rem; border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface); box-shadow: 0 6px 24px rgb(0 0 0 / 28%);
+  // The dead sentence this replaced was pointer-events: none. The card IS the
+  // way into the book now, so it must take a tap — but only the card: nothing
+  // here may swallow one meant for the work underneath.
+  pointer-events: auto;
+}
+.school-book-scan__notice .school-book-scan__notice-cover { width: 3rem; flex: 0 0 3rem; max-height: 4.5rem; }
+.school-book-scan__notice-body { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
+.school-book-scan__notice-title { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.school-book-scan__notice-warn { margin: 0; color: var(--school-muted); font-size: .9rem; }
+.school-book-scan__notice-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.school-book-scan__open {
+  min-height: 44px; padding: .4rem 1rem; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--school-border); background: var(--school-accent, var(--school-surface));
+  color: inherit; font: inherit; font-weight: 700; touch-action: manipulation;
+}
+
+@media (min-width: 820px) and (orientation: landscape) {
+  .school-books-task-view {
+    display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+    grid-template-rows: 52px minmax(0, 1fr); column-gap: 2rem; row-gap: .5rem;
+    align-items: start;
+  }
+  .school-books-task-view > .school-books__back { grid-column: 1; grid-row: 1; justify-self: start; }
+  .school-books-task-view > .school-books-task { display: contents; }
+  .school-books-task-view .school-books-task__context {
+    grid-column: 1; grid-row: 2; display: flex; flex-direction: column; align-items: center;
+    gap: 1rem; width: 100%; margin: 0; text-align: center; align-self: center;
+  }
+  .school-books-task-view .school-books-task__controls {
+    grid-column: 2; grid-row: 1 / -1; align-self: center; width: 100%; max-height: 100%;
+    gap: .5rem; padding-block: .25rem; box-sizing: border-box;
+  }
+  .school-books-task__context .school-books-update__cover,
+  .school-books-task__context .school-books-add__cover,
+  .school-books-task__context .school-books-add__thumb {
+    width: 10rem; max-height: 15rem; height: 15rem; object-fit: contain;
+  }
+  .school-books-task__context .school-books-update__meta { flex: 0 1 auto; width: 100%; }
+  .school-books-task__context .school-books-add__about { text-align: center; }
+  .school-books-task__context .school-books-add__line { gap: .4rem; width: 100%; }
+  .school-books-task__context .school-books-add__line strong,
+  .school-books-task__context .school-books-add__line span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .school-books-task__context .school-books-add__line strong { font-size: 1.4rem; line-height: 1.2; }
+  .school-books-task__context .school-books-update__author { white-space: normal; }
+  .school-books-task__context .school-books-update__progress { margin-top: .5rem; }
+  .school-books-task__controls .school-books-pad { gap: .5rem; }
+  .school-books-task__controls .school-books-pad__label,
+  .school-books-task__controls .school-books-update__prompt,
+  .school-books-task__controls .school-books-add__prompt { margin: 0; font-size: 1.3rem; line-height: 1.25; }
+  .school-books-task__controls .school-books-pad__slot { aspect-ratio: auto; height: 56px; }
+  .school-books-task__controls .school-books-pad__keys { gap: .5rem; }
+  .school-books-task__controls .school-books-pad__key { min-height: 56px; height: 56px; }
+  .school-books-task__controls .school-books-pad__submit { min-height: 56px; }
+  .school-books-task__controls .school-books-update__finish { gap: .5rem; }
+  .school-books-task__controls .school-books-days { gap: .5rem; }
+  .school-books-task__controls .school-books-days__summary { font-size: 1.2rem; line-height: 1.25; }
+  .school-books-task__controls .school-books-days__grid,
+  .school-books-task__controls .school-books-days__row { gap: .35rem; }
+  .school-books-task__controls .school-books-days__cell { min-height: 48px; height: 48px; }
+  .school-books-task__controls .school-books-days__day { font-size: 1.15rem; }
+  .school-books-task__controls .school-books-days__confirm { min-height: 56px; }
+  .school-books-task__controls .school-books-update__quiet { min-height: 44px; }
+  .school-books-task__controls .school-books-add__doors { width: 100%; }
+  .school-book-scan__layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 2rem; align-items: center; }
+  // Keep the full cover visible while reserving room for its title and author.
+  .school-book-scan__preview .school-books-add__cover { width: min(100%, 44vh); }
+  .school-book-scan__actions { align-self: stretch; }
+  .school-book-scan__actions > p { font-size: clamp(1.4rem, 2.4vw, 2rem); }
+  .school-book-scan__learners { flex: 1; align-content: center; gap: 1rem; }
+  .school-book-scan__learners button { min-height: clamp(96px, 18vh, 160px); font-size: clamp(1.15rem, 1.8vw, 1.6rem); }
+  // THE FACES GROW INTO THE TILE. "Who's reading?" is a page of four tiles a
+  // child picks their own face from; a 72px portrait inside a 160px tile was
+  // a thumbnail with a caption. The face fills the tile's height instead.
+  .school-book-scan__learners .piano-avatar {
+    width: clamp(6rem, 22vh, 10rem); height: clamp(6rem, 22vh, 10rem); flex: 0 0 clamp(6rem, 22vh, 10rem);
+  }
+}

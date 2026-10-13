@@ -10,7 +10,7 @@
  * Usage:
  *   npx playwright test tests/runtime/fitness-session/memory-leak.runtime.test.mjs --workers=1
  *
- * @see /docs/_wip/plans/2026-01-12-fitness-session-memory-leak-test.md
+ * @see /__docs/_wip/plans/2026-01-12-fitness-session-memory-leak-test.md
  */
 
 import { test, expect } from '@playwright/test';

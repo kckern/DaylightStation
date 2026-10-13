@@ -11,7 +11,7 @@
  * "before you retry" from "worth a second look", and nothing else does.
  */
 import { describe, it, expect } from 'vitest';
-import { resultDocument } from "../../../../modules/school/server/domain/documents/receipts.mjs";
+import { resultDocument } from "../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
 
 const HINT = '15: review page 12 · midwest farming.';
 const summary = (document) => document.blocks.find((b) => b.type === 'result_summary');

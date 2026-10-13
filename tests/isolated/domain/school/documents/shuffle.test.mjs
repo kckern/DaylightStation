@@ -6,7 +6,7 @@
  * touching the input.
  */
 import { describe, it, expect } from 'vitest';
-import { deriveShuffle, applyShuffle, SHUFFLE_KEY_PATTERN } from "../../../../../modules/school/server/domain/documents/shuffle.mjs";
+import { deriveShuffle, applyShuffle, SHUFFLE_KEY_PATTERN } from "../../../../../__app_modules/learning/school/server/domain/documents/shuffle.mjs";
 
 describe('deriveShuffle', () => {
   it('is deterministic across repeated calls with the same inputs', () => {

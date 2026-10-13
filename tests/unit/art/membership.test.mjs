@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isMember } from "../../../modules/art/server/adapters/collections.mjs";
+import { isMember } from "../../../__app_modules/media/art/server/adapters/collections.mjs";
 
 // entry shape the predicate sees: { folder, meta }
 const entry = (meta) => ({ folder: 'W', meta });

@@ -4,7 +4,7 @@ import {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlSchoolDatastore } from "../../../../modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { YamlSchoolDatastore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
 
 const USER = 'kid1';
 let tmp, ds;

@@ -1,7 +1,7 @@
 /**
  * The single source of truth for where a household app's config lives.
  *
- * Folder = the DOMAIN, named after `backend/src/3_applications/`.
+ * Folder = the DOMAIN, named after `__backend/src/3_applications/`.
  * Filename = the facet: `config` for domain policy, another name for a
  * surface or a second facet of the same domain.
  *
@@ -25,7 +25,7 @@
  *
  * This map is now the ONLY way a household app config is found. The retiring
  * flat `<household>/config/<app>.yml` fallback was deleted in Phase E, after
- * `backend/tests/unit/system/config/registryCompleteness.test.mjs` proved every
+ * `__backend/tests/unit/system/config/registryCompleteness.test.mjs` proved every
  * registered path resolves on disk and no unregistered colocated config exists.
  * An app missing from this map no longer degrades to a flat file — it simply
  * has no config. Add the entry here; that is the only edit an app needs.

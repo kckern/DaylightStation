@@ -2,28 +2,28 @@ import { DaylightAPI, DaylightMediaPath } from './api.mjs';
 
 // App icon SVGs (Vite resolves these to hashed URLs)
 import webcamIcon from '../assets/app-icons/webcam.svg';
-import { gratitudeIcon } from '../../../modules/gratitude/browser/assets.mjs';
-import wrapupIcon from "../../../modules/home/browser/assets/wrap-up-icon.mjs";
-import officeOffIcon from "../../../modules/home/browser/assets/office-off-icon.mjs";
+import { gratitudeIcon } from '../../../__app_modules/personal/gratitude/browser/assets.mjs';
+import wrapupIcon from "../../../__app_modules/household/home/browser/assets/wrap-up-icon.mjs";
+import officeOffIcon from "../../../__app_modules/household/home/browser/assets/office-off-icon.mjs";
 import keycodeIcon from '../assets/app-icons/keycode.svg';
 import familySelectorIcon from '../assets/app-icons/family-selector.svg';
 import glympseIcon from '../assets/app-icons/glympse.svg';
 import websocketIcon from '../assets/app-icons/websocket.svg';
-import { videocallIcon } from "../../../modules/homeline/browser/assets.mjs";
+import { videocallIcon } from "../../../__app_modules/household/homeline/browser/assets.mjs";
 
 export const APP_REGISTRY = {
   'webcam':          { label: 'Webcam',           icon: webcamIcon,         param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
-  'videocall':       { label: 'Video Call',       icon: videocallIcon,      param: { name: 'device' }, component: () => import("../../../modules/homeline/browser/tv.mjs") },
-  'gratitude':       { label: 'Gratitude & Hope', icon: gratitudeIcon,      param: null, component: () => import('../../../modules/gratitude/browser/public.mjs') },
-  'wrapup':          { label: 'Wrap Up',          icon: wrapupIcon,         param: null, component: () => import("../../../modules/home/browser/wrap-up.mjs") },
-  'office_off':      { label: 'Office Off',       icon: officeOffIcon,      param: null, component: () => import("../../../modules/home/browser/office-off.mjs") },
+  'videocall':       { label: 'Video Call',       icon: videocallIcon,      param: { name: 'device' }, component: () => import("../../../__app_modules/household/homeline/browser/tv.mjs") },
+  'gratitude':       { label: 'Gratitude & Hope', icon: gratitudeIcon,      param: null, component: () => import('../../../__app_modules/personal/gratitude/browser/public.mjs') },
+  'wrapup':          { label: 'Wrap Up',          icon: wrapupIcon,         param: null, component: () => import("../../../__app_modules/household/home/browser/wrap-up.mjs") },
+  'office_off':      { label: 'Office Off',       icon: officeOffIcon,      param: null, component: () => import("../../../__app_modules/household/home/browser/office-off.mjs") },
   'keycode':         { label: 'Key Test',         icon: keycodeIcon,        param: null, component: () => import('../modules/AppContainer/Apps/KeyTest/KeyTest.jsx') },
-  'family-selector': { label: 'Family Selector',  icon: familySelectorIcon, param: { name: 'winner', options: 'household' }, component: () => import('../../../capabilities/household-identity/browser/public.mjs') },
+  'family-selector': { label: 'Family Selector',  icon: familySelectorIcon, param: { name: 'winner', options: 'household' }, component: () => import('../../../__capabilities/household-identity/browser/public.mjs') },
   'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
-  'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../modules/weekly-review/browser/widget.mjs") },
-  'party-games':      { label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../modules/party-games/browser/widget.mjs") },
-  'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../modules/school/browser/kiosk.mjs") },
+  'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../__app_modules/personal/weekly-review/browser/widget.mjs") },
+  'party-games':      { label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
+  'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../__app_modules/learning/school/browser/kiosk.mjs") },
 };
 
 /**

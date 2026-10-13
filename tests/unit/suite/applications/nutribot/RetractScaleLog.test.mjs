@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { RetractScaleLog } from "../../../../../modules/nutribot/server/application/usecases/RetractScaleLog.mjs";
+import { RetractScaleLog } from "../../../../../__app_modules/wellness/nutribot/server/application/usecases/RetractScaleLog.mjs";
 
 describe('RetractScaleLog', () => {
   let messagingGateway, foodLogStore, stateStore, logger, uc;

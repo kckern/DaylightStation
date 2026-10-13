@@ -1,6 +1,6 @@
 // tests/unit/fitness/legend-hydration.test.mjs
 import { describe, it, expect } from '@jest/globals';
-import { resolveHistoricalParticipant } from "../../../modules/fitness/browser/widgets/FitnessChart/resolveHistoricalParticipant.js";
+import { resolveHistoricalParticipant } from "../../../__app_modules/wellness/fitness/browser/widgets/FitnessChart/resolveHistoricalParticipant.js";
 
 describe('resolveHistoricalParticipant', () => {
   it('returns displayMap entry when it has a non-slug displayName', () => {

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +7,7 @@ const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 
 function loadConfig(baseURL) {
   return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
-    const { default: config } = await import('./playwright.config.mjs');
+    const { default: config } = await import('./tests/_infrastructure/config/playwright.config.mjs');
     process.stdout.write(JSON.stringify({ baseURL: config.use.baseURL, webServer: config.webServer ?? null }));
   `], { cwd: repository, env: { ...process.env, BASE_URL: baseURL }, encoding: 'utf8' }));
 }

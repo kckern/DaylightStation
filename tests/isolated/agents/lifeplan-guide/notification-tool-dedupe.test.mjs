@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { NotificationToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
+import { NotificationToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
 
 // Task 7 follow-up: CadenceCheck (the only production caller of
 // send_action_message) passes a hardcoded title of 'Life Coach' for every

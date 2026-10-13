@@ -1,6 +1,6 @@
 // tests/unit/domains/fitness/entities/Session.test.mjs
-import { Session } from "../../../../../modules/fitness/server/domain/entities/Session.mjs";
-import { serializeSession } from "../../../../../modules/fitness/server/application/sessionRecords.mjs";
+import { Session } from "../../../../../__app_modules/wellness/fitness/server/domain/entities/Session.mjs";
+import { serializeSession } from "../../../../../__app_modules/wellness/fitness/server/application/sessionRecords.mjs";
 
 describe('Session', () => {
   let session;

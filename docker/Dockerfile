@@ -1,9 +1,6 @@
 # syntax=docker/dockerfile:1.4
 ARG NODE_VERSION=22.23.2
-ARG CUTOVER_DEP_BASE=node:${NODE_VERSION}-alpine
-FROM ${CUTOVER_DEP_BASE}
-ARG CUTOVER_REUSE_DEPS=0
-ARG CUTOVER_DEP_BASE
+FROM node:${NODE_VERSION}-alpine
 
 WORKDIR /usr/src/app
 
@@ -18,34 +15,27 @@ WORKDIR /usr/src/app
 # remove this without re-checking that, since the printer will silently
 # fail closed (LaserPrinterAdapter now refuses to send an unsupported
 # format rather than guess) if `gs` disappears from the image.
-RUN if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then \
-      apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools su-exec fluidsynth soundfont-timgm exiftool ghostscript; \
-    else \
-      test "$CUTOVER_REUSE_DEPS" = "1" \
-      && test "$CUTOVER_DEP_BASE" = "sha256:2217a991d3e1a8d4c8a973bc44ea2ebf7580330b8a19c7b0b57e64a6dd888929"; \
-    fi
+RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools su-exec fluidsynth soundfont-timgm exiftool ghostscript
 
 # Set System Timezone
 ARG TZ=America/Los_Angeles
 ENV TZ=${TZ}
 
 # Layer 2: Build tools for native modules (canvas, etc.)
-RUN if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base; fi
+RUN apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base
 
 # Layer 3: Python and yt-dlp - changes occasionally
-RUN if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then \
-      apk add --no-cache python3 py3-pip \
-      && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]@git+https://github.com/yt-dlp/yt-dlp.git" \
-      && yt-dlp --version; \
-    fi
+RUN apk add --no-cache python3 py3-pip \
+    && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]@git+https://github.com/yt-dlp/yt-dlp.git" \
+    && yt-dlp --version
 
 # Layer 4: Global npm packages
-RUN if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then npm install -g forever; fi
+RUN npm install -g forever
 
 # Layer 5: Copy package files for dependency caching
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
-COPY backend/package*.json ./backend/
+COPY __backend/package*.json ./__backend/
 # Root `npm ci` runs the developer-hook `prepare` script. The production
 # context deliberately excludes `.git`, but the script itself must exist while
 # dependencies install; it exits cleanly outside a checkout.
@@ -66,29 +56,21 @@ COPY scripts/setup-owner-dependencies.mjs ./scripts/setup-owner-dependencies.mjs
 # dangling once the full build is deleted. That's fine as long as callers
 # always request `'lite-single'` explicitly (never call `require('stockfish')()`
 # with no argument), which is what the worker does.
-RUN if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then \
-      npm ci --include=dev --legacy-peer-deps \
-      && cd frontend && npm ci --legacy-peer-deps \
-      && cd ../backend && npm ci --legacy-peer-deps \
-      && SF=/usr/src/app/node_modules/stockfish/bin \
-      && test -f "$SF/stockfish-18-lite-single.js" \
-      && test -f "$SF/stockfish-18-lite-single.wasm" \
-      && find "$SF" -type f ! -name 'stockfish-18-lite-single.*' -delete \
-      && du -sh "$SF"; \
-    else \
-      for area in backend frontend; do \
-        find "$area" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} \; ; \
-      done \
-      && rm -rf shared modules capabilities cli scripts \
-      && rm -f package.json package-lock.json entrypoint.sh; \
-    fi
+RUN npm ci --include=dev --legacy-peer-deps \
+    && cd frontend && npm ci --legacy-peer-deps \
+    && cd ../__backend && npm ci --legacy-peer-deps \
+    && SF=/usr/src/app/node_modules/stockfish/bin \
+    && test -f "$SF/stockfish-18-lite-single.js" \
+    && test -f "$SF/stockfish-18-lite-single.wasm" \
+    && find "$SF" -type f ! -name 'stockfish-18-lite-single.*' -delete \
+    && du -sh "$SF"
 
 # Layer 7: Copy application source (uses .dockerignore)
 COPY --chown=node:node shared/ ./shared/
-COPY --chown=node:node backend/ ./backend/
+COPY --chown=node:node __backend/ ./__backend/
 COPY --chown=node:node frontend/ ./frontend/
-COPY --chown=node:node modules/ ./modules/
-COPY --chown=node:node capabilities/ ./capabilities/
+COPY --chown=node:node __app_modules/ ./__app_modules/
+COPY --chown=node:node __capabilities/ ./__capabilities/
 COPY --chown=node:node cli/ ./cli/
 COPY --chown=node:node package*.json ./
 COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
@@ -105,19 +87,6 @@ RUN node scripts/setup-owner-dependencies.mjs && node scripts/setup-owner-depend
 # build. If this is hit again the bundle needs splitting, not a bigger number.
 RUN cd frontend && NODE_OPTIONS=--max-old-space-size=4096 npm run build
 
-# The default context contains only a placeholder here. A cutover context may
-# replace it with the independently pinned legacy hashed JS/CSS allowlist.
-COPY docker/cutover-assets/ /tmp/cutover-assets/
-RUN if [ "$CUTOVER_REUSE_DEPS" = "1" ]; then \
-      test "$(find /tmp/cutover-assets -maxdepth 1 -type f ! -name .keep | wc -l)" -eq 388 \
-      && test -z "$(find /tmp/cutover-assets -mindepth 1 -maxdepth 1 -type l -print -quit)" \
-      && rm -f /tmp/cutover-assets/.keep \
-      && mkdir -p /usr/src/app/frontend/dist/assets \
-      && for file in /tmp/cutover-assets/*; do test ! -e "/usr/src/app/frontend/dist/assets/${file##*/}" || exit 1; done \
-      && cp -a /tmp/cutover-assets/. /usr/src/app/frontend/dist/assets/; \
-    fi \
-    && rm -rf /tmp/cutover-assets
-
 # Layer 9: Setup entrypoint and permissions
 COPY docker/entrypoint.sh /usr/src/app/
 RUN chmod +x /usr/src/app/entrypoint.sh \
@@ -125,7 +94,7 @@ RUN chmod +x /usr/src/app/entrypoint.sh \
     && chown node:node /usr/src/app/known_hosts \
     && mkdir -p /home/node/.cache/yt-dlp \
     && chown -R node:node /home/node/.cache \
-    && if [ "$CUTOVER_REUSE_DEPS" = "0" ]; then chown -R node:node /usr/src/app/backend; else test "$(stat -c %u:%g /usr/src/app/backend/node_modules)" = "1000:1000"; fi
+    && chown -R node:node /usr/src/app/__backend
 
 # Layer 10: Build metadata (at END - changes every build)
 ARG BUILD_TIME

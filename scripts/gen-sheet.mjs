@@ -21,21 +21,21 @@
  *   npm run sheet -- fridge --open         # write, then open it
  *   npm run sheet -- catalog --param source=plex --param id=42
  *
- * Requires DAYLIGHT_BASE_PATH (see .env) — same variable backend/index.js uses.
+ * Requires DAYLIGHT_BASE_PATH (see .env) — same variable __backend/index.js uses.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import yaml from 'js-yaml';
 
-import { normalizeScaleNutribotConfig } from '../modules/health/server/scale-config.mjs';
-import { createNutritionProviders } from '../modules/health/server/nutrition-sheets.mjs';
+import { normalizeScaleNutribotConfig } from '../__app_modules/wellness/health/server/scale-config.mjs';
+import { createNutritionProviders } from '../__app_modules/wellness/health/server/nutrition-sheets.mjs';
 import { createIconLoader } from '#composition/modules/iconLoader.mjs';
 import { createCellRenderers } from '#rendering/pdf/cellRenderers.mjs';
-import { createSheetService } from "../capabilities/printable-sheets/server/application/SheetService.mjs";
-import { renderSheetPdf } from "../capabilities/printable-sheets/server/rendering/QRSheetRenderer.mjs";
-import { layout as layoutSheet } from "../capabilities/printable-sheets/server/rendering/SheetLayout.mjs";
-import { parseScan } from "../modules/health/server/nutrition-scan.mjs";
+import { createSheetService } from "../__capabilities/printable-sheets/server/application/SheetService.mjs";
+import { renderSheetPdf } from "../__capabilities/printable-sheets/server/rendering/QRSheetRenderer.mjs";
+import { layout as layoutSheet } from "../__capabilities/printable-sheets/server/rendering/SheetLayout.mjs";
+import { parseScan } from "../__app_modules/wellness/health/server/nutrition-scan.mjs";
 
 // ---- args ------------------------------------------------------------------
 // Single left-to-right pass. An earlier version inferred the positional by

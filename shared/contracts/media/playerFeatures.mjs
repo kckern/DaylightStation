@@ -7,7 +7,7 @@
 //   - Music behind a slideshow (RQ-PLAY-12, PLAY.9a)           action `music-behind`, controls.musicBehind
 //
 // Pure functions only: shared by the backend router, the screen framework,
-// the Player and the Media app. See docs/reference/media/media-app-technical.md
+// the Player and the Media app. See __docs/reference/media/media-app-technical.md
 // §4.11 and §6.7. This module must not import shapes.mjs or sessionControls.mjs
 // (sessionControls imports it).
 

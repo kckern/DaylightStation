@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { FilesystemLocalMediaRepository } from "../../../../modules/media/server/adapters/FilesystemLocalMediaRepository.mjs";
-import { FilesystemContentMediaRepository } from "../../../../modules/media/server/adapters/FilesystemContentMediaRepository.mjs";
-import { ILocalMediaRepository } from "../../../../modules/media/server/application/ports/ILocalMediaRepository.mjs";
-import { IContentMediaRepository } from "../../../../modules/media/server/application/ports/IContentMediaRepository.mjs";
+import { FilesystemLocalMediaRepository } from "../../../../__app_modules/media/media/server/adapters/FilesystemLocalMediaRepository.mjs";
+import { FilesystemContentMediaRepository } from "../../../../__app_modules/media/media/server/adapters/FilesystemContentMediaRepository.mjs";
+import { ILocalMediaRepository } from "../../../../__app_modules/media/media/server/application/ports/ILocalMediaRepository.mjs";
+import { IContentMediaRepository } from "../../../../__app_modules/media/media/server/application/ports/IContentMediaRepository.mjs";
 
 async function readStream(stream) {
   const chunks = [];

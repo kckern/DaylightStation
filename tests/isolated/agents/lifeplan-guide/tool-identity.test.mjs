@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { PlanToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
-import { CeremonyToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/CeremonyToolFactory.mjs";
-import { LifelogToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/LifelogToolFactory.mjs";
-import { NotificationToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
-import { CoachingToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/CoachingToolFactory.mjs";
+import { PlanToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
+import { CeremonyToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/CeremonyToolFactory.mjs";
+import { LifelogToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/LifelogToolFactory.mjs";
+import { NotificationToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
+import { CoachingToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/CoachingToolFactory.mjs";
 
 const stub = new Proxy({}, { get: () => () => ({}) });
 

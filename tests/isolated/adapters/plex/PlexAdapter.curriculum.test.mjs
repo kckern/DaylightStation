@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PlexAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
-import { _resetCacheForTests } from "../../../../modules/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs";
+import { PlexAdapter } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { _resetCacheForTests } from "../../../../__app_modules/learning/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs";
 
 // A real index file for 676490 must exist (Task 2). Use a season+episode known present.
 function adapter() { return new PlexAdapter({ host: 'http://x', token: 't' }, { httpClient: { get: async () => ({}) } }); }

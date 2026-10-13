@@ -1,5 +1,5 @@
 ---
-applyTo: "backend/**/*"
+applyTo: "__backend/**/*"
 ---
 # Backend Development Guidelines
 

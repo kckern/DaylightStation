@@ -54,7 +54,7 @@ describe('InitiateDebriefInterview', () => {
     };
 
     // Dynamic import after mocks are set up
-    const module = await import("../../../../../modules/journalist/server/application/usecases/InitiateDebriefInterview.mjs");
+    const module = await import("../../../../../__app_modules/personal/journalist/server/application/usecases/InitiateDebriefInterview.mjs");
     InitiateDebriefInterview = module.InitiateDebriefInterview;
   });
 

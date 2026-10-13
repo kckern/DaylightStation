@@ -1,10 +1,10 @@
 import { describe, it, expect } from '@jest/globals';
-import { createSourceRegistry } from "../../../../../modules/newsreporter/server/adapters/sources/sourceRegistry.mjs";
-import { createSinkRegistry } from "../../../../../modules/newsreporter/server/application/sinks/sinkRegistry.mjs";
-import { HttpSourceAdapter } from "../../../../../modules/newsreporter/server/adapters/sources/HttpSourceAdapter.mjs";
-import { PrinterSink } from "../../../../../modules/newsreporter/server/application/sinks/PrinterSink.mjs";
-import { isSource } from "../../../../../modules/newsreporter/server/application/ports/ISource.mjs";
-import { isSink } from "../../../../../modules/newsreporter/server/application/ports/ISink.mjs";
+import { createSourceRegistry } from "../../../../../__app_modules/media/newsreporter/server/adapters/sources/sourceRegistry.mjs";
+import { createSinkRegistry } from "../../../../../__app_modules/media/newsreporter/server/application/sinks/sinkRegistry.mjs";
+import { HttpSourceAdapter } from "../../../../../__app_modules/media/newsreporter/server/adapters/sources/HttpSourceAdapter.mjs";
+import { PrinterSink } from "../../../../../__app_modules/media/newsreporter/server/application/sinks/PrinterSink.mjs";
+import { isSource } from "../../../../../__app_modules/media/newsreporter/server/application/ports/ISource.mjs";
+import { isSink } from "../../../../../__app_modules/media/newsreporter/server/application/ports/ISink.mjs";
 
 const fakeHttpClient = { get: async () => ({ status: 200, ok: true, data: [] }) };
 const nullLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} };

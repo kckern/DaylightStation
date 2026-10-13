@@ -1,7 +1,7 @@
 // tests/isolated/agents/health-coach/playbooks/update_playbook.test.mjs
 import { describe, it, expect } from 'vitest';
-import { PlaybookToolFactory } from "../../../../../modules/health/server/application/agents/health-coach/tools/PlaybookToolFactory.mjs";
-import { WorkingMemoryState } from "../../../../../capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
+import { PlaybookToolFactory } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/tools/PlaybookToolFactory.mjs";
+import { WorkingMemoryState } from "../../../../../__capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('update_playbook', () => {
   it('updates last_verified on existing playbook', async () => {

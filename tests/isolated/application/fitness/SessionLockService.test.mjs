@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SessionLockService } from "../../../../modules/fitness/server/application/services/SessionLockService.mjs";
+import { SessionLockService } from "../../../../__app_modules/wellness/fitness/server/application/services/SessionLockService.mjs";
 
 describe('SessionLockService', () => {
   let svc;

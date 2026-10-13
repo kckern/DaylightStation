@@ -1,7 +1,7 @@
 // tests/isolated/adapter/persistence/YamlListDatastore.contentPath.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { YamlListDatastore } from "../../../../capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
-import { ListConfigCodec } from "../../../../capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
+import { YamlListDatastore } from "../../../../__capabilities/content-catalog/server/adapters/persistence/YamlListDatastore.mjs";
+import { ListConfigCodec } from "../../../../__capabilities/content-catalog/server/adapters/providers/list/ListConfigCodec.mjs";
 
 /**
  * Proves YamlListDatastore (task 11) resolves list storage under

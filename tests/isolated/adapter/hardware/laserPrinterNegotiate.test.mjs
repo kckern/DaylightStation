@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   chooseDocumentFormat, chooseResolution, chooseUrfColor, choosePwgRasterColor,
   negotiatePrintPlan, chooseJobAttributes, RASTER_FORMATS, FALLBACK_DPI, JOB_ATTRIBUTE_TRIM_ORDER,
-} from '../../../../backend/src/1_adapters/hardware/laser-printer/negotiate.mjs';
+} from '../../../../__backend/src/1_adapters/hardware/laser-printer/negotiate.mjs';
 
 describe('chooseDocumentFormat', () => {
   it('a printer that advertises PDF directly gets the PDF, unrasterized', () => {

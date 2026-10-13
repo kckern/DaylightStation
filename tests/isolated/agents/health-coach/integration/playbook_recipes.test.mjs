@@ -1,8 +1,8 @@
 // tests/isolated/agents/health-coach/integration/playbook_recipes.test.mjs
 import { describe, it, expect } from 'vitest';
-import { HealthQueryService } from "../../../../../modules/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
-import { ComputeSandboxAdapter as ComputeSandbox } from "../../../../../modules/health/server/adapters/agents/health-coach/ComputeSandboxAdapter.mjs";
-import { PersonalConstantsService } from "../../../../../modules/health/server/application/agents/health-coach/services/PersonalConstantsService.mjs";
+import { HealthQueryService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
+import { ComputeSandboxAdapter as ComputeSandbox } from "../../../../../__app_modules/wellness/health/server/adapters/agents/health-coach/ComputeSandboxAdapter.mjs";
+import { PersonalConstantsService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/PersonalConstantsService.mjs";
 
 function makeFixtureServices() {
   // 30 days of synthetic data with a known under-reporting pattern:

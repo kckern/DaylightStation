@@ -9,8 +9,8 @@
  * (piano.mjs GET /courses/progress) and the pure courseProgress helpers.
  */
 import { describe, it, expect } from 'vitest';
-import { GetCourseProgress } from '../../../../modules/piano/server/application/usecases/GetCourseProgress.mjs';
-import { PianoConfigProjection } from "../../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { GetCourseProgress } from '../../../../__app_modules/learning/piano/server/application/usecases/GetCourseProgress.mjs';
+import { PianoConfigProjection } from "../../../../__app_modules/learning/piano/server/adapters/PianoConfigProjection.mjs";
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

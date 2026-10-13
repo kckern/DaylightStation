@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SetDailyCoachingUseCase } from "../../../../modules/health/server/application/health/SetDailyCoachingUseCase.mjs";
+import { SetDailyCoachingUseCase } from "../../../../__app_modules/wellness/health/server/application/health/SetDailyCoachingUseCase.mjs";
 
 /**
  * Build an in-memory fake datastore that captures save calls.

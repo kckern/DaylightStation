@@ -22,7 +22,7 @@ vi.mock('../../../frontend/src/hooks/useWebSocket.js', () => ({
   }),
 }));
 
-import { useScreenSubscriptions } from '../../../capabilities/screen-host/browser/subscriptions/useScreenSubscriptions.js';
+import { useScreenSubscriptions } from '../../../__capabilities/screen-host/browser/subscriptions/useScreenSubscriptions.js';
 
 describe('useScreenSubscriptions logging', () => {
   let showOverlay;

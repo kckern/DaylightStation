@@ -1,5 +1,5 @@
 // Stable command entry; implementation belongs to its declared owner.
 import { pathToFileURL } from 'node:url';
-export * from "../modules/chess/cli/chess.cli.mjs";
-import { runCliEntry } from "../modules/chess/cli/chess.cli.mjs";
+export * from "../__app_modules/games/chess/cli/chess.cli.mjs";
+import { runCliEntry } from "../__app_modules/games/chess/cli/chess.cli.mjs";
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) { runCliEntry(); }

@@ -4,7 +4,7 @@ const emptyEvidence = () => ({ success: false, title: null, partCount: 0, durati
 const silentLogger = { warn() {}, info() {}, error() {}, debug() {} };
 
 async function defaultRuntimeFactory(options) {
-  const { createLibbyRuntime } = await import('../../../../backend/src/5_composition/modules/libby.mjs');
+  const { createLibbyRuntime } = await import('../../../../__backend/src/5_composition/modules/libby.mjs');
   return createLibbyRuntime(options);
 }
 

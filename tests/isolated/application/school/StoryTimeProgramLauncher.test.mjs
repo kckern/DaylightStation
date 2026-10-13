@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StoryTimeProgramLauncher } from "../../../../modules/school/server/application/StoryTimeProgramLauncher.mjs";
+import { StoryTimeProgramLauncher } from "../../../../__app_modules/learning/school/server/application/StoryTimeProgramLauncher.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const at = (iso) => () => new Date(iso);

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PlanToolFactory } from "../../../../modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
+import { PlanToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
 
-// Real service signatures, confirmed by reading backend/src/4_api/v1/routers/life/plan.mjs:
+// Real service signatures, confirmed by reading __backend/src/4_api/v1/routers/life/plan.mjs:
 //   POST /goals/:goalId/transition  -> goalStateService.transition(goal, newState, reason)
 //   POST /beliefs/:id/evidence      -> beliefEvaluator.evaluateEvidence(belief, evidenceBody)
 // Both handlers re-save the plan via lifePlanStore.save(username, plan) after mutating.

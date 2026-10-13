@@ -1,4 +1,4 @@
-import { NextUpStrategy } from "../../../../../modules/fitness/server/application/suggestions/NextUpStrategy.mjs";
+import { NextUpStrategy } from "../../../../../__app_modules/wellness/fitness/server/application/suggestions/NextUpStrategy.mjs";
 
 // --- Factories ---
 

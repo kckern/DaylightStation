@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PlexAdapter } from "../../../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
-import { resolveFormat } from "../../../../../../capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
-import { buildClientProfileExtra } from "../../../../../../capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
-import { PlayResponseService } from "../../../../../../capabilities/playback/server/application/services/PlayResponseService.mjs";
+import { PlexAdapter } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { resolveFormat } from "../../../../../../__capabilities/content-catalog/server/domain/utils/resolveFormat.mjs";
+import { buildClientProfileExtra } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/plex/transcodeProfile.mjs";
+import { PlayResponseService } from "../../../../../../__capabilities/playback/server/application/services/PlayResponseService.mjs";
 
 function setup({ protocol, audio = 'opus', container = 'mp4', bitDepth = 8, channels = 2, partKey = '/library/parts/1/file.mp4', failDecision = false } = {}) {
   const item = { ratingKey: '675677', type: 'movie', title: 'Verified movie', duration: 500000,

@@ -4,11 +4,11 @@ import request from 'supertest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createPianoRouter } from '../../../modules/piano/server/api/piano.mjs';
+import { createPianoRouter } from '../../../__app_modules/learning/piano/server/api/piano.mjs';
 import { withPianoRouterServices } from '../../_lib/pianoRouterDeps.mjs';
-import { YamlPianoStudioDatastore } from '../../../modules/piano/server/adapters/YamlPianoStudioDatastore.mjs';
-import { PianoContainer } from '../../../modules/piano/server/application/PianoContainer.mjs';
-import { PianoConfigProjection } from "../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { YamlPianoStudioDatastore } from '../../../__app_modules/learning/piano/server/adapters/YamlPianoStudioDatastore.mjs';
+import { PianoContainer } from '../../../__app_modules/learning/piano/server/application/PianoContainer.mjs';
+import { PianoConfigProjection } from "../../../__app_modules/learning/piano/server/adapters/PianoConfigProjection.mjs";
 
 // NOTE: piano studio takes moved from a per-piano-device layout
 // (`/piano/:pianoId/studio`) to a per-user layout (`/piano/users/:userId/studio`)

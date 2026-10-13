@@ -10,7 +10,7 @@
 // This is what the unit tests cannot prove: they assert the CSS custom property
 // VALUES, but only a real engine shows that `zoom` consumes them the way the
 // fix depends on.
-// Both specs live in ONE file deliberately. playwright.config.mjs sets no
+// Both specs live in ONE file deliberately. tests/_infrastructure/config/playwright.config.mjs sets no
 // `workers`/`fullyParallel`, so Playwright parallelises across FILES while
 // running tests within a file serially. Both of these drive the same admin
 // preview modal into real media playback against a single dev server and

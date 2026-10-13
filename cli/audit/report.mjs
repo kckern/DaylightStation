@@ -42,7 +42,7 @@ export function generateReport(scanResult, baseline, options = {}) {
 **Date:** ${date}
 **Scope:** ${scope === 'full' ? 'Full codebase' : scope}
 **Files scanned:** ${scanResult.filesScanned}
-**Reference:** \`docs/reference/core/coding-standards.md\`
+**Reference:** \`__docs/reference/core/coding-standards.md\`
 
 ---
 
@@ -90,7 +90,7 @@ Previously identified, not yet addressed.
 |------|------|----------|------|
 `;
     for (const v of knownViolations) {
-      const shortFile = v.file.replace('backend/src/', '');
+      const shortFile = v.file.replace('__backend/src/', '');
       report += `| ${shortFile} | ${v.rule} | ${v.severity} | ${v.line} |\n`;
     }
     report += '\n';
@@ -106,7 +106,7 @@ These were in baseline but no longer detected.
 
 `;
     for (const v of resolvedViolations) {
-      const shortFile = v.file.replace('backend/src/', '');
+      const shortFile = v.file.replace('__backend/src/', '');
       report += `- \`${shortFile}\` - ${v.rule}\n`;
     }
     report += '\n';
@@ -124,7 +124,7 @@ Suppressed via @audit-ok annotation or baseline exception.
 |------|------|------|
 `;
     for (const v of ignoredViolations) {
-      const shortFile = v.file.replace('backend/src/', '');
+      const shortFile = v.file.replace('__backend/src/', '');
       report += `| ${shortFile} | ${v.rule} | ${v.line} |\n`;
     }
   }
@@ -151,7 +151,7 @@ function formatViolations(violations, status) {
     output += `### ${severity.toUpperCase()} (${group.length})\n\n`;
 
     for (const v of group) {
-      const shortFile = v.file.replace('backend/src/', '');
+      const shortFile = v.file.replace('__backend/src/', '');
       output += `**${v.rule}**\n`;
       output += `- File: \`${shortFile}:${v.line}\`\n`;
       output += `- Code: \`${v.code.substring(0, 80)}${v.code.length > 80 ? '...' : ''}\`\n`;
@@ -218,7 +218,7 @@ function calculateGrade(violations) {
 export function writeReport(content, scope) {
   const date = new Date().toISOString().split('T')[0];
   const scopeSlug = scope === 'full' ? 'full-codebase' : scope;
-  const filename = `docs/_wip/audits/${date}-${scopeSlug}-audit.md`;
+  const filename = `__docs/_wip/audits/${date}-${scopeSlug}-audit.md`;
 
   writeFileSync(filename, content, 'utf-8');
   return filename;

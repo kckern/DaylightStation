@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldRunScrollToHighlighted } from "../../../../capabilities/content-catalog/browser/combobox/comboboxScroll.js";
+import { shouldRunScrollToHighlighted } from "../../../../__capabilities/content-catalog/browser/combobox/comboboxScroll.js";
 
 describe('shouldRunScrollToHighlighted', () => {
   it('returns false when highlightedIdx is negative', () => {

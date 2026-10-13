@@ -12,19 +12,19 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { getAppPort } from './configHelper.mjs';
-import { PlexAdapter } from "../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
-import { HttpClient } from '../../backend/src/0_system/services/HttpClient.mjs';
-import { createLogger } from '../../backend/src/0_system/logging/logger.mjs';
-import { RegistryPlaybackStreamGateway } from '../../backend/src/1_adapters/proxy/RegistryPlaybackStreamGateway.mjs';
-import { MintPlaybackStream } from "../../capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
-import { createProxyRouter } from '../../backend/src/4_api/v1/routers/proxy.mjs';
-import { createContentRouter } from "../../capabilities/content-catalog/server/api/content.mjs";
-import { ContentQueryService } from "../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
-import { createPlayRouter } from "../../capabilities/playback/server/api/play.mjs";
+import { PlexAdapter } from "../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { HttpClient } from '../../__backend/src/0_system/services/HttpClient.mjs';
+import { createLogger } from '../../__backend/src/0_system/logging/logger.mjs';
+import { RegistryPlaybackStreamGateway } from '../../__backend/src/1_adapters/proxy/RegistryPlaybackStreamGateway.mjs';
+import { MintPlaybackStream } from "../../__capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
+import { createProxyRouter } from '../../__backend/src/4_api/v1/routers/proxy.mjs';
+import { createContentRouter } from "../../__capabilities/content-catalog/server/api/content.mjs";
+import { ContentQueryService } from "../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { createPlayRouter } from "../../__capabilities/playback/server/api/play.mjs";
 import { createAcceptancePlaybackRead } from './media-redesign-playback-read.mjs';
 import { createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
 import { createAllowlistedCatalog, seedAllowlist } from './media-household-fixture.mjs';
-import { RegistryContentCatalogGateway } from "../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { RegistryContentCatalogGateway } from "../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const upstream = `http://127.0.0.1:${getAppPort()}`;
 const logger = createLogger({ app: 'media-redesign-acceptance' });
@@ -67,7 +67,7 @@ export function readAcceptedSnapshot({ cwd = process.cwd(), exec = execFileSync,
   return validateAcceptedSnapshot({
     head: runGit(['rev-parse', 'HEAD']), expectedSha,
     branch: runGit(['rev-parse', '--abbrev-ref', 'HEAD']),
-    productStatus: runGit(['status', '--porcelain', '--', 'frontend', 'backend', 'shared']),
+    productStatus: runGit(['status', '--porcelain', '--', 'frontend', '__backend', 'shared']),
   });
 }
 
@@ -403,7 +403,7 @@ const allowedTitles = new Set(policy === 'branch' ? BRANCH_ALLOWED_TITLES
 /**
  * The Player's answer to "the media server refused this file" is to ask
  * POST /api/v1/media-source/check and WAIT while the file is `unreadable`
- * (docs/reference/player/media-source-healing.md). The ordinary-journey
+ * (__docs/reference/player/media-source-healing.md). The ordinary-journey
  * allowlist forbids upstream POSTs, so the check was answered 403 and the
  * receiver fell back to its short recovery ladder: a title Plex refused for
  * three seconds (NFS `Permission denied (13)`) failed the journey instead of

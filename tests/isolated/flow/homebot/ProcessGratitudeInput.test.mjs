@@ -29,7 +29,7 @@ describe('ProcessGratitudeInput', () => {
       ])
     };
 
-    const { ProcessGratitudeInput } = await import("../../../../modules/homebot/server/application/usecases/ProcessGratitudeInput.mjs");
+    const { ProcessGratitudeInput } = await import("../../../../__app_modules/household/homebot/server/application/usecases/ProcessGratitudeInput.mjs");
     useCase = new ProcessGratitudeInput({
       messagingGateway: mockMessagingGateway,
       aiGateway: mockAiGateway,

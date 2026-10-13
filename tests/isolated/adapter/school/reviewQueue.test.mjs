@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlReviewQueue } from "../../../../modules/school/server/adapters/persistence/YamlReviewQueue.mjs";
-import { IReviewQueue } from "../../../../modules/school/server/application/ports/IReviewQueue.mjs";
+import { YamlReviewQueue } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlReviewQueue.mjs";
+import { IReviewQueue } from "../../../../__app_modules/learning/school/server/application/ports/IReviewQueue.mjs";
 
 let tmp, store;
 

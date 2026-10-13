@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ProgressSyncService } from "../../../../capabilities/playback/server/application/services/ProgressSyncService.mjs";
-import { ProgressWriteRuntime } from "../../../../capabilities/playback/server/adapters/ProgressWriteRuntime.mjs";
+import { ProgressSyncService } from "../../../../__capabilities/playback/server/application/services/ProgressSyncService.mjs";
+import { ProgressWriteRuntime } from "../../../../__backend/src/0_system/scheduling/ProgressWriteRuntime.mjs";
 
 describe('ProgressSyncService.pushMarkedState (mark watched/unwatched)', () => {
   it('writes the mark to the remote at once and cancels a pending debounced heartbeat', async () => {

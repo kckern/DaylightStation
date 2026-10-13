@@ -6,7 +6,7 @@
 // production/Docker, unless explicitly opted in via ENABLE_CRON=true — the
 // same convention as the system scheduler (0_system/scheduling).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { agentSchedulerEnabled } from "../../../../capabilities/agent-runtime/server/composition/agentSchedulerEnabled.mjs";
+import { agentSchedulerEnabled } from "../../../../__capabilities/agent-runtime/server/composition/agentSchedulerEnabled.mjs";
 
 describe('Scheduler — production gating', () => {
   let Scheduler;

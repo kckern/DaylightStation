@@ -19,9 +19,9 @@ window.fetch = async (input, init) => {
 };
 
 const { default: RosterStrip } = await import(
-  "../../../../modules/school/browser/teacher/panels/RosterStrip.jsx"
+  "../../../../__app_modules/learning/school/browser/teacher/panels/RosterStrip.jsx"
 );
-await import("../../../../modules/school/browser/teacher/Teacher.scss");
+await import("../../../../__app_modules/learning/school/browser/teacher/Teacher.scss");
 
 createRoot(document.getElementById('root')).render(
   <div className="teacher-console-page">

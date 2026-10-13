@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { isPlausibleGamepad, getActiveGamepads } from '../../../../../capabilities/screen-host/browser/input/gamepadFiltering.js';
+import { isPlausibleGamepad, getActiveGamepads } from '../../../../../__capabilities/screen-host/browser/input/gamepadFiltering.js';
 
 const fakePad = (overrides = {}) => ({
   id: '8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)',

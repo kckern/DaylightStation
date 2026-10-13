@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseSources } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
-import { parseNfcLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcLocationsParser.mjs";
-import { parseNfcTags } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
-import { parseStateLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/stateLocationsParser.mjs";
-import { parseVoiceLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/voiceLocationsParser.mjs";
-import { parseNamedMap } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/namedMapParser.mjs";
+import { parseSources } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/sourcesParser.mjs";
+import { parseNfcLocations } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/nfcLocationsParser.mjs";
+import { parseNfcTags } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/nfcTagsParser.mjs";
+import { parseStateLocations } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/stateLocationsParser.mjs";
+import { parseVoiceLocations } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/voiceLocationsParser.mjs";
+import { parseNamedMap } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/namedMapParser.mjs";
 
 // A config key of __proto__ / constructor / prototype must never reach an
 // assignment like `out[key] = …`: `__proto__` replaces the object's prototype,

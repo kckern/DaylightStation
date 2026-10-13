@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   outcomeIdFor, evaluateOutcome, rewardDecision, companionVetoStatus,
-} from "../../../../../modules/school/server/domain/sessions/outcome.mjs";
+} from "../../../../../__app_modules/learning/school/server/domain/sessions/outcome.mjs";
 
 const SID = 'ses_abc123';
 const OUT = `out:${SID}`;

@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from "../../../preimplementation/application-modules/drivers/agent-http-memory-transport.mjs";
+import request from "../../../_lib/memory-http/agent-http-memory-transport.mjs";
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
 
@@ -52,10 +52,10 @@ const PassThroughPolicy = {
 // ─── Build test app ───────────────────────────────────────────────────────────
 
 async function buildApp({ agentRuntime, policy = PassThroughPolicy, satellite }) {
-  const { ConciergeAgent } = await import("../../../../modules/concierge/server/application/ConciergeAgent.mjs");
-  const { AgentOrchestrator } = await import("../../../../capabilities/agent-runtime/server/application/AgentOrchestrator.mjs");
-  const { MemoryBundle } = await import("../../../../modules/concierge/server/application/skills/MemoryBundle.mjs");
-  const { mountAgentHttp } = await import("../../../../capabilities/agent-runtime/server/api/mountAgentHttp.mjs");
+  const { ConciergeAgent } = await import("../../../../__app_modules/household/concierge/server/application/ConciergeAgent.mjs");
+  const { AgentOrchestrator } = await import("../../../../__capabilities/agent-runtime/server/application/AgentOrchestrator.mjs");
+  const { MemoryBundle } = await import("../../../../__app_modules/household/concierge/server/application/skills/MemoryBundle.mjs");
+  const { mountAgentHttp } = await import("../../../../__capabilities/agent-runtime/server/api/mountAgentHttp.mjs");
 
   const orchestrator = new AgentOrchestrator({ agentRuntime, createTurnId: () => 'test-turn', logger: makeLogger() });
   orchestrator.register(ConciergeAgent, {
@@ -189,7 +189,7 @@ describe('concierge smoke — policy deny path', () => {
 
   it('ConciergeAgent.run() returns refusal output directly without hitting runtime', async () => {
     // This test isolates the agent layer to confirm the refusal shape before the wire format.
-    const { ConciergeAgent } = await import("../../../../modules/concierge/server/application/ConciergeAgent.mjs");
+    const { ConciergeAgent } = await import("../../../../__app_modules/household/concierge/server/application/ConciergeAgent.mjs");
 
     const DenyAllPolicy = {
       evaluateRequest: () => ({ allow: false, reason: 'test_deny' }),

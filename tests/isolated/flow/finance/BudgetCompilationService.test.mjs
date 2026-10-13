@@ -3,7 +3,7 @@
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { BudgetCompilationService } from "../../../../modules/finance/server/application/BudgetCompilationService.mjs";
+import { BudgetCompilationService } from "../../../../__app_modules/money/finance/server/application/BudgetCompilationService.mjs";
 
 describe('BudgetCompilationService', () => {
   let service;

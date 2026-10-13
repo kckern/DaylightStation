@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../../modules/piano/cli/piano-effect-audit/analyze.cli.mjs";
+export * from "../../__app_modules/learning/piano/cli/piano-effect-audit/analyze.cli.mjs";

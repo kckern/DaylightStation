@@ -1,7 +1,7 @@
 // tests/isolated/agents/health-coach/adapters/nutrition_adapter.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { NutritionEventAdapter } from "../../../../../modules/health/server/application/agents/health-coach/services/adapters/NutritionEventAdapter.mjs";
-import { createNutriLog } from "../../../../../modules/health/server/nutrition-records.mjs";
+import { NutritionEventAdapter } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/adapters/NutritionEventAdapter.mjs";
+import { createNutriLog } from "../../../../../__app_modules/wellness/health/server/nutrition-records.mjs";
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 

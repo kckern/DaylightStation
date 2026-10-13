@@ -17,11 +17,28 @@ function fixture(t) {
   return { root, put };
 }
 
+test('categorized apps keep canonical runtime dependencies at their deeper path', async (t) => {
+  const { setupOwnerDependencies } = await load();
+  const f = fixture(t);
+  for (const scope of ['__backend', 'frontend']) mkdirSync(join(f.root, scope, 'node_modules'), { recursive: true });
+  for (const owner of ['school', 'piano']) {
+    for (const surface of ['server', 'browser']) mkdirSync(join(f.root, '__app_modules/learning', owner, surface), { recursive: true });
+  }
+  const links = setupOwnerDependencies(f.root);
+  assert.equal(links.length, 4);
+  for (const { link, target } of links) {
+    const runtime = link.includes('/server/') ? '__backend' : 'frontend';
+    assert.equal(target, `../../../../${runtime}/node_modules`);
+    assert.equal(realpathSync(link), realpathSync(join(f.root, runtime, 'node_modules')));
+  }
+  assert.equal(setupOwnerDependencies(f.root, { check: true }).length, 4);
+});
+
 test('owner setup skips absent roots, links only runtime surfaces, and is idempotent before install', async (t) => {
   const { setupOwnerDependencies } = await load();
   const f = fixture(t);
   assert.deepEqual(setupOwnerDependencies(f.root), []);
-  for (const ownerRoot of ['modules', 'capabilities']) {
+  for (const ownerRoot of ['__app_modules', '__capabilities']) {
     for (const surface of ['server', 'browser']) mkdirSync(join(f.root, ownerRoot, 'owner', surface), { recursive: true });
     mkdirSync(join(f.root, ownerRoot, 'owner', 'assets'));
     symlinkSync(join(f.root, ownerRoot, 'owner'), join(f.root, ownerRoot, 'linked-owner'));
@@ -30,17 +47,17 @@ test('owner setup skips absent roots, links only runtime surfaces, and is idempo
   assert.equal(first.length, 4);
   assert.ok(first.every((link) => !link.exists));
   for (const link of first) assert.equal(readlinkSync(link.link), link.target);
-  assert.equal(existsSync(join(f.root, 'modules/owner/assets/node_modules')), false);
+  assert.equal(existsSync(join(f.root, '__app_modules/owner/assets/node_modules')), false);
   assert.ok(setupOwnerDependencies(f.root).every((link) => link.exists));
   assert.throws(() => setupOwnerDependencies(f.root, { check: true }), /Missing dependency target/i);
-  for (const surface of ['backend', 'frontend']) mkdirSync(join(f.root, surface, 'node_modules'), { recursive: true });
+  for (const surface of ['__backend', 'frontend']) mkdirSync(join(f.root, surface, 'node_modules'), { recursive: true });
   assert.equal(setupOwnerDependencies(f.root, { check: true }).length, 4);
 });
 
 test('owner setup refuses real dependency paths and unexpected links; check never creates', async (t) => {
   const { setupOwnerDependencies } = await load();
   const f = fixture(t);
-  const dir = join(f.root, 'modules/owner/server');
+  const dir = join(f.root, '__app_modules/owner/server');
   mkdirSync(dir, { recursive: true });
   assert.throws(() => setupOwnerDependencies(f.root, { check: true }), /missing/i);
   assert.equal(existsSync(join(dir, 'node_modules')), false);
@@ -55,22 +72,22 @@ test('owner setup refuses real dependency paths and unexpected links; check neve
 test('ordinary import, require, dynamic exports and canonical identity use runtime dependencies instead of root fallback', async (t) => {
   const { setupOwnerDependencies } = await load();
   const f = fixture(t);
-  for (const scope of ['backend', 'frontend', '']) {
+  for (const scope of ['__backend', 'frontend', '']) {
     const base = `${scope ? scope + '/' : ''}node_modules/scope-probe`;
     f.put(`${base}/package.json`, JSON.stringify({ name: 'scope-probe', type: 'module', exports: { import: './import.mjs', require: './require.cjs' } }));
     f.put(`${base}/import.mjs`, `export const scope = '${scope || 'root'}'; export const identity = {};`);
     f.put(`${base}/require.cjs`, `module.exports = { scope: '${scope || 'root'}' };`);
   }
-  for (const ownerRoot of ['modules', 'capabilities']) {
+  for (const ownerRoot of ['__app_modules', '__capabilities']) {
     for (const surface of ['server', 'browser']) {
       f.put(`${ownerRoot}/owner/${surface}/probe.mjs`, "import { scope, identity } from 'scope-probe'; export { scope, identity }; export const dynamic = () => import('scope-probe');");
     }
   }
   setupOwnerDependencies(f.root);
   setupOwnerDependencies(f.root, { check: true });
-  for (const ownerRoot of ['modules', 'capabilities']) {
+  for (const ownerRoot of ['__app_modules', '__capabilities']) {
     for (const surface of ['server', 'browser']) {
-      const expected = surface === 'server' ? 'backend' : 'frontend';
+      const expected = surface === 'server' ? '__backend' : 'frontend';
       const entry = join(f.root, ownerRoot, 'owner', surface, 'probe.mjs');
       const loaded = await import(pathToFileURL(entry).href);
       const canonical = await import(pathToFileURL(join(f.root, expected, 'node_modules/scope-probe/import.mjs')).href);

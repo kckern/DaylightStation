@@ -1,17 +1,17 @@
 import { render, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
-import { ScreenVolumeProvider } from '../../../../../capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
+import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
+import { ScreenVolumeProvider } from '../../../../../__capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
 import { _resetForTests as resetVolume } from '../../../lib/volume/ScreenVolumeContext.js';
-import { getNaturalEndPolicy } from '../../../../../capabilities/playback/browser/player/lib/naturalEndPolicy.js';
-import { createScreenSessionControls } from '../../../../../capabilities/screen-host/browser/session/screenSessionControls.js';
+import { getNaturalEndPolicy } from '../../../../../__capabilities/playback/browser/player/lib/naturalEndPolicy.js';
+import { createScreenSessionControls } from '../../../../../__capabilities/screen-host/browser/session/screenSessionControls.js';
 import { ScreenSessionControlsHost } from './ScreenSessionControlsHost.jsx';
 import { ScreenPlayer } from '../publishers/ScreenPlayer.jsx';
 
 const overlayState = vi.hoisted(() => ({ hasOverlay: false, component: null }));
-vi.mock('../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay, fullscreenComponent: overlayState.component }) }));
-import { savePersistedSession, loadPersistedSession, restorableSnapshot, POWER_RESTORE_DELAY_MS } from '../../../../../capabilities/screen-host/browser/session/sessionPersistence.js';
+vi.mock('../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx', () => ({ useScreenOverlay: () => ({ hasOverlay: overlayState.hasOverlay, fullscreenComponent: overlayState.component }) }));
+import { savePersistedSession, loadPersistedSession, restorableSnapshot, POWER_RESTORE_DELAY_MS } from '../../../../../__capabilities/screen-host/browser/session/sessionPersistence.js';
 
 const playing = {
   sessionId: 's', state: 'playing', position: 77,

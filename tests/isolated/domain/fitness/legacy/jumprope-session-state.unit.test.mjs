@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { JumpropeSessionState } from "../../../../../modules/fitness/browser/hooks/fitness/JumpropeSessionState.js";
+import { JumpropeSessionState } from "../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/JumpropeSessionState.js";
 
 describe('JumpropeSessionState', () => {
   let state;

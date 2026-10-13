@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ResolverRegistry, UnknownModalityError } from "../../../../../capabilities/device-dispatch/server/domain/services/ResolverRegistry.mjs";
+import { ResolverRegistry, UnknownModalityError } from "../../../../../__capabilities/device-dispatch/server/domain/services/ResolverRegistry.mjs";
 
 const fakeContentIdResolver = { resolve: (c) => c.startsWith('plex:') };
 

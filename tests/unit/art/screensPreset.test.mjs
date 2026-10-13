@@ -1,12 +1,12 @@
-import { FilesystemArtScreenPresetRepository } from '../../../modules/art/server/adapters/FilesystemArtScreenPresetRepository.mjs';
-import { createArtScreenPresetEnricher } from '../../../modules/art/server/application/screenPresetEnricher.mjs';
+import { FilesystemArtScreenPresetRepository } from '../../../__app_modules/media/art/server/adapters/FilesystemArtScreenPresetRepository.mjs';
+import { createArtScreenPresetEnricher } from '../../../__app_modules/media/art/server/application/screenPresetEnricher.mjs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { createScreensRouter } from '../../../backend/src/4_api/v1/routers/screens.mjs';
-import { ScreensQueryService } from "../../../capabilities/screen-host/server/application/ScreensQueryService.mjs";
-import { FilesystemScreensRepository } from "../../../capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
+import { createScreensRouter } from '../../../__backend/src/4_api/v1/routers/screens.mjs';
+import { ScreensQueryService } from "../../../__capabilities/screen-host/server/application/ScreensQueryService.mjs";
+import { FilesystemScreensRepository } from "../../../__capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs";
 
 let dataPath;
 const logger = { debug() {}, info() {}, warn() {}, error() {} };

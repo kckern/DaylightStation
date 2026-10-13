@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SimilarPeriodFinder } from "../../../../modules/health/server/domain/health/services/SimilarPeriodFinder.mjs";
+import { SimilarPeriodFinder } from "../../../../__app_modules/wellness/health/server/domain/health/services/SimilarPeriodFinder.mjs";
 
 // Deterministic baseline signature used across most cases.
 const BASE_SIGNATURE = {

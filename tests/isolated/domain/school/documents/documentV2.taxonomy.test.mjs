@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateDocumentV2 } from "../../../../../modules/school/server/domain/documents/documentV2.mjs";
+import { validateDocumentV2 } from "../../../../../__app_modules/learning/school/server/domain/documents/documentV2.mjs";
 
 const base = {
   schema: 'school.document/v2',

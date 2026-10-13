@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { LongitudinalToolFactory } from "../../../../modules/health/server/application/agents/health-coach/tools/LongitudinalToolFactory.mjs";
+import { LongitudinalToolFactory } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/tools/LongitudinalToolFactory.mjs";
 
 // -------------------------------------------------------------------
 // query_named_period (F-103.4)

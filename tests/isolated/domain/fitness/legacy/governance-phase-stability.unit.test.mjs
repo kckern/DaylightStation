@@ -19,7 +19,7 @@ describe('GovernanceEngine phase stability', () => {
   });
 
   test('phase cannot cycle faster than tick interval (5 seconds)', async () => {
-    const { GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
+    const { GovernanceEngine } = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
     const session = {
       zoneProfileStore: { getProfile: vi.fn() },
@@ -89,7 +89,7 @@ describe('GovernanceEngine phase stability', () => {
   });
 
   test('TreasureBox zone changes do not trigger governance evaluation', async () => {
-    const { FitnessTreasureBox } = await import("../../../../../modules/fitness/browser/hooks/fitness/TreasureBox.js");
+    const { FitnessTreasureBox } = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/TreasureBox.js");
 
     const mockSession = { _log: vi.fn() };
     const box = new FitnessTreasureBox(mockSession);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { YamlStateGatesStateEngine } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
-import { YamlStateGatesProjectionRepository } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesProjectionRepository.mjs";
-import { YamlStateGatesTransitionRepository } from "../../../../capabilities/state-gates/server/adapters/persistence/YamlStateGatesTransitionRepository.mjs";
+import { YamlStateGatesStateEngine } from "../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesStateEngine.mjs";
+import { YamlStateGatesProjectionRepository } from "../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesProjectionRepository.mjs";
+import { YamlStateGatesTransitionRepository } from "../../../../__capabilities/state-gates/server/adapters/persistence/YamlStateGatesTransitionRepository.mjs";
 
 function memoryEngine(options = {}) {
   const files = new Map();

@@ -4,9 +4,9 @@
  * re-scopes it; the moment it takes the stage it is frozen into the pick.
  */
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from "../../../../modules/school/server/application/ReadingSessionService.mjs";
-import { ReadingSessionInterceptor } from "../../../../modules/school/server/application/readingSessionInterceptor.mjs";
-import { makeReadingSessionHandler } from "../../../../modules/school/server/application/workflows/LearnerCardActions.mjs";
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../../__app_modules/learning/school/server/application/ReadingSessionService.mjs";
+import { ReadingSessionInterceptor } from "../../../../__app_modules/learning/school/server/application/readingSessionInterceptor.mjs";
+import { makeReadingSessionHandler } from "../../../../__app_modules/learning/school/server/application/workflows/LearnerCardActions.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

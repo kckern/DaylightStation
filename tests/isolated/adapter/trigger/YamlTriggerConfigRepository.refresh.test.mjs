@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { YamlTriggerConfigRepository } from "../../../../capabilities/device-dispatch/server/adapters/YamlTriggerConfigRepository.mjs";
+import { YamlTriggerConfigRepository } from "../../../../__capabilities/device-dispatch/server/adapters/YamlTriggerConfigRepository.mjs";
 
 /**
  * The registry is read at boot. A tag named afterwards used to need a container

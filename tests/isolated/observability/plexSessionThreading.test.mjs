@@ -10,14 +10,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createPlayRouter } from "../../../capabilities/playback/server/api/play.mjs";
+import { createPlayRouter } from "../../../__capabilities/playback/server/api/play.mjs";
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
-import { PlayResponseService } from "../../../capabilities/playback/server/application/services/PlayResponseService.mjs";
-import { PlaybackReadService } from "../../../capabilities/playback/server/application/services/PlaybackReadService.mjs";
-import { RegistryContentCatalogGateway } from "../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
-import { sanitizePlexSessionId } from "../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlayResponseService } from "../../../__capabilities/playback/server/application/services/PlayResponseService.mjs";
+import { PlaybackReadService } from "../../../__capabilities/playback/server/application/services/PlaybackReadService.mjs";
+import { RegistryContentCatalogGateway } from "../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { sanitizePlexSessionId } from "../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 import { RegistryPlaybackStreamGateway } from '#adapters/proxy/RegistryPlaybackStreamGateway.mjs';
-import { MintPlaybackStream } from "../../../capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
+import { MintPlaybackStream } from "../../../__capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
 
 const instanceA = '008c56a342:0#AbCdEfGhIj';
 const instanceB = '008c56a342:0#KlMnOpQrSt';

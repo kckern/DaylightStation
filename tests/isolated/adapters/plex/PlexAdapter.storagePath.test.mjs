@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PlexAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlexAdapter } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 
 // getStoragePath decides which progress file an item's watch state lives in.
 // Every watch-state enrich asked Plex for it — one serialized metadata call per

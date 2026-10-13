@@ -112,7 +112,7 @@ data/household/common/gratitude/
 ### 3.1 HomeBot Structure
 
 ```
-backend/chatbots/bots/homebot/
+__backend/chatbots/bots/homebot/
 ├── container.mjs              # DI container
 ├── server.mjs                 # Express router
 ├── config/

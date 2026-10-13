@@ -2,8 +2,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createHealthMentionsRouter } from "../../../../modules/health/server/api/routers/health-mentions.mjs";
-import { HealthMentionSuggestions } from "../../../../modules/health/server/application/health/HealthMentionSuggestions.mjs";
+import { createHealthMentionsRouter } from "../../../../__app_modules/wellness/health/server/api/routers/health-mentions.mjs";
+import { HealthMentionSuggestions } from "../../../../__app_modules/wellness/health/server/application/health/HealthMentionSuggestions.mjs";
 
 function makeApp(deps = {}) {
   const fakeDeps = {

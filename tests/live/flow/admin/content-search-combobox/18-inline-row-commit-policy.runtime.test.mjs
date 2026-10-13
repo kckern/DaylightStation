@@ -10,7 +10,7 @@
  *   B. Id-like text MUST commit exactly once on blur          — expected green (Mar-01 invariant)
  *   C. EmptyItemRow must not auto-add freeform text           — EXPECTED RED today
  *
- * A and C are deliberate failing specs (see docs/_wip/bugs/2026-03-01-admin-menu-editor-junk-entries.md
+ * A and C are deliberate failing specs (see __docs/_wip/bugs/2026-03-01-admin-menu-editor-junk-entries.md
  * and the admin UX remediation plan). Tasks 3-4 turn them green. Do NOT
  * "fix" these tests by loosening assertions.
  *
@@ -228,7 +228,7 @@ test.describe('Inline row combobox — commit policy (menus/adhoc)', () => {
   // Two abandonment paths, neither may create a row:
   //   C1: type junk → Escape → click away   (explicit cancel)
   //   C2: type junk → click away            (blur-commit → setInput → auto-add,
-  //       the exact chain behind docs/_wip/bugs/2026-03-01-admin-menu-editor-junk-entries.md —
+  //       the exact chain behind __docs/_wip/bugs/2026-03-01-admin-menu-editor-junk-entries.md —
   //       this is the path that fires a POST today)
   test('C. EmptyItemRow must not auto-add freeform text', async ({ page, baseURL }) => {
     const before = await apiGetList(baseURL);

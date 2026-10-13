@@ -1,0 +1,534 @@
+// __backend/src/1_adapters/feed/sources/ABSEbookFeedAdapter.mjs
+/**
+ * ABSEbookFeedAdapter
+ *
+ * Fetches random non-fiction ebook chapters from AudioBookShelf.
+ * Picks a random book from genre-filtered library items, downloads the
+ * EPUB, parses the NCX/NAV table of contents for chapter titles, and
+ * returns a random chapter as a feed item.
+ *
+ * TOC data is cached to disk via DataService to avoid re-downloading EPUBs.
+ * Books without a meaningful TOC (< 2 titled chapters) are filtered out.
+ *
+ * @module adapters/feed/sources/ABSEbookFeedAdapter
+ */
+
+import { IFeedSourceAdapter, CONTENT_TYPES } from "../../application/ports/IFeedSourceAdapter.mjs";
+import { HttpClient } from '#system/services/HttpClient.mjs';
+import imageSize from 'image-size';
+import path from 'path';
+import yaml from 'js-yaml';
+import { deleteFileStrict, fileExists, readTextFromPath, writeFile } from '#system/utils/FileIO.mjs';
+import {
+  partitionEbookCandidates,
+  rankRotatingEbooks,
+  chooseEbookChapter,
+  recordEbookSelection,
+} from "../../domain/ebookRotationPolicy.mjs";
+
+export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
+  #absClient;
+  #token;
+  #mediaDir;
+  #webUrl;
+  #logger;
+  #httpClient;
+  #prefetching = false;
+  #clock;
+  #random;
+
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.absClient - AudiobookshelfClient instance
+   * @param {string} deps.token - ABS API token for EPUB downloads
+   * @param {string} deps.mediaDir - Base media directory for cache storage
+   * @param {string} [deps.webUrl] - Browser-accessible ABS URL for reader links
+   * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
+   */
+  constructor({ absClient, token, mediaDir, webUrl = null, logger = console, httpClient, clock = () => new Date(), random = Math.random } = {}) {
+    super();
+    if (!absClient) throw new Error('ABSEbookFeedAdapter requires absClient');
+    if (!token) throw new Error('ABSEbookFeedAdapter requires token');
+    if (!mediaDir) throw new Error('ABSEbookFeedAdapter requires mediaDir');
+    this.#absClient = absClient;
+    this.#token = token;
+    this.#mediaDir = mediaDir;
+    this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
+    this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
+    this.#clock = clock;
+    this.#random = random;
+  }
+
+  #cachePath(bookId) {
+    return path.join(this.#mediaDir, 'archives', 'abs', 'chapters', `${bookId}.yml`);
+  }
+
+  #rotationPath() {
+    return path.join(this.#mediaDir, 'archives', 'abs', 'rotation.yml');
+  }
+
+  #readRotation() {
+    try {
+      const filePath = this.#rotationPath();
+      if (!fileExists(filePath)) return { lastBookId: null, books: {} };
+      const content = readTextFromPath(filePath);
+      return yaml.load(content) || { lastBookId: null, books: {} };
+    } catch {
+      return { lastBookId: null, books: {} };
+    }
+  }
+
+  #writeRotation(state) {
+    const filePath = this.#rotationPath();
+    writeFile(filePath, yaml.dump(state, { lineWidth: -1 }));
+  }
+
+  #readCache(bookId) {
+    try {
+      const filePath = this.#cachePath(bookId);
+      if (!fileExists(filePath)) return null;
+      const content = readTextFromPath(filePath);
+      return yaml.load(content) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  #writeCache(bookId, data) {
+    const filePath = this.#cachePath(bookId);
+    writeFile(filePath, yaml.dump(data, { lineWidth: -1 }));
+  }
+
+  get sourceType() { return 'abs-ebooks'; }
+  get provides() { return [CONTENT_TYPES.EBOOKS]; }
+
+  /**
+   * Fetch feed items from AudioBookShelf.
+   *
+   * Fetches genre-filtered library items, shuffles them, walks through
+   * until finding a book with a meaningful EPUB TOC, and returns a random
+   * chapter as a feed card.
+   *
+   * @param {Object} query - Query config from YAML
+   * @param {string} query.params.library - ABS library ID
+   * @param {string[]} [query.params.genres] - Genre names to filter by
+   * @param {string} _username
+   * @returns {Promise<Object[]>} Normalized FeedItem-shaped objects
+   */
+  async fetchItems(query, _username) {
+    const libraryId = query.params?.library;
+    if (!libraryId) return [];
+
+    const genres = query.params?.genres || [];
+
+    // ABS API genre filter: base64-encoded genre name
+    const filter = genres.length > 0
+      ? `genres.${Buffer.from(genres[0]).toString('base64')}`
+      : undefined;
+
+    let data;
+    try {
+      data = await this.#absClient.getLibraryItems(libraryId, {
+        limit: 100,
+        filter,
+      });
+    } catch (err) {
+      this.#logger.warn?.('abs-ebooks.adapter.list.error', { error: err.message });
+      return [];
+    }
+
+    const books = data?.results || [];
+    if (books.length === 0) return [];
+
+    const itemLimit = query.limit || 1;
+    const now = this.#clock().getTime();
+
+    const { eligible, uncached } = partitionEbookCandidates(
+      books.map(book => ({
+        book,
+        cached: Boolean((book.media?.ebookFormat || book.media?.ebookFile) && this.#readCache(book.id)),
+      })),
+    );
+
+    // Background-prefetch uncached books (fire and forget)
+    if (uncached.length > 0) {
+      this.#prefetchUncached(uncached).catch(() => {});
+    }
+
+    if (eligible.length === 0) return [];
+
+    let rotation = this.#readRotation();
+    const selection = rankRotatingEbooks(eligible, rotation, now);
+    let activeBooks = selection.activeBooks;
+
+    const items = [];
+
+    for (const { book } of selection.ranked) {
+      if (items.length >= itemLimit) break;
+
+      const bookId = book.id;
+      const metadata = book.media?.metadata || {};
+
+      const chapterData = await this.#getChapters(bookId, metadata);
+      if (!chapterData || !this.#hasMeaningfulToc(chapterData.chapters)) continue;
+
+      const chapters = chapterData.chapters;
+      const coverUrl = `/api/v1/proxy/abs/items/${bookId}/cover`;
+      const author = metadata.authorName || metadata.author || '';
+      const title = metadata.title || 'Untitled';
+
+      // Exclude chapters already served during this book's cooldown window
+      const chapter = chooseEbookChapter(
+        chapters,
+        activeBooks[bookId]?.servedChapters || [],
+        this.#random(),
+      );
+
+      items.push({
+        id: `abs-ebooks:${bookId}:${chapter.id}`,
+        tier: query.tier || 'library',
+        source: 'abs-ebooks',
+        title: chapter.title,
+        body: chapter.preview || `${author} — ${title}`,
+        image: coverUrl,
+        link: this.#webUrl ? `${this.#webUrl}/item/${bookId}` : null,
+        timestamp: this.#clock().toISOString(),
+        priority: query.priority || 5,
+        meta: {
+          bookId,
+          chapterId: chapter.id,
+          bookTitle: title,
+          author,
+          imageWidth: chapterData.coverWidth,
+          imageHeight: chapterData.coverHeight,
+          sourceName: 'Audiobookshelf',
+          sourceIcon: null,
+        },
+      });
+
+      // Update rotation state
+      rotation = recordEbookSelection(
+        rotation,
+        activeBooks,
+        bookId,
+        chapter.id,
+        this.#clock().toISOString(),
+      );
+      activeBooks = rotation.books;
+    }
+    this.#writeRotation(rotation);
+
+    return items;
+  }
+
+  async getDetail(localId) {
+    const [bookId, chapterIdStr] = localId.split(':');
+    const chapterId = parseInt(chapterIdStr, 10);
+
+    const cached = this.#readCache(bookId);
+    const chapter = cached?.chapters?.find(ch => ch.id === chapterId);
+
+    if (!chapter?.content) return { sections: [] };
+
+    const html = chapter.content
+      .split(/\n\n+/)
+      .filter(p => p.trim())
+      .map(p => `<p>${p.trim()}</p>`)
+      .join('\n');
+
+    return {
+      sections: [{
+        type: 'article',
+        data: { html, wordCount: chapter.content.split(/\s+/).length },
+      }],
+    };
+  }
+
+  /**
+   * Get chapter data for a book, using disk cache to avoid re-downloading EPUBs.
+   *
+   * Cache path: {mediaDir}/archives/abs/chapters/{bookId}.yml
+   *
+   * @param {string} bookId
+   * @param {Object} metadata - Book metadata from list response
+   * @returns {Promise<Object|null>} Chapter data
+   */
+  async #getChapters(bookId, metadata) {
+    const cached = this.#readCache(bookId);
+    if (cached) return cached;
+
+    // Download EPUB and parse TOC
+    let chapters;
+    try {
+      chapters = await this.#extractEpubToc(bookId);
+    } catch (err) {
+      this.#logger.warn?.('abs-ebooks.adapter.epub.error', { bookId, error: err.message });
+      // Cache empty result to avoid re-attempting failed books
+      const emptyData = { bookId, title: metadata.title || '', author: metadata.authorName || '', chapters: [] };
+      this.#writeCache(bookId, emptyData);
+      return null;
+    }
+
+    const { width: coverWidth, height: coverHeight } = await this.#getCoverDimensions(bookId);
+
+    const chapterData = {
+      bookId,
+      title: metadata.title || '',
+      author: metadata.authorName || metadata.author || '',
+      coverWidth,
+      coverHeight,
+      chapters,
+    };
+
+    this.#writeCache(bookId, chapterData);
+    return chapterData;
+  }
+
+  async #getCoverDimensions(bookId) {
+    try {
+      const host = this.#absClient.host;
+      const res = await this.#httpClient.requestRaw('GET', `${host}/api/items/${bookId}/cover`, {
+        headers: { 'Authorization': `Bearer ${this.#token}` },
+        responseType: 'buffer',
+        timeout: 10000,
+      });
+      if (!res.ok) return { width: 2, height: 3 };
+      const dims = imageSize(res.data);
+      return { width: dims.width, height: dims.height };
+    } catch {
+      return { width: 2, height: 3 };
+    }
+  }
+
+  /**
+   * Download the EPUB file from ABS and extract chapter titles from the
+   * NCX (EPUB 2) or NAV (EPUB 3) table of contents.
+   *
+   * @param {string} bookId
+   * @returns {Promise<Array<{id: number, title: string}>>}
+   */
+  async #extractEpubToc(bookId) {
+    // downloadBuffer throws HttpError on non-2xx, which #getChapters catches.
+    const host = this.#absClient.host;
+    const buffer = await this.#httpClient.downloadBuffer(`${host}/api/items/${bookId}/ebook`, {
+      headers: { 'Authorization': `Bearer ${this.#token}` },
+      timeout: 30000,
+    });
+
+    const AdmZip = (await import('adm-zip')).default;
+    const zip = new AdmZip(buffer);
+
+    // Try NCX first (EPUB 2), then NAV (EPUB 3)
+    let chapters = this.#parseNcx(zip);
+    let tocEntry = zip.getEntries().find(e => e.entryName.endsWith('.ncx'));
+    if (chapters.length === 0) {
+      chapters = this.#parseNav(zip);
+      tocEntry = zip.getEntries().find(e =>
+        (e.entryName.endsWith('.xhtml') || e.entryName.endsWith('.html')) &&
+        e.getData().toString('utf-8').includes('epub:type="toc"')
+      );
+    }
+
+    const filtered = this.#filterContentChapters(chapters);
+
+    // Extract chapter content from EPUB files
+    const basePath = tocEntry ? tocEntry.entryName.replace(/[^/]*$/, '') : '';
+    for (const chapter of filtered) {
+      if (!chapter.src) continue;
+      const text = this.#extractChapterContent(zip, chapter.src, basePath);
+      if (text) {
+        chapter.content = text;
+        chapter.preview = this.#extractPreview(text);
+      }
+      delete chapter.src;
+    }
+
+    return filtered;
+  }
+
+  #extractChapterContent(zip, src, basePath) {
+    // Strip fragment identifier
+    const filePath = src.split('#')[0];
+    // Resolve relative to TOC file's directory
+    const fullPath = basePath + filePath;
+    // Normalize path (handle ../ etc.)
+    const normalized = fullPath.split('/').reduce((acc, part) => {
+      if (part === '..') acc.pop();
+      else if (part !== '.' && part !== '') acc.push(part);
+      return acc;
+    }, []).join('/');
+
+    const entry = zip.getEntries().find(e => e.entryName === normalized || e.entryName === filePath);
+    if (!entry) return null;
+
+    try {
+      const html = entry.getData().toString('utf-8');
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\r\n?/g, '\n')
+        .replace(/^[^\S\n]+/gm, '')
+        .replace(/[^\S\n]+$/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return text || null;
+    } catch {
+      return null;
+    }
+  }
+
+  #extractPreview(text) {
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    return sentences.slice(0, 3).join(' ');
+  }
+
+  /**
+   * Parse NCX (EPUB 2) table of contents.
+   * @param {Object} zip - AdmZip instance
+   * @returns {Array<{id: number, title: string}>}
+   */
+  #parseNcx(zip) {
+    const ncxEntry = zip.getEntries().find(e => e.entryName.endsWith('.ncx'));
+    if (!ncxEntry) return [];
+
+    const content = ncxEntry.getData().toString('utf-8');
+    const points = [...content.matchAll(
+      /<navPoint[^>]*>[\s\S]*?<text>([^<]+)<\/text>[\s\S]*?<content\s+src=["']([^"']+)["']/g
+    )];
+
+    return points.map((m, i) => ({ id: i, title: m[1].trim(), src: m[2] }));
+  }
+
+  /**
+   * Parse NAV (EPUB 3) table of contents.
+   * @param {Object} zip - AdmZip instance
+   * @returns {Array<{id: number, title: string}>}
+   */
+  #parseNav(zip) {
+    const entries = zip.getEntries();
+    // Find NAV document containing epub:type="toc"
+    for (const entry of entries) {
+      if (!entry.entryName.endsWith('.xhtml') && !entry.entryName.endsWith('.html')) continue;
+      const content = entry.getData().toString('utf-8');
+      const tocMatch = content.match(/<nav[^>]*epub:type="toc"[^>]*>([\s\S]*?)<\/nav>/);
+      if (!tocMatch) continue;
+
+      const links = [...tocMatch[1].matchAll(/<a[^>]*href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/g)];
+      return links.map((m, i) => ({ id: i, title: m[2].trim(), src: m[1] }));
+    }
+    return [];
+  }
+
+  /**
+   * Filter out front/back matter entries, keeping only content chapters.
+   * @param {Array<{id: number, title: string}>} chapters
+   * @returns {Array<{id: number, title: string}>}
+   */
+  #filterContentChapters(chapters) {
+    const excluded = /^(cover|title\s*page|dedication|table\s*of\s*contents|contents|about\s*the\s*author|acknowledg[e]?ments?|also\s*by|epigraph|half\s*title|index|bibliography|notes|endnotes|glossary|colophon|foreword|preface|prologue|introduction)$/i;
+    const excludedContains = /copyright|appendix/i;
+
+    return chapters.filter(ch => {
+      const title = ch.title.trim();
+      return title.length > 0 && !excluded.test(title) && !excludedContains.test(title);
+    });
+  }
+
+  /**
+   * Check if a chapters array represents a meaningful TOC.
+   * @param {Array} chapters
+   * @returns {boolean}
+   */
+  #hasMeaningfulToc(chapters) {
+    if (!Array.isArray(chapters) || chapters.length < 2) return false;
+    const titled = chapters.filter(ch => ch.title && ch.title.trim().length > 0);
+    return titled.length >= 2;
+  }
+
+  async prefetchAll(query, { force = false, onProgress } = {}) {
+    const libraryId = query.params?.library;
+    if (!libraryId) return { cached: 0, skipped: 0, failed: 0 };
+
+    const genres = query.params?.genres || [];
+    const filter = genres.length > 0
+      ? `genres.${Buffer.from(genres[0]).toString('base64')}`
+      : undefined;
+
+    const data = await this.#absClient.getLibraryItems(libraryId, { limit: 100, filter });
+    const books = data?.results || [];
+
+    let cached = 0, skipped = 0, failed = 0;
+    for (const book of books) {
+      if (!book.media?.ebookFormat && !book.media?.ebookFile) continue;
+      const bookId = book.id;
+      const metadata = book.media?.metadata || {};
+
+      if (!force && this.#readCache(bookId)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        if (force) {
+          const fp = this.#cachePath(bookId);
+          if (fileExists(fp)) deleteFileStrict(fp);
+        }
+        await this.#getChapters(bookId, metadata);
+        cached++;
+        onProgress?.({ bookId, title: metadata.title, current: cached + skipped, total: books.length });
+      } catch {
+        failed++;
+      }
+    }
+
+    return { cached, skipped, failed };
+  }
+
+  startPrefetchTimer(queryConfigs) {
+    const absQueries = queryConfigs.filter(q => q.type === 'abs-ebooks');
+    if (absQueries.length === 0) return;
+
+    const run = async () => {
+      for (const query of absQueries) {
+        try {
+          const result = await this.prefetchAll(query);
+          this.#logger.debug?.('abs-ebooks.prefetch.complete', result);
+        } catch (err) {
+          this.#logger.warn?.('abs-ebooks.prefetch.error', { error: err.message });
+        }
+      }
+    };
+
+    // First run after 60s delay, then every 24h
+    setTimeout(() => {
+      run();
+      setInterval(run, 24 * 60 * 60 * 1000);
+    }, 60_000);
+  }
+
+  async #prefetchUncached(books) {
+    if (this.#prefetching) return;
+    this.#prefetching = true;
+    try {
+      for (const book of books) {
+        const metadata = book.media?.metadata || {};
+        try {
+          await this.#getChapters(book.id, metadata);
+        } catch {
+          // Skip failed books silently — #getChapters already logs
+        }
+      }
+    } finally {
+      this.#prefetching = false;
+    }
+  }
+}

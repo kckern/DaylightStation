@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DoNowApprovals } from "../../../../modules/donow/server/application/DoNowApprovals.mjs";
+import { DoNowApprovals } from "../../../../__app_modules/household/donow/server/application/DoNowApprovals.mjs";
 
 const NOW_ISO = '2026-07-30T10:05:00.000Z';
 

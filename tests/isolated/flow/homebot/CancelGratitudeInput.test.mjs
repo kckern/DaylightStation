@@ -39,7 +39,7 @@ describe('CancelGratitudeInput', () => {
       error: vi.fn()
     };
 
-    const { CancelGratitudeInput } = await import("../../../../modules/homebot/server/application/usecases/CancelGratitudeInput.mjs");
+    const { CancelGratitudeInput } = await import("../../../../__app_modules/household/homebot/server/application/usecases/CancelGratitudeInput.mjs");
 
     useCase = new CancelGratitudeInput({
       messagingGateway: mockMessagingGateway,
@@ -50,7 +50,7 @@ describe('CancelGratitudeInput', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { CancelGratitudeInput } = await import("../../../../modules/homebot/server/application/usecases/CancelGratitudeInput.mjs");
+      const { CancelGratitudeInput } = await import("../../../../__app_modules/household/homebot/server/application/usecases/CancelGratitudeInput.mjs");
 
       expect(() => new CancelGratitudeInput({
         conversationStateStore: mockStateStore
@@ -58,7 +58,7 @@ describe('CancelGratitudeInput', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { CancelGratitudeInput } = await import("../../../../modules/homebot/server/application/usecases/CancelGratitudeInput.mjs");
+      const { CancelGratitudeInput } = await import("../../../../__app_modules/household/homebot/server/application/usecases/CancelGratitudeInput.mjs");
 
       expect(() => new CancelGratitudeInput({
         messagingGateway: mockMessagingGateway

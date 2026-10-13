@@ -34,7 +34,7 @@ describe('ZoneProfileStore.syncFromUsers memoization', () => {
   });
 
   beforeEach(async () => {
-    const mod = await import("../../../../modules/fitness/browser/hooks/fitness/ZoneProfileStore.js");
+    const mod = await import("../../../../__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js");
     ZoneProfileStore = mod.ZoneProfileStore;
     store = new ZoneProfileStore();
     store.setBaseZoneConfig(baseZoneConfig);

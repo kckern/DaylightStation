@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { rasterizePdf } from '../../../../backend/src/1_adapters/hardware/laser-printer/rasterize.mjs';
+import { rasterizePdf } from '../../../../__backend/src/1_adapters/hardware/laser-printer/rasterize.mjs';
 
 // A minimal-but-valid single-page PDF, built by hand (no pdfkit dependency
 // needed for a fixture this small).

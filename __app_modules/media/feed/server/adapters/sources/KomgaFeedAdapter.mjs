@@ -1,0 +1,486 @@
+// __backend/src/1_adapters/feed/sources/KomgaFeedAdapter.mjs
+/**
+ * KomgaFeedAdapter
+ *
+ * Fetches magazine/comic articles from Komga via its REST API.
+ * Picks a random series, random recent issue, extracts PDF table-of-contents
+ * (bookmarks) via pdfjs-dist, and returns a random article as a feed item.
+ *
+ * TOC data is cached to disk via DataService to avoid re-downloading PDFs.
+ *
+ * @module adapters/feed/sources/KomgaFeedAdapter
+ */
+
+import { IFeedSourceAdapter, CONTENT_TYPES } from "../../application/ports/IFeedSourceAdapter.mjs";
+import { HttpClient } from '#system/services/HttpClient.mjs';
+
+export class KomgaFeedAdapter extends IFeedSourceAdapter {
+  #client;
+  #apiKey;
+  #webUrl;
+  #dataService;
+  #logger;
+  #httpClient;
+
+  /**
+   * @param {Object} deps
+   * @param {Object} deps.client - KomgaClient instance with `.host` property
+   * @param {string} deps.apiKey - Komga API key for X-API-Key header
+   * @param {string} [deps.webUrl] - Komga web UI base URL for reader links
+   * @param {Object} deps.dataService - DataService for TOC cache persistence
+   * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
+   */
+  constructor({ client, apiKey, webUrl = null, dataService, logger = console, httpClient } = {}) {
+    super();
+    if (!client) throw new Error('KomgaFeedAdapter requires client');
+    if (!apiKey) throw new Error('KomgaFeedAdapter requires apiKey');
+    if (!dataService) throw new Error('KomgaFeedAdapter requires dataService');
+    this.#client = client;
+    this.#apiKey = apiKey;
+    this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
+    this.#dataService = dataService;
+    this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
+  }
+
+  get sourceType() { return 'komga'; }
+  get provides() { return [CONTENT_TYPES.COMICS]; }
+
+  /**
+   * Fetch feed items from Komga.
+   *
+   * Picks a random series from query.params.series, fetches its most recent
+   * issues, picks one at random, extracts its TOC, and returns a random
+   * article as a feed card.
+   *
+   * @param {Object} query - Query config from YAML
+   * @param {Object[]} query.params.series - Array of {id, label}
+   * @param {number} [query.params.recent_issues=6] - How many recent issues to consider
+   * @param {string} username
+   * @returns {Promise<Object[]>} Normalized FeedItem-shaped objects
+   */
+  async fetchItems(query, username) {
+    const seriesList = query.params?.series;
+    if (!Array.isArray(seriesList) || seriesList.length === 0) return [];
+
+    const limit = query.limit || 1;
+    const recentCount = query.params?.recent_issues || 6;
+    const perSeries = Math.ceil(limit / seriesList.length);
+
+    // Fetch multiple articles per series (in parallel)
+    const results = await Promise.allSettled(
+      seriesList.map(series => this.#fetchFromSeries(series, recentCount, perSeries, query))
+    );
+
+    const items = [];
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled') {
+        items.push(...results[i].value);
+      } else if (results[i].status === 'rejected') {
+        this.#logger.warn?.('komga.adapter.series.error', {
+          seriesId: seriesList[i].id,
+          error: results[i].reason?.message,
+        });
+      }
+    }
+
+    // Shuffle across series and cap
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items.slice(0, limit);
+  }
+
+  /**
+   * Fetch multiple articles from one series across its recent issues.
+   * @param {Object} series - { id, label }
+   * @param {number} recentCount - How many recent issues to consider
+   * @param {number} count - Target number of articles
+   * @param {Object} query - Query config for tier/priority
+   * @returns {Promise<Object[]>} FeedItem array
+   */
+  async #fetchFromSeries(series, recentCount, count, query) {
+    let booksData;
+    try {
+      booksData = await this.#client.getBooks(series.id, {
+        size: recentCount,
+        sort: 'metadata.numberSort,desc',
+      });
+    } catch (err) {
+      this.#logger.warn?.('komga.adapter.books.error', { seriesId: series.id, error: err.message });
+      return [];
+    }
+
+    const books = booksData?.content || [];
+    if (books.length === 0) return [];
+
+    const redflags = (query.params?.redflags || []).map(p => new RegExp(p, 'i'));
+    const items = [];
+
+    // Shuffle issues to randomize selection across the recent batch
+    const shuffledBooks = [...books];
+    for (let i = shuffledBooks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledBooks[i], shuffledBooks[j]] = [shuffledBooks[j], shuffledBooks[i]];
+    }
+
+    // Walk issues, collecting articles until we have enough
+    for (const book of shuffledBooks) {
+      if (items.length >= count) break;
+
+      const bookId = book.id;
+      const bookTitle = book.metadata?.title || book.name || 'Issue';
+      const pageCount = book.media?.pagesCount || 0;
+
+      const toc = await this.#getToc(bookId, series.label, bookTitle, pageCount);
+      const goodArticles = this.#getGoodArticles(toc, pageCount, redflags);
+
+      // Shuffle articles within issue
+      for (let i = goodArticles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [goodArticles[i], goodArticles[j]] = [goodArticles[j], goodArticles[i]];
+      }
+
+      for (const article of goodArticles) {
+        if (items.length >= count) break;
+        const offset = toc.tocPageOffset || 0;
+        const pageNum = article.page + offset;
+        items.push({
+          id: `komga:${bookId}:${pageNum}`,
+          tier: query.tier || 'library',
+          source: 'komga',
+          title: article.title,
+          body: `${series.label} — ${bookTitle}`,
+          image: `/api/v1/proxy/komga/composite/${bookId}/${pageNum}`,
+          link: this.#webUrl ? `${this.#webUrl}/book/${bookId}/read?page=${pageNum}` : null,
+          timestamp: book.metadata?.releaseDate || book.created || new Date().toISOString(),
+          priority: query.priority || 5,
+          meta: {
+            bookId,
+            page: pageNum,
+            seriesId: series.id,
+            seriesLabel: series.label,
+            issueTitle: bookTitle,
+            pageCount,
+            imageWidth: 1280,
+            imageHeight: 720,
+            sourceName: 'Komga',
+            sourceIcon: null,
+          },
+        });
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Fetch detail view for a Komga item.
+   *
+   * @param {string} localId - Format: "{bookId}:{page}"
+   * @param {Object} meta - Item meta from the scroll response
+   * @param {string} username
+   * @returns {Promise<{sections: Array}>}
+   */
+  async getDetail(localId, meta, _username) {
+    const colonIdx = localId.lastIndexOf(':');
+    const bookId = colonIdx > 0 ? localId.slice(0, colonIdx) : localId;
+    const vendorPage = colonIdx > 0 ? parseInt(localId.slice(colonIdx + 1), 10) || 1 : 1;
+    const sections = [];
+
+    // Read TOC for offset and article boundaries
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.content.read(cachePath);
+    const offset = toc?.tocPageOffset || 0;
+
+    // Convert vendor page back to printed page for boundary lookup
+    const printedPage = vendorPage - offset;
+
+    // Determine article page range from TOC (in printed page numbers)
+    const printedEndPage = this.#getArticleEndPage(bookId, printedPage, meta.pageCount || 0);
+
+    // Convert back to vendor pages for image URLs
+    const vendorStartPage = printedPage + offset;
+    const vendorEndPage = printedEndPage + offset;
+
+    // All article page images (vertically stacked in detail view)
+    const images = [];
+    for (let p = vendorStartPage; p <= vendorEndPage; p++) {
+      images.push({ url: this.#pageImageUrl(bookId, p) });
+    }
+
+    sections.push({
+      type: 'media',
+      data: { images },
+    });
+
+    return { sections };
+  }
+
+  /**
+   * Determine the last page of an article by finding the next TOC entry.
+   *
+   * @param {string} bookId
+   * @param {number} startPage - 1-indexed start page of this article
+   * @param {number} totalPages - Total pages in the book
+   * @returns {number} Last page of the article (inclusive)
+   */
+  #getArticleEndPage(bookId, startPage, totalPages) {
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.content.read(cachePath);
+
+    if (!toc?.articles?.length) {
+      // No TOC — show a reasonable number of pages (up to 8)
+      return Math.min(startPage + 7, totalPages || startPage);
+    }
+
+    // Sort articles by page number
+    const sorted = [...toc.articles]
+      .map(a => a.page)
+      .sort((a, b) => a - b);
+
+    // Find the next article's start page after this one
+    const nextPage = sorted.find(p => p > startPage);
+
+    if (nextPage) {
+      return nextPage - 1;
+    }
+
+    // Last article in the book — go to end of book
+    return totalPages || startPage;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Build proxied page image URL.
+   * @param {string} bookId
+   * @param {number} page - 1-indexed page number
+   * @returns {string}
+   */
+  #pageImageUrl(bookId, page) {
+    return `/api/v1/proxy/komga/api/v1/books/${bookId}/pages/${page}`;
+  }
+
+  /**
+   * Get TOC for a book, using disk cache to avoid re-downloading PDFs.
+   *
+   * Cache path: content/komga/toc/{bookId}.yml
+   * (Explicit .yml extension to avoid ensureExtension issues with dotted IDs.)
+   *
+   * @param {string} bookId
+   * @param {string} seriesLabel
+   * @param {string} issueTitle
+   * @param {number} pageCount
+   * @returns {Promise<Object>} TOC object with { bookId, series, issue, pages, articles }
+   */
+  async #getToc(bookId, seriesLabel, issueTitle, pageCount) {
+    // Check disk cache
+    const cachePath = `komga/toc/${bookId}.yml`;
+    const cached = this.#dataService.content.read(cachePath);
+    if (cached) return cached;
+
+    // Download PDF and extract bookmarks
+    let articles = [];
+    try {
+      articles = await this.#extractBookmarks(bookId);
+    } catch (err) {
+      this.#logger.warn?.('komga.toc.extract.error', { bookId, error: err.message });
+    }
+
+    const tocData = {
+      bookId,
+      series: seriesLabel,
+      issue: issueTitle,
+      pages: pageCount,
+      articles,
+    };
+
+    // Persist to cache
+    this.#dataService.content.write(cachePath, tocData);
+
+    return tocData;
+  }
+
+  /**
+   * Download the book's PDF file from Komga and extract PDF bookmarks
+   * (outline / table of contents) using pdfjs-dist.
+   *
+   * Flattens the outline to max depth 2, skipping container-only entries.
+   * Returns array of { title, page } where page is 1-indexed.
+   *
+   * @param {string} bookId
+   * @returns {Promise<Array<{title: string, page: number}>>}
+   */
+  async #extractBookmarks(bookId) {
+    // Download the PDF file (downloadBuffer throws HttpError on non-2xx,
+    // which #getToc catches and logs).
+    const fileUrl = `${this.#client.host}/api/v1/books/${bookId}/file`;
+    const buffer = await this.#httpClient.downloadBuffer(fileUrl, {
+      headers: { 'X-API-Key': this.#apiKey },
+      timeout: 60000,
+    });
+
+    // Load with pdfjs-dist (legacy Node build, no worker)
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+
+    let articles = [];
+    try {
+      const outline = await doc.getOutline();
+      if (outline && outline.length > 0) {
+        articles = await this.#flattenOutline(doc, outline, 0, 2);
+      }
+    } finally {
+      await doc.destroy();
+    }
+
+    return articles;
+  }
+
+  /**
+   * Recursively flatten a PDF outline to a max depth, resolving each
+   * destination to a 1-indexed page number.
+   *
+   * @param {Object} doc - pdfjs document
+   * @param {Object[]} items - Outline items from getOutline()
+   * @param {number} depth - Current depth
+   * @param {number} maxDepth - Max recursion depth
+   * @returns {Promise<Array<{title: string, page: number}>>}
+   */
+  async #flattenOutline(doc, items, depth, maxDepth) {
+    if (!items || depth >= maxDepth) return [];
+
+    const results = [];
+    for (const item of items) {
+      const hasChildren = item.items && item.items.length > 0;
+
+      // Skip parent/section entries that have children (e.g. "FEATURES", "FRONTIERS")
+      // — prefer the more descriptive child entries instead
+      if (!hasChildren) {
+        const page = await this.#resolveDestination(doc, item.dest);
+        if (page !== null) {
+          results.push({ title: item.title, page });
+        }
+      }
+
+      // Recurse into children
+      if (hasChildren) {
+        const children = await this.#flattenOutline(doc, item.items, depth + 1, maxDepth);
+        results.push(...children);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Resolve a PDF destination to a 1-indexed page number.
+   *
+   * Destinations can be:
+   *  - An array where dest[0] is a page ref (resolve via getPageIndex)
+   *  - A string (named destination, resolve via getDestination first)
+   *
+   * @param {Object} doc - pdfjs document
+   * @param {Array|string|null} dest
+   * @returns {Promise<number|null>} 1-indexed page number or null
+   */
+  async #resolveDestination(doc, dest) {
+    try {
+      if (!dest) return null;
+
+      let resolved = dest;
+
+      // Named destination: resolve to explicit destination array
+      if (typeof dest === 'string') {
+        resolved = await doc.getDestination(dest);
+        if (!resolved) return null;
+      }
+
+      // dest should now be an array; first element is the page ref
+      if (Array.isArray(resolved) && resolved.length > 0) {
+        const pageIndex = await doc.getPageIndex(resolved[0]); // 0-based
+        return pageIndex + 1; // convert to 1-indexed
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get all good (non-redflag) articles from a TOC, with fallback to
+   * redflag page indices or random pages.
+   *
+   * @param {Object} toc - TOC object with articles array
+   * @param {number} pageCount - Total pages in the book
+   * @param {RegExp[]} redflags - Patterns that indicate junk bookmark titles
+   * @returns {Array<{title: string, page: number}>}
+   */
+  #getGoodArticles(toc, pageCount, redflags = []) {
+    const articles = toc?.articles || [];
+    if (articles.length > 0) {
+      const good = redflags.length > 0
+        ? articles.filter(a => !redflags.some(rx => rx.test(a.title)))
+        : articles;
+      if (good.length > 0) return good;
+      // All articles are junk — page indices are still useful
+      return articles.map(a => ({ title: `p. ${a.page}`, page: a.page }));
+    }
+    // No TOC — generate a handful of random pages from the middle 70%
+    if (pageCount <= 0) return [];
+    const start = Math.floor(pageCount * 0.15) + 1;
+    const end = Math.floor(pageCount * 0.85);
+    if (start >= end) return [{ title: 'Page', page: 1 }];
+    const pages = [];
+    for (let p = start; p < end; p += Math.max(1, Math.floor((end - start) / 5))) {
+      pages.push({ title: `p. ${p}`, page: p });
+    }
+    return pages;
+  }
+
+  /**
+   * Pick a random article from the TOC. If the TOC has no usable articles
+   * (empty or all matching redflags), fall back to a random page from the
+   * middle 70% of the book — but prefer redflag-article page numbers over
+   * blind random pages since those indices are still meaningful.
+   *
+   * @param {Object} toc - TOC object with articles array and pages count
+   * @param {number} pageCount - Total pages in the book
+   * @param {RegExp[]} redflags - Patterns that indicate junk bookmark titles
+   * @returns {{title: string, page: number}|null}
+   */
+  #pickArticle(toc, pageCount, redflags = []) {
+    const articles = toc?.articles || [];
+
+    if (articles.length > 0) {
+      // Separate good vs junk articles
+      const good = redflags.length > 0
+        ? articles.filter(a => !redflags.some(rx => rx.test(a.title)))
+        : articles;
+
+      if (good.length > 0) {
+        return good[Math.floor(Math.random() * good.length)];
+      }
+
+      // All articles are junk — page indices are still useful, just replace titles
+      const pick = articles[Math.floor(Math.random() * articles.length)];
+      return { title: `p. ${pick.page}`, page: pick.page };
+    }
+
+    // Fallback: random page from the middle 70%
+    if (pageCount <= 0) return null;
+
+    const start = Math.floor(pageCount * 0.15) + 1; // 1-indexed, skip first 15%
+    const end = Math.floor(pageCount * 0.85);        // skip last 15%
+    if (start >= end) return { title: 'Page', page: 1 };
+
+    const page = start + Math.floor(Math.random() * (end - start));
+    return { title: 'Page', page };
+  }
+}

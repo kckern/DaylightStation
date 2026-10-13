@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { WebSocketContentAdapter } from '../../../backend/src/1_adapters/devices/WebSocketContentAdapter.mjs';
+import { WebSocketContentAdapter } from '../../../__backend/src/1_adapters/devices/WebSocketContentAdapter.mjs';
 
 const make = () => {
   const broadcast = vi.fn(async () => {});

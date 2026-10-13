@@ -6,7 +6,7 @@ import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 import { requestLoggerMiddleware } from '#backend/src/0_system/http/middleware/requestLogger.mjs';
 
-const APP_MJS = fileURLToPath(new URL('../../../../../backend/src/app.mjs', import.meta.url));
+const APP_MJS = fileURLToPath(new URL('../../../../../__backend/src/app.mjs', import.meta.url));
 
 /**
  * The middleware existed, was mounted on exactly one router, and would have
@@ -188,7 +188,7 @@ describe('global mount', () => {
   test('no router mounts a second copy of it', () => {
     // Two mounts means every matching request is logged twice into a
     // size-capped sink.
-    const routers = fileURLToPath(new URL('../../../../../backend/src/4_api/v1/routers/', import.meta.url));
+    const routers = fileURLToPath(new URL('../../../../../__backend/src/4_api/v1/routers/', import.meta.url));
     const offenders = fs.readdirSync(routers)
       .filter((f) => f.endsWith('.mjs'))
       .filter((f) => /router\.use\(\s*requestLoggerMiddleware\(/.test(fs.readFileSync(routers + f, 'utf8')));

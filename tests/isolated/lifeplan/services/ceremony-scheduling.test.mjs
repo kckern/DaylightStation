@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CeremonyService } from "../../../../modules/life/server/application/services/CeremonyService.mjs";
-import { CeremonyScheduler } from "../../../../modules/life/server/application/services/CeremonyScheduler.mjs";
+import { CeremonyService } from "../../../../__app_modules/personal/life/server/application/services/CeremonyService.mjs";
+import { CeremonyScheduler } from "../../../../__app_modules/personal/life/server/application/services/CeremonyScheduler.mjs";
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
 
 describe('CeremonyService', () => {

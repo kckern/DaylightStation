@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 
-const { DeviceEventRouter } = await import("../../../../modules/fitness/browser/hooks/fitness/DeviceEventRouter.js");
+const { DeviceEventRouter } = await import("../../../../__app_modules/wellness/fitness/browser/hooks/fitness/DeviceEventRouter.js");
 
 describe('DeviceEventRouter equipment catalog', () => {
   let router;

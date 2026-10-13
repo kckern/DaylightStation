@@ -1,4 +1,4 @@
-import { FlexConfigParser } from "../../../../modules/feed/server/application/services/FlexConfigParser.mjs";
+import { FlexConfigParser } from "../../../../__app_modules/media/feed/server/application/services/FlexConfigParser.mjs";
 
 describe('FlexConfigParser', () => {
   describe('parseFlexNode', () => {

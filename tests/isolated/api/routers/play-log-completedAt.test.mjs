@@ -2,9 +2,9 @@
 import { vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createPlayRouter } from "../../../../capabilities/playback/server/api/play.mjs";
-import { RecordPlaybackProgress } from "../../../../capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
-import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { createPlayRouter } from "../../../../__capabilities/playback/server/api/play.mjs";
+import { RecordPlaybackProgress } from "../../../../__capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
+import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

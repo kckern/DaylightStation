@@ -10,7 +10,7 @@ vi.mock('#frontend/lib/logging/Logger.js', () => ({
 
 let GovernanceEngine;
 beforeAll(async () => {
-  ({ GovernanceEngine } = await import("../../../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js"));
+  ({ GovernanceEngine } = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js"));
 });
 
 describe('governance phase change logging', () => {

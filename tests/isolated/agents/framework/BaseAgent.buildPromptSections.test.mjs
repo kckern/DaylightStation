@@ -5,7 +5,7 @@
 // section. These tests cover only the chat-path sections this layer owns:
 // base prompt + Active User + attachments.
 import { describe, it, expect } from 'vitest';
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 class FakeAgent extends BaseAgent {
   static id = 'fake';

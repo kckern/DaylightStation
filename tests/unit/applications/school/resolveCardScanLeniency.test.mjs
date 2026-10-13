@@ -12,14 +12,14 @@
  * mirroring `RecordCardScanOutcome.test.mjs`'s own fixture style.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { PublishPrintDocument } from "../../../../modules/school/server/application/documents/PublishPrintDocument.mjs";
-import { RenderPrintDocument } from "../../../../modules/school/server/application/documents/RenderPrintDocument.mjs";
-import { createPrintDocumentRendering } from "../../../../modules/school/server/rendering/documents/PrintDocumentRendering.mjs";
-import { ResolveCardScan } from "../../../../modules/school/server/application/documents/ResolveCardScan.mjs";
-import { RecordCardScanOutcome } from "../../../../modules/school/server/application/documents/RecordCardScanOutcome.mjs";
-import { YamlAllocationStore } from "../../../../modules/school/server/adapters/documents/YamlAllocationStore.mjs";
-import { DOCUMENT_SOURCE_SCHEMA } from "../../../../modules/school/server/domain/documents/documentSource.mjs";
-import { createEvent } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { PublishPrintDocument } from "../../../../__app_modules/learning/school/server/application/documents/PublishPrintDocument.mjs";
+import { RenderPrintDocument } from "../../../../__app_modules/learning/school/server/application/documents/RenderPrintDocument.mjs";
+import { createPrintDocumentRendering } from "../../../../__app_modules/learning/school/server/rendering/documents/PrintDocumentRendering.mjs";
+import { ResolveCardScan } from "../../../../__app_modules/learning/school/server/application/documents/ResolveCardScan.mjs";
+import { RecordCardScanOutcome } from "../../../../__app_modules/learning/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { YamlAllocationStore } from "../../../../__app_modules/learning/school/server/adapters/documents/YamlAllocationStore.mjs";
+import { DOCUMENT_SOURCE_SCHEMA } from "../../../../__app_modules/learning/school/server/domain/documents/documentSource.mjs";
+import { createEvent } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const richText = (md) => ({ type: 'rich_text', md });
 

@@ -16,11 +16,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { describe, it, expect } from 'vitest';
-import { validateUnit, isPublishable } from "../../../../../modules/school/server/domain/curriculum/unitValidation.mjs";
-import { validateManifest } from "../../../../../modules/school/server/domain/curriculum/manifestValidation.mjs";
-import { validateDocument, walkBlocks } from "../../../../../modules/school/server/domain/documents/documentValidation.mjs";
-import { validateQuestionBank } from "../../../../../modules/school/server/domain/questionBankValidation.mjs";
-import { TOKEN_CLASSES } from "../../../../../modules/school/server/domain/sessions/tokens.mjs";
+import { validateUnit, isPublishable } from "../../../../../__app_modules/learning/school/server/domain/curriculum/unitValidation.mjs";
+import { validateManifest } from "../../../../../__app_modules/learning/school/server/domain/curriculum/manifestValidation.mjs";
+import { validateDocument, walkBlocks } from "../../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
+import { validateQuestionBank } from "../../../../../__app_modules/learning/school/server/domain/questionBankValidation.mjs";
+import { TOKEN_CLASSES } from "../../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 
 const FIXTURES = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

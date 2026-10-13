@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '../modules/nutribot/cli/ai-wire-ab.cli.mjs';
+import '../__app_modules/wellness/nutribot/cli/ai-wire-ab.cli.mjs';

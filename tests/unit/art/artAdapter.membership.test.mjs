@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Jimp } from 'jimp';
-import { createArtAdapter } from "../../../modules/art/server/adapters/ArtAdapter.mjs";
+import { createArtAdapter } from "../../../__app_modules/media/art/server/adapters/ArtAdapter.mjs";
 
 const noop = { warn: () => {}, info: () => {}, debug: () => {}, error: () => {} };
 let tmp, imgBasePath;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { dispatchResponse } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
+import { dispatchResponse } from "../../../../__capabilities/device-dispatch/server/application/responseHandlers.mjs";
 
 describe('script handler', () => {
   it('calls endpointGateway.call(ref, params)', async () => {

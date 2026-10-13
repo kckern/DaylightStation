@@ -1,7 +1,7 @@
 // tests/isolated/application/feed/FeedAssemblyService.test.mjs
 import { vi } from 'vitest';
-import { FeedAssemblyService } from "../../../../modules/feed/server/application/services/FeedAssemblyService.mjs";
-import { FeedPoolManager } from "../../../../modules/feed/server/application/services/FeedPoolManager.mjs";
+import { FeedAssemblyService } from "../../../../__app_modules/media/feed/server/application/services/FeedAssemblyService.mjs";
+import { FeedPoolManager } from "../../../../__app_modules/media/feed/server/application/services/FeedPoolManager.mjs";
 
 const TEST_SCHEDULER = { withDeadline: (work) => work };
 

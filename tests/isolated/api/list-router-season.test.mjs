@@ -1,9 +1,9 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createListRouter } from "../../../capabilities/content-catalog/server/api/list.mjs";
-import { ListBrowseService } from "../../../capabilities/content-catalog/server/application/services/ListBrowseService.mjs";
-import { RegistryContentCatalogGateway } from "../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { createListRouter } from "../../../__capabilities/content-catalog/server/api/list.mjs";
+import { ListBrowseService } from "../../../__capabilities/content-catalog/server/application/services/ListBrowseService.mjs";
+import { RegistryContentCatalogGateway } from "../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 /**
  * Test that the list router wraps seasons as single container items.

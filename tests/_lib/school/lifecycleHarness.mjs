@@ -61,17 +61,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { createSchoolLifecycle } from "../../../modules/school/server/composition/schoolLifecycle.mjs";
-import { createDonow } from "../../../modules/donow/server/composition/donow.mjs";
-import { YamlSchoolDatastore } from "../../../modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
-import { YamlEconomyDatastore } from "../../../modules/economy/server/adapters/persistence/YamlEconomyDatastore.mjs";
-import { EconomyConfigProjection } from '../../../modules/economy/server/adapters/config/EconomyConfigProjection.mjs';
-import { SchoolService } from "../../../modules/school/server/application/SchoolService.mjs";
-import { EconomyService } from "../../../modules/economy/server/application/EconomyService.mjs";
-import { createDocumentReceiptRenderer } from "../../../modules/school/server/rendering/documents/DocumentReceiptRenderer.mjs";
-import { HmacSchoolStudyGrantIssuer } from "../../../modules/school/server/adapters/actions/HmacSchoolStudyGrantIssuer.mjs";
-import { mintToken } from "../../../modules/school/server/domain/sessions/tokens.mjs";
-import { reduceSession } from "../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { createSchoolLifecycle } from "../../../__app_modules/learning/school/server/composition/schoolLifecycle.mjs";
+import { createDonow } from "../../../__app_modules/household/donow/server/composition/donow.mjs";
+import { YamlSchoolDatastore } from "../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { YamlEconomyDatastore } from "../../../__app_modules/money/economy/server/adapters/persistence/YamlEconomyDatastore.mjs";
+import { EconomyConfigProjection } from '../../../__app_modules/money/economy/server/adapters/config/EconomyConfigProjection.mjs';
+import { SchoolService } from "../../../__app_modules/learning/school/server/application/SchoolService.mjs";
+import { EconomyService } from "../../../__app_modules/money/economy/server/application/EconomyService.mjs";
+import { createDocumentReceiptRenderer } from "../../../__app_modules/learning/school/server/rendering/documents/DocumentReceiptRenderer.mjs";
+import { HmacSchoolStudyGrantIssuer } from "../../../__app_modules/learning/school/server/adapters/actions/HmacSchoolStudyGrantIssuer.mjs";
+import { mintToken } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
+import { reduceSession } from "../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');

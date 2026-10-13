@@ -1,5 +1,6 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import config from '../../../playwright.config.mjs';
+import config from '../../_infrastructure/config/playwright.config.mjs';
 
 describe('Playwright config: Media journeys', () => {
   it('runs tests/live/flow/media/** in a single-worker project (the household reset in beforeEach wipes shared server state)', () => {

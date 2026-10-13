@@ -15,7 +15,7 @@ describe.each([
   ['journalist-debrief-preview.cli.mjs', 'cli:journalist-debrief-preview', 'journalist'],
 ])('%s', (file, origin, app) => {
   const implementation = file === 'journalist-debrief-preview.cli.mjs'
-    ? '../modules/journalist/cli/journalist-debrief-preview.cli.mjs'
+    ? '../__app_modules/personal/journalist/cli/journalist-debrief-preview.cli.mjs'
     : file;
   const source = readFileSync(path.join(here, implementation), 'utf8');
 

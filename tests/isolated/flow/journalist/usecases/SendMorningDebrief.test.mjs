@@ -29,7 +29,7 @@ describe('SendMorningDebrief — adaptive headline assembly', () => {
     mockLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
     const module = await import(
-      "../../../../../modules/journalist/server/application/usecases/SendMorningDebrief.mjs"
+      "../../../../../__app_modules/personal/journalist/server/application/usecases/SendMorningDebrief.mjs"
     );
     SendMorningDebrief = module.SendMorningDebrief;
     useCase = new SendMorningDebrief({ logger: mockLogger });

@@ -59,7 +59,7 @@ describe('ComposePresentationUseCase', () => {
     };
 
     const { ComposePresentationUseCase } = await import(
-      "../../../../capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
+      "../../../../__capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
     );
 
     useCase = new ComposePresentationUseCase({
@@ -71,7 +71,7 @@ describe('ComposePresentationUseCase', () => {
   describe('constructor', () => {
     it('should throw if contentSourceRegistry is not provided', async () => {
       const { ComposePresentationUseCase } = await import(
-        "../../../../capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
+        "../../../../__capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
       );
 
       expect(() => new ComposePresentationUseCase({})).toThrow(
@@ -81,7 +81,7 @@ describe('ComposePresentationUseCase', () => {
 
     it('should accept optional logger', async () => {
       const { ComposePresentationUseCase } = await import(
-        "../../../../capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
+        "../../../../__capabilities/playback/server/application/usecases/ComposePresentationUseCase.mjs"
       );
 
       // Should not throw without logger

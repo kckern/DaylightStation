@@ -2,8 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
-import { createDisplayRouter } from "../../../../capabilities/content-catalog/server/api/display.mjs";
-import { ContentAccessService } from "../../../../capabilities/content-catalog/server/application/ContentAccessService.mjs";
+import { createDisplayRouter } from "../../../../__capabilities/content-catalog/server/api/display.mjs";
+import { ContentAccessService } from "../../../../__capabilities/content-catalog/server/application/ContentAccessService.mjs";
 
 describe('GET /display/:source/*', () => {
   const mockRegistry = {

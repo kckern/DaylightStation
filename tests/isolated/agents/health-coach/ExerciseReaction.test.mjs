@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { ExerciseReaction } from "../../../../modules/health/server/application/agents/health-coach/assignments/ExerciseReaction.mjs";
+import { ExerciseReaction } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/ExerciseReaction.mjs";
 
 describe('ExerciseReaction', () => {
   it('has correct static properties', () => {

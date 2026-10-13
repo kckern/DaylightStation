@@ -10,8 +10,8 @@
  * GET /courses/:courseId/playable).
  */
 import { describe, it, expect } from 'vitest';
-import { GetPlayableUnits } from '../../../../modules/piano/server/application/usecases/GetPlayableUnits.mjs';
-import { PianoConfigProjection } from "../../../../modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { GetPlayableUnits } from '../../../../__app_modules/learning/piano/server/application/usecases/GetPlayableUnits.mjs';
+import { PianoConfigProjection } from "../../../../__app_modules/learning/piano/server/adapters/PianoConfigProjection.mjs";
 
 const noop = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

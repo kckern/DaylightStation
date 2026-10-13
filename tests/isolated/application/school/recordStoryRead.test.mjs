@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RecordStoryRead } from "../../../../modules/school/server/application/usecases/RecordStoryRead.mjs";
+import { RecordStoryRead } from "../../../../__app_modules/learning/school/server/application/usecases/RecordStoryRead.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 

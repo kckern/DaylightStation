@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { NfcResolver } from "../../../../../capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
+import { NfcResolver } from "../../../../../__capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
 
 const stubResolver = { resolve: () => true }; // every shorthand is valid
 

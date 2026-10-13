@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createConfigRouter } from '../../../../backend/src/4_api/v1/routers/config.mjs';
-import { ConfigQueryService } from '../../../../backend/src/3_applications/config/ConfigQueryService.mjs';
-import { loadYaml } from '../../../../backend/src/0_system/utils/FileIO.mjs';
+import { createConfigRouter } from '../../../../__backend/src/4_api/v1/routers/config.mjs';
+import { ConfigQueryService } from '../../../../__backend/src/3_applications/config/ConfigQueryService.mjs';
+import { loadYaml } from '../../../../__backend/src/0_system/utils/FileIO.mjs';
 import path from 'node:path';
 
 function makeLogger() {

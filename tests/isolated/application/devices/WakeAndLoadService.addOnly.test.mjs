@@ -1,4 +1,4 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // RQ-PLAY-10: a screen in Add only acks a dispatched play-now with
 // appliedAs:'add'. The dispatch result must say so, and the receiver-outcome
 // watchdog must look for a queue append — not for the item becoming current

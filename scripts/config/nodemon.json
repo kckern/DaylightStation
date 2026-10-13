@@ -1,0 +1,7 @@
+{
+  "watch": ["__backend", ".env"],
+  "ext": "js,mjs,json,yml",
+  "exec": "node __backend/index.js",
+  "legacyWatch": true,
+  "delay": "500"
+}

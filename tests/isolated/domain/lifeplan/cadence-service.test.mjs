@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CadenceService } from "../../../../modules/life/server/domain/services/CadenceService.mjs";
+import { CadenceService } from "../../../../__app_modules/personal/life/server/domain/services/CadenceService.mjs";
 
 describe('CadenceService', () => {
   const service = new CadenceService();

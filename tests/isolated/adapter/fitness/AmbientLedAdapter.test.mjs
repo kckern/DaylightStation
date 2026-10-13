@@ -1,6 +1,6 @@
 // tests/unit/adapters/fitness/AmbientLedAdapter.test.mjs
 import { vi } from 'vitest';
-import { AmbientLedAdapter } from "../../../../modules/fitness/server/adapters/AmbientLedAdapter.mjs";
+import { AmbientLedAdapter } from "../../../../__app_modules/wellness/fitness/server/adapters/AmbientLedAdapter.mjs";
 
 describe('AmbientLedAdapter', () => {
   let adapter;

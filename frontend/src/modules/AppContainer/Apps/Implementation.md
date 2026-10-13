@@ -166,12 +166,12 @@ try {
 #### 1.1 Create Folder Structure
 
 ```bash
-mkdir -p backend/chatbots/bots/homebot/{application/{ports,usecases},domain,config,handlers,repositories}
+mkdir -p __backend/chatbots/bots/homebot/{application/{ports,usecases},domain,config,handlers,repositories}
 ```
 
 #### 1.2 Create `container.mjs`
 
-Reference: `backend/chatbots/bots/nutribot/container.mjs`
+Reference: `__backend/chatbots/bots/nutribot/container.mjs`
 
 ```javascript
 /**
@@ -230,7 +230,7 @@ export default HomeBotContainer;
 
 #### 1.3 Create `server.mjs`
 
-Reference: `backend/chatbots/bots/nutribot/server.mjs`
+Reference: `__backend/chatbots/bots/nutribot/server.mjs`
 
 ```javascript
 /**
@@ -324,7 +324,7 @@ TELEGRAM_HOMEBOT_TOKEN: <bot_token_here>
 
 #### 2.1 Input Router
 
-Create `backend/chatbots/bots/homebot/adapters/HomeBotInputRouter.mjs`:
+Create `__backend/chatbots/bots/homebot/adapters/HomeBotInputRouter.mjs`:
 
 ```javascript
 /**
@@ -420,7 +420,7 @@ export class HomeBotInputRouter {
 
 #### 2.2 ProcessGratitudeInput Use Case
 
-Create `backend/chatbots/bots/homebot/application/usecases/ProcessGratitudeInput.mjs`:
+Create `__backend/chatbots/bots/homebot/application/usecases/ProcessGratitudeInput.mjs`:
 
 ```javascript
 /**
@@ -628,7 +628,7 @@ Output: ["Sunny Weather", "Morning Coffee", "Family Time"]`;
 
 ### Phase 3: AssignItemToUser Use Case
 
-Create `backend/chatbots/bots/homebot/application/usecases/AssignItemToUser.mjs`:
+Create `__backend/chatbots/bots/homebot/application/usecases/AssignItemToUser.mjs`:
 
 ```javascript
 /**
@@ -794,7 +794,7 @@ gratitudeRouter.get('/bootstrap', (req, res) => {
 
 #### 4.2 Create GratitudeRepository
 
-Create `backend/chatbots/bots/homebot/repositories/GratitudeRepository.mjs`:
+Create `__backend/chatbots/bots/homebot/repositories/GratitudeRepository.mjs`:
 
 ```javascript
 /**

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 
-const { FitnessSession } = await import("../../../../modules/fitness/browser/hooks/fitness/FitnessSession.js");
-const { applyEquipmentCatalogFromConfig } = await import("../../../../modules/fitness/browser/context/fitnessConfigBridge.js");
+const { FitnessSession } = await import("../../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js");
+const { applyEquipmentCatalogFromConfig } = await import("../../../../__app_modules/wellness/fitness/browser/context/fitnessConfigBridge.js");
 
 describe('fitnessConfigBridge.applyEquipmentCatalogFromConfig', () => {
   let session;

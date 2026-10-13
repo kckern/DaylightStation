@@ -7,10 +7,10 @@
  * now notice — the per-projection fault and the startup report.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { collectProgramStatuses } from "../../../../modules/school/server/application/programStatusCollection.mjs";
-import { reportUnreachableSchoolPrograms } from "../../../../modules/school/server/composition/schoolReachability.mjs";
-import { planDailyAgenda } from "../../../../modules/school/server/domain/agenda.mjs";
-import { resolveDayCompletion } from "../../../../modules/school/server/domain/completion.mjs";
+import { collectProgramStatuses } from "../../../../__app_modules/learning/school/server/application/programStatusCollection.mjs";
+import { reportUnreachableSchoolPrograms } from "../../../../__app_modules/learning/school/server/composition/schoolReachability.mjs";
+import { planDailyAgenda } from "../../../../__app_modules/learning/school/server/domain/agenda.mjs";
+import { resolveDayCompletion } from "../../../../__app_modules/learning/school/server/domain/completion.mjs";
 
 const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
 

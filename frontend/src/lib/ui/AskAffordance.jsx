@@ -7,7 +7,7 @@ const SparkIcon = () => (
   </svg>
 );
 
-/** Chat entry pill. Pairs with modules/Agent/AgentChatSurface in an overlay. */
+/** Chat entry pill. Pairs with __app_modules/Agent/AgentChatSurface in an overlay. */
 export function AskAffordance({ placeholder = 'Ask your coach…', onActivate }) {
   return (
     <button type="button" className="ds-ask" onClick={onActivate}>

@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/event_query/pick_series.test.mjs
 import { describe, it, expect } from 'vitest';
-import { pickPrimaryHrSeries } from "../../../../../modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
+import { pickPrimaryHrSeries } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/EventQueryService.mjs";
 
 describe('pickPrimaryHrSeries', () => {
   it('returns empty array for missing/null/non-object', () => {

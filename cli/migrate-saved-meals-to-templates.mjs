@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import "../modules/health/cli/migrate-saved-meals-to-templates.mjs";
+import "../__app_modules/wellness/health/cli/migrate-saved-meals-to-templates.mjs";

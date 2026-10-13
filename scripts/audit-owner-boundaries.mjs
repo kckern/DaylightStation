@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Static owner privacy; no runtime registry or product evaluation. */
-import { readFileSync, readdirSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,12 +13,19 @@ export { PUBLIC_OWNER_ENTRIES } from './owner-entry-policy.mjs';
 
 const traverse = typeof traverseModule === 'function' ? traverseModule : traverseModule.default;
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const ROOTS = ['backend', 'frontend', 'shared', 'cli', 'modules', 'capabilities'];
+const ROOTS = ['__backend', 'frontend', 'shared', 'cli', '__app_modules', '__capabilities'];
 const EXTENSIONS = new Set(['.mjs', '.js', '.cjs', '.jsx']);
 const SKIP = new Set(['node_modules', '.git', '.claude', '.claire', '.worktrees', '.cache', '.vite', 'dist', 'build', 'coverage', 'vendor']);
 // Each entry is explicitly reviewed. No filename wildcard or public-directory
 // exemption: add only the actual independent facets an owner publishes.
-const ownerOf = (file) => /^(modules|capabilities)\/([^/]+)\//.exec(file)?.slice(1).join('/') ?? null;
+const APP_CATEGORIES = new Set(['learning', 'games', 'wellness', 'media', 'household', 'personal', 'money']);
+const ownerOf = (file) => {
+  const match = /^(__app_modules|__capabilities)\/([^/]+)\/([^/]+)/.exec(file);
+  if (!match) return null;
+  return match[1] === '__app_modules' && APP_CATEGORIES.has(match[2])
+    ? `${match[1]}/${match[2]}/${match[3]}`
+    : `${match[1]}/${match[2]}`;
+};
 const isTestHelper = (file) => /^tests\/(_lib|_fixtures|_infrastructure)\//.test(file);
 const isTest = (file) => isTestHelper(file) || /\.(?:test|spec|case)\.(?:mjs|js|cjs|jsx)$/.test(file);
 const isSource = (file) => ROOTS.includes(file.split('/')[0]) && EXTENSIONS.has(extname(file))
@@ -100,7 +107,7 @@ export function auditOwnerBoundaries(files, {
     const ast = parse(readFile(file), { sourceType: 'unambiguous', plugins: ['jsx', 'dynamicImport', 'importAttributes', 'topLevelAwait'] });
     function check(node, specifier) {
       const clean = specifier.split('?')[0];
-      const browser = source.startsWith('frontend/') || /^(modules|capabilities)\/[^/]+\/browser\//.test(source);
+      const browser = source.startsWith('frontend/') || /^(?:__app_modules\/[^/]+(?:\/[^/]+)?|__capabilities\/[^/]+)\/browser\//.test(source);
       const alias = browser && [...browserAliases].sort(([a], [b]) => b.length - a.length)
         .find(([name]) => clean === name || clean.startsWith(name + '/'));
       const resolved = alias ? { kind: 'local', file: resolve(alias[1], '.' + clean.slice(alias[0].length)) }
@@ -118,14 +125,14 @@ export function auditOwnerBoundaries(files, {
         findings.push({ file: source, line: node.loc?.start.line ?? 1, specifier, target, reason: 'production source cannot import a test helper' });
         return;
       }
-      if (from === 'capabilities/screen-host' && target.startsWith('frontend/src/composition/')) {
+      if (from === '__capabilities/screen-host' && target.startsWith('frontend/src/composition/')) {
         findings.push({ file: source, line: node.loc?.start.line ?? 1, specifier, target,
           reason: 'screen-host cannot depend on installed composition' });
         return;
       }
       if (!to || from === to) return;
-      const reason = from?.startsWith('capabilities/') && to.startsWith('modules/')
-        ? from === 'capabilities/screen-host'
+      const reason = from?.startsWith('__capabilities/') && to.startsWith('__app_modules/')
+        ? from === '__capabilities/screen-host'
           ? 'screen-host cannot depend on installed products'
           : 'capability cannot depend on application modules, including public entries'
         : !publicEntries.has(target) ? 'cross-owner import targets a private implementation' : null;
@@ -172,7 +179,7 @@ function main() {
       .split('\0').filter((entry) => entry.startsWith('120000 ')).map((entry) => entry.slice(entry.indexOf('\t') + 1)));
     files = all.filter((file) => isSource(file) && !symlinks.has(file)).map((file) => join(ROOT, file));
     const imports = JSON.parse(snapshot.get('package.json')).imports ?? {};
-    const backendImports = snapshot.has('backend/package.json') ? JSON.parse(snapshot.get('backend/package.json')).imports ?? {} : imports;
+    const backendImports = snapshot.has('__backend/package.json') ? JSON.parse(snapshot.get('__backend/package.json')).imports ?? {} : imports;
     options = { imports, backendImports, readFile: (file) => snapshot.get(relative(ROOT, file)),
       browserAliases: browserAliasesFromConfig(snapshot.get('frontend/vite.config.js'), ROOT),
       sourceInventory: new Set(all.map((file) => join(ROOT, file))) };
@@ -189,4 +196,4 @@ function main() {
   }
   else console.log(`Owner boundary gate OK — ${files.length} ${staged ? 'staged ' : ''}source files inspected without evaluation.`);
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

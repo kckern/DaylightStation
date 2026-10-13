@@ -4,37 +4,38 @@
 frontend/node_modules
 frontend/dist
 frontend/build
-backend/node_modules
-/modules/*/server/node_modules
-/modules/*/browser/node_modules
-/capabilities/*/server/node_modules
-/capabilities/*/browser/node_modules
+__backend/node_modules
+/__app_modules/*/*/server/node_modules
+/__app_modules/*/*/browser/node_modules
+/__capabilities/*/server/node_modules
+/__capabilities/*/browser/node_modules
 *.yml
 # SchoolCalc GUI source assets are required to reproduce its native build.
-!/modules/school/satellites/ti86-app/gui/icons.yml
-!/modules/school/satellites/ti86-app/gui/design-system.yml
-!/modules/school/satellites/ti86-app/gui/screens.yml
-!/modules/school/satellites/ti86-app/gui/type.yml
-!/modules/school/satellites/ticalc-relay/config.example.yml
-!content/seeds/**/*.yml
-!docker-compose.test.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/icons.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/design-system.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/screens.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/type.yml
+!/__app_modules/learning/school/satellites/ticalc-relay/config.example.yml
+!/__app_modules/learning/school/seeds/**/*.yml
+!__docs/configuration/*.example.yml
+!docker/docker-compose.test.yml
 /shared/gaming/fixtures/
 /shared/presentation/fixtures/
 !tests/_fixtures/**/*.yml
 !tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
-!backend/src/3_applications/agents/health-coach/playbooks/seed.yml
-!backend/src/2_domains/fitness/services/__fixtures__/*.yml
-!backend/src/3_applications/school/sources/geography/*.yml
+!__backend/src/3_applications/agents/health-coach/playbooks/seed.yml
+!__backend/src/2_domains/fitness/services/__fixtures__/*.yml
+!__backend/src/3_applications/school/sources/geography/*.yml
 # Rubik's Cube course content — `courseCatalog.mjs` degrades gracefully when
 # this is absent (no throw at import), but a real one authored here must be
 # committable rather than silently swallowed by the blanket `*.yml` rule.
-!backend/src/3_applications/school/rubiksCube/course.yml
+!__backend/src/3_applications/school/rubiksCube/course.yml
 # Backend-scoped fixture tree (mirrors the `!tests/_fixtures/**` rule above for
 # the root suite). These ARE test inputs — without this the suite only passes on
 # a machine where they happen to sit untracked in the working tree.
-!backend/tests/_fixtures/**/*.yml
+!__backend/tests/_fixtures/**/*.yml
 # Golden-page corpus: these ARE the test inputs. Without this the suite passes
 # only on a machine where they happen to sit untracked in the working tree.
 !tests/isolated/rendering/school/golden/corpus/*.yml
@@ -58,8 +59,8 @@ known_hosts
 /_extentions/fitness/node_modules
 /_extentions/fitness/_reference
 *.dev
-/docs/ops
-backend/logs/
+/__docs/ops
+__backend/logs/
 /config
 
 # Config files (use *.example.yml as templates)
@@ -77,6 +78,7 @@ config.app-local.yml
 !scripts/bench/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
+!scripts/config/
 !scripts/media-source-heal.sh
 !scripts/test-env.sh
 !scripts/update-test-imports.mjs
@@ -128,8 +130,8 @@ CLAUDE.local.md
 /.playwright-mcp
 /coverage
 tests/output/
-/docs/marketing/jop
-/docs/ideas
+/__docs/marketing/jop
+/__docs/ideas
 /_extensions/audio-bridge/app/app/build
 /_extensions/audio-bridge/app/.gradle
 /_extensions/audio-bridge/app/local.properties
@@ -202,21 +204,28 @@ __sabotage_*.mjs
 # sheets.yml + scales.yml and is not byte-stable anyway (pdfkit stamps a creation
 # date), so committing it would churn on every regeneration.
 /*.pdf
-docs/_moveme/
+__docs/_moveme/
 /.agents
 !scripts/migrate-household-config.mjs
 *.png
 !tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
 # Committed visual baselines the print-design acceptance sweeps compare against
 # (they write a fresh one and FAIL when it is missing, so it must be tracked).
-!docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/proof-standard-p02.png
-!docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance/kitchen-sink-student-p01.png
-!docs/_wip/audits/2026-08-04-print-design-phase-c-acceptance/card-continuation-student-p01.png
+!__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/proof-standard-p02.png
+!__docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance/kitchen-sink-student-p01.png
+!__docs/_wip/audits/2026-08-04-print-design-phase-c-acceptance/card-continuation-student-p01.png
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at
 # build time — neither belongs in a public repo.
 _extensions/ti86-app/dist/
+__app_modules/*/*/satellites/**/dist/
+__app_modules/*/*/satellites/**/build/
+__app_modules/*/*/satellites/**/node_modules/
+**/.pio/
+**/.gradle/
+**/.cxx/
+**/local.properties
 /tmp
 
 # Screenshots and scratch captures. This repo is public and screenshots of a
@@ -245,7 +254,7 @@ tests/_artifacts/
 # Scratch analysis output, both of them, regenerable from the source capture.
 recording-analysis/
 *.wav
-docs/_wip/audits/**/measurements.json
+__docs/_wip/audits/**/measurements.json
 
 # Generated audit LEDGERS. An audit's findings are its markdown; the JSON
 # beside it is machine output from the tooling in
@@ -262,16 +271,29 @@ docs/_wip/audits/**/measurements.json
 #
 # Already-tracked files are unaffected (gitignore only governs new adds), so
 # the small curated evidence indexes committed alongside an audit stay.
-docs/_wip/audits/**/*.json
+__docs/_wip/audits/**/*.json
 
-# Large generated application-module inventories. Keep the exact working copies
-# locally for pinned evidence; commit their lossless gzip forms instead.
-tests/readiness/application-modules/current-http-evidence-projection.json
-tests/readiness/application-modules/current-http-evidence-projection-v2.json
-tests/readiness/application-modules/current-http-evidence-projection-v3.json
-tests/readiness/application-modules/current-http-evidence-projection-v4.json
-tests/readiness/application-modules/current-http-source-census.json
-tests/readiness/application-modules/current-http-source-projection.json
-tests/readiness/application-modules/non-http-surface-census.json
+# Personal data authoring and one-off root probes belong outside the code tree.
+/data-drafts/
+/media/
+/molecules-review/
+/js.json
+/swap-test.mjs
 
 !scripts/audit-owner-boundaries.mjs
+
+# Authored application fixtures, examples, and helper scripts.
+!/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/
+!/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/componentDefs.js
+!/__app_modules/wellness/fitness/cli/scripts/organize-fitness-pdfs.sh
+!/__app_modules/wellness/fitness/server/adapters/courses/mountain-pass.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260627195941.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260923183528.yml
+!/__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seed.yml
+!/__app_modules/media/media/cli/brain/media-scenarios.example.yml
+!/__app_modules/learning/piano/satellites/piano/recorder/config.example.yml
+!/__app_modules/learning/piano/satellites/piano/recorder/run.sh
+!/__app_modules/learning/school/satellites/ti86-app/testing/adaptive-journey.yml
+!/__app_modules/learning/school/satellites/ti86-app/testing/mame-scenarios.yml
+!/__app_modules/learning/school/satellites/ti86-app/testing/state-capitals.yml
+!/__app_modules/learning/school/satellites/ticalc-relay/tools/build-ti86-graph-link.sh

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { LaunchableItem } from "../../../../capabilities/content-catalog/server/domain/entities/LaunchableItem.mjs";
+import { LaunchableItem } from "../../../../__capabilities/content-catalog/server/domain/entities/LaunchableItem.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('LaunchableItem', () => {

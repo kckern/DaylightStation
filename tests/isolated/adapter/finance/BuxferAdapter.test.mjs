@@ -1,6 +1,6 @@
 // tests/unit/adapters/finance/BuxferAdapter.test.mjs
 import { vi } from 'vitest';
-import { BuxferAdapter } from "../../../../modules/finance/server/adapters/BuxferAdapter.mjs";
+import { BuxferAdapter } from "../../../../__app_modules/money/finance/server/adapters/BuxferAdapter.mjs";
 
 describe('BuxferAdapter', () => {
   let adapter;

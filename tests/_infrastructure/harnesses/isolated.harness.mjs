@@ -7,6 +7,7 @@ import {
   parseArgs,
   findTestFiles,
   findBrowserColocatedTestFiles,
+  findOwnerDirectories,
   runJest,
   printSummary,
   COLORS,
@@ -48,7 +49,7 @@ const TARGETS = [...JEST_TARGETS, ...VITEST_TARGETS, VITEST_COLOCATED_TARGET];
 function runVitest(files) {
   return new Promise((resolve, reject) => {
     const vitestBin = path.join(ROOT_DIR, 'frontend/node_modules/.bin/vitest');
-    const configPath = path.join(ROOT_DIR, 'vitest.config.mjs');
+    const configPath = path.join(ROOT_DIR, 'tests/_infrastructure/config/vitest.config.mjs');
     const child = spawn(vitestBin, ['run', '--config', configPath, ...files], {
       stdio: 'inherit',
       cwd: ROOT_DIR,
@@ -125,12 +126,9 @@ function routeByImports(jestFiles, vitestFiles) {
 
 function findOwnerIsolatedFiles(targets, args, options = {}) {
   const files = [];
-  for (const scope of ['modules', 'capabilities']) {
-    const owners = path.join(ROOT_DIR, scope);
-    if (!fs.existsSync(owners) || fs.lstatSync(owners).isSymbolicLink()) continue;
-    for (const owner of fs.readdirSync(owners, { withFileTypes: true })) {
-      if (!owner.isDirectory() || owner.name === 'node_modules') continue;
-      const isolated = path.join(owners, owner.name, 'tests', 'isolated');
+  for (const scope of ['__app_modules', '__capabilities']) {
+    for (const owner of findOwnerDirectories(ROOT_DIR, scope)) {
+      const isolated = path.join(owner, 'tests', 'isolated');
       if (!fs.existsSync(isolated) || fs.lstatSync(isolated).isSymbolicLink()) continue;
       files.push(...findTestFiles(isolated, targets, args, options));
     }

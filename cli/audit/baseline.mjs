@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import yaml from 'yaml';
 import { hasFileDisableAnnotation, hasLineAnnotation } from './utils.mjs';
 
-const BASELINE_PATH = 'docs/_wip/audits/baseline.yml';
+const BASELINE_PATH = '__docs/_wip/audits/baseline.yml';
 
 /**
  * Load baseline from YAML file

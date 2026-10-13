@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SchoolService } from "../../../../modules/school/server/application/SchoolService.mjs";
-import { GuestForbiddenError, SessionGoneError } from "../../../../modules/school/server/domain/errors.mjs";
+import { SchoolService } from "../../../../__app_modules/learning/school/server/application/SchoolService.mjs";
+import { GuestForbiddenError, SessionGoneError } from "../../../../__app_modules/learning/school/server/domain/errors.mjs";
 
 const BANKS = {
   'caps': { id: 'caps', title: 'Caps', audience: 'assigned', items: [

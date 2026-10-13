@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '../modules/fitness/cli/backfill-media-durations.mjs';
+import '../__app_modules/wellness/fitness/cli/backfill-media-durations.mjs';

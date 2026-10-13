@@ -3,6 +3,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ENTRYPOINT = fileURLToPath(import.meta.url);
-export * from "../modules/fitness/cli/exercise-library.cli.mjs";
-import { runCliEntry } from "../modules/fitness/cli/exercise-library.cli.mjs";
+export * from "../__app_modules/wellness/fitness/cli/exercise-library.cli.mjs";
+import { runCliEntry } from "../__app_modules/wellness/fitness/cli/exercise-library.cli.mjs";
 if (process.argv[1] && path.resolve(process.argv[1]) === ENTRYPOINT) { runCliEntry(); }

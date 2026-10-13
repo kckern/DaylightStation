@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { GuestForbiddenError, SessionGoneError } from "../../../../modules/school/server/domain/errors.mjs";
+import { GuestForbiddenError, SessionGoneError } from "../../../../__app_modules/learning/school/server/domain/errors.mjs";
 
 // finding 3: bare `class X extends Error {}` leaves error.name === 'Error' (JS
 // does not set it for subclasses) and has nowhere to attach the bank/session
 // context a caller needs to log. These follow the same idiom as
-// backend/src/2_domains/core/errors/{ValidationError,EntityNotFoundError}.mjs.
+// __backend/src/2_domains/core/errors/{ValidationError,EntityNotFoundError}.mjs.
 describe('GuestForbiddenError', () => {
   it('sets its own name and carries the bankId that triggered it', () => {
     const error = new GuestForbiddenError('Guest cannot access this bank', { bankId: 'wa-history-1' });

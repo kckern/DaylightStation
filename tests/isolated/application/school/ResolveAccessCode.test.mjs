@@ -8,9 +8,9 @@
  * not write into that sibling's history, so this path reads and only reads.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ResolveAccessCode } from "../../../../modules/school/server/application/usecases/ResolveAccessCode.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { mintToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
+import { ResolveAccessCode } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveAccessCode.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { mintToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, FakeTokenRegistry,
   fakeClock, seededRng, silentLogger,

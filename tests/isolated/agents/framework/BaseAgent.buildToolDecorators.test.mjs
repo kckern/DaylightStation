@@ -1,6 +1,6 @@
 // tests/isolated/agents/framework/BaseAgent.buildToolDecorators.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 class TestAgent extends BaseAgent {
   static id = 'test-agent';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CalorieAdjustmentService } from "../../../../modules/health/server/domain/health/services/CalorieAdjustmentService.mjs";
+import { CalorieAdjustmentService } from "../../../../__app_modules/wellness/health/server/domain/health/services/CalorieAdjustmentService.mjs";
 
 describe('CalorieAdjustmentService', () => {
   describe('computeWindowStats', () => {

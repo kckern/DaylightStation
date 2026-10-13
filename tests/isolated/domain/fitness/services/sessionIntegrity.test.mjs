@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkSessionIntegrity, seriesLength } from "../../../../../modules/fitness/server/domain/services/sessionIntegrity.mjs";
+import { checkSessionIntegrity, seriesLength } from "../../../../../__app_modules/wellness/fitness/server/domain/services/sessionIntegrity.mjs";
 
 const strava = (overrides = {}) => ({
   session: { id: '20260919104104', duration_seconds: 50, source: 'strava' },

@@ -15,8 +15,8 @@
  * now reads instead of guessing positionally.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { CloseSessionOutcome } from "../../../../__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   fakeClock, fakeGrownUps, seededRng, silentLogger,

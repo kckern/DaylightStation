@@ -1,5 +1,5 @@
 // Characterization test: the STORED YAML SHAPE of gratitude data must not
-// change across the serialization-ownership migration (docs/_wip/plans/
+// change across the serialization-ownership migration (__docs/_wip/plans/
 // 2026-07-08-serialization-ownership-migration.md, phase 1).
 // It drives GratitudeService + YamlGratitudeDatastore over an in-memory
 // dataService stub and asserts the exact shape written to each file key.
@@ -8,8 +8,8 @@
 // as {} and fail loudly. This test must pass BEFORE and AFTER the refactor.
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
-import { YamlGratitudeDatastore } from '../../../../modules/gratitude/server/adapters/persistence/YamlGratitudeDatastore.mjs';
-import { GratitudeService } from '../../../../modules/gratitude/server/application/services/GratitudeService.mjs';
+import { YamlGratitudeDatastore } from '../../../../__app_modules/personal/gratitude/server/adapters/persistence/YamlGratitudeDatastore.mjs';
+import { GratitudeService } from '../../../../__app_modules/personal/gratitude/server/application/services/GratitudeService.mjs';
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const HH = 'default';

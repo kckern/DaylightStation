@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '../../modules/fitness/cli/scripts/backfill-media-namespace.mjs';
+import '../../__app_modules/wellness/fitness/cli/scripts/backfill-media-namespace.mjs';

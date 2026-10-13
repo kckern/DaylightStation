@@ -2,9 +2,9 @@
 /**
  * GATE-VITEST — regression gate for the vitest test population that lives
  * OUTSIDE tests/unit/suite/ (which the jest harness owns) and outside the
- * node:test tree under backend/tests/. Before this gate, ~594 vitest files
+ * node:test tree under __backend/tests/. Before this gate, ~594 vitest files
  * were run by no npm script at all — a real regression once shipped through
- * every gate undetected (see docs/_wip/audits/2026-07-08-test-runner-
+ * every gate undetected (see __docs/_wip/audits/2026-07-08-test-runner-
  * bifurcation-ungated-vitest.md, the P1.4 PeriodResolver escape).
  *
  * FRONTEND IS IN THE POPULATION. It was not, until 2026-08-27, and nothing
@@ -18,8 +18,8 @@
  * gate" note that work logged repeatedly: it was never about panels.
  *
  * Population (SSOT, computed here): every test.{js,jsx,mjs} file under
- * tests/unit, tests/isolated, backend/, frontend/, shared/, modules/ and
- * capabilities/ that vitest owns,
+ * tests/unit, tests/isolated, __backend/, frontend/, shared/, __app_modules/ and
+ * __capabilities/ that vitest owns,
  * excluding:
  *   - tests/unit/suite/       (jest — gated by `npm run test:unit`)
  *   - any node_modules/ path
@@ -29,9 +29,9 @@
  * run by no harness today and must either move into suite/ or get a jest glob.
  *
  * BACKEND IS IN THE POPULATION, by content and not by path. This gate used to
- * exclude `/backend/` wholesale on the belief that the whole tree was
+ * exclude `/__backend/` wholesale on the belief that the whole tree was
  * node:test. It is not: 92 backend files are node:test, but ~350 colocated
- * `backend/src` and `backend/tests/unit` test files are vitest,
+ * `__backend/src` and `__backend/tests/unit` test files are vitest,
  * and every one of them was gated by nothing. The print-acceptance sweep
  * lived in that hole, which is how `acceptance.phaseB`/`phaseC` sat red
  * without any gate noticing. Ownership is therefore decided by what a file
@@ -61,10 +61,10 @@ const BASELINE = path.join(ROOT, 'scripts/audit-baseline.vitest.txt');
 const GATE_REPORT = path.join(ROOT, 'tests/output/results.gate-vitest.json');
 // `shared/` joined this list on 2026-09-16. It holds the game rulesets — the
 // Connect Four opponent among them — and was gated by NOTHING: the walk never
-// listed it, and `backend/shared` is a symlink the walk deliberately refuses to
+// listed it, and `__backend/shared` is a symlink the walk deliberately refuses to
 // follow, so the tree was unreachable from both directions. A rung-7 opponent
 // that dropped every disc in the far right column shipped through that hole.
-const ROOTS = ['tests/unit', 'tests/isolated', 'backend', 'frontend', 'shared', 'modules', 'capabilities'];
+const ROOTS = ['tests/unit', 'tests/isolated', '__backend', 'frontend', 'shared', '__app_modules', '__capabilities'];
 const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
 /**
@@ -83,7 +83,7 @@ function isVitestOwned(src) {
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    // NEVER follow a symlink. `backend/shared` and `backend/shared-contracts`
+    // NEVER follow a symlink. `__backend/shared` and `__backend/shared-contracts`
     // both point up at `shared/`, so a walk that followed them would collect
     // the same file twice under two paths — and the aliased copy fails to
     // load at all, because its own relative imports resolve against the real
@@ -108,7 +108,7 @@ function vitestPopulation() {
       // tests/unit/suite remains Jest-owned by default. An explicit Vitest
       // import is the migration marker that transfers an individual file.
       // Matches the suite tree under EITHER root. The check used to be anchored
-      // at the start of `rel`, so `backend/tests/unit/suite/` never matched it
+      // at the start of `rel`, so `__backend/tests/unit/suite/` never matched it
       // and that whole tree entered the population unnoticed — 37 stale files
       // testing contracts the DDD remediation had removed, under the old layer
       // numbering (`1_domains`, `2_adapters`). They were deleted 2026-09-01.
@@ -145,7 +145,7 @@ function runVitest(files) {
   } catch { /* best effort — never let archiving block the run */ }
   try { rmSync(outFile, { force: true }); } catch { /* first run, or already gone */ }
   // Parallelism is CAPPED, not default. Default workers were fine while the
-  // population was ~600 files; folding backend/ in took it past 1200 and the
+  // population was ~600 files; folding __backend/ in took it past 1200 and the
   // contention started producing flakes — the same file passing alone and in
   // one gate run, failing in the next, with a different file each time
   // (quizScanRecorder, RenderPrintDocument, curriculumPlanner, scripture all
@@ -221,7 +221,7 @@ function runVitest(files) {
     const chunkOut = `${outFile}.${index}`;
     res = spawnSync(
       'npx',
-      ['vitest', 'run', ...chunk, '--config', 'vitest.config.mjs',
+      ['vitest', 'run', ...chunk, '--config', 'tests/_infrastructure/config/vitest.config.mjs',
        `--max-workers=${workers}`,
        '--reporter=json', `--outputFile=${chunkOut}`],
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
@@ -261,7 +261,7 @@ function runVitest(files) {
     process.exit(2);
   }
   const report = JSON.parse(readFileSync(outFile, 'utf8'));
-  // RECONCILE THE POPULATION AGAINST WHAT ACTUALLY RAN. `vitest.config.mjs`
+  // RECONCILE THE POPULATION AGAINST WHAT ACTUALLY RAN. `tests/_infrastructure/config/vitest.config.mjs`
   // applies its `exclude` globs even to paths passed explicitly on the command
   // line, so a file can be counted in the population here and quietly not run
   // — the population number would keep rising while coverage fell, which is
@@ -275,7 +275,7 @@ function runVitest(files) {
       + `${report.testResults.length} in the report.`);
     if (missing.length) {
       console.error(`gate-vitest: ${missing.length} file(s) in the population that vitest did not run `
-        + '(check `exclude` in vitest.config.mjs — it applies to explicit paths too):');
+        + '(check `exclude` in tests/_infrastructure/config/vitest.config.mjs — it applies to explicit paths too):');
       missing.forEach((f) => console.error('  ? ' + f));
     }
     if (extra.length) {

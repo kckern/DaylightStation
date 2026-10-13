@@ -21,15 +21,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { RecordCheckpointAnswer } from "../../../../modules/school/server/application/usecases/RecordCheckpointAnswer.mjs";
-import { RecordMediaCompletion } from "../../../../modules/school/server/application/usecases/RecordMediaCompletion.mjs";
-import { ReadLessonSnapshot } from "../../../../modules/school/server/application/usecases/ReadLessonSnapshot.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { RecordCheckpointAnswer } from "../../../../__app_modules/learning/school/server/application/usecases/RecordCheckpointAnswer.mjs";
+import { RecordMediaCompletion } from "../../../../__app_modules/learning/school/server/application/usecases/RecordMediaCompletion.mjs";
+import { ReadLessonSnapshot } from "../../../../__app_modules/learning/school/server/application/usecases/ReadLessonSnapshot.mjs";
 import { FakeCatalog, FakeSessionRepository, fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, MEDIA_BANK_ID, fixtureBank,
 } from '#testlib/school/lifecycleFixtures.mjs';
-import { createMediaLessonRouter } from "../../../../modules/school/server/api/mediaLesson.mjs";
+import { createMediaLessonRouter } from "../../../../__app_modules/learning/school/server/api/mediaLesson.mjs";
 import { LessonPositionReporter } from '#apps/events/RealtimePublications.mjs';
 
 const SID = 'ses_1';

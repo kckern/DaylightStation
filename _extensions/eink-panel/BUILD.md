@@ -118,7 +118,7 @@ vision-capable tool, or just open it) — don't rely on eyeballing the panel.
 | `tconWake`/`setTconTemp` not declared | `TCON_ENABLE` only set by `Dynamic_Setup.h`, which is skipped under `USER_SETUP_LOADED` | use `BOARD_SCREEN_COMBO` (not `USER_SETUP_LOADED`) so Dynamic_Setup runs |
 | No serial output at all | board logs to `Serial1`/CH340 (GPIO44/43); `Serial` is USB-CDC and dark | `Serial1.begin(115200, SERIAL_8N1, 44, 43)` |
 | `OOM` spam, never renders | full RGB888 buffer (~7.9MB) won't fit beside the 1.32MB Gray16 sprite in 8MB PSRAM | decode to 1 byte/px luma + dither in-place (don't keep RGB888) |
-| Every "restart" had no effect | 3 zombie `node backend/index.js` held port 3112 | kill by PID (`pgrep -f`), `pkill` had missed them |
+| Every "restart" had no effect | 3 zombie `node __backend/index.js` held port 3112 | kill by PID (`pgrep -f`), `pkill` had missed them |
 | Device can't reach backend | pointed at a laptop dev server, or server bound to localhost | ensure backend binds `*:PORT`; for permanent installs point at the prod host |
 
 ---
@@ -189,5 +189,5 @@ _extensions/eink-panel/
     └── lib/seeed/                 # fetched decoder (gitignored)
 ```
 
-Backend counterparts: `backend/src/3_applications/eink/`, `.../4_api/v1/routers/eink.mjs`,
+Backend counterparts: `__backend/src/3_applications/eink/`, `.../4_api/v1/routers/eink.mjs`,
 `.../1_rendering/eink/`, SSOT at `data/household/screens/<panel>.yml`.

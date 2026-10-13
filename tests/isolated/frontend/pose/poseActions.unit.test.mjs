@@ -1,6 +1,6 @@
 // tests/isolated/frontend/pose/poseActions.unit.test.mjs
 import { vi } from 'vitest';
-import { createActionDetector, createCustomActionDetector } from "../../../../modules/fitness/browser/lib/pose/poseActions.js";
+import { createActionDetector, createCustomActionDetector } from "../../../../__app_modules/wellness/fitness/browser/lib/pose/poseActions.js";
 
 const JUMPING_JACK = {
   id: 'jumping-jack',

@@ -10,7 +10,7 @@
  *
  *   node scripts/probe-printer-jobstate.mjs <printer-host>
  */
-import { LaserPrinterAdapter } from '../backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
+import { LaserPrinterAdapter } from '../__backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
 
 const host = process.argv[2];
 if (!host) {

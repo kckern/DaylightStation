@@ -2,11 +2,11 @@ import path from 'node:path';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import express from 'express';
-import request from '../../../preimplementation/application-modules/drivers/content-api-request.mjs';
+import request from '../../../_lib/memory-http/content-api-request.mjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createConfiguredLibbyRuntime, createLibbyRuntime } from "../../../../capabilities/content-catalog/server/composition/libby.mjs";
+import { createConfiguredLibbyRuntime, createLibbyRuntime } from "../../../../__capabilities/content-catalog/server/composition/libby.mjs";
 import { createContentRegistry } from '#composition/contentRegistry.mjs';
-import { createApiRouters } from "../../../../backend/src/5_composition/modules/contentApi.mjs";
+import { createApiRouters } from "../../../../__backend/src/5_composition/modules/contentApi.mjs";
 import loadConfig from '#system/config/configLoader.mjs';
 import { ConfigService } from '#system/config/ConfigService.mjs';
 

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi } from 'vitest';
-import { ContentQueryService } from "../../../../capabilities/content-catalog/server/application/ContentQueryService.mjs";
-import { RegistryContentCatalogGateway } from "../../../../capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+import { ContentQueryService } from "../../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
+import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
 
 const catalogFor = (registry) => new RegistryContentCatalogGateway({ registry });
 

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { routeNutribotScan, nutriscanRefusalNotice } from "../../../../modules/nutribot/server/application/lib/routeNutribotScan.mjs";
+import { routeNutribotScan, nutriscanRefusalNotice } from "../../../../__app_modules/wellness/nutribot/server/application/lib/routeNutribotScan.mjs";
 
 const applyStub = (outcome) => ({ execute: vi.fn(() => outcome) });
 

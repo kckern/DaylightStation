@@ -1,8 +1,0 @@
-{
-  "name": "probe-backend",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@daylight/fitness": "file:../modules/fitness"
-  }
-}

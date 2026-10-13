@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
-import { render } from "../../../../modules/screens/server/rendering/eink/index.mjs";
-import { registerBuiltins } from "../../../../modules/screens/server/rendering/eink/widgets/builtins.mjs";
-import * as registry from "../../../../modules/screens/server/rendering/eink/widgets/registry.mjs";
+import { render } from "../../../../__app_modules/household/screens/server/rendering/eink/index.mjs";
+import { registerBuiltins } from "../../../../__app_modules/household/screens/server/rendering/eink/widgets/builtins.mjs";
+import * as registry from "../../../../__app_modules/household/screens/server/rendering/eink/widgets/registry.mjs";
 
 // Real font files live in the repo so the canvas can register the base face.
-const FONT_DIR = path.resolve('backend/assets/fonts');
+const FONT_DIR = path.resolve('__backend/assets/fonts');
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // \x89PNG
 const RENDER_REFERENCE_TIME = new Date('2026-08-28T12:00:00.000Z');

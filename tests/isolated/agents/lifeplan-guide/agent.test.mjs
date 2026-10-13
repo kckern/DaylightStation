@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LifeplanGuideAgent } from "../../../../modules/life/server/application/agents/lifeplan-guide/LifeplanGuideAgent.mjs";
+import { LifeplanGuideAgent } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/LifeplanGuideAgent.mjs";
 
 describe('LifeplanGuideAgent', () => {
   const makeDeps = () => ({

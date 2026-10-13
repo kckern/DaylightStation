@@ -5,8 +5,8 @@ import { ScreenPlayer } from './ScreenPlayer.jsx';
 import {
   __resetPlayerSessionRegistryForTests,
   getPlayerSessionRegistry,
-} from '../../../../../capabilities/playback/browser/sessions/playerSessionRegistry.js';
-import { createRegistrySessionSource } from '../../../../../capabilities/playback/browser/sessions/registrySessionSource.js';
+} from '../../../../../__capabilities/playback/browser/sessions/playerSessionRegistry.js';
+import { createRegistrySessionSource } from '../../../../../__capabilities/playback/browser/sessions/registrySessionSource.js';
 import { createScreenItemActions } from '../actions/screenItemActions.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 

@@ -1,4 +1,4 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // Regression (2026-10-02/03, office-tv "Office Morning Program"):
 //   1. prewarm was unbounded — a Plex queue that serialized behind test runs
 //      held the load for 12 minutes before the screen was even told to play.

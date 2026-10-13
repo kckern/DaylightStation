@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaLabelSource } from "../../../../modules/school/server/application/sources/MediaLabelSource.mjs";
+import { MediaLabelSource } from "../../../../__app_modules/learning/school/server/application/sources/MediaLabelSource.mjs";
 
 const items = [
   { id: 'opaque:1', title: 'Math', medium: 'video', childCount: 12, labels: ['school:on', 'subject:math', 'grade:upper'] },

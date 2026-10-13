@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
+import { SlotClass } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 
 describe('SlotClass', () => {
   it('accepts "private"', () => {

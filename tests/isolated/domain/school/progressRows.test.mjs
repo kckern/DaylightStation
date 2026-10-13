@@ -7,7 +7,7 @@
  * receipt that is plainly wrong: they had just finished a lesson inside it.
  */
 import { describe, it, expect } from 'vitest';
-import { activeProgressPosition, inProgressSegments } from "../../../../capabilities/printing/server/progress.mjs";
+import { activeProgressPosition, inProgressSegments } from "../../../../__capabilities/printing/server/progress.mjs";
 
 describe('inProgressSegments', () => {
   it('marks one segment underway mid-course', () => {

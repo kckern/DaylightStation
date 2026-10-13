@@ -6,7 +6,7 @@ import {
   resolveZone,
   getHigherZone,
   createDefaultZones
-} from "../../../../../modules/fitness/server/domain/entities/Zone.mjs";
+} from "../../../../../__app_modules/wellness/fitness/server/domain/entities/Zone.mjs";
 
 describe('Zone', () => {
   describe('ZONE_NAMES', () => {

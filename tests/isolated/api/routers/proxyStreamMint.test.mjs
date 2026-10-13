@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
 import { RegistryPlaybackStreamGateway } from '#adapters/proxy/RegistryPlaybackStreamGateway.mjs';
-import { MintPlaybackStream } from "../../../../capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
+import { MintPlaybackStream } from "../../../../__capabilities/content-catalog/server/application/proxy/MintPlaybackStream.mjs";
 
 /**
  * Each call to this route mints a Plex transcode session, and the route logged

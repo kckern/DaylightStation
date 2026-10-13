@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SessionSerializerV3 } from "../../../../../modules/fitness/browser/hooks/fitness/SessionSerializerV3.js";
+import { SessionSerializerV3 } from "../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/SessionSerializerV3.js";
 
 describe('SessionSerializerV3', () => {
   describe('computeDerivedStats', () => {

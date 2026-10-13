@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GRADES, gradeRank, gradeFromLabels, isVisibleAtCeiling } from "../../../../modules/school/server/domain/grades.mjs";
+import { GRADES, gradeRank, gradeFromLabels, isVisibleAtCeiling } from "../../../../__app_modules/learning/school/server/domain/grades.mjs";
 
 describe('school grade ladder', () => {
   it('is the six-tier ascending ladder', () => {

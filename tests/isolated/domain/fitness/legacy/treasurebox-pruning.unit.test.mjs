@@ -20,14 +20,14 @@ vi.mock('#frontend/lib/logging/Logger.js', () => ({
  *
  * At 5-second intervals: 1000 points = ~83 minutes of data
  *
- * Related: docs/_wip/audits/2026-01-19-fitness-memory-audit.md
+ * Related: __docs/_wip/audits/2026-01-19-fitness-memory-audit.md
  * Related code: frontend/src/hooks/fitness/TreasureBox.js:7
  */
 describe('TreasureBox timeline pruning', () => {
   let FitnessTreasureBox;
 
   beforeAll(async () => {
-    const module = await import("../../../../../modules/fitness/browser/hooks/fitness/TreasureBox.js");
+    const module = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/TreasureBox.js");
     FitnessTreasureBox = module.FitnessTreasureBox;
   });
 

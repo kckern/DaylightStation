@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HealthCoachAgent } from "../../../../modules/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
+import { HealthCoachAgent } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
 
 function buildAgentRuntime() {
   return { execute: vi.fn(async () => ({ output: '{}' })) };

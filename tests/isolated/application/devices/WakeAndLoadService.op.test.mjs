@@ -1,10 +1,10 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
-import { buildDispatchUrl } from "../../../../modules/media/browser/cast/dispatchUrl.js";
+import { buildDispatchUrl } from "../../../../__app_modules/media/media/browser/cast/dispatchUrl.js";
 import { AUTOPLAY_ACTIONS, autoplayToAction, parseAutoplayParams } from '../../../../frontend/src/lib/parseAutoplayParams.js';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 

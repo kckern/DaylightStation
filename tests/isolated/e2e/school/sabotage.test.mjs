@@ -189,7 +189,7 @@ const payOncScenario = () => onTheConsole(async (h) => {
 
 /** codeMap.test: the printed QR is a real symbol, not a reserved box. */
 const printedQrScenario = async () => {
-  const { createDocumentPdfRenderer } = await import("../../../../modules/school/server/rendering/documents/DocumentPdfRenderer.mjs");
+  const { createDocumentPdfRenderer } = await import("../../../../__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs");
   const document = {
     id: 'code-doc',
     seed: 1,
@@ -208,7 +208,7 @@ const printedQrScenario = async () => {
 
 /** golden.test: every bubble coordinate is pinned exactly, no tolerance. */
 const bubbleGeometryScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const testCase = golden.GOLDEN_CASES.find((c) => c.formMapSnapshot);
   expect(testCase, 'no golden case pins a form map').toBeTruthy();
   const rendered = await golden.renderCase(testCase);
@@ -226,7 +226,7 @@ const bubbleGeometryScenario = async () => {
  * printed pixels, so it stays red no matter what any snapshot says.
  */
 const opticalBubbleScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const optics = await import('#testlib/school/opticalHarness.mjs');
   const testCase = golden.GOLDEN_CASES.find((c) => c.formMapSnapshot);
   const rendered = await golden.renderCase(testCase);
@@ -239,7 +239,7 @@ const opticalBubbleScenario = async () => {
 
 /** optical.test: the printed symbol decodes to the token that was handed over. */
 const opticalQrScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const optics = await import('#testlib/school/opticalHarness.mjs');
   const token = 'sch:9F3KMNPQ2RSTUVWX';
   const document = {
@@ -261,7 +261,7 @@ const opticalQrScenario = async () => {
 
 /** documentValidation.test: an answer key anywhere in a document is refused. */
 const answerKeyScenario = async () => {
-  const { validateDocument } = await import("../../../../modules/school/server/domain/documents/documentValidation.mjs");
+  const { validateDocument } = await import("../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs");
   const noKey = 'must not carry an answer key (answer keys render from the question bank)';
   const doc = (over) => ({
     id: 'doc', seed: 1, target: ['letter'],
@@ -281,7 +281,7 @@ const answerKeyScenario = async () => {
 // ---------------------------------------------------------------------------
 
 const OMR_DECODE_RETURNS_THE_LETTER = {
-  file: 'backend/src/2_domains/school/documents/omrForm.mjs',
+  file: '__backend/src/2_domains/school/documents/omrForm.mjs',
   specifier: '#domains/school/documents/omrForm.mjs',
   edits: [['entries[itemId] = hits[0].label ?? hits[0].choice;', 'entries[itemId] = hits[0].choice;']],
 };
@@ -294,7 +294,7 @@ const OMR_DECODE_RETURNS_THE_LETTER = {
 // reported the suite as holed. Cutting the assignment covers both arms and
 // stays honest if a third is ever added.
 const CLOSE_OUT_PRINTS_NOTHING = {
-  file: 'backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
+  file: '__backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
   specifier: '#apps/school/usecases/CloseSessionOutcome.mjs',
   edits: [[
     `printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
@@ -305,19 +305,19 @@ const CLOSE_OUT_PRINTS_NOTHING = {
 };
 
 const QR_LOOP_DRAWS_NOTHING = {
-  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['if (!modules.data[row * modules.size + col]) continue;', 'continue;']],
 };
 
 const BUBBLE_CENTRE_IS_OFF_BY_3PT = {
-  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['        xPt: centreX,', '        xPt: centreX + 3,']],
 };
 
 const BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED = {
-  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['.circle(centreX, centreY, bubbleRadiusPt).stroke().restore();', '.circle(centreX, centreY, bubbleRadiusPt - 1).stroke().restore();']],
 };
@@ -327,7 +327,7 @@ const BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED = {
 // unchanged, the module count is unchanged, the dark-module count is still
 // healthy. Only a decoder pointed at the ink can see it.
 const QR_ENCODES_A_DIFFERENT_TOKEN = {
-  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['QRCode.create(String(text), {', "QRCode.create(`${String(text)}Z`, {"]],
 };
@@ -337,7 +337,7 @@ const QR_ENCODES_A_DIFFERENT_TOKEN = {
 // first proves nothing: the second still refuses, and the mutation survives.
 // Both are the same guard, so both go.
 const REWARD_GUARD_IGNORES_THE_TXN = {
-  file: 'backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
+  file: '__backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
   specifier: '#apps/school/usecases/CloseSessionOutcome.mjs',
   edits: [
     ['    if (state.rewardTxn) {', '    if (false && state.rewardTxn) {'],
@@ -346,7 +346,7 @@ const REWARD_GUARD_IGNORES_THE_TXN = {
 };
 
 const VALIDATOR_ALLOWS_AN_ANSWER_KEY = {
-  file: 'backend/src/2_domains/school/documents/documentValidation.mjs',
+  file: '__backend/src/2_domains/school/documents/documentValidation.mjs',
   specifier: '#domains/school/documents/documentValidation.mjs',
   edits: [[
     "  collectAnswerKeys(raw, '', errors, new WeakSet());",

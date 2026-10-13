@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PianoScreenAuthorityService } from '../../../../modules/piano/server/application/services/PianoScreenAuthorityService.mjs';
+import { PianoScreenAuthorityService } from '../../../../__app_modules/learning/piano/server/application/services/PianoScreenAuthorityService.mjs';
 
 const POLL_MS = 3000;
 const OFF_DEBOUNCE_MS = 15000;

@@ -11,7 +11,7 @@
  * child actually handed in is left for a person.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { MarkSessionAbandoned } from "../../../../modules/school/server/application/usecases/MarkSessionAbandoned.mjs";
+import { MarkSessionAbandoned } from "../../../../__app_modules/learning/school/server/application/usecases/MarkSessionAbandoned.mjs";
 import { FakeSessionRepository } from '../../../_lib/school/lifecycleFakes.mjs';
 
 const NOW = new Date('2026-08-23T12:00:00.000Z');

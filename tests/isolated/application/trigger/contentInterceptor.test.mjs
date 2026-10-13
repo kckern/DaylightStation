@@ -10,7 +10,7 @@
  * still plays its book.
  */
 import { describe, it, expect } from 'vitest';
-import { responseHandlers } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
+import { responseHandlers } from "../../../../__capabilities/device-dispatch/server/application/responseHandlers.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const RESPONSE = {

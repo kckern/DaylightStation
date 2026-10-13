@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { MessagingChannelToolFactory } from "../../../../modules/health/server/application/agents/health-coach/tools/MessagingChannelToolFactory.mjs";
+import { MessagingChannelToolFactory } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/tools/MessagingChannelToolFactory.mjs";
 
 describe('MessagingChannelToolFactory', () => {
   it('creates 1 tool named send_channel_message', () => {

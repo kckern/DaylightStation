@@ -240,12 +240,13 @@ function parseJestOutput(output) {
 
 function buildJestArgs(args, folders) {
   // Anchor discovery to this repository's legacy Jest suite. A loose
-  // `tests/unit/suite` substring also matches `backend/tests/unit/suite`, whose
+  // `tests/unit/suite` substring also matches `__backend/tests/unit/suite`, whose
   // files are Vitest-owned and register a second matcher runtime inside Jest.
   const suiteRoot = join(rootDir, 'tests/unit/suite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const jestArgs = [
     `--testPathPattern=^${suiteRoot}`,
     '--passWithNoTests',
+    '--config=tests/_infrastructure/config/jest.config.cjs',
   ];
 
   // Runner ownership is declared by the file, not solely by its historical

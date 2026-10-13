@@ -9,7 +9,7 @@ import { describe, test, expect } from 'vitest';
  *
  * At 5-second intervals: 2000 points = ~2.7 hours of data per participant
  *
- * Related: docs/_wip/audits/2026-01-19-fitness-memory-audit.md
+ * Related: __docs/_wip/audits/2026-01-19-fitness-memory-audit.md
  * Related code: frontend/src/hooks/fitness/FitnessSession.js:1459
  */
 describe('FitnessSession snapshot series pruning', () => {

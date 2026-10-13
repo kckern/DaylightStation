@@ -3,7 +3,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
   getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
 }));
-const { GovernanceEngine } = await import("../../../modules/fitness/browser/hooks/fitness/GovernanceEngine.js");
+const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
 describe('GovernanceEngine cycle pause/resume on base_req', () => {
   it('does not accrue cycle progress while base_req failing', () => {

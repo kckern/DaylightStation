@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { EinkPanelService } from "../../../../modules/screens/server/application/eink/EinkPanelService.mjs";
-import { Sha1ContentFingerprint } from "../../../../modules/screens/server/adapters/eink/Sha1ContentFingerprint.mjs";
+import { EinkPanelService } from "../../../../__app_modules/household/screens/server/application/eink/EinkPanelService.mjs";
+import { Sha1ContentFingerprint } from "../../../../__app_modules/household/screens/server/adapters/eink/Sha1ContentFingerprint.mjs";
 
 // A screen with two distinct, data-free views (so resolveData returns {} with no
 // network) — lets us exercise the fingerprint logic without a canvas render.

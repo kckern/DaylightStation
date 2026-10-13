@@ -12,7 +12,7 @@
  *
  * Endpoint under test: GET /api/v1/play/plex/mpd/:id
  *
- * Route: backend/src/4_api/v1/routers/play.mjs → /plex/mpd/:id
+ * Route: __backend/src/4_api/v1/routers/play.mjs → /plex/mpd/:id
  * Session minting: PlexAdapter._generateSessionIds() — Math.random() per call,
  *   no memoization. Confirmed: every call gets a unique sessionUUID.
  *

@@ -1,2 +1,2 @@
 // Stable dscli command entry; implementation belongs to Concierge.
-export { default } from '../../modules/concierge/cli/memory.mjs';
+export { default } from '../../__app_modules/household/concierge/cli/memory.mjs';

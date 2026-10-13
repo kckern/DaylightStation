@@ -3,9 +3,9 @@
 // screen-widget--full → school-app--locked → school-app__body), exactly as
 // captured from the live tablet DOM.
 import { createRoot } from 'react-dom/client';
-import ReadalongPlaylistPlayer from '../../../../capabilities/playback/browser/player/ReadalongPlaylistPlayer.jsx';
-import '../../../../capabilities/screen-host/browser/panels/PanelRenderer.css';
-import "../../../../modules/school/browser/School.scss";
+import ReadalongPlaylistPlayer from '../../../../__capabilities/playback/browser/player/ReadalongPlaylistPlayer.jsx';
+import '../../../../__capabilities/screen-host/browser/panels/PanelRenderer.css';
+import "../../../../__app_modules/learning/school/browser/School.scss";
 
 const parts = [
   { id: 'p1', title: 'Psalms 49', contentId: 'readalong:scripture/fixture-ps-49' },

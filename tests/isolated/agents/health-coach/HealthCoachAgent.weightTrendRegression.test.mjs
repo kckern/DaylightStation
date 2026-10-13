@@ -11,8 +11,8 @@
 // - Tools never see 'user123' or 'default' — they see 'user_1'
 
 import { describe, it, expect, vi } from 'vitest';
-import { AgentOrchestrator } from "../../../../capabilities/agent-runtime/server/application/AgentOrchestrator.mjs";
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { AgentOrchestrator } from "../../../../__capabilities/agent-runtime/server/application/AgentOrchestrator.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
 
 // Minimal stub agent that exposes a tool with userId in its schema. The
 // runtime is mocked to capture what args the tool's execute() actually

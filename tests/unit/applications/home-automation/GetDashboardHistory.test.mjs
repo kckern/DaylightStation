@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GetDashboardHistory } from "../../../../modules/home/server/application/home-automation/usecases/GetDashboardHistory.mjs";
+import { GetDashboardHistory } from "../../../../__app_modules/household/home/server/application/home-automation/usecases/GetDashboardHistory.mjs";
 
 const config = {
   summary: {

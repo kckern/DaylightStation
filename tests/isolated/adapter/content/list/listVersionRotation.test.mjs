@@ -4,7 +4,7 @@ describe('version rotation helpers', () => {
   let ScriptureResolver;
 
   beforeAll(async () => {
-    const mod = await import("../../../../../capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs");
+    const mod = await import("../../../../../__capabilities/content-catalog/server/adapters/providers/readalong/resolvers/scripture.mjs");
     ScriptureResolver = mod.ScriptureResolver;
   });
 

@@ -12,7 +12,7 @@
 //     "2w") is passed through UNCHANGED — the historical router only expanded
 //     the day-notation and handed everything else to the store as-is.
 import { describe, it, expect } from 'vitest';
-import { resolveStartDate } from "../../../../modules/fitness/server/application/usecases/QuerySessions.mjs";
+import { resolveStartDate } from "../../../../__app_modules/wellness/fitness/server/application/usecases/QuerySessions.mjs";
 
 describe('resolveStartDate (QuerySessions date-window parser)', () => {
   // Fixed reference "today" so the relative math is deterministic.

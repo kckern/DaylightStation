@@ -69,16 +69,16 @@ lsof -i :3111  # on the laptop
 
 **Start dev server** (on the server):
 ```bash
-node backend/index.js
-# Or background: nohup node backend/index.js > /tmp/backend-dev.log 2>&1 &
+node __backend/index.js
+# Or background: nohup node __backend/index.js > /tmp/backend-dev.log 2>&1 &
 ```
 
 **Stop dev server**:
 ```bash
-pkill -f 'node backend/index.js'
+pkill -f 'node __backend/index.js'
 ```
 
-**Full runbook**: `docs/runbooks/dev-server-multi-environment.md`
+**Full runbook**: `__docs/runbooks/dev-server-multi-environment.md`
 
 ### Prod Access
 
@@ -106,7 +106,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 ## Rules
 
 - **Commit & deploy policy is set per-machine in `CLAUDE.local.md`** - Where a workspace's `CLAUDE.local.md` grants build/commit/deploy authority, follow it. Absent any local rule, default to: don't commit or deploy automatically — let the user review and run those steps.
-- **Keep docs in /docs folder** - In appropriate subfolder
+- **Keep docs in /__docs folder** - In appropriate subfolder
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 - **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
 - **Worth flagging is worth fixing** - Never end a session by handing back a list of
@@ -134,7 +134,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 
 Before deleting any branch, document it for potential restoration:
 
-1. Record the branch name and commit hash in `docs/_archive/deleted-branches.md`
+1. Record the branch name and commit hash in `__docs/_archive/deleted-branches.md`
 2. Format: `| YYYY-MM-DD | branch-name | commit-hash | brief description |`
 3. Then delete: `git branch -d branch-name` (or `-D` if unmerged)
 
@@ -156,7 +156,7 @@ IMPORTANT: Always update docs when changing code!
 
 ### Folder Structure
 ```
-docs/
+__docs/
 ├── ai-context/       # Claude primers (agents.md, testing.md)
 ├── reference/
 │   └── core/         # Backend architecture, DDD layer guidelines, coding standards
@@ -179,17 +179,17 @@ The `reference/core/` folder contains DDD architecture documentation:
 
 ### When to Update Docs
 When modifying code, check if related docs need updating:
-- Changed DDD layer structure? Check `docs/reference/core/`
-- Changed config system? Check `docs/reference/core/configuration.md`
-- Added new patterns? Check `docs/reference/core/coding-standards.md`
+- Changed DDD layer structure? Check `__docs/reference/core/`
+- Changed config system? Check `__docs/reference/core/configuration.md`
+- Added new patterns? Check `__docs/reference/core/coding-standards.md`
 
 ### Freshness Audit
 ```bash
 # See code changes since last docs review
-git diff $(cat docs/docs-last-updated.txt)..HEAD --name-only
+git diff $(cat __docs/docs-last-updated.txt)..HEAD --name-only
 
 # After updating docs, update the marker
-git rev-parse HEAD > docs/docs-last-updated.txt
+git rev-parse HEAD > __docs/docs-last-updated.txt
 ```
 
 ### Rules
@@ -211,48 +211,48 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 
 | Working On | Read |
 |------------|------|
-| AI Agents (autonomous LLM agents) | `docs/ai-context/agents.md` |
-| Testing infrastructure | `docs/ai-context/testing.md` |
-| Backend architecture (DDD layers) | `docs/reference/core/backend-architecture.md` |
-| Config system | `docs/reference/core/configuration.md` |
-| Coding standards | `docs/reference/core/coding-standards.md` |
-| Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
-| Player surround (classical chrome: sidecars, movement detection) | `docs/reference/player/surround/classical/README.md` |
-| Station sequences (playlist pinned head + station IDs between songs; radio-station playlists) | `docs/reference/player/surround/sequences.md` |
-| Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `docs/reference/player/media-source-healing.md` |
-| Home Line video calling (state, signaling, recovery, observability) | `docs/reference/call/README.md` |
-| Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
-| Piano tablet screen control (screensaver, manual off holds, power authority) | `docs/reference/piano/screen-control.md` |
-| Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `docs/reference/piano/grid-addressing.md` |
-| Piano game time budget + match gate (daily minutes, played challenge, day files) | `docs/reference/piano/games-budget-gate.md` |
-| Exercise library (shared corpus: Fitness workouts + School anatomy) | `docs/reference/fitness/exercise-library.md` |
-| Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `docs/reference/fitness/suggestions.md` |
-| Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `docs/reference/gaming/emulator-resilience.md` |
-| Arcade consoles (adding a system: manifest, core, bezel geometry) | `docs/reference/gaming/arcade-consoles.md` |
-| Arcade game sessions (metered arcade time: observation, budget, overlay) | `docs/reference/gaming/arcade-game-sessions.md` |
-| Household economy (coins) | `docs/reference/economy/economy.md` |
-| State Gates (assertions, gate policy, entitlements, replay) | `docs/reference/state-gates/README.md` |
-| DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |
-| Nutrition (scan-enriched food logging) | `docs/reference/nutrition/README.md` |
-| Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `docs/reference/finance/categorization.md` |
-| Health app (log-first food logging, budget, medical) | `docs/reference/health/README.md` |
-| Nutrition auditor (AI cleanup agent: triggers, gates, permissions, journal, cost) | `docs/reference/health/nutrition-auditor.md` |
-| AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `docs/reference/core/configuration.md` (AI usage ledger) |
-| AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `docs/reference/core/ai-structured-wire-layer.md` |
-| OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
-| Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
-| School / Portal homeschool | `docs/reference/school/README.md` |
-| Teacher flows (what a grown-up can do, from which state) | `docs/reference/school/teacher.md` |
-| School print documents (worksheets/quizzes + OMR card grading) | `docs/reference/school/print-documents.md` |
-| Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `docs/reference/school/reading-log.md` |
-| Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `docs/reference/school/reading-sessions.md` |
-| School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `docs/reference/school/term-grid.md` |
-| School media lessons (living-room video/audio with hard comprehension checkpoints) | `docs/reference/school/media-lessons.md` |
-| School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `docs/reference/school/card-ladder.md` |
-| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `docs/runbooks/school/README.md` |
-| Push notifications (text standard, school push copy, HA relay contract) | `docs/reference/notifications/push-standard.md` |
-| NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
-| Webapp design system (tokens, primitives, packs) | `docs/reference/frontend/design-system.md` |
+| AI Agents (autonomous LLM agents) | `__docs/ai-context/agents.md` |
+| Testing infrastructure | `__docs/ai-context/testing.md` |
+| Backend architecture (DDD layers) | `__docs/reference/core/backend-architecture.md` |
+| Config system | `__docs/reference/core/configuration.md` |
+| Coding standards | `__docs/reference/core/coding-standards.md` |
+| Layer guidelines | `__docs/reference/core/layers-of-abstraction/*.md` |
+| Player surround (classical chrome: sidecars, movement detection) | `__docs/reference/player/surround/classical/README.md` |
+| Station sequences (playlist pinned head + station IDs between songs; radio-station playlists) | `__docs/reference/player/surround/sequences.md` |
+| Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `__docs/reference/player/media-source-healing.md` |
+| Home Line video calling (state, signaling, recovery, observability) | `__docs/reference/call/README.md` |
+| Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
+| Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
+| Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |
+| Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
+| Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
+| Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `__docs/reference/fitness/suggestions.md` |
+| Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
+| Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
+| Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
+| Household economy (coins) | `__docs/reference/economy/economy.md` |
+| State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
+| DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |
+| Nutrition (scan-enriched food logging) | `__docs/reference/nutrition/README.md` |
+| Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `__docs/reference/finance/categorization.md` |
+| Health app (log-first food logging, budget, medical) | `__docs/reference/health/README.md` |
+| Nutrition auditor (AI cleanup agent: triggers, gates, permissions, journal, cost) | `__docs/reference/health/nutrition-auditor.md` |
+| AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `__docs/reference/core/configuration.md` (AI usage ledger) |
+| AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `__docs/reference/core/ai-structured-wire-layer.md` |
+| OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
+| Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
+| School / Portal homeschool | `__docs/reference/school/README.md` |
+| Teacher flows (what a grown-up can do, from which state) | `__docs/reference/school/teacher.md` |
+| School print documents (worksheets/quizzes + OMR card grading) | `__docs/reference/school/print-documents.md` |
+| Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `__docs/reference/school/reading-log.md` |
+| Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `__docs/reference/school/reading-sessions.md` |
+| School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `__docs/reference/school/term-grid.md` |
+| School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |
+| School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
+| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `__docs/runbooks/school/README.md` |
+| Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
+| NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
+| Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 
 ---
 
@@ -267,17 +267,17 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - `frontend/src/Apps/` - App entry points
 - `frontend/src/modules/` - Reusable UI modules
 - `frontend/src/hooks/` - Custom hooks
-- `backend/src/0_system/` - Bootstrap, config loading
-- `backend/src/1_adapters/` - External service integrations (Plex, HA, etc.)
-- `backend/src/1_rendering/` - Server-side presentation (thermal printer, PDF)
-- `backend/src/2_domains/` - Domain entities and logic
-- `backend/src/3_applications/` - Use cases, orchestration
-- `backend/src/4_api/` - Express routers, HTTP layer
+- `__backend/src/0_system/` - Bootstrap, config loading
+- `__backend/src/1_adapters/` - External service integrations (Plex, HA, etc.)
+- `__backend/src/1_rendering/` - Server-side presentation (thermal printer, PDF)
+- `__backend/src/2_domains/` - Domain entities and logic
+- `__backend/src/3_applications/` - Use cases, orchestration
+- `__backend/src/4_api/` - Express routers, HTTP layer
 - `cli/` - CLI tools
 
 ### Config System
 - **Runtime-loaded household app config:** `data/household[-{hid}]/config/{app}.yml` (e.g. `config/piano.yml`). This is the file `ConfigService.getHouseholdAppConfig(hid, app)` actually serves — see `reloadHouseholdAppConfig`, which resolves `<dataDir>/<folder>/config/<app>`. **A stale duplicate may also exist at `apps/{app}/config.yml` — that path is NOT loaded for app config; don't edit it expecting runtime effect.** Verify which file is live by checking which one holds real values (e.g. the actual `videos.plexCollection`) vs. a `null` stub.
-- **Config is cached in-memory at startup.** `getHouseholdAppConfig` reads from `#config` (loaded once); editing the YAML requires a dev-server restart (nodemon: touch a watched `backend/**.mjs` file) or a `reloadHouseholdAppConfig` call before changes take effect.
+- **Config is cached in-memory at startup.** `getHouseholdAppConfig` reads from `#config` (loaded once); editing the YAML requires a dev-server restart (nodemon: touch a watched `__backend/**.mjs` file) or a `reloadHouseholdAppConfig` call before changes take effect.
 - Per-app subdirectories under `apps/{app}/` (e.g. `apps/piano/studio/`, `apps/piano/devices/`) and per-user data under `users/{id}/apps/{app}/` ARE used directly — only the top-level `apps/{app}/config.yml` is the misleading one.
 - Use ConfigService for reads (preferred over io.mjs)
 - Multi-dimensional process.env (use spread pattern to set)
@@ -473,7 +473,7 @@ unreachable, so a gap in the store is itself a signal to check `docker logs`.
 
 **Other sinks** (unchanged, longer windows, on the media mount): per-app session
 logs `media/logs/{app}/` 14 days, school ledger 400 days, `backend.log` on the
-non-synced volume. See `docs/reference/core/configuration.md`.
+non-synced volume. See `__docs/reference/core/configuration.md`.
 
 ---
 
@@ -498,7 +498,7 @@ Test URLs come from system config - **NOT hardcoded**. The port is determined by
 
 1. `tests/_lib/configHelper.mjs` reads from `system.yml` in the data path
 2. Default fallback is 3111 if no config found
-3. `playwright.config.mjs` uses `getAppPort()` from configHelper
+3. `tests/_infrastructure/config/playwright.config.mjs` uses `getAppPort()` from configHelper
 
 **This means tests use the same port as the running dev server.** If Vite is on 3111, tests connect to 3111.
 
@@ -506,21 +506,21 @@ Test URLs come from system config - **NOT hardcoded**. The port is determined by
 
 ```bash
 # Run all flow tests (headless)
-npx playwright test tests/live/flow/
+npm run test:browser -- tests/live/flow/
 
 # Run specific test
-npx playwright test tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs
+npm run test:browser -- tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs
 
 # Run headed (visible browser)
-npx playwright test tests/live/flow/ --headed
+npm run test:browser -- tests/live/flow/ --headed
 
 # Run with line reporter for cleaner output
-npx playwright test tests/live/flow/ --reporter=line
+npm run test:browser -- tests/live/flow/ --reporter=line
 ```
 
 ### Dev Server Handling
 
-Playwright's `webServer` config (in `playwright.config.mjs`) automatically:
+Playwright's `webServer` config (in `tests/_infrastructure/config/playwright.config.mjs`) automatically:
 1. Checks if a server is running on the configured port
 2. If `reuseExistingServer: true`, uses existing server
 3. If no server running, starts `npm run dev`

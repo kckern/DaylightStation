@@ -1,12 +1,12 @@
 // frontend/src/screen-framework/ScreenScreensaver.jsx
 import { useEffect, useRef } from 'react';
-import { useScreenOverlay } from "../../../../capabilities/screen-host/browser/overlays.mjs";
-import { getWidgetRegistry } from "../../../../capabilities/screen-host/browser/public.mjs";
-import { useMenuNavigationContext } from "../../../../capabilities/screen-host/browser/menu-navigation.mjs";
+import { useScreenOverlay } from "../../../../__capabilities/screen-host/browser/overlays.mjs";
+import { getWidgetRegistry } from "../../../../__capabilities/screen-host/browser/public.mjs";
+import { useMenuNavigationContext } from "../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import getLogger from '../../lib/logging/Logger.js';
-import { BROWSE_NAV_TYPES } from "../../../../capabilities/screen-host/browser/lifecycle.mjs";
+import { BROWSE_NAV_TYPES } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { hasInitialScreenAction } from './screenAppPath.js';
-import { getActionBus } from "../../../../capabilities/screen-host/browser/input.mjs";
+import { getActionBus } from "../../../../__capabilities/screen-host/browser/input.mjs";
 
 let _logger;
 function logger() {

@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../../modules/fitness/cli/scripts/enrich-session-media.mjs";
+export * from "../../__app_modules/wellness/fitness/cli/scripts/enrich-session-media.mjs";

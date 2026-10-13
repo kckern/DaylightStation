@@ -11,8 +11,8 @@ import {
   encodeTi86DeviceInfo,
   encodeTi86ResultQueue,
   encodeTi86ResultRecord,
-} from "../../../../modules/school/server/adapters/schoolcalc/ti86/index.mjs";
-import { SchoolCalcContainer } from "../../../../modules/school/server/application/schoolcalc/index.mjs";
+} from "../../../../__app_modules/learning/school/server/adapters/schoolcalc/ti86/index.mjs";
+import { SchoolCalcContainer } from "../../../../__app_modules/learning/school/server/application/schoolcalc/index.mjs";
 import { stableRecordDigest, stableRecordText } from '#apps/common/stableRecord.mjs';
 
 const ADDRESS = 'main/mixed/foundations/unit-one/first-lesson';

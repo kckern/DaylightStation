@@ -91,7 +91,7 @@ async function main() {
     if (flowFiles.length > 0) {
       const { execSync } = await import('child_process');
       const playwrightArgs = flowFiles.join(' ');
-      execSync(`npx playwright test ${playwrightArgs}`, { stdio: 'inherit' });
+      execSync(`npx playwright test --config tests/_infrastructure/config/playwright.config.mjs ${playwrightArgs}`, { stdio: 'inherit' });
     }
 
     console.log(`\n${COLORS.green}✓ All live tests passed${COLORS.reset}`);

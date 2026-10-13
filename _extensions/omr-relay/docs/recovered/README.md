@@ -23,9 +23,9 @@ search engines.
 Everything operationally relevant now lives in the main docs, which are the
 working reference:
 
-- `docs/reference/omr/README.md` — protocol, troubleshooting, sourcing
-- `docs/reference/omr/command-reference.md` — full command set
-- `docs/reference/omr/card-specification.md` — Appendix A card spec
+- `__docs/reference/omr/README.md` — protocol, troubleshooting, sourcing
+- `__docs/reference/omr/command-reference.md` — full command set
+- `__docs/reference/omr/card-specification.md` — Appendix A card spec
 
 The PDFs are kept as primary source so transcription errors can be caught.
 

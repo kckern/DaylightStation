@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { YamlFitnessSchoolAttemptStore } from "../../../../modules/fitness/server/adapters/persistence/YamlFitnessSchoolAttemptStore.mjs";
+import { YamlFitnessSchoolAttemptStore } from "../../../../__app_modules/wellness/fitness/server/adapters/persistence/YamlFitnessSchoolAttemptStore.mjs";
 
 const roots = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop(), { recursive: true, force: true }); });

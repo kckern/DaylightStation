@@ -1,6 +1,6 @@
 // tests/isolated/application/fitness/playlistSorter.test.mjs
 import { describe, test, expect } from 'vitest';
-import { sortPlaylistItems, isPlaylist } from "../../../../modules/fitness/server/application/playlistSorter.mjs";
+import { sortPlaylistItems, isPlaylist } from "../../../../__app_modules/wellness/fitness/server/application/playlistSorter.mjs";
 
 describe('sortPlaylistItems', () => {
   test('sorts by userRating DESC (highest first)', () => {

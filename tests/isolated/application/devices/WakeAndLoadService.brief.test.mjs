@@ -1,4 +1,4 @@
-import {contentRequiresCamera} from '../../../../backend/src/5_composition/policies/contentRequiresCamera.mjs';
+import {contentRequiresCamera} from '../../../../__backend/src/5_composition/policies/contentRequiresCamera.mjs';
 // RQ-PLAY-11 Show briefly: a screen acks a brief play with appliedAs:'brief'
 // and shows it OVER its programme, so its current item never changes. The
 // watchdog confirms on the published brief instead of timing out at 90 s, and

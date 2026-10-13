@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldEmitTrackChanged } from '../../../../capabilities/playback/browser/player/lib/shouldEmitTrackChanged.js';
+import { shouldEmitTrackChanged } from '../../../../__capabilities/playback/browser/player/lib/shouldEmitTrackChanged.js';
 
 /**
  * Tests for queue-track-changed emission filtering.
@@ -8,7 +8,7 @@ import { shouldEmitTrackChanged } from '../../../../capabilities/playback/browse
  * that appear before the queue API response arrives. These have a guid
  * but no title, no mediaType, no media URL — they're placeholders.
  *
- * See: docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
+ * See: __docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
  */
 
 describe('shouldEmitTrackChanged', () => {

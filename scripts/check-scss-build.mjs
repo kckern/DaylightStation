@@ -106,14 +106,10 @@ function isDirectory(dir) {
 
 function* sourceRoots() {
   yield SRC;
-  for (const name of ['modules', 'capabilities']) {
+  for (const name of ['__app_modules', '__capabilities']) {
     const root = path.join(ROOT, name);
     if (!isDirectory(root)) continue;
-    for (const owner of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!owner.isDirectory() || SKIP_DIRS.has(owner.name) || owner.name === 'vendor') continue;
-      const browser = path.join(root, owner.name, 'browser');
-      if (isDirectory(browser)) yield browser;
-    }
+    yield root;
   }
 }
 
@@ -123,6 +119,9 @@ const IMPORT_RE = /import\s+['"](\.[^'"]+\.scss)['"]/g;
 function findEntrypoints() {
   const entries = new Set();
   for (const file of [...sourceRoots()].flatMap((root) => [...walk(root, root !== SRC)])) {
+    const relativeFile = path.relative(ROOT, file).split(path.sep).join('/');
+    if (!relativeFile.startsWith('frontend/src/') &&
+        !/^(?:__app_modules\/[^/]+(?:\/[^/]+)?|__capabilities\/[^/]+)\/browser\/.+/.test(relativeFile)) continue;
     const source = fs.readFileSync(file, 'utf8');
     for (const match of source.matchAll(IMPORT_RE)) {
       entries.add(path.normalize(path.join(path.dirname(file), match[1])));

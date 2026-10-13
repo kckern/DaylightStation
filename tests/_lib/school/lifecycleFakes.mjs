@@ -11,16 +11,16 @@
  * behaviour depends on the wall clock cannot be tested at a day boundary, and
  * the spec's reward path has a cross-day scenario that must be exercised.
  */
-import { ICurriculumCatalog } from "../../../modules/school/server/application/ports/ICurriculumCatalog.mjs";
-import { IWorkSessionRepository } from "../../../modules/school/server/application/ports/IWorkSessionRepository.mjs";
-import { ITokenRegistry } from "../../../modules/school/server/application/ports/ITokenRegistry.mjs";
-import { IAssignmentStore } from "../../../modules/school/server/application/ports/IAssignmentStore.mjs";
-import { IFormMapStore } from "../../../modules/school/server/application/ports/IFormMapStore.mjs";
-import { IReviewQueue } from "../../../modules/school/server/application/ports/IReviewQueue.mjs";
-import { IDocumentRenderer, IReceiptRenderer } from "../../../modules/school/server/application/ports/IDocumentRenderer.mjs";
-import { GrownUpGate } from "../../../modules/school/server/application/GrownUpGate.mjs";
-import { reduceSession } from "../../../modules/school/server/domain/sessions/sessionEvents.mjs";
-import { TOKEN_PREFIX, isAccessCodeLive } from "../../../modules/school/server/domain/sessions/tokens.mjs";
+import { ICurriculumCatalog } from "../../../__app_modules/learning/school/server/application/ports/ICurriculumCatalog.mjs";
+import { IWorkSessionRepository } from "../../../__app_modules/learning/school/server/application/ports/IWorkSessionRepository.mjs";
+import { ITokenRegistry } from "../../../__app_modules/learning/school/server/application/ports/ITokenRegistry.mjs";
+import { IAssignmentStore } from "../../../__app_modules/learning/school/server/application/ports/IAssignmentStore.mjs";
+import { IFormMapStore } from "../../../__app_modules/learning/school/server/application/ports/IFormMapStore.mjs";
+import { IReviewQueue } from "../../../__app_modules/learning/school/server/application/ports/IReviewQueue.mjs";
+import { IDocumentRenderer, IReceiptRenderer } from "../../../__app_modules/learning/school/server/application/ports/IDocumentRenderer.mjs";
+import { GrownUpGate } from "../../../__app_modules/learning/school/server/application/GrownUpGate.mjs";
+import { reduceSession } from "../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
+import { TOKEN_PREFIX, isAccessCodeLive } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 
 export const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 

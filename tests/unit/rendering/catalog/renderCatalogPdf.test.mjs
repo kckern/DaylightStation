@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderCatalogPdf } from "../../../../capabilities/content-catalog/server/rendering/catalog/renderCatalogPdf.mjs";
+import { renderCatalogPdf } from "../../../../__capabilities/content-catalog/server/rendering/catalog/renderCatalogPdf.mjs";
 
 describe('renderCatalogPdf', () => {
   it('renders a valid PDF buffer from QR SVG input', async () => {

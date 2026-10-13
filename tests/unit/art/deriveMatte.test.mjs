@@ -1,4 +1,4 @@
-import { deriveMatte, rgbToHsv } from "../../../modules/art/server/domain/deriveMatte.mjs";
+import { deriveMatte, rgbToHsv } from "../../../__app_modules/media/art/server/domain/deriveMatte.mjs";
 
 const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const sum = (rgb) => rgb[0] + rgb[1] + rgb[2];

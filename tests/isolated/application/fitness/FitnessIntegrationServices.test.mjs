@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FitnessContentService } from "../../../../modules/fitness/server/application/services/FitnessContentService.mjs";
-import { EmergencyAccessService } from "../../../../modules/fitness/server/application/services/EmergencyAccessService.mjs";
-import { FitnessWebhookService } from "../../../../modules/fitness/server/application/services/FitnessWebhookService.mjs";
+import { FitnessContentService } from "../../../../__app_modules/wellness/fitness/server/application/services/FitnessContentService.mjs";
+import { EmergencyAccessService } from "../../../../__app_modules/wellness/fitness/server/application/services/EmergencyAccessService.mjs";
+import { FitnessWebhookService } from "../../../../__app_modules/wellness/fitness/server/application/services/FitnessWebhookService.mjs";
 import { StravaWebhookAdapter } from '#adapters/strava/StravaWebhookAdapter.mjs';
-import { GetFitnessMenuMusic } from "../../../../modules/fitness/server/application/usecases/GetFitnessMenuMusic.mjs";
-import { PrintFitnessReceipt } from "../../../../modules/fitness/server/application/usecases/PrintFitnessReceipt.mjs";
-import { SaveDebugVoiceMemo } from "../../../../modules/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
+import { GetFitnessMenuMusic } from "../../../../__app_modules/wellness/fitness/server/application/usecases/GetFitnessMenuMusic.mjs";
+import { PrintFitnessReceipt } from "../../../../__app_modules/wellness/fitness/server/application/usecases/PrintFitnessReceipt.mjs";
+import { SaveDebugVoiceMemo } from "../../../../__app_modules/wellness/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
 
 describe('Fitness integration facades', () => {
   it('hydrates the config and preserves the household projection', async () => {

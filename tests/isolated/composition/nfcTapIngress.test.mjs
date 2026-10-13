@@ -165,7 +165,7 @@ describe('createNfcTapIngress — transport only', () => {
   });
 });
 
-// MIGRATED from `backend/src/5_composition/modules/nfcTapIngress.shutdown.test.mjs`
+// MIGRATED from `__backend/src/5_composition/modules/nfcTapIngress.shutdown.test.mjs`
 // (node:test, colocated — a path no CI gate ever executed). The precedence it
 // pinned survives the fork deletion, and now runs in a suite that is actually
 // gated. The tag it uses is a LEARNER card on purpose: the original pinned

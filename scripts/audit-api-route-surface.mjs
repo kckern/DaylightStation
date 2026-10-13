@@ -23,14 +23,17 @@ function currentFiles() {
   };
   // Include the API plus legacy system HTTP modules so moving a registration
   // into its correct layer does not look like an added/removed route.
-  walk(path.join(root, 'backend/src/4_api'));
-  walk(path.join(root, 'backend/src/0_system/http'));
-  files.push('backend/src/app.mjs');
+  walk(path.join(root, '__backend/src/4_api'));
+  walk(path.join(root, '__backend/src/0_system/http'));
+  files.push('__backend/src/app.mjs');
   return files;
 }
 
 function baselineFiles() {
-  return execFileSync('git', ['ls-tree', '-r', '--name-only', base, '--', 'backend/src/4_api', 'backend/src/0_system/http', 'backend/src/app.mjs'], { encoding: 'utf8' })
+  // Historical commits use backend/ before the contributor-folder rename.
+  const roots = ['backend', '__backend'];
+  const paths = roots.flatMap((owner) => ['src/4_api', 'src/0_system/http', 'src/app.mjs'].map((entry) => `${owner}/${entry}`));
+  return execFileSync('git', ['ls-tree', '-r', '--name-only', base, '--', ...paths], { encoding: 'utf8' })
     .split('\n')
     .filter((file) => /\.m?js$/.test(file) && !/\.test\.m?js$/.test(file));
 }

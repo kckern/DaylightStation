@@ -12,7 +12,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   getStats: vi.fn(() => ({ mtimeMs: 1 })),
 }));
 
-const { ListAdapter } = await import("../../../../../capabilities/content-catalog/server/adapters/providers/list/ListAdapter.mjs");
+const { ListAdapter } = await import("../../../../../__capabilities/content-catalog/server/adapters/providers/list/ListAdapter.mjs");
 
 // Progress store double. getAll returns one entity per supplied entry,
 // keyed by contentId (matching YamlMediaProgressMemory.listProgress's shape).

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { mapIntentToResponse, UnknownActionError } from "../../../../capabilities/device-dispatch/server/application/mapIntentToResponse.mjs";
+import { mapIntentToResponse, UnknownActionError } from "../../../../__capabilities/device-dispatch/server/application/mapIntentToResponse.mjs";
 // Domain import in an APPLICATION test, in the legal direction: the pair below
 // pins the resolver's real learner intent against this mapper, so the two
 // cannot drift apart on the one field (`location`) neither test would miss.
-import { NfcResolver } from "../../../../capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
+import { NfcResolver } from "../../../../__capabilities/device-dispatch/server/domain/services/NfcResolver.mjs";
 
 describe('mapIntentToResponse', () => {
   it('maps queue/play/play-next to content with expression', () => {

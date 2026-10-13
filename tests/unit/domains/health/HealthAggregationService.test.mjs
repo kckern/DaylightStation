@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HealthAggregator } from "../../../../modules/health/server/domain/health/services/HealthAggregationService.mjs";
+import { HealthAggregator } from "../../../../__app_modules/wellness/health/server/domain/health/services/HealthAggregationService.mjs";
 
 const DATE = '2026-05-01';
 

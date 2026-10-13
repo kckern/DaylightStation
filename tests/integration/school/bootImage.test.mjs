@@ -30,7 +30,7 @@
 //   2. It is also the only way to get REAL Node module resolution. This
 //      repo's `#composition/*` subpath import (package.json `imports`) is
 //      resolved by Node natively — jest's own `moduleNameMapper` in
-//      `jest.config.js` does not mirror it, so an in-process `import` of
+//      `tests/_infrastructure/config/jest.config.cjs` does not mirror it, so an in-process `import` of
 //      `schoolLifecycle.mjs` from inside this test would resolve
 //      differently than production does anyway.
 //
@@ -147,7 +147,7 @@ describe('school composition root boots against an image-shaped tree', () => {
     // the `.gitignore`/`.dockerignore` negation for this exact file (or a
     // reintroduction of a file read at that path) cannot silently stop being
     // exercised by this guard.
-    const leaked = path.join(imageDir, 'backend/src/3_applications/school/rubiksCube/course.yml');
+    const leaked = path.join(imageDir, '__backend/src/3_applications/school/rubiksCube/course.yml');
     expect(existsSync(leaked)).toBe(false);
   });
 

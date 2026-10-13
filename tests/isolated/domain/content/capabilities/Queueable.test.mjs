@@ -1,6 +1,6 @@
 // tests/unit/content/capabilities/Queueable.test.mjs
 import { describe, test, expect } from 'vitest';
-import { QueueableItem } from "../../../../../capabilities/content-catalog/server/domain/capabilities/Queueable.mjs";
+import { QueueableItem } from "../../../../../__capabilities/content-catalog/server/domain/capabilities/Queueable.mjs";
 
 describe('Queueable capability', () => {
   test('creates queueable item with traversal mode', () => {

@@ -1,0 +1,200 @@
+.piano-keyboard {
+  display: flex;
+  position: relative;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+  align-items: flex-start;
+
+  // Paint/layout containment: the keyboard is the one rich surface on an
+  // otherwise-flat menu, and its keys repaint on every played note (gradient +
+  // glow). Containing it keeps those repaints inside the keyboard's own box so a
+  // chord or fast passage never invalidates the chrome, tiles, or mode content
+  // around it — the difference between silky and stuttery while playing. (No
+  // `size` containment: the keyboard is sized by its children.)
+  contain: layout style paint;
+
+  // Own the keyboard frame. Without this the surrounding theme (dark mode, a
+  // charcoal panel, whatever) bleeds through the key gaps, the rounded key
+  // bottoms, and the strip above the black keys — washing out the keys. A fixed
+  // near-black frame keeps white-on-black reading correctly anywhere it's placed.
+  background: #1a1a1a;
+  box-sizing: border-box;
+  padding: 4px 4px 0;
+
+  // Touch/click playable keyboard: keys take pointer events directly and must
+  // not trigger scroll/zoom gestures on the tablet.
+  &.interactive .piano-key {
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+  }
+
+  // Half-shade target reveal (Sheet Music Learn mode): the target key is only
+  // shown AFTER a wrong attempt, and then muted — a hint, not a spoiler light.
+  &.target-dim .piano-key.target { opacity: 0.45; }
+
+  .piano-key {
+    position: relative;
+    transition: background-color 0.05s ease-out;
+    overflow: hidden;
+
+    // Destroyed key — grayscale, dimmed, diagonal crack pattern
+    &.destroyed {
+      filter: grayscale(0.8) brightness(0.5);
+      opacity: 0.5;
+      pointer-events: none;
+
+      // Diagonal crack lines overlay
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 4px,
+          rgba(255, 50, 50, 0.25) 4px,
+          rgba(255, 50, 50, 0.25) 5px
+        );
+        pointer-events: none;
+        z-index: 5;
+      }
+    }
+
+    // Rebuild progress bar — fills upward from bottom
+    .rebuild-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(var(--rebuild-progress, 0) * 100%);
+      z-index: 4;
+      pointer-events: none;
+      border-radius: 0 0 4px 4px;
+
+      // Color transitions: red → yellow → green
+      background: linear-gradient(
+        to top,
+        hsl(calc(var(--rebuild-progress, 0) * 120), 80%, 45%) 0%,
+        hsl(calc(var(--rebuild-progress, 0) * 120), 80%, 55%) 100%
+      );
+      opacity: 0.5;
+      transition: height 0.1s linear;
+    }
+
+    &.white {
+      width: calc(100% / var(--white-key-count, 52));
+      height: 100%;
+      // Flat fill (was a vertical gradient). On the weak tablet GPU, gradients
+      // across 50+ repeated keys are a measurable paint cost; a solid color is
+      // visually near-identical and free. See __docs/reference/core/webview-paint-performance.md.
+      background: #f3f3f3;
+      border: 1px solid #999;
+      border-radius: 0 0 4px 4px;
+      z-index: 1;
+
+      &.target {
+        background: linear-gradient(to bottom, #b8e8ff 0%, #d0f0ff 100%);
+        box-shadow: 0 0 15px rgba(0, 180, 255, 0.4), inset 0 0 10px rgba(0, 180, 255, 0.15);
+        border-color: rgba(0, 180, 255, 0.5);
+      }
+
+      &.active {
+        // Flat velocity-mapped fill, NO blurred box-shadow. A blurred glow fires
+        // on every played key — during a chord or fast passage that's many blur
+        // passes per frame, the single worst per-note paint on this GPU. Drop it;
+        // the bright fill is the feedback. (webview-paint-performance.md)
+        background: hsl(200, 100%, calc(48% + 22% * var(--velocity, 0)));
+      }
+
+      &.wrong {
+        background: linear-gradient(to bottom, #ff6666 0%, #ff4444 100%);
+        box-shadow: 0 0 25px rgba(255, 50, 50, 0.7), inset 0 0 10px rgba(255, 50, 50, 0.3);
+        border-color: #cc3333;
+      }
+
+      // Percussion zone (Producer split): warm amber wash so the perc keys read
+      // distinctly from the melodic side. Active playing still overrides.
+      &.perc:not(.active) {
+        background: linear-gradient(to bottom, #f0d49a 0%, #f8e6c2 100%);
+        border-color: #c9a86a;
+      }
+
+      .note-label {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 10px;
+        color: #666;
+        pointer-events: none;
+      }
+    }
+
+    &.black {
+      width: calc(100% / var(--white-key-count, 52) * 0.6);
+      height: 60%;
+      background: #1c1c1c; // flat (was gradient) — cheaper paint across 36 keys
+      border-radius: 0 0 3px 3px;
+      margin-left: calc(-100% / var(--white-key-count, 52) * 0.3);
+      margin-right: calc(-100% / var(--white-key-count, 52) * 0.3);
+      z-index: 2;
+
+      &.target {
+        background: linear-gradient(to bottom, #1a4a6a 0%, #2a5a7a 100%);
+        box-shadow: 0 0 12px rgba(0, 180, 255, 0.5), inset 0 0 8px rgba(0, 180, 255, 0.2);
+      }
+
+      &.active {
+        // Flat velocity-mapped fill, no blurred glow (see white-key note above).
+        background: hsl(280, 100%, calc(34% + 22% * var(--velocity, 0)));
+      }
+
+      &.wrong {
+        background: linear-gradient(to bottom, #8b2222 0%, #aa3333 100%);
+        box-shadow: 0 0 20px rgba(255, 50, 50, 0.6), inset 0 0 8px rgba(255, 50, 50, 0.3);
+      }
+
+      // Darker amber for black keys in the percussion zone.
+      &.perc:not(.active) {
+        background: linear-gradient(to bottom, #5a4516 0%, #6e571f 100%);
+      }
+    }
+
+    // Divider at the perc → melodic boundary: a bright accent edge on the first
+    // melodic white key so the split point is unmistakable.
+    &.white.split-start {
+      border-left: 3px solid #2ec46f;
+      box-shadow: -3px 0 8px rgba(46, 196, 111, 0.45);
+      z-index: 3;
+    }
+
+    // Loop-driven notes: distinct accent hue so loop-sounding keys read
+    // differently from the player's own pressed (.active) keys.
+    // White loop keys use the accent fill; black loop keys use a darker tone.
+    &.white.loop:not(.active) {
+      background: var(--piano-accent, #2ec46f);
+      opacity: 0.75;
+    }
+    &.black.loop:not(.active) {
+      background: color-mix(in srgb, var(--piano-accent, #2ec46f) 60%, #1c1c1c 40%);
+      opacity: 0.85;
+    }
+  }
+
+  // Roman-numeral hand-chord label overlay: floats over the left (perc/bass)
+  // region. Positioned absolutely within the keyboard's relative container.
+  &__hand-label {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.4rem;
+    z-index: 4;
+    pointer-events: none;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+}

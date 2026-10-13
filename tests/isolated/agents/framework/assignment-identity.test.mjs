@@ -5,8 +5,8 @@
 // Assignment.execute must not call the LLM runtime when buildPrompt()
 // returns null (nothing actionable).
 import { describe, it, expect, vi } from 'vitest';
-import { BaseAgent } from "../../../../capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
-import { Assignment } from "../../../../capabilities/agent-runtime/server/application/framework/Assignment.mjs";
+import { BaseAgent } from "../../../../__capabilities/agent-runtime/server/application/framework/BaseAgent.mjs";
+import { Assignment } from "../../../../__capabilities/agent-runtime/server/application/framework/Assignment.mjs";
 
 class NullAssignment extends Assignment {
   static id = 'null-check';

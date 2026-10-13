@@ -8,10 +8,10 @@
  * today described every day of the term.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GetLearnerDayCompletion } from "../../../../modules/school/server/application/GetLearnerDayCompletion.mjs";
-import { PlanProjection } from "../../../../modules/school/server/application/PlanProjection.mjs";
-import { collectProgramStatuses, UNKNOWABLE_STATUS } from "../../../../modules/school/server/application/programStatusCollection.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
+import { GetLearnerDayCompletion } from "../../../../__app_modules/learning/school/server/application/GetLearnerDayCompletion.mjs";
+import { PlanProjection } from "../../../../__app_modules/learning/school/server/application/PlanProjection.mjs";
+import { collectProgramStatuses, UNKNOWABLE_STATUS } from "../../../../__app_modules/learning/school/server/application/programStatusCollection.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';

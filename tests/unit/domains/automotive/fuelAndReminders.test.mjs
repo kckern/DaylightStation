@@ -7,11 +7,11 @@
 // the reminder list's merging of service intervals with document expiries.
 
 import { describe, it, expect } from 'vitest';
-import { FuelLog } from "../../../../modules/auto/server/domain/entities/FuelLog.mjs";
-import { ServiceRecord, addMonths } from "../../../../modules/auto/server/domain/entities/ServiceRecord.mjs";
-import { Document } from "../../../../modules/auto/server/domain/entities/Document.mjs";
-import { computeEconomyIntervals, summarizeFuel } from "../../../../modules/auto/server/domain/services/FuelEconomyService.mjs";
-import { buildReminders } from "../../../../modules/auto/server/domain/services/ReminderService.mjs";
+import { FuelLog } from "../../../../__app_modules/household/auto/server/domain/entities/FuelLog.mjs";
+import { ServiceRecord, addMonths } from "../../../../__app_modules/household/auto/server/domain/entities/ServiceRecord.mjs";
+import { Document } from "../../../../__app_modules/household/auto/server/domain/entities/Document.mjs";
+import { computeEconomyIntervals, summarizeFuel } from "../../../../__app_modules/household/auto/server/domain/services/FuelEconomyService.mjs";
+import { buildReminders } from "../../../../__app_modules/household/auto/server/domain/services/ReminderService.mjs";
 
 const at = (iso) => new Date(iso);
 

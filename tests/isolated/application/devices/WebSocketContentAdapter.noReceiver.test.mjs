@@ -1,7 +1,7 @@
 // PR-10 / RELY.6a: a load broadcast to a screen topic nobody is subscribed to
 // reaches nothing. It must be reported as not delivered, never as sent.
 import { describe, it, expect, vi } from 'vitest';
-import { WebSocketContentAdapter } from '../../../../backend/src/1_adapters/devices/WebSocketContentAdapter.mjs';
+import { WebSocketContentAdapter } from '../../../../__backend/src/1_adapters/devices/WebSocketContentAdapter.mjs';
 
 function adapter(subscribers) {
   const wsBus = { broadcast: vi.fn(async () => {}), getTopicSubscriberCount: vi.fn(() => subscribers) };

@@ -3,7 +3,7 @@
 // playing 45 seconds later on its own. Routines that omit the flag keep the
 // existing one-shot retry behaviour.
 import { describe, it, expect, vi } from 'vitest';
-import { DeviceContentDispatchService } from '../../../../backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
+import { DeviceContentDispatchService } from '../../../../__backend/src/3_applications/devices/services/DeviceContentDispatchService.mjs';
 
 function setup() {
   const calls = [];

@@ -11,7 +11,7 @@ import {
   FLOOR_EXCLUSIONS,
   compileAdditions,
   matchesExclusion,
-} from "../../../../modules/health/server/domain/health/policies/PrivacyExclusions.mjs";
+} from "../../../../__app_modules/wellness/health/server/domain/health/policies/PrivacyExclusions.mjs";
 
 describe('PrivacyExclusions', () => {
   describe('FLOOR_EXCLUSIONS', () => {

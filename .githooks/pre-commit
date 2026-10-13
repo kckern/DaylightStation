@@ -10,7 +10,7 @@ cd "$repo_root"
 node scripts/audit-direct-fs-imports.mjs --staged
 node scripts/audit-direct-fs-imports.mjs
 
-# Enforce the rest of docs/reference/core/layers-of-abstraction as executable
+# Enforce the rest of __docs/reference/core/layers-of-abstraction as executable
 # dependency and link-integrity rules on every commit.
 npm run audit:layers
 node scripts/audit-layer-imports.mjs --staged

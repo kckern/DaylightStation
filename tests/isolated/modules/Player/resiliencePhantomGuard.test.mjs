@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldSkipResilienceReload } from '../../../../capabilities/playback/browser/player/lib/shouldSkipResilienceReload.js';
+import { shouldSkipResilienceReload } from '../../../../__capabilities/playback/browser/player/lib/shouldSkipResilienceReload.js';
 
 /**
  * Tests for shouldSkipResilienceReload — the guard that prevents
@@ -10,7 +10,7 @@ import { shouldSkipResilienceReload } from '../../../../capabilities/playback/br
  * Attempting to remount for such an entry always fails and can
  * destroy working playback in a different track.
  *
- * See: docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
+ * See: __docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
  */
 
 describe('shouldSkipResilienceReload', () => {

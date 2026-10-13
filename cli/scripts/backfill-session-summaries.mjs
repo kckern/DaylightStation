@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '../../modules/fitness/cli/scripts/backfill-session-summaries.mjs';
+import '../../__app_modules/wellness/fitness/cli/scripts/backfill-session-summaries.mjs';

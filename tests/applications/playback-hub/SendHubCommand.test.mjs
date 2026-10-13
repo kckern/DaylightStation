@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SendHubCommand } from "../../../modules/media/server/application/playback-hub/usecases/SendHubCommand.mjs";
-import { FakeHubGateway } from "../../../modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
-import { FakeHubConfigRepository } from "../../../modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
-import { HubConfig } from "../../../modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
-import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { VolumeBounds } from "../../../modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
-import { CommandResult } from "../../../modules/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
-import { ValidationError } from '../../../backend/src/2_domains/core/errors/ValidationError.mjs';
-import { EntityNotFoundError } from '../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
-import { InfrastructureError } from '../../../backend/src/0_system/utils/errors/InfrastructureError.mjs';
+import { SendHubCommand } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/SendHubCommand.mjs";
+import { FakeHubGateway } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { FakeHubConfigRepository } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
+import { HubConfig } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/HubConfig.mjs";
+import { HubDevice } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { CommandResult } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/CommandResult.mjs";
+import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
+import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
+import { InfrastructureError } from '../../../__backend/src/0_system/utils/errors/InfrastructureError.mjs';
 
 const makeDevice = ({
   position = 1, color = 'red', mac = '41:42:3A:E5:43:07',

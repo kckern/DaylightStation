@@ -4,7 +4,7 @@
 // drives a real learner through three seeded scenarios in a real browser at
 // the Portal's 1280x800 and checks that no `.wl-fit` region overflows its
 // box. This is the render check the unit tests cannot make — see
-// docs/reference/school/card-ladder.md for what each scenario seeds.
+// __docs/reference/school/card-ladder.md for what each scenario seeds.
 //
 // The `test.skip` guard below is the ONLY allowed skip: it is a
 // missing-parameter guard (no real learner id may be committed), not a

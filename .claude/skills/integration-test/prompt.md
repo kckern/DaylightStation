@@ -6,7 +6,7 @@ You are running integration tests for the DaylightStation backend server with co
 
 This skill manages **three concurrent processes** that must cooperate:
 
-1. **Dev Server** - Runs `./dev` in background
+1. **Dev Server** - Runs `npm run dev` in background
 2. **Log Monitor** - Tails `dev.log` for real-time debugging
 3. **API Client** - Executes curl commands to test endpoints
 
@@ -31,7 +31,7 @@ Then use three separate Bash calls with `run_in_background=true`:
 
 **Thread 1: Dev Server**
 ```bash
-./dev 2>&1 | tee -a dev.log
+npm run dev 2>&1 | tee -a dev.log
 ```
 
 **Thread 2: Log Monitor** (if showLogs=true)
@@ -71,7 +71,7 @@ When done or on error:
 3. **Start dev server in background**
    Use Bash tool with `run_in_background=true`:
    ```bash
-   ./dev 2>&1 | tee -a dev.log
+   npm run dev 2>&1 | tee -a dev.log
    ```
    Save the task_id for later cleanup.
 
@@ -453,7 +453,7 @@ Monitor dev.log for performance issues.
 START:
   1. Kill any existing processes
   2. Clear dev.log
-  3. Start ./dev in background (save task_id)
+  3. Start npm run dev in background (save task_id)
   4. Start tail -f dev.log in background (save task_id)
   5. Wait for server ready
   6. Report status

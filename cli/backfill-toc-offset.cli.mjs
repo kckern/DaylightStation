@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../modules/media/cli/backfill-toc-offset.cli.mjs";
+export * from "../__app_modules/media/media/cli/backfill-toc-offset.cli.mjs";

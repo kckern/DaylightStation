@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gatekeeperStrategies } from "../../../../capabilities/device-dispatch/server/application/guards/gatekeeperStrategies.mjs";
+import { gatekeeperStrategies } from "../../../../__capabilities/device-dispatch/server/application/guards/gatekeeperStrategies.mjs";
 
 describe('gatekeeperStrategies', () => {
   it('returns [] (approve) when no policy configured', () => {

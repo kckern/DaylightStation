@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FakeHubGateway } from "../../../modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { FakeHubGateway } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubGateway.mjs";
 
 describe('FakeHubGateway.verifyAudio', () => {
   let gateway;

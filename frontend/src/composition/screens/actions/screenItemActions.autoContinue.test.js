@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createScreenItemActions, getScreenItemActions } from './screenItemActions.js';
-import { createLocalSessionController } from "../../../../../modules/media/browser/session/LocalSessionController.js";
+import { createLocalSessionController } from "../../../../../__app_modules/media/media/browser/session/LocalSessionController.js";
 
 function ownerSource() {
   const c = createLocalSessionController({ clientId: 'screen' });

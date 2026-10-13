@@ -1,0 +1,2221 @@
+// THE SCREEN A CHILD SEES, MEASURED.
+//
+// Every other spec on this surface renders under happy-dom, which has no layout
+// engine and no SVG metrics. That is why the bug this branch started from — an
+// empty bass clef under a treble dyad, with a notehead drawn off the bottom of
+// the card — shipped through a fully green suite: nothing in the repo could see
+// where a notehead landed, only that one existed. This file is the answer to
+// that, and it is the only test on this surface that can fail for a reason a
+// child would notice.
+//
+// ── WHY THIS ONE RUNS LIVE, WHERE ITS TWO SIBLINGS HAND OVER MARKUP ──────────
+// `GameGate.measure.test.jsx` and `Surround/band.measure.test.jsx` render under
+// happy-dom and hand the settled `innerHTML` to Chromium. That is exactly right
+// for a box whose geometry is decided by the cascade alone, and it is NOT enough
+// here, for a reason that is itself a measurement:
+//
+//   `ClefGlyph` (MusicNotation/renderers/staffGlyphs.jsx) sizes itself from its
+//   own `getBBox()` and renders at `opacity: 0` until that returns a non-zero
+//   box. happy-dom returns nothing, so in handed-over markup the clef is present
+//   and INVISIBLE — and "the ask is on a treble staff" is one of the facts this
+//   file exists to assert. The same is true of abcjs and of OSMD, both of which
+//   engrave by measuring.
+//
+// So the real components are BUILT INTO A BROWSER BUNDLE (esbuild) and mounted
+// in headless Chromium, over the SHIPPED SCSS compiled with `sass-embedded`.
+// Nothing about the notation is emulated: abcjs draws tier 3, `SvgSequenceStaff`
+// draws tiers 1-2, and OpenSheetMusicDisplay engraves the score fixture, all in
+// a real layout engine at the kiosk's declared canvas.
+//
+// ── WHICH STYLESHEETS ARE COMPILED, AND WHY IT CANNOT DRIFT ──────────────────
+// The bundler COLLECTS every `.scss`/`.css` the component graph imports and this
+// file compiles exactly that list. A sheet added to a component tomorrow is
+// compiled tomorrow, with nothing to remember. This matters: an earlier
+// tier-2 measurement built on the GameGate harness compiled only the app shell,
+// the run and the gate — `SvgSequenceStaff.scss` was absent, so the staff was
+// measured with no paper card, no `overflow: hidden`, and none of its own box
+// model. It measured the wrong element and would have passed a cropped staff.
+//
+// ── WHAT IS DOUBLED, EACH FOR A STATED REASON ────────────────────────────────
+// Six modules, all of them I/O or hardware, none of them presentation:
+//   Logger.js            — no log backend in a `setContent` page.
+//   PianoMidiContext     — the piano. Replaced by a real external store the
+//                          spec can push notes into; the run subscribes to it
+//                          exactly as it subscribes to the real one.
+//   PianoUserContext     — the roster fetch.
+//   pianoLearningApi     — the exercise bank (HTTP).
+//   lib/api.mjs          — the media tree (HTTP); `DaylightAPIText` serves the
+//                          score fixture, which is how the score MATERIAL path
+//                          is exercised end to end rather than stubbed past.
+//   useMetronomeClick    — an AudioContext, which headless Chromium has no
+//                          output device for. It is a sound, not a sight.
+// `window.fetch` is stubbed to a 201 so the attempt-evidence POST — a real call
+// the run makes on completion — resolves instead of logging a network failure
+// over the measurement.
+//
+// ── THE BOX ──────────────────────────────────────────────────────────────────
+// The kiosk canvas is 1280x800 (`display.designWidth/designHeight`, the
+// SM-T590's CSS viewport), and the run is measured where the gate mounts it:
+// inside `.piano-game-gate--attempt`, itself inside `.piano-game-fullscreen`,
+// itself inside `.piano-app` under a pessimistic 70px header. The gate's Leave
+// button is rendered as a sibling because the gate's column RESERVES it before
+// the run gets its share — measuring without it would give the run more room
+// than the kiosk ever does. Whether that button is reachable is
+// `GameGate.measure.test.jsx`'s assertion, not this file's.
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { keysInstance } from '../Games/gateMaterial.js';
+import fourBars from './__fixtures__/fourBars.musicxml?raw';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '../../../../../../..');
+const FRONTEND = path.join(ROOT, 'frontend');
+const MAIN_FRONTEND = path.resolve(fs.realpathSync(path.join(FRONTEND, '../node_modules')), '../frontend');
+
+/** The kiosk's declared design canvas — the SM-T590's CSS viewport. */
+const KIOSK = Object.freeze({ width: 1280, height: 800 });
+const GROOVE_KIOSK = Object.freeze({ width: 1920, height: 1200 });
+/**
+ * The header bar's height, pinned and deliberately PESSIMISTIC — the same
+ * number and the same argument as `GameGate.measure.test.jsx`, so the two files
+ * measure the run against the same worst case.
+ */
+const CHROME_HEIGHT = 70;
+/**
+ * How long a played note is given to reach the screen.
+ *
+ * `createAssessmentRuntime` throttles its published store snapshot to 50ms
+ * (`snapshotMs`, assessmentRuntime.js) and the run reads presses against that
+ * published snapshot, so anything shorter than one throttle window measures the
+ * frame BEFORE the press — and, worse, a second press inside the same window is
+ * dropped. 80ms is that window with room to spare; it is a property of the
+ * shipped runtime, not a hopeful sleep.
+ */
+const SETTLE = 80;
+/**
+ * The paper card's own box model: `.sequence-staff` is `border: 1px` +
+ * `padding: 2px 0`, which is 2px across and 6px down. That is chrome, not
+ * notation, and it is all the card is allowed to be — the assertions below pin
+ * it at exactly this so a card that grew a real box model would be caught.
+ *
+ * It is no longer a TOLERANCE for overflow. The card sizes its BORDER box
+ * (`box-sizing: border-box`, SvgSequenceStaff.scss), so the cap a host writes is
+ * the cap the card obeys and the staff sits inside its container at the ordinary
+ * half-pixel slack. Under the old content-box sizing the border box always stood
+ * 6px proud of the row and the tier-1 assertion had to tolerate it; reverting
+ * that one declaration fails this file.
+ */
+const CARD_HAIRLINE = 6;
+
+/* -------------------------------------------------------------------------- */
+/* The fixtures — the shape the gate actually serves                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Tier 0's ask, built by the SHIPPED synthesizer rather than transcribed:
+ * `keysInstance({ notes: 1 }, 0)` is literally what a tier-0 gate rung hands the
+ * run. A transcription would keep passing after the synthesizer changed.
+ */
+const ONE_KEY = keysInstance({ notes: 1 }, 0);
+/** Tier 1's treble dyad, likewise: C4 + E4, one event, `ordering: 'any'`. */
+const TREBLE_DYAD = keysInstance({ notes: 2 }, 0);
+
+/**
+ * Tier 1's BASS dyad — G3 + C4, the exact ask task 6 fixed.
+ *
+ * `keysInstance` draws from C4 up and can never produce this, so it is authored
+ * in that function's own shape. The staff's majority rule ties 1-1 here and a
+ * tie goes treble, which puts G3 five steps below the bottom line, past the
+ * bottom of the viewBox and under the card's `overflow: hidden`. The fix hands
+ * the staff the clef the ask was JUDGED to fit on. That fix is invisible to
+ * jsdom and plain to see here.
+ */
+const BASS_DYAD = Object.freeze({
+  ...TREBLE_DYAD,
+  id: 'keys/lit@notes=2,arrangement=together,bass',
+  events: [{ id: 'lit-1', value: 'quarter', notes: [{ midi: 55, hand: 'left' }, { midi: 60, hand: 'left' }] }],
+});
+
+/** A C major right-hand scale, one octave: the tier-2 ask, eight notes. */
+const SCALE_MIDIS = Object.freeze([60, 62, 64, 65, 67, 69, 71, 72]);
+const scaleInstance = (midis) => Object.freeze({
+  id: `scales/c-major@hands=1,notes=${midis.length}`,
+  title: 'C major, right hand',
+  form: 'scale',
+  ordering: 'strict',
+  key: 'C',
+  meter: '4/4',
+  tempo: { unit: 'quarter', start_bpm: 90 },
+  level: { free: 1, cued: 2 },
+  supports: ['free', 'cued'],
+  axes: { hands: 1 },
+  staff: 'treble',
+  events: midis.map((midi, i) => ({ id: `n${i + 1}`, value: 'quarter', notes: [{ midi, hand: 'right' }] })),
+});
+const SCALE = scaleInstance(SCALE_MIDIS);
+/** The SHORT ask: two notes, the aspect ratio at which the sizing cap bites. */
+const SHORT_ASK = scaleInstance(SCALE_MIDIS.slice(0, 2));
+/** A visibly rhythm-bearing free line for SP2's engraved presentation cell. */
+const ENGRAVED_LINE = Object.freeze({
+  ...scaleInstance([60, 62, 64, 65]),
+  id: 'scales/c-major@engraved-rhythm',
+  events: [
+    { id: 'n1', value: 'quarter', notes: [{ midi: 60, hand: 'right' }] },
+    { id: 'n2', value: 'half', notes: [{ midi: 62, hand: 'right' }] },
+    { id: 'n3', value: 'eighth', notes: [{ midi: 64, hand: 'right' }] },
+    { id: 'n4', value: 'eighth', notes: [{ midi: 65, hand: 'right' }] },
+  ],
+});
+
+const RECALL_TUPLE = Object.freeze({
+  prompt: 'recall', secondary: 'none', timing: 'free', hints: 'none', judging: 'completion',
+});
+const ENGRAVED_FREE_TUPLE = Object.freeze({
+  prompt: 'read', secondary: 'keyboard-strip', notationStyle: 'engraved', timing: 'free', hints: 'none', judging: 'completion',
+});
+const SINGLE_NOTE_TUPLE = Object.freeze({
+  prompt: 'read', secondary: 'staff', notationStyle: 'sequence', timing: 'free', hints: 'none', judging: 'completion',
+});
+
+/** A cued rung: the mode that makes tier 3, with a pace gate so the chip exists. */
+const CUED_REQUIREMENT = Object.freeze({ mode: 'cued', gates: { pace: { target_bpm: 90 } } });
+const FREE_REQUIREMENT = Object.freeze({ mode: 'free', rubric: { criteria: { completeness: 1 } }, passScore: null });
+
+/** The score material a gate level names, and the bars a grown-up wrote down. */
+const SCORE_MATERIAL = Object.freeze({
+  kind: 'score', source: 'files:docs/sheet-music/four-bars.musicxml', measures: [2, 3],
+});
+
+// Five dense measures on a real grand staff: the same layout shape as the live
+// Jesu passage that exposed a second-system bass stave below the clipped page.
+const GRAND_FIVE_BARS = `<?xml version="1.0"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">${Array.from({ length: 5 }, (_, measure) => `<measure number="${measure + 1}">${measure === 0 ? '<attributes><divisions>2</divisions><time><beats>5</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>' : ''}${Array.from({ length: 10 }, (_, beat) => `<note><pitch><step>${['C', 'D', 'E', 'F'][(measure + beat) % 4]}</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><staff>1</staff></note>`).join('')}<backup><duration>10</duration></backup>${Array.from({ length: 10 }, (_, beat) => `<note><pitch><step>${['C', 'B', 'A', 'G'][(measure + beat) % 4]}</step><octave>3</octave></pitch><duration>1</duration><voice>2</voice><type>eighth</type><staff>2</staff></note>`).join('')}</measure>`).join('')}</part></score-partwise>`;
+
+/* -------------------------------------------------------------------------- */
+/* The bundle                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The stand-ins, matched on the RESOLVED path of the real module so a rename
+ * cannot silently leave the real one in the bundle (it would fail to build, or
+ * fail to run, rather than quietly reach for the network).
+ */
+const STUBS = Object.freeze([
+  [/lib\/logging\/Logger\.js$/, `
+    const events = (globalThis.__logEvents = []);
+    const rec = (level) => (event, data) => { events.push({ level, event, data }); };
+    const L = { info: rec('info'), warn: rec('warn'), error: rec('error'), debug: rec('debug'), sampled: rec('debug') };
+    L.child = () => L;
+    export default () => L;
+    export const getLogger = () => L;
+  `],
+  // The piano, as a real external store. The run subscribes through
+  // useSyncExternalStore exactly as it does to the shipped context, so a press
+  // pushed from the spec travels the same path a played note does.
+  // The piano's own note-on STAMP, which this double has to carry or it is not
+  // the piano. `noteStore.noteOn` publishes `{ velocity, timestamp: time }`, and
+  // that stamp is the whole input to `classifyHeldPitch`: a key that was already
+  // down when the cursor arrived is a SUSTAIN (logged, never drawn), and a key
+  // with no stamp at all is documented to fall through to `ghost`, because an
+  // unknown press time cannot be shown to be an afterglow. A double that omits
+  // it therefore draws a wrong-note accusation over every legato correct note —
+  // and any spec measuring ghosts here was measuring the double.
+  //
+  // `hold` also has to KEEP the stamp of a key that stays down. Re-stamping on
+  // every call makes a note that has been held for a second look freshly
+  // pressed, which is the same bug wearing the other hat: a sustain would be
+  // reclassified as a ghost the instant the cursor moved.
+  [/PianoKiosk\/PianoMidiContext\.jsx$/, `
+    import { useSyncExternalStore } from 'react';
+    let notes = new Map();
+    const subs = new Set();
+    const subscribe = (fn) => { subs.add(fn); return () => subs.delete(fn); };
+    const snapshot = () => notes;
+    export const __getNotes = () => notes;
+    export function __setNotes(next) { notes = next; for (const fn of [...subs]) fn(); }
+    export const usePianoMidi = () => ({ connected: true });
+    export const usePianoMidiNotes = () => ({ activeNotes: useSyncExternalStore(subscribe, snapshot, snapshot) });
+  `],
+  [/PianoKiosk\/PianoUserContext\.jsx$/, `export const usePianoUser = () => ({ currentUser: 'learner4' });`],
+  [/Exercises\/pianoLearningApi\.js$/, `
+    export const pianoLearningApi = {
+      instance: async () => ({ ok: Boolean(globalThis.__instance), data: globalThis.__instance ?? null }),
+      instances: async () => ({ ok: false, data: null }),
+      catalog: async () => ({ ok: false, data: null }),
+      program: async () => ({ ok: false, data: null }),
+    };
+  `],
+  [/SheetMusic\/useMetronomeClick\.js$/, `export const useMetronomeClick = () => {};`],
+  [/lib\/api\.mjs$/, `
+    export const DaylightAPIText = async () => {
+      if (typeof globalThis.__scoreXml !== 'string') throw new Error('no score');
+      return globalThis.__scoreXml;
+    };
+    export const DaylightAPI = async () => ({});
+    export const DaylightMediaPath = (p) => p;
+    export const DaylightImagePath = (p) => p;
+    export const ContentDisplayUrl = (p) => p;
+    export const DaylightHostPath = () => '';
+    export const DaylightStatusCheck = async () => ({});
+    export const DaylightWebsocketSubscribe = () => {};
+    export const DaylightWebsocketUnsubscribe = () => {};
+    export const normalizeImageUrl = (u) => u;
+  `],
+]);
+
+/**
+ * The page's whole API, written in the components' own directory so its imports
+ * are the imports the components use. Everything it exposes is either a mount,
+ * a key press, or a callback recorder — no geometry is computed here, because
+ * geometry is what the browser is for.
+ */
+const ENTRY = `
+import { createElement as h, Fragment } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import ExerciseRun from './ExerciseRun.jsx';
+import LearnLab from '../SheetMusic/LearnLab.jsx';
+import ScorePassage from './ScorePassage.jsx';
+import ExerciseNotation from './ExerciseNotation.jsx';
+import { MusicXmlRenderer } from '../../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx';
+import { loadAskSources } from '../../../ask/askResolution.js';
+import { __setNotes, __getNotes } from '../../PianoMidiContext.jsx';
+
+const calls = [];
+let root = null;
+const host = () => document.querySelector('.piano-game-gate--attempt');
+const push = (name, value) => { calls.push({ name, value: value ?? null }); };
+
+/**
+ * A DOM node cannot cross the page/spec boundary, so the two callback payloads
+ * that carry engraved elements are PROJECTED to the fields being asserted.
+ * Nothing is decided here — every number below is the component's own.
+ */
+const projectExpectation = (e) => ({
+  source: e?.source ?? null,
+  tempoMap: e?.tempoMap ?? null,
+  events: (e?.events ?? []).map((ev) => ({
+    onsetQuarter: ev.onsetQuarter,
+    spanId: ev.spanId ?? null,
+    midis: (ev.notes ?? []).map((n) => n.midi),
+  })),
+});
+const projectLayout = (l) => ({
+  width: l?.width ?? null,
+  height: l?.height ?? null,
+  tempoEntries: l?.tempoEntries ?? [],
+  steps: (l?.steps ?? []).map((s) => ({
+    measure: s.measure,
+    number: s.number,
+    onsetQuarter: s.onsetQuarter,
+    midis: (s.notes ?? []).map((n) => n.midi),
+    engraved: (s.notes ?? []).every((n) => Boolean(n.el)),
+  })),
+});
+
+window.__stage = {
+  calls,
+  reset() {
+    if (root) { root.unmount(); root = null; }
+    calls.length = 0;
+    __setNotes(new Map());
+    globalThis.__instance = null;
+    globalThis.__scoreXml = null;
+    if (globalThis.__logEvents) globalThis.__logEvents.length = 0;
+  },
+  /**
+   * The run, where the gate mounts it, with the gate's reserved footer beside it.
+   *
+   * ExerciseRun resolves nothing for itself any more, so this stands in for
+   * AskSession — through the SESSION'S OWN loader (loadAskSources), not a copy
+   * of it. The media-tree fetch and the bank call are still in the path; only
+   * the component that makes them moved. A scenario names its subject the way a
+   * level does (material, or the stubbed bank via instance) and the settled
+   * instance/score/requirement are what reach the run.
+   */
+  async mountRun({ instance = null, scoreXml = null, props = {} }) {
+    globalThis.__instance = instance;
+    globalThis.__scoreXml = scoreXml;
+    const { material = null, requirementOverride = null, ...rest } = props;
+    const sources = await loadAskSources({ material, requirementOverride });
+    root = createRoot(host());
+    flushSync(() => root.render(h(Fragment, null,
+      h(ExerciseRun, {
+        ...rest,
+        instance: sources.instance,
+        score: sources.score,
+        requirement: sources.requirement,
+        onExit: () => push('exit'),
+        onPassed: (r) => push('passed', { score: r?.score ?? null }),
+        onUnavailable: (reason) => push('unavailable', reason),
+      }),
+      h('button', { type: 'button', className: 'piano-game-gate__leave' }, 'Leave'),
+    )));
+  },
+  /** The real Learn shell and run: tempo picks must reach the engraved ask. */
+  mountLab({ musicXml, mastery = false }) {
+    root = createRoot(host());
+    flushSync(() => root.render(h(LearnLab, {
+      score: { id: 'groove-score', sourceId: 'files:four-bars.musicxml', musicXml },
+      revision: 'groove',
+      segment: { id: 'm0-3', label: 'Segment 1', barLabel: 'Bars 1–4', printedMeasures: [1, 4], inMeasure: 0, outMeasure: 3 },
+      rung: { id: 'timed', label: mastery ? 'Mastery' : 'Together with the beat', effectiveParts: ['rh'],
+        mode: 'cued', sets: 2, reps: 3, passCount: 0, required: 6, criteria: { completeness: 1 },
+        tempoPercent: 60, mastery },
+      tempo: { tempoMap: [{ onsetQuarter: 0, bpm: 80 }], tempoSource: 'musicxml' },
+      onRecord: (r) => push('record', r), onClose: () => push('close'),
+      onChangePractice: (choice) => push('change-practice', choice),
+      onUnavailable: (r) => push('unavailable', r),
+    })));
+  },
+  /** The passage alone: what the engraving yields, and how it says it cannot. */
+  mountPassage({ musicXml, measures = null }) {
+    root = createRoot(host());
+    flushSync(() => root.render(h(ScorePassage, {
+      musicXml,
+      sourceId: 'files:docs/sheet-music/four-bars.musicxml',
+      measures,
+      onExpectation: (e) => push('expectation', projectExpectation(e)),
+      onUnrunnable: (reason) => push('unrunnable', reason),
+    })));
+  },
+  /**
+   * The engraved exercise stage alone, painted from a RECORD: what a timed run
+   * hands it. The verdicts cross the page boundary as [index, [[midi, v]]] pairs.
+   */
+  mountNotation({ instance, eventIndex = 0, verdicts = [] }) {
+    root = createRoot(host());
+    const map = new Map(verdicts.map(([index, byMidi]) => [index, new Map(byMidi)]));
+    flushSync(() => root.render(h('div', { className: 'piano-exercise-run__stage piano-exercise-run__score' },
+      h(ExerciseNotation, { instance, eventIndex, verdicts: map, windowOpen: false }))));
+  },
+  /**
+   * The engraved stage alone, LIVE: a cursor on eventIndex and nothing held.
+   * pressLive then puts keys down AFTER the cursor arrived (a ghost needs an
+   * onset at this entry), stamped exactly as noteStore.noteOn stamps them.
+   */
+  mountLive({ instance, eventIndex = 0 }) {
+    root = createRoot(host());
+    window.__live = { instance, eventIndex };
+    window.__stage.renderLive(new Map());
+  },
+  renderLive(active) {
+    const { instance, eventIndex } = window.__live;
+    flushSync(() => root.render(h('div', { className: 'piano-exercise-run__stage piano-exercise-run__score' },
+      h(ExerciseNotation, { instance, eventIndex, activeNotes: active }))));
+  },
+  async pressLive(midis) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const at = Date.now();
+    window.__stage.renderLive(new Map(midis.map((m) => [m, { velocity: 1, timestamp: at }])));
+  },
+  /** The engraver alone: the geometry every score assertion above rests on. */
+  mountEngraver({ musicXml }) {
+    root = createRoot(host());
+    flushSync(() => root.render(h(MusicXmlRenderer, {
+      musicXml,
+      onLayout: (l) => push('layout', projectLayout(l)),
+      onFailed: (info) => push('failed', info?.error ?? 'failed'),
+    })));
+  },
+  /** A key down and up, so the next press of the same pitch is a new onset. */
+  async press(midi) {
+    await window.__stage.hold([midi]);
+    await window.__stage.hold([]);
+  },
+  /**
+   * Keys held together, and then SETTLED, which is not politeness: the
+   * assessment runtime publishes its store snapshot on a 50ms throttle and the
+   * run reads presses against that published snapshot, so two presses inside
+   * one window both see the pre-press state and the second is dropped. See
+   * SETTLE in the spec for the measurement.
+   */
+  async hold(midis) {
+    // Keeps the stamp of any key that was already down, and stamps a new one
+    // exactly as noteStore.noteOn does. See the double above for why.
+    const held = __getNotes();
+    const at = Date.now();
+    flushSync(() => __setNotes(new Map(midis.map((m) => [m, held.get(m) ?? { velocity: 1, timestamp: at }]))));
+    await new Promise((resolve) => setTimeout(resolve, ${SETTLE}));
+  },
+};
+`;
+
+/**
+ * A package stylesheet's real path — or a THROW.
+ *
+ * The first version returned `null` here and let the build carry on with an
+ * empty module, which meant that if `abcjs/abcjs-audio.css` ever moved, tier 3
+ * would be measured with none of abcjs's own CSS and would stay green. That is
+ * the precise class of silent omission this whole harness exists to end, so an
+ * unresolvable sheet stops the run and names itself.
+ */
+function resolvePackageSheet(createRequire, resolveDir, specifier) {
+  try { return createRequire(path.join(resolveDir, 'noop.js')).resolve(specifier); }
+  catch (error) {
+    throw new Error(
+      `the component graph imports the stylesheet "${specifier}", which cannot be resolved from `
+      + `${resolveDir}. Measuring without it would be measuring a screen the kiosk does not paint. `
+      + `(${error?.message ?? error})`,
+    );
+  }
+}
+
+/**
+ * Build the page bundle, and hand back the stylesheet list the graph asked for.
+ * The two are produced by the same pass on purpose: the sheets compiled are the
+ * sheets the components import, and there is no second list to keep true.
+ */
+async function buildBundle() {
+  const { createRequire } = await import('node:module');
+  const esbuild = createRequire(path.join(MAIN_FRONTEND, 'package.json'))('esbuild');
+  const sheets = [];
+  const plugin = {
+    name: 'daylight-measure',
+    setup(build) {
+      build.onResolve({ filter: /\.(scss|css)$/ }, (args) => {
+        // Relative and package specifiers both occur (`./Exercises.scss`,
+        // `abcjs/abcjs-audio.css`). Resolving the second one as a relative path
+        // invents a file that does not exist, which is how the first version of
+        // this failed — loudly, which is the right way for it to fail.
+        const file = args.path.startsWith('.') || path.isAbsolute(args.path)
+          ? path.resolve(args.resolveDir, args.path)
+          : resolvePackageSheet(createRequire, args.resolveDir, args.path);
+        if (!sheets.includes(file)) sheets.push(file);
+        return { path: file, namespace: 'daylight-sheet' };
+      });
+      build.onLoad({ filter: /.*/, namespace: 'daylight-sheet' }, () => ({ contents: '', loader: 'js' }));
+      build.onLoad({ filter: /\.(js|jsx|mjs)$/ }, (args) => {
+        for (const [pattern, contents] of STUBS) if (pattern.test(args.path)) return { contents, loader: 'jsx' };
+        // TransportSheet's real Icon uses Vite's eager raw-SVG glob. Expand
+        // that build-time macro from the shipped assets; do not stub the icon.
+        if (args.path.endsWith('/Piano/ui/icons/Icon.jsx')) {
+          const directory = path.join(path.dirname(args.path), 'svg');
+          const assets = Object.fromEntries(fs.readdirSync(directory).filter((file) => file.endsWith('.svg'))
+            .map((file) => [`./svg/${file}`, fs.readFileSync(path.join(directory, file), 'utf8')]));
+          return { contents: fs.readFileSync(args.path, 'utf8').replace(
+            /import\.meta\.glob\([^\n]+\)/, JSON.stringify(assets)), loader: 'jsx' };
+        }
+        return null;
+      });
+    },
+  };
+  const built = await esbuild.build({
+    stdin: { contents: ENTRY, resolveDir: HERE, loader: 'jsx', sourcefile: 'measure-entry.jsx' },
+    bundle: true,
+    format: 'iife',
+    write: false,
+    jsx: 'automatic',
+    logLevel: 'silent',
+    target: 'chrome120',
+    loader: { '.jsx': 'jsx', '.js': 'jsx' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      'import.meta.env': JSON.stringify({ MODE: 'production', DEV: false, PROD: true }),
+    },
+    plugins: [plugin],
+  });
+  return { js: built.outputFiles[0].text, sheets };
+}
+
+/**
+ * Compile the collected sheets, in cascade order.
+ *
+ * Shared notation tokens, `pianoTokens.scss`, then `PianoApp.scss` first — these declare the
+ * `--piano-*` tokens every other sheet reads (it moved out of the shell sheet),
+ * and the shell owns `.piano-app` / `.piano-game-fullscreen`. `GameGate.scss` last,
+ * because that is where it sits in the real bundle and its lateness is a known
+ * hazard the gate's own sheet is scoped against. Everything between is the
+ * graph's own order.
+ *
+ * `@font-face` blocks are dropped: their urls have no origin to resolve against
+ * in a `setContent` page, and nothing here is measured against a font face.
+ */
+async function compileSheet(sheets) {
+  const sass = await import('sass-embedded');
+  const ordered = [
+    path.join(ROOT, '__capabilities/music-notation/browser/styles/tokens.scss'),
+    path.join(ROOT, '__app_modules/learning/piano/browser/pianoTokens.scss'),
+    path.join(ROOT, '__app_modules/learning/piano/browser/PianoApp.scss'),
+    ...sheets,
+    path.join(HERE, '../Games/GameGate.scss'),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const file of ordered) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    out.push(file.endsWith('.css')
+      ? fs.readFileSync(file, 'utf8')
+      : (await sass.compileAsync(file, { loadPaths: [path.dirname(file), FRONTEND] })).css);
+  }
+  return out.join('\n').replace(/@font-face\s*\{[^}]*\}/g, '');
+}
+
+/* -------------------------------------------------------------------------- */
+/* The page                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A clean kiosk, every time: the shell the gate mounts into, the compiled
+ * stylesheet, and the bundle. Rebuilt per scenario rather than reset, so no
+ * engraved SVG or lingering class from one tier can be measured in another.
+ */
+/**
+ * A clean page per scenario, not a clean document.
+ *
+ * `setContent` alone leaves every previous scenario's heap — two megabytes of
+ * engraver per mount — to the same renderer process, and by the twelfth mount
+ * the engrave that takes eight seconds on a fresh page had not finished in
+ * sixty. A new page costs milliseconds and makes each scenario's timing its own.
+ */
+async function openStage(css, js, viewport = KIOSK, reducedMotion = 'no-preference') {
+  pageErrors = [];
+  const previous = page;
+  page = await browser.newPage({ deviceScaleFactor: 1 });
+  page.on('pageerror', (error) => pageErrors.push(String(error?.stack || error)));
+  await previous?.close();
+  await page.setViewportSize(viewport);
+  await page.emulateMedia({ reducedMotion });
+  // An origin allows the real browser storage used by Learn loudness to work.
+  await page.route('http://piano-measure.test/**', (route) => route.fulfill({ status: 200, body: '<!doctype html>' }));
+  await page.goto('http://piano-measure.test');
+  await page.setContent(
+    `<!doctype html><html><head><meta charset="utf-8"><style>
+       html, body { margin: 0; padding: 0; }
+       ${css}
+     </style></head><body>
+       <div class="piano-app">
+         <header class="piano-chrome" style="height: ${CHROME_HEIGHT}px"></header>
+         <div class="piano-game-fullscreen">
+           <div class="piano-game-gate piano-game-gate--attempt"></div>
+         </div>
+       </div>
+       <script>
+         /* The attempt-evidence POST the run really makes on completion. */
+         window.fetch = () => Promise.resolve({
+           ok: true, status: 201, json: () => Promise.resolve({ attempt_id: 'measured' }),
+         });
+       </script>
+     </body></html>`,
+    { waitUntil: 'load' },
+  );
+  await page.addScriptTag({ content: js });
+  expectNoPageErrors();
+  await page.waitForFunction(() => typeof window.__stage?.mountRun === 'function');
+}
+
+/** The measurement vocabulary, installed in the page once per scenario. */
+const PROBE = `(${function install() {
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const px = (name) => parseFloat(cs.getPropertyValue(name)) || 0;
+    // The border box, the content box, and the difference. `.sequence-staff`
+    // sets `box-sizing: border-box`, so a size cap written against it governs
+    // the BORDER box and `height`/`width` are the tight numbers; `content*` is
+    // looser by exactly the card's own chrome. Both are published because which
+    // one an assertion should use depends on the element's own box-sizing, and
+    // getting that backwards is how a check goes quietly slack.
+    const chromeX = px('border-left-width') + px('border-right-width') + px('padding-left') + px('padding-right');
+    const chromeY = px('border-top-width') + px('border-bottom-width') + px('padding-top') + px('padding-bottom');
+    return {
+      top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+      width: r.width, height: r.height,
+      contentWidth: r.width - chromeX, contentHeight: r.height - chromeY,
+      chromeX, chromeY,
+      cx: r.left + r.width / 2, cy: r.top + r.height / 2,
+      opacity: Number(cs.opacity),
+      visibility: cs.visibility,
+      background: cs.backgroundColor,
+      text: (el.textContent || '').trim(),
+      painted: r.width > 0 && r.height > 0 && Number(cs.opacity) > 0 && cs.visibility !== 'hidden',
+      reachable: Boolean(hit) && (hit === el || el.contains(hit)),
+      lineOffset: el.getAttribute ? el.getAttribute('data-line-offset') : null,
+      midi: el.getAttribute ? el.getAttribute('data-midi') : null,
+    };
+  };
+  window.__probe = {
+    one: (sel) => { const el = document.querySelector(sel); return el ? rect(el) : null; },
+    all: (sel) => [...document.querySelectorAll(sel)].map(rect),
+    count: (sel) => document.querySelectorAll(sel).length,
+    text: () => document.body.innerText,
+    /** Every button the RUN owns, by label — the gate's Leave is not one of them. */
+    runButtons: () => [...document.querySelectorAll('.piano-exercise-run button')]
+      .map((b) => (b.textContent || '').trim()),
+    prop: (sel, name) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).getPropertyValue(name).trim() : null;
+    },
+  };
+}})()`;
+
+/** Is `inner` wholly inside `outer`? Half a pixel of slack for sub-pixel layout. */
+const inside = (inner, outer, slack = 0.5) => Boolean(inner) && Boolean(outer)
+  && inner.top >= outer.top - slack && inner.bottom <= outer.bottom + slack
+  && inner.left >= outer.left - slack && inner.right <= outer.right + slack;
+
+const onCanvas = (box, slack = 0.5) => Boolean(box)
+  && box.top >= -slack && box.bottom <= KIOSK.height + slack
+  && box.left >= -slack && box.right <= KIOSK.width + slack;
+
+/** A compact, printable description of a box, for failure messages. */
+const say = (box) => (box
+  ? `${box.width.toFixed(1)}x${box.height.toFixed(1)} at (${box.left.toFixed(1)}, ${box.top.toFixed(1)})`
+  : 'absent');
+
+/** Clef glyph codepoints, as `ClefGlyph` writes them. */
+/**
+ * WHERE A CLEF HAS TO SIT, measured in pixels against the lines themselves.
+ *
+ * The clef used to be a Unicode <text> fitted to a measured bounding box, so
+ * these cases could only ask "is a glyph there and did it size itself". They
+ * could not ask the question that matters — does the G clef's spiral land on
+ * the G line — and the answer was no: the treble sat about a quarter space
+ * high, and the bass floated a full space above the F line at 80% size.
+ *
+ * It is a Bravura outline now, in staff spaces with the origin ON the defining
+ * line, so the anchor is a fixed fraction of the drawn glyph's own height and
+ * a real layout engine can be asked directly. Numbers are SMuFL's:
+ * gClef spans -2.632..4.392 about the G line, fClef -2.54..1.048 about the F.
+ */
+const CLEF_ANCHOR_FRACTION = { treble: 4.392 / 7.024, bass: 1.048 / 3.588 };
+/** Which staff line the clef names, counted from the BOTTOM line (0). */
+const CLEF_ANCHOR_LINE = { treble: 1, bass: 3 };
+
+/**
+ * Assert the clef is the one expected AND that it is drawn on its own line.
+ * `lines` are the five staff lines as the probe measured them, bottom-first.
+ */
+async function expectClefOnItsLine(probeRef, clef) {
+  const drawn = await probeRef.all(`.action-staff__clef[data-clef="${clef}"]`);
+  expect(drawn.length, `no ${clef} clef was drawn`).toBe(1);
+  expect(drawn[0].painted, 'the clef is not visible on screen').toBe(true);
+  const lines = (await probeRef.all('.action-staff__lines-svg line')).sort((a, b) => b.cy - a.cy);
+  expect(lines.length, 'the staff did not draw five lines').toBe(5);
+  const anchor = drawn[0].top + CLEF_ANCHOR_FRACTION[clef] * drawn[0].height;
+  const target = lines[CLEF_ANCHOR_LINE[clef]].cy;
+  // One pixel of slack for rounding; the bug this replaces was off by a whole
+  // staff space, which at this size is more than a dozen.
+  expect(Math.abs(anchor - target),
+    `the ${clef} clef is anchored at y=${anchor.toFixed(1)} but its line is at y=${target.toFixed(1)}`)
+    .toBeLessThanOrEqual(1.5);
+  return drawn[0];
+}
+
+/**
+ * Staves, counted across every stage that can draw one. Tier 0 must show ZERO
+ * of these and every other tier exactly one — and the specific failure this
+ * counts against is the one that started the branch: a grand staff drawing an
+ * empty bass clef under a treble ask reads as TWO.
+ */
+const STAFF_SELECTOR = '.sequence-staff, .abcjs-staff, .piano-score-passage .musicxml-renderer__svg';
+
+let browser;
+let page;
+let css;
+let js;
+/**
+ * Anything the page threw. A component that dies mid-mount renders nothing and
+ * every assertion below it then fails as a timeout, which reads as "slow" and is
+ * not — so the throw is captured and reported instead of guessed at.
+ */
+let pageErrors = [];
+
+beforeAll(async () => {
+  const bundle = await buildBundle();
+  js = bundle.js;
+  css = await compileSheet(bundle.sheets);
+  // Fails CLOSED. An absent Chromium throws here and errors the whole suite;
+  // it never skips, because a measurement nobody made is not a measurement.
+  const { chromium } = await import('playwright');
+  browser = await chromium.launch();
+}, 180_000);
+
+afterAll(async () => { await browser?.close(); });
+
+/** Mount a run and wait for the ready line the given mode promises. */
+async function run({ instance = null, scoreXml = null, props = {} }, readyText) {
+  await openStage(css, js);
+  await page.evaluate(PROBE);
+  await page.evaluate((arg) => window.__stage.mountRun(arg), { instance, scoreXml, props });
+  await page.waitForFunction(
+    (needle) => document.body.innerText.includes(needle),
+    readyText,
+    { timeout: 30_000 },
+  );
+  expectNoPageErrors();
+}
+
+/** Nothing on this screen may have thrown to get here. */
+function expectNoPageErrors() {
+  expect(pageErrors, `the page threw while rendering:\n${pageErrors.join('\n')}`).toEqual([]);
+}
+
+const FREE_READY = 'Play the first note to begin.';
+const CUED_READY = 'Press any key to start.';
+
+const probe = {
+  one: (sel) => page.evaluate((s) => window.__probe.one(s), sel),
+  all: (sel) => page.evaluate((s) => window.__probe.all(s), sel),
+  count: (sel) => page.evaluate((s) => window.__probe.count(s), sel),
+  text: () => page.evaluate(() => window.__probe.text()),
+  runButtons: () => page.evaluate(() => window.__probe.runButtons()),
+  prop: (sel, name) => page.evaluate(([s, n]) => window.__probe.prop(s, n), [sel, name]),
+  press: (midi) => page.evaluate((m) => window.__stage.press(m), midi),
+  hold: (midis) => page.evaluate((m) => window.__stage.hold(m), midis),
+  calls: () => page.evaluate(() => window.__stage.calls),
+};
+
+/* -------------------------------------------------------------------------- */
+
+describe('the exercise run, per tier, in a real layout engine at 1280x800', () => {
+  it('measures against the staff\'s OWN stylesheet, not just the app shell', () => {
+    // The guard for the mistake this harness was built to stop repeating: an
+    // earlier tier-2 measurement compiled the shell, the run and the gate and
+    // silently left `SvgSequenceStaff.scss` out, so it measured a staff with no
+    // paper card, no padding, no border and no `overflow: hidden` — a box the
+    // kiosk never draws.
+    //
+    // EVERY SELECTOR BELOW IS UNIQUE TO THE SHEET IT GUARDS, and that is the
+    // whole design of this case. The first version asserted `.sequence-staff`
+    // and `.piano-key`, which cannot fail: the first is emitted by
+    // `Exercises.scss` and the second by nine sheets including the shell that
+    // `compileSheet` force-prepends — so the collection could drop the staff's
+    // and the keyboard's sheets entirely and this would stay green, which is
+    // exactly the silent omission it exists to catch.
+    const OWNED = [
+      // SvgSequenceStaff.scss — the paper card, the run-state ink and the cursor
+      // lane. Nothing else in frontend/src/**/*.scss names these.
+      //
+      // NOT the ghost: its paint moved to `GHOST_INK` in staffGlyphs.jsx and is
+      // applied as attributes, because the single-simultaneity renderer draws
+      // the same ghost and cannot share a stylesheet. Asserting a ghost class
+      // here would be asserting that the fork came back.
+      ['.sequence-note-miss', 'SvgSequenceStaff.scss', 'a wrong note would not be coloured'],
+      ['.sequence-note-done', 'SvgSequenceStaff.scss', 'the staff\'s own sheet is missing'],
+      ['.sequence-staff__cursor', 'SvgSequenceStaff.scss', 'the cursor lane would be invisible'],
+      // PianoKeyboard.scss — `.piano-key` alone proves nothing (the shell has it).
+      ['.target-dim', 'PianoKeyboard.scss', 'a lit key would be painted like any other'],
+      ['.rebuild-bar', 'PianoKeyboard.scss', 'the keyboard\'s own sheet is missing'],
+      // Exercises.scss — the run, its stage rows, and the tier-2 size cap.
+      ['--staff-aspect', 'Exercises.scss', 'the tier-2 size cap would not exist'],
+      // PianoApp.scss — the shell, force-prepended, so this one IS vacuous by
+      // construction and is here only to say the compile produced anything.
+      ['.piano-game-fullscreen', 'PianoApp.scss', 'nothing would have the kiosk box'],
+    ];
+    for (const [selector, sheet, consequence] of OWNED) {
+      expect(css, `${sheet} was not compiled into the measured stylesheet — ${consequence}`)
+        .toContain(selector);
+    }
+  });
+
+  /* ── Tier 0 — one lit key, and nothing else on the screen ───────────────── */
+
+  it('tier 0 shows a lit key, an ask, and NO staff of any kind', async () => {
+    await run({ instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    // A staff here is the whole failure: a four-year-old asked to press one key
+    // is being shown notation they cannot read. One would mean the stage table
+    // sent tier 0 to `sequence`; two would be the grand staff this redesign
+    // replaced.
+    expect(await probe.count(STAFF_SELECTOR),
+      'tier 0 drew a staff — the lit key is the entire reading task at this rung').toBe(0);
+
+    const stage = await probe.one('.piano-exercise-run__ask');
+    const keyboard = await probe.one('.keys-ask__keys .piano-keyboard');
+    expect(keyboard, 'no keyboard rendered at all').not.toBeNull();
+    expect(inside(keyboard, stage), `the keyboard ${say(keyboard)} is outside its stage row ${say(stage)}`).toBe(true);
+
+    // THE LIT KEY, as a child sees it: a real box, on screen, wearing paint no
+    // other key wears. `data-note` is jsdom-visible and proves nothing; the
+    // background is what makes it lit.
+    const lit = await probe.all('.piano-key.target');
+    expect(lit.length, 'exactly one key should be lit for a one-key ask').toBe(1);
+    expect(lit[0].painted, `the lit key is not painted: ${say(lit[0])}`).toBe(true);
+    expect(lit[0].width).toBeGreaterThan(10);
+    expect(onCanvas(lit[0]), `the lit key is off the kiosk canvas: ${say(lit[0])}`).toBe(true);
+    expect(lit[0].reachable, 'the lit key is on screen but covered').toBe(true);
+
+    const plain = await probe.all('.piano-key.white:not(.target)');
+    expect(plain.length).toBeGreaterThan(0);
+    expect(lit[0].background,
+      `the lit key is painted exactly like an unlit one (${plain[0].background}) — nothing on this screen says which key to press`)
+      .not.toBe(plain[0].background);
+
+    // The ask is READ BEFORE anything is played, and it is the run's heading.
+    const heading = await probe.one('.piano-exercise-run__head h1');
+    expect(heading.text).toBe('Press the lit key.');
+    expect(heading.painted && onCanvas(heading), `the ask line is not legible on canvas: ${say(heading)}`).toBe(true);
+
+    // No button starts this: the piano does.
+    expect(await probe.runButtons()).toEqual([]);
+  });
+
+  it('tier 0 tells a child how it went in words, with no percentage on the screen', async () => {
+    await run({ instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    // `ordering: 'any'` material is graded by the held matcher: press and hold.
+    await probe.hold(ONE_KEY.events[0].notes.map((n) => n.midi));
+    // THE VERDICT IS SHOUTED. `.piano-exercise-run__result` uppercases it in CSS
+    // (`text-transform`), so the words on the screen are PASSED and the words in
+    // the JSX are "Passed" — a jsdom test can only ever see the second. Waiting
+    // for the first is the difference between asserting the markup and asserting
+    // the screen.
+    await page.waitForFunction(() => document.body.innerText.includes('PASSED'));
+
+    const panel = await probe.one('.piano-exercise-run__result');
+    expect(panel.painted && onCanvas(panel), `the result panel is not on canvas: ${say(panel)}`).toBe(true);
+    expect(panel.text).toContain('You played every note that was asked for.');
+    expect(panel.text, 'a percentage reached a tier-0 screen').not.toMatch(/%/);
+  });
+
+  /* ── Tier 1 — a dyad, and the small staff that reinforces it ────────────── */
+
+  it('tier 1 draws exactly one staff, on the treble clef, with both noteheads on it', async () => {
+    await run({ instance: TREBLE_DYAD, props: { tier: 1, ask: 'Play both lit keys together.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    expect(await probe.count(STAFF_SELECTOR), 'tier 1 should reinforce the keys with ONE staff').toBe(1);
+    expect(await probe.count('.abcjs-staff'), 'tier 1 mounted the ABC notation stage').toBe(0);
+
+    const staff = await probe.one('.sequence-staff');
+    const card = await probe.one('.keys-ask__staff');
+    const stage = await probe.one('.piano-exercise-run__ask');
+    expect(staff.painted && onCanvas(staff), `the staff is not on canvas: ${say(staff)}`).toBe(true);
+    // The card sizes the staff (`max-width: min(100%, 28rem)`) and the staff
+    // sizes its BORDER box, so nothing of it — border included — may sit
+    // outside the card. No overflow tolerance: this is the assertion that the
+    // one-line box-sizing fix bought, and it fails without it.
+    expect(staff.chromeX, 'the staff card grew a real box model').toBeLessThanOrEqual(CARD_HAIRLINE);
+    expect(inside(staff, card), `the staff ${say(staff)} overflows its card ${say(card)}`).toBe(true);
+    expect(inside(await probe.one('.action-staff__staff-area'), stage),
+      'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);
+
+    // THE CLEF, AS DRAWN — and on the line it names. No jsdom test can say
+    // where the spiral actually landed; this one can.
+    const clef = await expectClefOnItsLine(probe, 'treble');
+    expect(inside(clef, staff), `the clef ${say(clef)} is drawn outside the staff ${say(staff)}`).toBe(true);
+    expect(await probe.count('.action-staff__notation-svg text'),
+      'a font glyph is back in the notation layer — clefs are outlines').toBe(0);
+
+    const heads = await probe.all('.action-staff__note');
+    expect(heads.length, 'a two-note dyad should draw two noteheads').toBe(2);
+    for (const head of heads) {
+      expect(inside(head, staff),
+        `notehead midi ${head.midi} at ${say(head)} is outside the staff ${say(staff)}`).toBe(true);
+    }
+  });
+
+  it('tier 1 puts a G3+C4 ask on a BASS staff, with both notes on the card', async () => {
+    // The task-6 fix, made visual. The staff's own majority rule ties 1-1 here
+    // and a tie goes treble, which draws G3 at staff position -5 — below the
+    // viewBox and clipped away by the card's `overflow: hidden`. The clef the
+    // ask was judged to fit on has to travel with it, and this is where that
+    // shows.
+    await run({ instance: BASS_DYAD, props: { tier: 1, ask: 'Play both lit keys together.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    expect(await probe.count(STAFF_SELECTOR)).toBe(1);
+    const staff = await probe.one('.sequence-staff');
+    // A G3+C4 ask on a TREBLE staff puts G3 five steps under the bottom line and
+    // off the card; the clef the ask was judged to fit on has to travel with it,
+    // and it has to be drawn on the F line once it gets here.
+    await expectClefOnItsLine(probe, 'bass');
+
+    const heads = await probe.all('.action-staff__note');
+    expect(heads.map((h) => h.midi).sort()).toEqual(['55', '60']);
+    for (const head of heads) {
+      expect(inside(head, staff),
+        `notehead midi ${head.midi} at ${say(head)} is off the staff card ${say(staff)} — this is the bug this branch opened on`)
+        .toBe(true);
+      expect(onCanvas(head), `notehead midi ${head.midi} is off the kiosk canvas: ${say(head)}`).toBe(true);
+    }
+    // The two notes are a fifth apart and must READ as a fifth: different lines.
+    expect(Math.abs(heads[0].cy - heads[1].cy),
+      'the two noteheads are drawn at the same height — the interval is invisible').toBeGreaterThan(4);
+  });
+
+  /* ── Tier 2 — the sequence staff IS the screen ──────────────────────────── */
+
+  it('tier 2 engraves all eight notes on one treble staff, inside the row it was given', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    expect(await probe.count(STAFF_SELECTOR), 'tier 2 should draw exactly one staff').toBe(1);
+    expect(await probe.count('.abcjs-staff')).toBe(0);
+
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const container = await probe.one('.piano-exercise-run__sequence');
+    const staff = await probe.one('.sequence-staff');
+
+    // THE SIZING CONTRACT (Exercises.scss): the host caps the staff's width at
+    // `aspect x row height` on a `container-type: size` wrapper, so the derived
+    // height can never exceed the row and be cropped by the card's
+    // `overflow: hidden`. No committed test asserted any of this before.
+    expect(await probe.prop('.piano-exercise-run__sequence', '--staff-aspect'),
+      'the host did not publish the staff aspect the cap is computed from').not.toBe('');
+    // The cap governs the BORDER box (`box-sizing: border-box`), so that is the
+    // number it must hold for. Asserting `contentHeight` here would be the loose
+    // check — slack by exactly the 6px of chrome the card carries, which is the
+    // whole of what used to overflow — and it would pass a card that spills.
+    expect(staff.height, `the staff ${say(staff)} is taller than its row ${say(container)}`)
+      .toBeLessThanOrEqual(container.height + 0.5);
+    expect(staff.width).toBeLessThanOrEqual(container.width + 0.5);
+    // Nothing may sit proud of the row now — but the card's box model is still
+    // pinned, so a card that grew one would be caught here rather than absorbed.
+    expect(staff.chromeY, 'the staff card grew a real box model').toBeLessThanOrEqual(CARD_HAIRLINE);
+    expect(inside(await probe.one('.action-staff__staff-area'), stage),
+      'the staff\'s ink is drawn outside the stage row that clips it').toBe(true);
+    expect(onCanvas(staff), `the staff is off the kiosk canvas: ${say(staff)}`).toBe(true);
+    // And it is actually a staff, not a sliver: the run gives it the row.
+    expect(staff.height).toBeGreaterThan(60);
+
+    await expectClefOnItsLine(probe, 'treble');
+
+    const heads = await probe.all('.action-staff__note');
+    expect(heads.map((h) => Number(h.midi)), 'the engraved noteheads are not the ask').toEqual([...SCALE_MIDIS]);
+    for (const head of heads) {
+      expect(inside(head, staff),
+        `notehead midi ${head.midi} at ${say(head)} is outside the staff ${say(staff)}`).toBe(true);
+    }
+    // Eight notes, left to right, each clear of the last.
+    for (let i = 1; i < heads.length; i += 1) {
+      expect(heads[i].cx, `notehead ${i} is not to the right of notehead ${i - 1}`).toBeGreaterThan(heads[i - 1].cx);
+    }
+
+    // The cursor is a LANE behind the note that is next, and it has to be over
+    // the first one before a key is touched.
+    const cursor = await probe.one('.sequence-staff__cursor');
+    expect(cursor, 'no cursor lane was drawn').not.toBeNull();
+    expect(cursor.cx, `the cursor ${say(cursor)} is not over notehead 0 ${say(heads[0])}`)
+      .toBeGreaterThan(heads[0].left - cursor.width);
+    expect(cursor.cx).toBeLessThan(heads[0].right + cursor.width);
+    expect(inside(cursor, staff)).toBe(true);
+  });
+
+  it('tier 2 does not crop a SHORT ask, which is where the size cap actually bites', async () => {
+    // Two notes make a nearly square viewBox (100 x 112, aspect 0.89). Without
+    // the container-query cap the staff would take the row's full width and
+    // derive a height of width/aspect — far taller than the row — and the card
+    // would clip it. The assertion below is only meaningful if that is true
+    // here, so the uncapped height is computed and asserted to overflow first:
+    // a vacuous pass is not a pass.
+    await run({ instance: SHORT_ASK, props: { tier: 2, ask: 'Play two notes.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    const container = await probe.one('.piano-exercise-run__sequence');
+    const staff = await probe.one('.sequence-staff');
+    const aspect = Number(await probe.prop('.piano-exercise-run__sequence', '--staff-aspect'));
+    expect(Number.isFinite(aspect) && aspect > 0, 'the staff aspect was not published').toBe(true);
+
+    const uncapped = container.width / aspect;
+    expect(uncapped,
+      `this case no longer exercises the cap: a full-width staff would be ${uncapped.toFixed(1)}px tall in a ${container.height.toFixed(1)}px row`)
+      .toBeGreaterThan(container.height);
+
+    expect(staff.contentHeight, `the short ask's staff ${say(staff)} is taller than its row ${say(container)} — it is being cropped`)
+      .toBeLessThanOrEqual(container.height + 0.5);
+    expect(staff.width).toBeLessThan(container.width);
+
+    const heads = await probe.all('.action-staff__note');
+    expect(heads.length).toBe(2);
+    for (const head of heads) {
+      expect(inside(head, staff), `notehead midi ${head.midi} at ${say(head)} is cropped out of ${say(staff)}`).toBe(true);
+      expect(onCanvas(head)).toBe(true);
+    }
+    const clef = await expectClefOnItsLine(probe, 'treble');
+    expect(inside(clef, staff), 'the clef left the card when the staff was capped').toBe(true);
+  });
+
+  it('tier 2 draws a wrong note at ITS OWN height, and moves the cursor on', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    const before = await probe.all('.action-staff__note');
+    await probe.press(60);              // arms the run and grades note one
+    // 5f33842e6 ("keep Learn verdicts visible"): a free run is now JUDGED too
+    // (`data-judged="true"`), so the staff paints the RECORDED wrong pitch as a
+    // durable `.sequence-note-wrong-verdict` instead of the live held-key ghost
+    // (`.sequence-note-wrong-ghost`, which only a never-judged staff draws).
+    // Held here so the key is down when it is judged; durability is asserted below.
+    await probe.hold([61]);             // a semitone under the expected 62
+
+    await page.waitForFunction(() => document.querySelector('.sequence-note-wrong-verdict') !== null);
+    const staff = await probe.one('.sequence-staff');
+    const ghost = await probe.one('.sequence-note-wrong-verdict');
+    expect(ghost.midi).toBe('61');
+    expect(ghost.painted, `the wrong-note ghost is not painted: ${say(ghost)}`).toBe(true);
+    expect(inside(ghost, staff), `the ghost ${say(ghost)} is drawn off the staff ${say(staff)}`).toBe(true);
+
+    // THE WHOLE POINT OF THE GHOST: it stands at the position of the note that
+    // was PLAYED, not at the position of the note that was owed. A child who
+    // can only see that they are wrong learns nothing; one who can see they are
+    // a step low learns where they are. `data-line-offset` is that contract, and
+    // this is the assertion that makes it visible.
+    const target = (await probe.all('.action-staff__note'))[1];
+    expect(ghost.lineOffset, 'the ghost is drawn at the target\'s staff position, not its own')
+      .not.toBe(target.lineOffset);
+    expect(Math.abs(ghost.cy - target.cy),
+      `the ghost (${ghost.cy.toFixed(1)}) and the note that was owed (${target.cy.toFixed(1)}) are at the same height — the distance a child is meant to read is not on screen`)
+      .toBeGreaterThan(2);
+    // Side by side, not on top of each other.
+    expect(ghost.cx).toBeGreaterThan(target.cx);
+
+    // And the run moved on: the cursor is over note two.
+    const cursor = await probe.one('.sequence-staff__cursor');
+    const heads = await probe.all('.action-staff__note');
+    expect(heads.length, 'the ask changed shape when a wrong note was played').toBe(before.length);
+    expect(Math.abs(cursor.cx - heads[1].cx),
+      `the cursor ${say(cursor)} did not advance to notehead 1 ${say(heads[1])}`)
+      .toBeLessThan(cursor.width);
+
+    // The verdict is a record, not a held-key afterglow: it stays on the staff
+    // after the wrong key is released.
+    await probe.hold([]);
+    expect(await probe.all('.sequence-note-wrong-verdict'), 'the recorded wrong note vanished on key-up').toHaveLength(1);
+  });
+
+  it('tier 2 ends on a percentage, where tier 0 ended on words', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    for (const midi of SCALE_MIDIS) await probe.press(midi);
+    // Uppercased on screen — see the tier-0 case for why that is the assertion.
+    await page.waitForFunction(() => document.body.innerText.includes('PASSED'));
+
+    const panel = await probe.one('.piano-exercise-run__result');
+    expect(panel.painted && onCanvas(panel), `the result panel is not on canvas: ${say(panel)}`).toBe(true);
+    expect(panel.text, 'tier 2 gave no score readout').toMatch(/100%/);
+    expect(panel.text).toContain('All notes');
+  }, 60000);
+
+  /* ── Tier 3 — cued: written rhythm, a count-in, and a beat to hold ──────── */
+
+  it('tier 3 engraves ONE staff, chips the meter and the beat, and starts on any key', async () => {
+    await run({
+      instance: SCALE,
+      props: { tier: 3, ask: 'Play C major on the beat.', intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+    }, CUED_READY);
+
+    // ONE staff. Two is the defect this branch opened on — an empty bass clef
+    // engraved under a right-hand ask, which reads to a child as a whole line
+    // of music they were not given.
+    expect(await probe.count('.abcjs-staff'),
+      'the ABC stage engraved a second, empty staff under a one-hand ask').toBe(1);
+    expect(await probe.count('.sequence-staff'), 'tier 3 mounted the sequence staff as well').toBe(0);
+
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const notation = await probe.one('.abc-renderer svg');
+    expect(notation.painted, `the engraving is not painted: ${say(notation)}`).toBe(true);
+    expect(inside(notation, stage), `the engraving ${say(notation)} overflows the stage row ${say(stage)}`).toBe(true);
+    expect(await probe.count('.abcjs-note'), 'the engraving does not carry the ask').toBe(SCALE_MIDIS.length);
+
+    // Both context chips a cued rung is owed, on screen and legible.
+    const chips = await probe.all('.piano-exercise-run__context > *');
+    const labels = chips.map((c) => c.text);
+    expect(labels, 'the cued rung is missing its meter or its beat').toEqual(
+      expect.arrayContaining(['4/4', '90 BPM']),
+    );
+    for (const chip of chips) {
+      expect(chip.painted && onCanvas(chip), `a context chip is not legible on canvas: ${say(chip)}`).toBe(true);
+    }
+
+    // Nothing to press but the piano — the ready line says so, and there is no
+    // button that could be mistaken for a start.
+    expect(await probe.text()).toContain('Press any key to start.');
+    expect(await probe.runButtons()).toEqual([]);
+  });
+
+  it('tier 3 puts the count-in over the music the moment a key is touched', async () => {
+    await run({
+      instance: SCALE,
+      props: { tier: 3, ask: 'Play C major on the beat.', intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+    }, CUED_READY);
+    expect(await probe.one('.piano-score-countin'), 'the count-in overlay was up before anyone played').toBeNull();
+
+    // Any key at all arms a cued ask — this one is not even in the scale.
+    await probe.press(84);
+    await page.waitForFunction(() => document.querySelector('.piano-score-countin') !== null);
+
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const overlay = await probe.one('.piano-score-countin');
+    const beat = await probe.one('.piano-score-countin__beat');
+    expect(inside(overlay, stage), 'the countdown must remain inside the music stage').toBe(true);
+    expect(overlay.width).toBeCloseTo(stage.width, 0);
+    expect(overlay.height).toBeCloseTo(stage.height, 0);
+    expect(beat.text, 'the descending countdown must start at four').toBe('4');
+    expect(beat.painted, `the beat number is not painted: ${say(beat)}`).toBe(true);
+    expect(inside(beat, stage), `the count-in numeral ${say(beat)} is not over the music ${say(stage)}`).toBe(true);
+    expect(beat.height, 'the count-in number is too small to read across a room').toBeGreaterThan(24);
+    // And it does not eat the tap it is drawn over: `pointer-events: none`.
+    expect(overlay.reachable, 'the count-in layer is swallowing taps meant for the run').toBe(false);
+    expect(await probe.text()).toContain('Listen to the count-in.');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* SP2 presentation cells — each proven in the browser that paints the kiosk  */
+/* -------------------------------------------------------------------------- */
+
+describe('SP2 presentation cells in real Chromium', () => {
+  it('shows a named recall chord from memory without leaking the lit-key answer', async () => {
+    await run({
+      instance: { ...TREBLE_DYAD, title: 'C major chord', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] },
+      props: {
+        tier: 1, ask: 'Play a C major chord.', intent: 'challenge', askTuple: RECALL_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    const recall = await probe.one('[data-testid="piano-recall-stage"]');
+    const heading = await probe.one('.piano-exercise-run__head h1');
+    expect(heading.text).toBe('Play a C major chord.');
+    expect(recall.painted && onCanvas(recall), `the recall card is not visible: ${say(recall)}`).toBe(true);
+    expect(recall.text).toContain('From memory');
+    expect(await probe.count('.piano-key.target'), 'a recall ask exposed its answer at mount').toBe(0);
+    expect(await probe.count('.piano-keyboard'), 'a recall ask mounted a keyboard before its hint').toBe(0);
+  });
+
+  it('reveals the after-stall answer on screen before the free-attempt timeout', async () => {
+    await run({
+      instance: { ...TREBLE_DYAD, title: 'C major chord', events: [{ id: 'chord', value: 'quarter', notes: [{ midi: 60 }, { midi: 64 }, { midi: 67 }] }] },
+      props: {
+        tier: 1,
+        ask: 'Play a C major chord.',
+        intent: 'challenge',
+        askTuple: { ...RECALL_TUPLE, hints: 'after-stall' },
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    expect(await probe.one('[data-testid="piano-recall-hint"]')).toBeNull();
+    await probe.press(60);
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="piano-recall-hint"]') !== null,
+      null,
+      { timeout: 15_000 },
+    );
+    const hint = await probe.one('[data-testid="piano-recall-hint"]');
+    expect(hint.painted && onCanvas(hint), `the revealed answer is not visible: ${say(hint)}`).toBe(true);
+    expect(await probe.count('.piano-key.target'), 'the hint did not light the chord it reveals').toBe(3);
+    expect(await probe.text(), 'the hint arrived only after the attempt had already timed out').not.toContain('Keep working');
+  }, 30_000);
+
+  it('engraves a duration-aware line while timing remains free', async () => {
+    await run({
+      instance: ENGRAVED_LINE,
+      props: {
+        tier: 2, ask: 'Read the line.', intent: 'challenge', askTuple: ENGRAVED_FREE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+    await page.waitForFunction(() => document.querySelectorAll('.abcjs-note').length === 4);
+
+    expect(await probe.one('.piano-exercise-run')).toMatchObject({ text: expect.stringContaining('Play the first note to begin.') });
+    expect(await probe.count('.abcjs-staff'), 'the free engraved line did not render one staff').toBe(1);
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const notation = await probe.one('.abc-renderer svg');
+    expect(notation.painted && inside(notation, stage), `the free engraving overflows its stage: ${say(notation)}`).toBe(true);
+    expect(Math.abs(notation.cx - stage.cx), `the staff is not horizontally centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(notation.cy - stage.cy), `the staff is not vertically centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(await page.$eval('.abc-renderer svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted staff was stretched out of its engraved proportions').toBeCloseTo(1, 4);
+    expect(await probe.count('.sequence-staff'), 'the engraved request fell back to the sequence renderer').toBe(0);
+    expect(await probe.count('.piano-score-passage'), 'bank material incorrectly entered the score resolver').toBe(0);
+  });
+
+  it('holds the resolved staff on screen before the host hears the pass', async () => {
+    await run({
+      instance: ENGRAVED_LINE,
+      props: {
+        tier: 2, ask: 'Read the line.', intent: 'challenge', askTuple: ENGRAVED_FREE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+    await page.waitForFunction(() => document.querySelectorAll('.abcjs-note').length === 4);
+    for (const midi of [60, 62, 64, 65]) await probe.press(midi);
+    // Mid-hold: the run is decided and painted, the host has not been told.
+    await page.waitForSelector('.piano-exercise-run.is-resolve-held');
+    expect((await probe.calls()).some((c) => c.name === 'passed'), 'the host was told before the hold').toBe(false);
+    expect(await probe.count('.exercise-note-done, .exercise-note-hit'), 'the confirmed notes are not painted during the hold').toBe(4);
+    if (process.env.GHOST_SHOT_DIR) await page.screenshot({ path: `${process.env.GHOST_SHOT_DIR}/resolve-hold-mid.png` });
+    await page.waitForFunction(() => window.__stage.calls.some((c) => c.name === 'passed'), undefined, { timeout: 5000 });
+    expectNoPageErrors();
+  }, 60_000);
+
+  it('renders a one-note reading ask as one compact staff card', async () => {
+    await run({
+      instance: { ...ONE_KEY, title: 'Middle C', staff: 'treble' },
+      props: {
+        tier: 2, ask: 'Read this note.', intent: 'challenge', askTuple: SINGLE_NOTE_TUPLE,
+        requirementOverride: FREE_REQUIREMENT,
+      },
+    }, FREE_READY);
+
+    const runBox = await probe.one('.piano-exercise-run');
+    const card = await probe.one('.piano-exercise-run__single-note .sequence-staff');
+    expect(await probe.count('.action-staff__note'), 'the single-note card did not contain exactly one notehead').toBe(1);
+    expect(card.painted && onCanvas(card), `the single-note card is not visible: ${say(card)}`).toBe(true);
+    expect(card.width, 'the single-note card expanded into an oversized notation surface').toBeLessThan(runBox.width / 2);
+    expect(await probe.count('.piano-keyboard'), 'the reading card exposed a keyboard target').toBe(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The score stage — REAL OpenSheetMusicDisplay                               */
+/* -------------------------------------------------------------------------- */
+
+describe('the score stage, engraved by the real OSMD in Chromium', () => {
+  it('engraves a five-bar lab excerpt on no more than two systems', async () => {
+    const fiveBars = fourBars.replace('</part>', '<measure number="5"><note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note><note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note></measure></part>');
+    await openStage(css, js);
+    await page.setViewportSize({ width: 800, height: 800 });
+    await page.evaluate(PROBE);
+    await page.evaluate((xml) => window.__stage.mountPassage({ musicXml: xml, measures: [1, 5] }), fiveBars);
+    await page.waitForFunction(
+      () => window.__stage.calls.some((c) => ['expectation', 'unrunnable'].includes(c.name)),
+      undefined,
+      { timeout: 60_000 },
+    );
+    await page.waitForTimeout(1000);
+
+    const calls = await probe.calls();
+    expect(calls.find((call) => call.name === 'unrunnable'), 'the five-bar excerpt could not be fitted').toBeUndefined();
+    const systemCount = Number(await page.$eval('.piano-score-passage', (element) => element.dataset.systemCount));
+    expect(systemCount, 'OSMD exposed no system geometry to measure').toBeGreaterThan(0);
+    expect(systemCount, `the five-bar excerpt occupied ${systemCount} systems`).toBeLessThanOrEqual(2);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('engraves the four-bar fixture and reports the geometry the ask is compiled from', async () => {
+    // The claim `ExerciseRun.score.test.jsx` cannot make: OSMD cannot engrave
+    // under happy-dom (no SVG text metrics — it lands on its own placeholder),
+    // so that suite doubles the renderer and states that the real-engraving
+    // assertion belongs here. This is it.
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((xml) => window.__stage.mountEngraver({ musicXml: xml }), fourBars);
+    await page.waitForFunction(
+      () => window.__stage.calls.some((c) => c.name === 'layout' || c.name === 'failed'),
+      undefined,
+      { timeout: 60_000 },
+    );
+
+    const calls = await probe.calls();
+    const failed = calls.find((c) => c.name === 'failed');
+    expect(failed, `OSMD could not engrave the fixture in this browser: ${failed?.value}`).toBeUndefined();
+    const layout = calls.find((c) => c.name === 'layout').value;
+
+    // Onsets and measure indices, from the ENGRAVING — the four bars of two
+    // half notes the fixture writes, in the order a child reads them.
+    expect(layout.steps.map((s) => s.onsetQuarter)).toEqual([0, 2, 4, 6, 8, 10, 12, 14]);
+    expect(layout.steps.map((s) => s.measure)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+    expect(layout.steps.flatMap((s) => s.midis),
+      'the engraved pitches are not the ones the document writes').toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
+    // Every step has a graphical element: without one the cursor has no ink to
+    // light and a child is asked to follow a passage with nothing marked.
+    expect(layout.steps.every((s) => s.engraved), 'a step engraved without a graphical element').toBe(true);
+    // The tempo the passage is counted and graded at, read off the document.
+    expect(layout.tempoEntries[0]).toMatchObject({ onsetQuarter: 0, bpm: 80 });
+
+    // And it is REALLY drawn: an engraving with a box, not a placeholder.
+    expect(await probe.count('.musicxml-renderer--placeholder')).toBe(0);
+    const svg = await probe.one('.musicxml-renderer__svg svg, svg.musicxml-renderer__svg');
+    expect(svg, 'no SVG was engraved').not.toBeNull();
+    expect(svg.width, `the engraving has no width: ${say(svg)}`).toBeGreaterThan(100);
+    expect(svg.height, `the engraving has no height: ${say(svg)}`).toBeGreaterThan(40);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('compiles the named bars — and only those — into the ask the run is graded on', async () => {
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((xml) => window.__stage.mountPassage({ musicXml: xml, measures: [2, 3] }), fourBars);
+    await page.waitForFunction(
+      () => window.__stage.calls.some((c) => ['expectation', 'unrunnable'].includes(c.name)),
+      undefined,
+      { timeout: 60_000 },
+    );
+
+    const calls = await probe.calls();
+    const dead = calls.find((c) => c.name === 'unrunnable');
+    expect(dead, `the passage refused the fixture: ${dead?.value}`).toBeUndefined();
+    const expectation = calls.find((c) => c.name === 'expectation').value;
+
+    // Bars 2-3 as a grown-up wrote them: E4 F4 G4 A4, and nothing either side.
+    expect(expectation.events.flatMap((e) => e.midis)).toEqual([64, 65, 67, 69]);
+    // A standalone lab starts its clock at zero, regardless of where the bars
+    // lived in the full piece.
+    expect(expectation.events.map((e) => e.onsetQuarter)).toEqual([0, 2, 4, 6]);
+    // The printed bar numbers converted ONCE, at this boundary: bars 2-3 are
+    // engraved measure indices 1-2.
+    expect(expectation.events.map((e) => e.spanId)).toEqual(['measure:1', 'measure:1', 'measure:2', 'measure:2']);
+    expect(expectation.tempoMap).toEqual([{ onsetQuarter: 0, bpm: 80 }]);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('says so on screen AND to its host when a document cannot be engraved', async () => {
+    // Both halves, in one case, because the jsdom probe that came before this
+    // observed the placeholder at a time when the callback did not exist — the
+    // placeholder alone leaves a child sitting on "Getting the music ready…"
+    // with no way out but Leave, forfeiting the game they earned.
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate(() => window.__stage.mountPassage({ musicXml: '<not-a-score>garbage</not-a-score>' }));
+    await page.waitForFunction(
+      () => window.__stage.calls.some((c) => c.name === 'unrunnable'),
+      undefined,
+      { timeout: 60_000 },
+    );
+
+    expect((await probe.calls()).map((c) => [c.name, c.value]))
+      .toContainEqual(['unrunnable', 'invalid-xml']);
+
+    // The callback fires in the same tick as `setFailed(true)`, so the words a
+    // child reads land one paint later — which is exactly the ordering the
+    // earlier jsdom probe could not see, and the reason both halves are asserted
+    // in one case rather than two.
+    await page.waitForSelector('.musicxml-renderer--placeholder', { timeout: 20_000 });
+    const placeholder = await probe.one('.musicxml-renderer--placeholder');
+    expect(placeholder, 'nothing was drawn where the music should be').not.toBeNull();
+    // THE WORDS, NOT THE BOX. This scenario mounts the passage bare, so the
+    // renderer takes its own `width: 100%` plus the placeholder's 2rem padding
+    // under content-box sizing and comes out 64px wider than whatever holds it
+    // — an artefact of mounting it with no host, clipped in the run by
+    // `.piano-score-passage`'s `overflow: hidden`. The hosted geometry is
+    // asserted by the scenario below, which mounts the real run. What has to be
+    // true here is that a child is TOLD something, in readable type, where they
+    // are looking — rather than left in front of an empty rectangle.
+    const words = await probe.one('.musicxml-renderer--placeholder p');
+    expect(words, 'the placeholder rendered no message at all').not.toBeNull();
+    expect(words.text).toContain('Could not read this score.');
+    expect(words.painted, `the placeholder's message is not painted: ${say(words)}`).toBe(true);
+    expect(words.height, 'the message is too small to read').toBeGreaterThan(8);
+    expect(words.top >= 0 && words.bottom <= KIOSK.height,
+      `the message is off the top or bottom of the kiosk canvas: ${say(words)}`).toBe(true);
+    expect(words.cx >= 0 && words.cx <= KIOSK.width,
+      `the message is centred off the side of the kiosk canvas: ${say(words)}`).toBe(true);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('mounts the engraved passage as the run\'s stage, inside the row it was given', async () => {
+    // The whole path, end to end: a gate level names a score, the media tree
+    // serves it, OSMD engraves it, the passage compiles the ask, and the run
+    // builds its attempt from that — with nothing about the notation doubled.
+    await run({ scoreXml: fourBars, props: { material: SCORE_MATERIAL, tier: 2, ask: 'Play this passage as written.', intent: 'challenge', requirementOverride: { mode: 'free' } } }, FREE_READY);
+
+    const root = await probe.one('.piano-exercise-run');
+    expect(await page.evaluate(() => document.querySelector('.piano-exercise-run').dataset.stage)).toBe('score');
+    expect(onCanvas(root), `the run overflows the kiosk canvas: ${say(root)}`).toBe(true);
+
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const passage = await probe.one('.piano-score-passage');
+    const engraving = await probe.one('.piano-score-passage .musicxml-renderer__svg svg');
+    expect(inside(passage, stage), `the passage ${say(passage)} overflows the stage row ${say(stage)}`).toBe(true);
+    expect(inside(engraving, passage), `the engraving ${say(engraving)} overflows its passage ${say(passage)}`).toBe(true);
+    expect(Math.abs(engraving.cx - passage.cx), `the score is not horizontally centred: ${say(engraving)} in ${say(passage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(engraving.cy - passage.cy), `the score is not vertically centred: ${say(engraving)} in ${say(passage)}`).toBeLessThanOrEqual(1);
+    expect(Math.max(engraving.width / passage.width, engraving.height / passage.height),
+      `the score does not fill either available axis: ${say(engraving)} in ${say(passage)}`).toBeGreaterThan(0.8);
+    expect(await page.$eval('.piano-score-passage .musicxml-renderer__svg svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted score was stretched out of its engraved proportions').toBeCloseTo(1, 4);
+    expect(await probe.count('.musicxml-renderer--placeholder')).toBe(0);
+
+    // The cursor lights the FIRST NOTE OF THE PASSAGE in the real engraving —
+    // E4, the first note of bar 2 — and not the first note of the document.
+    await page.waitForFunction(() => document.querySelectorAll('.piano-note-lit').length > 0, undefined, { timeout: 60_000 });
+    const lit = await probe.all('.piano-note-lit');
+    expect(lit.length, 'more than one notehead is lit at a single-note step').toBe(1);
+    expect(inside(lit[0], passage), `the lit notehead ${say(lit[0])} is outside the passage ${say(passage)}`).toBe(true);
+
+    // The lab contains only the excerpt: no out-of-range grey context remains.
+    expect(await probe.count('.piano-score-passage__dim'),
+      'the lab retained grey out-of-range bars').toBe(0);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('never clips the left-hand stave on the second system of a dense grand-staff passage', async () => {
+    await run({
+      scoreXml: GRAND_FIVE_BARS,
+      props: { material: { ...SCORE_MATERIAL, measures: [1, 5] }, tier: 2, intent: 'practice', practiceMode: 'free' },
+    }, FREE_READY);
+    const passage = await probe.one('.piano-score-passage');
+    expect(Number(await page.$eval('.piano-score-passage', (element) => element.dataset.systemCount))).toBe(2);
+    const staves = await probe.all('.piano-score-passage g.staffline');
+    expect(staves.length, 'two grand-staff systems must expose four complete staves').toBeGreaterThanOrEqual(4);
+    for (const staff of staves) expect(inside(staff, passage), `a stave is clipped: ${say(staff)} in ${say(passage)}`).toBe(true);
+    expectNoPageErrors();
+  }, 120000);
+
+  it('keeps drill progress visible and the keyboard at the bottom on a Learn Lab run', async () => {
+    const drillProjection = {
+      id: 'learn:segment:right',
+      title: 'Right hand',
+      displaySingleStep: true,
+      steps: [
+        { id: 'right:set-1', title: 'Set 1', display: { key: 'Set 1', hand: 'R', hand_label: 'Right hand' }, requirement: { required_passes: 3 }, pass_count: 0, state: 'current' },
+        { id: 'right:set-2', title: 'Set 2', display: { key: 'Set 2', hand: 'R', hand_label: 'Right hand' }, requirement: { required_passes: 3 }, pass_count: 0, state: 'locked' },
+      ],
+    };
+    await run({
+      scoreXml: fourBars,
+      props: {
+        material: SCORE_MATERIAL,
+        tier: 2,
+        ask: 'Play the passage accurately.',
+        intent: 'practice',
+        requirementOverride: { mode: 'free' },
+        programId: drillProjection.id,
+        stepId: 'right:set-1',
+        drillProjection,
+        surface: 'learn-lab',
+      },
+    }, 'Set 1');
+
+    const root = await probe.one('.piano-exercise-run');
+    const rail = await probe.one('.piano-exercise-run__rail');
+    const keyboard = await probe.one('.piano-exercise-run__keys');
+    expect(rail?.painted, `the rep/set rail is not visible: ${say(rail)}`).toBe(true);
+    expect(await probe.count('.drill-pill')).toBe(6);
+    expect(keyboard?.painted, `the virtual keyboard is not visible: ${say(keyboard)}`).toBe(true);
+    expect(Math.abs(root.bottom - keyboard.bottom), `the keyboard is not pinned to the run bottom: run ${say(root)}, keyboard ${say(keyboard)}`).toBeLessThan(1);
+  }, 120000);
+});
+
+describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
+  it('keeps recovery actions reachable and accepts Extra slow without losing the run', async () => {
+    await openStage(css, js, KIOSK);
+    await page.evaluate(PROBE);
+    await page.evaluate((musicXml) => window.__stage.mountLab({ musicXml }), fourBars);
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    const canvas = { top: 0, left: 0, right: KIOSK.width, bottom: KIOSK.height };
+    const controlButtons = await probe.all('.piano-learn-lab__run-controls button');
+    expect(controlButtons.map(({ text }) => text)).toEqual(['Pause', 'Start over', 'Change practice']);
+    for (const button of controlButtons) {
+      const label = button.text;
+      expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(64);
+      expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(64);
+      expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
+      expect(button.reachable, `${label} is not reachable`).toBe(true);
+    }
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 8000 });
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('paused');
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('resume-countdown');
+    await page.getByRole('button', { name: 'Start over', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    await page.getByRole('button', { name: 'Change practice', exact: true }).click();
+    expect(await probe.calls()).toContainEqual({ name: 'change-practice', value: expect.objectContaining({ parts: ['rh'], mode: 'cued' }) });
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Extra slow', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Extra slow · 12 BPM');
+    expect((await probe.one('.piano-exercise-run__stage')).painted).toBe(true);
+    expectNoPageErrors();
+  }, 120000);
+});
+
+describe('timed practice groove at 1920x1200 in real Chromium', () => {
+  const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const stageSelector = '.piano-exercise-run__stage';
+  const beatSelector = '.piano-exercise-run__beat';
+  const numeralSelector = '.piano-score-countin__beat';
+  const canvas = { top: 0, left: 0, right: 1920, bottom: 1200 };
+  const geometry = (label, measurements) => {
+    if (process.env.PIANO_MEASURE_GEOMETRY) process.stdout.write(`${label}: ${JSON.stringify(measurements)}\n`);
+  };
+
+  async function lab({ reducedMotion = 'no-preference', mastery = false, musicXml = fourBars } = {}) {
+    await openStage(css, js, GROOVE_KIOSK, reducedMotion);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml, mastery });
+    try {
+      await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 10000 });
+    } catch (error) {
+      const failures = await page.evaluate(() => (globalThis.__logEvents ?? []).filter(({ level }) => ['warn', 'error'].includes(level)));
+      throw new Error(`Learn Lab did not become ready: ${await probe.text()}\n${pageErrors.join('\n')}\n${JSON.stringify(failures)}`, { cause: error });
+    }
+    expectNoPageErrors();
+  }
+
+  async function chooseFullSpeed() {
+    await page.getByRole('button', { name: /^Choose tempo:/ }).click();
+    await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Full speed · 80 BPM');
+  }
+
+  async function assertRunGeometry() {
+    const runBox = await probe.one('.piano-exercise-run');
+    const stage = await probe.one(stageSelector);
+    const rail = await probe.one('.piano-exercise-run__rail');
+    const keys = await probe.one('.piano-exercise-run__keys');
+    const score = await probe.one('.piano-score-passage');
+    for (const box of [runBox, stage, rail, keys, score]) expect(inside(box, canvas), say(box)).toBe(true);
+    expect(inside(score, stage), `notation ${say(score)} escapes stage ${say(stage)}`).toBe(true);
+    expect(rail.painted).toBe(true);
+    expect(keys.painted).toBe(true);
+    expect(overlaps(stage, rail), 'the music stage overlaps rep progress').toBe(false);
+    expect(overlaps(stage, keys), 'the music stage overlaps the keyboard').toBe(false);
+    expect(Math.abs(runBox.bottom - keys.bottom), 'the keyboard must remain pinned to the run bottom').toBeLessThan(1);
+    return { stage, rail, keys };
+  }
+
+  // Removing the sheet, shrinking its hit targets, or losing focus trapping
+  // must break this scenario; the picked label must also change the REAL ask.
+  it('offers a reachable tempo modal and persistent loudness without disturbing notation or progress', async () => {
+    await lab();
+    const before = await assertRunGeometry();
+    geometry('groove layout', before);
+    const opener = page.getByRole('button', { name: 'Choose tempo: Steady · 48 BPM' });
+    expect(await probe.count('input[type="number"], input[type="range"]')).toBe(0);
+    for (const button of await probe.all('.piano-learn-lab__click-level button')) {
+      expect(button.height).toBeGreaterThanOrEqual(64);
+      expect(button.width).toBeGreaterThanOrEqual(64);
+      expect(button.reachable).toBe(true);
+      expect(button.background, 'loudness controls need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+    }
+    const loud = page.getByRole('button', { name: 'Loud', exact: true });
+    const soft = page.getByRole('button', { name: 'Soft', exact: true });
+    expect(await loud.getAttribute('aria-pressed')).toBe('true');
+    await soft.click();
+    expect(await soft.getAttribute('aria-pressed')).toBe('true');
+    expect(await page.evaluate(() => localStorage.getItem('piano.learn.click-level'))).toBe('soft');
+    const after = await assertRunGeometry();
+    expect(after).toEqual(before);
+
+    await opener.click();
+    expect(await probe.count('.piano-learn-tempo-sheet'), 'the tempo button must open its sheet').toBe(1);
+    const dialog = page.getByRole('dialog', { name: 'Practice tempo', exact: true });
+    await dialog.waitFor({ state: 'visible' });
+    const panel = await probe.one('.piano-learn-tempo-sheet .piano-tsheet__panel');
+    expect(inside(panel, canvas), `tempo panel overflows canvas: ${say(panel)}`).toBe(true);
+    const buttons = await probe.all('.piano-learn-tempo-sheet__stages button');
+    expect(buttons.map((b) => b.text)).toEqual(['Extra slow', 'Very slow', 'Slow', 'Steady', 'Nearly there', 'Full speed']);
+    for (const button of buttons) {
+      expect(button.height).toBeGreaterThanOrEqual(64);
+      expect(button.reachable, `unreachable tempo stage ${button.text}`).toBe(true);
+      expect(button.background, 'tempo choices need an opaque themed surface').not.toBe('rgba(0, 0, 0, 0)');
+    }
+    geometry('tempo modal', { panel, buttons });
+    await page.screenshot({ path: '/tmp/piano-groove-modal.png' });
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Steady');
+    await dialog.getByRole('button', { name: 'Back', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement.getAttribute('aria-label'))).toBe('Close Practice tempo');
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.activeElement.textContent.trim())).toBe('Back');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+    expect(await probe.calls()).toEqual([]);
+    await opener.click();
+    await dialog.getByRole('button', { name: 'Very slow', exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]');
+    expect(await probe.text()).toContain('Very slow · 20 BPM');
+    await assertRunGeometry();
+    // Remount in the same real origin: the loudness choice survives a lab visit.
+    await page.evaluate(() => window.__stage.reset());
+    await page.evaluate((arg) => window.__stage.mountLab(arg), { musicXml: fourBars, mastery: true });
+    expect(await page.getByRole('button', { name: 'Soft', exact: true }).getAttribute('aria-pressed')).toBe('true');
+    expect(await probe.text()).toContain('Full speed · 80 BPM');
+    expect(await page.getByRole('button', { name: /^Choose tempo:/ }).count()).toBe(0);
+    expectNoPageErrors();
+  }, 30000);
+
+  // Removing the overlay/drain or moving PLAY into engraved staff ink must fail.
+  it('counts down 4 3 2 1 with a draining bar and hands off to PLAY above the notation', async () => {
+    await lab();
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    const { stage, rail, keys } = await assertRunGeometry();
+    const overlay = await probe.one('.piano-score-countin');
+    expect(inside(overlay, stage)).toBe(true);
+    expect(overlaps(overlay, rail)).toBe(false);
+    expect(overlaps(overlay, keys)).toBe(false);
+    expect(overlay.reachable, 'countdown must let taps reach the score').toBe(false);
+    expect((await probe.one(numeralSelector)).text).toBe('4');
+    const drain = () => page.$eval('.piano-score-countin__bar', (bar) => {
+      const style = getComputedStyle(bar, '::after');
+      return { width: bar.getBoundingClientRect().width, scale: new DOMMatrix(style.transform).a };
+    });
+    const start = await drain();
+    await page.waitForTimeout(200);
+    const later = await drain();
+    expect(later.scale).toBeLessThan(start.scale);
+    expect(later.scale).toBeGreaterThan(0);
+    expect(start.width).toBeLessThanOrEqual(stage.width * 0.6);
+    geometry('countdown drain', { overlay, start, later });
+    await page.screenshot({ path: '/tmp/piano-groove-countdown.png' });
+    for (const numeral of ['3', '2', '1', 'PLAY']) {
+      await page.waitForFunction((text) => document.querySelector('.piano-score-countin__beat')?.textContent === text, numeral);
+    }
+    expect(await probe.count('.piano-score-countin__bar')).toBe(0);
+    const play = await probe.one(numeralSelector);
+    expect(inside(play, stage)).toBe(true);
+    const ink = await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead');
+    expect(ink.length).toBeGreaterThan(0);
+    for (const box of ink) expect(overlaps(play, box), `PLAY ${say(play)} overlaps notation ink ${say(box)}`).toBe(false);
+    geometry('PLAY cue', { play, stage });
+    await page.screenshot({ path: '/tmp/piano-groove-play.png' });
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-beat-pulse')).toBe('1');
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    expect(await probe.count('.piano-score-countin')).toBe(0);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
+  // Removing the beat treatment or flattening its downbeat accent must fail.
+  it('pulses a bounded stage edge on running beats and accents each downbeat', async () => {
+    await lab();
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    const { stage } = await assertRunGeometry();
+    expect(inside(await probe.one(beatSelector), stage)).toBe(true);
+    expect(await probe.prop(beatSelector, 'pointer-events')).toBe('none');
+    expect(await probe.prop(beatSelector, 'animation-duration')).toBe('0.35s');
+    expect(await probe.prop(beatSelector, 'animation-iteration-count')).toBe('1');
+    expect(await probe.prop(beatSelector, 'background-color')).toBe('rgba(0, 0, 0, 0)');
+    const halo = await probe.one(beatSelector);
+    for (const ink of await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead')) {
+      expect(inside(ink, halo), `notation ink ${say(ink)} reaches the beat border ${say(halo)}`).toBe(true);
+    }
+    const downbeat = await probe.prop(beatSelector, 'box-shadow');
+    expect(downbeat).toContain('0px 4px');
+    geometry('downbeat halo', { halo, downbeat });
+    await page.screenshot({ path: '/tmp/piano-groove-downbeat.png' });
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe('false');
+    expect((await probe.one(beatSelector)).painted, 'the ordinary beat halo must visibly pulse').toBe(true);
+    const ordinary = await probe.prop(beatSelector, 'box-shadow');
+    expect(ordinary).toContain('0px 2px');
+    expect(ordinary).not.toBe(downbeat);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.piano-exercise-run__beat')).opacity === '0');
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '5');
+    expect((await probe.one(beatSelector)).painted, 'the next downbeat halo must visibly pulse').toBe(true);
+    expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe('true');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe(downbeat);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
+  it('reads real 3/4 score measure boundaries in Learn without an exercise instance', async () => {
+    const musicXml = `<?xml version="1.0" encoding="UTF-8"?>
+    <score-partwise version="3.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>80</per-minute></metronome></direction-type><sound tempo="80" /></direction><note><pitch><step>C</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+      <measure number="2"><note><rest /><duration>1</duration><type>quarter</type></note><note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note></measure>
+      <measure number="3"><note><pitch><step>E</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+      <measure number="4"><note><pitch><step>F</step><octave>4</octave></pitch><duration>3</duration><type>half</type><dot /></note></measure>
+    </part></score-partwise>`;
+    await lab({ musicXml, reducedMotion: 'reduce' });
+    await chooseFullSpeed();
+    await probe.press(84);
+    for (const [beat, downbeat, marker] of [['1', 'true', '1'], ['3', 'false', '3'], ['4', 'true', '1'], ['5', 'false', '2'], ['7', 'true', '1']]) {
+      try {
+        await page.waitForFunction((expected) => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === expected, beat, { timeout: 10000 });
+      } catch (error) {
+        const state = await page.evaluate(() => ({ run: { ...document.querySelector('.piano-exercise-run')?.dataset }, logs: globalThis.__logEvents?.filter(({ event }) => ['piano.exercise-countdown-started', 'piano.score-passage-unrunnable'].includes(event)) }));
+        throw new Error(`Did not reach quarter beat ${beat}: ${JSON.stringify(state)}`, { cause: error });
+      }
+      expect(await page.locator('.piano-exercise-run').getAttribute('data-downbeat')).toBe(downbeat);
+      expect((await probe.one('.piano-exercise-run__beat-marker')).text).toBe(marker);
+    }
+    const countdownEvents = await page.evaluate(() => globalThis.__logEvents.filter(({ event }) => event === 'piano.exercise-countdown-started'));
+    expect(countdownEvents).toEqual([expect.objectContaining({ data: expect.objectContaining({
+      pulseCount: 4, pulseBpm: 80, leadInMs: 3000, tempoStage: 'full-speed', clickLevel: 'loud',
+    }) })]);
+    await assertRunGeometry();
+    expectNoPageErrors();
+  }, 30000);
+
+  it('uses a static beat marker with reduced motion and keeps it clear of notation and controls', async () => {
+    await lab({ reducedMotion: 'reduce' });
+    await chooseFullSpeed();
+    await probe.press(84);
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    expect(await probe.prop(numeralSelector, 'animation-name')).toBe('none');
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    expect(await probe.prop(beatSelector, 'animation-name')).toBe('none');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');
+    const selector = '.piano-exercise-run__beat-marker';
+    const marker = await probe.one(selector);
+    expect(marker.background, 'the static numeral needs a surface against white score paper').not.toBe('rgba(0, 0, 0, 0)');
+    const markerColor = await probe.prop(selector, 'color');
+    const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3).map(Number).map((value) => {
+      const channel = value / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const foreground = luminance(markerColor);
+    const background = luminance(marker.background);
+    expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+      'the reduced-motion beat numeral must remain readable').toBeGreaterThanOrEqual(4.5);
+    const { stage, rail, keys } = await assertRunGeometry();
+    expect(marker.painted).toBe(true);
+    expect(marker.text).toBe('1');
+    expect(inside(marker, stage)).toBe(true);
+    expect(await probe.prop(selector, 'border-top-width')).toBe('3px');
+    geometry('reduced-motion marker', { marker, stage });
+    await page.screenshot({ path: '/tmp/piano-groove-reduced.png' });
+    for (const box of [...await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead'), rail, keys]) {
+      expect(overlaps(marker, box), `beat marker ${say(marker)} overlaps ${say(box)}`).toBe(false);
+    }
+    // Geometry reads and the screenshot can outlive beat 2 on a busy runner.
+    // Any ordinary running beat must update the marker and remove the accent.
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.downbeat === 'false');
+    expect(['2', '3', '4']).toContain((await probe.one(selector)).text);
+    expect(await probe.prop(selector, 'border-top-width')).toBe('1px');
+    expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');
+    expectNoPageErrors();
+  }, 30000);
+});
+
+// Both engraving engines must show the same inert count-in and clock-led run.
+describe('timed exercise display in real Chromium', () => {
+  for (const surface of ['notation', 'score']) {
+    it(`${surface} grays the count-in, ignores held keys, and advances the cursor without playing`, async () => {
+      await run(surface === 'notation' ? {
+        instance: SCALE,
+        props: { tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+      } : {
+        scoreXml: fourBars,
+        props: { material: SCORE_MATERIAL, tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT },
+      }, CUED_READY);
+      await probe.hold([84]);
+      await page.waitForSelector('.piano-exercise-run.is-countdown');
+      await probe.hold([60, 61]);
+      const feedback = '.exercise-note-hit, .exercise-note-wrong, .sequence-note-hit, .sequence-note-miss, .exercise-notation__ghost, .sequence-staff__ghost, .piano-note-wrong, .piano-key.active, .piano-key.wrong';
+      expect(await probe.count(feedback), 'count-in keys must not paint input feedback').toBe(0);
+      expect(await probe.count('.piano-note-lit, .piano-score-passage__cursor, .exercise-notation__cursor, .sequence-staff__cursor')).toBe(0);
+      expect(await page.locator('.piano-exercise-run').getAttribute('data-displayed-cursor')).toBe('-1');
+      const music = '.piano-exercise-run__stage > :not(.piano-score-countin)';
+      expect(await probe.prop(music, 'filter')).toBe('grayscale(1)');
+      expect(await probe.prop(music, 'opacity')).toBe('0.45');
+      expect(await probe.prop('.piano-exercise-run__keys', 'filter')).toBe('grayscale(1)');
+      expect(await probe.prop('.piano-exercise-run__keys', 'opacity')).toBe('0.45');
+      expect(await probe.prop('.piano-score-countin', 'filter')).toBe('none');
+      expect(await probe.prop('.piano-score-countin', 'opacity')).toBe('1');
+      await page.screenshot({ path: `/tmp/timed-${surface}-countdown.png` });
+
+      await page.waitForSelector('.piano-exercise-run.is-running');
+      const cursorSelector = surface === 'score' ? '.piano-score-passage__cursor' : '.exercise-notation__cursor';
+      await page.waitForSelector(cursorSelector);
+      const firstCursor = await probe.one(cursorSelector);
+      expect(await probe.count(feedback), 'keys held through the count-in must remain excluded').toBe(0);
+      await probe.hold([]);
+      await page.waitForFunction(() => Number(document.querySelector('.piano-exercise-run').dataset.expectedCursor) >= 2);
+      const cursors = await page.locator('.piano-exercise-run').evaluate((node) => ({
+        expected: Number(node.dataset.expectedCursor), displayed: Number(node.dataset.displayedCursor),
+      }));
+      expect(cursors.displayed, 'silent timed runs must follow the clock, not accepted presses').toBe(cursors.expected);
+      expect(cursors.displayed).toBeGreaterThanOrEqual(2);
+      expect(await probe.prop(music, 'filter')).toBe('none');
+      expect(await probe.prop(music, 'opacity')).toBe('1');
+      expect(await probe.count(surface === 'score' ? '.piano-note-lit' : '.exercise-notation__cursor')).toBeGreaterThan(0);
+      const movedCursor = await probe.one(cursorSelector);
+      expect(movedCursor.painted).toBe(true);
+      expect(movedCursor.cx).toBeGreaterThan(firstCursor.cx);
+      if (surface === 'score') {
+        const note = await probe.one('.piano-note-lit');
+        expect(inside(note, movedCursor), 'the score cursor must enclose its engraved note').toBe(true);
+        expect(await probe.prop(cursorSelector, 'fill')).toBe('rgba(255, 200, 60, 0.3)');
+        expect(await probe.prop(cursorSelector, 'stroke')).toBe('rgba(200, 150, 0, 0.5)');
+      }
+      await page.screenshot({ path: `/tmp/timed-${surface}-running.png` });
+      expectNoPageErrors();
+    }, 30000);
+  }
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE CURSOR MUST BE ON THE NOTE, on the material the BANK actually ships.
+ *
+ * The timed block above asserts the notation cursor EXISTS and MOVES RIGHT, and
+ * both were true on a screen with no cursor visible anywhere: an SVG child's
+ * `getBoundingClientRect()` reports its geometry whether or not it lies inside
+ * the viewBox, so a lane drawn four times off-scale and entirely outside the
+ * engraving still measured `painted: true` with a rising `cx`. Only the SCORE
+ * surface was ever asked the one question that matters — does the lane enclose
+ * the note it is pointing at — and `ScorePassage` is the surface that maps
+ * coordinates correctly. The ABC surface was never asked.
+ *
+ * These fixtures are shaped like the bank's own output rather than like the
+ * harness's older `SCALE`: every published scale rung is `value: '8th'` (which
+ * BEAMS) and half of them are `staff: 'grand'` (which draws TWO lanes). No
+ * measurement in this file had ever mounted either.
+ */
+const EIGHTH_SCALE = Object.freeze({
+  ...SCALE,
+  id: 'scales/modes@root=C,mode=ionian,direction=up,span_octaves=1,hand=R',
+  tempo: { unit: 'quarter', start_bpm: 60, target_bpm: 120 },
+  events: SCALE_MIDIS.map((midi, i) => ({ id: `n${i + 1}`, value: '8th', notes: [{ midi, hand: 'right' }] })),
+});
+const GRAND_SCALE = Object.freeze({
+  ...SCALE,
+  id: 'scales/modes@root=B,mode=ionian,direction=up-then-down,span_octaves=1,hand=RL',
+  key: 'B', staff: 'grand',
+  tempo: { unit: 'quarter', start_bpm: 60, target_bpm: 120 },
+  events: [71, 73, 75, 76, 78, 80, 82, 83].map((midi, i) => ({
+    id: `n${i + 1}`, value: '8th', notes: [{ midi, hand: 'right' }, { midi: midi - 12, hand: 'left' }],
+  })),
+});
+
+describe('the engraved stage paints a timed run\'s record, in real abcjs', () => {
+  it('a late note is amber with a ▸ under it, a wrong pitch is a red ghost beside its beat, and nothing is green', async () => {
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountNotation(arg), {
+      instance: EIGHTH_SCALE,
+      eventIndex: 2,
+      verdicts: [
+        [0, [[60, { state: 'late', driftMs: 450 }]]],
+        [1, [[62, { state: 'lapsed' }], [66, { state: 'wrong', midi: 66, driftMs: 40 }]]],
+      ],
+    });
+    await page.waitForSelector('.exercise-note-late');
+    expect(await probe.count('.exercise-note-hit'), 'a timed record with no hit must draw no green').toBe(0);
+    const late = await probe.one('.exercise-note-late .abcjs-notehead');
+    expect(await probe.prop('.exercise-note-late', 'fill')).toBe('rgb(222, 140, 0)');
+    const tick = await probe.one('.exercise-notation__drift--late');
+    expect(tick?.painted, 'the late tick is not on screen').toBe(true);
+    expect(tick.text).toBe('\u25B8');
+    expect(Math.abs(tick.cx - late.cx), `the tick ${say(tick)} is not under its note ${say(late)}`).toBeLessThan(late.width);
+    expect(tick.top).toBeGreaterThanOrEqual(late.top);
+    const lapsed = await probe.one('.exercise-note-unplayed .abcjs-notehead');
+    expect(lapsed, 'the lapsed note is not grey').not.toBeNull();
+    const ghost = await probe.one('.exercise-notation__ghost.is-wrong ellipse');
+    expect(ghost?.painted, 'the recorded wrong pitch has no red ghost').toBe(true);
+    expect(ghost.midi).toBe('66');
+    // The ghost is engraved INTO its beat's column (one chord, one stem), not
+    // floated off to the right of it: it overlaps the beat horizontally.
+    expect(ghost.left, `the ghost ${say(ghost)} is not in its beat's column ${say(lapsed)}`).toBeLessThan(lapsed.right);
+    expect(ghost.right, `the ghost ${say(ghost)} is not in its beat's column ${say(lapsed)}`).toBeGreaterThan(lapsed.left);
+    expect(await probe.prop('.exercise-notation__ghost.is-wrong ellipse', 'fill')).toBe('rgba(200, 40, 40, 0.8)');
+    // The lane at the cursor is dimmed: this beat's window is shut.
+    expect(await probe.count('.exercise-notation__cursor.is-window-closed')).toBe(1);
+    await page.screenshot({ path: '/tmp/timed-record-notation.png' });
+    expectNoPageErrors();
+  }, 60000);
+});
+
+/**
+ * THE WRONG-NOTE GHOST IS ENGRAVED AS A CHORD ON THE TARGET'S STEM.
+ *
+ * It used to be drawn out from the cursor lane's right edge — floating beside
+ * the column, lower, stemless, touching nothing (owner screenshot, match-gate
+ * rung keys-3: stem-down B4 asked, A4 pressed). Notes on one beat are one chord
+ * on one stem, and a second flips to the other side of the stem and touches it.
+ * jsdom cannot see any of this, so it is measured in real abcjs.
+ */
+describe('the live wrong-note ghost, engraved into the target\'s column', () => {
+  const quarter = (midi) => ({ ...SCALE, id: `ghost@${midi}`, events: [{ id: 'n1', value: 'quarter', notes: [{ midi }] }] });
+  const SHOT_DIR = process.env.GHOST_SHOT_DIR;
+  const live = async (target, pressed, shot) => {
+    await openStage(css, js);
+    await page.evaluate(PROBE);
+    await page.evaluate((arg) => window.__stage.mountLive(arg), { instance: quarter(target), eventIndex: 0 });
+    await page.waitForSelector('.exercise-note-next');
+    await page.evaluate((m) => window.__stage.pressLive(m), pressed);
+    await page.waitForSelector('.exercise-notation__ghost ellipse');
+    const out = {
+      head: await probe.one('.abcjs-notehead'),
+      stem: await probe.one('.abcjs-stem'),
+      ghost: await probe.one('.exercise-notation__ghost ellipse'),
+      lane: await probe.one('.exercise-notation__cursor'),
+      ghostStem: await probe.one('.exercise-notation__ghost-stem'),
+    };
+    if (SHOT_DIR) await (await page.$('.piano-exercise-run__stage')).screenshot({ path: `${SHOT_DIR}/${shot}.png` });
+    return out;
+  };
+
+  it('stem-down B4 asked, A4 pressed: the red head is LEFT of the stem, touching it, one step lower', async () => {
+    const { head, stem, ghost, lane } = await live(71, [69], 'second-stem-down');
+    expect(ghost.painted).toBe(true);
+    expect(ghost.right, `ghost ${say(ghost)} stops short of the stem ${say(stem)}`).toBeGreaterThanOrEqual(stem.left);
+    expect(ghost.right, `ghost ${say(ghost)} overshoots the stem ${say(stem)}`).toBeLessThanOrEqual(stem.right + head.width * 0.2);
+    expect(ghost.cx, 'the flipped head is left of the target head').toBeLessThan(head.cx - head.width / 2);
+    expect(ghost.cy, 'one step (half a line space) lower').toBeGreaterThan(head.cy);
+    expect(ghost.cy - head.cy).toBeLessThan(head.height);
+    expect(ghost.left).toBeGreaterThanOrEqual(lane.left);
+    expect(ghost.right).toBeLessThanOrEqual(lane.right);
+  }, 60000);
+
+  it('stem-up G4 asked, A4 pressed: the red head is RIGHT of the stem, touching it', async () => {
+    const { head, stem, ghost, lane } = await live(67, [69], 'second-stem-up');
+    expect(ghost.left, `ghost ${say(ghost)} stops short of the stem ${say(stem)}`).toBeLessThanOrEqual(stem.right);
+    expect(ghost.left, `ghost ${say(ghost)} overshoots the stem ${say(stem)}`).toBeGreaterThanOrEqual(stem.left - head.width * 0.2);
+    expect(ghost.cx).toBeGreaterThan(head.cx + head.width / 2);
+    expect(ghost.cy).toBeLessThan(head.cy);
+    expect(ghost.right).toBeLessThanOrEqual(lane.right);
+  }, 60000);
+
+  it('a third: the red head shares the target head\'s side of the stem and its x', async () => {
+    const { head, ghost } = await live(71, [67], 'third-stem-down');
+    expect(Math.abs(ghost.cx - head.cx), `ghost ${say(ghost)} is not in the target column ${say(head)}`).toBeLessThan(head.width * 0.15);
+    expect(ghost.cy).toBeGreaterThan(head.cy);
+  }, 60000);
+
+  it('a far note past the stem tip gets a short red stem joining it to the chord', async () => {
+    const { stem, ghost, ghostStem } = await live(71, [57], 'far-stem-down');
+    expect(ghostStem, 'no stem segment joins the ghost to the stem').not.toBeNull();
+    expect(Math.abs(ghostStem.left - stem.left)).toBeLessThan(stem.width + 3);
+    expect(ghostStem.bottom).toBeGreaterThanOrEqual(ghost.cy - 1);
+  }, 60000);
+
+  it('a flipped head carries its accidental to its own left', async () => {
+    const { ghost } = await live(71, [70], 'accidental-second');
+    const acc = await probe.one('.exercise-notation__ghost g');
+    expect(acc.right).toBeLessThanOrEqual(ghost.left + 1);
+  }, 60000);
+});
+
+describe('the engraved cursor, on the material the bank ships', () => {
+  it('a cued eighth-note scale draws its lane ON the note it is asking for', async () => {
+    await run({ instance: EIGHTH_SCALE,
+      props: { tier: 3, intent: 'challenge', requirementOverride: CUED_REQUIREMENT } }, CUED_READY);
+    await probe.hold([60]); await probe.hold([]);
+    await page.waitForSelector('.piano-exercise-run.is-running');
+    await page.waitForFunction(() => !document.querySelector('.piano-exercise-run.is-countdown'));
+    await page.waitForSelector('.exercise-notation__cursor');
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const cursor = await probe.one('.exercise-notation__cursor');
+    expect(inside(cursor, stage),
+      `the cursor ${say(cursor)} is drawn outside the engraving ${say(stage)} — a child sees no cursor at all`).toBe(true);
+    // The NOTEHEAD, not the whole abcjs note group. The lane is centred on the
+    // head — that is its stated job — and a beamed eighth's stem and beam run
+    // well past it, so demanding the lane swallow those would pin a cosmetic
+    // choice instead of the thing that broke: WHICH head the lane sits on.
+    // A timed run paints the RECORD, so the note under the lane may already be
+    // grey (its window closed unplayed) rather than `next`; the lane's own
+    // hook says which note it is on either way.
+    const target = await probe.one('.exercise-note-at-cursor .abcjs-notehead');
+    expect(inside(target, cursor),
+      `the cursor ${say(cursor)} does not enclose the notehead it points at ${say(target)}`).toBe(true);
+    await page.screenshot({ path: '/tmp/cursor-cued-eighths.png' });
+    expectNoPageErrors();
+  }, 60000);
+
+  it('a grand staff puts one lane on each stave, each around its own note', async () => {
+    await run({ instance: GRAND_SCALE,
+      props: { tier: 2, intent: 'challenge', requirementOverride: FREE_REQUIREMENT } }, FREE_READY);
+    await page.waitForSelector('.exercise-notation__cursor');
+    expect(await probe.count('.abcjs-staff'), 'a two-hand exercise did not engrave two staves').toBe(2);
+    const stage = await probe.one('.piano-exercise-run__stage');
+    const notation = await probe.one('.abc-renderer svg');
+    expect(inside(notation, stage), `the grand staff overflows its stage: ${say(notation)} in ${say(stage)}`).toBe(true);
+    expect(Math.abs(notation.cx - stage.cx), `the grand staff is not horizontally centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(notation.cy - stage.cy), `the grand staff is not vertically centred: ${say(notation)} in ${say(stage)}`).toBeLessThanOrEqual(1);
+    expect(await page.$eval('.abc-renderer svg', (svg) => {
+      const matrix = svg.getScreenCTM();
+      return Math.abs(matrix.a / matrix.d);
+    }), 'the fitted grand staff was stretched out of its engraved proportions').toBeCloseTo(1, 4);
+    const cursors = await probe.all('.exercise-notation__cursor');
+    expect(cursors.length, 'a grand staff needs a lane on each stave').toBe(2);
+    for (const cursor of cursors) {
+      expect(inside(cursor, stage),
+        `a grand-staff lane ${say(cursor)} is drawn outside the engraving ${say(stage)}`).toBe(true);
+    }
+    const targets = await probe.all('.exercise-note-next .abcjs-notehead');
+    expect(targets.length, 'both hands should be asked for at once').toBeGreaterThanOrEqual(2);
+    for (const target of targets) {
+      expect(cursors.some((cursor) => inside(target, cursor)),
+        `the notehead ${say(target)} has no lane around it — lanes at ${cursors.map(say).join(' and ')}`).toBe(true);
+    }
+    await page.screenshot({ path: '/tmp/cursor-grand-staff.png' });
+    expectNoPageErrors();
+  }, 60000);
+});
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THE HEIGHT BUDGET OF A RUN, measured.
+ *
+ * Every case above asserts what a given tier DRAWS. These assert who the room
+ * belongs to — the thing no stylesheet on this surface had ever said, so each
+ * block sized itself from its own content until the column ran out and the
+ * loser drew outside its box.
+ *
+ * What that cost, measured at 1280x800 before this block existed:
+ *
+ *   - A two-note tier-1 ask gave the reinforcement staff 399px of a 516px
+ *     stage — it is `width: 100%` over an inline aspect-ratio, so a one-column
+ *     dyad's height was simply however wide the stage happened to be.
+ *   - The keyboard had no proportion of its own at all (`width/height: 100%`,
+ *     white keys `100% / count` by `100%`), and its slot was `flex: 1 1 auto`.
+ *     So the board was exactly whatever the blocks above it did not use. In
+ *     this harness that measured **4.4:1** on the tier-1 ask above, against
+ *     **21.3:1** at tier 0 where no staff is drawn at all — a white key 514px
+ *     long and 24px wide. A child reported exactly this: the keys are too
+ *     tall, especially when there is no staff. And `staffFitsAsk` decides
+ *     PER ASK whether a staff is drawn, so one deck drew a differently-shaped
+ *     instrument from one ask to the next.
+ *
+ * So: the keyboard is the object and holds a real proportion, the staff is
+ * reinforcement and yields first, and neither may leave its slot.
+ */
+describe('the room a run gives each block, at 1280x800', () => {
+  /** A white key is a physical object: roughly 6x longer than it is wide. */
+  const KEY_RATIO = [4.5, 7];
+
+  const whiteKeyRatio = async () => {
+    const keys = await probe.all('.piano-key.white');
+    expect(keys.length, 'no white keys drawn').toBeGreaterThan(0);
+    return keys[0].height / keys[0].width;
+  };
+
+  it('keeps the lit-keys board in a real keyboard proportion, with a staff and without', async () => {
+    await run({ instance: TREBLE_DYAD, props: { tier: 1, ask: 'Play both lit keys together.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    expect(await probe.count(STAFF_SELECTOR), 'tier 1 is the WITH-staff half of this comparison').toBe(1);
+    const withStaff = await probe.one('.keys-ask__keys .piano-keyboard');
+    const withRatio = await whiteKeyRatio();
+
+    await run({ instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+    expect(await probe.count(STAFF_SELECTOR), 'tier 0 is the WITHOUT-staff half').toBe(0);
+    const noStaff = await probe.one('.keys-ask__keys .piano-keyboard');
+    const noRatio = await whiteKeyRatio();
+
+    for (const [label, ratio] of [['with a staff', withRatio], ['with no staff', noRatio]]) {
+      expect(ratio, `white keys ${label} are ${ratio.toFixed(1)}:1, outside ${KEY_RATIO.join('..')}:1 — that is not a picture of a piano`)
+        .toBeGreaterThanOrEqual(KEY_RATIO[0]);
+      expect(ratio, `white keys ${label} are ${ratio.toFixed(1)}:1, outside ${KEY_RATIO.join('..')}:1 — that is not a picture of a piano`)
+        .toBeLessThanOrEqual(KEY_RATIO[1]);
+    }
+
+    // THE SAME INSTRUMENT EITHER WAY. `staffFitsAsk` turns the staff block on
+    // and off per ask, and the board must not resize under the child when it
+    // does — that is the shape-changing keyboard, stated as a number.
+    expect(Math.abs(noStaff.height - withStaff.height),
+      `the board is ${withStaff.height.toFixed(0)}px tall with a staff and ${noStaff.height.toFixed(0)}px without`)
+      .toBeLessThanOrEqual(1);
+  });
+
+  it('keeps every block inside the slot it was given, at every tier', async () => {
+    const cases = [
+      ['tier 0 lit key', { instance: ONE_KEY, props: { tier: 0, ask: 'Press the lit key.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 1 dyad + staff', { instance: TREBLE_DYAD, props: { tier: 1, ask: 'Play both lit keys.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 2 scale', { instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }],
+      ['tier 2 short ask', { instance: SHORT_ASK, props: { tier: 2, ask: 'Play two notes.', intent: 'practice', practiceMode: 'free' } }],
+    ];
+    for (const [label, arg] of cases) {
+      await run(arg, FREE_READY);
+      const stage = await probe.one('.piano-exercise-run__stage');
+      expect(stage, `${label}: no stage`).not.toBeNull();
+      // Whatever this tier actually mounted — lit keys, sequence staff, the
+      // reinforcement card, the footer strip — none of it may draw outside the
+      // row it was handed.
+      for (const sel of ['.keys-ask', '.keys-ask__staff', '.keys-ask__keys', '.piano-exercise-run__sequence']) {
+        const box = await probe.one(sel);
+        if (!box) continue;
+        expect(inside(box, stage), `${label}: ${sel} ${say(box)} is outside its stage row ${say(stage)}`).toBe(true);
+      }
+      // And the board may not leave the slot the column gave it. Giving the
+      // keyboard a proportion is exactly what makes this failable: a board that
+      // simply fills its slot can never overhang, and can never be a keyboard
+      // either.
+      const slot = await probe.one('.keys-ask__keys');
+      const board = await probe.one('.keys-ask__keys .piano-keyboard');
+      if (slot && board) {
+        expect(inside(board, slot), `${label}: the board ${say(board)} hangs out of its slot ${say(slot)}`).toBe(true);
+      }
+    }
+    expectNoPageErrors();
+  }, 40000);
+});
+
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * WHAT THE RUN DOES WHEN A CHILD IS LOST, driven through the real input path.
+ *
+ * Both cases here come from one session in the log store: a four-year-old on
+ * `keys/lit@notes=3,arrangement=sequence,pick=15`, 2026-09-13 19:58:25–19:58:45.
+ * He cleared note one and then fired THIRTY wrong notes in twenty seconds at
+ * note two, cursor never moving, and the run answered with nothing at all.
+ *
+ * Two separate faults were behind that, and this block holds both shut.
+ */
+describe('a run that has lost its child, at 1280x800', () => {
+  const dataAttr = (name) => page.evaluate((n) => document.querySelector('.piano-exercise-run')?.getAttribute(n), name);
+
+  /**
+   * THE CURSOR MAY NOT POINT BACKWARDS.
+   *
+   * `visualCursorFor` used to roll its index back one entry while the
+   * just-completed key was still HELD — and that index is what lights the key
+   * and what numbers the badges. A child who does not lift a finger (which is
+   * most of them, at this age) was shown the key they had already played while
+   * the assessor graded the next one, so every key they tried came back wrong,
+   * the correct one included. 289 such frames in a week across four learners.
+   */
+  it('shows the note being graded, not the one still under a finger', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    // HELD and never released — this is the whole condition.
+    await probe.hold([60]);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-expected-cursor') === '1');
+
+    const expected = await dataAttr('data-expected-cursor');
+    const displayed = await dataAttr('data-displayed-cursor');
+    expect(displayed,
+      `the assessor is grading entry ${expected} while the child is being shown entry ${displayed} — every key they press now is wrong, including the right one`)
+      .toBe(expected);
+
+    // AND THE NOTE UNDER THE FINGER IS STILL NOT ACCUSED, which is the thing
+    // the rollback existed to prevent. That defence now comes from the layer it
+    // belongs in: `classifyHeldPitch` calls a key that was already down when the
+    // cursor arrived a SUSTAIN — logged, never drawn — so the cursor is free to
+    // tell the truth. If this ever fails, the rollback was load-bearing after
+    // all and removing it was wrong.
+    expect(await probe.count('.sequence-note-wrong-ghost'),
+      'the correct note still held under a finger was drawn as a mistake')
+      .toBe(0);
+  });
+
+  /**
+   * AND WHEN THEY ARE SIMPLY LOST, THE RUN SAYS SOMETHING.
+   *
+   * The screen state on the tenth wrong key used to be identical to the state
+   * on the first. `stuckLadder.js` climbs: re-cue the lit key, then name it.
+   */
+  it('re-cues the lit key, then names it, as the misses pile up', async () => {
+    await run({ instance: SCALE, props: { tier: 2, ask: 'Play C major, right hand.', intent: 'practice', practiceMode: 'free' } }, FREE_READY);
+
+    await probe.press(60);                       // arms the run, clears note one
+    expect(await dataAttr('data-hunting'), 'a run that is going fine owes nothing').toBeNull();
+
+    // Three wrong onsets at one target: the first rung.
+    for (const midi of [61, 63, 66]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'recue');
+    expect(await dataAttr('data-hunting')).toBe('recue');
+    // The lit key is the thing that moves, and it is still the same lit key.
+    const lit = await probe.all('.piano-key.target');
+    expect(lit.length, 'the re-cue has no key to pulse').toBeGreaterThan(0);
+
+    // Three more: looking harder has stopped being the answer, so say it.
+    for (const midi of [67, 69, 71]) await probe.press(midi);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === 'reveal');
+
+    const text = await probe.text();
+    expect(text, `the run reached its top rung and still never named the note. Screen text: ${text}`)
+      .toMatch(/Look for D\b/);
+    // Named WITHOUT its octave: "D", not "D4". The lit key already says which D.
+    expect(text).not.toMatch(/Look for D\d/);
+
+    // And finding the note ends the hunt — the next entry starts owed nothing.
+    await probe.press(62);
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.getAttribute('data-hunting') === null);
+    expect(await dataAttr('data-hunting'),
+      'help stayed on screen after the child found the note — the ladder is about one target, not the run').toBeNull();
+    expectNoPageErrors();
+  }, 40000);
+});

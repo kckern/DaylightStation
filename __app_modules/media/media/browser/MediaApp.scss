@@ -1,0 +1,84 @@
+// frontend/src/Apps/MediaApp.scss
+// Slim by design: colors/radii/spacing come from the Mantine theme
+// (__app_modules/Media/theme/mediaTheme.js). Only the font and app-level layout
+// variables live here.
+
+@use "./theme/fonts";
+
+.media-app {
+  --media-dock-h: 56px;
+  --media-tabbar-h: 56px;
+  --media-mini-h: 60px;
+  --media-dock-video-w: 96px;
+
+  // Visual-redesign tokens, aliased from the theme ramp (mediaTheme.js owns the
+  // hexes). Amber: primary Play/Resume, destination name, selected scope, focus.
+  // One left edge: the fixed content gutter (24 px laptop, 16 px phone).
+  --media-gutter: 16px;
+  --media-rail-w: 72px;
+  font-family: 'Atkinson Hyperlegible Next', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 1rem;
+
+  height: 100dvh;
+  overflow: hidden;
+}
+
+// Declared on <html> (not .media-app) so portaled popovers/menus read them too.
+html:has(.media-app) {
+  --media-ink: var(--mantine-color-dark-7);
+  --media-surface: var(--mantine-color-dark-5);
+  --media-line: var(--mantine-color-dark-4);
+  // Control boundaries (RELY.13a/AC1): the existing dimmed step of the ramp, >= 3:1 on ink, panel and surface.
+  // Hairlines between regions stay on --media-line; only the edge of something you press or type in uses this.
+  --media-control-line: var(--mantine-color-dark-2);
+  --media-text: var(--mantine-color-dark-0);
+  --media-muted: var(--mantine-color-dark-1);
+  --media-accent: var(--mantine-color-amber-5);
+}
+
+// The same tokens on the app root, as a separate rule: a WebView without :has()
+// drops the rule above whole, and the app itself must still resolve them.
+.media-app {
+  --media-ink: var(--mantine-color-dark-7);
+  --media-surface: var(--mantine-color-dark-5);
+  --media-line: var(--mantine-color-dark-4);
+  // Control boundaries (RELY.13a/AC1): the existing dimmed step of the ramp, >= 3:1 on ink, panel and surface.
+  // Hairlines between regions stay on --media-line; only the edge of something you press or type in uses this.
+  --media-control-line: var(--mantine-color-dark-2);
+  --media-text: var(--mantine-color-dark-0);
+  --media-muted: var(--mantine-color-dark-1);
+  --media-accent: var(--mantine-color-amber-5);
+}
+
+// Mantine's default-variant controls (inputs, default buttons, checkboxes) draw their edge from this one
+// variable; pointing it at the control-boundary token lifts every ordinary control at once, portals included.
+html:has(.media-app)[data-mantine-color-scheme],
+.media-app {
+  --mantine-color-default-border: var(--media-control-line);
+}
+
+@media (min-width: 48em) {
+  .media-app { --media-gutter: 24px; }
+}
+
+// Chrome Android turns downward overscroll of the ROOT scroller into
+// pull-to-refresh, which remounts the app and destroys in-flight search and
+// session state. overscroll-behavior only acts on a real scroll container, so
+// it must sit on html/body — `.media-app` is height:100dvh; overflow:hidden and
+// never scrolls, so setting it there does nothing. Scoped with :has() so only
+// pages actually rendering the Media App are affected.
+html:has(.media-app),
+body:has(.media-app) {
+  overscroll-behavior-y: none;
+}
+
+// Action feedback is informative, not a modal surface. Keep its Undo and
+// dismiss buttons interactive without letting the notification card block
+// destination controls underneath it on narrow viewports.
+.media-app-notification {
+  pointer-events: none;
+
+  button {
+    pointer-events: auto;
+  }
+}

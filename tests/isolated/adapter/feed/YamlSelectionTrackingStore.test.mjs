@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { YamlSelectionTrackingStore } from '../../../../backend/src/1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs';
+import { YamlSelectionTrackingStore } from '../../../../__backend/src/1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs';
 
 describe('YamlSelectionTrackingStore', () => {
   let store;

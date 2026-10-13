@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGenerateCatalog } from "../../../../capabilities/content-catalog/server/application/catalog/GenerateCatalog.mjs";
+import { createGenerateCatalog } from "../../../../__capabilities/content-catalog/server/application/catalog/GenerateCatalog.mjs";
 
 const expression = { screen: 'kitchen', options: { shuffle: true } };
 const createContentExpression = vi.fn((value) => value);

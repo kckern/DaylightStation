@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { LaunchService } from "../../../../capabilities/device-dispatch/server/application/LaunchService.mjs";
+import { LaunchService } from "../../../../__capabilities/device-dispatch/server/application/LaunchService.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('LaunchService', () => {

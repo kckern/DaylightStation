@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
-import { OpenRemediation } from "../../../../modules/school/server/application/usecases/OpenRemediation.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { ReceiptPrinting } from "../../../../capabilities/printing/server/receipt.mjs";
-import { validateDocument } from "../../../../modules/school/server/domain/documents/documentValidation.mjs";
-import { isSchoolToken } from "../../../../modules/school/server/domain/sessions/tokens.mjs";
-import { GuestForbiddenError } from "../../../../modules/school/server/domain/errors.mjs";
+import { CloseSessionOutcome } from "../../../../__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { OpenRemediation } from "../../../../__app_modules/learning/school/server/application/usecases/OpenRemediation.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { ReceiptPrinting } from "../../../../__capabilities/printing/server/receipt.mjs";
+import { validateDocument } from "../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
+import { isSchoolToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
+import { GuestForbiddenError } from "../../../../__app_modules/learning/school/server/domain/errors.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
   FakeReceiptPrinter, FakeReceiptRenderer, FakeReviewQueue,

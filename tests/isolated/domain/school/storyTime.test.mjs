@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateStoryTimeEnrollment, MAX_STORY_TARGET } from "../../../../modules/school/server/domain/storyTime.mjs";
+import { validateStoryTimeEnrollment, MAX_STORY_TARGET } from "../../../../__app_modules/learning/school/server/domain/storyTime.mjs";
 
 describe('validateStoryTimeEnrollment', () => {
   it('accepts a bare enrollment and applies the default target', () => {

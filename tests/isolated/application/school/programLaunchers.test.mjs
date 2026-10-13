@@ -13,8 +13,8 @@
  * policy any other DoNow caller gets (spec §6 last bullet).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { LanguageProgramLauncher } from "../../../../modules/school/server/application/LanguageProgramLauncher.mjs";
-import { LanguageStudyService } from "../../../../modules/school/server/application/LanguageStudyService.mjs";
+import { LanguageProgramLauncher } from "../../../../__app_modules/learning/school/server/application/LanguageProgramLauncher.mjs";
+import { LanguageStudyService } from "../../../../__app_modules/learning/school/server/application/LanguageStudyService.mjs";
 
 describe('LanguageProgramLauncher', () => {
   const studyGrants = { issue: vi.fn(() => 'signed-study-grant') };

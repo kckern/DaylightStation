@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaAlbumSource } from "../../../../modules/school/server/application/sources/MediaAlbumSource.mjs";
+import { MediaAlbumSource } from "../../../../__app_modules/learning/school/server/application/sources/MediaAlbumSource.mjs";
 
 const album = (id, title = `Album ${id}`) => ({
   id: `provider:${id}`, title, poster: `/img/${id}`, childCount: 3,

@@ -22,8 +22,8 @@
  * `created`/`media_completed`, unchanged and untouched here.
  */
 import { describe, it, expect } from 'vitest';
-import { nextMove } from "../../../../modules/school/server/application/usecases/offerSession.mjs";
-import { reduceSession, createEvent } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+import { nextMove } from "../../../../__app_modules/learning/school/server/application/usecases/offerSession.mjs";
+import { reduceSession, createEvent } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 /** A real `reduceSession` result for a session that has issued (and optionally reprinted) once. */
 function issuedState({ sessionId = 'ses_1', unitId, reprint = false } = {}) {

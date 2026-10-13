@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UpdateDeviceConfig } from "../../../modules/media/server/application/playback-hub/usecases/UpdateDeviceConfig.mjs";
-import { FakeHubConfigRepository } from "../../../modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
-import { HubConfig } from "../../../modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
-import { HubDevice } from "../../../modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { SlotPosition } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { VolumeBounds } from "../../../modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
-import { EntityNotFoundError } from '../../../backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
-import { DomainInvariantError } from '../../../backend/src/2_domains/core/errors/DomainInvariantError.mjs';
+import { UpdateDeviceConfig } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/UpdateDeviceConfig.mjs";
+import { FakeHubConfigRepository } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
+import { HubConfig } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/HubConfig.mjs";
+import { HubDevice } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/errors/EntityNotFoundError.mjs';
+import { DomainInvariantError } from '../../../__backend/src/2_domains/core/errors/DomainInvariantError.mjs';
 
 const makeDevice = ({
   position = 1, color = 'red', mac = '41:42:3A:E5:43:07',

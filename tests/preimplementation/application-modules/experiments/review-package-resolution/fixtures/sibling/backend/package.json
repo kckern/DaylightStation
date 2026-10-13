@@ -1,8 +1,0 @@
-{
-  "name": "@proof/backend",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@proof/fitness": "0.0.0"
-  }
-}

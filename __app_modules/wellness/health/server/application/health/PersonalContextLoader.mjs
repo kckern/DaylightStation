@@ -1,0 +1,313 @@
+/**
+ * PersonalContextLoader (F-101)
+ *
+ * Loads a per-user personal playbook (YAML) and projects it into a markdown
+ * bundle suitable for splicing into the HealthCoachAgent system prompt.
+ *
+ * Source: data/users/{userId}/lifelog/archives/playbook/playbook.yml
+ * Output: 1.5–3K-token markdown string with profile, calibration, named
+ *         periods, and patterns sections (severity-sorted).
+ *
+ * Token budget is enforced via a rough char-count proxy (1 token ≈ 4 chars).
+ * If over budget, lower-severity patterns are dropped first, then older named
+ * periods, and finally a hard truncate is applied as a last resort.
+ *
+ * Path traversal is blocked synchronously by validating userId against
+ * /^[a-zA-Z0-9_-]+$/ before any I/O is attempted.
+ *
+ * Location: __backend/src/3_applications/health/PersonalContextLoader.mjs
+ */
+
+const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const DEFAULT_TOKEN_BUDGET = 3000;
+const CHARS_PER_TOKEN = 4;
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+
+export class PersonalContextLoader {
+  #playbookStore;
+  #tokenBudget;
+  #charBudget;
+  #logger;
+
+  /**
+   * @param {Object} config
+   * @param {Object} config.dataService - Has `readYaml(absPath)` returning parsed YAML or null
+   * @param {string} [config.archiveRoot='data/users'] - Root directory holding per-user archives
+   * @param {number} [config.tokenBudget=3000] - Soft cap on output size (token-count proxy)
+   * @param {Object} [config.logger] - Logger with debug/info/warn/error methods (defaults to console)
+   */
+  constructor(config = {}) {
+    if (!config.playbookStore || typeof config.playbookStore.load !== 'function') {
+      throw new Error('PersonalContextLoader requires playbookStore with load()');
+    }
+    this.#playbookStore = config.playbookStore;
+    this.#tokenBudget = config.tokenBudget || DEFAULT_TOKEN_BUDGET;
+    this.#charBudget = this.#tokenBudget * CHARS_PER_TOKEN;
+    this.#logger = config.logger || console;
+  }
+
+  /**
+   * Load the raw parsed playbook YAML object for a user. Returns the parsed
+   * object (e.g. with `profile`, `calibration`, `named_periods`, `patterns`)
+   * or `null` if the file is missing/empty/invalid.
+   *
+   * Shared by `load(userId)` (which renders the markdown bundle) and by
+   * downstream tools that need structured playbook access (e.g. the
+   * LongitudinalToolFactory's `query_named_period` tool).
+   *
+   * @param {string} userId
+   * @returns {Promise<Object|null>}
+   */
+  async loadPlaybook(userId) {
+    if (!userId || typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
+      throw new Error(`Invalid userId: must match ${USER_ID_PATTERN}`);
+    }
+
+    this.#logger.debug?.('personal_context.load_start', { userId });
+    const playbook = await this.#playbookStore.load(userId);
+
+    if (!playbook || typeof playbook !== 'object') {
+      this.#logger.info?.('personal_context.playbook_missing', { userId });
+      return null;
+    }
+
+    return playbook;
+  }
+
+  /**
+   * Load and render the personal context bundle for a user.
+   * @param {string} userId
+   * @returns {Promise<string>} markdown bundle, or '' if playbook is missing
+   */
+  async load(userId) {
+    const playbook = await this.loadPlaybook(userId);
+
+    if (!playbook) return '';
+
+    const bundle = this.#render(playbook);
+
+    this.#logger.debug?.('personal_context.load_complete', {
+      userId,
+      chars: bundle.length,
+      approxTokens: Math.ceil(bundle.length / CHARS_PER_TOKEN),
+    });
+
+    return bundle;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
+
+  #render(playbook) {
+    const profileSection = this.#renderProfile(playbook.profile);
+    const calibrationSection = this.#renderCalibration(playbook.calibration);
+    const periods = this.#collectPeriods(playbook.named_periods);
+    const patterns = this.#collectPatterns(playbook.patterns);
+
+    let bundle = this.#assemble(profileSection, calibrationSection, periods, patterns);
+
+    if (bundle.length <= this.#charBudget) {
+      return bundle;
+    }
+
+    // Step 1: keep only high-severity patterns.
+    const highPatterns = patterns.filter(p => p.severity === 'high');
+    bundle = this.#assemble(profileSection, calibrationSection, periods, highPatterns);
+    if (bundle.length <= this.#charBudget) {
+      this.#logger.warn?.('personal_context.truncated', {
+        stage: 'patterns_high_only',
+        chars: bundle.length,
+      });
+      return bundle;
+    }
+
+    // Step 2: also trim named periods (keep most recent by `from`).
+    const recentPeriods = [...periods]
+      .sort((a, b) => (b.from || '').localeCompare(a.from || ''))
+      .slice(0, 3);
+    bundle = this.#assemble(profileSection, calibrationSection, recentPeriods, highPatterns);
+    if (bundle.length <= this.#charBudget) {
+      this.#logger.warn?.('personal_context.truncated', {
+        stage: 'periods_trimmed',
+        chars: bundle.length,
+      });
+      return bundle;
+    }
+
+    // Step 3: hard truncate. Cut to last newline within budget so we never
+    // sever a list item mid-line and produce malformed markdown for the LLM.
+    const suffix = '\n\n_(truncated)_';
+    const budget = Math.max(0, this.#charBudget - suffix.length);
+    const cut = bundle.slice(0, budget);
+    const lastNl = cut.lastIndexOf('\n');
+    const safe = lastNl > 0 ? cut.slice(0, lastNl) : cut;
+    const truncated = safe + suffix;
+    this.#logger.warn?.('personal_context.truncated', {
+      stage: 'hard_truncate',
+      chars: truncated.length,
+    });
+    return truncated;
+  }
+
+  #assemble(profileSection, calibrationSection, periods, patterns) {
+    const parts = ['## Personal Context', ''];
+
+    if (profileSection) {
+      parts.push(profileSection, '');
+    }
+    if (calibrationSection) {
+      parts.push(calibrationSection, '');
+    }
+
+    const periodsSection = this.#renderPeriods(periods);
+    if (periodsSection) {
+      parts.push(periodsSection, '');
+    }
+
+    const patternsSection = this.#renderPatterns(patterns);
+    if (patternsSection) {
+      parts.push(patternsSection, '');
+    }
+
+    return parts.join('\n').trimEnd() + '\n';
+  }
+
+  #renderProfile(profile) {
+    if (!profile || typeof profile !== 'object') return '';
+    const lines = ['### Profile'];
+
+    const goal = this.#escapeMd((profile.goal_context || '').trim());
+    if (goal) lines.push(goal);
+
+    const truths = Array.isArray(profile.truths) ? profile.truths.filter(Boolean) : [];
+    if (truths.length) {
+      lines.push('', '**Truths:**');
+      for (const t of truths) {
+        lines.push(`- ${this.#escapeMd(String(t).trim())}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  #renderCalibration(calibration) {
+    if (!calibration || typeof calibration !== 'object') return '';
+    const lines = ['### Calibration'];
+
+    if (calibration.last_dexa !== undefined && calibration.last_dexa !== null) {
+      lines.push(`- Last DEXA: ${this.#formatDate(calibration.last_dexa)}`);
+    }
+    if (calibration.consumer_bia_lean_offset_lbs !== undefined) {
+      lines.push(`- Consumer-BIA lean offset: ${calibration.consumer_bia_lean_offset_lbs} lbs`);
+    }
+    if (calibration.consumer_bia_body_fat_offset_pct !== undefined) {
+      lines.push(`- Consumer-BIA body-fat offset: ${calibration.consumer_bia_body_fat_offset_pct} pct`);
+    }
+    return lines.length > 1 ? lines.join('\n') : '';
+  }
+
+  #collectPeriods(namedPeriods) {
+    if (!namedPeriods || typeof namedPeriods !== 'object') return [];
+    return Object.entries(namedPeriods).map(([name, body]) => {
+      const summary = (body?.description || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .join(' ');
+      return {
+        name,
+        from: body?.from ? this.#formatDate(body.from) : null,
+        to: body?.to ? this.#formatDate(body.to) : null,
+        summary,
+      };
+    });
+  }
+
+  #renderPeriods(periods) {
+    if (!periods || !periods.length) return '';
+    const lines = ['### Named Periods'];
+    for (const p of periods) {
+      const range = p.from && p.to ? ` (${p.from} → ${p.to})` : '';
+      const summary = p.summary ? `: ${this.#escapeMd(this.#firstSentence(p.summary))}` : '';
+      lines.push(`- **${this.#escapeMd(p.name)}**${range}${summary}`);
+    }
+    return lines.join('\n');
+  }
+
+  #collectPatterns(patterns) {
+    if (!Array.isArray(patterns)) return [];
+    return patterns
+      .filter(p => p && p.name)
+      .map(p => ({
+        name: p.name,
+        type: p.type || 'failure_mode',
+        severity: SEVERITY_RANK[p.severity] !== undefined ? p.severity : 'medium',
+        description: (p.description || '').trim(),
+      }))
+      .sort((a, b) => {
+        const ra = SEVERITY_RANK[a.severity] ?? 99;
+        const rb = SEVERITY_RANK[b.severity] ?? 99;
+        return ra - rb;
+      });
+  }
+
+  #renderPatterns(patterns) {
+    if (!patterns || !patterns.length) return '';
+    const failures = patterns.filter(p => p.type === 'failure_mode');
+    const successes = patterns.filter(p => p.type === 'success_mode');
+
+    const lines = ['### Patterns'];
+
+    if (failures.length) {
+      lines.push('**Failure modes:**');
+      for (const p of failures) {
+        lines.push(`- **${this.#escapeMd(p.name)}** [${p.severity}]: ${this.#escapeMd(this.#firstSentence(p.description))}`);
+      }
+    }
+    if (successes.length) {
+      if (failures.length) lines.push('');
+      lines.push('**Success modes:**');
+      for (const p of successes) {
+        lines.push(`- **${this.#escapeMd(p.name)}** [${p.severity}]: ${this.#escapeMd(this.#firstSentence(p.description))}`);
+      }
+    }
+    return lines.length > 1 ? lines.join('\n') : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  #firstSentence(text) {
+    if (!text) return '';
+    const flattened = String(text).replace(/\s+/g, ' ').trim();
+    const match = flattened.match(/^(.+?[.!?])(\s|$)/);
+    return match ? match[1] : flattened;
+  }
+
+  #formatDate(value) {
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+    return String(value);
+  }
+
+  /**
+   * Escape markdown special characters in user-supplied playbook content so
+   * a stray `#`, backtick, or `**` in a description can't corrupt the rendered
+   * bundle the LLM receives. Conservative — strips backticks entirely (rare
+   * inside playbook prose) and prefixes leading `#`/`*`/`_`/`>` with a backslash
+   * so the LLM doesn't interpret them as headers/emphasis/blockquote markers.
+   */
+  #escapeMd(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/`/g, "'")
+      .replace(/\*\*/g, '\\*\\*')
+      .replace(/__/g, '\\_\\_')
+      .replace(/^#+\s/gm, '\\$&')
+      .replace(/^>\s/gm, '\\$&');
+  }
+}
+
+export default PersonalContextLoader;

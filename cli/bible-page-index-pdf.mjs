@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../modules/school/cli/bible-page-index-pdf.mjs";
+export * from "../__app_modules/learning/school/cli/bible-page-index-pdf.mjs";

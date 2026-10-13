@@ -1,6 +1,6 @@
 // tests/isolated/domain/content/capabilities/Displayable.test.mjs
 import { describe, it, expect } from 'vitest';
-import { DisplayableItem } from "../../../../../capabilities/content-catalog/server/domain/capabilities/Displayable.mjs";
+import { DisplayableItem } from "../../../../../__capabilities/content-catalog/server/domain/capabilities/Displayable.mjs";
 
 describe('DisplayableItem', () => {
   const validProps = {

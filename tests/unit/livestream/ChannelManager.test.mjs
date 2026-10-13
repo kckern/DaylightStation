@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { ChannelManager } from "../../../modules/livestream/server/application/ChannelManager.mjs";
+import { ChannelManager } from "../../../__app_modules/media/livestream/server/application/ChannelManager.mjs";
 
 // Adapters are injected as factories by the composition root; tests inject mocks.
 function makeMockRuntime() {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React, { useContext } from 'react';
 import { render, cleanup, act } from '@testing-library/react';
-import { ScreenVolumeProvider } from '../../../capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
+import { ScreenVolumeProvider } from '../../../__capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
 import { ScreenVolumeContext } from '../../../frontend/src/lib/volume/ScreenVolumeContext.js';
 
 vi.mock('../../../frontend/src/lib/logging/Logger.js', () => ({

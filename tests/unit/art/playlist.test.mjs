@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { toTracks, advanceIndex, shuffleOrder, shuffleOrderAvoiding }
-  from "../../../capabilities/playback/browser/playlist.js";
+  from "../../../__capabilities/playback/browser/playlist.js";
 
 describe('toTracks', () => {
   it('maps items to {mediaUrl,title,artist}', () => {

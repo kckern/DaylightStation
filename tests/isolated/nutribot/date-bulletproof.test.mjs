@@ -6,10 +6,10 @@
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { LogFoodFromText } from "../../../modules/nutribot/server/application/usecases/LogFoodFromText.mjs";
-import { AcceptFoodLog } from "../../../modules/nutribot/server/application/usecases/AcceptFoodLog.mjs";
-import { NutriLog } from "../../../modules/health/server/domain/nutrition/entities/NutriLog.mjs";
-import { createNutriLog, serializeNutriLog } from "../../../modules/health/server/nutrition-records.mjs";
+import { LogFoodFromText } from "../../../__app_modules/wellness/nutribot/server/application/usecases/LogFoodFromText.mjs";
+import { AcceptFoodLog } from "../../../__app_modules/wellness/nutribot/server/application/usecases/AcceptFoodLog.mjs";
+import { NutriLog } from "../../../__app_modules/wellness/health/server/domain/nutrition/entities/NutriLog.mjs";
+import { createNutriLog, serializeNutriLog } from "../../../__app_modules/wellness/health/server/nutrition-records.mjs";
 
 // Fixed clocks for deterministic date behavior
 const THU_NOON_PT = new Date('2026-04-16T19:00:00Z'); // Thu 12:00 PT

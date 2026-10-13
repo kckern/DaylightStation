@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAttempt } from "../../../../modules/school/server/domain/attempt.mjs";
+import { createAttempt } from "../../../../__app_modules/learning/school/server/domain/attempt.mjs";
 
 describe('createAttempt', () => {
   const base = { id: 'att_fixed', at: '2026-08-01T15:00:00.000Z', sessionId: 'ses_x', bankId: 'b', itemId: 'q1', itemType: 'multiple_choice', mode: 'quiz', given: 'Olympia', correct: true, attributedTo: 'kckern' };

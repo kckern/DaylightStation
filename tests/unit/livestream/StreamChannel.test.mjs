@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach } from 'vitest';
-import { StreamChannel } from "../../../modules/livestream/server/domain/StreamChannel.mjs";
-import { toChannelStatus } from "../../../modules/livestream/server/application/ChannelManager.mjs";
+import { StreamChannel } from "../../../__app_modules/media/livestream/server/domain/StreamChannel.mjs";
+import { toChannelStatus } from "../../../__app_modules/media/livestream/server/application/ChannelManager.mjs";
 
 describe('StreamChannel', () => {
   let channel;

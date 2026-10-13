@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { MastraAdapter } from "../../../../capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
-import { AgentExecutionPolicy } from "../../../../capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
+import { MastraAdapter } from "../../../../__capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
+import { AgentExecutionPolicy } from "../../../../__capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
 
 const logger = { info() {}, debug() {}, warn() {}, error() {} };
 const adapter = deps => new MastraAdapter({ logger, executionPolicy: new AgentExecutionPolicy({ logger }), ...deps });

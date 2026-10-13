@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/adapters/fitness_adapter.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { FitnessEventAdapter } from "../../../../../modules/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
+import { FitnessEventAdapter } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 

@@ -10,7 +10,7 @@ export const rules = [
     // This is tricky to detect with grep - we look for class without corresponding default
     // This rule may need custom detection logic
     pattern: /^export class \w+ /,
-    scope: 'backend/src/**/*.mjs',
+    scope: '__backend/src/**/*.mjs',
     message: 'Classes should have both named and default export',
     // Note: This will have false positives, needs filtering in post-processing
     _needsPostProcess: true

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { PrinterSink } from "../../../../../modules/newsreporter/server/application/sinks/PrinterSink.mjs";
-import { isSink } from "../../../../../modules/newsreporter/server/application/ports/ISink.mjs";
+import { PrinterSink } from "../../../../../__app_modules/media/newsreporter/server/application/sinks/PrinterSink.mjs";
+import { isSink } from "../../../../../__app_modules/media/newsreporter/server/application/ports/ISink.mjs";
 
 const fakeRenderer = () => ({
   renderCalls: [],

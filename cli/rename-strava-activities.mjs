@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '../modules/fitness/cli/rename-strava-activities.mjs';
+import '../__app_modules/wellness/fitness/cli/rename-strava-activities.mjs';

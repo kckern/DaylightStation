@@ -1,6 +1,6 @@
 // tests/isolated/agents/framework/buildTimeWindowProcessor.test.mjs
 import { describe, it, expect } from 'vitest';
-import { buildTimeWindowProcessor } from "../../../../capabilities/agent-runtime/server/application/framework/buildTimeWindowProcessor.mjs";
+import { buildTimeWindowProcessor } from "../../../../__capabilities/agent-runtime/server/application/framework/buildTimeWindowProcessor.mjs";
 
 const NOW = 1700000000000;
 

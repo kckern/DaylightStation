@@ -8,7 +8,7 @@
  * read of it.
  */
 import { describe, it, expect } from 'vitest';
-import { questionPrompts } from "../../../../../modules/school/server/domain/documents/documentValidation.mjs";
+import { questionPrompts } from "../../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
 import { fixtureDocument, WORKSHEET_DOCUMENT_ID, OMR_DOCUMENT_ID } from '#testlib/school/lifecycleFixtures.mjs';
 
 describe('questionPrompts', () => {

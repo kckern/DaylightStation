@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { MastraAdapter } from "../../../../capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
-import { MastraRunAdapter } from "../../../../capabilities/agent-runtime/server/adapters/MastraRunAdapter.mjs";
-import { standardSchema } from "../../../../capabilities/agent-runtime/server/adapters/standardSchema.mjs";
-import { createTool } from "../../../../capabilities/agent-runtime/server/application/ports/ITool.mjs";
-import { buildMastraMemory } from "../../../../capabilities/agent-runtime/server/adapters/MastraAgentMemoryFactory.mjs";
-import { AgentExecutionPolicy } from "../../../../capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
+import { MastraAdapter } from "../../../../__capabilities/agent-runtime/server/adapters/MastraAdapter.mjs";
+import { MastraRunAdapter } from "../../../../__capabilities/agent-runtime/server/adapters/MastraRunAdapter.mjs";
+import { standardSchema } from "../../../../__capabilities/agent-runtime/server/adapters/standardSchema.mjs";
+import { createTool } from "../../../../__capabilities/agent-runtime/server/application/ports/ITool.mjs";
+import { buildMastraMemory } from "../../../../__capabilities/agent-runtime/server/adapters/MastraAgentMemoryFactory.mjs";
+import { AgentExecutionPolicy } from "../../../../__capabilities/agent-runtime/server/application/framework/AgentExecutionPolicy.mjs";
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

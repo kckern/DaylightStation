@@ -1,6 +1,6 @@
 // tests/unit/content/capabilities/Playable.test.mjs
 import { describe, it, test, expect } from 'vitest';
-import { PlayableItem } from "../../../../../capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
+import { PlayableItem } from "../../../../../__capabilities/content-catalog/server/domain/capabilities/Playable.mjs";
 
 describe('Playable capability', () => {
   test('creates playable video item', () => {

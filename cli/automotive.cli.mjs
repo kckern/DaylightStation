@@ -1,2 +1,2 @@
 // Stable command entry; implementation belongs to its declared owner.
-export * from "../modules/auto/cli/automotive.cli.mjs";
+export * from "../__app_modules/household/auto/cli/automotive.cli.mjs";

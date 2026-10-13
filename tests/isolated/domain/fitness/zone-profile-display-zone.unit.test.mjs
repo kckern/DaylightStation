@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { ZoneProfileStore } from "../../../../modules/fitness/browser/hooks/fitness/ZoneProfileStore.js";
+import { ZoneProfileStore } from "../../../../__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js";
 
 const ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', color: '#3b82f6', min: 0 },

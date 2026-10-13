@@ -469,7 +469,7 @@ describe('production error-handler statuses (object shape)', () => {
   // exact path (it was a silent 500 until 2026-08-06).
   let server2; let base2;
   beforeAll(async () => {
-    const { GuestForbiddenError } = await import("../../../../modules/school/server/domain/errors.mjs");
+    const { GuestForbiddenError } = await import("../../../../__app_modules/learning/school/server/domain/errors.mjs");
     const { EntityNotFoundError } = await import('#domains/core/errors/index.mjs');
     const app = express();
     app.use(express.json());

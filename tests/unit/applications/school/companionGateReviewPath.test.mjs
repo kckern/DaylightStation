@@ -18,12 +18,12 @@
  * the verdict survives all three.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RecordCardScanOutcome } from "../../../../modules/school/server/application/documents/RecordCardScanOutcome.mjs";
-import { GradeSubmission } from "../../../../modules/school/server/application/usecases/GradeSubmission.mjs";
-import { CloseSessionOutcome } from "../../../../modules/school/server/application/usecases/CloseSessionOutcome.mjs";
-import { CurriculumAccess } from "../../../../modules/school/server/application/CurriculumAccess.mjs";
-import { reduceSession } from "../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
-import { COMPANION_GATE_ITEM_ID } from "../../../../modules/school/server/domain/companionCode.mjs";
+import { RecordCardScanOutcome } from "../../../../__app_modules/learning/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { GradeSubmission } from "../../../../__app_modules/learning/school/server/application/usecases/GradeSubmission.mjs";
+import { CloseSessionOutcome } from "../../../../__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { reduceSession } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
+import { COMPANION_GATE_ITEM_ID } from "../../../../__app_modules/learning/school/server/domain/companionCode.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   fakeClock, fakeGrownUps, seededRng, silentLogger,

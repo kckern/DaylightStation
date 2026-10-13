@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouterBase from "../../../../modules/life/server/api/life.mjs";
-import { LifeApiOperations } from "../../../../modules/life/server/application/LifeApiOperations.mjs";
-import { LifePlanOperations } from "../../../../modules/life/server/application/LifePlanOperations.mjs";
+import createLifeRouterBase from "../../../../__app_modules/personal/life/server/api/life.mjs";
+import { LifeApiOperations } from "../../../../__app_modules/personal/life/server/application/LifeApiOperations.mjs";
+import { LifePlanOperations } from "../../../../__app_modules/personal/life/server/application/LifePlanOperations.mjs";
 
 const createLifeRouter = (config) => {
   const lifePlanOperations = new LifePlanOperations({
@@ -23,7 +23,7 @@ const createLifeRouter = (config) => {
     }),
   });
 };
-import { PlanAuthoringService } from "../../../../modules/life/server/application/services/PlanAuthoringService.mjs";
+import { PlanAuthoringService } from "../../../../__app_modules/personal/life/server/application/services/PlanAuthoringService.mjs";
 
 /**
  * Exercises POST /plan/purpose — the route that lets a planless user

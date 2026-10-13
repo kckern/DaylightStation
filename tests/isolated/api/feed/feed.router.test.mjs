@@ -1,7 +1,7 @@
 // tests/isolated/api/feed/feed.router.test.mjs
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from '../../../preimplementation/application-modules/drivers/remaining-http-request.mjs';
+import request from '../../../_lib/memory-http/request.mjs';
 import { createFeedTestRouter as createFeedRouter } from '../../../_lib/feed/feedRouterTestSupport.mjs';
 
 describe('Feed Router', () => {
@@ -303,8 +303,8 @@ describe('Feed Router', () => {
   // Content plugin enrichment
   describe('Content plugin enrichment on /reader/stream', () => {
     test('enriches YouTube URLs from FreshRSS with contentType and videoId', async () => {
-      const { ContentPluginRegistry } = await import("../../../../modules/feed/server/application/services/ContentPluginRegistry.mjs");
-      const { YouTubeContentPlugin } = await import("../../../../modules/feed/server/adapters/plugins/youtube.mjs");
+      const { ContentPluginRegistry } = await import("../../../../__app_modules/media/feed/server/application/services/ContentPluginRegistry.mjs");
+      const { YouTubeContentPlugin } = await import("../../../../__app_modules/media/feed/server/adapters/plugins/youtube.mjs");
       const registry = new ContentPluginRegistry([new YouTubeContentPlugin()]);
 
       const ytMockAdapter = {

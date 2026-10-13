@@ -25,7 +25,7 @@ const SRC = 'frontend/src';
 const APPS_DIR = `${SRC}/Apps`;
 const BASELINE_PATH = 'scripts/audit-css-ownership.baseline.json';
 
-// An app's own module folder, where it differs from modules/<Base>/ (Base =
+// An app's own module folder, where it differs from __app_modules/<Base>/ (Base =
 // the app name without "App"). Piano's module folder is shared with surfaces
 // that mount without the kiosk shell (games, the office-screen visualizer), so
 // only the kiosk shell's folder counts as PianoApp's own.
@@ -284,7 +284,7 @@ function main() {
   }
   const otherSheets = {};
   const jsFiles = {};
-  for (const file of [SRC, 'modules/gratitude/browser', 'capabilities/household-identity/browser'].flatMap(root => walk(root))) {
+  for (const file of [SRC, '__app_modules/personal/gratitude/browser', '__capabilities/household-identity/browser'].flatMap(root => walk(root))) {
     if (/\.(scss|css)$/.test(file)) {
       if (path.posix.dirname(file) === APPS_DIR) continue;
       otherSheets[file] = fs.readFileSync(file, 'utf8');

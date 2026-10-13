@@ -70,7 +70,7 @@ services:
 
 ```bash
 mkdir daylight && cd daylight
-# Add your config files to ./data (see docs/configuration.md)
+# Add your config files to ./data (see __docs/reference/core/configuration.md)
 docker-compose up -d
 ```
 
@@ -78,7 +78,7 @@ Open `http://localhost:3111`
 
 ## Architecture
 
-See [docs/reference/core/backend-architecture.md](docs/reference/core/backend-architecture.md) for technical details.
+Start with [the contributor map](__docs/reference/core/project-layout.md) for source ownership and the repository layout.
 
 ## Configuration
 
@@ -87,7 +87,7 @@ See [docs/reference/core/backend-architecture.md](docs/reference/core/backend-ar
 | `secrets.yml` | API keys and credentials for integrations |
 | `system.yml` | Household settings, users, feature flags |
 
-See [Configuration Guide](docs/configuration.md) for detailed setup.
+See [Configuration Guide](__docs/reference/core/configuration.md) for detailed setup.
 
 ## Contributing
 
@@ -108,10 +108,10 @@ DaylightStation is released under the [MIT License](https://opensource.org/licen
 | Forking/redistribution | Free |
 | Verified supporter badge | Voluntary ($1-$50/mo) |
 
-See [docs/reference/licensing.md](docs/reference/licensing.md) for the supporter program and badge verification.
+See [__docs/reference/licensing.md](__docs/reference/licensing.md) for the supporter program and badge verification.
 
 ## Links
 
-- [Documentation](docs/)
+- [Documentation](__docs/)
 - [Docker Hub](https://hub.docker.com/r/kckern/daylight-station)
 - [Report Issues](https://github.com/kckern/DaylightStation/issues)

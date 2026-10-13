@@ -6,7 +6,7 @@
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { TransactionCategorizationService } from "../../../../../modules/finance/server/application/TransactionCategorizationService.mjs";
+import { TransactionCategorizationService } from "../../../../../__app_modules/money/finance/server/application/TransactionCategorizationService.mjs";
 
 describe('FinanceCategorization', () => {
   let service;

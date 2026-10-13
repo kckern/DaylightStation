@@ -13,7 +13,7 @@ vi.mock('#frontend/lib/logging/Logger.js', () => ({
 
 let ZoneProfileStore;
 beforeAll(async () => {
-  ({ ZoneProfileStore } = await import("../../../../../modules/fitness/browser/hooks/fitness/ZoneProfileStore.js"));
+  ({ ZoneProfileStore } = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js"));
 });
 
 const ZONE_CONFIG = [
@@ -244,7 +244,7 @@ describe('ZoneProfileStore hysteresis', () => {
     // no zone rather than a zone they did not earn. The clamp itself is now
     // unreachable for any committed ladder — every earned rung is >= 60, so
     // `min - EXIT_MARGIN_BPM` can never go negative.
-    // See docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
+    // See __docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
     const tightConfig = [
       { id: 'cool', name: 'Cool', min: 0, color: 'gray', rings: 0 },
       { id: 'active', name: 'Active', min: 2, color: 'green', rings: 1 }

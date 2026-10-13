@@ -19,13 +19,13 @@ function repository(t) {
   const repo = mkdtempSync(join(tmpdir(), 'destination-audits-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
   execFileSync('git', ['init', '--quiet'], { cwd: repo });
-  mkdirSync(join(repo, 'backend/src'), { recursive: true });
+  mkdirSync(join(repo, '__backend/src'), { recursive: true });
   mkdirSync(join(repo, 'shared'));
   put(repo, 'scripts/audit-baseline.json', readFileSync(join(project, 'scripts/audit-baseline.json')));
   return repo;
 }
 
-for (const root of ['modules', 'capabilities']) {
+for (const root of ['__app_modules/personal', '__capabilities']) {
   const server = `${root}/gratitude/server`;
   test(`${root}: fs policy covers all six layers and keeps legal controls`, () => {
     for (const layer of ['domain', 'application', 'adapters', 'api', 'rendering', 'composition']) {
@@ -35,7 +35,7 @@ for (const root of ['modules', 'capabilities']) {
       assert.deepEqual(scanDirectFsImports(`${server}/${layer}/Thing.test.mjs`, "import fs from 'node:fs';"), []);
     }
     assert.deepEqual(scanDirectFsImports(`${root}/gratitude/browser/view.js`, "import fs from 'node:fs';"), []);
-    assert.deepEqual(scanDirectFsImports('backend/src/0_system/utils/FileIO.mjs', "import fs from 'node:fs';"), []);
+    assert.deepEqual(scanDirectFsImports('__backend/src/0_system/utils/FileIO.mjs', "import fs from 'node:fs';"), []);
   });
   test(`${root}: direct FS gate also covers unlayered server entries`, () => {
     for (const entry of ['public.mjs', 'print-gateway.mjs']) {
@@ -141,7 +141,7 @@ for (const root of ['modules', 'capabilities']) {
     assert.equal(report.counts['apps-no-adapters'], 1);
     assert.equal(report.counts['domains-nondeterminism'], 1);
     assert.equal(report.counts['domains-no-ambient-clock'], 1);
-    assert.equal(report.counts['composition-no-direct-runtime-io'], root === 'modules' ? 2 : 1);
+    assert.equal(report.counts['composition-no-direct-runtime-io'], root.startsWith('__app_modules/') ? 2 : 1);
     assert.equal(report.counts['composition-no-global-fetch'], 1);
     assert.ok(report.findings.some((finding) => finding.file === file));
     execFileSync('git', ['add', '.'], { cwd: repo });
@@ -159,7 +159,7 @@ for (const root of ['modules', 'capabilities']) {
     const stagedReport = JSON.parse(cli(repo, 'audit-layer-imports.mjs', '--staged', '--json').stdout);
     assert.equal(stagedReport.counts['apps-no-adapters'], 1);
     assert.equal(stagedReport.counts['domains-nondeterminism'], 1);
-    assert.equal(stagedReport.counts['composition-no-direct-runtime-io'], root === 'modules' ? 2 : 1);
+    assert.equal(stagedReport.counts['composition-no-direct-runtime-io'], root.startsWith('__app_modules/') ? 2 : 1);
     execFileSync('git', ['add', file, domain, composition, entry], { cwd: repo });
     for (const script of ['audit-layer-imports.mjs', 'audit-direct-fs-imports.mjs']) {
       const staged = cli(repo, script, '--staged');
@@ -177,16 +177,16 @@ test('legacy-only repositories tolerate absent destination roots', (t) => {
 });
 
 test('relative legacy sources cannot bypass layer rules by targeting a destination adapter', () => {
-  assert.ok(rules(scanAstViolations('backend/src/3_applications/gratitude/UseCase.mjs', "import Store from '../../../../modules/gratitude/server/adapters/Store.mjs';")).includes('apps-no-adapters'));
+  assert.ok(rules(scanAstViolations('__backend/src/3_applications/gratitude/UseCase.mjs', "import Store from '../../../../__app_modules/personal/gratitude/server/adapters/Store.mjs';")).includes('apps-no-adapters'));
 });
 
 test('declared server entry layers reject domain to application public', () => {
-  assert.ok(rules(scanAstViolations('modules/school/server/domain/Item.mjs', "import { HouseholdUserProjection } from '../../../../capabilities/household-identity/server/public.mjs';")).includes('domains-no-adapters'));
+  assert.ok(rules(scanAstViolations('__app_modules/learning/school/server/domain/Item.mjs', "import { HouseholdUserProjection } from '../../../../../__capabilities/household-identity/server/public.mjs';")).includes('domains-no-adapters'));
 });
 test('declared server entry layers reject rendering to composition public', () => {
-  assert.ok(rules(scanAstViolations('modules/school/server/rendering/Card.mjs', "import { createPianoModule } from '../../../../modules/piano/server/composition.mjs';")).includes('rendering-no-adapters-apps'));
+  assert.ok(rules(scanAstViolations('__app_modules/learning/school/server/rendering/Card.mjs', "import { createPianoModule } from '../../../../__app_modules/learning/piano/server/composition.mjs';")).includes('rendering-no-adapters-apps'));
 });
 test('declared server entry layers apply source rules to the public files', () => {
-  assert.ok(rules(scanAstViolations('modules/gratitude/server/public.mjs', "import { spawn } from 'node:child_process';")).includes('composition-no-direct-runtime-io'));
-  assert.ok(rules(scanAstViolations('capabilities/household-identity/server/public.mjs', "import fs from 'node:fs';")).includes('apps-no-fs'));
+  assert.ok(rules(scanAstViolations('__app_modules/personal/gratitude/server/public.mjs', "import { spawn } from 'node:child_process';")).includes('composition-no-direct-runtime-io'));
+  assert.ok(rules(scanAstViolations('__capabilities/household-identity/server/public.mjs', "import fs from 'node:fs';")).includes('apps-no-fs'));
 });

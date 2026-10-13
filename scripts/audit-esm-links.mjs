@@ -33,8 +33,8 @@ const traverse = typeof traverseModule === 'function'
   ? traverseModule
   : traverseModule.default;
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SOURCE_ROOTS = ['backend/src', 'cli'];
-const DESTINATION_ROOTS = ['modules', 'capabilities'];
+const SOURCE_ROOTS = ['__backend/src', 'cli'];
+const DESTINATION_ROOTS = ['__app_modules', '__capabilities'];
 const DESTINATION_SKIP = new Set(['node_modules', 'vendor', '.cache', '.vite', 'dist', 'build', 'coverage', '.git']);
 const SOURCE_EXTENSIONS = new Set(['.mjs', '.js', '.cjs']);
 const BUILTINS = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
@@ -71,17 +71,15 @@ function* destinationFiles() {
   for (const name of DESTINATION_ROOTS) {
     const root = join(PROJECT_ROOT, name);
     if (!optionalDirectory(root)) continue;
-    for (const owner of readdirSync(root, { withFileTypes: true })) {
-      if (!owner.isDirectory() || DESTINATION_SKIP.has(owner.name)) continue;
-      const server = join(root, owner.name, 'server');
-      if (optionalDirectory(server)) yield* walk(server, true);
+    for (const file of walk(root, true)) {
+      if (isDestinationSource(relative(PROJECT_ROOT, file))) yield file;
     }
   }
 }
 
 function isDestinationSource(file) {
   const parts = file.split('/');
-  return DESTINATION_ROOTS.includes(parts[0]) && parts.length >= 4 && parts[2] === 'server'
+  return /^(?:__app_modules\/[^/]+(?:\/[^/]+)?|__capabilities\/[^/]+)\/server\/.+/.test(file)
     && !parts.slice(1, -1).some((part) => DESTINATION_SKIP.has(part))
     && SOURCE_EXTENSIONS.has(extname(file));
 }
@@ -135,7 +133,7 @@ export function createModuleResolver({ projectRoot = PROJECT_ROOT, imports, back
   const rootPackageImports = imports ?? JSON.parse(
     readFileSync(join(projectRoot, 'package.json'), 'utf8'),
   ).imports ?? {};
-  const backendRoot = join(projectRoot, 'backend');
+  const backendRoot = join(projectRoot, '__backend');
   const backendPackage = join(backendRoot, 'package.json');
   const backendPackageImports = backendImports ?? (imports || !existsSync(backendPackage)
     ? rootPackageImports
@@ -292,7 +290,7 @@ export function auditEsmLinks(files, {
 
 function main() {
   const staged = process.argv.includes('--staged');
-  // Resolve imports against the complete index: backend/CLI modules commonly
+  // Resolve imports against the complete index: __backend/CLI modules commonly
   // target shared contracts, test helpers, and package-import aliases outside
   // their own source roots.
   const indexFiles = staged ? listIndexFiles() : [];
@@ -301,7 +299,7 @@ function main() {
   const indexPathFor = (file) => {
     const direct = relative(PROJECT_ROOT, file);
     if (indexSet.has(direct)) return direct;
-    // `backend/shared*` are tracked symlinks into the root shared tree. The
+    // `__backend/shared*` are tracked symlinks into the root shared tree. The
     // index stores the physical tree once, whereas Node resolves aliases
     // through the symlink. Match the blob by its physical repo path.
     try {
@@ -313,16 +311,16 @@ function main() {
   const readStaged = (file) => indexSnapshot.get(indexPathFor(file)) ?? readIndexFile(file, PROJECT_ROOT);
   const destinationSymlinks = staged ? new Set(execFileSync('git', [
     'ls-files', '--stage', '-z', '--', ...DESTINATION_ROOTS,
-  ], { encoding: 'utf8' }).split('\0').filter((entry) => entry.startsWith('120000 '))
+  ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).split('\0').filter((entry) => entry.startsWith('120000 '))
     .map((entry) => entry.slice(entry.indexOf('\t') + 1))) : new Set();
   const files = staged
     ? indexFiles.filter((file) => (SOURCE_ROOTS.some((root) => file.startsWith(`${root}/`)) && SOURCE_EXTENSIONS.has(extname(file)))
       || (isDestinationSource(file) && !destinationSymlinks.has(file))).map((file) => join(PROJECT_ROOT, file))
     : [...SOURCE_ROOTS.flatMap((root) => [...walk(join(PROJECT_ROOT, root))]), ...destinationFiles()];
   const rootImports = staged ? JSON.parse(indexSnapshot.get('package.json')).imports ?? {} : undefined;
-  const stagedBackendPackage = staged && indexSet.has('backend/package.json');
+  const stagedBackendPackage = staged && indexSet.has('__backend/package.json');
   const backendImports = stagedBackendPackage
-    ? JSON.parse(indexSnapshot.get('backend/package.json')).imports ?? {}
+    ? JSON.parse(indexSnapshot.get('__backend/package.json')).imports ?? {}
     : rootImports;
   const findings = auditEsmLinks(files, staged ? {
     imports: rootImports,
@@ -341,4 +339,4 @@ function main() {
   console.log(`ESM link gate OK — ${files.length} ${staged ? 'staged ' : ''}modules checked without evaluating entrypoints.`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

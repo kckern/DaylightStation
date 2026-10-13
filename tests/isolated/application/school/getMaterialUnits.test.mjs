@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GetMaterialUnits, buildBankIndex } from "../../../../modules/school/server/application/GetMaterialUnits.mjs";
+import { GetMaterialUnits, buildBankIndex } from "../../../../__app_modules/learning/school/server/application/GetMaterialUnits.mjs";
 
 const CONFIG = { completion_threshold_percent: 90, quiz_pass_percent: 80 };
 

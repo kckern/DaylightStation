@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { PlanAuthoringService } from "../../../../modules/life/server/application/services/PlanAuthoringService.mjs";
-import { LifePlan } from "../../../../modules/life/server/domain/entities/LifePlan.mjs";
+import { PlanAuthoringService } from "../../../../__app_modules/personal/life/server/application/services/PlanAuthoringService.mjs";
+import { LifePlan } from "../../../../__app_modules/personal/life/server/domain/entities/LifePlan.mjs";
 
 describe('PlanAuthoringService', () => {
   let store, saved, current, svc;

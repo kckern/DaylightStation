@@ -34,7 +34,7 @@ test('list flushes a complete JSON population larger than 128 KiB through a pipe
   const f = fixture(t);
   const expected = [];
   for (let i = 0; i < 700; i++) {
-    const file = `modules/sample/browser/${'long-name-'.repeat(23)}${String(i).padStart(4, '0')}.test.js`;
+    const file = `__app_modules/sample/browser/${'long-name-'.repeat(23)}${String(i).padStart(4, '0')}.test.js`;
     f.put(file, vitest);
     expected.push(file);
   }
@@ -43,7 +43,7 @@ test('list flushes a complete JSON population larger than 128 KiB through a pipe
 });
 test('list retains legacy population with absent destination roots and performs no execution or writes', (t) => {
   const f = fixture(t);
-  const expected = ['backend/legacy.test.mjs', 'frontend/legacy.test.jsx', 'shared/legacy.test.js', 'tests/isolated/legacy.test.mjs', 'tests/unit/legacy.test.mjs'];
+  const expected = ['__backend/legacy.test.mjs', 'frontend/legacy.test.jsx', 'shared/legacy.test.js', 'tests/isolated/legacy.test.mjs', 'tests/unit/legacy.test.mjs'];
   for (const file of expected) f.put(file, vitest);
   f.put('tests/unit/suite/jest.test.mjs', "describe('jest', () => {});");
   assert.deepEqual(f.list(), expected);
@@ -52,9 +52,9 @@ test('list retains legacy population with absent destination roots and performs 
 
 test('list discovers destination server/browser tests exactly once and excludes other runners and symlinks', (t) => {
   const f = fixture(t);
-  f.put('backend/legacy.test.mjs', vitest);
-  const expected = ['backend/legacy.test.mjs'];
-  for (const root of ['modules', 'capabilities']) {
+  f.put('__backend/legacy.test.mjs', vitest);
+  const expected = ['__backend/legacy.test.mjs'];
+  for (const root of ['__app_modules', '__capabilities']) {
     for (const surface of ['server', 'browser']) {
       const dir = `${root}/sample/${surface}`;
       const file = `${dir}/owned.test.${surface === 'server' ? 'mjs' : 'jsx'}`;

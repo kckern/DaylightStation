@@ -36,7 +36,7 @@ export function createAppTheme(pack) {
   // it sets (colors/other/components/...) fully replace the base's, so an
   // app's own component defaults are never silently blended with the base's
   // generic ones. Additive: no existing pack sets this, so every other app's
-  // theme is unchanged. See modules/Media/theme/mediaTheme.js (Phase 6).
+  // theme is unchanged. See __app_modules/Media/theme/mediaTheme.js (Phase 6).
   return createTheme(pack?.themeExtras ? { ...base, ...pack.themeExtras } : base);
 }
 

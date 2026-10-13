@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PlaybackHubContainer } from "../../../modules/media/server/application/playback-hub/PlaybackHubContainer.mjs";
-import { FakeHubGateway } from "../../../modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
-import { FakeHubConfigRepository } from "../../../modules/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
-import { GetHubStatus } from "../../../modules/media/server/application/playback-hub/usecases/GetHubStatus.mjs";
-import { GetHubConfig } from "../../../modules/media/server/application/playback-hub/usecases/GetHubConfig.mjs";
-import { SendHubCommand } from "../../../modules/media/server/application/playback-hub/usecases/SendHubCommand.mjs";
-import { UpdateDeviceConfig } from "../../../modules/media/server/application/playback-hub/usecases/UpdateDeviceConfig.mjs";
-import { SaveScheduledFire } from "../../../modules/media/server/application/playback-hub/usecases/SaveScheduledFire.mjs";
-import { DeleteScheduledFire } from "../../../modules/media/server/application/playback-hub/usecases/DeleteScheduledFire.mjs";
-import { VerifyAudioFlowing } from "../../../modules/media/server/application/playback-hub/usecases/VerifyAudioFlowing.mjs";
-import { HubStatusBroadcaster } from "../../../modules/media/server/application/playback-hub/runtime/HubStatusBroadcaster.mjs";
-import { SlotStatus } from "../../../modules/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
+import { PlaybackHubContainer } from "../../../__app_modules/media/media/server/application/playback-hub/PlaybackHubContainer.mjs";
+import { FakeHubGateway } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { FakeHubConfigRepository } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubConfigRepository.mjs";
+import { GetHubStatus } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/GetHubStatus.mjs";
+import { GetHubConfig } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/GetHubConfig.mjs";
+import { SendHubCommand } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/SendHubCommand.mjs";
+import { UpdateDeviceConfig } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/UpdateDeviceConfig.mjs";
+import { SaveScheduledFire } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/SaveScheduledFire.mjs";
+import { DeleteScheduledFire } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/DeleteScheduledFire.mjs";
+import { VerifyAudioFlowing } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/VerifyAudioFlowing.mjs";
+import { HubStatusBroadcaster } from "../../../__app_modules/media/media/server/application/playback-hub/runtime/HubStatusBroadcaster.mjs";
+import { SlotStatus } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotStatus.mjs";
 const statusFromFixture = value => new SlotStatus({ ...value, position: value.slot ?? value.position });
 
 class StubEventPublisher {

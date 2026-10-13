@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Belief } from "../../../../modules/life/server/domain/entities/Belief.mjs";
+import { Belief } from "../../../../__app_modules/personal/life/server/domain/entities/Belief.mjs";
 
 describe('Belief Entity', () => {
   describe('construction', () => {

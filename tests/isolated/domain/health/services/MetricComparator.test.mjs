@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { MetricComparator } from "../../../../../modules/health/server/application/health/analytics/MetricComparator.mjs";
-import { MetricAggregator } from "../../../../../modules/health/server/application/health/analytics/MetricAggregator.mjs";
-import { PeriodResolver } from "../../../../../modules/health/server/application/health/analytics/PeriodResolver.mjs";
+import { MetricComparator } from "../../../../../__app_modules/wellness/health/server/application/health/analytics/MetricComparator.mjs";
+import { MetricAggregator } from "../../../../../__app_modules/wellness/health/server/application/health/analytics/MetricAggregator.mjs";
+import { PeriodResolver } from "../../../../../__app_modules/wellness/health/server/application/health/analytics/PeriodResolver.mjs";
 
 const NOW = new Date('2026-05-05T12:00:00Z');
 const fixedNow = () => NOW;

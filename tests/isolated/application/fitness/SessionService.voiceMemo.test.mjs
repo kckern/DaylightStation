@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SessionService } from "../../../../modules/fitness/server/application/services/SessionService.mjs";
+import { SessionService } from "../../../../__app_modules/wellness/fitness/server/application/services/SessionService.mjs";
 
 describe('SessionService.appendVoiceMemo — sanitization', () => {
   let service;

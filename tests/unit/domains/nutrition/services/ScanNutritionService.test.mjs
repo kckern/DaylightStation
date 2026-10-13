@@ -4,7 +4,7 @@ import {
   computeNutrition,
   encodeDensity,
   MAX_DENSITY_CODE,
-} from "../../../../../modules/health/server/domain/nutrition/index.mjs";
+} from "../../../../../__app_modules/wellness/health/server/domain/nutrition/index.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const LEVEL_4 = {

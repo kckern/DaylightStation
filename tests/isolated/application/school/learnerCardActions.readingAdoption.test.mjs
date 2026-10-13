@@ -13,8 +13,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   ReadingSessionService as ProductionReadingSessionService, ADOPTABLE_PLAY_MS,
-} from "../../../../modules/school/server/application/ReadingSessionService.mjs";
-import { makeReadingSessionHandler } from "../../../../modules/school/server/application/workflows/LearnerCardActions.mjs";
+} from "../../../../__app_modules/learning/school/server/application/ReadingSessionService.mjs";
+import { makeReadingSessionHandler } from "../../../../__app_modules/learning/school/server/application/workflows/LearnerCardActions.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

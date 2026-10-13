@@ -1,5 +1,5 @@
 // tests/unit/domains/fitness/entities/Participant.test.mjs
-import { Participant } from "../../../../../modules/fitness/server/domain/entities/Participant.mjs";
+import { Participant } from "../../../../../__app_modules/wellness/fitness/server/domain/entities/Participant.mjs";
 
 describe('Participant', () => {
   let participant;

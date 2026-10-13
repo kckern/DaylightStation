@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CoachingMessageBuilder } from "../../../modules/health/server/application/coaching/CoachingMessageBuilder.mjs";
+import { CoachingMessageBuilder } from "../../../__app_modules/wellness/health/server/application/coaching/CoachingMessageBuilder.mjs";
 
 describe('CoachingMessageBuilder', () => {
   describe('buildPostReportBlock', () => {

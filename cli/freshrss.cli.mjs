@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its declared owner.
-export * from "../modules/feed/cli/freshrss.cli.mjs";
+export * from "../__app_modules/media/feed/cli/freshrss.cli.mjs";

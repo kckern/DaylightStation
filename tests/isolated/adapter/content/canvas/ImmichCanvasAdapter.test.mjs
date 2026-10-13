@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/canvas/ImmichCanvasAdapter.test.mjs
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ImmichCanvasAdapter } from "../../../../../modules/art/server/adapters/canvas/immich/ImmichCanvasAdapter.mjs";
+import { ImmichCanvasAdapter } from "../../../../../__app_modules/media/art/server/adapters/canvas/immich/ImmichCanvasAdapter.mjs";
 
 describe('ImmichCanvasAdapter', () => {
   let adapter;

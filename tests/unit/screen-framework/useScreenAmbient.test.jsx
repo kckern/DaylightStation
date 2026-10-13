@@ -3,8 +3,8 @@ import React from 'react';
 import { renderHook } from '@testing-library/react';
 import {
   ScreenAmbientProvider,
-} from '../../../capabilities/screen-host/browser/ambient/ScreenAmbientContext.jsx';
-import { useScreenAmbient } from '../../../capabilities/screen-host/browser/ambient/useScreenAmbient.js';
+} from '../../../__capabilities/screen-host/browser/ambient/ScreenAmbientContext.jsx';
+import { useScreenAmbient } from '../../../__capabilities/screen-host/browser/ambient/useScreenAmbient.js';
 
 describe('useScreenAmbient', () => {
   it('returns the provided ambient config', () => {

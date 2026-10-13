@@ -12,7 +12,7 @@ vi.mock('../../../frontend/src/lib/logging/Logger.js', () => {
   return { default: () => mockLogger, getLogger: () => mockLogger };
 });
 
-import { NumpadAdapter } from '../../../capabilities/screen-host/browser/input/adapters/NumpadAdapter.js';
+import { NumpadAdapter } from '../../../__capabilities/screen-host/browser/input/adapters/NumpadAdapter.js';
 
 describe('NumpadAdapter logging', () => {
   let adapter;

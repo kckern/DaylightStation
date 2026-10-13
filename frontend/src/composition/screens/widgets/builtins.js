@@ -1,20 +1,20 @@
-import { getWidgetRegistry } from "../../../../../capabilities/screen-host/browser/public.mjs";
+import { getWidgetRegistry } from "../../../../../__capabilities/screen-host/browser/public.mjs";
 import Time from '../../../modules/Time/Time.jsx';
 import Weather from '../../../modules/Weather/Weather.jsx';
 import WeatherForecast from '../../../modules/Weather/WeatherForecast.jsx';
-import Upcoming from "../../../../../modules/home/browser/upcoming.mjs";
-import { FinanceChart } from "../../../../../modules/finance/browser/widget.mjs";
-import Weight from "../../../../../modules/health/browser/weight-widget.mjs";
-import EntropyPanel from "../../../../../modules/home/browser/entropy/EntropyPanel.jsx";
-import { PianoVisualizer } from "../../../../../modules/piano/browser/widget.mjs";
+import Upcoming from "../../../../../__app_modules/household/home/browser/upcoming.mjs";
+import { FinanceChart } from "../../../../../__app_modules/money/finance/browser/widget.mjs";
+import Weight from "../../../../../__app_modules/wellness/health/browser/weight-widget.mjs";
+import EntropyPanel from "../../../../../__app_modules/household/home/browser/entropy/EntropyPanel.jsx";
+import { PianoVisualizer } from "../../../../../__app_modules/learning/piano/browser/widget.mjs";
 import MenuWidget from './MenuWidget.jsx';
 import ArtMode from './ArtMode.jsx';
-import WeeklyReview from "../../../../../modules/weekly-review/browser/widget.mjs";
-import CameraOverlay from "../../../../../modules/camera/browser/overlay.mjs";
-import PartyGamesApp from "../../../../../modules/party-games/browser/widget.mjs";
-import SchoolApp from "../../../../../modules/school/browser/kiosk.mjs";
-import ReadingSessionScreen from "../../../../../modules/school/browser/reading.mjs";
-import MediaLessonScreen from "../../../../../modules/school/browser/lesson.mjs";
+import WeeklyReview from "../../../../../__app_modules/personal/weekly-review/browser/widget.mjs";
+import CameraOverlay from "../../../../../__app_modules/household/camera/browser/overlay.mjs";
+import PartyGamesApp from "../../../../../__app_modules/games/party-games/browser/widget.mjs";
+import SchoolApp from "../../../../../__app_modules/learning/school/browser/kiosk.mjs";
+import ReadingSessionScreen from "../../../../../__app_modules/learning/school/browser/reading.mjs";
+import MediaLessonScreen from "../../../../../__app_modules/learning/school/browser/lesson.mjs";
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();

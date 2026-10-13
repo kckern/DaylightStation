@@ -4,10 +4,10 @@ import request from 'supertest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHealthDashboardRouter } from "../../../modules/health/server/api/routers/health-dashboard.mjs";
-import { AgentHealthDashboardService } from "../../../modules/health/server/application/health/AgentHealthDashboardService.mjs";
-import { HealthDashboardRepositoryErrorCode } from "../../../modules/health/server/application/health/ports/IHealthDashboardRepository.mjs";
-import { DataServiceHealthDashboardRepository } from "../../../modules/health/server/adapters/persistence/files/DataServiceHealthDashboardRepository.mjs";
+import { createHealthDashboardRouter } from "../../../__app_modules/wellness/health/server/api/routers/health-dashboard.mjs";
+import { AgentHealthDashboardService } from "../../../__app_modules/wellness/health/server/application/health/AgentHealthDashboardService.mjs";
+import { HealthDashboardRepositoryErrorCode } from "../../../__app_modules/wellness/health/server/application/health/ports/IHealthDashboardRepository.mjs";
+import { DataServiceHealthDashboardRepository } from "../../../__app_modules/wellness/health/server/adapters/persistence/files/DataServiceHealthDashboardRepository.mjs";
 
 const FIXED_NOW = new Date('2026-08-28T23:59:59.000Z');
 const clock = { now: () => FIXED_NOW };

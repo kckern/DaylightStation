@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import YAML from 'yaml';
 import { applyGamingV2Migration, migrateJournalText, migrateManifest, planGamingV2Migration } from './gaming-v2.mjs';
-import { stableHash } from "../../capabilities/gaming/portable/kernel/canonical.mjs";
+import { stableHash } from "../../__capabilities/gaming/portable/kernel/canonical.mjs";
 
 test('migrates Card Battle to piano and developer surfaces with an optional Presentation V2 fallback', () => {
   const result = migrateManifest({ id: 'card-battle', version: 1, native_surface_id: 'gaming-app', presenters: { primary: 'card-battle' } });

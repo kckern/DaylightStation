@@ -2,6 +2,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'node:url';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -103,6 +104,7 @@ export function runJest(files, options = {}) {
   return new Promise((resolve, reject) => {
     const jestArgs = [
       'jest',
+      '--config', fileURLToPath(new URL('../config/jest.config.cjs', import.meta.url)),
       ...files,
       '--colors',
     ];
@@ -135,15 +137,29 @@ export function printSummary(label, files, args) {
   console.log(`${COLORS.cyan}═══════════════════════════════════════════════════${COLORS.reset}\n`);
 }
 
+/** Resolve both categorized applications and flat capability owners. */
+export function findOwnerDirectories(projectRoot, kind) {
+  const root = path.join(projectRoot, kind);
+  if (!fs.existsSync(root) || !fs.lstatSync(root).isDirectory()) return [];
+  const directories = fs.readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory() && entry.name !== 'node_modules');
+  return directories.flatMap(entry => {
+    const directory = path.join(root, entry.name);
+    const hasSurface = ['server', 'browser', 'cli', 'portable', 'satellites', 'tests', 'seeds'].some(surface => {
+      const candidate = path.join(directory, surface);
+      return fs.existsSync(candidate) && fs.lstatSync(candidate).isDirectory();
+    });
+    return kind === '__app_modules' && !hasSurface
+      ? fs.readdirSync(directory, { withFileTypes: true }).filter(child => child.isDirectory() && child.name !== 'node_modules').map(child => path.join(directory, child.name))
+      : [directory];
+  });
+}
+
 /** Browser ownership changes physical paths, not the frontend test population. */
 export function findBrowserColocatedTestFiles(projectRoot, args) {
   const files = findColocatedTestFiles(path.join(projectRoot, 'frontend/src'), args);
-  for (const kind of ['modules', 'capabilities']) {
-    const ownerRoot = path.join(projectRoot, kind);
-    if (!fs.existsSync(ownerRoot) || !fs.lstatSync(ownerRoot).isDirectory()) continue;
-    for (const owner of fs.readdirSync(ownerRoot, { withFileTypes: true })) {
-      if (!owner.isDirectory()) continue;
-      const browser = path.join(ownerRoot, owner.name, 'browser');
+  for (const kind of ['__app_modules', '__capabilities']) {
+    for (const owner of findOwnerDirectories(projectRoot, kind)) {
+      const browser = path.join(owner, 'browser');
       if (!fs.existsSync(browser) || !fs.lstatSync(browser).isDirectory()) continue;
       files.push(...findColocatedTestFiles(browser, args).filter(file => fs.lstatSync(file).isFile()));
     }

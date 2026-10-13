@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
-import { PersonalContextLoader } from "../../../../modules/health/server/application/health/PersonalContextLoader.mjs";
+import { PersonalContextLoader } from "../../../../__app_modules/wellness/health/server/application/health/PersonalContextLoader.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');

@@ -6,7 +6,7 @@ import { PassThrough } from 'stream';
 const { mockSpawn } = vi.hoisted(() => ({ mockSpawn: vi.fn() }));
 vi.mock('child_process', () => ({ spawn: mockSpawn }));
 
-import { FFmpegStreamAdapter } from "../../../modules/livestream/server/adapters/FFmpegStreamAdapter.mjs";
+import { FFmpegStreamAdapter } from "../../../__app_modules/media/livestream/server/adapters/FFmpegStreamAdapter.mjs";
 
 function createMockProcess() {
   const proc = {

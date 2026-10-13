@@ -2,14 +2,14 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
-import { ScreenVolumeProvider } from '../../../../../capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
+import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
+import { ScreenVolumeProvider } from '../../../../../__capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
 import { _resetForTests as resetVolume } from '../../../lib/volume/ScreenVolumeContext.js';
-import { createScreenSessionControls } from '../../../../../capabilities/screen-host/browser/session/screenSessionControls.js';
+import { createScreenSessionControls } from '../../../../../__capabilities/screen-host/browser/session/screenSessionControls.js';
 import { ScreenSessionControlsHost } from './ScreenSessionControlsHost.jsx';
 import {
   savePersistedSession, loadPersistedSession, restorableSnapshot, POWER_RESTORE_DELAY_MS, SESSION_STORAGE_PREFIX,
-} from '../../../../../capabilities/screen-host/browser/session/sessionPersistence.js';
+} from '../../../../../__capabilities/screen-host/browser/session/sessionPersistence.js';
 
 const item = { contentId: 'plex:1', queueItemId: 'q1', format: 'video', title: 'One' };
 const playing = {

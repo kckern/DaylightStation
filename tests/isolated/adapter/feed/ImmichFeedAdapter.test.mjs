@@ -1,6 +1,6 @@
 // tests/isolated/adapter/feed/ImmichFeedAdapter.test.mjs
 import { vi } from 'vitest';
-import { ImmichFeedAdapter } from "../../../../modules/feed/server/adapters/sources/ImmichFeedAdapter.mjs";
+import { ImmichFeedAdapter } from "../../../../__app_modules/media/feed/server/adapters/sources/ImmichFeedAdapter.mjs";
 
 describe('ImmichFeedAdapter', () => {
   const logger = { warn: vi.fn(), debug: vi.fn(), error: vi.fn() };

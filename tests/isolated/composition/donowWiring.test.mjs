@@ -18,8 +18,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createDonow } from "../../../modules/donow/server/composition/donow.mjs";
-import { createSchoolLifecycle } from "../../../modules/school/server/composition/schoolLifecycle.mjs";
+import { createDonow } from "../../../__app_modules/household/donow/server/composition/donow.mjs";
+import { createSchoolLifecycle } from "../../../__app_modules/learning/school/server/composition/schoolLifecycle.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const SURFACE_IDS = [

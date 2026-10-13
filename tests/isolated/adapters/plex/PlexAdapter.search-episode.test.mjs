@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PlexAdapter } from "../../../../capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
+import { PlexAdapter } from "../../../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 
 // Build an adapter whose PlexClient is stubbed to return one episode hub result
 // and no playlists. Mirrors the real "Think! How Intelligent Are Animals?" case.

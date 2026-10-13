@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RecordPlaybackProgress } from "../../../../capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
+import { RecordPlaybackProgress } from "../../../../__capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs";
 
 describe('RecordPlaybackProgress', () => {
   it('preserves the logical namespace across persistence, event, and response contracts', async () => {

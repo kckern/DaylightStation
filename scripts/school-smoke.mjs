@@ -120,7 +120,7 @@ async function main() {
   // MATH already served today (a passing outcome just now) — the agenda
   // caps a subject at one scannable action per study day and files the
   // subject under the foot-of-sheet "Done today" tally instead (spec §6.2
-  // v2, docs/reference/school/README.md "at most one scannable action").
+  // v2, __docs/reference/school/README.md "at most one scannable action").
   // Rescanning the SAME day proves that cap, not a bug in unlocking; cross
   // the 4am study-day boundary to see unit 02 actually offered.
   await harness.scanCard();

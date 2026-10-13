@@ -4,7 +4,7 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { ABSEbookFeedAdapter } from "../../../../modules/feed/server/adapters/sources/ABSEbookFeedAdapter.mjs";
+import { ABSEbookFeedAdapter } from "../../../../__app_modules/media/feed/server/adapters/sources/ABSEbookFeedAdapter.mjs";
 
 // Mock absClient
 const mockAbsClient = {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MediaDownloadService } from "../../../modules/media/server/application/services/MediaDownloadService.mjs";
+import { MediaDownloadService } from "../../../__app_modules/media/media/server/application/services/MediaDownloadService.mjs";
 
 describe('MediaDownloadService', () => {
   it('preserves the metadata response while delegating persistence and file addressing', async () => {

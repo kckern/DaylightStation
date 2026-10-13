@@ -4,14 +4,14 @@
 import { render, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
-import { ScreenOverlayProvider } from '../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
+import { ScreenOverlayProvider } from '../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
-import { SessionSourceProvider } from '../../../../../capabilities/playback/browser/sessions/SessionSourceContext.jsx';
-import { __resetPlayerQueueOpRegistryForTests } from '../../../../../capabilities/playback/browser/player/lib/queueOpRegistry.js';
+import { SessionSourceProvider } from '../../../../../__capabilities/playback/browser/sessions/SessionSourceContext.jsx';
+import { __resetPlayerQueueOpRegistryForTests } from '../../../../../__capabilities/playback/browser/player/lib/queueOpRegistry.js';
 
-vi.mock("../../../../../modules/media/browser/menu.mjs", () => ({ default: () => <div data-testid="menu-stack" /> }));
-vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
+vi.mock("../../../../../__app_modules/media/media/browser/menu.mjs", () => ({ default: () => <div data-testid="menu-stack" /> }));
+vi.mock('../../../../../__capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(_props, ref) { return <div ref={ref} data-testid="player">Player</div>; }),
 }));
 

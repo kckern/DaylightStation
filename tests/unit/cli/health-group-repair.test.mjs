@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { inspectGroupRepair, applyGroupRepair } from "../../../modules/health/cli/health-group-repair.cli.mjs";
+import { inspectGroupRepair, applyGroupRepair } from "../../../__app_modules/wellness/health/cli/health-group-repair.cli.mjs";
 function fixture() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'health-group-repair-'));
   const nutrition = path.join(directory, 'nutrition');

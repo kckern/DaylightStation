@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HealthQueryService } from "../../../../../modules/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
+import { HealthQueryService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
 
 function makeSvc(weightSeries) {
   const data = Object.fromEntries(weightSeries.map(([d, v]) => [d, { lbs: v }]));

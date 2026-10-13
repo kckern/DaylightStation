@@ -91,7 +91,7 @@ describe('cli/commands/ha', () => {
       // pass isHomeAutomationGateway. If a future command uses methods other than
       // getState, its test fakes need to implement those too — this test demonstrates
       // the contract and will catch regressions to the port itself.
-      const { isHomeAutomationGateway } = await import("../../../../capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs");
+      const { isHomeAutomationGateway } = await import("../../../../__capabilities/home-control/server/application/ports/IHomeAutomationGateway.mjs");
       const fakeGateway = {
         async getState() { return null; },
         async getStates() { return new Map(); },

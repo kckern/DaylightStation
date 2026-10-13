@@ -18,8 +18,8 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSchoolLifecycle } from "../../../modules/school/server/composition/schoolLifecycle.mjs";
-import { isSchoolToken } from "../../../modules/school/server/domain/sessions/tokens.mjs";
+import { createSchoolLifecycle } from "../../../__app_modules/learning/school/server/composition/schoolLifecycle.mjs";
+import { isSchoolToken } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 
@@ -179,7 +179,7 @@ describe('branch order in the composition root', () => {
   const dispatchSource = async () => readFile(
     path.join(
       path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..',
-      'backend', 'src', '5_composition', 'modules', 'scanDispatch.mjs',
+      '__backend', 'src', '5_composition', 'modules', 'scanDispatch.mjs',
     ),
     'utf8',
   );

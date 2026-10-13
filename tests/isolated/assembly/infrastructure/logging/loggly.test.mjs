@@ -29,14 +29,14 @@ const winstonFactory = () => ({
   }
 });
 
-// backend/ has its own package.json + node_modules (standalone/Docker installs),
+// __backend/ has its own package.json + node_modules (standalone/Docker installs),
 // so the SOURCE module may resolve winston/winston-loggly-bulk to
-// backend/node_modules while this test file resolves the root copies — and a
+// __backend/node_modules while this test file resolves the root copies — and a
 // mock registered for one resolution does not intercept the other. Register
 // the mocks against the source file's resolutions too (when they exist), then
 // import the module under test AFTER the mocks via dynamic import (vi.doMock
 // is not hoisted, so ordering is explicit).
-const sourcePath = path.resolve('backend/src/1_adapters/logging/LogglyTransport.mjs');
+const sourcePath = path.resolve('__backend/src/1_adapters/logging/LogglyTransport.mjs');
 const requireFromSource = createRequire(sourcePath);
 for (const [specifier, factory] of [
   ['winston-loggly-bulk', logglyFactory],

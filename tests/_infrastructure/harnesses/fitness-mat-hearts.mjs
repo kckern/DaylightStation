@@ -26,10 +26,10 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
-import './modules/fitness/browser/FitnessApp.scss';
-import FitnessUsersList from './modules/fitness/browser/player/panels/FitnessUsers.jsx';
-import { FixtureContext } from './modules/fitness/browser/context/FitnessContext.jsx';
-import { STRAP_COLORS } from './modules/fitness/portable/contracts/strapColors.mjs';
+import './__app_modules/wellness/fitness/browser/FitnessApp.scss';
+import FitnessUsersList from './__app_modules/wellness/fitness/browser/player/panels/FitnessUsers.jsx';
+import { FixtureContext } from './__app_modules/wellness/fitness/browser/context/FitnessContext.jsx';
+import { STRAP_COLORS } from './__app_modules/wellness/fitness/portable/contracts/strapColors.mjs';
 const root = createRoot(document.getElementById('root'));
 window.renderFixture = ({ count = 3, width = 345, color = 'red', inactive = false, mat = false, zoom = 1 }) => {
   const devices = Array.from({ length: count }, (_, i) => ({

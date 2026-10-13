@@ -6,10 +6,10 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const sourceRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const adapter = 'modules/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs';
-const api = 'modules/art/tests/isolated/api/routers/canvas.test.mjs';
+const adapter = '__app_modules/media/art/tests/isolated/adapter/persistence/files/FilesystemCanvasImageRepository.test.mjs';
+const api = '__app_modules/media/art/tests/isolated/api/routers/canvas.test.mjs';
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-isolated-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'owner-isolated-')));
   const put = (p, s="import { it } from 'vitest'; throw Error('DO NOT EVALUATE');") => {
     fs.mkdirSync(path.dirname(path.join(root,p)), {recursive:true}); fs.writeFileSync(path.join(root,p),s);
   };
@@ -22,11 +22,11 @@ function fixture() {
   return {root,put,run,close:()=>fs.rmSync(root,{recursive:true,force:true})};
 }
 test('default discovers both original moved Art oracles exactly once and routes their Vitest imports',()=>{
-  const f=fixture();try{f.put('tests/isolated/system/Legacy.test.mjs');const result=f.run();assert.deepEqual(result.files,[adapter,api,'tests/isolated/system/Legacy.test.mjs'].sort());assert.match(result.stdout,/Re-routed 2 file/);assert.match(result.stdout,/vitest ← modules\/art\/tests\/isolated\/adapter/);}finally{f.close();}
+  const f=fixture();try{f.put('tests/isolated/system/Legacy.test.mjs');const result=f.run();assert.deepEqual(result.files,[adapter,api,'tests/isolated/system/Legacy.test.mjs'].sort());assert.match(result.stdout,/Re-routed 2 file/);assert.match(result.stdout,/vitest ← __app_modules\/media\/art\/tests\/isolated\/adapter/);}finally{f.close();}
 });
 test('owner isolated target and pattern filtering preserve existing options',()=>{
   const f=fixture();try{assert.deepEqual(f.run('--only=adapter').files,[adapter]);assert.deepEqual(f.run('--only=api').files,[api]);assert.deepEqual(f.run('--only=adapter','--pattern=canvas').files,[]);assert.deepEqual(f.run('--pattern=canvas').files,[api]);assert.deepEqual(f.run('--skip=api').files,[adapter]);}finally{f.close();}
 });
 test('frontend-only excludes owner isolated suites; absent roots and unlisted targets stay legal',()=>{
-  const f=fixture();try{f.put('frontend/src/Frontend.test.jsx');f.put('modules/art/tests/isolated/unlisted/Hidden.test.mjs');assert.deepEqual(f.run('--only=frontend').files,['frontend/src/Frontend.test.jsx']);assert.deepEqual(f.run('--only=system').files,[]);fs.rmSync(path.join(f.root,'modules'),{recursive:true});assert.deepEqual(f.run().files,['frontend/src/Frontend.test.jsx']);}finally{f.close();}
+  const f=fixture();try{f.put('frontend/src/Frontend.test.jsx');f.put('__app_modules/media/art/tests/isolated/unlisted/Hidden.test.mjs');assert.deepEqual(f.run('--only=frontend').files,['frontend/src/Frontend.test.jsx']);assert.deepEqual(f.run('--only=system').files,[]);fs.rmSync(path.join(f.root,'__app_modules'),{recursive:true});assert.deepEqual(f.run().files,['frontend/src/Frontend.test.jsx']);}finally{f.close();}
 });

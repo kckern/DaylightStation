@@ -15,7 +15,7 @@
 # stays with nfs-watchdog.sh.
 #
 # Output: one JSON object on stdout. Exit 0 whenever a report was produced.
-# See docs/reference/player/media-source-healing.md.
+# See __docs/reference/player/media-source-healing.md.
 
 set -u
 

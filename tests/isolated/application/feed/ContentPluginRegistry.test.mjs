@@ -1,7 +1,7 @@
 // tests/isolated/application/feed/ContentPluginRegistry.test.mjs
 import { vi } from 'vitest';
-import { IContentPlugin } from "../../../../modules/feed/server/application/ports/IContentPlugin.mjs";
-import { ContentPluginRegistry } from "../../../../modules/feed/server/application/services/ContentPluginRegistry.mjs";
+import { IContentPlugin } from "../../../../__app_modules/media/feed/server/application/ports/IContentPlugin.mjs";
+import { ContentPluginRegistry } from "../../../../__app_modules/media/feed/server/application/services/ContentPluginRegistry.mjs";
 
 describe('IContentPlugin', () => {
   test('throws if contentType not implemented', () => {

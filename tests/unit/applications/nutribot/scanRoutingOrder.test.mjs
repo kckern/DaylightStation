@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ApplyScanToComposition } from "../../../../modules/health/server/application/nutrition/usecases/ApplyScanToComposition.mjs";
+import { ApplyScanToComposition } from "../../../../__app_modules/wellness/health/server/application/nutrition/usecases/ApplyScanToComposition.mjs";
 
 const CONFIG = {
   densityLevels: [

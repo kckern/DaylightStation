@@ -1,24 +1,24 @@
 import { render, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { getActionBus, resetActionBus } from '../../../../../capabilities/screen-host/browser/input/ActionBus.js';
-import { ScreenOverlayProvider } from '../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
-import { ScreenVolumeProvider } from '../../../../../capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
+import { getActionBus, resetActionBus } from '../../../../../__capabilities/screen-host/browser/input/ActionBus.js';
+import { ScreenOverlayProvider } from '../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import { ScreenVolumeProvider } from '../../../../../__capabilities/screen-host/browser/providers/ScreenVolumeProvider.jsx';
 import {
   useScreenVolume,
   _resetForTests as resetVolumeModuleState,
 } from '../../../lib/volume/ScreenVolumeContext.js';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
 import { ScreenScreensaver } from '../ScreenScreensaver.jsx';
-import { MenuNavigationProvider } from "../../../../../capabilities/screen-host/browser/menu-context.mjs";
-import { SessionSourceProvider } from '../../../../../capabilities/playback/browser/sessions/SessionSourceContext.jsx';
+import { MenuNavigationProvider } from "../../../../../__capabilities/screen-host/browser/menu-context.mjs";
+import { SessionSourceProvider } from '../../../../../__capabilities/playback/browser/sessions/SessionSourceContext.jsx';
 import * as apiModule from '../../../lib/api.mjs';
 import {
   __resetPlayerQueueOpRegistryForTests,
   getPlayerQueueOpRegistry,
-} from '../../../../../capabilities/playback/browser/player/lib/queueOpRegistry.js';
+} from '../../../../../__capabilities/playback/browser/player/lib/queueOpRegistry.js';
 
-import { useScreenOverlay } from '../../../../../capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
+import { useScreenOverlay } from '../../../../../__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx';
 
 /**
  * Test helper: registers an escape interceptor that returns the given value.
@@ -32,7 +32,7 @@ function InterceptorRegistrar({ handled }) {
 }
 
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
-vi.mock("../../../../../modules/media/browser/menu.mjs", () => ({
+vi.mock("../../../../../__app_modules/media/media/browser/menu.mjs", () => ({
   // `rootMenu` is a legacy menu KEY (string) or a content id (object with
   // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
   // exposes both rather than stringifying an object into "[object Object]".
@@ -47,7 +47,7 @@ vi.mock("../../../../../modules/media/browser/menu.mjs", () => ({
   ),
 }));
 
-vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => ({
+vi.mock('../../../../../__capabilities/playback/browser/player/Player.jsx', () => ({
   default: React.forwardRef(function MockPlayer(props, ref) {
     return (
       <div
@@ -61,11 +61,11 @@ vi.mock('../../../../../capabilities/playback/browser/player/Player.jsx', () => 
 }));
 
 // Stub the 'art' widget so the scene overlay renders without ArtMode's deps.
-// Spread the real module first: `modules/Surround/registry.js` builds the surround
+// Spread the real module first: `__app_modules/Surround/registry.js` builds the surround
 // registry from this file's `WidgetRegistry` CLASS, and a partial mock that drops
 // that export breaks the import chain (ScreenPlayer -> SurroundHost -> registry).
 // Only `getWidgetRegistry` is stubbed, exactly as before.
-vi.mock('../../../../../capabilities/screen-host/browser/widgets/registry.js', async (importOriginal) => ({
+vi.mock('../../../../../__capabilities/screen-host/browser/widgets/registry.js', async (importOriginal) => ({
   ...(await importOriginal()),
   getWidgetRegistry: () => ({
     get: () => (props) => (

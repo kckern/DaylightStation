@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../../modules/school/cli/booklog.cli.mjs";
+export * from "../../__app_modules/learning/school/cli/booklog.cli.mjs";

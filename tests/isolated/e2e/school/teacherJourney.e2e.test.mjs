@@ -10,11 +10,11 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
 import { createLifecycleHarness } from '../../../_lib/school/lifecycleHarness.mjs';
 import { fixtureBank } from '../../../_lib/school/lifecycleFixtures.mjs';
-import { GetTeacherToday } from "../../../../modules/school/server/application/usecases/GetTeacherToday.mjs";
-import { GetReportCard } from "../../../../modules/school/server/application/usecases/GetReportCard.mjs";
-import { GetMilestoneStatuses } from "../../../../modules/school/server/application/usecases/GetMilestoneStatuses.mjs";
-import { YamlMilestoneStore } from "../../../../modules/school/server/adapters/persistence/YamlMilestoneStore.mjs";
-import { YamlSchoolDatastore } from "../../../../modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { GetTeacherToday } from "../../../../__app_modules/learning/school/server/application/usecases/GetTeacherToday.mjs";
+import { GetReportCard } from "../../../../__app_modules/learning/school/server/application/usecases/GetReportCard.mjs";
+import { GetMilestoneStatuses } from "../../../../__app_modules/learning/school/server/application/usecases/GetMilestoneStatuses.mjs";
+import { YamlMilestoneStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlMilestoneStore.mjs";
+import { YamlSchoolDatastore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
 
 const CHEMISTRY_COURSE = 'how-chemistry-surrounds-you';
 const CHEMISTRY_UNIT = 'how-chemistry-surrounds-you.01';

@@ -6,7 +6,7 @@ Foundation for integration testing with concurrent dev server, log monitoring, a
 
 This skill manages three concurrent processes that work together:
 
-1. **Dev Server** (`./dev`) - Runs your backend server
+1. **Dev Server** (`npm run dev`) - Runs your backend server
 2. **Log Monitor** (`tail -f dev.log`) - Shows real-time logs
 3. **API Client** (`curl`) - Tests endpoints while server runs
 
@@ -206,7 +206,7 @@ grep -i error dev.log | tail -n 20
 
 The skill uses the Bash tool's `run_in_background` parameter to manage long-running processes:
 
-1. **Server Process** - Runs `./dev` piped to `dev.log`
+1. **Server Process** - Runs `npm run dev` piped to `dev.log`
 2. **Log Monitor** - Runs `tail -f dev.log` to show real-time output
 3. **Task Tracking** - Saves task IDs for graceful shutdown
 
@@ -220,7 +220,7 @@ When stopping:
 
 ### Log Management
 
-- All output from `./dev` is captured to `dev.log`
+- All output from `npm run dev` is captured to `dev.log`
 - Logs persist across sessions
 - You can archive or clear `dev.log` manually
 

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { getActionBus } from "../../../../capabilities/screen-host/browser/input.mjs";
-import { CommandAckPublisher }   from "../../../../capabilities/screen-host/browser/publishers.mjs";
-import { SessionStatePublisher } from '../../../../capabilities/screen-host/browser/publishers.mjs';
+import { getActionBus } from "../../../../__capabilities/screen-host/browser/input.mjs";
+import { CommandAckPublisher }   from "../../../../__capabilities/screen-host/browser/publishers.mjs";
+import { SessionStatePublisher } from '../../../../__capabilities/screen-host/browser/publishers.mjs';
 
 /**
  * ScreenSessionPublishers — Mounts the per-screen WS publishers based on the

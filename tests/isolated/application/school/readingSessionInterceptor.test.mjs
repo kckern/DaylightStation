@@ -7,11 +7,11 @@
  * and the existing preempt / on-deck queue applies unchanged.
  */
 import { describe, it, expect } from 'vitest';
-import { ReadingSessionService as ProductionReadingSessionService } from "../../../../modules/school/server/application/ReadingSessionService.mjs";
-import { ReadingSessionInterceptor } from "../../../../modules/school/server/application/readingSessionInterceptor.mjs";
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../../__app_modules/learning/school/server/application/ReadingSessionService.mjs";
+import { ReadingSessionInterceptor } from "../../../../__app_modules/learning/school/server/application/readingSessionInterceptor.mjs";
 // Through the REAL seam, not a stand-in for it: the two halves shipped in
 // separate commits and only this pair proves they meet.
-import { responseHandlers } from "../../../../capabilities/device-dispatch/server/application/responseHandlers.mjs";
+import { responseHandlers } from "../../../../__capabilities/device-dispatch/server/application/responseHandlers.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaSeriesSource } from "../../../../modules/school/server/application/sources/MediaSeriesSource.mjs";
+import { MediaSeriesSource } from "../../../../__app_modules/learning/school/server/application/sources/MediaSeriesSource.mjs";
 
 describe('MediaSeriesSource', () => {
   it('projects neutral series metadata', async () => {

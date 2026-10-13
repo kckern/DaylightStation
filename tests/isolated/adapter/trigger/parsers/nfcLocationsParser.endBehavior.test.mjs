@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNfcLocations } from "../../../../../capabilities/device-dispatch/server/adapters/parsers/nfcLocationsParser.mjs";
+import { parseNfcLocations } from "../../../../../__capabilities/device-dispatch/server/adapters/parsers/nfcLocationsParser.mjs";
 
 describe('parseNfcLocations — end behavior', () => {
   it('extracts end and end_location as first-class fields (not in defaults)', () => {

@@ -7,7 +7,7 @@ import {
   createEvent,
   validateEvent,
   reduceSession,
-} from "../../../../../modules/school/server/domain/sessions/sessionEvents.mjs";
+} from "../../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const AT = '2026-07-27T10:00:00.000Z';
 const SID = 'ses_abc123';

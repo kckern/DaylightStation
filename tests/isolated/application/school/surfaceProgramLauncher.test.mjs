@@ -6,7 +6,7 @@
  * span one household study day.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { SurfaceProgramLauncher } from "../../../../modules/school/server/application/SurfaceProgramLauncher.mjs";
+import { SurfaceProgramLauncher } from "../../../../__app_modules/learning/school/server/application/SurfaceProgramLauncher.mjs";
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 

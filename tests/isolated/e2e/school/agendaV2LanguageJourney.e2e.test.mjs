@@ -34,8 +34,8 @@ import {
   createLifecycleHarness, fixtureBank,
   MEDIA_UNIT, COURSE_ID, DEFAULT_LEARNER,
 } from '#testlib/school/lifecycleHarness.mjs';
-import { LanguageStudyService } from "../../../../modules/school/server/application/LanguageStudyService.mjs";
-import { createDocumentEscPosRenderer } from "../../../../capabilities/printing/server/esc-pos.mjs";
+import { LanguageStudyService } from "../../../../__app_modules/learning/school/server/application/LanguageStudyService.mjs";
+import { createDocumentEscPosRenderer } from "../../../../__capabilities/printing/server/esc-pos.mjs";
 import { VirtualThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRequest } from "../../../../capabilities/agent-runtime/server/api/wireFormats/native.mjs";
+import { parseRequest } from "../../../../__capabilities/agent-runtime/server/api/wireFormats/native.mjs";
 
 const makeReq = (body) => ({ body });
 

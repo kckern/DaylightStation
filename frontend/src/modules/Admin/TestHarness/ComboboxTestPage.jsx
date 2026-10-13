@@ -13,7 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Paper, Text, Code, Group, Badge, Title, Divider } from '@mantine/core';
-import ContentCombobox from "../../../../../capabilities/content-catalog/browser/picker.mjs";
+import ContentCombobox from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 
 function ComboboxTestPage() {
   const [searchParams] = useSearchParams();

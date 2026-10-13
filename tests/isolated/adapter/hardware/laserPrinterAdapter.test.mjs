@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// The suite's default environment (happy-dom, see vitest.config.mjs) patches
+// The suite's default environment (happy-dom, see tests/_infrastructure/config/vitest.config.mjs) patches
 // global `fetch` for DOM-flavored use and mangles the binary IPP request
 // bodies LaserPrinterAdapter sends (Buffer.readUInt16BE on the server side
 // started going out-of-bounds — the body arrived truncated/re-encoded).
@@ -11,8 +11,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import net from 'net';
 import http from 'http';
 import { execFileSync } from 'node:child_process';
-import { LaserPrinterAdapter } from '../../../../backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
-import { OPS, encodeRequest, decodeResponse } from '../../../../backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
+import { LaserPrinterAdapter } from '../../../../__backend/src/1_adapters/hardware/laser-printer/LaserPrinterAdapter.mjs';
+import { OPS, encodeRequest, decodeResponse } from '../../../../__backend/src/1_adapters/hardware/laser-printer/ipp.mjs';
 
 // Passes LaserPrinterAdapter's own `%PDF-` header sniff but is not a real
 // parseable PDF — fine for every test except the rasterization path, which

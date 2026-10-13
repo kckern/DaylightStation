@@ -1,4 +1,4 @@
-import { materializeAssetCatalog } from "../../../capabilities/gaming/portable/assets.mjs";
+import { materializeAssetCatalog } from "../../../__capabilities/gaming/portable/assets.mjs";
 import { validateAssetAnimation } from './animation.mjs';
 
 export const PRESENTATION_CATALOG_MAP_FIELDS = Object.freeze([

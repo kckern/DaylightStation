@@ -1,4 +1,4 @@
-import { createPianoScreenHoldPolicy } from "../../../modules/piano/server/application/screenHoldPolicy.mjs";
+import { createPianoScreenHoldPolicy } from "../../../__app_modules/learning/piano/server/application/screenHoldPolicy.mjs";
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';

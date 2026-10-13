@@ -6,36 +6,36 @@ import { MantineProvider } from '@mantine/core';
 const mockRestore = vi.fn();
 const mockRefetch = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('../../../../capabilities/screen-host/browser/providers/useScreen.js', () => ({
+vi.mock('../../../../__capabilities/screen-host/browser/providers/useScreen.js', () => ({
   useScreen: () => ({ restore: mockRestore, replace: () => () => {} }),
 }));
 
-vi.mock('../../../../capabilities/screen-host/browser/data/useScreenData.js', () => ({
+vi.mock('../../../../__capabilities/screen-host/browser/data/useScreenData.js', () => ({
   useScreenDataRefetch: () => mockRefetch,
   useScreenData: () => null,
 }));
 
-vi.mock('../../../../capabilities/screen-host/browser/widgets/registry.js', () => ({
+vi.mock('../../../../__capabilities/screen-host/browser/widgets/registry.js', () => ({
   getWidgetRegistry: () => ({ get: () => null }),
 }));
 
-vi.mock("../../../../modules/fitness/browser/useFitnessScreen.js", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/useFitnessScreen.js", () => ({
   useFitnessScreen: () => ({ onNavigate: null }),
 }));
 
-vi.mock("../../../../modules/fitness/browser/context/FitnessContext.jsx", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/context/FitnessContext.jsx", () => ({
   useFitnessContext: () => ({ openVoiceMemoCapture: null }),
 }));
 
-vi.mock("../../../../modules/fitness/browser/lib/dateFormatter.js", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/lib/dateFormatter.js", () => ({
   formatFitnessDate: () => '',
 }));
 
-vi.mock("../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/RouteMap.jsx", () => ({ default: () => null }));
-vi.mock("../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx", () => ({ default: () => null }));
-vi.mock("../../../../modules/fitness/browser/widgets/_shared/SportIcon.jsx", () => ({ default: () => null, formatSportType: () => '' }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/RouteMap.jsx", () => ({ default: () => null }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx", () => ({ default: () => null }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/_shared/SportIcon.jsx", () => ({ default: () => null, formatSportType: () => '' }));
 
-import FitnessSessionDetailWidget from "../../../../modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx";
+import FitnessSessionDetailWidget from "../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx";
 
 function findDeleteButton(container) {
   // Prefer data-testid for a stable selector; fall back to text match.

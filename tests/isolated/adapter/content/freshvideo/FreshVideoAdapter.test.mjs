@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { FreshVideoAdapter } from "../../../../../modules/media/server/adapters/providers/freshvideo/FreshVideoAdapter.mjs";
+import { FreshVideoAdapter } from "../../../../../__app_modules/media/media/server/adapters/providers/freshvideo/FreshVideoAdapter.mjs";
 
 // Helper: create mock FileAdapter that returns video items for a folder.
 // Production now stamps a show.jpg thumbnail by joining

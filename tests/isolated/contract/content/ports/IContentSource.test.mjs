@@ -1,7 +1,7 @@
 // tests/unit/content/ports/IContentSource.test.mjs
 // IContentSource port was relocated from domains → applications during the
 // DDD layering refactor. Update import path accordingly.
-import { validateAdapter, ContentSourceBase } from "../../../../../capabilities/content-catalog/server/application/ports/IContentSource.mjs";
+import { validateAdapter, ContentSourceBase } from "../../../../../__capabilities/content-catalog/server/application/ports/IContentSource.mjs";
 
 describe('IContentSource port', () => {
   test('validateAdapter rejects invalid adapter', () => {

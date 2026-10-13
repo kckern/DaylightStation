@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { StateGatesEngine } from "../../../../capabilities/state-gates/server/application/StateGatesEngine.mjs";
+import { StateGatesEngine } from "../../../../__capabilities/state-gates/server/application/StateGatesEngine.mjs";
 
 const start = Date.parse('2026-08-30T12:00:00-07:00');
 

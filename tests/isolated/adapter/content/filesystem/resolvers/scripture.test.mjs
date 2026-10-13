@@ -1,5 +1,5 @@
 // tests/isolated/adapter/content/filesystem/resolvers/scripture.test.mjs
-import { ScriptureResolver } from "../../../../../../capabilities/content-catalog/server/adapters/providers/filesystem/resolvers/scripture.mjs";
+import { ScriptureResolver } from "../../../../../../__capabilities/content-catalog/server/adapters/providers/filesystem/resolvers/scripture.mjs";
 
 describe('ScriptureResolver', () => {
   const defaults = {
