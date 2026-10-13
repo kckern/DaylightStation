@@ -21,7 +21,7 @@ This document guides frontend developers through migrating from legacy endpoints
 
 ### Player Module
 
-**File:** `frontend/src/modules/Player/lib/api.js`
+**File:** `__capabilities/playback/browser/player/lib/api.js`
 
 | Old | New |
 |-----|-----|
@@ -39,7 +39,7 @@ This document guides frontend developers through migrating from legacy endpoints
 
 ### Menu Module
 
-**File:** `frontend/src/modules/Menu/Menu.jsx`
+**File:** `__app_modules/media/media/browser/menu/Menu.jsx`
 
 | Old | New |
 |-----|-----|
@@ -51,7 +51,7 @@ This document guides frontend developers through migrating from legacy endpoints
 
 ### ContentScroller Module
 
-**File:** `frontend/src/modules/ContentScroller/ContentScroller.jsx`
+**File:** `__capabilities/playback/browser/player/renderers/ContentScroller.jsx`
 
 | Old | New |
 |-----|-----|
@@ -62,7 +62,7 @@ This document guides frontend developers through migrating from legacy endpoints
 
 ### Progress Logging
 
-**File:** `frontend/src/modules/Player/hooks/useCommonMediaController.js`
+**File:** `__capabilities/playback/browser/player/hooks/useCommonMediaController.js`
 
 | Old | New |
 |-----|-----|
@@ -110,4 +110,4 @@ Check your network requests for these headers to identify any endpoints you may 
 If you encounter issues during migration:
 1. Check the response shape matches what you expect
 2. Look for `X-Deprecated` headers indicating which new endpoint to use
-3. Review the API Consumer Inventory in `ops:docs/_wip/plans/2026-01-10-api-consumer-inventory.md`
+3. Review the API Consumer Inventory in `ops:docs/_archive/migration-2026-01/2026-01-10-api-consumer-inventory.md`

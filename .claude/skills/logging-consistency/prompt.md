@@ -5,7 +5,7 @@ You are auditing the DaylightStation codebase for logging quality and consistenc
 ## Context
 
 DaylightStation uses structured logging via Winston:
-- Backend: `createLogger({ source: 'backend', app: '<module-name>' })` from `__backend/lib/logging/logger.js`
+- Backend: `createLogger({ source: 'backend', app: '<module-name>' })` from `__backend/src/0_system/logging/logger.mjs`
 - Loggers should be created at module level (e.g., `const fitnessLogger = createLogger(...)`)
 - Log methods: `logger.info()`, `logger.warn()`, `logger.error()`, `logger.debug()`
 - Console methods (`console.log/warn/error`) should NOT be used in production code
@@ -25,7 +25,7 @@ Based on the parameters provided, perform the following checks:
   - **Low**: console.log in development/debug code with comments
 
 ### 2. Verify Logger Usage (if checkLoggerUsage=true)
-- Find all `.mjs` and `.js` files in `__backend/routers/` and `__backend/lib/`
+- Find all `.mjs` and `.js` files in `__backend/src/4_api/` and `__backend/src/0_system/`
 - Check each file:
   - Does it import `createLogger`?
   - Is a logger instance created at module level?

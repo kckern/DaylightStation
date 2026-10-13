@@ -107,7 +107,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 ## Rules
 
 - **Commit & deploy policy is set per-machine in `CLAUDE.local.md`** - Where a workspace's `CLAUDE.local.md` grants build/commit/deploy authority, follow it. Absent any local rule, default to: don't commit or deploy automatically — let the user review and run those steps.
-- **Keep docs in /__docs folder** - In appropriate subfolder
+- **Keep public docs in `__docs/`** (reference, runbooks, ai-context) - internal work docs (plans, audits, bugs) go to the private ops companion repo (see Documentation Management)
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 - **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
 - **Worth flagging is worth fixing** - Never end a session by handing back a list of
@@ -167,8 +167,8 @@ __docs/
 
 Public docs are `__docs/reference/`, `__docs/runbooks/`, `__docs/ai-context/` and
 the `docs/` folders inside modules. Internal working docs (plans, audits, bugs,
-refactor indexes, specs, archive) live in the private companion repo, not here:
-`/opt/Code/DaylightStation-ops/docs/` (`env.ops_docs` in `.claude/settings.local.json`).
+refactor indexes, specs, archive) live in the private ops companion repo, not here
+(path in `.claude/settings.local.json` `env.ops_docs`).
 Code comments cite them as `ops:docs/<folder>/<file>`.
 
 ### Reference Structure
@@ -266,8 +266,10 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 - `.js` - Frontend utilities/hooks
 
 ### Key Directories
-- `frontend/src/Apps/` - App entry points
-- `frontend/src/modules/` - Reusable UI modules
+- `__app_modules/<category>/<app>/` - App modules (`server/`, `browser/`, `cli/`, ...)
+- `__capabilities/<cap>/` - Shared capabilities (same layout)
+- `frontend/src/Apps/` - Shell app entry points
+- `frontend/src/modules/` - Shell-level UI modules
 - `frontend/src/hooks/` - Custom hooks
 - `__backend/src/0_system/` - Bootstrap, config loading
 - `__backend/src/1_adapters/` - External service integrations (Plex, HA, etc.)
@@ -375,7 +377,7 @@ function logger() {
 
 ### Category Facades
 
-For modules with many related log calls across categories (e.g., feed scroll), create a thin facade file that delegates to a child logger. See `frontend/src/modules/Feed/Scroll/feedLog.js` for the pattern.
+For modules with many related log calls across categories (e.g., feed scroll), create a thin facade file that delegates to a child logger. See `__app_modules/media/feed/browser/Scroll/feedLog.js` for the pattern.
 
 ### Key APIs
 

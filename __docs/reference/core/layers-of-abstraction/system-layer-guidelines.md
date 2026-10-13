@@ -386,11 +386,11 @@ export function createFitnessServices(config) {
 ```json
 {
   "imports": {
-    "#system/*": "./backend/src/0_system/*",
-    "#adapters/*": "./backend/src/1_adapters/*",
-    "#rendering/*": "./backend/src/1_rendering/*",
-    "#domains/*": "./backend/src/2_domains/*",
-    "#applications/*": "./backend/src/3_applications/*"
+    "#system/*": "./__backend/src/0_system/*",
+    "#adapters/*": "./__backend/src/1_adapters/*",
+    "#rendering/*": "./__backend/src/1_rendering/*",
+    "#domains/*": "./__backend/src/2_domains/*",
+    "#applications/*": "./__backend/src/3_applications/*"
   }
 }
 ```

@@ -34,7 +34,7 @@ Spec: `__docs/reference/gaming/presentation-framework-v2.md`
 
 ### Step 0 — Staleness (abort condition)
 
-Compare the mtime of the newest artifact in the QA bundle against the newest mtime in `shared/presentation/`, `shared/gaming/`, and `cli/gaming-assets/`. If any source file is newer than the artifacts, the bundle is a fossil: emit `status: STALE`, name the offending file, and stop. Reviewing renders that predate the code is worse than not reviewing.
+Compare the mtime of the newest artifact in the QA bundle against the newest mtime in `shared/presentation/` and `__capabilities/gaming/`. If any source file is newer than the artifacts, the bundle is a fossil: emit `status: STALE`, name the offending file, and stop. Reviewing renders that predate the code is worse than not reviewing.
 
 Also confirm `report.yml` names the bundle you were asked about and that `scenes:` matches the number of scene directories present. A missing scene is a blocking defect, not an oversight.
 
@@ -72,7 +72,7 @@ This converts taste into a defect report. "The house reads too small" is an opin
 
 ### Step 6 — Root cause, last
 
-Only after a visual defect is confirmed on pixels, read `shared/presentation/scene.mjs`, `catalog.mjs`, or `cli/gaming-assets/lib.mjs` to name the mechanism. Reading code first produces a reviewer that critiques architecture while the water is still a rectangle. If you cannot confirm the mechanism, say so and describe the symptom precisely — a well-specified symptom beats a guessed cause.
+Only after a visual defect is confirmed on pixels, read `shared/presentation/scenes/catalog.mjs` or `__capabilities/gaming/cli/gaming-assets/lib.mjs` to name the mechanism. Reading code first produces a reviewer that critiques architecture while the water is still a rectangle. If you cannot confirm the mechanism, say so and describe the symptom precisely — a well-specified symptom beats a guessed cause.
 
 ## Defect classes to hunt
 

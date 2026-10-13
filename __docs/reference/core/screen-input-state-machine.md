@@ -175,10 +175,10 @@ it advances the selection by one item.
 
 | File | Role |
 |------|------|
-| `frontend/src/screen-framework/input/adapters/NumpadAdapter.js` | Key → ActionBus translation (stops propagation on matched keys) |
-| `frontend/src/screen-framework/ScreenRenderer.jsx` | Focus retention probe (`document.hasFocus`) and fallback focus recovery |
-| `frontend/src/screen-framework/actions/ScreenActionHandler.jsx` | ActionBus → overlay/effect dispatch |
-| `frontend/src/screen-framework/overlays/ScreenOverlayProvider.jsx` | Overlay state management |
-| `frontend/src/modules/Menu/Menu.jsx:618-663` | Menu keydown handler + window listener |
-| `frontend/src/modules/Menu/MenuStack.jsx` | Menu navigation stack (push/pop) |
+| `__capabilities/screen-host/browser/input/adapters/NumpadAdapter.js` | Key → ActionBus translation (stops propagation on matched keys) |
+| `frontend/src/composition/screens/ScreenRenderer.jsx` | Focus retention probe (`document.hasFocus`) and fallback focus recovery |
+| `frontend/src/composition/screens/actions/ScreenActionHandler.jsx` | ActionBus → overlay/effect dispatch |
+| `__capabilities/screen-host/browser/overlays/ScreenOverlayProvider.jsx` | Overlay state management |
+| `__app_modules/media/media/browser/menu/Menu.jsx:618-663` | Menu keydown handler + window listener |
+| `__app_modules/media/media/browser/menu/MenuStack.jsx` | Menu navigation stack (push/pop) |
 | `data/household/screens/office.yml` | YAML config for actions.menu.duplicate, escape chain, etc. |

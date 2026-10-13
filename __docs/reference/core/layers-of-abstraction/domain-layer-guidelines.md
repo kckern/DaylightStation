@@ -451,11 +451,11 @@ import { Session } from '#domains/fitness/entities/Session.mjs';
 ```json
 {
   "imports": {
-    "#domains/*": "./backend/src/2_domains/*",
-    "#adapters/*": "./backend/src/1_adapters/*",
-    "#rendering/*": "./backend/src/1_rendering/*",
-    "#applications/*": "./backend/src/3_applications/*",
-    "#infrastructure/*": "./backend/src/0_system/*"
+    "#domains/*": "./__backend/src/2_domains/*",
+    "#adapters/*": "./__backend/src/1_adapters/*",
+    "#rendering/*": "./__backend/src/1_rendering/*",
+    "#applications/*": "./__backend/src/3_applications/*",
+    "#infrastructure/*": "./__backend/src/0_system/*"
   }
 }
 ```
@@ -650,7 +650,7 @@ class ZoneService {
 | **Adapter imports** | `import { PlexClient } from '#adapters/...'` | Domain has no external dependencies |
 | **Raw time functions** | `Date.now()`, `new Date()` | Receive timestamp as parameter from caller |
 | **Date formatting** | `this.#time.toISOString()` | Pass pre-formatted or let adapter format |
-| **Ports in domain** | `2_domains/ai/ports/IAIGateway.mjs` | Move to `3_applications/{app}/ports/` |
+| **Ports in domain** | `__backend/src/3_applications/common/ports/IAIGateway.mjs` | Move to `3_applications/{app}/ports/` |
 | **Upward domain imports** | `fitness` imports from `lifelog` | Only import from lower-level domains |
 | **Circular dependencies** | `fitness` ↔ `nutrition` | Coordinate in application layer |
 | **Anemic entities** | All logic in services, entities are data bags | Entity owns logic about itself |

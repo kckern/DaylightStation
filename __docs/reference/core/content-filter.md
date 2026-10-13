@@ -102,7 +102,7 @@ also bypass global synchronization.
 
 ## Resolution and effects
 
-`frontend/src/lib/Player/contentFilter.js` resolves the three layers into flat,
+`__app_modules/media/media/browser/content-filter/contentFilter.js` resolves the three layers into flat,
 effective cues. Precedence is:
 
 `cue override` → `cue effect` → `profile rule` → `cue type` fallback.
@@ -125,7 +125,7 @@ GET /api/v1/content-filter/{ratingKey}?profile=family
 ```
 
 If no EDL exists, the endpoint returns `404` with `no filter data`. The application port
-is defined by `__backend/src/3_applications/content-filter/ports/IContentFilterRepository.mjs`;
+is defined by `__app_modules/media/media/server/application/content-filter/ports/IContentFilterRepository.mjs`;
 the filesystem adapter is replaceable without changing the use case.
 
 ## Import sources and synchronization
@@ -146,7 +146,7 @@ actual media release before being enabled, especially when the source is marked 
 `--srt <file>`) for words in `household/content-filter/bad-words.yml` and, with
 `--write`, stores one local-time mute per word as `addCues` (`source: srt`,
 `precision: srt-line`) in the title's override. The matcher lives in
-`__backend/src/2_domains/content-filter/subtitleWords.mjs`: whole-word forms only,
+`__app_modules/media/media/server/domain/content-filter/subtitleWords.mjs`: whole-word forms only,
 word *i* of a line placed at `start + i·0.33 s` (capped at the caption end),
 and every listed word gets its own cue, even when two land at the same instant
 (otherwise disabling one would unmute the other). Ids are
@@ -193,7 +193,7 @@ and correctness are therefore data-quality concerns, not guarantees of the file 
 
 Related implementation:
 
-- `frontend/src/lib/Player/contentFilter.js`
-- `frontend/src/lib/Player/useContentFilter.js`
-- `__backend/src/1_adapters/persistence/files/FilesystemContentFilterRepository.mjs`
-- `__backend/src/4_api/v1/routers/contentFilter.mjs`
+- `__app_modules/media/media/browser/content-filter/contentFilter.js`
+- `__app_modules/media/media/browser/content-filter/useContentFilter.js`
+- `__app_modules/media/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs`
+- `__app_modules/media/media/server/api/contentFilter.mjs`

@@ -80,10 +80,8 @@ Inbound event parsing and routing.
 | Source | Purpose | Examples |
 |--------|---------|----------|
 | **`0_system/utils/FileIO`** | File read/write operations | `loadYamlSafe`, `saveYaml`, `ensureDir` |
-| **`0_system/services/HttpClient`** | HTTP requests to external APIs | `httpClient.post()`, `httpClient.get()` |
+| **`0_system/http/httpClient`** | HTTP requests to external APIs | `httpClient.post()`, `httpClient.get()` |
 | **`0_system/utils/time`** | Timestamp formatting | `formatLocalTimestamp`, `parseToDate` |
-| **`0_system/utils/media`** | Buffer/stream handling | Media type detection, buffer operations |
-| **`0_system/utils/collections`** | List/array utilities | Filtering, grouping helpers |
 | `2_domains/` | Entity types for hydration | `NutriLog`, `Session`, `Message` |
 | `3_applications/*/ports/` | Interfaces to implement | `IMessagingGateway`, `IFoodLogDatastore` |
 
@@ -111,7 +109,7 @@ constructor(deps) {
 | Forbidden | Why | Instead |
 |-----------|-----|---------|
 | `#system/config/ConfigService` | Adapters receive config, don't fetch it | Pass values via constructor |
-| Raw `axios`, `fetch`, `node-fetch` | HTTP mechanics belong in system | Use `#system/services/HttpClient` |
+| Raw `axios`, `fetch`, `node-fetch` | HTTP mechanics belong in system | Use `#system/http/httpClient` |
 | Raw `fs`, `path` | File I/O belongs in system | Use `#system/utils/FileIO` |
 | Other adapters | No cross-adapter coupling | Extract shared logic to system |
 | `1_rendering/*` | Peer layer, no cross-imports | Rendering is a separate concern |
@@ -422,7 +420,7 @@ async sendMessage(conversationId, text, options = {}) {
 
 | Anti-Pattern | Example | Fix |
 |--------------|---------|-----|
-| **Raw HTTP client imports** | `import axios from 'axios'` | Use `#system/services/HttpClient` |
+| **Raw HTTP client imports** | `import axios from 'axios'` | Use `#system/http/httpClient` |
 | **Raw file I/O imports** | `import fs from 'fs/promises'` | Use `#system/utils/FileIO` |
 | **Importing ConfigService** | `configService.getSecret('API_KEY')` | Receive config via constructor |
 | **Cross-adapter imports** | `import { TelegramAdapter } from '../telegram/...'` | Extract shared logic to system |

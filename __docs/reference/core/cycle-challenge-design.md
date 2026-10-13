@@ -377,9 +377,9 @@ eligible rider, and the cooldown (admin override may force). It returns
 
 ---
 
-*Implementation: `frontend/src/hooks/fitness/GovernanceEngine.js` (state machine,
-health pool, projection), `frontend/src/modules/Fitness/player/overlays/`
+*Implementation: `__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js` (state machine,
+health pool, projection), `__app_modules/wellness/fitness/browser/player/overlays/`
 (overlay, `cycleOverlayVisuals.js`, `CycleHealthBar.jsx`, `resolveLockScreen.js`,
-`useCycleSuccessHold.js`), and `frontend/src/modules/Fitness/player/cycleDimStyle.js`
+`useCycleSuccessHold.js`), and `__app_modules/wellness/fitness/browser/player/cycleDimStyle.js`
 (video dim). Overlay detail: `__docs/reference/fitness/cycing-challenge.md`. Engine
 detail: `__docs/reference/fitness/governance-engine.md`.*

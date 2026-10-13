@@ -4,9 +4,9 @@ Enables the container to execute commands on the Docker host machine via SSH.
 
 ## Related code
 
-- `docker/docker-compose.yml` - Volume mount configuration
+- Container run configuration (the deploy wrapper) - Volume mount configuration
 - `docker/entrypoint.sh` - Key permission setup
-- `__backend/_legacy/routers/exe.mjs` - SSH command execution
+- `__backend/src/1_adapters/devices/SshOsAdapter.mjs` - SSH command execution
 
 ## Configuration
 
@@ -14,7 +14,7 @@ The container needs access to a private SSH key to execute commands on the host.
 
 ### Volume Mount
 
-In `docker/docker-compose.yml`:
+In the container run configuration (volume mount):
 
 ```yaml
 volumes:

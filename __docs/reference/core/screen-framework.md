@@ -136,7 +136,7 @@ To **land** on a screen already showing a replacement, pass
 at mount and applied from the first render, so the default content never mounts
 only to be swapped out a render later. Clear a seeded entry with `restore(nodeId)`.
 Fitness home uses this for the post-session landing and `/fitness/home/session-{id}`
-deep links (`__app_modules/Fitness/widgets/FitnessSessionsWidget/sessionDetailPane.js`).
+deep links (`__app_modules/wellness/fitness/browser/widgets/FitnessSessionsWidget/sessionDetailPane.js`).
 
 ## Theme System
 

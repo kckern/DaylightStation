@@ -1,5 +1,7 @@
 # FamilySelector App - Design Document
 
+> Implemented as `__capabilities/household-identity/browser/FamilySelector.jsx` (with `FamilySelector.scss`). This design predates the move into the capability; file names below are relative to that directory, and the config and endpoint tasks refer to the household config system rather than the removed the backend API router.
+
 ## Overview
 
 The FamilySelector is a visual "roulette wheel" app that randomly (or pseudo-randomly) selects a household member. Use cases include:
@@ -65,13 +67,13 @@ The FamilySelector is a visual "roulette wheel" app that randomly (or pseudo-ran
 
 ## Component Props / URL Input
 
-The FamilySelectorApp accepts props to control behavior, similar to other apps like ArtApp.
+The FamilySelector accepts props to control behavior, similar to other apps like ArtApp.
 
 ### Props Interface
 
 ```jsx
 // Usage in app routing
-<FamilySelectorApp 
+<FamilySelector 
   winner="kc"           // Optional: Rig the winner (member id)
   title="Dish Duty"     // Optional: Override title
   exclude="child2"      // Optional: Comma-separated member ids to exclude
@@ -101,10 +103,10 @@ When launched via URL, the same parameters can be passed as query strings:
 ### Implementation Example
 
 ```jsx
-import "./FamilySelectorApp.scss";
+import "./FamilySelector.scss";
 import { useSearchParams } from "react-router-dom";
 
-export default function FamilySelectorApp({ winner, title, exclude, autoSpin }) {
+export default function FamilySelector({ winner, title, exclude, autoSpin }) {
   const [searchParams] = useSearchParams();
   
   // Props take precedence, then URL params, then config defaults
@@ -216,9 +218,9 @@ familySelector:
 
 ### File Structure
 ```
-frontend/src/Apps/
-├── FamilySelectorApp.jsx
-├── FamilySelectorApp.scss
+__capabilities/household-identity/browser/
+├── FamilySelector.jsx
+├── FamilySelector.scss
 └── components/
     └── FamilySelector/
         ├── RouletteWheel.jsx
@@ -229,7 +231,7 @@ frontend/src/Apps/
 
 ### Key Components
 
-#### `FamilySelectorApp.jsx`
+#### `FamilySelector.jsx`
 - Main container, handles keyboard events
 - Fetches config from backend
 - Manages spin state machine
@@ -372,12 +374,12 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 
 | Task | File | Description |
 |------|------|-------------|
-| 1.1 | `FamilySelectorApp.jsx` | Create component shell with props/URL param parsing |
-| 1.2 | `FamilySelectorApp.scss` | Basic layout: centered wheel container, title, instruction text |
-| 1.3 | `FamilySelectorApp.jsx` | Render SVG wheel with hardcoded 4 segments |
-| 1.4 | `FamilySelectorApp.scss` | Style wheel segments with distinct colors |
-| 1.5 | `FamilySelectorApp.jsx` | Add avatar images to each segment (or initials fallback) |
-| 1.6 | `FamilySelectorApp.scss` | Add fixed pointer/indicator element |
+| 1.1 | `FamilySelector.jsx` | Create component shell with props/URL param parsing |
+| 1.2 | `FamilySelector.scss` | Basic layout: centered wheel container, title, instruction text |
+| 1.3 | `FamilySelector.jsx` | Render SVG wheel with hardcoded 4 segments |
+| 1.4 | `FamilySelector.scss` | Style wheel segments with distinct colors |
+| 1.5 | `FamilySelector.jsx` | Add avatar images to each segment (or initials fallback) |
+| 1.6 | `FamilySelector.scss` | Add fixed pointer/indicator element |
 | 1.7 | `RootApp.jsx` | Register route `/app/family-selector` |
 
 **Deliverable**: Static wheel displays on screen with avatars, no interaction.
@@ -389,13 +391,13 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 
 | Task | File | Description |
 |------|------|-------------|
-| 2.1 | `FamilySelectorApp.jsx` | Add state machine: `idle` → `spinning` → `result` |
-| 2.2 | `FamilySelectorApp.jsx` | Add keyboard listener for Space/Enter |
-| 2.3 | `FamilySelectorApp.jsx` | Calculate target rotation angle based on random winner |
-| 2.4 | `FamilySelectorApp.scss` | CSS `@keyframes` for spin with `cubic-bezier` easing |
-| 2.5 | `FamilySelectorApp.jsx` | Apply dynamic `transform: rotate(Xdeg)` via inline style |
-| 2.6 | `FamilySelectorApp.jsx` | Transition to `result` state after animation ends (`onTransitionEnd`) |
-| 2.7 | `FamilySelectorApp.scss` | Winner highlight effect (glow/pulse on winning segment) |
+| 2.1 | `FamilySelector.jsx` | Add state machine: `idle` → `spinning` → `result` |
+| 2.2 | `FamilySelector.jsx` | Add keyboard listener for Space/Enter |
+| 2.3 | `FamilySelector.jsx` | Calculate target rotation angle based on random winner |
+| 2.4 | `FamilySelector.scss` | CSS `@keyframes` for spin with `cubic-bezier` easing |
+| 2.5 | `FamilySelector.jsx` | Apply dynamic `transform: rotate(Xdeg)` via inline style |
+| 2.6 | `FamilySelector.jsx` | Transition to `result` state after animation ends (`onTransitionEnd`) |
+| 2.7 | `FamilySelector.scss` | Winner highlight effect (glow/pulse on winning segment) |
 
 **Deliverable**: Press Space → wheel spins → lands on random person → winner highlighted.
 
@@ -406,9 +408,9 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 
 | Task | File | Description |
 |------|------|-------------|
-| 3.1 | `FamilySelectorApp.jsx` | Parse `winner` prop and `?winner=` URL param |
-| 3.2 | `FamilySelectorApp.jsx` | If rigged, calculate angle to land on specified member |
-| 3.3 | `FamilySelectorApp.jsx` | Add random variance to spin count (3-6 rotations) for natural feel |
+| 3.1 | `FamilySelector.jsx` | Parse `winner` prop and `?winner=` URL param |
+| 3.2 | `FamilySelector.jsx` | If rigged, calculate angle to land on specified member |
+| 3.3 | `FamilySelector.jsx` | Add random variance to spin count (3-6 rotations) for natural feel |
 | 3.4 | — | Test: verify rigged spin looks identical to random spin |
 
 **Deliverable**: `?winner=kc` always lands on KC, indistinguishable from random.
@@ -421,12 +423,12 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 | Task | File | Description |
 |------|------|-------------|
 | 4.1 | `config/apps/family-selector.yml` | Create config file with members array |
-| 4.2 | `__backend/api.mjs` | Add endpoint `GET /api/family-selector/config` |
-| 4.3 | `FamilySelectorApp.jsx` | Fetch config on mount, replace hardcoded members |
-| 4.4 | `FamilySelectorApp.jsx` | Support dynamic segment count (2-8 members) |
-| 4.5 | `FamilySelectorApp.scss` | Responsive segment sizing based on member count |
-| 4.6 | `FamilySelectorApp.jsx` | Implement `exclude` prop to filter members |
-| 4.7 | `FamilySelectorApp.jsx` | Show disabled state when < 2 active members |
+| 4.2 | the backend API router | Add endpoint `GET /api/family-selector/config` |
+| 4.3 | `FamilySelector.jsx` | Fetch config on mount, replace hardcoded members |
+| 4.4 | `FamilySelector.jsx` | Support dynamic segment count (2-8 members) |
+| 4.5 | `FamilySelector.scss` | Responsive segment sizing based on member count |
+| 4.6 | `FamilySelector.jsx` | Implement `exclude` prop to filter members |
+| 4.7 | `FamilySelector.jsx` | Show disabled state when < 2 active members |
 
 **Deliverable**: Wheel dynamically renders from config, exclusions work.
 
@@ -437,12 +439,12 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 
 | Task | File | Description |
 |------|------|-------------|
-| 5.1 | `FamilySelectorApp.jsx` | Add cooldown state to prevent spam-spinning |
-| 5.2 | `FamilySelectorApp.jsx` | Handle `R` key to re-spin from result state |
-| 5.3 | `FamilySelectorApp.jsx` | Handle `Escape` to reset to idle |
-| 5.4 | `FamilySelectorApp.scss` | Add entrance animation on mount |
-| 5.5 | `FamilySelectorApp.jsx` | Implement `autoSpin` prop for kiosk mode |
-| 5.6 | `FamilySelectorApp.scss` | Responsive sizing for TV vs desktop |
+| 5.1 | `FamilySelector.jsx` | Add cooldown state to prevent spam-spinning |
+| 5.2 | `FamilySelector.jsx` | Handle `R` key to re-spin from result state |
+| 5.3 | `FamilySelector.jsx` | Handle `Escape` to reset to idle |
+| 5.4 | `FamilySelector.scss` | Add entrance animation on mount |
+| 5.5 | `FamilySelector.jsx` | Implement `autoSpin` prop for kiosk mode |
+| 5.6 | `FamilySelector.scss` | Responsive sizing for TV vs desktop |
 | 5.7 | — | Cross-browser testing (Chrome, Safari, TV WebView) |
 
 **Deliverable**: Production-ready component with all interactions polished.
@@ -466,9 +468,9 @@ function calculateSpinAngle(selectedIndex, memberCount, config) {
 ### File Checklist
 
 ```
-frontend/src/Apps/
-├── FamilySelectorApp.jsx      ← New
-├── FamilySelectorApp.scss     ← New
+__capabilities/household-identity/browser/
+├── FamilySelector.jsx      ← New
+├── FamilySelector.scss     ← New
 
 config/apps/
 ├── family-selector.yml        ← New

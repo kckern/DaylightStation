@@ -48,7 +48,7 @@ The frontend logger sends events over a shared WebSocket connection to the backe
 
 ### 3. Backend: Ingestion
 
-`__backend/src/0_system/logging/ingestion.mjs` processes incoming events:
+`__backend/src/1_adapters/logging/FrontendLogIngestion.mjs` processes incoming events:
 
 1. Normalizes the payload and dispatches to the standard logging pipeline (console, Loggly, etc.)
 2. Checks `normalized.context?.sessionLog` — if truthy, writes the event to the session file transport
@@ -80,7 +80,7 @@ The transport is **not** registered with the dispatcher. It is invoked directly 
 
 | App | File | Logger Init |
 |-----|------|-------------|
-| Fitness | `frontend/src/Apps/FitnessApp.jsx` | `child({ app: 'fitness', sessionLog: true })` + `configureLogger()` |
+| Fitness | `__app_modules/wellness/fitness/browser/FitnessApp.jsx` | `child({ app: 'fitness', sessionLog: true })` + `configureLogger()` |
 | Admin | `frontend/src/Apps/AdminApp.jsx` | `child({ app: 'admin', sessionLog: true })` |
 
 ---
@@ -124,7 +124,7 @@ Each line is a JSON object:
 | File | Role |
 |------|------|
 | `frontend/src/lib/logging/Logger.js` | Frontend logger; emits `session-log.start` on child creation |
-| `__backend/src/0_system/logging/ingestion.mjs` | Routes `sessionLog` events to session file transport |
+| `__backend/src/1_adapters/logging/FrontendLogIngestion.mjs` | Routes `sessionLog` events to session file transport |
 | `__backend/src/0_system/logging/transports/sessionFile.mjs` | Writes per-app JSONL files, manages sessions, prunes old files |
 
 ---

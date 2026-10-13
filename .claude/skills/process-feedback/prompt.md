@@ -100,7 +100,7 @@ Each doc must be self-sufficient input for a spec or plan — someone should be 
 
 ## Where to look
 <Best-guess affected files/components from the route + your codebase knowledge,
-e.g. `frontend/src/modules/Piano/PianoKiosk/modes/Studio/...`. Don't over-investigate;
+e.g. `__app_modules/learning/piano/browser/PianoKiosk/modes/Studio/...`. Don't over-investigate;
 a pointer is enough — the spec/plan phase digs in.>
 
 ## Context / evidence

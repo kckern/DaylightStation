@@ -17,7 +17,7 @@ This document maps legacy API endpoints to their DDD (Domain-Driven Design) equi
             │                               │
             ▼                               ▼
 ┌───────────────────────┐       ┌───────────────────────┐
-│   __backend/src/app.mjs │       │ __backend/_legacy/app.mjs│
+│   __backend/src/app.mjs │       │  (retired legacy app)   │
 │      (DDD Backend)    │       │   (Legacy Backend)    │
 └───────────────────────┘       └───────────────────────┘
 ```
@@ -185,7 +185,7 @@ Intent-driven routes that map directly to query-combinatorics actions:
 | GET | `/api/v1/list/:source/:id` | List container contents | Children array with action objects |
 | GET | `/api/v1/read/:source/:id` | Readable content | Reader content, format info |
 
-See [Action Routes Reference](../content/action-routes.md) for detailed documentation.
+See [Content Playback Reference](../content/content-playback.md) for detailed documentation.
 
 ---
 
@@ -252,11 +252,10 @@ These endpoints remain in legacy and are not planned for DDD migration:
 
 ## File Locations
 
-**Legacy routers:** `__backend/_legacy/routers/`
-**DDD routers:** `__backend/src/4_api/routers/`
+**DDD routers:** `__backend/src/4_api/v1/routers/` (plus per-app `server/api/` in `__app_modules/` and `__capabilities/`)
+**Legacy routers:** removed with the legacy backend
 
 **Entry points:**
-- Legacy: `__backend/_legacy/app.mjs`
 - DDD: `__backend/src/app.mjs`
 - Router: `__backend/index.js`
 
@@ -264,8 +263,5 @@ These endpoints remain in legacy and are not planned for DDD migration:
 
 ## Related Documentation
 
-- Parity Test Results (ops:docs/_wip/audits/2026-01-21-parity-audit-results.md)
-- Endpoint Migration Tracker (ops:docs/_wip/audits/2026-01-21-endpoint-migration-tracker.md)
-- Testing: `tests/integration/api/fitness-parity.test.mjs`
-- Testing: `tests/integration/api/finance-parity.test.mjs`
-- Testing: `tests/integration/api/fitness-plex-parity.test.mjs`
+- Parity Test Results (ops:docs/_archive/2026-01-cleanup/wip-old-audits/2026-01-21-parity-audit-results.md)
+- Endpoint Migration Tracker (ops:docs/_archive/2026-01-cleanup/wip-old-audits/2026-01-21-endpoint-migration-tracker.md)

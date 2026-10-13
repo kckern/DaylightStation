@@ -1,6 +1,6 @@
 # Testing Infrastructure
 
-**Related code:** `tests/`, `tests/_infrastructure/config/jest.config.cjs`
+**Related code:** `tests/`, `tests/_infrastructure/config/vitest.config.mjs`, `tests/_infrastructure/config/jest.config.cjs`
 
 ## Overview
 
@@ -72,25 +72,17 @@ tests/
 ├── _fixtures/             # Dummy data for mocked tests
 ├── integration/
 │   ├── harness.mjs        # Integration test harness
-│   ├── _wip/              # Work in progress
 │   ├── suite/             # Regression baseline
 │   │   ├── api/           # API endpoint tests
 │   │   ├── content-domain/
 │   │   └── routing/
-│   ├── edge/              # Edge cases
-│   └── external/          # External API tests (credentials required)
-│       └── harness.mjs    # External API harness
-├── lib/                   # Test utilities
-│   ├── testDataService.mjs
-│   ├── testDataMatchers.mjs
-│   └── migrate-imports.mjs
+├── _lib/                  # Test utilities (testDataService.mjs, ...)
+├── lib/                   # migrate-imports.mjs
+├── live/                  # Live API / adapter / Playwright flow tests
 ├── runtime/               # Playwright e2e tests
-│   ├── _wip/
-│   ├── suite/
-│   └── edge/
+│   └── suite/
 └── unit/
     ├── harness.mjs        # Unit test harness
-    ├── _wip/
     ├── suite/             # All unit tests
     │   ├── adapters/
     │   ├── api/
@@ -104,16 +96,13 @@ tests/
     │   ├── logging/
     │   ├── nutribot/
     │   └── voice-memo/
-    └── edge/
 ```
 
 ### Subdirectory Purposes
 
 | Directory | Purpose |
 |-----------|---------|
-| `_wip/` | Tests under development, debugging, or feature work |
 | `suite/` | Stable regression tests that run in CI |
-| `edge/` | Edge cases, special scenarios, flaky tests |
 
 ## Path Aliases
 
@@ -121,11 +110,12 @@ Tests use path aliases instead of relative paths. Configured in `tests/_infrastr
 
 | Alias | Resolves To | Example |
 |-------|-------------|---------|
-| `@backend/` | `__backend/` | `import { X } from '@backend/src/2_domains/...'` |
-| `@frontend/` | `frontend/src/` | `import { X } from '@frontend/hooks/...'` |
-| `@extensions/` | `_extensions/` | `import { X } from '@extensions/fitness/...'` |
-| `@fixtures/` | `tests/_fixtures/` | `import { X } from '@fixtures/media/...'` |
-| `@testlib/` | `tests/lib/` | `import { X } from '@testlib/testDataService.mjs'` |
+| `#backend/` | `__backend/` | `import { X } from '#backend/src/2_domains/...'` |
+| `#frontend/` | `frontend/src/` | `import { X } from '#frontend/hooks/...'` |
+| `#extensions/` | `_extensions/` | `import { X } from '#extensions/fitness/...'` |
+| `#fixtures/` | `tests/_fixtures/` | `import { X } from '#fixtures/media/...'` |
+| `#testlib/` | `tests/_lib/` | `import { X } from '#testlib/...'` |
+| `#harnesses/` | `tests/_infrastructure/harnesses/` | `import { X } from '#harnesses/...'` |
 
 ### Migrating Imports
 
@@ -145,7 +135,7 @@ node tests/lib/migrate-imports.mjs
 |----------|---------|-------------|
 | Unit | `node tests/unit/harness.mjs` | `_fixtures/` (dummy) |
 | Integration | `node tests/integration/harness.mjs` | testDataService |
-| External | `node tests/integration/external/harness.mjs` | Live APIs |
+| Live | `npm run test:live` | Live APIs and real backend (`tests/live/`) |
 | Runtime | `npm run test:browser --` | Real backend |
 
 ## testDataService
@@ -155,7 +145,7 @@ Provides real, meaningful test data from the data mount instead of hardcoded fix
 ### Usage
 
 ```javascript
-import { loadTestData, validateExpectations } from '@testlib/testDataService.mjs';
+import { loadTestData, validateExpectations } from '#testlib/testDataService.mjs';
 
 describe('API tests', () => {
   let testData;
@@ -227,17 +217,17 @@ plex:
 1. **Choose the right category:**
    - Unit test? → `tests/unit/suite/`
    - API test? → `tests/integration/suite/`
-   - External API? → `tests/integration/external/`
+   - Live API / adapter? → `tests/live/api/`, `tests/live/adapter/`
    - E2E? → `tests/runtime/suite/`
 
 2. **Use path aliases:**
    ```javascript
-   import { X } from '@backend/src/...';  // Not '../../../__backend/...'
+   import { X } from '#backend/src/...';  // Not '../../../__backend/...'
    ```
 
 3. **Use testDataService for real data:**
    ```javascript
-   import { loadTestData } from '@testlib/testDataService.mjs';
+   import { loadTestData } from '#testlib/testDataService.mjs';
    ```
 
 4. **Use `_fixtures/` only for dummy/mock data:**

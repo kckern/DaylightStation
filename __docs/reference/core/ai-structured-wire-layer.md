@@ -40,9 +40,9 @@ and `isConfigured` delegate. The layer is a Proxy: any member not on the port
 
 ## Classification rules
 
-`planWire` (`wire/planWire.mjs`) is pure: it never mutates the caller's messages
+`planWire` (`__backend/src/1_adapters/ai/wire/planWire.mjs`) is pure: it never mutates the caller's messages
 and returns the same array when nothing changes. It finds JSON blocks in each
-string `content` (`wire/jsonBlocks.mjs`), then classifies each.
+string `content` (`__backend/src/1_adapters/ai/wire/jsonBlocks.mjs`), then classifies each.
 
 A block is a **reply template** when its cue is an **imperative** about the
 reply format (`REPLY_CUE` in `planWire.mjs`, case-insensitive):
@@ -81,7 +81,7 @@ neither) are left as they are.
 
 ## Reply decode and fallback guarantee
 
-A TOON reply is decoded by `decodeReply` (`wire/replyFormat.mjs`) against the
+A TOON reply is decoded by `decodeReply` (`__backend/src/1_adapters/ai/wire/replyFormat.mjs`) against the
 template's shape:
 
 - Code fences are removed, and the ends are trimmed **without removing tabs**,
@@ -249,7 +249,7 @@ control group for the `toon` rows.
 
 `cli/ai-wire-ab.cli.mjs` replays real food descriptions through
 `LogFoodFromText` on the JSON path and the TOON path and scores them
-(`cli/ai-wire-ab.lib.mjs`). Run it inside the container:
+(`__app_modules/wellness/nutribot/cli/ai-wire-ab.lib.mjs`). Run it inside the container:
 
 ```bash
 sudo docker exec daylight-station node cli/ai-wire-ab.cli.mjs \

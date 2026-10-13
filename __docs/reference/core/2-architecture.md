@@ -4,6 +4,8 @@
 **Date:** December 30, 2025  
 **Status:** Draft for Implementation
 
+> Historical design. The `__backend/lib/*.mjs` files named in the before/after sketches below (`io.mjs`, `gcal.mjs`, `plex.mjs`, ...) belong to the pre-DDD backend and no longer exist; their current equivalents live under `__backend/src/` (system config, adapters, harvesters).
+
 ---
 
 ## Executive Summary
@@ -1534,7 +1536,7 @@ All logs follow this JSON structure:
 | `frontend/src/lib/logging/errorHandlers.js` | Global error capture (`window.onerror`, `unhandledrejection`) |
 | `frontend/src/lib/logging/consoleInterceptor.js` | Console method interception with rate limiting |
 | `frontend/src/main.jsx` | Logging initialization on app start |
-| `__backend/lib/websocket.mjs` | WebSocket log ingestion, writes to dev.log or stdout |
+| `__backend/src/1_adapters/logging/FrontendLogIngestion.mjs` | Frontend log ingestion, forwards to the logger transports |
 
 ---
 

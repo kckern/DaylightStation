@@ -154,7 +154,7 @@ persistent location, so the survives-a-restart guarantee is intact:
 | `kckern-macbook` | `~/Library/Logs/DaylightStation/backend.log` |
 | `kckern-server` | `DockerDrive/daylight-logs/backend-kckern-server.log` |
 
-The Docker entry needs the `logs` bind mount in `docker/docker-compose.yml`;
+The Docker entry needs the `logs` bind mount in the container run configuration;
 without it the path lands in the container's ephemeral layer and dies on
 redeploy. Point any of these back at `media/logs/` and the sync loop returns.
 
@@ -225,7 +225,7 @@ harvest's LLM tagger and its Jev category judge, both narrowed in
 `createFinanceServices`), `feed`, `lifeplan`, `fitness` (`voice-memo`),
 `harvester` (`shopping`), `feedback` (`transcription`), `gaming`,
 `piano-games` (`opponent-dialogue`, the gpt-5.6-luna table talk, narrowed in
-`5_composition/modules/pianoGames.mjs`), `school` (`card-ladder`,
+`__app_modules/learning/piano/server/composition/pianoGames.mjs`), `school` (`card-ladder`,
 `language`), `trigger`, `agents` (paged-media-toc rows are
 `media/paged-media-toc`), `weekly-review`, `ai-console`.
 `5_composition/aiUsageAttribution.consumers.test.mjs` drives a real call
@@ -249,7 +249,7 @@ Untagged rows record `app: null` — the value `ledger --untagged`,
 `listCosts({ app: null })` and Health's AI-usage reader filter on. The ledger
 itself is the runtime guard behind the static one: `AiUsageLedger.record()`
 adds a **`caller`** field to any row without an `app` — the first stack frame
-outside `1_adapters/ai/`, `1_adapters/agents/` and node internals, as
+outside `1_adapters/ai/`, `__capabilities/agent-runtime/server/adapters/` and node internals, as
 `<path under __backend/src>:<line> (<function>)`, found through V8's async stack
 traces — and logs `ai.usage.unattributed` (warn; caller, provider, endpoint,
 model, agentId, origin) the first time each caller appears in a process. A
@@ -524,7 +524,7 @@ map — because everything else derives from it:
 | `ConfigService.#resolveHouseholdAppConfigPath` | read AND write path resolution |
 | `AppsConfigService.APP_CONFIGS` | the admin per-app editor |
 | `YamlConfigFileService.ALLOWED_FILES` | the admin YAML browser allowlist |
-| `frontend/…/Admin/utils/adminConfigPaths.js` | the admin UI's fetch paths |
+| `frontend/src/modules/Admin/utils/adminConfigPaths.js` | the admin UI's fetch paths |
 
 It lives in `shared/` rather than `0_system/config/` because `3_applications/`
 may not import `#system/config/*` (rule `apps-no-config-internals`), and a
@@ -900,4 +900,4 @@ Check directory name matches pattern: `household/` for default, `household-{name
 | `__backend/src/0_system/config/configLoader.mjs` | YAML loading & merging |
 | `__backend/src/0_system/config/configValidator.mjs` | Validation rules |
 | `frontend/vite.config.js` | Frontend port/proxy config |
-| `tests/lib/configHelper.mjs` | Test config helper |
+| `tests/_lib/configHelper.mjs` | Test config helper |

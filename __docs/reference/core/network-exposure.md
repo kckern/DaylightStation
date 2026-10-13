@@ -471,7 +471,7 @@ Telegram → Production Server → [Dev Proxy] → Your Local Machine
 - Protected by Access policies (whitelisted IPs only)
 - Toggle state resets on server restart
 
-**Related code:** `__backend/src/0_system/http/middleware/devProxy.mjs`
+**Related code:** `__backend/src/4_api/v1/middleware/createDevProxy.mjs`
 
 ---
 

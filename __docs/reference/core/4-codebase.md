@@ -1,6 +1,6 @@
 # Harvester Testing Guide
 
-> **Related code:** `__backend/tests/harvest.test.mjs`, `__backend/tests/harvest.integration.test.mjs`, `__backend/routers/harvest.js`
+> **Related code:** `__backend/src/4_api/v1/routers/harvest.test.mjs`, `__backend/src/4_api/v1/routers/harvest.mjs`
 
 Comprehensive unit and integration tests for all 19 harvesters. Tests run without requiring a server, external APIs, or credentials.
 
@@ -29,7 +29,6 @@ npm run test:coverage
 | File | Purpose |
 |------|---------|
 | `harvest.test.mjs` | Unit tests - initialization, logging, error handling |
-| `harvest.integration.test.mjs` | Integration tests - data structures, transformations |
 
 ## Covered Harvesters
 
@@ -109,6 +108,8 @@ describe('New Harvester', () => {
 - **<1 second** execution time
 - **0 external dependencies** (all mocked)
 # Logging Code Auditor Agent
+
+> **Design sketch, not implemented.** The files proposed below (`scripts/audit-logging-code.mjs`, `scripts/log-monitor.mjs`, `scripts/scheduled-audit.mjs`, the `.claude/skills/audit-logs/index.mjs` entry point) were never added to the repo; only `.claude/skills/audit-logs/skill.json` exists. The `__backend/routers/` and `__backend/lib/` paths in the sample output are from the pre-restructure layout.
 
 **Purpose:** Audit codebase to ensure proper structured logging implementation
 **Date:** 2026-01-03
@@ -2122,7 +2123,7 @@ You now have three options for a logging auditor agent:
 
 ## Cron Scheduler (Backend)
 
-**Related code:** `__backend/routers/cron.mjs`, `__backend/lib/cron/TaskRegistry.mjs`, `data/system/jobs.yml`
+**Related code:** `__backend/src/4_api/v1/routers/scheduling.mjs`, `__backend/src/0_system/scheduling/TaskRegistry.mjs`, `data/system/jobs.yml`
 
 The backend scheduler runs individual jobs defined in `data/system/jobs.yml`. Runtime state is stored in `data/system/state/cron-runtime.yml` with per-job keys (`last_run`, `nextRun`, `status`, `duration_ms`).
 

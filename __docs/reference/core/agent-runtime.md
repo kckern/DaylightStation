@@ -2,7 +2,7 @@
 
 The application layer uses `IAgentRuntime`, `ITool`, `IAgentRunRuntime`,
 `IAgentStateStore`, and `AgentInteractions`. Vendor SDK construction belongs in
-`1_adapters/agents`; even coaching commentary now uses the shared runtime.
+`__capabilities/agent-runtime/server/adapters/`; even coaching commentary now uses the shared runtime.
 
 Pinned SDK set: Mastra core **1.64.0**, memory **1.28.2**, libSQL **1.22.3**,
 Zod **4.5.4**. Docker and `.nvmrc` select Node **22.23.2** (minimum 22.13.0).

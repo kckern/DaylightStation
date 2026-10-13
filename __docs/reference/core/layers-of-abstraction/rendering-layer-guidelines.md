@@ -59,8 +59,8 @@ The `1_` prefix indicates dependency tier. `1_adapters/` and `1_rendering/` are 
 
 | Domain | Renderer | Output |
 |--------|----------|--------|
-| `fitness/` | `FitnessReceiptRenderer` | Thermal receipt PNG |
-| `gratitude/` | `GratitudeCardRenderer` | Thermal card PNG |
+| `fitness` (`__app_modules/wellness/fitness/server/rendering/`) | `FitnessReceiptRenderer` | Thermal receipt PNG |
+| `gratitude` (`__app_modules/personal/gratitude/server/rendering/`) | `GratitudeCardRenderer` | Thermal card PNG |
 
 ---
 
@@ -261,7 +261,7 @@ async function createCanvas(model) {
 ```json
 {
   "imports": {
-    "#rendering/*": "./backend/src/1_rendering/*"
+    "#rendering/*": "./__backend/src/1_rendering/*"
   }
 }
 ```

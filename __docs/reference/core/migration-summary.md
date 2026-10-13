@@ -8,7 +8,7 @@
 
 ## Overview
 
-The backend was migrated from a legacy flat structure (`__backend/_legacy/`) to a Domain-Driven Design architecture (`__backend/src/`). This document summarizes what was accomplished.
+The backend was migrated from a legacy flat structure (since removed) to a Domain-Driven Design architecture (`__backend/src/`). This document summarizes what was accomplished.
 
 ---
 
@@ -102,7 +102,7 @@ The backend was migrated from a legacy flat structure (`__backend/_legacy/`) to 
 
 ## What's Still Legacy
 
-These components remain in `_legacy/` but are tracked for eventual removal:
+These components remained in the legacy tree at the time of the migration (the tree has since been removed):
 
 | Component | Path | Reason |
 |-----------|------|--------|
@@ -159,17 +159,12 @@ Routes can be switched between legacy and new implementations via config file. M
 
 2. **Wait for 0 hits** (run for 1 week minimum)
 
-3. **Delete legacy folder**
-   ```bash
-   rm -rf __backend/_legacy/
-   ```
+3. **Delete legacy folder** (done: the legacy tree has been removed)
 
 4. **Update imports** in any remaining files
 
 5. **Archive documentation**
-   ```bash
-   mv ops:docs/_wip/plans/2026-01-* ops:docs/_archive/migration-2026-01/
-   ```
+   (done: the January 2026 migration plans are archived in the ops repo)
 
 ---
 
@@ -177,7 +172,7 @@ Routes can be switched between legacy and new implementations via config file. M
 
 - [Backend Architecture](./backend-architecture.md) - Layer overview
 - [DDD File Map](./ddd-file-map.md) - Complete file listing
-- Finish Line Workplan (ops:docs/_wip/plans/2026-01-12-finish-line-workplan.md) - Remaining tasks
+- Finish Line Workplan (ops:docs/_archive/2026-01-cleanup/wip-old-plans/2026-01-12-finish-line-workplan.md) - Remaining tasks
 
 ---
 

@@ -286,7 +286,7 @@ When the resolver returns a volume container (e.g., `scripture/nt`), the info re
 | `/api/v1/siblings/:source/:id` | Sibling browse | Parent descriptor plus peer items |
 | `/api/v1/read/:source/:id` | Readable content | Reader content, format info |
 
-See [Action Routes Reference](../content/action-routes.md) for full documentation.
+See [Content Playback Reference](../content/content-playback.md) for full documentation.
 
 ---
 
@@ -353,12 +353,12 @@ Log menu navigation for `recent_on_top` sorting.
 ## Related code:
 
 - `__backend/src/4_api/v1/routers/item.mjs` - Unified Item API router (new)
-- `__backend/src/4_api/v1/routers/play.mjs` - Play API router (legacy)
-- `__backend/src/4_api/v1/routers/list.mjs` - List API router (legacy)
-- `__backend/src/4_api/v1/routers/content.mjs` - Content API router (legacy)
-- `__backend/src/4_api/v1/routers/localContent.mjs` - LocalContent API router
+- `__capabilities/playback/server/api/play.mjs` - Play API router (legacy)
+- `__capabilities/content-catalog/server/api/list.mjs` - List API router (legacy)
+- `__capabilities/content-catalog/server/api/content.mjs` - Content API router (legacy)
+- `__capabilities/content-catalog/server/api/localContent.mjs` - LocalContent API router
 - `__backend/src/4_api/v1/routers/proxy.mjs` - Proxy API router
 - `__backend/src/2_domains/content/` - Domain entities and ports
 - `__backend/src/1_adapters/content/` - Source adapters
-  - `singalong/SingalongAdapter.mjs` - Hymns and primary songs
-  - `readalong/ReadalongAdapter.mjs` - Scripture, talks, poetry
+  - `__capabilities/content-catalog/server/adapters/providers/singalong/SingalongAdapter.mjs` - Hymns and primary songs
+  - `__capabilities/content-catalog/server/adapters/providers/readalong/ReadalongAdapter.mjs` - Scripture, talks, poetry

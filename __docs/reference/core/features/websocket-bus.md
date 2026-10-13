@@ -546,7 +546,7 @@ Clients interact with the bus using control messages:
 
 ## 6. Detailed Technical Design
 
-### 6.1 Backend WebSocket Extension (`__backend/routers/websocket.mjs`)
+### 6.1 Backend WebSocket Extension (`__backend/src/0_system/eventbus/EventBusImpl.mjs`)
 
 #### Client Management
 Each `ws` client will be assigned a metadata object containing its subscriptions.
