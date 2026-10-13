@@ -10,7 +10,7 @@ import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError }
 import { TriggerDispatchService } from "../application/TriggerDispatchService.mjs";
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { randomUUID } from 'node:crypto';
-import { createVoiceTriggerService } from "voiceTrigger.mjs";
+import { createVoiceTriggerService } from "./voiceTrigger.mjs";
 
 /**
  * Create Trigger application service + API router
