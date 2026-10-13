@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { YamlCurriculumExceptionStore } from "../../../../__app_modules/school/server/adapters/persistence/YamlCurriculumExceptionStore.mjs";
+import { YamlCurriculumExceptionStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlCurriculumExceptionStore.mjs";
 
 const roots = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop(), { recursive: true, force: true }); });

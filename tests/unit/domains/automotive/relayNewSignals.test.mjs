@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildTripRecord, normalizeSnapshotReadings,
-} from "../../../../__app_modules/auto/server/application/ingress/automotiveRelay.mjs";
+} from "../../../../__app_modules/household/auto/server/application/ingress/automotiveRelay.mjs";
 
 const TZ = 'America/Los_Angeles';
 const TS = '2026-08-12T18:00:00-07:00';

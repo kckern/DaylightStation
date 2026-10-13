@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-import { TTSAssetResolver } from "../../../__app_modules/livestream/server/adapters/TTSAssetResolver.mjs";
+import { TTSAssetResolver } from "../../../__app_modules/media/livestream/server/adapters/TTSAssetResolver.mjs";
 
 describe('TTSAssetResolver', () => {
   let resolver;

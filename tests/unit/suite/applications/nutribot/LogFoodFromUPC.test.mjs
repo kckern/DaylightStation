@@ -1,6 +1,6 @@
 // tests/unit/suite/applications/nutribot/LogFoodFromUPC.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { LogFoodFromUPC } from "../../../../../__app_modules/nutribot/server/application/usecases/LogFoodFromUPC.mjs";
+import { LogFoodFromUPC } from "../../../../../__app_modules/wellness/nutribot/server/application/usecases/LogFoodFromUPC.mjs";
 
 describe('LogFoodFromUPC', () => {
   let useCase;

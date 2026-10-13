@@ -7,7 +7,7 @@
  * is fixed in the next task.
  */
 
-import { buildActivityDescription as buildStravaDescription, extractUserNotes } from "../../../../__app_modules/fitness/server/domain/services/buildActivityDescription.mjs";
+import { buildActivityDescription as buildStravaDescription, extractUserNotes } from "../../../../__app_modules/wellness/fitness/server/domain/services/buildActivityDescription.mjs";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS

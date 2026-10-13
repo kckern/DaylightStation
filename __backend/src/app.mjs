@@ -1,58 +1,58 @@
-import {createPianoBoardGameDayRuntime} from '../../__app_modules/piano/server/composition/board-game-day.mjs';
+import {createPianoBoardGameDayRuntime} from '../../__app_modules/learning/piano/server/composition/board-game-day.mjs';
 import {createInstalledPrintableSheets} from '#composition/modules/printableSheets.mjs';
 import {createInstalledWeeklyMeasures} from '#composition/modules/weeklyMeasures.mjs';
-import { createArtContentRuntime } from '../../__app_modules/art/server/composition/installed-runtime.mjs';
-import { createArtAdminService } from '../../__app_modules/art/server/composition/admin-runtime.mjs';
-import { createCanvasImageUseCase } from '../../__app_modules/art/server/composition/canvas-runtime.mjs';
-import { createArtScreenPresets } from '../../__app_modules/art/server/composition/screen-presets.mjs';
-import { createSchoolLearnerDirectory } from '../../__app_modules/school/server/composition/learner-directory.mjs';
+import { createArtContentRuntime } from '../../__app_modules/media/art/server/composition/installed-runtime.mjs';
+import { createArtAdminService } from '../../__app_modules/media/art/server/composition/admin-runtime.mjs';
+import { createCanvasImageUseCase } from '../../__app_modules/media/art/server/composition/canvas-runtime.mjs';
+import { createArtScreenPresets } from '../../__app_modules/media/art/server/composition/screen-presets.mjs';
+import { createSchoolLearnerDirectory } from '../../__app_modules/learning/school/server/composition/learner-directory.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
-import { configureLifelogArchive } from "../../__app_modules/lifelog/server/composition/archive.mjs";
-import { createLifelogWeightService } from "../../__app_modules/health/server/composition/lifelog-weight.mjs";
-import { registerFeedHeadlineHarvester } from "../../__app_modules/feed/server/composition/harvester.mjs";
-import { installAutomotiveRelay } from "../../__app_modules/auto/server/composition/ingress.mjs";
-import {createEconomyEarningsRuntime} from "../../__app_modules/economy/server/composition/earnings.mjs";
-import {studyDayFor,isInWindow} from "../../__app_modules/school/server/study-calendar.mjs";
-import {createChessRuntime} from "../../__app_modules/chess/server/composition/runtime.mjs";
-import {createEmulatorRuntime} from "../../__app_modules/emulator/server/composition/runtime.mjs";
-import { createHomeEvents } from "../../__app_modules/home/server/composition/events.mjs";
-import { startHomeAmbient } from "../../__app_modules/home/server/composition/ambient.mjs";
-import { registerCameraJobs } from "../../__app_modules/camera/server/composition/jobs.mjs";
-import { installWeeklyReview } from "../../__app_modules/weekly-review/server/composition.mjs";
-import { installLivestream } from "../../__app_modules/livestream/server/composition.mjs";
-import { installFeedApi } from "../../__app_modules/feed/server/composition/http-runtime.mjs";
-import { createNutribotReportRenderer } from "../../__app_modules/nutribot/server/composition/report-renderer.mjs";
-import { createPartyGamesCatalogRuntime, createPartyGamesSessionRuntime, createPartyGamesHttpRuntime } from "../../__app_modules/party-games/server/composition/installed-runtime.mjs";
-import { registerLifeplanMaintenance } from "../../__app_modules/life/server/maintenance.mjs";
-import {createMediaPlayLedger} from "../../__app_modules/media/server/composition/play-ledger.mjs";
-import {createMediaJobsRuntime} from "../../__app_modules/media/server/composition/jobs-runtime.mjs";
-import {createMediaMemoryValidator} from "../../__app_modules/media/server/composition/memory-validation.mjs";
-import { createMediaApiRuntime } from "../../__app_modules/media/server/composition/api-runtime.mjs";
-import { createHomelineLease } from "../../__app_modules/homeline/server/composition.mjs";
-import { createAmbientScheduler } from "../../__app_modules/screens/server/ambient-runtime.mjs";
-import { createNutribotDestinationResolver } from "../../__app_modules/nutribot/server/composition/destinations.mjs";
-import { createHealthMentionsApi, createHealthScanRuntime, createHealthNutritionLookup, startHealthScaleObservation, registerHealthMaintenance } from "../../__app_modules/health/server/composition/app-runtime.mjs";
-import { createHealthServices } from "../../__app_modules/health/server/composition/runtime.mjs";
-import { createNutribotServices } from "../../__app_modules/nutribot/server/composition/runtime.mjs";
+import { configureLifelogArchive } from "../../__app_modules/personal/lifelog/server/composition/archive.mjs";
+import { createLifelogWeightService } from "../../__app_modules/wellness/health/server/composition/lifelog-weight.mjs";
+import { registerFeedHeadlineHarvester } from "../../__app_modules/media/feed/server/composition/harvester.mjs";
+import { installAutomotiveRelay } from "../../__app_modules/household/auto/server/composition/ingress.mjs";
+import {createEconomyEarningsRuntime} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
+import {studyDayFor,isInWindow} from "../../__app_modules/learning/school/server/study-calendar.mjs";
+import {createChessRuntime} from "../../__app_modules/games/chess/server/composition/runtime.mjs";
+import {createEmulatorRuntime} from "../../__app_modules/games/emulator/server/composition/runtime.mjs";
+import { createHomeEvents } from "../../__app_modules/household/home/server/composition/events.mjs";
+import { startHomeAmbient } from "../../__app_modules/household/home/server/composition/ambient.mjs";
+import { registerCameraJobs } from "../../__app_modules/household/camera/server/composition/jobs.mjs";
+import { installWeeklyReview } from "../../__app_modules/personal/weekly-review/server/composition.mjs";
+import { installLivestream } from "../../__app_modules/media/livestream/server/composition.mjs";
+import { installFeedApi } from "../../__app_modules/media/feed/server/composition/http-runtime.mjs";
+import { createNutribotReportRenderer } from "../../__app_modules/wellness/nutribot/server/composition/report-renderer.mjs";
+import { createPartyGamesCatalogRuntime, createPartyGamesSessionRuntime, createPartyGamesHttpRuntime } from "../../__app_modules/games/party-games/server/composition/installed-runtime.mjs";
+import { registerLifeplanMaintenance } from "../../__app_modules/personal/life/server/maintenance.mjs";
+import {createMediaPlayLedger} from "../../__app_modules/media/media/server/composition/play-ledger.mjs";
+import {createMediaJobsRuntime} from "../../__app_modules/media/media/server/composition/jobs-runtime.mjs";
+import {createMediaMemoryValidator} from "../../__app_modules/media/media/server/composition/memory-validation.mjs";
+import { createMediaApiRuntime } from "../../__app_modules/media/media/server/composition/api-runtime.mjs";
+import { createHomelineLease } from "../../__app_modules/household/homeline/server/composition.mjs";
+import { createAmbientScheduler } from "../../__app_modules/household/screens/server/ambient-runtime.mjs";
+import { createNutribotDestinationResolver } from "../../__app_modules/wellness/nutribot/server/composition/destinations.mjs";
+import { createHealthMentionsApi, createHealthScanRuntime, createHealthNutritionLookup, startHealthScaleObservation, registerHealthMaintenance } from "../../__app_modules/wellness/health/server/composition/app-runtime.mjs";
+import { createHealthServices } from "../../__app_modules/wellness/health/server/composition/runtime.mjs";
+import { createNutribotServices } from "../../__app_modules/wellness/nutribot/server/composition/runtime.mjs";
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 import { EventBusEventInputSource } from '#adapters/scan/EventBusEventInputSource.mjs';
-import { createSchoolReadingRuntime, registerSchoolReadingAction } from "../../__app_modules/school/server/reading-runtime.mjs";
-import { createFitnessIdentityRuntime } from "../../__app_modules/fitness/server/identity-runtime.mjs";
-import { registerFitnessPoseRuntime } from "../../__app_modules/fitness/server/pose-runtime.mjs";
-import { registerSchoolAssessmentIngress } from "../../__app_modules/school/server/assessment-ingress.mjs";
+import { createSchoolReadingRuntime, registerSchoolReadingAction } from "../../__app_modules/learning/school/server/reading-runtime.mjs";
+import { createFitnessIdentityRuntime } from "../../__app_modules/wellness/fitness/server/identity-runtime.mjs";
+import { registerFitnessPoseRuntime } from "../../__app_modules/wellness/fitness/server/pose-runtime.mjs";
+import { registerSchoolAssessmentIngress } from "../../__app_modules/learning/school/server/assessment-ingress.mjs";
 import { createBooksApiRouter } from "../../__capabilities/book-catalog/server/composition/booksApi.mjs";
 import { createLanguageTranscriptionService } from "#composition/bootstrap.mjs";
-import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from "../../__app_modules/piano/server/adapters/YamlUserVideoProgressStore.mjs";
+import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from "../../__app_modules/learning/piano/server/adapters/YamlUserVideoProgressStore.mjs";
 import { createFitnessServices } from "#composition/bootstrap.mjs";
-import { createSchoolLearningRuntime } from "../../__app_modules/school/server/learning-runtime.mjs";
-import { createSchoolCatalogRuntime } from "../../__app_modules/school/server/catalog-runtime.mjs";
-import { createSchoolLanguageRuntime } from "../../__app_modules/school/server/language-runtime.mjs";
-import { createSchoolLessonHookRuntime } from "../../__app_modules/school/server/lesson-hook-runtime.mjs";
-import { createSchoolLifecycleRuntime } from "../../__app_modules/school/server/lifecycle-runtime.mjs";
-import { createFitnessServicesRuntime } from "../../__app_modules/fitness/server/services-runtime.mjs";
-import { createFitnessReceiptRuntime } from "../../__app_modules/fitness/server/receipt-runtime.mjs";
-import { createFitnessApiRuntime } from "../../__app_modules/fitness/server/api-runtime.mjs";
-import {createPianoModule} from "../../__app_modules/piano/server/composition.mjs";
+import { createSchoolLearningRuntime } from "../../__app_modules/learning/school/server/learning-runtime.mjs";
+import { createSchoolCatalogRuntime } from "../../__app_modules/learning/school/server/catalog-runtime.mjs";
+import { createSchoolLanguageRuntime } from "../../__app_modules/learning/school/server/language-runtime.mjs";
+import { createSchoolLessonHookRuntime } from "../../__app_modules/learning/school/server/lesson-hook-runtime.mjs";
+import { createSchoolLifecycleRuntime } from "../../__app_modules/learning/school/server/lifecycle-runtime.mjs";
+import { createFitnessServicesRuntime } from "../../__app_modules/wellness/fitness/server/services-runtime.mjs";
+import { createFitnessReceiptRuntime } from "../../__app_modules/wellness/fitness/server/receipt-runtime.mjs";
+import { createFitnessApiRuntime } from "../../__app_modules/wellness/fitness/server/api-runtime.mjs";
+import {createPianoModule} from "../../__app_modules/learning/piano/server/composition.mjs";
 /**
  * DDD App Factory
  *
@@ -69,7 +69,7 @@ import crypto from 'node:crypto';
 import path, { join } from 'path';
 
 
-import { PianoConfigProjection } from "../../__app_modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { PianoConfigProjection } from "../../__app_modules/learning/piano/server/adapters/PianoConfigProjection.mjs";
 import { publicResourceUrl } from '#api/v1/presenters/publicResourceRefs.mjs';
 
 // Infrastructure imports
@@ -96,24 +96,24 @@ import { loadLoggingConfig, resolveLoggerLevel } from "./0_system/logging/config
 // Bootstrap functions
 import { initializeIntegrations, loadHouseholdIntegrations, loadSystemBots, getMessagingAdapter, createContentRegistry, createMediaProgressMemory, createFeedServices, createFinanceServices, createEntropyServices, createHomeAutomationAdapters, createPlaybackHubServices, createDeviceServices, createWakeAndLoadService, createDispatchIdempotencyService, createTranscodePrewarmService, createHardwareAdapters, createProxyService, createMessagingServices, createJournalistServices, createHomebotServices, createLifelogServices, createEventBus, createDeviceLivenessService, broadcastEvent, createHarvesterServices, createNewsReporterServices, createAgentsServices, createConciergeServices, createCostServices, createMediaServices } from "#composition/bootstrap.mjs";
 
-import { bootstrapLifeplan } from "../../__app_modules/life/server/composition.mjs";
+import { bootstrapLifeplan } from "../../__app_modules/personal/life/server/composition.mjs";
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
-import { createHubFleetBridge } from "../../__app_modules/media/server/composition/hubFleetBridge.mjs";
-import { createPlexHubSessions } from "../../__app_modules/media/server/composition/plexHubSessions.mjs";
-import { createArcadeGameSessionTracking } from "../../__app_modules/arcade/server/composition/arcadeGameSessions.mjs";
-import { createArcadeGameSessionsRouter } from "../../__app_modules/arcade/server/api/arcadeGameSessions.mjs";
+import { createHubFleetBridge } from "../../__app_modules/media/media/server/composition/hubFleetBridge.mjs";
+import { createPlexHubSessions } from "../../__app_modules/media/media/server/composition/plexHubSessions.mjs";
+import { createArcadeGameSessionTracking } from "../../__app_modules/games/arcade/server/composition/arcadeGameSessions.mjs";
+import { createArcadeGameSessionsRouter } from "../../__app_modules/games/arcade/server/api/arcadeGameSessions.mjs";
 import { createApiRouters } from "./5_composition/modules/contentApi.mjs";
-import { createFitnessPlayableModule } from "../../__app_modules/fitness/server/composition-fitness-api.mjs";
+import { createFitnessPlayableModule } from "../../__app_modules/wellness/fitness/server/composition-fitness-api.mjs";
 import { createBooksModule } from "../../__capabilities/book-catalog/server/composition/booksApi.mjs";
-import { createFinanceApiRouter } from "../../__app_modules/finance/server/composition/financeApi.mjs";
+import { createFinanceApiRouter } from "../../__app_modules/money/finance/server/composition/financeApi.mjs";
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
-import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from "../../__app_modules/home/server/composition/homeApi.mjs";
+import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from "../../__app_modules/household/home/server/composition/homeApi.mjs";
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createDeviceStartStatusService } from '#composition/modules/deviceStartStatus.mjs';
 import { createTriggerApiRouter } from "../../__capabilities/device-dispatch/server/composition/triggerApi.mjs";
-import { declaredEntryActions } from "../../__app_modules/school/server/domain-reachability.mjs";
-import { reportUnreachableSchoolPrograms } from "../../__app_modules/school/server/composition-school-reachability.mjs";
+import { declaredEntryActions } from "../../__app_modules/learning/school/server/domain-reachability.mjs";
+import { reportUnreachableSchoolPrograms } from "../../__app_modules/learning/school/server/composition-school-reachability.mjs";
 import { createLearnerActions } from "../../__capabilities/device-dispatch/server/application/learnerActions.mjs";
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 
@@ -122,21 +122,21 @@ import { createScanDispatch, errText } from '#composition/modules/scanDispatch.m
 
 
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
-import { createGratitudeServices, createGratitudeApiRouter } from "../../__app_modules/gratitude/server/public.mjs";
-import { createEconomyApi } from "../../__app_modules/economy/server/composition/economyApi.mjs";
-import { createJournalistApiRouter } from "../../__app_modules/journalist/server/api-runtime.mjs";
-import { createHomebotApiRouter } from "../../__app_modules/homebot/server/api-runtime.mjs";
-import { createNutribotApiRouter } from "../../__app_modules/nutribot/server/composition/nutribotApi.mjs";
-import { createHealthApiRouter, createHealthDashboardApiRouter } from "../../__app_modules/health/server/composition/healthApi.mjs";
+import { createGratitudeServices, createGratitudeApiRouter } from "../../__app_modules/personal/gratitude/server/public.mjs";
+import { createEconomyApi } from "../../__app_modules/money/economy/server/composition/economyApi.mjs";
+import { createJournalistApiRouter } from "../../__app_modules/personal/journalist/server/api-runtime.mjs";
+import { createHomebotApiRouter } from "../../__app_modules/household/homebot/server/api-runtime.mjs";
+import { createNutribotApiRouter } from "../../__app_modules/wellness/nutribot/server/composition/nutribotApi.mjs";
+import { createHealthApiRouter, createHealthDashboardApiRouter } from "../../__app_modules/wellness/health/server/composition/healthApi.mjs";
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from "../../__capabilities/lifelog/server/composition/lifelogApi.mjs";
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
-import { equipmentImageMap } from "../../__app_modules/fitness/server/application-equipment-images.mjs";
-import { createCalendarApiRouter } from "../../__app_modules/calendar/server/composition/calendarApi.mjs";
+import { equipmentImageMap } from "../../__app_modules/wellness/fitness/server/application-equipment-images.mjs";
+import { createCalendarApiRouter } from "../../__app_modules/personal/calendar/server/composition/calendarApi.mjs";
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
-import { createPianoScreenPowerSync } from '../../__app_modules/piano/server/composition/screen-power-sync.mjs';
-import { createPianoMidiWake } from "../../__app_modules/piano/server/composition/midi-wake.mjs";
-import { createPianoBridgeSupervisor } from "../../__app_modules/piano/server/composition/bridge-supervisor.mjs";
+import { createPianoScreenPowerSync } from '../../__app_modules/learning/piano/server/composition/screen-power-sync.mjs';
+import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/composition/midi-wake.mjs";
+import { createPianoBridgeSupervisor } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
@@ -203,13 +203,13 @@ import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs
 import { FullyKioskRemoteAdministrationAdapter } from '#adapters/devices/FullyKioskRemoteAdministrationAdapter.mjs';
 import { CameraEvents, LessonPositionReporter } from "#apps/events/RealtimePublications.mjs";
 
-import { createCameraRouter } from "../../__app_modules/camera/server/api/camera.mjs";
+import { createCameraRouter } from "../../__app_modules/household/camera/server/api/camera.mjs";
 import { createPrinterRouter } from "./4_api/v1/routers/printer.mjs";
 
 // Homeline call state tracking
-import { setCallLeaseAuthority } from "../../__app_modules/homeline/server/call-state.mjs";
+import { setCallLeaseAuthority } from "../../__app_modules/household/homeline/server/call-state.mjs";
 
-import { createHomelineRouter } from "../../__app_modules/homeline/server/api.mjs";
+import { createHomelineRouter } from "../../__app_modules/household/homeline/server/api.mjs";
 
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
@@ -229,14 +229,14 @@ import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
 
 
-import { createFoodScaleRelay } from "../../__app_modules/health/server/scale-relay.mjs";
+import { createFoodScaleRelay } from "../../__app_modules/wellness/health/server/scale-relay.mjs";
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createOmrReaderLiveness } from '#adapters/hardware/omrReaderLiveness.mjs';
 import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
 import { PressureMatOperations } from '#apps/hardware/PressureMatOperations.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
-import { createAutomotiveApi } from "../../__app_modules/auto/server/composition/automotiveApi.mjs";
+import { createAutomotiveApi } from "../../__app_modules/household/auto/server/composition/automotiveApi.mjs";
 
 
 
@@ -244,7 +244,7 @@ import { createAutomotiveApi } from "../../__app_modules/auto/server/composition
 
 
 
-import { normalizeScaleNutribotConfig } from "../../__app_modules/health/server/scale-config.mjs";
+import { normalizeScaleNutribotConfig } from "../../__app_modules/wellness/health/server/scale-config.mjs";
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createRelayWatchdog } from '#apps/hardware/relayWatchdog.mjs';
 import {
@@ -272,8 +272,8 @@ import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mj
 import { ScreenContentTracker } from '#apps/devices/services/ScreenContentTracker.mjs';
 
 
-import { normalizeWindows } from "../../__app_modules/screens/server/windows.mjs";
-import { loadArtmodeConfig } from "../../__app_modules/art/server/adapters/artmodeConfig.mjs";
+import { normalizeWindows } from "../../__app_modules/household/screens/server/windows.mjs";
+import { loadArtmodeConfig } from "../../__app_modules/media/art/server/adapters/artmodeConfig.mjs";
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { CompositeJobDatastore } from '#adapters/scheduling/CompositeJobDatastore.mjs';
@@ -282,10 +282,10 @@ import { Scheduler } from "./0_system/scheduling/Scheduler.mjs";
 import { createSchedulingRouter } from "./4_api/v1/routers/scheduling.mjs";
 
 // NewsReporter domain — scheduled, LLM-generated reports
-import { createNewsReporterRouter } from "../../__app_modules/newsreporter/server/api.mjs";
+import { createNewsReporterRouter } from "../../__app_modules/media/newsreporter/server/api.mjs";
 
 // Canvas domain
-import { createCanvasRouter } from '../../__app_modules/art/server/api/canvas.mjs';
+import { createCanvasRouter } from '../../__app_modules/media/art/server/api/canvas.mjs';
 
 
 
@@ -357,12 +357,12 @@ import { createWikipediaRouter } from "./4_api/v1/routers/wikipedia.mjs";
 
 
 
-import { projectHeadToHead, rivalryOpponentId } from "../../__app_modules/piano/server/game-rivalry.mjs";
-import { createPianoGamesModule } from "../../__app_modules/piano/server/composition/pianoGames.mjs";
+import { projectHeadToHead, rivalryOpponentId } from "../../__app_modules/learning/piano/server/game-rivalry.mjs";
+import { createPianoGamesModule } from "../../__app_modules/learning/piano/server/composition/pianoGames.mjs";
 import { WikipediaAdapter } from "./1_adapters/reference/WikipediaAdapter.mjs";
 import { WikipediaService } from '#apps/reference/WikipediaService.mjs';
 
-import { buzzersToSelectors, makeBuzzerSelectHandler } from "../../__app_modules/party-games/server/application/effects/partyGamesBuzzerInput.mjs";
+import { buzzersToSelectors, makeBuzzerSelectHandler } from "../../__app_modules/games/party-games/server/application/effects/partyGamesBuzzerInput.mjs";
 
 
 
@@ -421,7 +421,7 @@ const PANEL_BOOK_GRANT_TTL_MS = 20 * 60_000;
 
 import { shortId } from '#system/utils/id.mjs';
 import { PresenceStore } from "./1_adapters/devices/PresenceStore.mjs";
-import { ROLE_SEVERITY } from "../../__app_modules/school/server/domain-access-gate.mjs";
+import { ROLE_SEVERITY } from "../../__app_modules/learning/school/server/domain-access-gate.mjs";
 
 
 
@@ -443,7 +443,7 @@ import { ROLE_SEVERITY } from "../../__app_modules/school/server/domain-access-g
 
 
 
-import { createContentFilterRuntime } from "../../__app_modules/media/server/composition/content-filter.mjs";
+import { createContentFilterRuntime } from "../../__app_modules/media/media/server/composition/content-filter.mjs";
 import { FeedbackService } from "./3_applications/common/feedback/FeedbackService.mjs";
 import { NotificationConfigService } from "./3_applications/notification/NotificationConfigService.mjs";
 import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
@@ -1473,7 +1473,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Livestream engine — concrete adapters composed here, injected as factories
   await installLivestream({ configService, rootLogger, eventBus, mediaBasePath, v1Routers });
   // Lazy proxy for webNutribotAdapter — filled after nutribot services are created below
-  const { createWebNutribotProxy } = await import("../../__app_modules/nutribot/server/composition/webNutribotProxy.mjs");
+  const { createWebNutribotProxy } = await import("../../__app_modules/wellness/nutribot/server/composition/webNutribotProxy.mjs");
   const webNutribotAdapterProxy = createWebNutribotProxy();
 
   let nutritionCleanup = null;
@@ -1720,7 +1720,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.emulator = createEmulatorRuntime({configService,rootLogger,eventBus});
 
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
-  const { createEinkModule } = await import("../../__app_modules/screens/server/display-runtime.mjs");
+  const { createEinkModule } = await import("../../__app_modules/household/screens/server/display-runtime.mjs");
   v1Routers.eink = await createEinkModule({ configService, householdId, dataService, mediaBasePath, rootLogger });
 
   // Config router - serves configuration to frontend
@@ -2011,8 +2011,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - gratitude card canvas renderer
   let createGratitudeCardCanvas = null;
   try {
-    const { createGratitudeCardRenderer } = await import("../../__app_modules/gratitude/server/rendering.mjs");
-    const { GratitudePrintPresentationService } = await import("../../__app_modules/gratitude/server/print-presentation.mjs");
+    const { createGratitudeCardRenderer } = await import("../../__app_modules/personal/gratitude/server/rendering.mjs");
+    const { GratitudePrintPresentationService } = await import("../../__app_modules/personal/gratitude/server/print-presentation.mjs");
     const householdId = configService.getDefaultHouseholdId();
     const presentation = new GratitudePrintPresentationService({
       gratitude: gratitudeServices.gratitudeService,
@@ -2480,7 +2480,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // variable and needs it in scope before this point runs; this is a
   // reassignment, not a re-declaration.
   try {
-    const { createDonow } = await import("../../__app_modules/donow/server/composition/donow.mjs");
+    const { createDonow } = await import("../../__app_modules/household/donow/server/composition/donow.mjs");
     donowModule = await createDonow({
       configService,
       householdId,
@@ -2671,9 +2671,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       && schoolLifecycle.useCases?.recordMediaCompletion) {
     try {
       const lessonLogger = rootLogger.child({ module: 'school-lesson' });
-      const { ReadLessonSnapshot } = await import("../../__app_modules/school/server/application-usecases-read-lesson-snapshot.mjs");
-      const { RecordCheckpointAnswer } = await import("../../__app_modules/school/server/application-usecases-record-checkpoint-answer.mjs");
-      const { createMediaLessonRouter } = await import("../../__app_modules/school/server/api-media-lesson.mjs");
+      const { ReadLessonSnapshot } = await import("../../__app_modules/learning/school/server/application-usecases-read-lesson-snapshot.mjs");
+      const { RecordCheckpointAnswer } = await import("../../__app_modules/learning/school/server/application-usecases-record-checkpoint-answer.mjs");
+      const { createMediaLessonRouter } = await import("../../__app_modules/learning/school/server/api-media-lesson.mjs");
 
       v1Routers.school.use('/lesson', createMediaLessonRouter({
         readLessonSnapshot: new ReadLessonSnapshot({
@@ -2722,7 +2722,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     // its contract — the retryable `print_failed`, and the `agenda-suppressed`
     // acknowledgement that is a cooldown tap's only feedback — is testable
     // without booting the app.
-    const { makePrintAgendaHandler } = await import("../../__app_modules/school/server/composition-learner-card-actions.mjs");
+    const { makePrintAgendaHandler } = await import("../../__app_modules/learning/school/server/composition-learner-card-actions.mjs");
     learnerActions.register('print-agenda', makePrintAgendaHandler({
       resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
       eventBus,
@@ -2857,7 +2857,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // the teacher console's rate edits go through the school router's gate.
   v1Routers.earnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
   try {
-    const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
+    const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
       weeklyMeasures,
       publishAssertion: (assertion) => stateGatesModule.ingress.observe(
@@ -2923,7 +2923,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   //
   // Wired here (rather than in the earlier "Barcode ingress" block) because it
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
-  const { TelegramNutribotIdentity } = await import("../../__app_modules/nutribot/server/adapters/TelegramNutribotIdentity.mjs");
+  const { TelegramNutribotIdentity } = await import("../../__app_modules/wellness/nutribot/server/adapters/TelegramNutribotIdentity.mjs");
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
     book: bookScans,
@@ -3156,7 +3156,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   webNutribotAdapterProxy._delegate = nutribotApiResult.webNutribotAdapter;
 
   try {
-    const { startNutritionSurfaceSync } = await import("../../__app_modules/health/server/composition/nutritionSurfaceSync.mjs");
+    const { startNutritionSurfaceSync } = await import("../../__app_modules/wellness/health/server/composition/nutritionSurfaceSync.mjs");
     const receiptSync = startNutritionSurfaceSync({ configService, createDestinationFor: () => createNutribotDestinationResolver({ configService, userIdentityService }), dataService, nutribotServices,
       logger: rootLogger.child({ module: 'nutrition-surface-sync' }), server });
     nutritionReceiptPublisher = receiptSync.publisher || null;
@@ -3280,7 +3280,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
 
   try {
-    const { createNutritionCleanup } = await import("../../__app_modules/health/server/composition/nutritionCleanup.mjs");
+    const { createNutritionCleanup } = await import("../../__app_modules/wellness/health/server/composition/nutritionCleanup.mjs");
     nutritionCleanup = createNutritionCleanup({ configService, createDestinationFor: () => createNutribotDestinationResolver({ configService, userIdentityService, optional: true }), dataService, nutribotServices, upcGateway,
       decisionGateway: scopedGateway(decisionGateway, { app: 'health' }),
       agentOrchestrator: agentsServices.agentOrchestrator, usageRecorder: agentUsageRecorder,
@@ -3455,7 +3455,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   if (agentsServices.scheduler) {
     agentsServices.scheduler.registerTask('school:content-manifest', '50 3 * * *', async () => {
       try {
-        const { ContentTreeManifest } = await import("../../__app_modules/school/server/adapters-content-content-tree-manifest.mjs");
+        const { ContentTreeManifest } = await import("../../__app_modules/learning/school/server/adapters-content-content-tree-manifest.mjs");
         new ContentTreeManifest({
           contentDir: path.join(contentPath, 'school'),
           manifestFile: configService.getRuntimeCachePath('school/content-manifest.yml'),
@@ -3473,7 +3473,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   if (agentsServices.scheduler && schoolDatastore) {
     agentsServices.scheduler.registerTask('school:retention-sweep', '30 3 * * *', async () => {
       try {
-        const { SchoolRetentionSweep } = await import("../../__app_modules/school/server/application-school-retention-sweep.mjs");
+        const { SchoolRetentionSweep } = await import("../../__app_modules/learning/school/server/application-school-retention-sweep.mjs");
         const sweep = new SchoolRetentionSweep({
           datastore: schoolDatastore,
           schoolService,
@@ -3723,7 +3723,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // lifecycle itself is (an install without it has no sessions to sweep).
   let schoolMaintenanceExecutor = null;
   if (schoolLifecycle.wired && schoolLifecycle.useCases?.markSessionAbandoned) {
-    const { SchoolMaintenanceExecutor } = await import("../../__app_modules/school/server/application-school-maintenance-executor.mjs");
+    const { SchoolMaintenanceExecutor } = await import("../../__app_modules/learning/school/server/application-school-maintenance-executor.mjs");
     schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
       markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
       logger: rootLogger.child({ module: 'school-maintenance' }),

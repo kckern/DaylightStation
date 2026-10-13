@@ -17,6 +17,23 @@ function fixture(t) {
   return { root, put };
 }
 
+test('categorized apps keep canonical runtime dependencies at their deeper path', async (t) => {
+  const { setupOwnerDependencies } = await load();
+  const f = fixture(t);
+  for (const scope of ['__backend', 'frontend']) mkdirSync(join(f.root, scope, 'node_modules'), { recursive: true });
+  for (const owner of ['school', 'piano']) {
+    for (const surface of ['server', 'browser']) mkdirSync(join(f.root, '__app_modules/learning', owner, surface), { recursive: true });
+  }
+  const links = setupOwnerDependencies(f.root);
+  assert.equal(links.length, 4);
+  for (const { link, target } of links) {
+    const runtime = link.includes('/server/') ? '__backend' : 'frontend';
+    assert.equal(target, `../../../../${runtime}/node_modules`);
+    assert.equal(realpathSync(link), realpathSync(join(f.root, runtime, 'node_modules')));
+  }
+  assert.equal(setupOwnerDependencies(f.root, { check: true }).length, 4);
+});
+
 test('owner setup skips absent roots, links only runtime surfaces, and is idempotent before install', async (t) => {
   const { setupOwnerDependencies } = await load();
   const f = fixture(t);

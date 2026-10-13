@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ConvertPendingPianoMidi } from "../../../../__app_modules/piano/server/application/pianoaudio/ConvertPendingPianoMidi.mjs";
+import { ConvertPendingPianoMidi } from "../../../../__app_modules/learning/piano/server/application/pianoaudio/ConvertPendingPianoMidi.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 

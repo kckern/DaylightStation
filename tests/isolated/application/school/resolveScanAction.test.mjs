@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ResolveScanAction } from "../../../../__app_modules/school/server/application/usecases/ResolveScanAction.mjs";
-import { ResolvePersonalCard } from "../../../../__app_modules/school/server/application/usecases/ResolvePersonalCard.mjs";
-import { ResolveSubjectNext } from "../../../../__app_modules/school/server/application/usecases/ResolveSubjectNext.mjs";
-import { BuildAgenda } from "../../../../__app_modules/school/server/application/usecases/BuildAgenda.mjs";
-import { IssueDocument } from "../../../../__app_modules/school/server/application/usecases/IssueDocument.mjs";
-import { DispatchMedia } from "../../../../__app_modules/school/server/application/usecases/DispatchMedia.mjs";
-import { OpenRemediation } from "../../../../__app_modules/school/server/application/usecases/OpenRemediation.mjs";
-import { CloseSessionOutcome } from "../../../../__app_modules/school/server/application/usecases/CloseSessionOutcome.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
+import { ResolveScanAction } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveScanAction.mjs";
+import { ResolvePersonalCard } from "../../../../__app_modules/learning/school/server/application/usecases/ResolvePersonalCard.mjs";
+import { ResolveSubjectNext } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveSubjectNext.mjs";
+import { BuildAgenda } from "../../../../__app_modules/learning/school/server/application/usecases/BuildAgenda.mjs";
+import { IssueDocument } from "../../../../__app_modules/learning/school/server/application/usecases/IssueDocument.mjs";
+import { DispatchMedia } from "../../../../__app_modules/learning/school/server/application/usecases/DispatchMedia.mjs";
+import { OpenRemediation } from "../../../../__app_modules/learning/school/server/application/usecases/OpenRemediation.mjs";
+import { CloseSessionOutcome } from "../../../../__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import { ReceiptPrinting } from "../../../../__capabilities/printing/server/receipt.mjs";
-import { createTokenRecord, mintToken } from "../../../../__app_modules/school/server/domain/sessions/tokens.mjs";
+import { createTokenRecord, mintToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   FakeFormMapStore, FakeDocumentRenderer, FakeReceiptRenderer, FakeLaserPrinter,

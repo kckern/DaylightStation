@@ -4,7 +4,7 @@ import { useScreenOverlay } from "../../../../../__capabilities/screen-host/brow
 import { useHasMenuNavigationContext, useMenuNavigationContext } from "../../../../../__capabilities/screen-host/browser/menu-navigation.mjs";
 import { usePip } from "../../../../../__capabilities/screen-host/browser/pip.mjs";
 import { DaylightAPI } from '../../../lib/api.mjs';
-import MenuStack from "../../../../../__app_modules/media/browser/menu.mjs";
+import MenuStack from "../../../../../__app_modules/media/media/browser/menu.mjs";
 import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
 import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";

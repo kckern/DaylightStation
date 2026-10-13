@@ -16,7 +16,7 @@ vi.mock('../../../frontend/src/lib/api.mjs', () => ({
 vi.mock('../../../frontend/src/lib/logging/singleton.js', () => ({
   getChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() }),
 }));
-vi.mock("../../../__app_modules/art/browser/music/useBackgroundMusic.js", () => ({
+vi.mock("../../../__app_modules/media/art/browser/music/useBackgroundMusic.js", () => ({
   useBackgroundMusic: () => ({}),
 }));
 

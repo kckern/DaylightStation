@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { JournalistContainer } from "../../../../__app_modules/journalist/server/application/JournalistContainer.mjs";
+import { JournalistContainer } from "../../../../__app_modules/personal/journalist/server/application/JournalistContainer.mjs";
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 import { DataService } from '#adapters/persistence/files/DataService.mjs';
 

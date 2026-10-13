@@ -2,7 +2,7 @@ import React, {useEffect} from 'react';
 import {act, fireEvent, render} from '@testing-library/react';
 import {afterEach, expect, it, vi} from 'vitest';
 import {PanelRenderer, getWidgetRegistry, resetWidgetRegistry} from '../public.mjs';
-import {PianoKeyboard, useMidiSubscription} from '../../../../__app_modules/piano/browser/widget.mjs';
+import {PianoKeyboard, useMidiSubscription} from '../../../../__app_modules/learning/piano/browser/widget.mjs';
 import {getWidgetRegistry as privateRegistry} from '../widgets/registry.js';
 const transport=vi.hoisted(()=>({receive:null}));
 vi.mock('../../../../frontend/src/hooks/useWebSocket.js',()=>({useWebSocketSubscription:(_topic,receive)=>{transport.receive=receive;}}));

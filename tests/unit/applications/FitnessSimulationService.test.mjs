@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FitnessSimulationService } from "../../../__app_modules/fitness/server/adapters/FitnessSimulationProcess.mjs";
+import { FitnessSimulationService } from "../../../__app_modules/wellness/fitness/server/adapters/FitnessSimulationProcess.mjs";
 
 describe('FitnessSimulationService', () => {
   it('preserves simulation arguments and lifecycle responses through injected process operations', () => {

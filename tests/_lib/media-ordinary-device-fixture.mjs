@@ -11,7 +11,7 @@ import { DeviceLivenessService } from '../../__backend/src/3_applications/device
 import { CommandHandlerLivenessService } from '../../__backend/src/3_applications/devices/services/CommandHandlerLivenessService.mjs';
 import { DispatchIdempotencyService } from '../../__backend/src/3_applications/devices/services/DispatchIdempotencyService.mjs';
 import { EventBusBrowserPlayback } from '../../__backend/src/1_adapters/eventbus/EventBusBrowserPlayback.mjs';
-import { BrowserPlaybackTracker } from "../../__app_modules/media/server/application/BrowserPlaybackTracker.mjs";
+import { BrowserPlaybackTracker } from "../../__app_modules/media/media/server/application/BrowserPlaybackTracker.mjs";
 import { SessionControlService } from '../../__backend/src/3_applications/devices/services/SessionControlService.mjs';
 import { DeviceSessionApiService } from '../../__backend/src/3_applications/devices/services/DeviceSessionApiService.mjs';
 import { DeviceStartStatusService } from '../../__backend/src/3_applications/devices/services/DeviceStartStatusService.mjs';

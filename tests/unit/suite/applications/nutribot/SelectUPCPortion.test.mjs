@@ -1,6 +1,6 @@
 // tests/unit/suite/applications/nutribot/SelectUPCPortion.test.mjs
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-import { SelectUPCPortion } from "../../../../../__app_modules/nutribot/server/application/usecases/SelectUPCPortion.mjs";
+import { SelectUPCPortion } from "../../../../../__app_modules/wellness/nutribot/server/application/usecases/SelectUPCPortion.mjs";
 
 describe('SelectUPCPortion', () => {
   let useCase;

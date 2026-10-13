@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ActivateDashboardScene } from "../../../../__app_modules/home/server/application/home-automation/usecases/ActivateDashboardScene.mjs";
+import { ActivateDashboardScene } from "../../../../__app_modules/household/home/server/application/home-automation/usecases/ActivateDashboardScene.mjs";
 import { AuthorizationError } from '#system/utils/errors/index.mjs';
 
 const config = {

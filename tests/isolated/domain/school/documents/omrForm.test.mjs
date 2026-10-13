@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { projectFormMap, decodeOmrSheet } from "../../../../../__app_modules/school/server/domain/documents/omrForm.mjs";
+import { projectFormMap, decodeOmrSheet } from "../../../../../__app_modules/learning/school/server/domain/documents/omrForm.mjs";
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 
 /** Three questions, four bubbles each, one response row per question. */

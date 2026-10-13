@@ -119,7 +119,7 @@ describe('surround seams', () => {
         currentContent: { type: 'player', props: { play: { plex: '663134' } } },
         depth: 1, push: vi.fn(), pop: vi.fn(), reset: vi.fn(),
       };
-      const { MenuStack } = await import("../../../../__app_modules/media/browser/menu.mjs");
+      const { MenuStack } = await import("../../../../__app_modules/media/media/browser/menu.mjs");
       const playerRef = React.createRef();
 
       const { container } = render(<MenuStack rootMenu="root" playerRef={playerRef} />);
@@ -137,7 +137,7 @@ describe('surround seams', () => {
         currentContent: { type: 'composite', props: { play: { plex: '663134' } } },
         depth: 1, push: vi.fn(), pop: vi.fn(), reset: vi.fn(),
       };
-      const { MenuStack } = await import("../../../../__app_modules/media/browser/menu.mjs");
+      const { MenuStack } = await import("../../../../__app_modules/media/media/browser/menu.mjs");
       const playerRef = React.createRef();
 
       const { container } = render(<MenuStack rootMenu="root" playerRef={playerRef} />);
@@ -152,7 +152,7 @@ describe('surround seams', () => {
         currentContent: { type: 'player', props: { play: { plex: '663134' } } },
         depth: 1, push: vi.fn(), pop: vi.fn(), reset: vi.fn(),
       };
-      const { MenuStack } = await import("../../../../__app_modules/media/browser/menu.mjs");
+      const { MenuStack } = await import("../../../../__app_modules/media/media/browser/menu.mjs");
 
       const { container } = render(<MenuStack rootMenu="root" />);
       await settle();

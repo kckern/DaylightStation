@@ -52,9 +52,9 @@ const PassThroughPolicy = {
 // ─── Build test app ───────────────────────────────────────────────────────────
 
 async function buildApp({ agentRuntime, policy = PassThroughPolicy, satellite }) {
-  const { ConciergeAgent } = await import("../../../../__app_modules/concierge/server/application/ConciergeAgent.mjs");
+  const { ConciergeAgent } = await import("../../../../__app_modules/household/concierge/server/application/ConciergeAgent.mjs");
   const { AgentOrchestrator } = await import("../../../../__capabilities/agent-runtime/server/application/AgentOrchestrator.mjs");
-  const { MemoryBundle } = await import("../../../../__app_modules/concierge/server/application/skills/MemoryBundle.mjs");
+  const { MemoryBundle } = await import("../../../../__app_modules/household/concierge/server/application/skills/MemoryBundle.mjs");
   const { mountAgentHttp } = await import("../../../../__capabilities/agent-runtime/server/api/mountAgentHttp.mjs");
 
   const orchestrator = new AgentOrchestrator({ agentRuntime, createTurnId: () => 'test-turn', logger: makeLogger() });
@@ -189,7 +189,7 @@ describe('concierge smoke — policy deny path', () => {
 
   it('ConciergeAgent.run() returns refusal output directly without hitting runtime', async () => {
     // This test isolates the agent layer to confirm the refusal shape before the wire format.
-    const { ConciergeAgent } = await import("../../../../__app_modules/concierge/server/application/ConciergeAgent.mjs");
+    const { ConciergeAgent } = await import("../../../../__app_modules/household/concierge/server/application/ConciergeAgent.mjs");
 
     const DenyAllPolicy = {
       evaluateRequest: () => ({ allow: false, reason: 'test_deny' }),

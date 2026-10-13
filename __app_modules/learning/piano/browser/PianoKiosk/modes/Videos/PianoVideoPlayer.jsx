@@ -1,0 +1,377 @@
+// PianoVideoPlayer.jsx
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { usePlayerController as usePlayerController } from "../../../../../../../__capabilities/playback/browser/controller.mjs";
+import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
+import { usePianoPlayback } from '../../usePianoPlayback.js';
+import { usePianoMix } from '../../usePianoMix.js';
+import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
+import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
+import PlayerBoundary from './PlayerBoundary.jsx';
+import PianoVideoChrome from './PianoVideoChrome.jsx';
+import useResolvedMediaEl from './useResolvedMediaEl.js';
+import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
+import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
+import { usePlayerSessionBinding } from "../../../../../../../__capabilities/playback/browser/sessions.mjs";
+import Icon from '../../../ui/icons/Icon.jsx';
+import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
+import useABLoop from './useABLoop.js';
+import usePianoWatchLog from './usePianoWatchLog.js';
+import useSyncedPlaybackRate from './useSyncedPlaybackRate.js';
+import { lectureContentId, resumeSecondsFor } from './lectureMeta.js';
+import useReloadGuard from '../../useReloadGuard.js';
+import EngagementGate from './EngagementGate.jsx';
+import { useEngagementGate } from './useEngagementGate.js';
+import { usePianoUser } from '../../PianoUserContext.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
+
+// Player is heavy — code-split it so the menu/other modes don't pay for it.
+const Player = lazy(() => import("../../../../../../media/media/browser/playback.mjs"));
+
+const EMPTY_NOTES = new Map();
+
+/** Custom student video player for a single piano lecture, with MIDI play-along. */
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, speedEnabled = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null }) {
+  const playerRef = useRef(null);
+  const ctrl = usePlayerController(playerRef);
+  const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
+  // Read through a ref, not a dep: `mediaEl` is republished by the 100ms poll
+  // on every element swap, and a [mediaEl] dep on the clear callback rebuilds
+  // the memoized player element below — which hands Player a new `play` object
+  // and remounts the video. That loop is self-sustaining (2026-08-16 storm).
+  const mediaElRef = useRef(null);
+  mediaElRef.current = mediaEl;
+  // Fleet visibility: register this player so the tablet's DeviceStatePublisher
+  // reports live playing/paused state to the /media Devices view.
+  usePlayerSessionBinding(() => playerRef.current);
+  usePauseMediaOnUnmount(mediaEl);
+  // Belt-and-suspenders: also pause the live element/controller at unmount, in
+  // case the engine swapped elements within the poll window before we left.
+  // Depend on the stable pause callback, NOT the ctrl wrapper object — ctrl is
+  // a fresh object every render, so a [ctrl] dep runs this cleanup (and pauses
+  // playback) on every re-render, freezing the video within one timeupdate.
+  const ctrlPause = ctrl.pause;
+  useEffect(() => () => {
+    try { ctrlPause?.(); } catch { /* torn down */ }
+    try { playerRef.current?.getMediaElement?.()?.pause?.(); } catch { /* torn down */ }
+  }, [ctrlPause]);
+  const { pressNote, releaseNote } = usePianoMidi();
+  const { activeNotes } = usePianoMidiNotes();
+  const { mediaLevel } = usePianoMix();
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
+  const bodyRef = useRef(null);
+  const [stackW, setStackW] = useState(null);   // px width of the video+controls column
+
+  // Size the left column to exactly the video's aspect at the available height, so
+  // the contained video fills it edge-to-edge (no pillar bars) and the staff gets
+  // ALL the remaining width. Recomputed on aspect change and on resize.
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return undefined;
+    const compute = () => {
+      const chrome = body.querySelector('.piano-video-chrome');
+      const H = body.clientHeight;
+      const C = chrome ? chrome.offsetHeight : 0;
+      const vidH = Math.max(0, H - C);
+      const maxW = body.clientWidth - 200; // keep a usable minimum staff width
+      setStackW(Math.round(Math.min(vidH * aspect, maxW)));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(body);
+    return () => ro.disconnect();
+  }, [aspect]);
+
+  const contentId = lectureContentId(lecture);
+  const title = lecture?.label || lecture?.title || '';
+  const resumeSeconds = resumeSecondsFor(lecture);
+
+  const { currentUser } = usePianoUser();
+  const engagedRef = useRef(false);
+
+  // Per-user auto-advance: fire once per lecture from the `ended` event. The
+  // shared Player ALSO reacts to `ended` (its end-of-content advance calls
+  // `clear` → onBack); the route's goBack ignores that call while an
+  // auto-advance navigation is in flight (see Videos.jsx LecturePlayerRoute).
+  const onAutoAdvanceRef = useRef(onAutoAdvance);
+  onAutoAdvanceRef.current = onAutoAdvance;
+  const endedHandledRef = useRef(false);
+  useEffect(() => { endedHandledRef.current = false; }, [contentId]);
+  const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
+
+  // Engagement for completion = ANY play-along. Once the student presses any key
+  // this session, the lecture counts as engaged (the inactivity gate's note also
+  // lands here). engagedRef is read at each play/log post (Part 2).
+  useEffect(() => {
+    if (activeNotes && activeNotes.size > 0) engagedRef.current = true;
+  }, [activeNotes]);
+
+  const { gateOpen, dismissGate } = useEngagementGate({
+    pause: ctrl.pause,
+    play: ctrl.play,
+    isPaused: () => !isPlaying,
+    // Per-user policy (piano.yml videos.user_policies): a user with
+    // engagement_gate:false watches passively — the anti-AFK gate never opens.
+    isSequential: isSequential && engagementGateEnabled,
+    timeoutSeconds: engagementTimeoutSeconds,
+    onEngagementConfirmed: () => { engagedRef.current = true; },
+  });
+
+  // Header breadcrumb: the source show (tap → back to the course) › this lecture.
+  usePianoBreadcrumb(useMemo(() => [
+    ...(source ? [{ label: source, onClick: onBack }] : []),
+    ...(title ? [{ label: title }] : []),
+  ], [source, title, onBack]));
+  const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
+  const { rate, cycleRate: handleCycleRate } = useSyncedPlaybackRate(mediaEl, playerRef);
+  usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef });
+  useReloadGuard(isPlaying);
+
+  // Player's clear callback is registered before this component's ended
+  // listener. When a completion coordinator exists, suppress only that natural
+  // end clear so the route can choose checkpoint, next lesson, or course end.
+  const handlePlayerClear = useCallback(() => {
+    if (mediaElRef.current?.ended && onAutoAdvanceRef.current) return;
+    onBack();
+  }, [onBack]);
+
+  // Own memo, keyed ONLY on content. The Player derives its media identity from
+  // this object; a fresh object for the same lecture remounts the video and
+  // opens a new Plex transcode session, so its identity must not ride along
+  // with anything render-frequency.
+  const playSpec = useMemo(
+    () => ({ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }),
+    [contentId, resumeSeconds]
+  );
+
+  // Memoize the heavy Player element so high-frequency re-renders (timeupdate
+  // ticks, MIDI play-along notes) DON'T recreate it — recreating it remounted
+  // the video, which caused the per-keypress skips, the restart loop, and audio
+  // that kept playing after navigating away. An unstable `onBack` still rebuilds
+  // this element, but `playSpec` above survives that, so the media no longer
+  // re-keys and the rebuild costs a render rather than a remount.
+  const playerEl = useMemo(() => (
+    <PlayerBoundary onBack={onBack}>
+      <Suspense fallback={<SkeletonStage />}>
+        {/* focused = the minimal shader (Player suppresses its own overlays; the
+            piano chrome provides the controls). `seconds` carries OUR computed
+            resumeSecondsFor(lecture) explicitly, and `resume:false` suppresses
+            the Player's own implicit Plex-viewOffset resume — otherwise a
+            completed lecture (resumeSeconds 0) could still open at Plex's tail
+            playhead and auto-exit seconds later when `ended` fires (the
+            re-watch "jumpscare"). Passing our value for BOTH the completed and
+            in-progress cases means there's only ever one source of truth. */}
+        <Player ref={playerRef} play={playSpec} clear={handlePlayerClear} />
+      </Suspense>
+    </PlayerBoundary>
+  ), [playSpec, handlePlayerClear, onBack]);
+
+  // Fullscreen is entered from the chrome strip's button; a tap never enters it.
+  // While fullscreen the strip is offscreen, so taps summon the transport
+  // overlay instead (which also carries the way back out).
+  const videoWrapRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fsOverlayOpen, setFsOverlayOpen] = useState(false);
+  const toggleFullscreen = useCallback(() => {
+    const el = videoWrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.().catch(() => {});
+  }, []);
+  const exitFullscreen = useCallback(() => { document.exitFullscreen?.(); }, []);
+  useEffect(() => {
+    const onFsChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs) setFsOverlayOpen(false);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Transient tap feedback — an indicator of what the tap did, not a button.
+  const [tapFlash, setTapFlash] = useState(null);
+  const tapFlashSeq = useRef(0);
+  const flash = useCallback((icon) => {
+    tapFlashSeq.current += 1;
+    setTapFlash({ icon, seq: tapFlashSeq.current });
+  }, []);
+
+  // Report active playback to the kiosk context so the inactivity timer stays alive.
+  const { setPlaying: setGlobalPlaying, setVideoActive } = usePianoPlayback();
+  useEffect(() => {
+    setGlobalPlaying(isPlaying);
+    return () => setGlobalPlaying(false);
+  }, [isPlaying, setGlobalPlaying]);
+
+  // Mark the video player mounted (survives pause, unlike `playing`) so the chrome
+  // locks player-switching and the "who's playing?" re-prompt until the lesson is
+  // left — a mid-lesson user change would mis-credit the watch.
+  useEffect(() => {
+    setVideoActive(true);
+    return () => setVideoActive(false);
+  }, [setVideoActive]);
+
+  const notes = activeNotes || EMPTY_NOTES;
+
+  useEffect(() => {
+    getLogger().child({ component: 'piano-video-player' }).info('piano.video.open', { contentId, resumeSeconds });
+  }, [contentId, resumeSeconds]);
+
+  // Mirror media-element state into React for the chrome.
+  useEffect(() => {
+    if (!mediaEl) return undefined;
+    const onTime = () => {
+      const t = mediaEl.currentTime || 0;
+      setCurrentTime(t);
+      setFurthestWatched((prev) => (t > prev ? t : prev));
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onMeta = () => {
+      setDuration(mediaEl.duration || 0);
+      if (mediaEl.videoWidth && mediaEl.videoHeight) setAspect(mediaEl.videoWidth / mediaEl.videoHeight);
+    };
+    const onEnded = () => {
+      if (!onAutoAdvanceRef.current || endedHandledRef.current) return;
+      endedHandledRef.current = true;
+      getLogger().child({ component: 'piano-video-player' }).info('piano.video.auto-advance', { contentId });
+      onAutoAdvanceRef.current();
+    };
+    mediaEl.addEventListener('timeupdate', onTime);
+    mediaEl.addEventListener('play', onPlay);
+    mediaEl.addEventListener('pause', onPause);
+    mediaEl.addEventListener('loadedmetadata', onMeta);
+    mediaEl.addEventListener('ended', onEnded);
+    onMeta();
+    return () => {
+      mediaEl.removeEventListener('timeupdate', onTime);
+      mediaEl.removeEventListener('play', onPlay);
+      mediaEl.removeEventListener('pause', onPause);
+      mediaEl.removeEventListener('loadedmetadata', onMeta);
+      mediaEl.removeEventListener('ended', onEnded);
+    };
+  }, [mediaEl, contentId]);
+
+  // Apply the shared media level to the resolved element (mirrors MusicPlayer).
+  useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
+
+  const handleRestart = useCallback(() => {
+    ctrl.seek(0);
+    getLogger().child({ component: 'piano-video-player' }).info('piano.video.restart');
+  }, [ctrl]);
+
+  const handleSkip = useCallback((delta) => {
+    const cur = ctrl.getCurrentTime() || 0;
+    const max = duration > 0 ? duration : cur + Math.abs(delta);
+    ctrl.seek(Math.max(0, Math.min(max, cur + delta)));
+  }, [ctrl, duration]);
+
+  // Sequential: can't skip forward past the furthest point already reached
+  // (1s tolerance) — mirrors the chrome's own calc (PianoVideoChrome.jsx:28).
+  const forwardDisabled = isSequential && currentTime >= furthestWatched - 1;
+
+  // Bare tap on the video surface. Fullscreen: summon the transport overlay.
+  // Otherwise the tap IS the transport: left third −15s, middle toggles
+  // pause, right third +15s (held back by the sequential forward-lock).
+  const handleSurfaceTap = useCallback((e) => {
+    if (isFullscreen) { setFsOverlayOpen(true); return; }
+    const rect = videoWrapRef.current?.getBoundingClientRect();
+    const action = videoTapAction((e.clientX ?? 0) - (rect?.left ?? 0), rect?.width ?? 0);
+    if (action === 'back') {
+      handleSkip(-TAP_SKIP_SECONDS);
+      flash('skip-back-15');
+    } else if (action === 'forward') {
+      if (forwardDisabled) return;
+      handleSkip(TAP_SKIP_SECONDS);
+      flash('skip-forward-15');
+    } else {
+      ctrl.toggle();
+      flash(isPlaying ? 'pause' : 'play');
+    }
+  }, [isFullscreen, handleSkip, forwardDisabled, ctrl, isPlaying, flash]);
+
+  if (!contentId) {
+    return (
+      <div className="piano-mode__placeholder">
+        This lecture cannot be played. <button type="button" onClick={onBack}>Back</button>
+      </div>
+    );
+  }
+
+  if (timedOut && !mediaEl) {
+    getLogger().child({ component: 'piano-video-player' }).warn('piano.video.mount-timeout', { contentId });
+    return (
+      <div className="piano-mode__placeholder">
+        This video did not start. <button type="button" onClick={onBack}>Back to course</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="piano-video-player piano-video-player--playalong">
+      {/* Upper row: video + transport (left, sized to the video aspect) and the
+          chord-theory column (fills all leftover width to the right). */}
+      <div className="piano-video-player__body" ref={bodyRef}>
+        <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
+          <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : handleSurfaceTap} style={{ position: 'relative' }}>
+            {playerEl}
+            {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
+            {isFullscreen && fsOverlayOpen && !gateOpen && (
+              <FullscreenTransportOverlay
+                isPlaying={isPlaying}
+                onSkip={handleSkip}
+                onToggle={ctrl.toggle}
+                onExitFullscreen={exitFullscreen}
+                onDismiss={() => setFsOverlayOpen(false)}
+                forwardDisabled={forwardDisabled}
+              />
+            )}
+            {tapFlash && (
+              <div key={tapFlash.seq} className="piano-tap-flash" onAnimationEnd={() => setTapFlash(null)}>
+                <Icon name={tapFlash.icon} />
+              </div>
+            )}
+          </div>
+
+          <PianoVideoChrome
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            rate={rate}
+            loop={loop}
+            isSequential={isSequential}
+            speedEnabled={speedEnabled}
+            furthestWatched={furthestWatched}
+            gateOpen={gateOpen}
+            onToggle={ctrl.toggle}
+            onRestart={handleRestart}
+            onSkip={handleSkip}
+            onCycleRate={handleCycleRate}
+            onMarkA={loop.markA}
+            onMarkB={loop.markB}
+            onToggleLoop={loop.toggle}
+            onClearLoop={loop.clear}
+            onSeek={ctrl.seek}
+            onToggleFullscreen={toggleFullscreen}
+          />
+        </div>
+
+        {/* Right sidebar: circle of fifths (top) · live grand staff (centered) ·
+            chord-name badge (bottom). Always visible. */}
+        <aside className="piano-video-player__staff">
+          <TheoryPanel activeNotes={notes} layout="column" />
+        </aside>
+      </div>
+
+      {/* Full-width playable keyboard footer — always visible on the main view. */}
+      <div className="piano-video-player__keys">
+        <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
+      </div>
+    </div>
+  );
+}

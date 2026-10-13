@@ -1,7 +1,7 @@
-import { createSchoolLifecycleRouter } from "../../../__app_modules/school/server/api/schoolLifecycle.mjs";
-import { SchoolLifecycleAgendaResource } from "../../../__app_modules/school/server/application/services/SchoolLifecycleAgendaResource.mjs";
-import { SchoolLifecycleReadService } from "../../../__app_modules/school/server/application/services/SchoolLifecycleReadService.mjs";
-import { SchoolLifecycleSyllabusService } from "../../../__app_modules/school/server/application/services/SchoolLifecycleSyllabusService.mjs";
+import { createSchoolLifecycleRouter } from "../../../__app_modules/learning/school/server/api/schoolLifecycle.mjs";
+import { SchoolLifecycleAgendaResource } from "../../../__app_modules/learning/school/server/application/services/SchoolLifecycleAgendaResource.mjs";
+import { SchoolLifecycleReadService } from "../../../__app_modules/learning/school/server/application/services/SchoolLifecycleReadService.mjs";
+import { SchoolLifecycleSyllabusService } from "../../../__app_modules/learning/school/server/application/services/SchoolLifecycleSyllabusService.mjs";
 
 export function createSchoolLifecycleTestRouter(legacy = {}) {
   const {

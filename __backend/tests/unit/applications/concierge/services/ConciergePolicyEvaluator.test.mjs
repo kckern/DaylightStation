@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { ConciergePolicyEvaluator } from "../../../../../../__app_modules/concierge/server/application/policy/ConciergePolicyEvaluator.mjs";
+import { ConciergePolicyEvaluator } from "../../../../../../__app_modules/household/concierge/server/application/policy/ConciergePolicyEvaluator.mjs";
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

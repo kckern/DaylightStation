@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { normalizeScaleNutribotConfig, densityForLevel } from '../../../../../__app_modules/health/server/scale-config.mjs';
+import { normalizeScaleNutribotConfig, densityForLevel } from '../../../../../__app_modules/wellness/health/server/scale-config.mjs';
 import { buildDensityKeyboard, buildContainerKeyboard, densityPromptText, densityHelpText } from '../../../../../__backend/src/3_applications/nutribot/lib/scalePrompts.mjs';
 
 describe('scaleNutribotConfig', () => {

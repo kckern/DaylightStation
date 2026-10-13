@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { buildVirtualSeasons, sortPlaylistByRating } from "../../../__app_modules/fitness/browser/lib/playlistVirtualSeasons.js";
+import { buildVirtualSeasons, sortPlaylistByRating } from "../../../__app_modules/wellness/fitness/browser/lib/playlistVirtualSeasons.js";
 
 describe('buildVirtualSeasons', () => {
   test('creates virtual parents and assigns parentId to items', () => {

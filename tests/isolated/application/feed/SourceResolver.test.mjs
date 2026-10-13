@@ -1,4 +1,4 @@
-import { SourceResolver } from "../../../../__app_modules/feed/server/application/services/SourceResolver.mjs";
+import { SourceResolver } from "../../../../__app_modules/media/feed/server/application/services/SourceResolver.mjs";
 
 describe('SourceResolver', () => {
   const mockAdapters = [

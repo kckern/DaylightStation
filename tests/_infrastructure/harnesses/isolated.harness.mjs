@@ -7,6 +7,7 @@ import {
   parseArgs,
   findTestFiles,
   findBrowserColocatedTestFiles,
+  findOwnerDirectories,
   runJest,
   printSummary,
   COLORS,
@@ -126,11 +127,8 @@ function routeByImports(jestFiles, vitestFiles) {
 function findOwnerIsolatedFiles(targets, args, options = {}) {
   const files = [];
   for (const scope of ['__app_modules', '__capabilities']) {
-    const owners = path.join(ROOT_DIR, scope);
-    if (!fs.existsSync(owners) || fs.lstatSync(owners).isSymbolicLink()) continue;
-    for (const owner of fs.readdirSync(owners, { withFileTypes: true })) {
-      if (!owner.isDirectory() || owner.name === 'node_modules') continue;
-      const isolated = path.join(owners, owner.name, 'tests', 'isolated');
+    for (const owner of findOwnerDirectories(ROOT_DIR, scope)) {
+      const isolated = path.join(owner, 'tests', 'isolated');
       if (!fs.existsSync(isolated) || fs.lstatSync(isolated).isSymbolicLink()) continue;
       files.push(...findTestFiles(isolated, targets, args, options));
     }

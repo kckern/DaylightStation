@@ -1,6 +1,6 @@
 // tests/isolated/agents/health-coach/formatAttachment.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { formatHealthAttachment } from "../../../../__app_modules/health/server/application/agents/health-coach/formatAttachment.mjs";
+import { formatHealthAttachment } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/formatAttachment.mjs";
 
 const fakeResolver = {
   resolve: vi.fn(async (input) => {

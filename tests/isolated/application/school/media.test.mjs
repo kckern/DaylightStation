@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DispatchMedia, normaliseTargets } from "../../../../__app_modules/school/server/application/usecases/DispatchMedia.mjs";
-import { RecordMediaCompletion } from "../../../../__app_modules/school/server/application/usecases/RecordMediaCompletion.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
-import { validateDocument } from "../../../../__app_modules/school/server/domain/documents/documentValidation.mjs";
-import { createEvent } from "../../../../__app_modules/school/server/domain/sessions/sessionEvents.mjs";
+import { DispatchMedia, normaliseTargets } from "../../../../__app_modules/learning/school/server/application/usecases/DispatchMedia.mjs";
+import { RecordMediaCompletion } from "../../../../__app_modules/learning/school/server/application/usecases/RecordMediaCompletion.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { validateDocument } from "../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
+import { createEvent } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakePlayback,
   fakeClock, silentLogger,

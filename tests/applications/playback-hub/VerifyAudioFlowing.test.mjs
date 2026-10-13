@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { VerifyAudioFlowing } from "../../../__app_modules/media/server/application/playback-hub/usecases/VerifyAudioFlowing.mjs";
-import { FakeHubGateway } from "../../../__app_modules/media/server/application/playback-hub/test/FakeHubGateway.mjs";
+import { VerifyAudioFlowing } from "../../../__app_modules/media/media/server/application/playback-hub/usecases/VerifyAudioFlowing.mjs";
+import { FakeHubGateway } from "../../../__app_modules/media/media/server/application/playback-hub/test/FakeHubGateway.mjs";
 import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 import { InfrastructureError } from '../../../__backend/src/0_system/utils/errors/InfrastructureError.mjs';
 

@@ -14,7 +14,7 @@ describe('GuestAssignmentService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const module = await import("../../../../__app_modules/fitness/browser/hooks/fitness/GuestAssignmentService.js");
+    const module = await import("../../../../__app_modules/wellness/fitness/browser/hooks/fitness/GuestAssignmentService.js");
     GuestAssignmentService = module.GuestAssignmentService;
     validateGuestAssignmentPayload = module.validateGuestAssignmentPayload;
   });

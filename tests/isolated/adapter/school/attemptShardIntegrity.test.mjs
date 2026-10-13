@@ -4,7 +4,7 @@ import path from 'node:path';
 import {
   describe, it, expect, beforeEach, afterEach,
 } from 'vitest';
-import { YamlSchoolDatastore } from "../../../../__app_modules/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
+import { YamlSchoolDatastore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
 
 let root;
 let warns;

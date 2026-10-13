@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { offsetMinutesFor, isSameStudyDay } from "../../../../__app_modules/school/server/domain/studyDay.mjs";
+import { offsetMinutesFor, isSameStudyDay } from "../../../../__app_modules/learning/school/server/domain/studyDay.mjs";
 
 describe('offsetMinutesFor', () => {
   it('returns 0 for a null timezone', () => {

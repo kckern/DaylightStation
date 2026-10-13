@@ -1,4 +1,4 @@
-import { startAmbientZones } from "../../../__app_modules/home/server/application/home-automation/ambientZones.mjs";
+import { startAmbientZones } from "../../../__app_modules/household/home/server/application/home-automation/ambientZones.mjs";
 import { projectAmbientZones as normalizeAmbientZones } from "../../../__capabilities/home-control/server/adapters/ConfiguredAmbientZones.mjs";
 
 describe('normalizeAmbientZones', () => {

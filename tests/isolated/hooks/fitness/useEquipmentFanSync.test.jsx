@@ -6,7 +6,7 @@ vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: (...args) => postMock(...args),
 }));
 
-import { useEquipmentFanSync } from "../../../../__app_modules/fitness/browser/hooks/fitness/useEquipmentFanSync.js";
+import { useEquipmentFanSync } from "../../../../__app_modules/wellness/fitness/browser/hooks/fitness/useEquipmentFanSync.js";
 
 describe('useEquipmentFanSync', () => {
   beforeEach(() => {

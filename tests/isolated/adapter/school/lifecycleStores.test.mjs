@@ -3,12 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlAssignmentStore } from "../../../../__app_modules/school/server/adapters/persistence/YamlAssignmentStore.mjs";
-import { YamlFormMapStore } from "../../../../__app_modules/school/server/adapters/persistence/YamlFormMapStore.mjs";
-import { YamlReviewQueue } from "../../../../__app_modules/school/server/adapters/persistence/YamlReviewQueue.mjs";
-import { IAssignmentStore } from "../../../../__app_modules/school/server/application/ports/IAssignmentStore.mjs";
-import { IFormMapStore } from "../../../../__app_modules/school/server/application/ports/IFormMapStore.mjs";
-import { IReviewQueue } from "../../../../__app_modules/school/server/application/ports/IReviewQueue.mjs";
+import { YamlAssignmentStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlAssignmentStore.mjs";
+import { YamlFormMapStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlFormMapStore.mjs";
+import { YamlReviewQueue } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlReviewQueue.mjs";
+import { IAssignmentStore } from "../../../../__app_modules/learning/school/server/application/ports/IAssignmentStore.mjs";
+import { IFormMapStore } from "../../../../__app_modules/learning/school/server/application/ports/IFormMapStore.mjs";
+import { IReviewQueue } from "../../../../__app_modules/learning/school/server/application/ports/IReviewQueue.mjs";
 
 const AT = '2026-07-27T10:00:00.000Z';
 

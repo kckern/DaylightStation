@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { MediaJudge } from "../../../../../../__app_modules/concierge/server/application/services/MediaJudge.mjs";
+import { MediaJudge } from "../../../../../../__app_modules/household/concierge/server/application/services/MediaJudge.mjs";
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

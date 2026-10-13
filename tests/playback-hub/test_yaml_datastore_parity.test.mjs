@@ -23,7 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { YamlHubConfigDatastore, serializeHubConfig } from '../../__app_modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
+import { YamlHubConfigDatastore, serializeHubConfig } from '../../__app_modules/media/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../fixtures/playback-hub');
 

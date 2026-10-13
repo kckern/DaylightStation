@@ -20,16 +20,16 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 
 import { createBookRecord } from "../../../../__capabilities/book-catalog/server/domain/BookRecord.mjs";
-import { appendAssignedProgramEntries } from "../../../../__app_modules/school/server/application/assignedProgramPlan.mjs";
+import { appendAssignedProgramEntries } from "../../../../__app_modules/learning/school/server/application/assignedProgramPlan.mjs";
 import { ResolveBook } from "../../../../__capabilities/book-catalog/server/application/ResolveBook.mjs";
-import { ResolveAccessCode } from "../../../../__app_modules/school/server/application/usecases/ResolveAccessCode.mjs";
-import { RunSelfServiceAction } from "../../../../__app_modules/school/server/application/usecases/RunSelfServiceAction.mjs";
-import { OpenBookShelfItem } from "../../../../__app_modules/school/server/application/usecases/OpenBookShelfItem.mjs";
-import { GetBookShelf } from "../../../../__app_modules/school/server/application/usecases/GetBookShelf.mjs";
-import { RecordBookProgress } from "../../../../__app_modules/school/server/application/usecases/RecordBookProgress.mjs";
-import { BookLogProgramLauncher } from "../../../../__app_modules/school/server/application/BookLogProgramLauncher.mjs";
-import { HmacSchoolBookGrantIssuer } from "../../../../__app_modules/school/server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
-import { YamlBookLogStore } from "../../../../__app_modules/school/server/adapters/persistence/YamlBookLogStore.mjs";
+import { ResolveAccessCode } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveAccessCode.mjs";
+import { RunSelfServiceAction } from "../../../../__app_modules/learning/school/server/application/usecases/RunSelfServiceAction.mjs";
+import { OpenBookShelfItem } from "../../../../__app_modules/learning/school/server/application/usecases/OpenBookShelfItem.mjs";
+import { GetBookShelf } from "../../../../__app_modules/learning/school/server/application/usecases/GetBookShelf.mjs";
+import { RecordBookProgress } from "../../../../__app_modules/learning/school/server/application/usecases/RecordBookProgress.mjs";
+import { BookLogProgramLauncher } from "../../../../__app_modules/learning/school/server/application/BookLogProgramLauncher.mjs";
+import { HmacSchoolBookGrantIssuer } from "../../../../__app_modules/learning/school/server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
+import { YamlBookLogStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlBookLogStore.mjs";
 import { YamlBookRepository } from "../../../../__capabilities/book-catalog/server/adapters/persistence/YamlBookRepository.mjs";
 
 const LEARNER_ID = 'user_4';

@@ -68,7 +68,7 @@ Enforced by `npm run audit:layers` (`adapters-no-direct-fs`, `apps-no-fs`,
 `composition-no-fileio`, `composition-no-direct-runtime-io`) and by a
 pre-commit gate that rejects the import outright.
 
-Both static gates also traverse `__app_modules/<owner>/server/` and
+Both static gates also traverse `__app_modules/<category>/<owner>/server/` and
 `__capabilities/<owner>/server/`, applying the same layer rules to `domain`,
 `application`, `adapters`, `api`, `rendering`, and `composition`. The staged
 commands read Git index bytes. Destination adapters and composition have no

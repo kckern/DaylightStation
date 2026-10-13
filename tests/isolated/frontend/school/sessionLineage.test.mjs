@@ -7,7 +7,7 @@
  * purpose, so the rule is testable without a DOM.
  */
 import { describe, it, expect } from 'vitest';
-import { deriveSession, buildThreads } from "../../../../__app_modules/school/browser/admin/sessionLineage.js";
+import { deriveSession, buildThreads } from "../../../../__app_modules/learning/school/browser/admin/sessionLineage.js";
 
 const row = (over = {}) => ({
   sessionId: 'ses_1', learnerId: 'learner-1', unitId: 'math-fractions.03',

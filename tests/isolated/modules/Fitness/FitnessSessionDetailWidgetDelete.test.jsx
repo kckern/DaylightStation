@@ -19,23 +19,23 @@ vi.mock('../../../../__capabilities/screen-host/browser/widgets/registry.js', ()
   getWidgetRegistry: () => ({ get: () => null }),
 }));
 
-vi.mock("../../../../__app_modules/fitness/browser/useFitnessScreen.js", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/useFitnessScreen.js", () => ({
   useFitnessScreen: () => ({ onNavigate: null }),
 }));
 
-vi.mock("../../../../__app_modules/fitness/browser/context/FitnessContext.jsx", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/context/FitnessContext.jsx", () => ({
   useFitnessContext: () => ({ openVoiceMemoCapture: null }),
 }));
 
-vi.mock("../../../../__app_modules/fitness/browser/lib/dateFormatter.js", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/lib/dateFormatter.js", () => ({
   formatFitnessDate: () => '',
 }));
 
-vi.mock("../../../../__app_modules/fitness/browser/widgets/FitnessSessionDetailWidget/RouteMap.jsx", () => ({ default: () => null }));
-vi.mock("../../../../__app_modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx", () => ({ default: () => null }));
-vi.mock("../../../../__app_modules/fitness/browser/widgets/_shared/SportIcon.jsx", () => ({ default: () => null, formatSportType: () => '' }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/RouteMap.jsx", () => ({ default: () => null }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessTimeline.jsx", () => ({ default: () => null }));
+vi.mock("../../../../__app_modules/wellness/fitness/browser/widgets/_shared/SportIcon.jsx", () => ({ default: () => null, formatSportType: () => '' }));
 
-import FitnessSessionDetailWidget from "../../../../__app_modules/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx";
+import FitnessSessionDetailWidget from "../../../../__app_modules/wellness/fitness/browser/widgets/FitnessSessionDetailWidget/FitnessSessionDetailWidget.jsx";
 
 function findDeleteButton(container) {
   // Prefer data-testid for a stable selector; fall back to text match.

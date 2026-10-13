@@ -17,8 +17,8 @@ vi.mock('#system/config/index.mjs', () => ({
   },
 }));
 
-import { FitnessActivityEnrichmentService } from "../../../../__app_modules/fitness/server/application/FitnessActivityEnrichmentService.mjs";
-import { YamlFitnessHistoryRepository } from "../../../../__app_modules/fitness/server/adapters/YamlFitnessHistoryRepository.mjs";
+import { FitnessActivityEnrichmentService } from "../../../../__app_modules/wellness/fitness/server/application/FitnessActivityEnrichmentService.mjs";
+import { YamlFitnessHistoryRepository } from "../../../../__app_modules/wellness/fitness/server/adapters/YamlFitnessHistoryRepository.mjs";
 import { loadYamlSafe } from '#system/utils/FileIO.mjs';
 
 describe('FitnessActivityEnrichmentService — Strava-only session creation', () => {

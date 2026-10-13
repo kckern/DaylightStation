@@ -1,6 +1,6 @@
 // tests/isolated/agents/memory/working_memory_schema.test.mjs
 import { describe, it, expect } from 'vitest';
-import { healthCoachWorkingMemorySchema } from "../../../../__app_modules/health/server/application/agents/health-coach/memory/workingMemorySchema.mjs";
+import { healthCoachWorkingMemorySchema } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/memory/workingMemorySchema.mjs";
 import { userWorkingMemoryTemplate as healthCoachWorkingMemoryTemplate } from "#apps/agents/framework/userWorkingMemoryTemplate.mjs";
 
 describe('healthCoachWorkingMemorySchema (deprecated; re-exports template)', () => {

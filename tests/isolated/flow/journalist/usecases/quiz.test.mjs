@@ -58,7 +58,7 @@ describe('Quiz Use Cases', () => {
     let useCase;
 
     beforeEach(async () => {
-      const module = await import("../../../../../__app_modules/journalist/server/application/usecases/SendQuizQuestion.mjs");
+      const module = await import("../../../../../__app_modules/personal/journalist/server/application/usecases/SendQuizQuestion.mjs");
       SendQuizQuestion = module.SendQuizQuestion;
     });
 
@@ -297,7 +297,7 @@ describe('Quiz Use Cases', () => {
     let useCase;
 
     beforeEach(async () => {
-      const module = await import("../../../../../__app_modules/journalist/server/application/usecases/RecordQuizAnswer.mjs");
+      const module = await import("../../../../../__app_modules/personal/journalist/server/application/usecases/RecordQuizAnswer.mjs");
       RecordQuizAnswer = module.RecordQuizAnswer;
     });
 
@@ -456,7 +456,7 @@ describe('Quiz Use Cases', () => {
     let mockAdvanceToNextQuizQuestion;
 
     beforeEach(async () => {
-      const module = await import("../../../../../__app_modules/journalist/server/application/usecases/HandleQuizAnswer.mjs");
+      const module = await import("../../../../../__app_modules/personal/journalist/server/application/usecases/HandleQuizAnswer.mjs");
       HandleQuizAnswer = module.HandleQuizAnswer;
 
       mockRecordQuizAnswer = {
@@ -668,7 +668,7 @@ describe('Quiz Use Cases', () => {
     let mockInitiateJournalPrompt;
 
     beforeEach(async () => {
-      const module = await import("../../../../../__app_modules/journalist/server/application/usecases/AdvanceToNextQuizQuestion.mjs");
+      const module = await import("../../../../../__app_modules/personal/journalist/server/application/usecases/AdvanceToNextQuizQuestion.mjs");
       AdvanceToNextQuizQuestion = module.AdvanceToNextQuizQuestion;
 
       mockInitiateJournalPrompt = {

@@ -5,7 +5,7 @@
 import { createRoot } from 'react-dom/client';
 import ReadalongPlaylistPlayer from '../../../../__capabilities/playback/browser/player/ReadalongPlaylistPlayer.jsx';
 import '../../../../__capabilities/screen-host/browser/panels/PanelRenderer.css';
-import "../../../../__app_modules/school/browser/School.scss";
+import "../../../../__app_modules/learning/school/browser/School.scss";
 
 const parts = [
   { id: 'p1', title: 'Psalms 49', contentId: 'readalong:scripture/fixture-ps-49' },

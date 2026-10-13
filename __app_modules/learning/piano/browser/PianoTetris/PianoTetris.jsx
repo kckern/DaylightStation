@@ -1,0 +1,168 @@
+import { useMemo, useEffect } from 'react';
+import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
+import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
+import { useTetrisGame } from './useTetrisGame.js';
+import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
+import { TetrisBoard } from './components/TetrisBoard.jsx';
+import { ActionStaff } from '../components/ActionStaff.jsx';
+import { TetrisOverlay } from './components/TetrisOverlay.jsx';
+import { ACTIONS } from '../game-platform/families/bound-action/useStaffMatching.js';
+import { computeKeyboardRange } from '../noteUtils.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
+import './PianoTetris.scss';
+
+/**
+ * PianoTetris main layout — 6 ActionStaffs flanking the TetrisBoard,
+ * with PianoKeyboard at bottom. Score/Lines in left/right margins.
+ *
+ * @param {Object} props
+ * @param {Map<number, {velocity: number, timestamp: number}>} props.activeNotes
+ * @param {Object|null} props.gameConfig - from piano.yml { levels: [...], activation: {...} }
+ * @param {function} props.onDeactivate - Called when game should exit
+ */
+export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
+  const logger = useMemo(() => getChildLogger({ component: 'piano-tetris-layout' }), []);
+
+  const game = useTetrisGame(activeNotes, gameConfig);
+  usePianoRunSession({
+    gameId: 'tetris', phase: game.phase, initialPhase: 'IDLE', score: game.score,
+    metrics: { lines_cleared: game.linesCleared, level: game.level },
+    activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
+  });
+  useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
+  // A replay is a match boundary, so it goes through the host (D12) — this is
+  // the ONLY path back into a new run, and a gate that stood at entry but not
+  // here would be paid once and replayed past forever. `useAutoGameLifecycle`
+  // above keeps the raw `startGame`: that is the FIRST run after entering,
+  // which the gate has already been paid for.
+  const playAgain = useMatchRematch(game.startGame);
+  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: playAgain });
+
+  // Keyboard range follows the progression's active note range (widens when
+  // bass clef unlocks); falls back to the level's note_range, then C4–C5.
+  const levels = gameConfig?.levels ?? [];
+  const currentLevelConfig = levels[game.level] ?? levels[0];
+  const noteRange = game.activeNoteRange ?? currentLevelConfig?.note_range ?? [60, 72];
+  const rangeLow = noteRange[0];
+  const rangeHigh = noteRange[1];
+  const { startNote, endNote } = useMemo(
+    () => computeKeyboardRange([rangeLow, rangeHigh]),
+    [rangeLow, rangeHigh],
+  );
+
+  // Expose game state for automated testing (localhost only)
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return;
+    window.__TETRIS_DEBUG__ = {
+      phase: game.phase,
+      targets: game.targets,
+      board: game.board,
+      currentPiece: game.currentPiece,
+      ghostPiece: game.ghostPiece,
+      nextPiece: game.nextPiece,
+      heldPiece: game.heldPiece,
+      score: game.score,
+      linesCleared: game.linesCleared,
+      level: game.level,
+      countdown: game.countdown,
+      spawnCount: game.spawnCount,
+    };
+    return () => { delete window.__TETRIS_DEBUG__; };
+  });
+
+  // Build keyboardTargets set from all pitches across all 6 staves
+  const keyboardTargets = useMemo(() => {
+    if (!game.targets) return null;
+    const pitches = new Set();
+    for (const action of ACTIONS) {
+      const actionPitches = game.targets[action];
+      if (actionPitches) {
+        for (const p of actionPitches) pitches.add(p);
+      }
+    }
+    return pitches.size > 0 ? pitches : null;
+  }, [game.targets]);
+
+  return (
+    <PianoGameHost
+      gameId="tetris"
+      phase={game.phase}
+      phaseMapping={{ GAME_OVER: 'result', COMPLETE: 'result' }}
+      className="piano-tetris"
+      instrumentClassName="piano-tetris__keyboard"
+      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
+      overlay={<TetrisOverlay phase={game.phase} countdown={game.countdown} score={game.score} linesCleared={game.linesCleared} level={game.level + 1} />}
+    >
+      {/* Play area */}
+      <div className="piano-tetris__play-area">
+        {/* Left staves + score */}
+        <div className="piano-tetris__staves-left">
+          <div className="piano-tetris__stat piano-tetris__stat--score">
+            <span className="piano-tetris__stat-value">{game.score.toLocaleString()}</span>
+            <span className="piano-tetris__stat-label">SCORE</span>
+          </div>
+          <ActionStaff
+            action="moveLeft"
+            targetPitches={game.targets?.moveLeft ?? []}
+            matched={game.matchedActions?.has('moveLeft') ?? false}
+            activeNotes={activeNotes}
+          />
+          <ActionStaff
+            action="rotateCCW"
+            targetPitches={game.targets?.rotateCCW ?? []}
+            matched={game.matchedActions?.has('rotateCCW') ?? false}
+            activeNotes={activeNotes}
+          />
+          <ActionStaff
+            action="hold"
+            targetPitches={game.targets?.hold ?? []}
+            matched={game.matchedActions?.has('hold') ?? false}
+            disabled={game.holdUsed}
+            heldPiece={game.heldPiece}
+            activeNotes={activeNotes}
+          />
+        </div>
+
+        {/* Center board */}
+        <div className="piano-tetris__board-area">
+          <TetrisBoard
+            board={game.board}
+            currentPiece={game.currentPiece}
+            ghostPiece={game.ghostPiece}
+          />
+        </div>
+
+        {/* Right staves + lines */}
+        <div className="piano-tetris__staves-right">
+          <div className="piano-tetris__stat piano-tetris__stat--lines">
+            <span className="piano-tetris__stat-value">{game.linesCleared}</span>
+            <span className="piano-tetris__stat-label">LINES</span>
+          </div>
+          <ActionStaff
+            action="moveRight"
+            targetPitches={game.targets?.moveRight ?? []}
+            matched={game.matchedActions?.has('moveRight') ?? false}
+            activeNotes={activeNotes}
+          />
+          <ActionStaff
+            action="rotateCW"
+            targetPitches={game.targets?.rotateCW ?? []}
+            matched={game.matchedActions?.has('rotateCW') ?? false}
+            activeNotes={activeNotes}
+          />
+          <ActionStaff
+            action="hardDrop"
+            targetPitches={game.targets?.hardDrop ?? []}
+            matched={game.matchedActions?.has('hardDrop') ?? false}
+            activeNotes={activeNotes}
+          />
+        </div>
+      </div>
+
+    </PianoGameHost>
+  );
+}
+
+export default PianoTetris;

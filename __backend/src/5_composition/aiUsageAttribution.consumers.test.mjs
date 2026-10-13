@@ -19,16 +19,16 @@ import { createAiUsageLedger } from '#adapters/ai/AiUsageLedger.mjs';
 // test can call through the exact gateway a consumer was given.
 const captured = vi.hoisted(() => ({}));
 
-vi.mock("../../../__app_modules/finance/server/application/TransactionCategorizationService.mjs", () => ({
+vi.mock("../../../__app_modules/money/finance/server/application/TransactionCategorizationService.mjs", () => ({
   TransactionCategorizationService: class { constructor(deps) { captured.categorization = deps; } },
 }));
-vi.mock("../../../__app_modules/finance/server/adapters/persistence/YamlFinanceDatastore.mjs", () => ({
+vi.mock("../../../__app_modules/money/finance/server/adapters/persistence/YamlFinanceDatastore.mjs", () => ({
   YamlFinanceDatastore: class { getCategorizationConfig() { return { validTags: ['Groceries'] }; } },
 }));
-vi.mock("../../../__app_modules/homebot/server/application/usecases/ProcessGratitudeInput.mjs", () => ({
+vi.mock("../../../__app_modules/household/homebot/server/application/usecases/ProcessGratitudeInput.mjs", () => ({
   ProcessGratitudeInput: class { constructor(deps) { captured.gratitude = deps; } },
 }));
-vi.mock("../../../__app_modules/piano/server/adapters/game-platform/OpponentDialogueGenerator.mjs", () => ({
+vi.mock("../../../__app_modules/learning/piano/server/adapters/game-platform/OpponentDialogueGenerator.mjs", () => ({
   OpponentDialogueGenerator: class { constructor(deps) { captured.dialogue = deps; } },
 }));
 
@@ -94,7 +94,7 @@ describe('AI usage attribution — previously feature-less consumers', () => {
 
   it('piano-games opponent dialogue writes piano-games/opponent-dialogue', async () => {
     const { adapter, rows } = await harness();
-    const { createPianoGamesModule } = await import("../../../__app_modules/piano/server/composition/pianoGames.mjs");
+    const { createPianoGamesModule } = await import("../../../__app_modules/learning/piano/server/composition/pianoGames.mjs");
     const module = createPianoGamesModule({
       dataService: { user: { read: () => null, write: () => true }, household: { write: () => true } },
       configService: { getHouseholdAppConfig: () => ({}) },
@@ -111,8 +111,8 @@ describe('AI usage attribution — previously feature-less consumers', () => {
 
   it('journalist use cases each write journalist/<feature>, through the logging wrapper', async () => {
     const { adapter, rows } = await harness();
-    const { JournalistContainer } = await import("../../../__app_modules/journalist/server/application/JournalistContainer.mjs");
-    const { LoggingAIGateway } = await import("../../../__app_modules/journalist/server/adapters/LoggingAIGateway.mjs");
+    const { JournalistContainer } = await import("../../../__app_modules/personal/journalist/server/application/JournalistContainer.mjs");
+    const { LoggingAIGateway } = await import("../../../__app_modules/personal/journalist/server/adapters/LoggingAIGateway.mjs");
     const container = new JournalistContainer({ username: 'tester' }, {
       messagingGateway: { sendMessage: vi.fn(async () => ({ messageId: 'm1' })) },
       aiGateway: adapter.scoped({ app: 'journalist' }),

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LanguageAudioResource } from "../../../../__app_modules/school/server/application/LanguageAudioResource.mjs";
+import { LanguageAudioResource } from "../../../../__app_modules/learning/school/server/application/LanguageAudioResource.mjs";
 
 describe('LanguageAudioResource', () => {
   it('requires both application dependencies', () => {

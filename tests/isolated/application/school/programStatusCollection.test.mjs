@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { collectProgramStatuses } from "../../../../__app_modules/school/server/application/programStatusCollection.mjs";
+import { collectProgramStatuses } from "../../../../__app_modules/learning/school/server/application/programStatusCollection.mjs";
 
 describe('collectProgramStatuses', () => {
   it('reads and keys each program instance independently, deduplicating exact instances', async () => {

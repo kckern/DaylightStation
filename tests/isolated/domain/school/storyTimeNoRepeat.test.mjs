@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   recentlyRead, noRepeatWindowDays, validateStoryTimeEnrollment, DEFAULT_STORY_NO_REPEAT_DAYS,
-} from '../../../../__app_modules/school/server/domain/storyTime.mjs';
+} from '../../../../__app_modules/learning/school/server/domain/storyTime.mjs';
 
 const BOOK = 'plex:621568';
 const read = (studyDay, contentId = BOOK) => ({ studyDay, contentId });

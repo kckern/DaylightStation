@@ -5,9 +5,9 @@ import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createFitnessRouter } from "../../../../__app_modules/fitness/server/api/fitness.mjs";
+import { createFitnessRouter } from "../../../../__app_modules/wellness/fitness/server/api/fitness.mjs";
 import { writeBinary } from '../../../../__backend/src/0_system/utils/FileIO.mjs';
-import { SaveDebugVoiceMemo } from "../../../../__app_modules/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
+import { SaveDebugVoiceMemo } from "../../../../__app_modules/wellness/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";
 
 // NOTE: c2880857f "refactor(api/fitness): webhook policy + FS + household-id
 // out of router (audit API-3)" (2026-07-07) moved this route's filesystem

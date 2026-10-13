@@ -10,20 +10,20 @@
  * edge (filesystem, network, or messaging transport).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createNutribotServices } from '../../../__app_modules/nutribot/server/composition/runtime.mjs';
-import { createFeedRouter } from "../../../__app_modules/feed/server/api/feed.mjs";
-import { createArtRouter } from "../../../__app_modules/art/server/api/art.mjs";
+import { createNutribotServices } from '../../../__app_modules/wellness/nutribot/server/composition/runtime.mjs';
+import { createFeedRouter } from "../../../__app_modules/media/feed/server/api/feed.mjs";
+import { createArtRouter } from "../../../__app_modules/media/art/server/api/art.mjs";
 import { createStateGatesModule } from './modules/stateGates.mjs';
-import { createFitnessPlayableModule } from "../../../__app_modules/fitness/server/composition/fitnessApi.mjs";
+import { createFitnessPlayableModule } from "../../../__app_modules/wellness/fitness/server/composition/fitnessApi.mjs";
 import { createApplicationScheduledJobs } from './modules/applicationScheduledJobs.mjs';
-import { createSchoolApiServices } from "../../../__app_modules/school/server/composition/schoolApi.mjs";
-import { createLanguageStudyService } from "../../../__app_modules/school/server/composition/schoolLanguage.mjs";
-import { GratitudePrintPresentationService } from '../../../__app_modules/gratitude/server/application/services/GratitudePrintPresentationService.mjs';
-import { ProviderFitnessContentCatalog } from "../../../__app_modules/fitness/server/adapters/ProviderFitnessContentCatalog.mjs";
+import { createSchoolApiServices } from "../../../__app_modules/learning/school/server/composition/schoolApi.mjs";
+import { createLanguageStudyService } from "../../../__app_modules/learning/school/server/composition/schoolLanguage.mjs";
+import { GratitudePrintPresentationService } from '../../../__app_modules/personal/gratitude/server/application/services/GratitudePrintPresentationService.mjs';
+import { ProviderFitnessContentCatalog } from "../../../__app_modules/wellness/fitness/server/adapters/ProviderFitnessContentCatalog.mjs";
 import { INSTALLED_STATE_GATES_POLICY } from './modules/installedStateGatesPolicy.mjs';
 import { YamlStateGatesPolicySource } from "../../../__capabilities/state-gates/server/adapters/index.mjs";
 import { createLibbyRuntime } from "../../../__capabilities/content-catalog/server/composition/libby.mjs";
-import { createMediaHouseModule } from "../../../__app_modules/media/server/composition/mediaHouse.mjs";
+import { createMediaHouseModule } from "../../../__app_modules/media/media/server/composition/mediaHouse.mjs";
 import { runWithRequestContext } from '#system/runtime/requestContext.mjs';
 import { LibbyStreamGateway } from '#adapters/content/media/libby/LibbyStreamGateway.mjs';
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';

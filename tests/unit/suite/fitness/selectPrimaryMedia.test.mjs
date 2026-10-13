@@ -1,4 +1,4 @@
-import { selectPrimaryMedia } from "../../../../__app_modules/fitness/server/domain/services/selectPrimaryMedia.mjs";
+import { selectPrimaryMedia } from "../../../../__app_modules/wellness/fitness/server/domain/services/selectPrimaryMedia.mjs";
 
 // ─── Test data factories ───
 

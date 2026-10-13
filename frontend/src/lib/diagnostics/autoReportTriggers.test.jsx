@@ -15,8 +15,8 @@ vi.mock('./autoReport.js', () => ({ autoReport: vi.fn(() => Promise.resolve(null
 vi.mock('../../services/WebSocketService.js', () => ({ wsService: { send: vi.fn() } }));
 
 import { autoReport } from './autoReport.js';
-import PlayerBoundary from '../../../../__app_modules/piano/browser/PianoKiosk/modes/Videos/PlayerBoundary.jsx';
-import { useRenderWatchdog } from '../../../../__app_modules/piano/browser/PianoKiosk/useRenderWatchdog.js';
+import PlayerBoundary from '../../../../__app_modules/learning/piano/browser/PianoKiosk/modes/Videos/PlayerBoundary.jsx';
+import { useRenderWatchdog } from '../../../../__app_modules/learning/piano/browser/PianoKiosk/useRenderWatchdog.js';
 import { useSessionStatePublisher } from '../../../../__capabilities/screen-host/browser/publishers/useSessionStatePublisher.js';
 
 beforeEach(() => { autoReport.mockClear(); });

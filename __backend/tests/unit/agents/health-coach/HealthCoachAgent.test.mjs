@@ -2,7 +2,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { HealthCoachAgent } from "../../../../../__app_modules/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
+import { HealthCoachAgent } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
 import { WorkingMemoryState } from "../../../../../__capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 describe('HealthCoachAgent', () => {

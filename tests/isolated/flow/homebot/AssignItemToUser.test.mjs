@@ -58,7 +58,7 @@ describe('AssignItemToUser', () => {
       error: vi.fn()
     };
 
-    const { AssignItemToUser } = await import("../../../../__app_modules/homebot/server/application/usecases/AssignItemToUser.mjs");
+    const { AssignItemToUser } = await import("../../../../__app_modules/household/homebot/server/application/usecases/AssignItemToUser.mjs");
 
     useCase = new AssignItemToUser({
       messagingGateway: mockMessagingGateway,
@@ -71,7 +71,7 @@ describe('AssignItemToUser', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { AssignItemToUser } = await import("../../../../__app_modules/homebot/server/application/usecases/AssignItemToUser.mjs");
+      const { AssignItemToUser } = await import("../../../../__app_modules/household/homebot/server/application/usecases/AssignItemToUser.mjs");
 
       expect(() => new AssignItemToUser({
         conversationStateStore: mockStateStore,
@@ -81,7 +81,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { AssignItemToUser } = await import("../../../../__app_modules/homebot/server/application/usecases/AssignItemToUser.mjs");
+      const { AssignItemToUser } = await import("../../../../__app_modules/household/homebot/server/application/usecases/AssignItemToUser.mjs");
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
@@ -91,7 +91,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if addSelections is not provided', async () => {
-      const { AssignItemToUser } = await import("../../../../__app_modules/homebot/server/application/usecases/AssignItemToUser.mjs");
+      const { AssignItemToUser } = await import("../../../../__app_modules/household/homebot/server/application/usecases/AssignItemToUser.mjs");
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
@@ -101,7 +101,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if householdService is not provided', async () => {
-      const { AssignItemToUser } = await import("../../../../__app_modules/homebot/server/application/usecases/AssignItemToUser.mjs");
+      const { AssignItemToUser } = await import("../../../../__app_modules/household/homebot/server/application/usecases/AssignItemToUser.mjs");
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,

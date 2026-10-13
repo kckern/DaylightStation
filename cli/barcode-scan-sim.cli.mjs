@@ -76,7 +76,7 @@
  */
 import fs from 'node:fs';
 import os from 'node:os';
-import { createSchoolBarcodeWorkflows } from '../__app_modules/school/cli/barcode-workflows.mjs';
+import { createSchoolBarcodeWorkflows } from '../__app_modules/learning/school/cli/barcode-workflows.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

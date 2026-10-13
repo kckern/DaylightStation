@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FitnessSchoolAssessmentBridge } from "../../../../__app_modules/school/server/application/FitnessSchoolAssessmentBridge.mjs";
-import { EventBusSchoolRealtimeAdapter } from "../../../../__app_modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { FitnessSchoolAssessmentBridge } from "../../../../__app_modules/learning/school/server/application/FitnessSchoolAssessmentBridge.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../../__app_modules/learning/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
 import {
   FITNESS_SCHOOL_ACCEPTED_TOPIC,
   FITNESS_SCHOOL_ASSESSED_TOPIC,
-} from "../../../../__app_modules/fitness/server/adapters/eventbus/FitnessSchoolPublications.mjs";
-import { reduceSession } from "../../../../__app_modules/school/server/domain/sessions/sessionEvents.mjs";
+} from "../../../../__app_modules/wellness/fitness/server/adapters/eventbus/FitnessSchoolPublications.mjs";
+import { reduceSession } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const SID = 'ses_school_1';
 const activity = {

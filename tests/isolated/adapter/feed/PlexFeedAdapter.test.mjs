@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { PlexFeedAdapter } from "../../../../__app_modules/feed/server/adapters/sources/PlexFeedAdapter.mjs";
+import { PlexFeedAdapter } from "../../../../__app_modules/media/feed/server/adapters/sources/PlexFeedAdapter.mjs";
 import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 vi.mock('#system/utils/probeImageDimensions.mjs', () => ({

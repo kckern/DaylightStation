@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { AIConsoleService } from '#apps/ai/AIConsoleService.mjs';
 import { createAIRouter } from './ai.mjs';
-import { createEpaperApiRouter } from "../../../../../__app_modules/screens/server/composition/epaperApi.mjs";
+import { createEpaperApiRouter } from "../../../../../__app_modules/household/screens/server/composition/epaperApi.mjs";
 
 function mounted(path, router) {
   const app = express();

@@ -25,7 +25,7 @@ function repository(t) {
   return repo;
 }
 
-for (const root of ['__app_modules', '__capabilities']) {
+for (const root of ['__app_modules/personal', '__capabilities']) {
   const server = `${root}/gratitude/server`;
   test(`${root}: fs policy covers all six layers and keeps legal controls`, () => {
     for (const layer of ['domain', 'application', 'adapters', 'api', 'rendering', 'composition']) {
@@ -141,7 +141,7 @@ for (const root of ['__app_modules', '__capabilities']) {
     assert.equal(report.counts['apps-no-adapters'], 1);
     assert.equal(report.counts['domains-nondeterminism'], 1);
     assert.equal(report.counts['domains-no-ambient-clock'], 1);
-    assert.equal(report.counts['composition-no-direct-runtime-io'], root === '__app_modules' ? 2 : 1);
+    assert.equal(report.counts['composition-no-direct-runtime-io'], root.startsWith('__app_modules/') ? 2 : 1);
     assert.equal(report.counts['composition-no-global-fetch'], 1);
     assert.ok(report.findings.some((finding) => finding.file === file));
     execFileSync('git', ['add', '.'], { cwd: repo });
@@ -159,7 +159,7 @@ for (const root of ['__app_modules', '__capabilities']) {
     const stagedReport = JSON.parse(cli(repo, 'audit-layer-imports.mjs', '--staged', '--json').stdout);
     assert.equal(stagedReport.counts['apps-no-adapters'], 1);
     assert.equal(stagedReport.counts['domains-nondeterminism'], 1);
-    assert.equal(stagedReport.counts['composition-no-direct-runtime-io'], root === '__app_modules' ? 2 : 1);
+    assert.equal(stagedReport.counts['composition-no-direct-runtime-io'], root.startsWith('__app_modules/') ? 2 : 1);
     execFileSync('git', ['add', file, domain, composition, entry], { cwd: repo });
     for (const script of ['audit-layer-imports.mjs', 'audit-direct-fs-imports.mjs']) {
       const staged = cli(repo, script, '--staged');
@@ -177,16 +177,16 @@ test('legacy-only repositories tolerate absent destination roots', (t) => {
 });
 
 test('relative legacy sources cannot bypass layer rules by targeting a destination adapter', () => {
-  assert.ok(rules(scanAstViolations('__backend/src/3_applications/gratitude/UseCase.mjs', "import Store from '../../../../__app_modules/gratitude/server/adapters/Store.mjs';")).includes('apps-no-adapters'));
+  assert.ok(rules(scanAstViolations('__backend/src/3_applications/gratitude/UseCase.mjs', "import Store from '../../../../__app_modules/personal/gratitude/server/adapters/Store.mjs';")).includes('apps-no-adapters'));
 });
 
 test('declared server entry layers reject domain to application public', () => {
-  assert.ok(rules(scanAstViolations('__app_modules/school/server/domain/Item.mjs', "import { HouseholdUserProjection } from '../../../../__capabilities/household-identity/server/public.mjs';")).includes('domains-no-adapters'));
+  assert.ok(rules(scanAstViolations('__app_modules/learning/school/server/domain/Item.mjs', "import { HouseholdUserProjection } from '../../../../../__capabilities/household-identity/server/public.mjs';")).includes('domains-no-adapters'));
 });
 test('declared server entry layers reject rendering to composition public', () => {
-  assert.ok(rules(scanAstViolations('__app_modules/school/server/rendering/Card.mjs', "import { createPianoModule } from '../../../../__app_modules/piano/server/composition.mjs';")).includes('rendering-no-adapters-apps'));
+  assert.ok(rules(scanAstViolations('__app_modules/learning/school/server/rendering/Card.mjs', "import { createPianoModule } from '../../../../__app_modules/learning/piano/server/composition.mjs';")).includes('rendering-no-adapters-apps'));
 });
 test('declared server entry layers apply source rules to the public files', () => {
-  assert.ok(rules(scanAstViolations('__app_modules/gratitude/server/public.mjs', "import { spawn } from 'node:child_process';")).includes('composition-no-direct-runtime-io'));
+  assert.ok(rules(scanAstViolations('__app_modules/personal/gratitude/server/public.mjs', "import { spawn } from 'node:child_process';")).includes('composition-no-direct-runtime-io'));
   assert.ok(rules(scanAstViolations('__capabilities/household-identity/server/public.mjs', "import fs from 'node:fs';")).includes('apps-no-fs'));
 });

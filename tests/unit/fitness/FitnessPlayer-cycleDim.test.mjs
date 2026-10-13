@@ -26,7 +26,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let computeCycleDimStyle;
 
 beforeAll(async () => {
-  const mod = await import("../../../__app_modules/fitness/browser/player/cycleDimStyle.js");
+  const mod = await import("../../../__app_modules/wellness/fitness/browser/player/cycleDimStyle.js");
   computeCycleDimStyle = mod.computeCycleDimStyle;
 });
 

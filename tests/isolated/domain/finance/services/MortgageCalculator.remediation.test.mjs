@@ -1,4 +1,4 @@
-import { MortgageCalculator } from "../../../../../__app_modules/finance/server/domain/services/MortgageCalculator.mjs";
+import { MortgageCalculator } from "../../../../../__app_modules/money/finance/server/domain/services/MortgageCalculator.mjs";
 
 describe('MortgageCalculator remediation', () => {
   let calculator;

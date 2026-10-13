@@ -22,7 +22,7 @@ import { VoiceTranscriptionService } from './VoiceTranscriptionService.mjs';
 import {
   fitnessTranscriptionProfile,
   buildTranscriptionContext
-} from "../../../../__app_modules/fitness/server/adapters/ai/transcriptionProfiles/fitness.mjs";
+} from "../../../../__app_modules/wellness/fitness/server/adapters/ai/transcriptionProfiles/fitness.mjs";
 
 /** The fitness path exactly as the composition root now builds it. */
 function makeService(config) {

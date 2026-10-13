@@ -54,7 +54,7 @@ describe('FitnessSession.ensureStarted()', () => {
   let FitnessSession;
 
   beforeAll(async () => {
-    const module = await import("../../../../../__app_modules/fitness/browser/hooks/fitness/FitnessSession.js");
+    const module = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js");
     FitnessSession = module.FitnessSession;
   });
 
@@ -161,7 +161,7 @@ describe('FitnessSession.updateSnapshot()', () => {
   let FitnessSession;
 
   beforeAll(async () => {
-    const module = await import("../../../../../__app_modules/fitness/browser/hooks/fitness/FitnessSession.js");
+    const module = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js");
     FitnessSession = module.FitnessSession;
   });
 

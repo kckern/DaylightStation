@@ -5,18 +5,18 @@ frontend/node_modules
 frontend/dist
 frontend/build
 __backend/node_modules
-/__app_modules/*/server/node_modules
-/__app_modules/*/browser/node_modules
+/__app_modules/*/*/server/node_modules
+/__app_modules/*/*/browser/node_modules
 /__capabilities/*/server/node_modules
 /__capabilities/*/browser/node_modules
 *.yml
 # SchoolCalc GUI source assets are required to reproduce its native build.
-!/__app_modules/school/satellites/ti86-app/gui/icons.yml
-!/__app_modules/school/satellites/ti86-app/gui/design-system.yml
-!/__app_modules/school/satellites/ti86-app/gui/screens.yml
-!/__app_modules/school/satellites/ti86-app/gui/type.yml
-!/__app_modules/school/satellites/ticalc-relay/config.example.yml
-!/__app_modules/school/seeds/**/*.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/icons.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/design-system.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/screens.yml
+!/__app_modules/learning/school/satellites/ti86-app/gui/type.yml
+!/__app_modules/learning/school/satellites/ticalc-relay/config.example.yml
+!/__app_modules/learning/school/seeds/**/*.yml
 !__docs/configuration/*.example.yml
 !docker/docker-compose.test.yml
 /shared/gaming/fixtures/
@@ -219,9 +219,9 @@ __docs/_moveme/
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at
 # build time — neither belongs in a public repo.
 _extensions/ti86-app/dist/
-__app_modules/*/satellites/**/dist/
-__app_modules/*/satellites/**/build/
-__app_modules/*/satellites/**/node_modules/
+__app_modules/*/*/satellites/**/dist/
+__app_modules/*/*/satellites/**/build/
+__app_modules/*/*/satellites/**/node_modules/
 **/.pio/
 **/.gradle/
 **/.cxx/
@@ -281,3 +281,19 @@ __docs/_wip/audits/**/*.json
 /swap-test.mjs
 
 !scripts/audit-owner-boundaries.mjs
+
+# Authored application fixtures, examples, and helper scripts.
+!/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/
+!/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/componentDefs.js
+!/__app_modules/wellness/fitness/cli/scripts/organize-fitness-pdfs.sh
+!/__app_modules/wellness/fitness/server/adapters/courses/mountain-pass.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260627195941.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260923183528.yml
+!/__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seed.yml
+!/__app_modules/media/media/cli/brain/media-scenarios.example.yml
+!/__app_modules/learning/piano/satellites/piano/recorder/config.example.yml
+!/__app_modules/learning/piano/satellites/piano/recorder/run.sh
+!/__app_modules/learning/school/satellites/ti86-app/testing/adaptive-journey.yml
+!/__app_modules/learning/school/satellites/ti86-app/testing/mame-scenarios.yml
+!/__app_modules/learning/school/satellites/ti86-app/testing/state-capitals.yml
+!/__app_modules/learning/school/satellites/ticalc-relay/tools/build-ti86-graph-link.sh

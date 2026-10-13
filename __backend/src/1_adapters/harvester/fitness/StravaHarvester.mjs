@@ -21,7 +21,7 @@ import { IHarvester, HarvesterCategory } from '#apps/harvester/ports/IHarvester.
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
-import { evaluateActivitySessionMatch, DEFAULT_MATCH_POLICY } from "../../../../../__app_modules/fitness/server/domain-services-activity-session-match.mjs";
+import { evaluateActivitySessionMatch, DEFAULT_MATCH_POLICY } from "../../../../../__app_modules/wellness/fitness/server/domain-services-activity-session-match.mjs";
 
 function hydrateStoredTimeline(data) {
   if (!data?.timeline?.series) return data;

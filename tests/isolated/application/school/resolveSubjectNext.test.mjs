@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ResolveSubjectNext } from "../../../../__app_modules/school/server/application/usecases/ResolveSubjectNext.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
+import { ResolveSubjectNext } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveSubjectNext.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore,
   fakeClock, sequentialIds, silentLogger,

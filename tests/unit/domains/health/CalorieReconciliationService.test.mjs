@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CalorieReconciliationService } from "../../../../__app_modules/health/server/domain/health/services/CalorieReconciliationService.mjs";
+import { CalorieReconciliationService } from "../../../../__app_modules/wellness/health/server/domain/health/services/CalorieReconciliationService.mjs";
 
 describe('CalorieReconciliationService', () => {
   describe('computeSeedBmr', () => {

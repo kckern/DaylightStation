@@ -2,8 +2,8 @@ import { Readable } from 'node:stream';
 import express from 'express';
 import request from 'supertest';
 import { vi } from 'vitest';
-import { createLocalRouter } from "../../../../__app_modules/media/server/api/local.mjs";
-import { createStreamRouter } from "../../../../__app_modules/media/server/api/stream.mjs";
+import { createLocalRouter } from "../../../../__app_modules/media/media/server/api/local.mjs";
+import { createStreamRouter } from "../../../../__app_modules/media/media/server/api/stream.mjs";
 
 function opaqueResource(content = '0123456789', mimeType = 'audio/mpeg') {
   const bytes = Buffer.from(content);

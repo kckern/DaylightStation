@@ -1,4 +1,4 @@
-import { TransactionClassifier } from "../../../../../__app_modules/finance/server/domain/services/TransactionClassifier.mjs";
+import { TransactionClassifier } from "../../../../../__app_modules/money/finance/server/domain/services/TransactionClassifier.mjs";
 
 describe('TransactionClassifier remediation', () => {
   test('labels a monthly transaction by its matching tag even when not the first tag', () => {

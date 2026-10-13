@@ -1,6 +1,6 @@
 // tests/isolated/contract/canvas/ports/ICanvasScheduler.test.mjs
 import { describe, it, expect } from 'vitest';
-import { validateScheduler } from "../../../../../__app_modules/art/server/application/canvas/ports/ICanvasScheduler.mjs";
+import { validateScheduler } from "../../../../../__app_modules/media/art/server/application/canvas/ports/ICanvasScheduler.mjs";
 
 describe('ICanvasScheduler contract', () => {
   it('validates compliant implementation', () => {

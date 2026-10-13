@@ -12,8 +12,8 @@
  *      correctly — never on one right answer out of three.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RecordCheckpointAnswer } from "../../../../__app_modules/school/server/application/usecases/RecordCheckpointAnswer.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
+import { RecordCheckpointAnswer } from "../../../../__app_modules/learning/school/server/application/usecases/RecordCheckpointAnswer.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import { FakeCatalog, FakeSessionRepository, fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, MEDIA_BANK_ID, fixtureBank,

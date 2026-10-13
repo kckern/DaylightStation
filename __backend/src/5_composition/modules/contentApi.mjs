@@ -1,10 +1,10 @@
 import { createCatalogProxyServices } from "../../../../__capabilities/content-catalog/server/composition/proxy-services.mjs";
 import { createContentQueryRouter } from '../../../../__capabilities/content-catalog/server/composition/api-context.mjs';
 import { createPlaybackQueueRouter } from '../../../../__capabilities/playback/server/composition/content-api.mjs';
-import { createLocalMediaRouter } from '../../../../__app_modules/media/server/composition/content-api.mjs';
+import { createLocalMediaRouter } from '../../../../__app_modules/media/media/server/composition/content-api.mjs';
 import { createContentQueryContext, createContentBrowseOperations, createLegacyContentOperations } from '../../../../__capabilities/content-catalog/server/composition/api-context.mjs';
 import { createPlaybackSurroundContext, createPlaybackProgressOperations, createPlaybackReadOperations } from '../../../../__capabilities/playback/server/composition/content-api.mjs';
-import { createMediaResourceOperations, createMediaBrowseState } from '../../../../__app_modules/media/server/composition/content-api.mjs';
+import { createMediaResourceOperations, createMediaBrowseState } from '../../../../__app_modules/media/media/server/composition/content-api.mjs';
 // __backend/src/5_composition/modules/contentApi.mjs
 // Composition wiring for  API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
@@ -16,17 +16,17 @@ import { createProxyPassthroughHandlers, createProxyRouter } from "#api/v1/route
 import { createQueriesRouter } from "../../../../__capabilities/content-catalog/server/api/queries.mjs";
 
 import { createSiblingsRouter } from "../../../../__capabilities/content-catalog/server/api/siblings.mjs";
-import { createStreamRouter } from "../../../../__app_modules/media/server/api/stream.mjs";
+import { createStreamRouter } from "../../../../__app_modules/media/media/server/api/stream.mjs";
 
 import { ContentAlternatesService } from "../../../../__capabilities/content-catalog/server/application/ContentAlternatesService.mjs";
 
 import { checkSchedule } from "../../../../__capabilities/device-dispatch/server/application/scheduleCheck.mjs";
 
-import { YamlUserVideoProgressStore as UserVideoProgressStore } from "../../../../__app_modules/piano/server/adapters/YamlUserVideoProgressStore.mjs";
+import { YamlUserVideoProgressStore as UserVideoProgressStore } from "../../../../__app_modules/learning/piano/server/adapters/YamlUserVideoProgressStore.mjs";
 
-import { validateSearchQuery } from "../../../../__app_modules/media/server/domain/validateMediaSearchQuery.mjs";
+import { validateSearchQuery } from "../../../../__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs";
 
-import { ContentAccessPolicyService } from "../../../../__app_modules/arcade/server/application/ContentAccessPolicyService.mjs";
+import { ContentAccessPolicyService } from "../../../../__app_modules/games/arcade/server/application/ContentAccessPolicyService.mjs";
 
 
 

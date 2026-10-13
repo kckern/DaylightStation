@@ -19,7 +19,7 @@
  * in the block stream.
  */
 import { describe, it, expect } from 'vitest';
-import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
+import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
 
 const TOKEN_A = 'sch:2K7QVM4X9HRJTBNP';
 const TOKEN_B = 'sch:9ZZZVM4X9HRJTBQQ';
@@ -132,7 +132,7 @@ describe('the renderers put it under the QR and nowhere else', () => {
   });
 
   it('the canvas renderer draws the code inside its own action, not as a page-level block', async () => {
-    const { createDocumentReceiptRenderer } = await import("../../../../__app_modules/school/server/rendering/documents/DocumentReceiptRenderer.mjs");
+    const { createDocumentReceiptRenderer } = await import("../../../../__app_modules/learning/school/server/rendering/documents/DocumentReceiptRenderer.mjs");
     const renderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
     // `codes` is the renderer's own report of what it drew beneath each code
     // area — one entry per action, carrying that action's own lines.

@@ -1,5 +1,5 @@
-import { FilesystemArtScreenPresetRepository } from '../../../__app_modules/art/server/adapters/FilesystemArtScreenPresetRepository.mjs';
-import { createArtScreenPresetEnricher } from '../../../__app_modules/art/server/application/screenPresetEnricher.mjs';
+import { FilesystemArtScreenPresetRepository } from '../../../__app_modules/media/art/server/adapters/FilesystemArtScreenPresetRepository.mjs';
+import { createArtScreenPresetEnricher } from '../../../__app_modules/media/art/server/application/screenPresetEnricher.mjs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';

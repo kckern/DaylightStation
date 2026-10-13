@@ -280,7 +280,7 @@ useDocumentTitle('Invite');
 
 - [ ] **Step 3: `screen-framework/ScreenRenderer.jsx` — title `Screen`**
 
-Add this import near the top of the file (other local imports use `'../lib/...'` and `'./...'`):
+Add this import near the top of the file (other local imports use `'../lib/...'` and `'...'`):
 
 ```jsx
 import useDocumentTitle from '../hooks/useDocumentTitle.js';

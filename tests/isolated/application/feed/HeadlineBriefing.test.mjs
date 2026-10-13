@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import stringSimilarity from 'string-similarity';
-import { HeadlineService } from "../../../../__app_modules/feed/server/application/services/HeadlineService.mjs";
-import { DataServiceFeedConfigRepository } from "../../../../__app_modules/feed/server/adapters/DataServiceFeedConfigRepository.mjs";
-import { HeadlineStoryJudge } from "../../../../__app_modules/feed/server/application/services/HeadlineStoryJudge.mjs";
+import { HeadlineService } from "../../../../__app_modules/media/feed/server/application/services/HeadlineService.mjs";
+import { DataServiceFeedConfigRepository } from "../../../../__app_modules/media/feed/server/adapters/DataServiceFeedConfigRepository.mjs";
+import { HeadlineStoryJudge } from "../../../../__app_modules/media/feed/server/application/services/HeadlineStoryJudge.mjs";
 
 describe('HeadlineService briefing', () => {
   test('clusters similar coverage and reports invalid zero-based placements', async () => {

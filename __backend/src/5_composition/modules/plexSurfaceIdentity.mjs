@@ -32,7 +32,7 @@
  * (2026-09-16). Every identifier here is stable and bounded.
  */
 
-import { PlexClientIdentity } from "../../../../__app_modules/media/server/domain/value-objects/PlexClientIdentity.mjs";
+import { PlexClientIdentity } from "../../../../__app_modules/media/media/server/domain/value-objects/PlexClientIdentity.mjs";
 
 /** Shared identity for callers that carry no stable per-browser token. */
 export const WEB_CLIENT_IDENTIFIER = 'daylight-web';

@@ -6,10 +6,10 @@ import {
   createSchoolCalc,
   createSchoolCalcIngressAuthenticator,
   schoolCalcConfigurationView,
-} from "../../../__app_modules/school/server/composition/schoolCalc.mjs";
-import { createSchoolCatalog } from "../../../__app_modules/school/server/composition/schoolCatalog.mjs";
-import { decodeTi86Envelope, decodeTi86LearnerRoster } from "../../../__app_modules/school/server/adapters/schoolcalc/ti86/index.mjs";
-import { SchoolCalcRelayCredentialVerifier } from "../../../__app_modules/school/server/adapters/schoolcalc/SchoolCalcRelayCredentialVerifier.mjs";
+} from "../../../__app_modules/learning/school/server/composition/schoolCalc.mjs";
+import { createSchoolCatalog } from "../../../__app_modules/learning/school/server/composition/schoolCatalog.mjs";
+import { decodeTi86Envelope, decodeTi86LearnerRoster } from "../../../__app_modules/learning/school/server/adapters/schoolcalc/ti86/index.mjs";
+import { SchoolCalcRelayCredentialVerifier } from "../../../__app_modules/learning/school/server/adapters/schoolcalc/SchoolCalcRelayCredentialVerifier.mjs";
 
 const TOKEN_A = 'a'.repeat(32);
 const TOKEN_B = 'b'.repeat(32);

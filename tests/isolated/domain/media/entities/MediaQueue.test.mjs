@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { MediaQueue, ADDED_FROM } from "../../../../../__app_modules/media/server/domain/entities/MediaQueue.mjs";
-import { QueueFullError } from "../../../../../__app_modules/media/server/domain/errors.mjs";
+import { MediaQueue, ADDED_FROM } from "../../../../../__app_modules/media/media/server/domain/entities/MediaQueue.mjs";
+import { QueueFullError } from "../../../../../__app_modules/media/media/server/domain/errors.mjs";
 
 describe('MediaQueue', () => {
   let queue;

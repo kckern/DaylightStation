@@ -1,7 +1,7 @@
 // tests/unit/applications/journalist/JournalistContainer.test.mjs
 import { describe, it, expect, beforeEach } from 'vitest';
 import { vi } from 'vitest';
-import { JournalistContainer } from "../../../../__app_modules/journalist/server/application/JournalistContainer.mjs";
+import { JournalistContainer } from "../../../../__app_modules/personal/journalist/server/application/JournalistContainer.mjs";
 
 describe('JournalistContainer', () => {
   let mockMessagingGateway;

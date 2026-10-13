@@ -4,8 +4,8 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { YamlRoutineHistoryDatastore } from "../../../../__app_modules/media/server/adapters/persistence/YamlRoutineHistoryDatastore.mjs";
-import { YamlRoutineSnapshotDatastore } from "../../../../__app_modules/media/server/adapters/persistence/YamlRoutineSnapshotDatastore.mjs";
+import { YamlRoutineHistoryDatastore } from "../../../../__app_modules/media/media/server/adapters/persistence/YamlRoutineHistoryDatastore.mjs";
+import { YamlRoutineSnapshotDatastore } from "../../../../__app_modules/media/media/server/adapters/persistence/YamlRoutineSnapshotDatastore.mjs";
 
 describe('routine YAML stores', () => {
   let dir;

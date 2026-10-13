@@ -39,7 +39,7 @@ describe('ToggleCategory', () => {
       error: vi.fn()
     };
 
-    const { ToggleCategory } = await import("../../../../__app_modules/homebot/server/application/usecases/ToggleCategory.mjs");
+    const { ToggleCategory } = await import("../../../../__app_modules/household/homebot/server/application/usecases/ToggleCategory.mjs");
 
     useCase = new ToggleCategory({
       messagingGateway: mockMessagingGateway,
@@ -51,7 +51,7 @@ describe('ToggleCategory', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { ToggleCategory } = await import("../../../../__app_modules/homebot/server/application/usecases/ToggleCategory.mjs");
+      const { ToggleCategory } = await import("../../../../__app_modules/household/homebot/server/application/usecases/ToggleCategory.mjs");
 
       expect(() => new ToggleCategory({
         conversationStateStore: mockStateStore
@@ -59,7 +59,7 @@ describe('ToggleCategory', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { ToggleCategory } = await import("../../../../__app_modules/homebot/server/application/usecases/ToggleCategory.mjs");
+      const { ToggleCategory } = await import("../../../../__app_modules/household/homebot/server/application/usecases/ToggleCategory.mjs");
 
       expect(() => new ToggleCategory({
         messagingGateway: mockMessagingGateway

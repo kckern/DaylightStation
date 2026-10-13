@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CadenceService } from "../../../../__app_modules/life/server/domain/services/CadenceService.mjs";
+import { CadenceService } from "../../../../__app_modules/personal/life/server/domain/services/CadenceService.mjs";
 
 const TZ = 'America/Los_Angeles';
 

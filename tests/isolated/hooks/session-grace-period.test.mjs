@@ -9,7 +9,7 @@
  * - ActivityMonitor removeThresholdTicks derived correctly (360 ticks)
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getFitnessTimeouts } from "../../../__app_modules/fitness/browser/hooks/fitness/FitnessSession.js";
+import { getFitnessTimeouts } from "../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js";
 
 describe('Fitness session — 30-minute grace period', () => {
   it('has a 30-minute default remove timeout', () => {

@@ -15,10 +15,10 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { ReadingSessionService as ProductionReadingSessionService } from "../../../../__app_modules/school/server/application/ReadingSessionService.mjs";
-import { RecordStoryRead } from "../../../../__app_modules/school/server/application/usecases/RecordStoryRead.mjs";
-import { ReadingApiService } from "../../../../__app_modules/school/server/application/ReadingApiService.mjs";
-import { createReadingRouter } from "../../../../__app_modules/school/server/api/reading.mjs";
+import { ReadingSessionService as ProductionReadingSessionService } from "../../../../__app_modules/learning/school/server/application/ReadingSessionService.mjs";
+import { RecordStoryRead } from "../../../../__app_modules/learning/school/server/application/usecases/RecordStoryRead.mjs";
+import { ReadingApiService } from "../../../../__app_modules/learning/school/server/application/ReadingApiService.mjs";
+import { createReadingRouter } from "../../../../__app_modules/learning/school/server/api/reading.mjs";
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 const TEST_SCHEDULER = { withDeadline: (work) => work, every: () => () => {}, wait: async () => {} };

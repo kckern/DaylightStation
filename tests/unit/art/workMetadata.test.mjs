@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import yaml from 'js-yaml';
 import { isValidAnchor, mergeWorkMetadata, filterWorks }
-  from "../../../__app_modules/art/server/adapters/workMetadata.mjs";
+  from "../../../__app_modules/media/art/server/adapters/workMetadata.mjs";
 
 describe('isValidAnchor', () => {
   it('accepts keyword anchors (1-2 tokens) and percents', () => {

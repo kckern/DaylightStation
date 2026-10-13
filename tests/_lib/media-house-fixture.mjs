@@ -19,16 +19,16 @@
  * without one (unit tests) they fall back to an empty ledger.
  */
 import express from 'express';
-import { createMediaHouseRouter } from "../../__app_modules/media/server/api/mediaHouse.mjs";
-import { ScreenRegistryService } from "../../__app_modules/media/server/application/ScreenRegistryService.mjs";
-import { ScreenSignalsReader } from "../../__app_modules/media/server/application/ScreenSignalsReader.mjs";
-import { RoutineCatalogService } from "../../__app_modules/media/server/application/RoutineCatalogService.mjs";
-import { RoutineHistoryService } from "../../__app_modules/media/server/application/RoutineHistoryService.mjs";
-import { RoutineLoadRecorder } from "../../__app_modules/media/server/application/RoutineLoadRecorder.mjs";
-import { LoadOriginHints } from "../../__app_modules/media/server/application/LoadOriginHints.mjs";
+import { createMediaHouseRouter } from "../../__app_modules/media/media/server/api/mediaHouse.mjs";
+import { ScreenRegistryService } from "../../__app_modules/media/media/server/application/ScreenRegistryService.mjs";
+import { ScreenSignalsReader } from "../../__app_modules/media/media/server/application/ScreenSignalsReader.mjs";
+import { RoutineCatalogService } from "../../__app_modules/media/media/server/application/RoutineCatalogService.mjs";
+import { RoutineHistoryService } from "../../__app_modules/media/media/server/application/RoutineHistoryService.mjs";
+import { RoutineLoadRecorder } from "../../__app_modules/media/media/server/application/RoutineLoadRecorder.mjs";
+import { LoadOriginHints } from "../../__app_modules/media/media/server/application/LoadOriginHints.mjs";
 import { RoutineTriggerDedupeService } from '../../__backend/src/3_applications/devices/services/RoutineTriggerDedupeService.mjs';
-import { ScreenPlaybackService } from "../../__app_modules/media/server/application/ScreenPlaybackService.mjs";
-import { buildRoutineRun } from "../../__app_modules/media/server/domain/routineHistory.mjs";
+import { ScreenPlaybackService } from "../../__app_modules/media/media/server/application/ScreenPlaybackService.mjs";
+import { buildRoutineRun } from "../../__app_modules/media/media/server/domain/routineHistory.mjs";
 import { currentRequestContext } from '../../__backend/src/0_system/runtime/requestContext.mjs';
 import { withRequestContext } from '../../__backend/src/0_system/http/middleware/requestContext.mjs';
 

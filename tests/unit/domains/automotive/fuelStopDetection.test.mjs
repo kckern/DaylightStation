@@ -12,7 +12,7 @@
 // entirely because nothing had been named yet.
 
 import { describe, it, expect } from 'vitest';
-import { detectFillUps, unloggedFillUps } from "../../../../__app_modules/auto/server/domain/services/FuelStopDetectionService.mjs";
+import { detectFillUps, unloggedFillUps } from "../../../../__app_modules/household/auto/server/domain/services/FuelStopDetectionService.mjs";
 
 const at = (iso) => new Date(iso);
 const reading = (pct, iso, tripId) => ({ pct, at: at(iso), tripId });

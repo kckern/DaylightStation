@@ -1,6 +1,6 @@
 // tests/isolated/adapter/pianoaudio/PianoMp3Harvester.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { PianoMp3Harvester } from "../../../../__app_modules/piano/server/adapters/pianoaudio/PianoMp3Harvester.mjs";
+import { PianoMp3Harvester } from "../../../../__app_modules/learning/piano/server/adapters/pianoaudio/PianoMp3Harvester.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 

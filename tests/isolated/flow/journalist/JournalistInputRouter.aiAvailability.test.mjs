@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JournalistInputRouter } from "../../../../__app_modules/journalist/server/application/services/JournalistInputRouter.mjs";
+import { JournalistInputRouter } from "../../../../__app_modules/personal/journalist/server/application/services/JournalistInputRouter.mjs";
 
 function unavailableRouter() {
   const useCases = {

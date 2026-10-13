@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from '../../../_lib/memory-http/request.mjs';
-import { createDoNowRouter } from "../../../../__app_modules/donow/server/api/donow.mjs";
+import { createDoNowRouter } from "../../../../__app_modules/household/donow/server/api/donow.mjs";
 import { createApiRouter } from '../../../../__backend/src/4_api/v1/routers/api.mjs';
 import { authenticate } from "../../../../__capabilities/device-dispatch/server/application/guards/authenticate.mjs";
 

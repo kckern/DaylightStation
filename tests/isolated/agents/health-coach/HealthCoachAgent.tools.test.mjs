@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { HealthCoachAgent } from "../../../../__app_modules/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
+import { HealthCoachAgent } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/HealthCoachAgent.mjs";
 
 // ---------------------------------------------------------------------------
 // Test doubles

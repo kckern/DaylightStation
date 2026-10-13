@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RenphoJumpropeDecoder } from "../../../../../__app_modules/fitness/satellites/fitness-controller/src/decoders/jumprope.mjs";
+import { RenphoJumpropeDecoder } from "../../../../../__app_modules/wellness/fitness/satellites/fitness-controller/src/decoders/jumprope.mjs";
 
 describe('RenphoJumpropeDecoder', () => {
   let decoder;

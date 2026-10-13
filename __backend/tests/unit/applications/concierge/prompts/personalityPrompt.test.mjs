@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { personalityPrompt } from "../../../../../../__app_modules/concierge/server/application/prompts/system.mjs";
+import { personalityPrompt } from "../../../../../../__app_modules/household/concierge/server/application/prompts/system.mjs";
 
 describe('personalityPrompt', () => {
   it('returns empty string when input is null', () => {

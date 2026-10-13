@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { Jimp } from 'jimp';
-import { createArtAdapter } from "../../../__app_modules/art/server/adapters/ArtAdapter.mjs";
+import { createArtAdapter } from "../../../__app_modules/media/art/server/adapters/ArtAdapter.mjs";
 
 const solid = (w, h, hex) => new Jimp({ width: w, height: h, color: hex });
 

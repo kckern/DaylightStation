@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateWork } from "../../../../../__app_modules/school/server/domain/curriculum/workValidation.mjs";
+import { validateWork } from "../../../../../__app_modules/learning/school/server/domain/curriculum/workValidation.mjs";
 
 describe('dated_modules progression', () => {
   // Come Follow Me: the calendar, not the learner, decides which week is open.

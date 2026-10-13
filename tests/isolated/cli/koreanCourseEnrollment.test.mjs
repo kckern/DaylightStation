@@ -6,10 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
-import { assembleKoreanCourse } from "../../../__app_modules/school/cli/lib/korean-course.mjs";
-import { preserveExistingEnrollments } from "../../../__app_modules/school/cli/lib/preserve-existing-enrollments.mjs";
-import { createSchoolProgramEnrollmentValidators } from "../../../__app_modules/school/server/application/SchoolProgramEnrollmentValidators.mjs";
-import { SetAssignments } from "../../../__app_modules/school/server/application/usecases/SetAssignments.mjs";
+import { assembleKoreanCourse } from "../../../__app_modules/learning/school/cli/lib/korean-course.mjs";
+import { preserveExistingEnrollments } from "../../../__app_modules/learning/school/cli/lib/preserve-existing-enrollments.mjs";
+import { createSchoolProgramEnrollmentValidators } from "../../../__app_modules/learning/school/server/application/SchoolProgramEnrollmentValidators.mjs";
+import { SetAssignments } from "../../../__app_modules/learning/school/server/application/usecases/SetAssignments.mjs";
 
 it('adds Korean lessons while preserving unrelated decks, linked courses and service-backed programs', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'korean-enrollment-'));

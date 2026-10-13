@@ -1,4 +1,4 @@
-import { SemanticMoveDetector } from "../../../../__app_modules/fitness/browser/domain/pose/SemanticMoveDetector.js";
+import { SemanticMoveDetector } from "../../../../__app_modules/wellness/fitness/browser/domain/pose/SemanticMoveDetector.js";
 
 const SQUAT_PATTERN = {
   id: 'squat',

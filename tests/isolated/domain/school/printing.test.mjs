@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from "../../../../__app_modules/school/server/domain/printing.mjs";
+import { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from "../../../../__app_modules/learning/school/server/domain/printing.mjs";
 
 const T0 = Date.UTC(2026, 6, 22, 15, 0, 0); // fixed "now"
 const job = (minutesAgo, pages) => ({ at: new Date(T0 - minutesAgo * 60000).toISOString(), pages });

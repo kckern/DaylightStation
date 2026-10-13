@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { DependencyResolver } from "../../../../__app_modules/life/server/domain/services/DependencyResolver.mjs";
-import { Goal } from "../../../../__app_modules/life/server/domain/entities/Goal.mjs";
-import { Dependency } from "../../../../__app_modules/life/server/domain/entities/Dependency.mjs";
-import { LifeEvent } from "../../../../__app_modules/life/server/domain/entities/LifeEvent.mjs";
+import { DependencyResolver } from "../../../../__app_modules/personal/life/server/domain/services/DependencyResolver.mjs";
+import { Goal } from "../../../../__app_modules/personal/life/server/domain/entities/Goal.mjs";
+import { Dependency } from "../../../../__app_modules/personal/life/server/domain/entities/Dependency.mjs";
+import { LifeEvent } from "../../../../__app_modules/personal/life/server/domain/entities/LifeEvent.mjs";
 
 describe('DependencyResolver', () => {
   const resolver = new DependencyResolver();

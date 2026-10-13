@@ -189,7 +189,7 @@ const payOncScenario = () => onTheConsole(async (h) => {
 
 /** codeMap.test: the printed QR is a real symbol, not a reserved box. */
 const printedQrScenario = async () => {
-  const { createDocumentPdfRenderer } = await import("../../../../__app_modules/school/server/rendering/documents/DocumentPdfRenderer.mjs");
+  const { createDocumentPdfRenderer } = await import("../../../../__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs");
   const document = {
     id: 'code-doc',
     seed: 1,
@@ -208,7 +208,7 @@ const printedQrScenario = async () => {
 
 /** golden.test: every bubble coordinate is pinned exactly, no tolerance. */
 const bubbleGeometryScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const testCase = golden.GOLDEN_CASES.find((c) => c.formMapSnapshot);
   expect(testCase, 'no golden case pins a form map').toBeTruthy();
   const rendered = await golden.renderCase(testCase);
@@ -226,7 +226,7 @@ const bubbleGeometryScenario = async () => {
  * printed pixels, so it stays red no matter what any snapshot says.
  */
 const opticalBubbleScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const optics = await import('#testlib/school/opticalHarness.mjs');
   const testCase = golden.GOLDEN_CASES.find((c) => c.formMapSnapshot);
   const rendered = await golden.renderCase(testCase);
@@ -239,7 +239,7 @@ const opticalBubbleScenario = async () => {
 
 /** optical.test: the printed symbol decodes to the token that was handed over. */
 const opticalQrScenario = async () => {
-  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const golden = await import('../../rendering/school/golden/goldenHarness.mjs');
   const optics = await import('#testlib/school/opticalHarness.mjs');
   const token = 'sch:9F3KMNPQ2RSTUVWX';
   const document = {
@@ -261,7 +261,7 @@ const opticalQrScenario = async () => {
 
 /** documentValidation.test: an answer key anywhere in a document is refused. */
 const answerKeyScenario = async () => {
-  const { validateDocument } = await import("../../../../__app_modules/school/server/domain/documents/documentValidation.mjs");
+  const { validateDocument } = await import("../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs");
   const noKey = 'must not carry an answer key (answer keys render from the question bank)';
   const doc = (over) => ({
     id: 'doc', seed: 1, target: ['letter'],

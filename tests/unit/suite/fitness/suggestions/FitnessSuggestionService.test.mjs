@@ -1,5 +1,5 @@
 // tests/unit/suite/fitness/suggestions/FitnessSuggestionService.test.mjs
-import { FitnessSuggestionService } from "../../../../../__app_modules/fitness/server/application/suggestions/FitnessSuggestionService.mjs";
+import { FitnessSuggestionService } from "../../../../../__app_modules/wellness/fitness/server/application/suggestions/FitnessSuggestionService.mjs";
 
 // Stub strategy: returns N cards for given showIds
 function stubStrategy(type, showIds) {

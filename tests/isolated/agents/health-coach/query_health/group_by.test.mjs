@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HealthQueryService } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
+import { HealthQueryService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/HealthQueryService.mjs";
 
 function makeSvc() {
   // 2026-05-04 = Mon, 05 = Tue, 06 = Wed, 07 = Thu, 08 = Fri, 09 = Sat, 10 = Sun

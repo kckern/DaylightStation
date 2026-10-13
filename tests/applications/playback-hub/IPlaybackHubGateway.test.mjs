@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   IPlaybackHubGateway,
   isPlaybackHubGateway,
-} from "../../../__app_modules/media/server/application/playback-hub/ports/IPlaybackHubGateway.mjs";
+} from "../../../__app_modules/media/media/server/application/playback-hub/ports/IPlaybackHubGateway.mjs";
 
 describe('IPlaybackHubGateway', () => {
   it('verifyAudio() throws "must be implemented" by default', async () => {

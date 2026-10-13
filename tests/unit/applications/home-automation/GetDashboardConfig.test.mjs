@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GetDashboardConfig } from "../../../../__app_modules/home/server/application/home-automation/usecases/GetDashboardConfig.mjs";
+import { GetDashboardConfig } from "../../../../__app_modules/household/home/server/application/home-automation/usecases/GetDashboardConfig.mjs";
 
 describe('GetDashboardConfig', () => {
   it('delegates to repository.load()', async () => {

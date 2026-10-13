@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeMidi, isLikelyJunkMidi, estimateMidiDurationSeconds } from "../../../../__app_modules/piano/server/domain/pianoaudio/midiDuration.mjs";
+import { analyzeMidi, isLikelyJunkMidi, estimateMidiDurationSeconds } from "../../../../__app_modules/learning/piano/server/domain/pianoaudio/midiDuration.mjs";
 
 // Build a minimal format-0 SMF: division=480 PPQ, one track with a set-tempo
 // (500000 us/qn = 120 BPM), one note that ends at absolute tick 960 (= 2 quarter

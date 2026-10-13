@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SlotPosition } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotPosition } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
 import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 
 describe('SlotPosition', () => {

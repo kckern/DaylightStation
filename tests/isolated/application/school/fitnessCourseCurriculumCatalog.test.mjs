@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FitnessCourseCurriculumCatalog } from "../../../../__app_modules/school/server/application/FitnessCourseCurriculumCatalog.mjs";
+import { FitnessCourseCurriculumCatalog } from "../../../../__app_modules/learning/school/server/application/FitnessCourseCurriculumCatalog.mjs";
 
 const authored = {
   schema: 'school.fitness-course/v1', work: 'bike-basics', title: 'Bike Basics', subject: 'skills',

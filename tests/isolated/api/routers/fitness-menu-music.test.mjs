@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createFitnessRouter } from "../../../../__app_modules/fitness/server/api/fitness.mjs";
+import { createFitnessRouter } from "../../../../__app_modules/wellness/fitness/server/api/fitness.mjs";
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 

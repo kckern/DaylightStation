@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { ScheduledFire } from "../../../__app_modules/media/server/domain/playback-hub/entities/ScheduledFire.mjs";
-import { DayPattern } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
-import { QueueRef } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
-import { VolumeBounds } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { ScheduledFire } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/ScheduledFire.mjs";
+import { DayPattern } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/DayPattern.mjs";
+import { QueueRef } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { VolumeBounds } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
 import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../__backend/src/2_domains/core/errors/DomainInvariantError.mjs';
 import { EntityNotFoundError } from '../../../__backend/src/2_domains/core/errors/EntityNotFoundError.mjs';

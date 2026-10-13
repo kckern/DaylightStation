@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../__app_modules/media/cli/player-review.cli.mjs";
+export * from "../__app_modules/media/media/cli/player-review.cli.mjs";

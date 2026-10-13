@@ -1,6 +1,6 @@
 // tests/isolated/services/MediaQueueService.test.mjs
 import { vi } from 'vitest';
-import { MediaQueue } from "../../../__app_modules/media/server/domain/entities/MediaQueue.mjs";
+import { MediaQueue } from "../../../__app_modules/media/media/server/domain/entities/MediaQueue.mjs";
 
 // --- Helpers ---
 
@@ -33,7 +33,7 @@ function buildQueue(items = [], overrides = {}) {
 // Lazy import so the test file parses even before the service exists
 let MediaQueueService;
 beforeAll(async () => {
-  const mod = await import("../../../__app_modules/media/server/application/MediaQueueService.mjs");
+  const mod = await import("../../../__app_modules/media/media/server/application/MediaQueueService.mjs");
   MediaQueueService = mod.MediaQueueService;
 });
 

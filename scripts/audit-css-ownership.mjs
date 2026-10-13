@@ -284,7 +284,7 @@ function main() {
   }
   const otherSheets = {};
   const jsFiles = {};
-  for (const file of [SRC, '__app_modules/gratitude/browser', '__capabilities/household-identity/browser'].flatMap(root => walk(root))) {
+  for (const file of [SRC, '__app_modules/personal/gratitude/browser', '__capabilities/household-identity/browser'].flatMap(root => walk(root))) {
     if (/\.(scss|css)$/.test(file)) {
       if (path.posix.dirname(file) === APPS_DIR) continue;
       otherSheets[file] = fs.readFileSync(file, 'utf8');

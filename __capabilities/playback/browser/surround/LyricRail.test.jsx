@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import SurroundFrame from "./SurroundFrame.jsx";
 import { resetSurroundRegistry } from "./registry.js";
-import { registerSurroundBuiltins } from "../../../../__app_modules/media/browser/surround/builtins.js";
+import { registerSurroundBuiltins } from "../../../../__app_modules/media/media/browser/surround/builtins.js";
 
 const seg = (over) => ({
   contentId: 'w1', start: 0, end: 10, offset: 0, duration: 10, name: 'x', ...over,

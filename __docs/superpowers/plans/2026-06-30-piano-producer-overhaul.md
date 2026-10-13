@@ -1645,7 +1645,7 @@ Expected: FAIL — `handChordLabel` unsupported.
 - In `PianoKeyboard.jsx`, accept `handChordLabel` (a string, already-analyzed roman) and render an absolutely-positioned `.piano-keyboard__hand-label` over the sub-`splitNote` region when present (position it left, above the keys). Render its content with the Phase 4 `<RomanChord>` for consistent typography:
 
 ```jsx
-import { RomanChord } from '../PianoKiosk/../components/roman/RomanProgression.jsx'; // use the real relative path
+import { RomanChord } from '../components/roman/RomanProgression.jsx'; // use the real relative path
 // …after the keys map, inside the .piano-keyboard div:
 {handChordLabel && (
   <div className="piano-keyboard__hand-label"><RomanChord token={handChordLabel} /></div>

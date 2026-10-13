@@ -3,7 +3,7 @@ import {fileURLToPath} from 'node:url';
 export const relocatedProviderManifests=[
   {legacyPath:"__backend/src/1_adapters/content/app-registry/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/app-registry/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/filesystem/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/filesystem/manifest.mjs",import.meta.url))},
-  {legacyPath:"__backend/src/1_adapters/content/freshvideo/manifest.mjs",path:fileURLToPath(new URL("../../../../__app_modules/media/server/adapters/providers/freshvideo/manifest.mjs",import.meta.url))},
+  {legacyPath:"__backend/src/1_adapters/content/freshvideo/manifest.mjs",path:fileURLToPath(new URL("../../../../__app_modules/media/media/server/adapters/providers/freshvideo/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/gallery/immich/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/gallery/immich/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/list/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/list/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/media/plex/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/plex/manifest.mjs",import.meta.url))},
@@ -14,7 +14,7 @@ export const relocatedProviderManifests=[
   {legacyPath:"__backend/src/1_adapters/content/retroarch/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/retroarch/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/singalong/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/content-catalog/server/adapters/providers/singalong/manifest.mjs",import.meta.url))},
   {legacyPath:"__backend/src/1_adapters/content/stream/manifest.mjs",path:fileURLToPath(new URL("../../../../__capabilities/playback/server/adapters/stream/manifest.mjs",import.meta.url))},
-  {legacyPath:'__backend/src/1_adapters/finance/buxfer/manifest.mjs',path:fileURLToPath(new URL('../../../../__app_modules/finance/server/adapters/buxfer/manifest.mjs',import.meta.url))},
+  {legacyPath:'__backend/src/1_adapters/finance/buxfer/manifest.mjs',path:fileURLToPath(new URL('../../../../__app_modules/money/finance/server/adapters/buxfer/manifest.mjs',import.meta.url))},
   {legacyPath:'__backend/src/1_adapters/home-automation/homeassistant/manifest.mjs',path:fileURLToPath(new URL('../../../../__capabilities/home-control/server/adapters/homeassistant/manifest.mjs',import.meta.url))},
-  {legacyPath:'__backend/src/1_adapters/livestream/manifest.mjs',path:fileURLToPath(new URL('../../../../__app_modules/livestream/server/adapters/manifest.mjs',import.meta.url))},
+  {legacyPath:'__backend/src/1_adapters/livestream/manifest.mjs',path:fileURLToPath(new URL('../../../../__app_modules/media/livestream/server/adapters/manifest.mjs',import.meta.url))},
 ];

@@ -1,7 +1,7 @@
 // tests/isolated/frontend/pose/poseSemantics.integration.test.mjs
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { extractSemanticPosition, createSemanticExtractor } from "../../../../__app_modules/fitness/browser/lib/pose/poseSemantics.js";
+import { extractSemanticPosition, createSemanticExtractor } from "../../../../__app_modules/wellness/fitness/browser/lib/pose/poseSemantics.js";
 
 const POSE_LOG_DIR = '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media/logs/poses/2026-03-04';
 const POSE_LOG_FILE = '2026-03-04T06-13-30.jsonl';

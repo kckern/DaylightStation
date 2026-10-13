@@ -7,12 +7,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ContentCombobox } from "./ContentCombobox.jsx";
-import { DestinationLine } from "../../../../__app_modules/media/browser/cast/DestinationLine.jsx";
-import { CastTargetProvider } from "../../../../__app_modules/media/browser/cast/CastTargetProvider.jsx";
-import { DispatchContext } from "../../../../__app_modules/media/browser/cast/DispatchProvider.jsx";
-import { FleetContext } from "../../../../__app_modules/media/browser/fleet/FleetProvider.jsx";
-import { createFleetStore } from "../../../../__app_modules/media/browser/fleet/fleetStore.js";
-import { DismissStackProvider } from "../../../../__app_modules/media/browser/shell/DismissStackProvider.jsx";
+import { DestinationLine } from "../../../../__app_modules/media/media/browser/cast/DestinationLine.jsx";
+import { CastTargetProvider } from "../../../../__app_modules/media/media/browser/cast/CastTargetProvider.jsx";
+import { DispatchContext } from "../../../../__app_modules/media/media/browser/cast/DispatchProvider.jsx";
+import { FleetContext } from "../../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx";
+import { createFleetStore } from "../../../../__app_modules/media/media/browser/fleet/fleetStore.js";
+import { DismissStackProvider } from "../../../../__app_modules/media/media/browser/shell/DismissStackProvider.jsx";
 
 vi.mock("../../../../frontend/src/lib/logging/singleton.js", () => {
   const logger = {
@@ -22,7 +22,7 @@ vi.mock("../../../../frontend/src/lib/logging/singleton.js", () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
-vi.mock("../../../../__app_modules/media/browser/logging/mediaLog.js", () => ({
+vi.mock("../../../../__app_modules/media/media/browser/logging/mediaLog.js", () => ({
   default: new Proxy({}, { get: () => vi.fn() }),
 }));
 

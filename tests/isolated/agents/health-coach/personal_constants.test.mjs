@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PersonalConstantsService } from "../../../../__app_modules/health/server/application/agents/health-coach/services/PersonalConstantsService.mjs";
+import { PersonalConstantsService } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/PersonalConstantsService.mjs";
 
 const workspace = (getHealthProfile) => ({ getHealthProfile });
 

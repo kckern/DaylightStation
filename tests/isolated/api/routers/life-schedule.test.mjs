@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-import createScheduleRouter from "../../../../__app_modules/life/server/api/life/schedule.mjs";
-import { LifePlanOperations } from "../../../../__app_modules/life/server/application/LifePlanOperations.mjs";
+import createScheduleRouter from "../../../../__app_modules/personal/life/server/api/life/schedule.mjs";
+import { LifePlanOperations } from "../../../../__app_modules/personal/life/server/application/LifePlanOperations.mjs";
 
 describe('GET /api/v1/life/schedule/:format', () => {
   let app;

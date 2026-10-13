@@ -13,8 +13,8 @@ import path from 'node:path';
 import {
   HealthArchiveScope as HealthArchiveScopeClass,
   DEFAULT_WORKOUT_SOURCES,
-} from "../../../../__app_modules/health/server/application/health/archive/HealthArchiveScope.mjs";
-import { FilesystemHealthArchiveAddressPolicyFactory } from "../../../../__app_modules/health/server/adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs";
+} from "../../../../__app_modules/wellness/health/server/application/health/archive/HealthArchiveScope.mjs";
+import { FilesystemHealthArchiveAddressPolicyFactory } from "../../../../__app_modules/wellness/health/server/adapters/health/FilesystemHealthArchiveAddressPolicyFactory.mjs";
 
 const addressPolicyFactory = new FilesystemHealthArchiveAddressPolicyFactory();
 function HealthArchiveScope({ dataRoot, mediaRoot, ...options } = {}) {

@@ -1,3 +1,3 @@
 #!/usr/bin/env node
 // Stable command entry; implementation belongs to its application.
-export * from "../../__app_modules/fitness/cli/migrations/migrate-strava-archives.mjs";
+export * from "../../__app_modules/wellness/fitness/cli/migrations/migrate-strava-archives.mjs";

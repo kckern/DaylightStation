@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlTokenRegistry, REBUILD_INTERVAL_MS } from "../../../../__app_modules/school/server/adapters/persistence/YamlTokenRegistry.mjs";
-import { ITokenRegistry } from "../../../../__app_modules/school/server/application/ports/ITokenRegistry.mjs";
-import { mintToken, resolveTokenState } from "../../../../__app_modules/school/server/domain/sessions/tokens.mjs";
-import { mintAccessCode } from "../../../../__app_modules/school/server/domain/sessions/accessCode.mjs";
+import { YamlTokenRegistry, REBUILD_INTERVAL_MS } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlTokenRegistry.mjs";
+import { ITokenRegistry } from "../../../../__app_modules/learning/school/server/application/ports/ITokenRegistry.mjs";
+import { mintToken, resolveTokenState } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
+import { mintAccessCode } from "../../../../__app_modules/learning/school/server/domain/sessions/accessCode.mjs";
 import { FakeTokenRegistry } from '#testlib/school/lifecycleFakes.mjs';
 
 const AT = '2026-07-27T10:00:00.000Z';

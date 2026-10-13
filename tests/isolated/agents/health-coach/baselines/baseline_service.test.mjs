@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PersonalBaselineService } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/PersonalBaselineService.mjs";
+import { PersonalBaselineService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/PersonalBaselineService.mjs";
 
 const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 const workspace = (dataService) => ({

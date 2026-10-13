@@ -13,13 +13,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import CurriculumPlanner from "../../../../__app_modules/school/browser/admin/CurriculumPlanner.jsx";
+import CurriculumPlanner from "../../../../__app_modules/learning/school/browser/admin/CurriculumPlanner.jsx";
 
 const rosterMock = vi.fn();
 const assignmentsMock = vi.fn();
 const putAssignmentMock = vi.fn();
 
-vi.mock("../../../../__app_modules/school/browser/admin/schoolAdminApi.js", () => ({
+vi.mock("../../../../__app_modules/learning/school/browser/admin/schoolAdminApi.js", () => ({
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     assignments: (...a) => assignmentsMock(...a),

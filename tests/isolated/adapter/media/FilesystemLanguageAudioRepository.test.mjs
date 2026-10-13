@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { FilesystemLanguageAudioRepository } from "../../../../__app_modules/school/server/adapters/media/FilesystemLanguageAudioRepository.mjs";
-import { ILanguageAudioRepository } from "../../../../__app_modules/school/server/application/ports/ILanguageAudioRepository.mjs";
+import { FilesystemLanguageAudioRepository } from "../../../../__app_modules/learning/school/server/adapters/media/FilesystemLanguageAudioRepository.mjs";
+import { ILanguageAudioRepository } from "../../../../__app_modules/learning/school/server/application/ports/ILanguageAudioRepository.mjs";
 
 async function readResource(resource) {
   const chunks = [];

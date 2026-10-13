@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PlanToolFactory } from "../../../../__app_modules/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
+import { PlanToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/PlanToolFactory.mjs";
 
 // Real service signatures, confirmed by reading __backend/src/4_api/v1/routers/life/plan.mjs:
 //   POST /goals/:goalId/transition  -> goalStateService.transition(goal, newState, reason)

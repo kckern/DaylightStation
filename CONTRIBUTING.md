@@ -58,7 +58,7 @@ DaylightStation/
 └── _extensions/       # Independent satellite components
 ```
 
-Start feature work in `__app_modules/<app>/`. Work on shared behavior in
+Start feature work in `__app_modules/<category>/<app>/`. Work on shared behavior in
 `__capabilities/<capability>/`. Many tests live beside their source. Test runner configs live under
 `tests/_infrastructure/config/`. See the
 [contributor map](__docs/reference/core/project-layout.md) for ownership and

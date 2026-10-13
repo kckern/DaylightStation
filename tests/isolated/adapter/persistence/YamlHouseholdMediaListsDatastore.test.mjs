@@ -4,7 +4,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { YamlHouseholdMediaListsDatastore } from "../../../../__app_modules/media/server/adapters/persistence/YamlHouseholdMediaListsDatastore.mjs";
+import { YamlHouseholdMediaListsDatastore } from "../../../../__app_modules/media/media/server/adapters/persistence/YamlHouseholdMediaListsDatastore.mjs";
 
 describe('YamlHouseholdMediaListsDatastore', () => {
   let dir;

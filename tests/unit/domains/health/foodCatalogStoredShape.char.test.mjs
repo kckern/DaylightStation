@@ -10,8 +10,8 @@
 // BEFORE (entry.toJSON path) and AFTER (datastore #dehydrate path) the refactor.
 import { describe, it, expect, beforeEach } from 'vitest';
 import yaml from 'js-yaml';
-import { YamlFoodCatalogDatastore } from "../../../../__app_modules/health/server/adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs";
-import { FoodCatalogEntry } from "../../../../__app_modules/health/server/domain/health/entities/FoodCatalogEntry.mjs";
+import { YamlFoodCatalogDatastore } from "../../../../__app_modules/wellness/health/server/adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs";
+import { FoodCatalogEntry } from "../../../../__app_modules/wellness/health/server/domain/health/entities/FoodCatalogEntry.mjs";
 
 const noopLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const USER = 'kckern';

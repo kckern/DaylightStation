@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { NotificationToolFactory } from "../../../../__app_modules/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
+import { NotificationToolFactory } from "../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/tools/NotificationToolFactory.mjs";
 
 describe('NotificationToolFactory', () => {
   let factory, tools, sentMessages;

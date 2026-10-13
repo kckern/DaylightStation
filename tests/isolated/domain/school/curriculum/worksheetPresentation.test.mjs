@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { worksheetPresentation } from "../../../../../__app_modules/school/server/domain/curriculum/worksheetPresentation.mjs";
+import { worksheetPresentation } from "../../../../../__app_modules/learning/school/server/domain/curriculum/worksheetPresentation.mjs";
 
 const work = {
   work: 'cfm', title: 'Come Follow Me — Old Testament 2026', short_title: 'Come Follow Me',

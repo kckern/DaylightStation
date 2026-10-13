@@ -19,7 +19,7 @@ vi.mock('../../../../../__capabilities/playback/browser/player/lib/trackPolicy.j
 }));
 vi.mock('../../../../../__capabilities/playback/browser/sessions/playerSessionRegistry.js', () => ({ getPlayerSessionRegistry: () => ({ getCurrent: () => null }) }));
 vi.mock('../../../../../__capabilities/playback/browser/player/Player.jsx', () => ({ default: () => null }));
-vi.mock("../../../../../__app_modules/camera/browser/CameraOverlay.jsx", () => ({ default: () => null }));
+vi.mock("../../../../../__app_modules/household/camera/browser/CameraOverlay.jsx", () => ({ default: () => null }));
 vi.mock('../../../../../__capabilities/playback/browser/player/components/MusicBehindLayer.jsx', () => ({
   MusicBehindLayer: () => <div data-testid="music-layer" />,
 }));

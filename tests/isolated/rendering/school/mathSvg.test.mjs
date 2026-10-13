@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { texToSvg, MathRenderError } from "../../../../__app_modules/school/server/rendering/documents/mathSvg.mjs";
+import { texToSvg, MathRenderError } from "../../../../__app_modules/learning/school/server/rendering/documents/mathSvg.mjs";
 
 const viewBoxOf = (svgString) => svgString.match(/viewBox="([^"]+)"/)[1].split(/\s+/).map(Number);
 const rootTagOf = (svgString) => svgString.slice(0, svgString.indexOf('>') + 1);

@@ -42,27 +42,27 @@ describe('Gaming import boundaries', () => {
       "__capabilities/gaming/portable/presentation",
       "__capabilities/gaming/portable/mechanics",
       "__capabilities/gaming/server/adapters/persistence",
-      "__app_modules/party-games/server/adapters/persistence",
-      "__app_modules/arcade/server/domain",
-      "__app_modules/piano/server/domain/game-platform",
-      "__app_modules/party-games/server/application",
-      "__app_modules/arcade/server/application",
+      "__app_modules/games/party-games/server/adapters/persistence",
+      "__app_modules/games/arcade/server/domain",
+      "__app_modules/learning/piano/server/domain/game-platform",
+      "__app_modules/games/party-games/server/application",
+      "__app_modules/games/arcade/server/application",
       "__capabilities/gaming/server/application",
       "__capabilities/device-dispatch/server/application/ports/IReaderPresence.mjs",
-      "__app_modules/party-games/server/api/gaming.mjs",
-      "__app_modules/party-games/server/composition/gamingApi.mjs",
+      "__app_modules/games/party-games/server/api/gaming.mjs",
+      "__app_modules/games/party-games/server/composition/gamingApi.mjs",
       "__capabilities/gaming/browser/platform",
-      "__app_modules/party-games/browser",
+      "__app_modules/games/party-games/browser",
       "frontend/src/composition/gaming",
-      "__app_modules/piano/browser/PianoCardGame",
-      "__app_modules/party-games/cli/gaming-artifacts.cli.mjs",
+      "__app_modules/learning/piano/browser/PianoCardGame",
+      "__app_modules/games/party-games/cli/gaming-artifacts.cli.mjs",
       "__docs/reference/gaming"
 ];
     const filesToCheck = roots.flatMap((root) => {
       const absolute = path.resolve(root);
       return sourceFiles(absolute);
     });
-    filesToCheck.push(path.resolve('__app_modules/piano/server/application/PianoScaleChallengePolicy.mjs'));
+    filesToCheck.push(path.resolve('__app_modules/learning/piano/server/application/PianoScaleChallengePolicy.mjs'));
     const violations = filesToCheck.filter((file) => {
       if (brandedTerm.test(path.basename(file))) return true;
       return brandedTerm.test(fs.readFileSync(file, 'utf8'));
@@ -73,13 +73,13 @@ describe('Gaming import boundaries', () => {
   it('keeps franchise-shaped presentation fields out of generic Gaming', () => {
     const roots = [
       "__capabilities/gaming/portable",
-      "__app_modules/arcade/server/domain",
-      "__app_modules/piano/server/domain/game-platform",
-      "__app_modules/party-games/server/application",
-      "__app_modules/arcade/server/application",
+      "__app_modules/games/arcade/server/domain",
+      "__app_modules/learning/piano/server/domain/game-platform",
+      "__app_modules/games/party-games/server/application",
+      "__app_modules/games/arcade/server/application",
       "__capabilities/gaming/server/application",
       "__capabilities/gaming/browser/platform",
-      "__app_modules/party-games/browser"
+      "__app_modules/games/party-games/browser"
 ];
     const themedSchema = new RegExp(`\\b(?:${[
       ['de', 'x'].join(''),

@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
-import { LifeUserContext } from "../../../../__app_modules/life/browser/hooks/useLifeUser.js";
-import { GoalsView } from "../../../../__app_modules/life/browser/views/plan/GoalsView.jsx";
+import { LifeUserContext } from "../../../../__app_modules/personal/life/browser/hooks/useLifeUser.js";
+import { GoalsView } from "../../../../__app_modules/personal/life/browser/views/plan/GoalsView.jsx";
 
 /**
  * C5 regression guard (rider from the C5 review): the household user switcher

@@ -32,7 +32,7 @@ function InterceptorRegistrar({ handled }) {
 }
 
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
-vi.mock("../../../../../__app_modules/media/browser/menu.mjs", () => ({
+vi.mock("../../../../../__app_modules/media/media/browser/menu.mjs", () => ({
   // `rootMenu` is a legacy menu KEY (string) or a content id (object with
   // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
   // exposes both rather than stringifying an object into "[object Object]".

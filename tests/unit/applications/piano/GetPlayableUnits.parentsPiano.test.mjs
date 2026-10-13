@@ -3,8 +3,8 @@
  * curriculum category block is flowed into the parents map.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GetPlayableUnits } from '../../../../__app_modules/piano/server/application/usecases/GetPlayableUnits.mjs';
-import { PianoConfigProjection } from "../../../../__app_modules/piano/server/adapters/PianoConfigProjection.mjs";
+import { GetPlayableUnits } from '../../../../__app_modules/learning/piano/server/application/usecases/GetPlayableUnits.mjs';
+import { PianoConfigProjection } from "../../../../__app_modules/learning/piano/server/adapters/PianoConfigProjection.mjs";
 
 // GetPlayableUnits now RECEIVES the curriculum reader (Decision D1), so this
 // is a plain injected double rather than a module mock — no vi.mock, and no

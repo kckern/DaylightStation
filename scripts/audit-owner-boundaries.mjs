@@ -18,7 +18,14 @@ const EXTENSIONS = new Set(['.mjs', '.js', '.cjs', '.jsx']);
 const SKIP = new Set(['node_modules', '.git', '.claude', '.claire', '.worktrees', '.cache', '.vite', 'dist', 'build', 'coverage', 'vendor']);
 // Each entry is explicitly reviewed. No filename wildcard or public-directory
 // exemption: add only the actual independent facets an owner publishes.
-const ownerOf = (file) => /^(__app_modules|__capabilities)\/([^/]+)\//.exec(file)?.slice(1).join('/') ?? null;
+const APP_CATEGORIES = new Set(['learning', 'games', 'wellness', 'media', 'household', 'personal', 'money']);
+const ownerOf = (file) => {
+  const match = /^(__app_modules|__capabilities)\/([^/]+)\/([^/]+)/.exec(file);
+  if (!match) return null;
+  return match[1] === '__app_modules' && APP_CATEGORIES.has(match[2])
+    ? `${match[1]}/${match[2]}/${match[3]}`
+    : `${match[1]}/${match[2]}`;
+};
 const isTestHelper = (file) => /^tests\/(_lib|_fixtures|_infrastructure)\//.test(file);
 const isTest = (file) => isTestHelper(file) || /\.(?:test|spec|case)\.(?:mjs|js|cjs|jsx)$/.test(file);
 const isSource = (file) => ROOTS.includes(file.split('/')[0]) && EXTENSIONS.has(extname(file))
@@ -100,7 +107,7 @@ export function auditOwnerBoundaries(files, {
     const ast = parse(readFile(file), { sourceType: 'unambiguous', plugins: ['jsx', 'dynamicImport', 'importAttributes', 'topLevelAwait'] });
     function check(node, specifier) {
       const clean = specifier.split('?')[0];
-      const browser = source.startsWith('frontend/') || /^(__app_modules|__capabilities)\/[^/]+\/browser\//.test(source);
+      const browser = source.startsWith('frontend/') || /^(?:__app_modules\/[^/]+(?:\/[^/]+)?|__capabilities\/[^/]+)\/browser\//.test(source);
       const alias = browser && [...browserAliases].sort(([a], [b]) => b.length - a.length)
         .find(([name]) => clean === name || clean.startsWith(name + '/'));
       const resolved = alias ? { kind: 'local', file: resolve(alias[1], '.' + clean.slice(alias[0].length)) }

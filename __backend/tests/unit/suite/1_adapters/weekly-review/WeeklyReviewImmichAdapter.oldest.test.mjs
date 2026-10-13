@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { WeeklyReviewImmichAdapter } from "../../../../../../__app_modules/weekly-review/server/adapters/WeeklyReviewImmichAdapter.mjs";
+import { WeeklyReviewImmichAdapter } from "../../../../../../__app_modules/personal/weekly-review/server/adapters/WeeklyReviewImmichAdapter.mjs";
 
 describe('WeeklyReviewImmichAdapter.searchOldest', () => {
   const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };

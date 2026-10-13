@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { HubDevice } from "../../../__app_modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { SlotPosition } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { VolumeBounds } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
-import { ContinuousSchedule } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/ContinuousSchedule.mjs";
-import { QueueRef } from "../../../__app_modules/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
+import { HubDevice } from "../../../__app_modules/media/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { ContinuousSchedule } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/ContinuousSchedule.mjs";
+import { QueueRef } from "../../../__app_modules/media/media/server/domain/playback-hub/value-objects/QueueRef.mjs";
 import { ValidationError } from '../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 import { DomainInvariantError } from '../../../__backend/src/2_domains/core/errors/DomainInvariantError.mjs';
-import { serializeHubDevice } from '../../../__app_modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
+import { serializeHubDevice } from '../../../__app_modules/media/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
 
 const validArgs = (overrides = {}) => ({
   position: new SlotPosition(1),

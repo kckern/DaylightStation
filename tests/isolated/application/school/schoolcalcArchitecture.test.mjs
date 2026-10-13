@@ -12,7 +12,7 @@ const SCHOOLCALC_ADAPTERS = path.join(ROOT, '__backend/src/1_adapters/schoolcalc
 const PAPER_ADAPTER = path.join(ROOT, '__backend/src/1_adapters/school/paper');
 const SCREEN_ADAPTER = path.join(ROOT, '__backend/src/1_adapters/school/screen');
 const SCHOOLCALC_API = [
-  path.join(ROOT, '__app_modules/school/server/api/handlers/schoolcalc'),
+  path.join(ROOT, '__app_modules/learning/school/server/api/handlers/schoolcalc'),
   path.join(ROOT, '__backend/src/4_api/v1/routers/schoolCalc.mjs'),
 ];
 

@@ -28,7 +28,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
+import { agendaDocument, resultDocument, noticeDocument } from "../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
 
 const RECEIPTS_SRC_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

@@ -35,7 +35,7 @@ let setFitnessTimeouts;
 let getFitnessTimeouts;
 
 beforeAll(async () => {
-  const mod = await import("../../../__app_modules/fitness/browser/hooks/fitness/FitnessSession.js");
+  const mod = await import("../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js");
   FitnessSession = mod.FitnessSession;
   setFitnessTimeouts = mod.setFitnessTimeouts;
   getFitnessTimeouts = mod.getFitnessTimeouts;

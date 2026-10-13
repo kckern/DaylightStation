@@ -12,11 +12,11 @@ const LEGACY_LAYERS = Object.freeze({
 });
 
 export function isDestinationServerFile(file) {
-  return /(?:^|\/)(__app_modules|__capabilities)\/[^/]+\/server\/.+/.test(file);
+  return /(?:^|\/)(__app_modules|__capabilities)\/(?:[^/]+\/)?[^/]+\/server\/.+/.test(file);
 }
 
 export function destinationServerPath(file) {
-  const match = file?.match(/(?:^|\/)(__app_modules|__capabilities)\/([^/]+)\/server\/(domain|application|adapters|api|rendering|composition)\/(.*)$/);
+  const match = file?.match(/(?:^|\/)(__app_modules|__capabilities)\/(?:[^/]+\/)?([^/]+)\/server\/(domain|application|adapters|api|rendering|composition)\/(.*)$/);
   return match ? { tree: match[1], owner: match[2], layer: match[3], suffix: match[4] } : declaredServerEntry(file);
 }
 

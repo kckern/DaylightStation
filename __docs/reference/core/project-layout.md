@@ -1,8 +1,13 @@
 # Contributor map
 
-Most feature work belongs in `__app_modules/<app>/`. Each application owns the
+Most feature work belongs in `__app_modules/<category>/<app>/`. Each application owns the
 surfaces it needs: `server/`, `browser/`, `cli/`, `portable/`, and `satellites/`.
 Tests for that feature usually live beside its implementation.
+
+The [application index](../../../__app_modules/README.md) groups applications into
+learning, games, wellness, media, household, personal, and money. Categories help
+contributors browse related applications; ownership and dependency checks remain
+at the application level.
 
 | Root | Responsibility |
 | --- | --- |
@@ -42,7 +47,7 @@ Personal data, authoring drafts, logs, coverage, and scratch captures stay out
 of version control. `_deleteme/` is an ignored local quarantine.
 
 School's maintained example decks and vocabulary packages live in
-`__app_modules/school/seeds/`. Their YAML ships with the module in the Docker
+`__app_modules/learning/school/seeds/`. Their YAML ships with the module in the Docker
 image; installed copies belong in the external data and media directories.
 
 Tool configs live with their workflows: test runners use

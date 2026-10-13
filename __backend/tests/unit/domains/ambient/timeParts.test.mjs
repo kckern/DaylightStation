@@ -1,5 +1,5 @@
 // __backend/tests/unit/domains/ambient/timeParts.test.mjs
-import { parseHHMM, resolveNowParts } from "../../../../../__app_modules/screens/server/domain/ambient/timeParts.mjs";
+import { parseHHMM, resolveNowParts } from "../../../../../__app_modules/household/screens/server/domain/ambient/timeParts.mjs";
 
 describe('parseHHMM', () => {
   it('parses HH:MM to minutes since midnight', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createNowRouter from "../../../__app_modules/life/server/api/life/now.mjs";
+import createNowRouter from "../../../__app_modules/personal/life/server/api/life/now.mjs";
 
 describe('Life Now API Router', () => {
   let app;

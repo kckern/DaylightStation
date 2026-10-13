@@ -1,6 +1,6 @@
 // tests/unit/domains/journaling/services/JournalService.test.mjs
 import { vi } from 'vitest';
-import { JournalService } from "../../../../../__app_modules/journalist/server/application/journaling/services/JournalService.mjs";
+import { JournalService } from "../../../../../__app_modules/personal/journalist/server/application/journaling/services/JournalService.mjs";
 
 describe('JournalService', () => {
   let service;

@@ -7,7 +7,7 @@
  */
 import express from 'express';
 import request from '../../../../tests/_lib/memory-http/request.mjs';
-import { createDoNowRouter } from "../../../../__app_modules/donow/server/api/donow.mjs";
+import { createDoNowRouter } from "../../../../__app_modules/household/donow/server/api/donow.mjs";
 import { authenticate } from "../../../../__capabilities/device-dispatch/server/application/guards/authenticate.mjs";
 
 const approvals = {

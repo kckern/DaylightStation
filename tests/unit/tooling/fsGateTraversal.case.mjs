@@ -11,9 +11,9 @@ for(const forbidden of [false,true])test(`filesystem CLI ignores dependency link
  const put=(name,source)=>{const file=join(root,name);mkdirSync(dirname(file),{recursive:true});writeFileSync(file,source);};
  for(const name of ['audit-direct-fs-imports.mjs','audit-server-layout.mjs','owner-entry-policy.mjs'])put('scripts/'+name,readFileSync(join(repo,'scripts',name),'utf8'));
  symlinkSync(join(repo,'node_modules'),join(root,'node_modules'));
- put('__app_modules/piano/server/application/Owned.mjs',forbidden?"import fs from 'node:fs';":"export const owned=true;");
- put('__app_modules/piano/server/node_modules/application/Dependency.mjs',"import fs from 'node:fs';");
- symlinkSync(join(root,'__app_modules/piano/server'),join(root,'__app_modules/piano/server/loop'));
+ put('__app_modules/learning/piano/server/application/Owned.mjs',forbidden?"import fs from 'node:fs';":"export const owned=true;");
+ put('__app_modules/learning/piano/server/node_modules/application/Dependency.mjs',"import fs from 'node:fs';");
+ symlinkSync(join(root,'__app_modules/learning/piano/server'),join(root,'__app_modules/learning/piano/server/loop'));
  const result=spawnSync(process.execPath,[join(root,'scripts/audit-direct-fs-imports.mjs')],{cwd:root,encoding:'utf8',timeout:3000});
  assert.equal(result.status,forbidden?1:0,result.stdout+result.stderr);
  assert.doesNotMatch(result.stderr,/ELOOP|Dependency|\/loop\//);

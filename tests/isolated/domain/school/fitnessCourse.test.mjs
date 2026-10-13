@@ -3,7 +3,7 @@ import {
   compileFitnessCourse,
   defaultFitnessSuccessPolicy,
   validateFitnessCourse,
-} from "../../../../__app_modules/school/server/domain/fitnessCourse.mjs";
+} from "../../../../__app_modules/learning/school/server/domain/fitnessCourse.mjs";
 
 const minimal = (over = {}) => ({
   schema: 'school.fitness-course/v1',

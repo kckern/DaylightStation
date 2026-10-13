@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createArtContentSource } from "../../../__app_modules/art/server/adapters/ArtContentSource.mjs";
+import { createArtContentSource } from "../../../__app_modules/media/art/server/adapters/ArtContentSource.mjs";
 import { validateAdapter } from "../../../__capabilities/content-catalog/server/application/ports/IContentSource.mjs";
 
 const fakeArtAdapter = (over = {}) => ({

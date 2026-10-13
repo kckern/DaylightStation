@@ -18,7 +18,7 @@ import { initConfigService, ConfigValidationError, configService } from '#system
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
 import { initializeLogging } from '#system/logging/dispatcher.mjs';
 import { createConsoleTransport, createFileTransport, createHttpLogSinkTransport, initSessionFileTransport, initSessionEventsFileTransport } from '#system/logging/transports/index.mjs';
-import { createSchoolLedgerTransport } from "../../../__app_modules/school/server/adapters-logging-school-ledger-transport.mjs";
+import { createSchoolLedgerTransport } from "../../../__app_modules/learning/school/server/adapters-logging-school-ledger-transport.mjs";
 import { createLogglyTransport } from '#adapters/logging/LogglyTransport.mjs';
 import { StartupMetricSamplingPolicy } from '#apps/logging/StartupMetricSamplingPolicy.mjs';
 import { createLogger } from '#system/logging/logger.mjs';

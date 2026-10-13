@@ -1,5 +1,5 @@
 // __backend/tests/unit/applications/ambient/AmbientSchedulerService.test.mjs
-import { AmbientSchedulerService } from "../../../../../__app_modules/screens/server/application/ambient/AmbientSchedulerService.mjs";
+import { AmbientSchedulerService } from "../../../../../__app_modules/household/screens/server/application/ambient/AmbientSchedulerService.mjs";
 
 const WIN = {
   key: 'am', name: 'am', days: [1], startMin: 420, endMin: 540,

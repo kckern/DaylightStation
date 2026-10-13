@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import { EventBusClientIngressAdapter } from '#adapters/eventbus/EventBusClientIngressAdapter.mjs';
 import { ClientIngressService } from '#apps/eventbus/ClientIngressService.mjs';
-import { buildClientAck } from "../../../../../__app_modules/media/browser/externalControl/useExternalControl.js";
+import { buildClientAck } from "../../../../../__app_modules/media/media/browser/externalControl/useExternalControl.js";
 
 function next(ws, predicate) {
   return new Promise((resolve, reject) => {

@@ -1,6 +1,6 @@
 // __backend/src/1_adapters/persistence/yaml/YamlTocCacheDatastore.mjs
 
-import { ITocCacheDatastore } from "../../../../../__app_modules/media/server/application/agents/paged-media-toc/ports/ITocCacheDatastore.mjs";
+import { ITocCacheDatastore } from "../../../../../__app_modules/media/media/server/application/agents/paged-media-toc/ports/ITocCacheDatastore.mjs";
 
 /**
  * YamlTocCacheDatastore — YAML-backed persistence for TOC cache.

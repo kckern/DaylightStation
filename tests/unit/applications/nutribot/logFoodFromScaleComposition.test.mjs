@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScalePromptText } from "../../../../__app_modules/nutribot/server/application/usecases/LogFoodFromScale.mjs";
+import { buildScalePromptText } from "../../../../__app_modules/wellness/nutribot/server/application/usecases/LogFoodFromScale.mjs";
 
 const MUG_CFG = { containers: { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] } };
 const DENSITY_CFG = {
@@ -139,10 +139,10 @@ describe('buildScalePromptText — transient notice', () => {
 // silently contradicts the message the user approved.
 // ---------------------------------------------------------------------------
 
-import { LogFoodFromScale } from "../../../../__app_modules/nutribot/server/application/usecases/LogFoodFromScale.mjs";
-import { SelectScaleContainer } from "../../../../__app_modules/nutribot/server/application/usecases/SelectScaleContainer.mjs";
-import { normalizeScaleNutribotConfig } from '../../../../__app_modules/health/server/scale-config.mjs';
-import { serializeNutriLog } from "../../../../__app_modules/health/server/nutrition-records.mjs";
+import { LogFoodFromScale } from "../../../../__app_modules/wellness/nutribot/server/application/usecases/LogFoodFromScale.mjs";
+import { SelectScaleContainer } from "../../../../__app_modules/wellness/nutribot/server/application/usecases/SelectScaleContainer.mjs";
+import { normalizeScaleNutribotConfig } from '../../../../__app_modules/wellness/health/server/scale-config.mjs';
+import { serializeNutriLog } from "../../../../__app_modules/wellness/health/server/nutrition-records.mjs";
 
 const MUG = { id: 'mug', label: 'Mug', emoji: '☕', grams: 350 };
 

@@ -303,8 +303,8 @@ describe('Feed Router', () => {
   // Content plugin enrichment
   describe('Content plugin enrichment on /reader/stream', () => {
     test('enriches YouTube URLs from FreshRSS with contentType and videoId', async () => {
-      const { ContentPluginRegistry } = await import("../../../../__app_modules/feed/server/application/services/ContentPluginRegistry.mjs");
-      const { YouTubeContentPlugin } = await import("../../../../__app_modules/feed/server/adapters/plugins/youtube.mjs");
+      const { ContentPluginRegistry } = await import("../../../../__app_modules/media/feed/server/application/services/ContentPluginRegistry.mjs");
+      const { YouTubeContentPlugin } = await import("../../../../__app_modules/media/feed/server/adapters/plugins/youtube.mjs");
       const registry = new ContentPluginRegistry([new YouTubeContentPlugin()]);
 
       const ytMockAdapter = {

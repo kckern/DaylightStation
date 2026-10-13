@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FitnessConfigService } from "../../../../__app_modules/fitness/server/application/FitnessConfigService.mjs";
+import { FitnessConfigService } from "../../../../__app_modules/wellness/fitness/server/application/FitnessConfigService.mjs";
 
 function service(whitelist) {
   return new FitnessConfigService({

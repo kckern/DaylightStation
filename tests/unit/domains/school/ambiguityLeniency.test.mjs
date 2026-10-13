@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creditsAsEraser, leniencyCap } from "../../../../__app_modules/school/server/domain/documents/ambiguityLeniency.mjs";
+import { creditsAsEraser, leniencyCap } from "../../../../__app_modules/learning/school/server/domain/documents/ambiguityLeniency.mjs";
 
 const mc4 = { type: 'multiple_choice', choiceCount: 4 };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationSeconds, computeNextWakeSeconds } from "../../../../__app_modules/screens/server/application/eink/wakeSchedule.mjs";
+import { parseDurationSeconds, computeNextWakeSeconds } from "../../../../__app_modules/household/screens/server/application/eink/wakeSchedule.mjs";
 
 // A fixed local time helper: build a Date at HH:MM:SS today (local tz).
 const at = (h, m = 0, s = 0) => { const d = new Date(2026, 5, 18, h, m, s); return d; };

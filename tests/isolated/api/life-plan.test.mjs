@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createPlanRouter from "../../../__app_modules/life/server/api/life/plan.mjs";
-import { LifePlan } from "../../../__app_modules/life/server/domain/entities/LifePlan.mjs";
-import { GoalStateService } from "../../../__app_modules/life/server/domain/services/GoalStateService.mjs";
-import { BeliefEvaluator } from "../../../__app_modules/life/server/domain/services/BeliefEvaluator.mjs";
-import { CadenceService } from "../../../__app_modules/life/server/domain/services/CadenceService.mjs";
-import { presentBelief, presentGoal, presentLifePlan } from "../../../__app_modules/life/server/application/presenters/lifePlanPresenter.mjs";
-import { LifePlanOperations } from "../../../__app_modules/life/server/application/LifePlanOperations.mjs";
+import createPlanRouter from "../../../__app_modules/personal/life/server/api/life/plan.mjs";
+import { LifePlan } from "../../../__app_modules/personal/life/server/domain/entities/LifePlan.mjs";
+import { GoalStateService } from "../../../__app_modules/personal/life/server/domain/services/GoalStateService.mjs";
+import { BeliefEvaluator } from "../../../__app_modules/personal/life/server/domain/services/BeliefEvaluator.mjs";
+import { CadenceService } from "../../../__app_modules/personal/life/server/domain/services/CadenceService.mjs";
+import { presentBelief, presentGoal, presentLifePlan } from "../../../__app_modules/personal/life/server/application/presenters/lifePlanPresenter.mjs";
+import { LifePlanOperations } from "../../../__app_modules/personal/life/server/application/LifePlanOperations.mjs";
 
 describe('Life Plan API Router', () => {
   let app;

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { loadSeedIfEmpty } from "../../../../../__app_modules/health/server/application/agents/health-coach/playbooks/seedLoader.mjs";
+import { loadSeedIfEmpty } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seedLoader.mjs";
 import { YamlPlaybookSeedReader } from '../../../../../__backend/src/1_adapters/persistence/yaml/YamlPlaybookSeedReader.mjs';
 import { WorkingMemoryState } from "../../../../../__capabilities/agent-runtime/server/application/framework/WorkingMemory.mjs";
 
 const seedReader = new YamlPlaybookSeedReader({
-  filePath: fileURLToPath(new URL("../../../../../__app_modules/health/server/application/agents/health-coach/playbooks/seed.yml", import.meta.url)),
+  filePath: fileURLToPath(new URL("../../../../../__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seed.yml", import.meta.url)),
 });
 
 describe('seedLoader.readSeedFile', () => {

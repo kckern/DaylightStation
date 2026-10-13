@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendAssignedProgramEntries } from "../../../../__app_modules/school/server/application/assignedProgramPlan.mjs";
+import { appendAssignedProgramEntries } from "../../../../__app_modules/learning/school/server/application/assignedProgramPlan.mjs";
 
 describe('appendAssignedProgramEntries — story-time', () => {
   it('projects a story-time enrollment as a daily, courseless english entry', () => {

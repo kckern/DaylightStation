@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectItemsForPrint } from '../../../../__app_modules/gratitude/server/domain/services/PrintSelectionService.mjs';
+import { selectItemsForPrint } from '../../../../__app_modules/personal/gratitude/server/domain/services/PrintSelectionService.mjs';
 
 describe('selectItemsForPrint', () => {
   const makeItem = (id, daysOld = 1, printCount = 0) => ({

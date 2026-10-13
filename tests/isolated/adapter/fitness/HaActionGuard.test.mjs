@@ -1,6 +1,6 @@
 // tests/isolated/adapter/fitness/HaActionGuard.test.mjs
 import { vi } from 'vitest';
-import { HaActionGuard } from "../../../../__app_modules/fitness/server/adapters/HaActionGuard.mjs";
+import { HaActionGuard } from "../../../../__app_modules/wellness/fitness/server/adapters/HaActionGuard.mjs";
 
 describe('HaActionGuard', () => {
   let guard;

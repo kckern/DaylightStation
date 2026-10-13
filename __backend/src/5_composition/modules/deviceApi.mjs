@@ -1,4 +1,4 @@
-import { createPianoScreenHoldPolicy } from "../../../../__app_modules/piano/server/application/screenHoldPolicy.mjs";
+import { createPianoScreenHoldPolicy } from "../../../../__app_modules/learning/piano/server/application/screenHoldPolicy.mjs";
 // __backend/src/5_composition/modules/deviceApi.mjs
 // Composition wiring for Device API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 

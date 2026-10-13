@@ -14,9 +14,9 @@
  * refused.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GrownUpGate } from "../../../../__app_modules/school/server/application/GrownUpGate.mjs";
-import { ResolveReviewItem } from "../../../../__app_modules/school/server/application/usecases/ResolveReviewItem.mjs";
-import { SetAssignments } from "../../../../__app_modules/school/server/application/usecases/SetAssignments.mjs";
+import { GrownUpGate } from "../../../../__app_modules/learning/school/server/application/GrownUpGate.mjs";
+import { ResolveReviewItem } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveReviewItem.mjs";
+import { SetAssignments } from "../../../../__app_modules/learning/school/server/application/usecases/SetAssignments.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 const AT = new Date('2026-07-27T09:00:00.000Z');

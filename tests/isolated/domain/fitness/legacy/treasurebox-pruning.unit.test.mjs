@@ -27,7 +27,7 @@ describe('TreasureBox timeline pruning', () => {
   let FitnessTreasureBox;
 
   beforeAll(async () => {
-    const module = await import("../../../../../__app_modules/fitness/browser/hooks/fitness/TreasureBox.js");
+    const module = await import("../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/TreasureBox.js");
     FitnessTreasureBox = module.FitnessTreasureBox;
   });
 

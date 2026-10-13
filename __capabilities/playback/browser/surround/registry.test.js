@@ -75,14 +75,14 @@ describe('surround builtins', () => {
   // only shrinks, so both registry specs stayed green while the frame lost a
   // module. The declaration and the registrations have to be the same set.
   it('registers exactly the builtin names it declares', async () => {
-    const builtins = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const builtins = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     builtins.registerSurroundBuiltins();
     expect(getSurroundRegistry().list().sort())
       .toEqual([...builtins.SURROUND_BUILTIN_MODULES].sort());
   });
 
   it('gives every builtin a real component and its declared regions', async () => {
-    const builtins = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const builtins = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     builtins.registerSurroundBuiltins();
     const registry = getSurroundRegistry();
     builtins.SURROUND_BUILTIN_MODULES.forEach((name) => {
@@ -106,7 +106,7 @@ describe('surround builtins', () => {
    * warnings.
    */
   it('declares the slots a rail-carried layout places its modules in', async () => {
-    const builtins = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const builtins = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     builtins.registerSurroundBuiltins();
     const registry = getSurroundRegistry();
     expect(registry.getMeta('segment-map').regions, 'the timeline cannot be placed in the rail')
@@ -121,7 +121,7 @@ describe('surround builtins', () => {
   // registered under a wrong name as long as the total is right, which is the
   // one failure a definition's `module:` reference cannot survive.
   it('declares the modules the frame resolves by name', async () => {
-    const { SURROUND_BUILTIN_MODULES } = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const { SURROUND_BUILTIN_MODULES } = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
         'composer-card', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
@@ -135,7 +135,7 @@ describe('surround builtins', () => {
   // unmigrated `_surrounds/*.yml` renders an empty region and warns
   // `surround.module.missing` instead of drawing the rail.
   it('resolves the legacy movement-map name to the same component as segment-map', async () => {
-    const builtins = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const builtins = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     builtins.registerSurroundBuiltins();
     const registry = getSurroundRegistry();
     expect(builtins.LEGACY_MODULE_ALIASES['movement-map']).toBe('segment-map');
@@ -150,7 +150,7 @@ describe('surround builtins', () => {
   // alias mechanism exists to prevent. These two specs are what make the loop's
   // generality real rather than asserted in a comment.
   it('registers every alias in the table against its target module', async () => {
-    const builtins = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const builtins = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     builtins.registerSurroundBuiltins();
     const registry = getSurroundRegistry();
     const aliases = Object.entries(builtins.LEGACY_MODULE_ALIASES);
@@ -166,7 +166,7 @@ describe('surround builtins', () => {
   });
 
   it('declares every alias among the names the frame resolves', async () => {
-    const { SURROUND_BUILTIN_MODULES, LEGACY_MODULE_ALIASES } = await import("../../../../__app_modules/media/browser/surround/builtins.js");
+    const { SURROUND_BUILTIN_MODULES, LEGACY_MODULE_ALIASES } = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     Object.keys(LEGACY_MODULE_ALIASES).forEach((alias) => {
       expect(SURROUND_BUILTIN_MODULES, `${alias} is registered but not declared`).toContain(alias);
     });

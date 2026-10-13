@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { extractOgImageFromHtml } from "../../../../__app_modules/feed/server/adapters/WebContentAdapter.mjs";
+import { extractOgImageFromHtml } from "../../../../__app_modules/media/feed/server/adapters/WebContentAdapter.mjs";
 
 describe('extractOgImageFromHtml', () => {
   test('reads og:image with property before content', () => {

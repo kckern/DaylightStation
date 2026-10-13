@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mp3RelForMidiRel } from "../../../../__app_modules/piano/server/domain/pianoaudio/pianoAudioPaths.mjs";
+import { mp3RelForMidiRel } from "../../../../__app_modules/learning/piano/server/domain/pianoaudio/pianoAudioPaths.mjs";
 
 describe('mp3RelForMidiRel', () => {
   it('swaps .mid for .mp3 preserving jamcorder subdirs', () => {

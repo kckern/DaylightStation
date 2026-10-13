@@ -22,13 +22,13 @@ import * as fs from 'node:fs';
 
 import yaml from 'js-yaml';
 
-import { YamlHubConfigDatastore, serializeHubConfig } from '../../../../__app_modules/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
-import { HubConfig } from "../../../../__app_modules/media/server/domain/playback-hub/entities/HubConfig.mjs";
-import { HubDevice } from "../../../../__app_modules/media/server/domain/playback-hub/entities/HubDevice.mjs";
-import { SlotPosition } from "../../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
-import { SlotColor } from "../../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
-import { SlotClass } from "../../../../__app_modules/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
-import { VolumeBounds } from "../../../../__app_modules/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
+import { YamlHubConfigDatastore, serializeHubConfig } from '../../../../__app_modules/media/media/server/adapters/playback-hub/YamlHubConfigDatastore.mjs';
+import { HubConfig } from "../../../../__app_modules/media/media/server/domain/playback-hub/entities/HubConfig.mjs";
+import { HubDevice } from "../../../../__app_modules/media/media/server/domain/playback-hub/entities/HubDevice.mjs";
+import { SlotPosition } from "../../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotPosition.mjs";
+import { SlotColor } from "../../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotColor.mjs";
+import { SlotClass } from "../../../../__app_modules/media/media/server/domain/playback-hub/value-objects/SlotClass.mjs";
+import { VolumeBounds } from "../../../../__app_modules/media/media/server/domain/playback-hub/value-objects/VolumeBounds.mjs";
 import { ValidationError } from '../../../../__backend/src/2_domains/core/errors/ValidationError.mjs';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/playback-hub');

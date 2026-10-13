@@ -71,17 +71,15 @@ function* destinationFiles() {
   for (const name of DESTINATION_ROOTS) {
     const root = join(PROJECT_ROOT, name);
     if (!optionalDirectory(root)) continue;
-    for (const owner of readdirSync(root, { withFileTypes: true })) {
-      if (!owner.isDirectory() || DESTINATION_SKIP.has(owner.name)) continue;
-      const server = join(root, owner.name, 'server');
-      if (optionalDirectory(server)) yield* walk(server, true);
+    for (const file of walk(root, true)) {
+      if (isDestinationSource(relative(PROJECT_ROOT, file))) yield file;
     }
   }
 }
 
 function isDestinationSource(file) {
   const parts = file.split('/');
-  return DESTINATION_ROOTS.includes(parts[0]) && parts.length >= 4 && parts[2] === 'server'
+  return /^(?:__app_modules\/[^/]+(?:\/[^/]+)?|__capabilities\/[^/]+)\/server\/.+/.test(file)
     && !parts.slice(1, -1).some((part) => DESTINATION_SKIP.has(part))
     && SOURCE_EXTENSIONS.has(extname(file));
 }

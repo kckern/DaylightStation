@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CeremonyScheduler } from "../../../../__app_modules/life/server/application/services/CeremonyScheduler.mjs";
+import { CeremonyScheduler } from "../../../../__app_modules/personal/life/server/application/services/CeremonyScheduler.mjs";
 
 describe('CeremonyScheduler sets a dedupeKey on nudges', () => {
   it('includes ceremony:<type>:<periodId> in the sent intent', async () => {

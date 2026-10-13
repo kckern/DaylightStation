@@ -1,6 +1,6 @@
 // tests/isolated/domain/weekly-review/WeeklyReviewAggregator.test.mjs
 import { describe, it, expect } from 'vitest';
-import { WeeklyReviewAggregator } from "../../../../__app_modules/weekly-review/server/domain/WeeklyReviewAggregator.mjs";
+import { WeeklyReviewAggregator } from "../../../../__app_modules/personal/weekly-review/server/domain/WeeklyReviewAggregator.mjs";
 
 describe('WeeklyReviewAggregator', () => {
   const PHOTO_DAYS = [

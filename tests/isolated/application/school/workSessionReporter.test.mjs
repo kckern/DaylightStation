@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkSessionReporter } from "../../../../__app_modules/school/server/application/WorkSessionReporter.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
-import { GetSchoolReport } from "../../../../__app_modules/school/server/application/GetSchoolReport.mjs";
+import { WorkSessionReporter } from "../../../../__app_modules/learning/school/server/application/WorkSessionReporter.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { GetSchoolReport } from "../../../../__app_modules/learning/school/server/application/GetSchoolReport.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, silentLogger,

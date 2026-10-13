@@ -3,9 +3,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { YamlWorkSessionDatastore } from "../../../../__app_modules/school/server/adapters/persistence/YamlWorkSessionDatastore.mjs";
-import { IWorkSessionRepository } from "../../../../__app_modules/school/server/application/ports/IWorkSessionRepository.mjs";
-import { reduceSession } from "../../../../__app_modules/school/server/domain/sessions/sessionEvents.mjs";
+import { YamlWorkSessionDatastore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlWorkSessionDatastore.mjs";
+import { IWorkSessionRepository } from "../../../../__app_modules/learning/school/server/application/ports/IWorkSessionRepository.mjs";
+import { reduceSession } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const DAY = '2026-07-27';
 const AT = `${DAY}T10:00:00.000Z`;

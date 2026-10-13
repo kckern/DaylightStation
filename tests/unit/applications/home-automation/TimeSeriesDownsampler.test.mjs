@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { downsample } from "../../../../__app_modules/home/server/application/home-automation/services/TimeSeriesDownsampler.mjs";
+import { downsample } from "../../../../__app_modules/household/home/server/application/home-automation/services/TimeSeriesDownsampler.mjs";
 
 describe('TimeSeriesDownsampler.downsample', () => {
   it('returns the series unchanged when shorter than target', () => {

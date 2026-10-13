@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ConciergeAgent } from "../../../../__app_modules/concierge/server/application/ConciergeAgent.mjs";
+import { ConciergeAgent } from "../../../../__app_modules/household/concierge/server/application/ConciergeAgent.mjs";
 import { policyDecorator } from "../../../../__capabilities/agent-runtime/server/application/framework/decorators/PolicyDecorator.mjs";
 
 function makeBundle(name, tools = []) {

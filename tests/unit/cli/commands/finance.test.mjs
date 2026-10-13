@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { Writable } from 'node:stream';
-import finance from "../../../../__app_modules/finance/cli/finance.mjs";
+import finance from "../../../../__app_modules/money/finance/cli/finance.mjs";
 
 function makeBuffers() {
   const stdoutChunks = [];

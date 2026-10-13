@@ -12,7 +12,7 @@ import { useScreenAmbient } from "../../../../../__capabilities/screen-host/brow
 import { resolveAmbient } from './resolveAmbient.js';
 import { useScreenAction } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import { useScreenScene } from "../../../../../__capabilities/screen-host/browser/providers.mjs";
-import { useBackgroundMusic } from "../../../../../__app_modules/art/browser/music/useBackgroundMusic.js";
+import { useBackgroundMusic } from "../../../../../__app_modules/media/art/browser/music/useBackgroundMusic.js";
 import MusicPlaque from './MusicPlaque.jsx';
 import ArtLayer from './ArtLayer.jsx';
 import ArtPlacards from './ArtPlacards.jsx';

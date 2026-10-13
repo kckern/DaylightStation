@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { Writable } from 'node:stream';
-import memory from "../../../../__app_modules/concierge/cli/memory.mjs";
+import memory from "../../../../__app_modules/household/concierge/cli/memory.mjs";
 
 function makeBuffers() {
   const stdoutChunks = [];

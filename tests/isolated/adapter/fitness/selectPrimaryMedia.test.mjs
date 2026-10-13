@@ -1,5 +1,5 @@
 // tests/isolated/adapter/fitness/selectPrimaryMedia.test.mjs
-import { selectPrimaryMedia, selectPrimaryMediaSummary, buildWarmupChecker } from "../../../../__app_modules/fitness/server/domain/services/selectPrimaryMedia.mjs";
+import { selectPrimaryMedia, selectPrimaryMediaSummary, buildWarmupChecker } from "../../../../__app_modules/wellness/fitness/server/domain/services/selectPrimaryMedia.mjs";
 
 // ─── Test data factories (event shape, matches backend timeline events) ───
 

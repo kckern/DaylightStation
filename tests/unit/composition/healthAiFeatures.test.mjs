@@ -9,8 +9,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
-import { NutribotContainer } from "../../../__app_modules/nutribot/server/application/NutribotContainer.mjs";
-import { NutriLog } from "../../../__app_modules/health/server/domain/nutrition/entities/NutriLog.mjs";
+import { NutribotContainer } from "../../../__app_modules/wellness/nutribot/server/application/NutribotContainer.mjs";
+import { NutriLog } from "../../../__app_modules/wellness/health/server/domain/nutrition/entities/NutriLog.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 
 const silent = { debug() {}, info() {}, warn() {}, error() {}, child() { return silent; } };
@@ -140,7 +140,7 @@ describe('Health AI spend is attributed health/<feature>', () => {
 
   it('meal-instruction and revision: the web services the nutribot API module builds', async () => {
     const { health, features } = harness();
-    const { createNutribotApiRouter } = await import("../../../__app_modules/nutribot/server/composition/nutribotApi.mjs");
+    const { createNutribotApiRouter } = await import("../../../__app_modules/wellness/nutribot/server/composition/nutribotApi.mjs");
     const nutriListStore = anything({
       findByDate: vi.fn(async () => [{ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, meal: { time: 'morning' }, bucket: 'breakfast' }]),
       findByUuid: vi.fn(async () => ({ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, unit: 'g', amount: 80 })),
@@ -170,7 +170,7 @@ describe('Health AI spend is attributed health/<feature>', () => {
     const { mkdtemp, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
-    const { createNutritionCleanup } = await import("../../../__app_modules/health/server/composition/nutritionCleanup.mjs");
+    const { createNutritionCleanup } = await import("../../../__app_modules/wellness/health/server/composition/nutritionCleanup.mjs");
     const scopedWith = [];
     const recording = (tags = {}) => ({ chat: async () => '', evaluate: async () => ({}), isConfigured: () => true,
       scoped(more) { scopedWith.push({ ...tags, ...more }); return recording({ ...tags, ...more }); } });

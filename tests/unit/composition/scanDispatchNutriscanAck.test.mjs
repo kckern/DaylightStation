@@ -10,7 +10,7 @@
  * @see __backend/src/3_applications/nutribot/lib/routeNutribotScan.mjs
  */
 import { describe, it, expect } from 'vitest';
-import { swallowNotice } from "../../../__app_modules/nutribot/server/application/lib/routeNutribotScan.mjs";
+import { swallowNotice } from "../../../__app_modules/wellness/nutribot/server/application/lib/routeNutribotScan.mjs";
 import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
 
 /**

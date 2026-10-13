@@ -1,4 +1,4 @@
-import { readBuxferCredsDirect } from '../__app_modules/finance/cli/access.mjs';
+import { readBuxferCredsDirect } from '../__app_modules/money/finance/cli/access.mjs';
 /**
  * Lazy memoized factories for dscli command implementations.
  *
@@ -231,7 +231,7 @@ export async function getMemory() {
   _memoryInitPromise = (async () => {
     const cfg = await getConfigService();
     const dataService = new DataService({ configService: cfg });
-    const { createConciergeMemoryAccess } = await import('../__app_modules/concierge/server/memory-access.mjs');
+    const { createConciergeMemoryAccess } = await import('../__app_modules/household/concierge/server/memory-access.mjs');
     const memory = await createConciergeMemoryAccess({ dataService });
     _memory = memory;
     return _memory;
@@ -251,7 +251,7 @@ export async function getFinance() {
   if (_financeInitPromise) return _financeInitPromise;
 
   _financeInitPromise = (async () => {
-    const { createFinanceAccess } = await import('../__app_modules/finance/cli/access.mjs');
+    const { createFinanceAccess } = await import('../__app_modules/money/finance/cli/access.mjs');
     _finance = await createFinanceAccess({ getConfigService, getHttpClient });
     return _finance;
   })();
@@ -327,7 +327,7 @@ export async function getConciergeConfig() {
  */
 export async function getFinanceDirect() {
   if (_financeDirect) return _financeDirect;
-  const { createDirectFinanceAccess } = await import('../__app_modules/finance/cli/access.mjs');
+  const { createDirectFinanceAccess } = await import('../__app_modules/money/finance/cli/access.mjs');
   _financeDirect = await createDirectFinanceAccess({ getHttpClient });
   return _financeDirect;
 }
@@ -355,7 +355,7 @@ export async function getHealthAnalytics() {
     const cfg = await getConfigService();
 
     const dataService                = new DataService({ configService: cfg });
-    const { createHealthCliAnalytics } = await import("../__app_modules/health/server/composition/cli-analytics.mjs");
+    const { createHealthCliAnalytics } = await import("../__app_modules/wellness/health/server/composition/cli-analytics.mjs");
     _healthAnalytics = await createHealthCliAnalytics({ configService: cfg, dataService });
     return _healthAnalytics;
   })();

@@ -17,7 +17,7 @@ import { GATE_ID } from "./gateIds.js";
 import { resolvePause, PAUSE_REASON } from "./pauseArbiter.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FITNESS_PLAYER = path.resolve(HERE, '../../../../../__app_modules/fitness/browser/player/FitnessPlayer.jsx');
+const FITNESS_PLAYER = path.resolve(HERE, '../../../../../__app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx');
 const READALONG_PLAYER = path.resolve(HERE, '../../player/ReadalongPlaylistPlayer.jsx');
 
 /** Comment-stripped source, so a prose mention of an id never satisfies a code assertion. */

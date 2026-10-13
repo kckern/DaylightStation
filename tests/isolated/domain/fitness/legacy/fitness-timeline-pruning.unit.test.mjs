@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../__app_modules/fitness/browser/hooks/fitness/FitnessTimeline.js";
+import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../__app_modules/wellness/fitness/browser/hooks/fitness/FitnessTimeline.js";
 
 /**
  * Tests for FitnessTimeline pruning behavior.

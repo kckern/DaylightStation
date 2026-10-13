@@ -49,7 +49,7 @@ test('staged ESM CLI handles owner inventories larger than the default subproces
   f.stage();
   const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: f.root, input: '', encoding: 'utf8' }).trim();
   const entries = Array.from({ length: 4000 }, (_, i) =>
-    `100644 ${blob}\t__app_modules/piano/server/inventory/${i}-${'x'.repeat(220)}.txt\0`).join('');
+    `100644 ${blob}\t__app_modules/learning/piano/server/inventory/${i}-${'x'.repeat(220)}.txt\0`).join('');
   execFileSync('git', ['update-index', '-z', '--index-info'], { cwd: f.root, input: entries });
   const inventory = execFileSync('git', ['ls-files', '--stage', '-z', '--', '__app_modules'],
     { cwd: f.root, maxBuffer: 16 * 1024 * 1024 });
@@ -59,7 +59,7 @@ test('staged ESM CLI handles owner inventories larger than the default subproces
   assert.match(result.stdout, /3 staged modules checked/);
 });
 
-for (const root of ['__app_modules', '__capabilities']) {
+for (const root of ['__app_modules', '__app_modules/personal', '__capabilities']) {
   for (const ext of ['mjs', 'js', 'cjs']) {
     test(`${root}: ${ext} destination source and package aliases obey working/index bytes`, (t) => {
       const f = fixture(t);

@@ -6,9 +6,9 @@
 // broken Home Assistant must never delay or prevent a grade being recorded,
 // so `gradingHook.fire()` is never awaited into the grading path.
 import { describe, it, expect, vi } from 'vitest';
-import { createSchoolPrintScanConsumer } from "../../../__app_modules/school/server/composition/schoolPrintScanConsumer.mjs";
-import { RecordCardScanOutcome } from "../../../__app_modules/school/server/application/documents/RecordCardScanOutcome.mjs";
-import { reduceSession } from "../../../__app_modules/school/server/domain/sessions/sessionEvents.mjs";
+import { createSchoolPrintScanConsumer } from "../../../__app_modules/learning/school/server/composition/schoolPrintScanConsumer.mjs";
+import { RecordCardScanOutcome } from "../../../__app_modules/learning/school/server/application/documents/RecordCardScanOutcome.mjs";
+import { reduceSession } from "../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 // Same calibration fixture `schoolPrintScanConsumer.test.mjs` uses — decodes
 // to testId '0123456' with a handful of answered rows. This file never

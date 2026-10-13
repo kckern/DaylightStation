@@ -10,9 +10,9 @@ import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createFitnessRouter } from "../../../../__app_modules/fitness/server/api/fitness.mjs";
-import { FilesystemVoiceMemoArtifactStore } from "../../../../__app_modules/fitness/server/adapters/FilesystemVoiceMemoArtifactStore.mjs";
-import { FitnessVoiceMemoService } from "../../../../__app_modules/fitness/server/application/services/FitnessVoiceMemoService.mjs";
+import { createFitnessRouter } from "../../../../__app_modules/wellness/fitness/server/api/fitness.mjs";
+import { FilesystemVoiceMemoArtifactStore } from "../../../../__app_modules/wellness/fitness/server/adapters/FilesystemVoiceMemoArtifactStore.mjs";
+import { FitnessVoiceMemoService } from "../../../../__app_modules/wellness/fitness/server/application/services/FitnessVoiceMemoService.mjs";
 
 const silent = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const AUDIO_B64 = `data:audio/webm;base64,${Buffer.from('pretend opus payload').toString('base64')}`;

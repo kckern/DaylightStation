@@ -23,9 +23,9 @@
  * is a vitest target, so this one does.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ResolveAccessCode } from "../../../../__app_modules/school/server/application/usecases/ResolveAccessCode.mjs";
-import { CurriculumAccess } from "../../../../__app_modules/school/server/application/CurriculumAccess.mjs";
-import { mintToken } from "../../../../__app_modules/school/server/domain/sessions/tokens.mjs";
+import { ResolveAccessCode } from "../../../../__app_modules/learning/school/server/application/usecases/ResolveAccessCode.mjs";
+import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
+import { mintToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, FakeTokenRegistry,
   fakeClock, seededRng, silentLogger,

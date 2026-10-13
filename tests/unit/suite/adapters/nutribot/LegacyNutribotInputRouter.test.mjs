@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LegacyNutribotInputRouter } from "../../../../../__app_modules/nutribot/server/adapters/LegacyNutribotInputRouter.mjs";
-import { NutribotScaleRefusal } from "../../../../../__app_modules/nutribot/server/application/ports/NutribotScaleRefusal.mjs";
+import { LegacyNutribotInputRouter } from "../../../../../__app_modules/wellness/nutribot/server/adapters/LegacyNutribotInputRouter.mjs";
+import { NutribotScaleRefusal } from "../../../../../__app_modules/wellness/nutribot/server/application/ports/NutribotScaleRefusal.mjs";
 
 describe('LegacyNutribotInputRouter', () => {
   it('preserves the established scale-refusal result envelope', async () => {

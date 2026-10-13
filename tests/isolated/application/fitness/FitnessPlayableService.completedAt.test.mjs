@@ -1,6 +1,6 @@
 // tests/isolated/application/fitness/FitnessPlayableService.completedAt.test.mjs
 import { describe, test, expect, vi } from 'vitest';
-import { FitnessPlayableService } from "../../../../__app_modules/fitness/server/application/FitnessPlayableService.mjs";
+import { FitnessPlayableService } from "../../../../__app_modules/wellness/fitness/server/application/FitnessPlayableService.mjs";
 
 function makeService({ items, classifyResult = 'in_progress' } = {}) {
   const fakeAdapter = {

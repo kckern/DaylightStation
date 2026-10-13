@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseYear, buildArtPredicate, resolveCollection }
-  from "../../../__app_modules/art/server/adapters/collections.mjs";
+  from "../../../__app_modules/media/art/server/adapters/collections.mjs";
 
 describe('parseYear', () => {
   it('extracts the first 4-digit run', () => {

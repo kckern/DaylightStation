@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createAuthRouter } from './auth.mjs';
-import { createCalendarRouter } from "../../../../../__app_modules/calendar/server/api/calendar.mjs";
+import { createCalendarRouter } from "../../../../../__app_modules/personal/calendar/server/api/calendar.mjs";
 import { createEntropyRouter } from './entropy.mjs';
 import { createHarvestRouter } from './harvest.mjs';
 import { createLifelogRouter } from "../../../../../__capabilities/lifelog/server/api/lifelog.mjs";
-import { createMediaRouter } from "../../../../../__app_modules/media/server/api/media.mjs";
-import { createHomeDashboardRouter } from "../../../../../__app_modules/home/server/api/home-dashboard.mjs";
-import { createJournalistRouter } from "../../../../../__app_modules/journalist/server/api/journalist.mjs";
-import { createNutribotRouter } from "../../../../../__app_modules/nutribot/server/api/routers/nutribot.mjs";
-import { CalendarReadContext } from "../../../../../__app_modules/calendar/server/application/CalendarReadContext.mjs";
+import { createMediaRouter } from "../../../../../__app_modules/media/media/server/api/media.mjs";
+import { createHomeDashboardRouter } from "../../../../../__app_modules/household/home/server/api/home-dashboard.mjs";
+import { createJournalistRouter } from "../../../../../__app_modules/personal/journalist/server/api/journalist.mjs";
+import { createNutribotRouter } from "../../../../../__app_modules/wellness/nutribot/server/api/routers/nutribot.mjs";
+import { CalendarReadContext } from "../../../../../__app_modules/personal/calendar/server/application/CalendarReadContext.mjs";
 
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 function mount(path, router, { json = true } = {}) {

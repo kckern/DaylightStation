@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-export { parseCorpusTsv, mergeLegacyEvents } from '../__app_modules/school/cli/glossika.cli.mjs';
+export { parseCorpusTsv, mergeLegacyEvents } from '../__app_modules/learning/school/cli/glossika.cli.mjs';

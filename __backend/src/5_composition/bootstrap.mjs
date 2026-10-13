@@ -1,23 +1,23 @@
-import {registerPianoJamCorderHarvester} from '../../../__app_modules/piano/server/composition/jamcorder-harvester.mjs';
-import { registerPianoAudioHarvesters } from "../../../__app_modules/piano/server/composition/audio-harvesters.mjs";
+import {registerPianoJamCorderHarvester} from '../../../__app_modules/learning/piano/server/composition/jamcorder-harvester.mjs';
+import { registerPianoAudioHarvesters } from "../../../__app_modules/learning/piano/server/composition/audio-harvesters.mjs";
 import { createHarvestedLifelogAggregator } from '../../../__capabilities/lifelog/server/composition.mjs';
 import {contentRequiresCamera} from './policies/contentRequiresCamera.mjs';
 import { createLifelogServices as owned_createLifelogServices } from "../../../__capabilities/lifelog/server/composition.mjs";
 import { createHomeAutomationAdapters as owned_createHomeAutomationAdapters } from "../../../__capabilities/home-control/server/composition.mjs";
-import { createCameraServices as owned_createCameraServices } from "../../../__app_modules/camera/server/composition.mjs";
-import { createFinanceServices as owned_createFinanceServices } from "../../../__app_modules/finance/server/composition.mjs";
-import { createFeedServices as owned_createFeedServices } from "../../../__app_modules/feed/server/composition.mjs";
+import { createCameraServices as owned_createCameraServices } from "../../../__app_modules/household/camera/server/composition.mjs";
+import { createFinanceServices as owned_createFinanceServices } from "../../../__app_modules/money/finance/server/composition.mjs";
+import { createFeedServices as owned_createFeedServices } from "../../../__app_modules/media/feed/server/composition.mjs";
 import { createAgentRuntimeServices } from '../../../__capabilities/agent-runtime/server/composition.mjs';
-import { registerLifeplanGuide } from '../../../__app_modules/life/server/agent-registration.mjs';
-import { registerPagedMediaToc } from '../../../__app_modules/media/server/agent-registration.mjs';
-import { createConciergeServices as createConciergeModule } from '../../../__app_modules/concierge/server/composition.mjs';
+import { registerLifeplanGuide } from '../../../__app_modules/personal/life/server/agent-registration.mjs';
+import { registerPagedMediaToc } from '../../../__app_modules/media/media/server/agent-registration.mjs';
+import { createConciergeServices as createConciergeModule } from '../../../__app_modules/household/concierge/server/composition.mjs';
 import {relocatedProviderManifests} from './integrations/providerManifests.mjs';
-import {pianoCurriculumEnrichment} from '../../../__app_modules/piano/server/composition/plex-curriculum.mjs';
+import {pianoCurriculumEnrichment} from '../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
 
-import { createHomebotServices as createOwnedHomebotServices } from '../../../__app_modules/homebot/server/composition.mjs';
-import { createJournalistServices as createOwnedJournalistServices } from '../../../__app_modules/journalist/server/composition.mjs';
-import { createNewsReporterServices as createOwnedNewsReporterServices } from '../../../__app_modules/newsreporter/server/composition.mjs';
-import { createHealthCoachingContext, registerHealthCoaching } from "../../../__app_modules/health/server/composition/coaching.mjs";
+import { createHomebotServices as createOwnedHomebotServices } from '../../../__app_modules/household/homebot/server/composition.mjs';
+import { createJournalistServices as createOwnedJournalistServices } from '../../../__app_modules/personal/journalist/server/composition.mjs';
+import { createNewsReporterServices as createOwnedNewsReporterServices } from '../../../__app_modules/media/newsreporter/server/composition.mjs';
+import { createHealthCoachingContext, registerHealthCoaching } from "../../../__app_modules/wellness/health/server/composition/coaching.mjs";
 // __backend/src/5_composition/bootstrap.mjs
 
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
@@ -363,7 +363,7 @@ import { YamlEntropyReader } from '#adapters/entropy/YamlEntropyReader.mjs';
 
 // Harvester application imports
 import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mjs';
-import { WeightProcessor } from "../../../__app_modules/health/server/application/health/analytics/WeightProcessor.mjs";
+import { WeightProcessor } from "../../../__app_modules/wellness/health/server/application/health/analytics/WeightProcessor.mjs";
 
 // Harvester adapter imports
 import { YamlLifelogDatastore, YamlCurrentDatastore, TodoistHarvester, ClickUpHarvester, GitHubHarvester, LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester, GmailHarvester, GCalHarvester, ShoppingHarvester, BuxferHarvester, WeatherHarvester, StravaHarvester, WithingsHarvester, FitnessSyncerHarvester, YamlAuthDatastore, createInfinityHarvesters } from "#adapters/harvester/index.mjs";
@@ -381,7 +381,7 @@ import { YamlLifelogDatastore, YamlCurrentDatastore, TodoistHarvester, ClickUpHa
 import RSSParser from 'rss-parser';
 
 // Additional adapters for harvesters
-import { createActivityGateway } from "../../../__app_modules/fitness/server/activity-gateway.mjs";
+import { createActivityGateway } from "../../../__app_modules/wellness/fitness/server/activity-gateway.mjs";
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 
 // =============================================================================
@@ -591,7 +591,7 @@ export function createMediaProgressMemory(config) {
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Fitness services
  */
-export { createFitnessServices } from '../../../__app_modules/fitness/server/services.mjs';
+export { createFitnessServices } from '../../../__app_modules/wellness/fitness/server/services.mjs';
 
 /**
  * Spoken-answer transcription for language assessment.
@@ -631,7 +631,7 @@ export function createLanguageTranscriptionService({ openaiAdapter, logger = con
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Media services
  */
-export { createMediaServices } from '../../../__app_modules/media/server/composition/runtime.mjs';
+export { createMediaServices } from '../../../__app_modules/media/media/server/composition/runtime.mjs';
 
 // =============================================================================
 // EventBus Bootstrap
@@ -948,7 +948,7 @@ export function createHomeAutomationAdapters(config) { return owned_createHomeAu
  * @param {Object} [config.logger] - Logger instance
  * @returns {Promise<{ container: PlaybackHubContainer, router: import('express').Router } | null>}
  */
-export {createPlaybackHubServices} from '../../../__app_modules/media/server/composition/playback-hub.mjs';
+export {createPlaybackHubServices} from '../../../__app_modules/media/media/server/composition/playback-hub.mjs';
 
 // =============================================================================
 // Camera Bootstrap

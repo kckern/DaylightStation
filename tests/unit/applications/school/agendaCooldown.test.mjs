@@ -21,7 +21,7 @@
  *   - `school.card.agenda-suppressed` logs `{learnerId, sinceMinutes, cooldownMinutes}`
  */
 import { describe, it, expect, vi } from 'vitest';
-import { ResolvePersonalCard } from "../../../../__app_modules/school/server/application/usecases/ResolvePersonalCard.mjs";
+import { ResolvePersonalCard } from "../../../../__app_modules/learning/school/server/application/usecases/ResolvePersonalCard.mjs";
 
 function fakeClock(startIso = '2026-08-22T15:02:33.000Z') {
   let ms = Date.parse(startIso);

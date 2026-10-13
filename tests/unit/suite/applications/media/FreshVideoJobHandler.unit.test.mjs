@@ -12,8 +12,8 @@ import { describe, it, expect, jest, beforeAll, afterAll } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createFreshVideoJobHandler } from "../../../../../__app_modules/media/server/application/FreshVideoJobHandler.mjs";
-import { FilesystemFreshVideoMediaStore } from "../../../../../__app_modules/media/server/adapters/persistence/FilesystemFreshVideoMediaStore.mjs";
+import { createFreshVideoJobHandler } from "../../../../../__app_modules/media/media/server/application/FreshVideoJobHandler.mjs";
+import { FilesystemFreshVideoMediaStore } from "../../../../../__app_modules/media/media/server/adapters/persistence/FilesystemFreshVideoMediaStore.mjs";
 
 describe('FreshVideoJobHandler', () => {
   describe('createFreshVideoJobHandler', () => {

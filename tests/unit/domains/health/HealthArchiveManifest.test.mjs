@@ -3,7 +3,7 @@ import {
   HealthArchiveManifest,
   BUILT_IN_CATEGORIES,
   VALID_CATEGORIES,
-} from "../../../../__app_modules/health/server/domain/health/entities/HealthArchiveManifest.mjs";
+} from "../../../../__app_modules/wellness/health/server/domain/health/entities/HealthArchiveManifest.mjs";
 
 describe('HealthArchiveManifest', () => {
   it('constructs with valid fields', () => {

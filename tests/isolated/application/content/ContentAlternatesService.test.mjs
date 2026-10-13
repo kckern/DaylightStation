@@ -12,7 +12,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
-import { FilesystemCanvasAdapter } from "../../../../__app_modules/art/server/adapters/canvas/filesystem/FilesystemCanvasAdapter.mjs";
+import { FilesystemCanvasAdapter } from "../../../../__app_modules/media/art/server/adapters/canvas/filesystem/FilesystemCanvasAdapter.mjs";
 import { ContentSourceRegistry } from "../../../../__capabilities/content-catalog/server/adapters/ContentSourceRegistry.mjs";
 import { ContentAlternatesService } from "../../../../__capabilities/content-catalog/server/application/ContentAlternatesService.mjs";
 import { RegistryContentCatalogGateway } from "../../../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";

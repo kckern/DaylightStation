@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 
-vi.mock("../../../../__app_modules/fitness/browser/context/FitnessContext.jsx", () => ({
+vi.mock("../../../../__app_modules/wellness/fitness/browser/context/FitnessContext.jsx", () => ({
   useFitnessContext: () => ({
     deviceAssignments: [],
     getDeviceAssignment: () => null,
@@ -32,7 +32,7 @@ vi.mock(
   })
 );
 
-import FitnessSidebarMenu from "../../../../__app_modules/fitness/browser/player/panels/FitnessSidebarMenu.jsx";
+import FitnessSidebarMenu from "../../../../__app_modules/wellness/fitness/browser/player/panels/FitnessSidebarMenu.jsx";
 
 describe('FitnessSidebarMenu — idle close timer', () => {
   beforeEach(() => { vi.useFakeTimers(); });

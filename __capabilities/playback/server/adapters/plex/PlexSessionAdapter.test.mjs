@@ -18,7 +18,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { PlexSessionAdapter, toRatingKey } from "./PlexSessionAdapter.mjs";
 import { PlaybackSession } from "../../domain/entities/PlaybackSession.mjs";
-import { PlexClientIdentity } from "../../../../../__app_modules/media/server/domain/value-objects/PlexClientIdentity.mjs";
+import { PlexClientIdentity } from "../../../../../__app_modules/media/media/server/domain/value-objects/PlexClientIdentity.mjs";
 
 const T0 = 1_789_577_175_000;
 

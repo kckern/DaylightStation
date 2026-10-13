@@ -57,13 +57,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SurroundFrame from "./SurroundFrame.jsx";
-import ComposerCard from "../../../../__app_modules/media/browser/surround/modules/ComposerCard.jsx";
+import ComposerCard from "../../../../__app_modules/media/media/browser/surround/modules/ComposerCard.jsx";
 import { accordionShares, soundingWidth, idealWidth, placedSegments, railFloorPx, railWearsChips, inactiveRoomPx, numeralStyle, numeralText, SEGMENT_FLOOR_PX, SEGMENT_NAME_RUN_PX, SEGMENT_CHIP_FLOOR_PX }  from "./band.js";
 import { bandPools, proseFloorPx, labelFloorPx, proseCeilingPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX, LEADING_FLOOR, LEADING_MAX }  from "./fit.js";
 import { factPools, isComposedContainer } from "./segments.js";
 import { smartQuotes } from "./typography.js";
 import { smartQuotesAll } from "./typography.js";
-import "../../../../__app_modules/media/browser/surround/builtins.js";
+import "../../../../__app_modules/media/media/browser/surround/builtins.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_FONTS = path.resolve(HERE, '../../../../frontend/public/fonts/surround');
@@ -604,9 +604,9 @@ const POSITION = 1200;
  */
 async function compileSheet() {
   const sass = await import('sass-embedded');
-  const sheets = ['SurroundFrame.scss', '../../../../__app_modules/media/browser/surround/modules/SegmentMap.scss', '../../../../__app_modules/media/browser/surround/modules/CueTicker.scss',
-    '../../../../__app_modules/media/browser/surround/modules/WorkPlacard.scss', '../../../../__app_modules/media/browser/surround/modules/ComposerCard.scss', '../../../../__app_modules/media/browser/surround/modules/PlaceCarousel.scss',
-    '../../../../__app_modules/media/browser/surround/map/CountryMap.scss', '../../../../__app_modules/media/browser/surround/map/EraTimeline.scss'];
+  const sheets = ['SurroundFrame.scss', '../../../../__app_modules/media/media/browser/surround/modules/SegmentMap.scss', '../../../../__app_modules/media/media/browser/surround/modules/CueTicker.scss',
+    '../../../../__app_modules/media/media/browser/surround/modules/WorkPlacard.scss', '../../../../__app_modules/media/media/browser/surround/modules/ComposerCard.scss', '../../../../__app_modules/media/media/browser/surround/modules/PlaceCarousel.scss',
+    '../../../../__app_modules/media/media/browser/surround/map/CountryMap.scss', '../../../../__app_modules/media/media/browser/surround/map/EraTimeline.scss'];
   const compiled = [];
   for (const rel of sheets) {
     const out = await sass.compileAsync(path.join(HERE, rel), { loadPaths: [HERE] });

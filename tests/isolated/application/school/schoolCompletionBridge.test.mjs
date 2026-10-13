@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SchoolCompletionBridge } from "../../../../__app_modules/school/server/application/SchoolCompletionBridge.mjs";
-import { EventBusSchoolRealtimeAdapter } from "../../../../__app_modules/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
+import { SchoolCompletionBridge } from "../../../../__app_modules/learning/school/server/application/SchoolCompletionBridge.mjs";
+import { EventBusSchoolRealtimeAdapter } from "../../../../__app_modules/learning/school/server/adapters/eventbus/EventBusSchoolRealtimeAdapter.mjs";
 import { fakeClock, silentLogger } from '#testlib/school/lifecycleFakes.mjs';
 
 class FakeEventBus {

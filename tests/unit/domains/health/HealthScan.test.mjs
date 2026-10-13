@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import HealthScanDefault, { HealthScan } from "../../../../__app_modules/health/server/domain/health/entities/HealthScan.mjs";
-import { serializeHealthScan } from "../../../../__app_modules/health/server/adapters/persistence/yaml/YamlHealthScanDatastore.mjs";
+import HealthScanDefault, { HealthScan } from "../../../../__app_modules/wellness/health/server/domain/health/entities/HealthScan.mjs";
+import { serializeHealthScan } from "../../../../__app_modules/wellness/health/server/adapters/persistence/yaml/YamlHealthScanDatastore.mjs";
 
 const validRequired = () => ({
   date: '2024-01-15',

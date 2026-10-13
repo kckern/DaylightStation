@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { conceptMastery } from "../../../../../__app_modules/school/server/domain/progress/conceptMastery.mjs";
+import { conceptMastery } from "../../../../../__app_modules/learning/school/server/domain/progress/conceptMastery.mjs";
 
 const NOW = '2026-09-30T00:00:00.000Z';
 

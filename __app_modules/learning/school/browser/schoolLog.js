@@ -1,0 +1,59 @@
+/**
+ * School logging facade — categories over a child logger (pattern:
+ * frontend/src/modules/Feed/Scroll/feedLog.js). Spec §9 event names.
+ */
+import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
+
+function logger() {
+  return getLogger().child({ component: 'school' });
+}
+
+function emit(category, detail, data, level = 'info') {
+  const payload = typeof data === 'object' && data !== null ? { ...data } : {};
+  payload.detail = detail;
+  logger()[level](`school.${category}.${detail}`, payload);
+}
+
+export const schoolLog = {
+  profile: (detail, data) => emit('profile', detail, data),           // claimed | lapsed
+  session: (detail, data) => emit('session', detail, data),           // start | end
+  answer:  (detail, data) => emit('answer', detail, data, 'debug'),   // graded
+  answerError: (detail, data) => emit('answer', detail, data, 'error'), // record-failed
+  bank:    (detail, data) => emit('bank', detail, data, 'warn'),
+  nav:     (detail, data) => emit('nav', detail, data),               // section | home | reload
+  home:    (detail, data) => emit('home', detail, data),               // continue-rail | continue-fetch-failed
+  materials: (detail, data) => emit('materials', detail, data),       // catalog-failed
+  materialsError: (detail, data) => emit('materials', detail, data, 'error'),
+  surface:  (detail, data) => emit('surface', detail, data, 'warn'),  // profile-unresolved
+  teacherToday: (detail, data) => emit('teacher-today', detail, data),           // loaded
+  teacherTodayError: (detail, data) => emit('teacher-today', detail, data, 'error'), // fetch-failed
+  feedback: (detail, data) => emit('feedback', detail, data),                   // loaded
+  feedbackError: (detail, data) => emit('feedback', detail, data, 'error'),     // fetch-failed
+  standing: (detail, data) => emit('standing', detail, data),                   // loaded
+  standingError: (detail, data) => emit('standing', detail, data, 'error'),     // fetch-failed
+  print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny
+  typing:  (detail, data) => emit('typing', detail, data, 'debug'),   // line-done
+  player:  (detail, data) => emit('player', detail, data),            // media-resolved | media-unresolved | chrome-visibility
+  // Locked self-service panel (design §5). Detail names match the backend's:
+  // code.rejected | code.resolved | action.run | print.confirmed |
+  // print.debounced | print.retried | idle.timeout. A code that never works is
+  // a minting or expiry bug and these are the only way to see it — so NEVER
+  // log the code itself, only that one was typed.
+  selfService: (detail, data) => emit('selfservice', detail, data),
+  selfServiceError: (detail, data) => emit('selfservice', detail, data, 'error'), // resolve.failed | act.failed
+  // The scan ceremony (Slice D self-service): every scan outcome the locked
+  // panel acknowledges on screen. `detail` is the event name off the `omr`
+  // topic (scan-graded | scan-review | scan-unresolved | scan-refused |
+  // reader-error); `data` carries the mapped { tone, title } plus whatever
+  // ids rode along, so a scan that made no visible mark on the room still
+  // leaves a trace here.
+  scan: (detail, data) => emit('scan', detail, data),
+  // The reading shelf (book-shelf UI design §7): opened | closed{reason} |
+  // lookup{status} | item-opened | progress{kind} | add.rejected{reason} |
+  // cover.unresolved. The number a child typed is never logged, only the
+  // verdict on it — the same discipline as the self-service code above.
+  bookShelf: (detail, data) => emit('book-shelf', detail, data),
+  bookShelfError: (detail, data) => emit('book-shelf', detail, data, 'error'), // shelf.failed | write.failed
+};
+
+export default schoolLog;

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 let resolveBackButtonLabel;
 
 beforeAll(async () => {
-  const mod = await import("../../../__app_modules/fitness/browser/player/FitnessChartBackButton.js");
+  const mod = await import("../../../__app_modules/wellness/fitness/browser/player/FitnessChartBackButton.js");
   resolveBackButtonLabel = mod.resolveBackButtonLabel;
 });
 

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { PlayMediaUseCase, orderForResolve, simplifyQuery, splitCompoundWords } from "../../../../../../__app_modules/concierge/server/application/usecases/PlayMedia.mjs";
+import { PlayMediaUseCase, orderForResolve, simplifyQuery, splitCompoundWords } from "../../../../../../__app_modules/household/concierge/server/application/usecases/PlayMedia.mjs";
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 const SAT = { mediaPlayerEntity: 'media_player.office' };

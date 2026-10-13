@@ -1,0 +1,562 @@
+/**
+ * The half of the reading session the backend cannot see: the pick being
+ * committed, the story starting, and the story finishing.
+ *
+ * Three rules are load-tested here because each of them fails INVISIBLY in the
+ * field — nothing on any screen would look wrong:
+ *   1. attribution is frozen at pick time (D4) — a sibling wandering past
+ *      mid-story must not inherit the read;
+ *   2. one pick is one `pickId`, and duplicate completion is still one book;
+ *   3. a read that did NOT record is never shown as though it had (§9).
+ */
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const h = vi.hoisted(() => ({ handler: null }));
+
+vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
+  useWebSocketSubscription: (_topic, cb) => { h.handler = cb; },
+}));
+
+vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => ({
+  default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
+}));
+
+import { useReadingSession } from "./useReadingSession.js";
+
+const SUMMARY = {
+  learnerId: 'user_5', displayName: 'User_5', enrolled: true, error: false,
+  count: 1, target: 2, progressLabel: '1 of 2 stories', doneToday: false, yesterday: [],
+};
+
+let calls;
+
+function stubFetch({ summary = SUMMARY, readOk = true, session = null, readNext = null } = {}) {
+  calls = [];
+  let sessionReads = 0;
+  vi.stubGlobal('fetch', vi.fn((url, opts) => {
+    const href = String(url);
+    calls.push({ url: href, body: opts?.body ? JSON.parse(opts.body) : null });
+    if (href.includes('/reading/session/adopt-decline')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    }
+    if (href.includes('/reading/session/ack')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    }
+    if (href.includes('/reading/session?')) {
+      const snapshot = typeof session === 'function' ? session(sessionReads++) : session;
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ location: 'livingroom', session: snapshot }) });
+    }
+    if (href.includes('/reading/read')) {
+      return Promise.resolve({ ok: readOk, status: readOk ? 200 : 500, json: async () => ({ recorded: readOk, next: readNext }) });
+    }
+    if (href.includes('/reading/playing')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, state: 'reading' }) });
+    }
+    if (href.includes('/reading/summary')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => summary });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ title: 'Frog and Toad' }) });
+  }));
+}
+
+const posted = (path) => calls.filter((c) => c.url.includes(path));
+
+async function mountAndPick({ learnerId = 'user_5', contentId = 'plex:620681' } = {}) {
+  const played = [];
+  const hook = renderHook(() => useReadingSession({
+    location: 'livingroom', confirmMs: 1000, onPlay: (pick) => played.push(pick),
+  }));
+  await act(async () => { h.handler({ event: 'session-open', learnerId, location: 'livingroom' }); });
+  await act(async () => { h.handler({ event: 'book-selected', learnerId, contentId }); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+  return { ...hook, played };
+}
+
+describe('useReadingSession — playback', () => {
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date',
+        'requestAnimationFrame', 'cancelAnimationFrame'],
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('commits the pick exactly once, with a pickId, and hands it to the player', async () => {
+    const { played, result } = await mountAndPick();
+    expect(played).toHaveLength(1);
+    expect(played[0]).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', location: 'livingroom' });
+    expect(played[0].pickId).toMatch(/^pick_/);
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('recovers a launch missed during cold resume from the authoritative snapshot and ACKs once', async () => {
+    stubFetch({
+      session: {
+        sessionId: 'rs-cold-resume',
+        location: 'livingroom',
+        learnerId: 'user_5',
+        state: 'prompt',
+      },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'user_5' });
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+    expect(posted('/reading/session/ack')[0].body).toEqual({
+      location: 'livingroom',
+      sessionId: 'rs-cold-resume',
+    });
+  });
+
+  it('does not apply or ACK a reservation that has not been activated yet', async () => {
+    stubFetch({
+      session: {
+        sessionId: 'rs-still-waking',
+        location: 'livingroom',
+        learnerId: 'user_5',
+        state: 'starting',
+      },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.view).toBe('idle');
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+  });
+
+  it('polls a STARTING snapshot and recovers once the slow wake activates it', async () => {
+    stubFetch({
+      session: (read) => read === 0
+        ? {
+            sessionId: 'rs-slow-wake', location: 'livingroom',
+            learnerId: 'user_5', state: 'starting',
+          }
+        : {
+            sessionId: 'rs-slow-wake', location: 'livingroom',
+            learnerId: 'user_5', state: 'prompt',
+          },
+    });
+
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom' }));
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'user_5' });
+    expect(posted('/reading/session?')).toHaveLength(2);
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+  });
+
+  it('reports the FIRST FRAME to the backend, once, with the pick it committed', async () => {
+    const { played, result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+
+    expect(posted('/reading/playing')).toHaveLength(1);
+    expect(posted('/reading/playing')[0].body).toMatchObject({
+      location: 'livingroom', learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId,
+    });
+  });
+
+  it('records the read on completion, with the SAME pickId the play was committed under', async () => {
+    const { played, result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+
+    expect(posted('/reading/read')).toHaveLength(1);
+    expect(posted('/reading/read')[0].body).toMatchObject({
+      learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId, location: 'livingroom',
+    });
+  });
+
+  it('a player that reports completion twice credits one book', async () => {
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/read')).toHaveLength(1);
+  });
+
+  it('keeps the picker and playback unchanged when another card is refused mid-story', async () => {
+    const { result } = await mountAndPick({ learnerId: 'user_5' });
+    await act(async () => {
+      h.handler({
+        event: 'session-switch-refused', learnerId: 'user_3', currentLearnerId: 'user_5',
+        currentSessionId: 'rs-learner-a', state: 'reading', location: 'livingroom',
+      });
+    });
+    expect(result.current.view).toBe('playing');
+    expect(result.current.learner.id).toBe('user_5');
+    expect(result.current.notice).toMatchObject({ title: 'Finish this first' });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/read')[0].body.learnerId).toBe('user_5');
+  });
+
+  it('ACKs the exact presentation only after the unobscured launch card renders', async () => {
+    const props = { obscured: true };
+    const { result, rerender } = renderHook(() => useReadingSession({
+      location: 'livingroom', presentationObscured: props.obscured,
+    }));
+    const payload = {
+      event: 'session-present', location: 'livingroom', learnerId: 'user_3',
+      sessionId: 'rs-new', presentationId: 'rp-new', revision: 7, serverEpoch: 'reading-1', reason: 'switch',
+    };
+    await act(async () => { h.handler(payload); });
+    expect(result.current.view).toBe('open');
+    expect(result.current.learner).toMatchObject({ id: 'user_3' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+
+    props.obscured = false;
+    rerender();
+    await act(async () => { await vi.advanceTimersByTimeAsync(40); });
+    expect(posted('/reading/session/ack')[0].body).toEqual({
+      location: 'livingroom', learnerId: 'user_3', sessionId: 'rs-new',
+      presentationId: 'rp-new', revision: 7, serverEpoch: 'reading-1',
+    });
+  });
+
+  it('records NOTHING when the player goes away without the story ending', async () => {
+    const { result } = await mountAndPick();
+    await act(async () => { result.current.notePlaybackDismissed(); });
+    expect(posted('/reading/read')).toEqual([]);
+    expect(result.current.view).toBe('open');
+  });
+
+  it('says so when the read did not save — never a count that did not move', async () => {
+    stubFetch({ readOk: false });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.notice).toMatchObject({ tone: 'error' });
+    expect(result.current.view).toBe('open');
+  });
+
+  it('celebrates only when the read that just landed MET the target', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('celebrating');
+    expect(result.current.summary.progressLabel).toBe('2 of 2 stories');
+  });
+
+  it('acknowledges the book, THEN goes back to the prompt, when stories are still owed', async () => {
+    // The short tier. This used to drop straight to `open` — a child who read
+    // story 1 of 2 watched their story end and the screen say nothing, which
+    // reads as "that did not count" moments after the read was credited.
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('book-done');
+    await act(async () => { vi.advanceTimersByTime(3200); });
+    expect(result.current.view).toBe('open');
+  });
+
+  it('holds the day-done celebration for its full length, not the book beat', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('celebrating');
+    // Past the short tier, still celebrating — the two timers are not shared.
+    await act(async () => { vi.advanceTimersByTime(3200); });
+    expect(result.current.view).toBe('celebrating');
+    // A DONE DAY DOES NOT GO BACK TO THE SHELF. It used to land on 'open',
+    // where a finished child sat in front of "what do you want to read today?"
+    // until a two-minute idle timer turned the room off.
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(result.current.view).toBe('winding-down');
+  });
+
+  it('winds the room down after the ceremony, through the reader\'s own end policy', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(result.current.view).toBe('winding-down');
+    // Nothing has happened to the room yet — there is still time to say no.
+    expect(posted('/reading/session/end')).toHaveLength(0);
+    await act(async () => { vi.advanceTimersByTime(20_000); });
+    expect(posted('/reading/session/end')[0].body).toMatchObject({ reason: 'day-done' });
+  });
+
+  it('a child who wants another book cancels the wind-down by picking one', async () => {
+    stubFetch({ summary: { ...SUMMARY, count: 2, progressLabel: '2 of 2 stories', doneToday: true } });
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    await act(async () => { h.handler({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:2' }); });
+    expect(result.current.view).not.toBe('winding-down');
+    await act(async () => { vi.advanceTimersByTime(20_000); });
+    expect(posted('/reading/session/end')).toHaveLength(0);
+  });
+
+  it('carries the title the info lookup found onto the recorded read', async () => {
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/read')[0].body.title).toBe('Frog and Toad');
+  });
+
+  it('exposes the countdown in the shape LaunchCard already draws', async () => {
+    const played = [];
+    const { result } = renderHook(() => useReadingSession({
+      location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p),
+    }));
+    await act(async () => { h.handler({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' }); });
+    expect(result.current.confirmRemainingMs).toBeNull();
+    expect(result.current.confirmTotalMs).toBeNull();
+
+    await act(async () => { h.handler({ event: 'book-selected', learnerId: 'user_5', contentId: 'plex:1' }); });
+    expect(result.current.confirmTotalMs).toBe(1000);
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.confirmRemainingMs).toBeLessThan(1000);
+    expect(result.current.confirmRemainingMs).toBeGreaterThan(0);
+  });
+});
+
+describe('useReadingSession — a book on deck is somebody\'s', () => {
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date',
+        'requestAnimationFrame', 'cancelAnimationFrame'],
+    });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  const ON_DECK = { event: 'on-deck', location: 'livingroom', contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5' };
+
+  it('shows the waiting book and whose it is, and a card re-scopes it without touching the story', async () => {
+    const { played, result } = await mountAndPick();
+    await act(async () => { h.handler(ON_DECK); });
+    expect(result.current.onDeck).toMatchObject({ contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', learnerName: 'User_5' });
+    await act(async () => { h.handler({ ...ON_DECK, event: 'on-deck-rescoped', learnerId: 'user_3' }); });
+    expect(result.current.onDeck).toMatchObject({ contentId: 'plex:2', learnerId: 'user_3' });
+    // The playing story's attribution is untouched.
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing')[0].body).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('when the first story is credited and a book was waiting, the next story is committed to ITS child with a fresh pickId', async () => {
+    stubFetch({ readNext: { contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_3', sessionId: 'rs_1', studyDay: '2026-09-09' } });
+    const { played, result } = await mountAndPick();
+    await act(async () => { h.handler({ ...ON_DECK, learnerId: 'user_3' }); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    // Book one: credited to the child who picked it.
+    expect(posted('/reading/read')).toHaveLength(1);
+    expect(posted('/reading/read')[0].body).toMatchObject({ learnerId: 'user_5', contentId: 'plex:620681', pickId: played[0].pickId });
+    // No ceremony between queued books: straight back to playing, the next story already running.
+    expect(result.current.view).toBe('playing');
+    expect(result.current.onDeck).toBeNull();
+    expect(result.current.pick).toMatchObject({ contentId: 'plex:2', learner: { id: 'user_3' } });
+    // Book two: the once-only guards were reset, so it reports and credits under the sibling.
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing')).toHaveLength(2);
+    expect(posted('/reading/playing')[1].body).toMatchObject({ learnerId: 'user_3', contentId: 'plex:2', pickId: 'pk_2' });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/read')).toHaveLength(2);
+    expect(posted('/reading/read')[1].body).toMatchObject({ learnerId: 'user_3', contentId: 'plex:2', pickId: 'pk_2' });
+  });
+
+  it('the same advance arriving by broadcast AND by the read response commits once', async () => {
+    stubFetch({ readNext: { contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', sessionId: 'rs_1' } });
+    const { result } = await mountAndPick();
+    await act(async () => { h.handler(ON_DECK); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    await act(async () => { h.handler({ event: 'on-deck-advanced', location: 'livingroom', contentId: 'plex:2', pickId: 'pk_2', learnerId: 'user_5', sessionId: 'rs_1' }); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    expect(posted('/reading/playing').filter((c) => c.body.pickId === 'pk_2')).toHaveLength(1);
+  });
+
+  it('with nothing on deck, completion goes to the ceremony as before', async () => {
+    const { result } = await mountAndPick();
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(result.current.view).toBe('book-done');
+    expect(result.current.onDeck).toBeNull();
+  });
+});
+
+describe('useReadingSession — adopting a story already playing (2026-09-30)', () => {
+  const ADOPT = {
+    event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+    sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+    adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+  };
+  const proved = { ok: true, play: [{ contentId: 'plex:674737', mediaType: 'audio' }], positionSec: 11.785, trackContentId: 'plex:674737' };
+
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  const mount = (resolveAdoption) => {
+    const played = [];
+    const hook = renderHook(() => useReadingSession({
+      location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption,
+    }));
+    return { ...hook, played };
+  };
+
+  it('proves, ACKs FIRST, then mounts the story at the proved position with the server s pick', async () => {
+    const order = [];
+    const resolveAdoption = vi.fn(async () => { order.push('resolve'); return proved; });
+    const { played, result } = mount(resolveAdoption);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    expect(resolveAdoption).toHaveBeenCalledWith('plex:674736');
+    const acks = posted('/reading/session/ack');
+    expect(acks).toHaveLength(1);
+    expect(acks[0].body).toMatchObject({ presentationId: 'rp_1', sessionId: 'rs_1', learnerId: 'user_7', revision: 4, serverEpoch: 'reading_1' });
+    const ackIndex = calls.findIndex((c) => c.url.includes('/reading/session/ack'));
+    expect(ackIndex).toBeGreaterThanOrEqual(0);
+    expect(played).toHaveLength(1);
+    expect(played[0]).toMatchObject({
+      learnerId: 'user_7', contentId: 'plex:674736', pickId: 'pick_adopt_1', sessionId: 'rs_1',
+      studyDay: '2026-09-30', adopted: true, positionSec: 11.785, play: proved.play,
+    });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('credits the adopted story on natural end with the adopted pickId', async () => {
+    const { result } = mount(async () => proved);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { await result.current.notePlaybackStarted(); });
+    await act(async () => { await result.current.notePlaybackCompleted(); });
+    expect(posted('/reading/playing')[0].body).toMatchObject({ pickId: 'pick_adopt_1', learnerId: 'user_7' });
+    expect(posted('/reading/read')[0].body).toMatchObject({ pickId: 'pick_adopt_1', learnerId: 'user_7', contentId: 'plex:674736', sessionId: 'rs_1' });
+  });
+
+  it('a movie started since → declines content-mismatch, says so, and touches nothing', async () => {
+    const { played, result } = mount(async () => ({ ok: false, reason: 'content-mismatch' }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(posted('/reading/session/adopt-decline')[0].body).toEqual({ location: 'livingroom', presentationId: 'rp_1', reason: 'content-mismatch' });
+    expect(posted('/reading/session/ack')).toHaveLength(0);
+    expect(played).toHaveLength(0);
+    expect(result.current.view).toBe('idle');
+    expect(result.current.notice).toMatchObject({ title: 'Something else is playing' });
+  });
+
+  it('declines no-owner when the screen has no resolver at all', async () => {
+    const { played } = mount(undefined);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(posted('/reading/session/adopt-decline')[0].body.reason).toBe('no-owner');
+    expect(played).toHaveLength(0);
+  });
+
+  it('the committed session-open for the adopted pick does not throw the story back to the shelf', async () => {
+    const { result } = mount(async () => proved);
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => {
+      h.handler({ event: 'session-open', learnerId: 'user_7', location: 'livingroom', sessionId: 'rs_1', presentationId: 'rp_1', revision: 5, serverEpoch: 'reading_1', state: 'confirm', pick: { pickId: 'pick_adopt_1' } });
+    });
+    expect(result.current.view).toBe('playing');
+  });
+
+  it('a page reloaded mid-adoption adopts from the hydrated snapshot, once', async () => {
+    stubFetch({ session: { ...ADOPT, state: 'presenting', pendingPresentation: { ...ADOPT } } });
+    const resolveAdoption = vi.fn(async () => proved);
+    const { played } = mount(resolveAdoption);
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(resolveAdoption).toHaveBeenCalledTimes(1);
+    expect(played).toHaveLength(1);
+    expect(played[0].pickId).toBe('pick_adopt_1');
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+  });
+});
+
+describe('useReadingSession — one adoption per presentation', () => {
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('the same adopt presentation arriving twice (socket + hydrate) mounts the story once', async () => {
+    const ADOPT = {
+      event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+      sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+      adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+    };
+    const played = [];
+    const resolveAdoption = vi.fn(async () => ({ ok: true, play: [{ contentId: 'plex:674737' }], positionSec: 5, trackContentId: 'plex:674737' }));
+    renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption }));
+    await act(async () => { h.handler(ADOPT); h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(resolveAdoption).toHaveBeenCalledTimes(1);
+    expect(played).toHaveLength(1);
+    expect(posted('/reading/session/ack')).toHaveLength(1);
+  });
+});
+
+describe('useReadingSession — adoption races and notices (review I2, I3, M3)', () => {
+  const ADOPT = {
+    event: 'session-present', reason: 'adopt', location: 'livingroom', learnerId: 'user_7',
+    sessionId: 'rs_1', presentationId: 'rp_1', revision: 4, serverEpoch: 'reading_1',
+    adopt: { contentId: 'plex:674736', pickId: 'pick_adopt_1', studyDay: '2026-09-30' },
+  };
+  const proved = { ok: true, play: [{ contentId: 'plex:674737', mediaType: 'audio' }], positionSec: 11.785, trackContentId: 'plex:674737' };
+  beforeEach(() => {
+    h.handler = null;
+    stubFetch();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('the ACK\'s own session-open, arriving BEFORE the ACK response, does not flash the launch card', async () => {
+    let finishProof;
+    const resolveAdoption = vi.fn(() => new Promise((resolve) => { finishProof = () => resolve(proved); }));
+    const played = [];
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: (p) => played.push(p), resolveAdoption }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => {
+      h.handler({ event: 'session-open', learnerId: 'user_7', location: 'livingroom', sessionId: 'rs_1', presentationId: 'rp_1', revision: 5, serverEpoch: 'reading_1', state: 'confirm', pick: { pickId: 'pick_adopt_1' } });
+    });
+    expect(result.current.view).not.toBe('open');
+    await act(async () => { finishProof(); await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.view).toBe('playing');
+    expect(played).toHaveLength(1);
+  });
+
+  it('the server\'s close echo of a DECLINED adoption does not wipe the notice', async () => {
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: () => {}, resolveAdoption: async () => ({ ok: false, reason: 'content-mismatch' }) }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { h.handler({ event: 'session-close', learnerId: 'user_7', sessionId: 'rs_1', reason: 'adopt-declined' }); });
+    expect(result.current.notice).toMatchObject({ title: 'Something else is playing' });
+  });
+
+  it.each(['no-owner', 'not-playing', 'unverified'])('a %s decline asks the child to tap again — nothing else is playing', async (reason) => {
+    const { result } = renderHook(() => useReadingSession({ location: 'livingroom', confirmMs: 1000, onPlay: () => {}, resolveAdoption: async () => ({ ok: false, reason }) }));
+    await act(async () => { h.handler(ADOPT); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.notice).toMatchObject({ title: 'Tap your card again' });
+  });
+});

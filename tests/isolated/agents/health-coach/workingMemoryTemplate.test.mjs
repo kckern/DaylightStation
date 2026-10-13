@@ -21,7 +21,7 @@ describe('healthCoachWorkingMemoryTemplate', () => {
   });
 
   it('lifeplan-guide template re-exports the same value', async () => {
-    const m = await import("../../../../__app_modules/life/server/application/agents/lifeplan-guide/memory/workingMemoryTemplate.mjs");
+    const m = await import("../../../../__app_modules/personal/life/server/application/agents/lifeplan-guide/memory/workingMemoryTemplate.mjs");
     expect(m.lifeplanGuideWorkingMemoryTemplate).toBe(healthCoachWorkingMemoryTemplate);
   });
 });

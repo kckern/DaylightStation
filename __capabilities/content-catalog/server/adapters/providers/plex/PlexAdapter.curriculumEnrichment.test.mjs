@@ -1,7 +1,7 @@
 import {it,expect,vi} from 'vitest';
 import {PlexAdapter} from './PlexAdapter.mjs';
-import {pianoCurriculumEnrichment} from '../../../../../../__app_modules/piano/server/composition/plex-curriculum.mjs';
-import * as owned from '../../../../../../__app_modules/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs';
+import {pianoCurriculumEnrichment} from '../../../../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
+import * as owned from '../../../../../../__app_modules/learning/piano/server/adapters/plex-curriculum/CurriculumIndex.mjs';
 it('M3 Plex enrichment preserves all three synchronous merge sites and the owned cache authority',()=>{
   for(const key of ['getCurriculumIndex','mergeEpisode','mergeSeason'])expect(pianoCurriculumEnrichment[key]).toBe(owned[key]);
   const index={synthetic:true},piano={course:'synthetic'},episode={ratingKey:'e',type:'episode',grandparentRatingKey:'show',parentIndex:2,index:3,title:'Original',duration:1000,Media:[]},season={ratingKey:'s',type:'season',parentRatingKey:'show',index:2,title:'Original',Media:[]};

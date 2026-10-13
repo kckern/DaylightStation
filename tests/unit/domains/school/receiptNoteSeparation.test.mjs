@@ -14,7 +14,7 @@
  * way to plumb it through even by accident.
  */
 import { describe, it, expect } from 'vitest';
-import { reviewNoteLines, resultDocument } from "../../../../__app_modules/school/server/domain/documents/receipts.mjs";
+import { reviewNoteLines, resultDocument } from "../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
 
 const AUDIT_TEXT = 'Eraser signature: A erased, B (Kansas) chosen. Credited per the leniency rule deployed in 0aed55c94.';
 const CHILD_TEXT = 'Remember to find a common denominator first';

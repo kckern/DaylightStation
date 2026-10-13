@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { MediaPolicyGate } from "../../../../../../__app_modules/concierge/server/application/services/MediaPolicyGate.mjs";
+import { MediaPolicyGate } from "../../../../../../__app_modules/household/concierge/server/application/services/MediaPolicyGate.mjs";
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 

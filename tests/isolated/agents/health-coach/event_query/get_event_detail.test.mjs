@@ -1,7 +1,7 @@
 // tests/isolated/agents/health-coach/event_query/get_event_detail.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { EventQueryService } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/EventQueryService.mjs";
-import { FitnessEventAdapter } from "../../../../../__app_modules/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
+import { EventQueryService } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/EventQueryService.mjs";
+import { FitnessEventAdapter } from "../../../../../__app_modules/wellness/health/server/application/agents/health-coach/services/adapters/FitnessEventAdapter.mjs";
 
 function makeSession({ sessionId, startTime, durationMs, stravaId = null, hr_series = null }) {
   return {

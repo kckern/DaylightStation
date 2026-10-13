@@ -4,7 +4,7 @@ import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mj
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
-import { buildDispatchUrl } from "../../../../__app_modules/media/browser/cast/dispatchUrl.js";
+import { buildDispatchUrl } from "../../../../__app_modules/media/media/browser/cast/dispatchUrl.js";
 import { AUTOPLAY_ACTIONS, autoplayToAction, parseAutoplayParams } from '../../../../frontend/src/lib/parseAutoplayParams.js';
 import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 

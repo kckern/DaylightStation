@@ -18,8 +18,8 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSchoolLifecycle } from "../../../__app_modules/school/server/composition/schoolLifecycle.mjs";
-import { isSchoolToken } from "../../../__app_modules/school/server/domain/sessions/tokens.mjs";
+import { createSchoolLifecycle } from "../../../__app_modules/learning/school/server/composition/schoolLifecycle.mjs";
+import { isSchoolToken } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 
 const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 

@@ -15,8 +15,8 @@ import {
   integrateSpeedKm,
   estimateOdometer,
   COUNTER_MODULUS_KM,
-} from "../../../../__app_modules/auto/server/domain/services/OdometerService.mjs";
-import { OdometerReading } from "../../../../__app_modules/auto/server/domain/value-objects/OdometerReading.mjs";
+} from "../../../../__app_modules/household/auto/server/domain/services/OdometerService.mjs";
+import { OdometerReading } from "../../../../__app_modules/household/auto/server/domain/value-objects/OdometerReading.mjs";
 
 const at = (iso) => new Date(iso);
 const dash = (km, iso) => new OdometerReading({ km, source: 'dash', observedAt: at(iso) });

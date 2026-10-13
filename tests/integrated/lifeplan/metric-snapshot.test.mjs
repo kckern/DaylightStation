@@ -7,8 +7,8 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { DriftService } from "../../../__app_modules/life/server/application/services/DriftService.mjs";
-import { YamlLifeplanMetricsStore } from "../../../__app_modules/life/server/adapters/persistence/YamlLifeplanMetricsStore.mjs";
+import { DriftService } from "../../../__app_modules/personal/life/server/application/services/DriftService.mjs";
+import { YamlLifeplanMetricsStore } from "../../../__app_modules/personal/life/server/adapters/persistence/YamlLifeplanMetricsStore.mjs";
 
 describe('DriftService — metric snapshot persistence (integrated)', () => {
   let tmpDir;

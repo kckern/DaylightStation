@@ -20,7 +20,7 @@ export class ReceiptPrinting {
 
   /**
    * @param {object} deps
-   * @param {import('../../../../__app_modules/school/server/application/ports/IDocumentRenderer.mjs').IReceiptRenderer} [deps.renderer]
+   * @param {import('../../../../__app_modules/learning/school/server/application/ports/IDocumentRenderer.mjs').IReceiptRenderer} [deps.renderer]
    * @param {{print: Function}} [deps.printer] - thermal printer adapter surface
    * @param {object} [deps.logger]
    */

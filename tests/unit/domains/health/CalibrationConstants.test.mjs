@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CalibrationConstants } from "../../../../__app_modules/health/server/application/health/analytics/CalibrationConstants.mjs";
+import { CalibrationConstants } from "../../../../__app_modules/wellness/health/server/application/health/analytics/CalibrationConstants.mjs";
 
 const USER_ID = 'test-user';
 

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolSelfServiceRouter } from "../../../../__app_modules/school/server/api/school.selfservice.mjs";
+import { createSchoolSelfServiceRouter } from "../../../../__app_modules/learning/school/server/api/school.selfservice.mjs";
 
 const appFor = (overrides = {}) => {
   const app = express();

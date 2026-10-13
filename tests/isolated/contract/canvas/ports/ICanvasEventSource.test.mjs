@@ -1,6 +1,6 @@
 // tests/isolated/contract/canvas/ports/ICanvasEventSource.test.mjs
 import { describe, it, expect } from 'vitest';
-import { validateEventSource } from "../../../../../__app_modules/art/server/application/canvas/ports/ICanvasEventSource.mjs";
+import { validateEventSource } from "../../../../../__app_modules/media/art/server/application/canvas/ports/ICanvasEventSource.mjs";
 
 describe('ICanvasEventSource contract', () => {
   it('validates compliant implementation', () => {

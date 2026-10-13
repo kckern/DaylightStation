@@ -10,12 +10,21 @@ export function setupOwnerDependencies(root,{check=false}={}) {
     const base=path.join(root,area);
     let baseType;try{baseType=fs.lstatSync(base);}catch(error){if(error.code==='ENOENT')continue;throw error;}
     if(!baseType.isDirectory())continue;
-    for(const owner of fs.readdirSync(base,{withFileTypes:true}).filter(entry=>entry.isDirectory()).sort((a,b)=>a.name.localeCompare(b.name))) {
+    const owners=fs.readdirSync(base,{withFileTypes:true}).filter(entry=>entry.isDirectory()).flatMap(entry=>{
+      const directory=path.join(base,entry.name);
+      const hasRuntime=['server','browser'].some(runtime=>{
+        try{return fs.lstatSync(path.join(directory,runtime)).isDirectory();}catch(error){if(error.code==='ENOENT')return false;throw error;}
+      });
+      return area==='__app_modules'&&!hasRuntime
+        ?fs.readdirSync(directory,{withFileTypes:true}).filter(child=>child.isDirectory()).map(child=>path.join(entry.name,child.name))
+        :[entry.name];
+    }).sort();
+    for(const owner of owners) {
       for(const runtime of ['server','browser']) {
-        const directory=path.join(base,owner.name,runtime);
+        const directory=path.join(base,owner,runtime);
         let type;try{type=fs.lstatSync(directory);}catch(error){if(error.code==='ENOENT')continue;throw error;}
         if(!type.isDirectory())continue;
-        const target=runtime==='server'?'../../../__backend/node_modules':'../../../frontend/node_modules';
+        const target=path.relative(directory,path.join(root,runtime==='server'?'__backend':'frontend','node_modules'));
         const link=path.join(directory,'node_modules');
         let existing;try{existing=fs.lstatSync(link);}catch(error){if(error.code!=='ENOENT')throw error;}
         if(existing&&(!existing.isSymbolicLink()||fs.readlinkSync(link)!==target))throw new Error('Refusing existing dependency directory/link: '+link);

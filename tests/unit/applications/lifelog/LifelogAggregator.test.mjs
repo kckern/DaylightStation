@@ -115,7 +115,7 @@ describe('LifelogAggregator', () => {
   describe('JournalistContainer integration', () => {
     it('should work when userDataService is injected into container', async () => {
       // Dynamically import to avoid circular dependency issues
-      const { JournalistContainer } = await import("../../../../__app_modules/journalist/server/application/JournalistContainer.mjs");
+      const { JournalistContainer } = await import("../../../../__app_modules/personal/journalist/server/application/JournalistContainer.mjs");
 
       // Minimal config for container
       const config = {
@@ -150,7 +150,7 @@ describe('LifelogAggregator', () => {
     });
 
     it('should reject a missing semantic lifelog aggregator', async () => {
-      const { JournalistContainer } = await import("../../../../__app_modules/journalist/server/application/JournalistContainer.mjs");
+      const { JournalistContainer } = await import("../../../../__app_modules/personal/journalist/server/application/JournalistContainer.mjs");
 
       const config = {
         username,

@@ -1,6 +1,6 @@
-import { registerFreshVideoProvider, registerOnlineVideoProviders } from "../../../__app_modules/media/server/composition/content-providers.mjs";
-import { registerArtCanvasSources } from '../../../__app_modules/art/server/composition/canvas-providers.mjs';
-import { pianoCurriculumEnrichment } from '../../../__app_modules/piano/server/composition/plex-curriculum.mjs';
+import { registerFreshVideoProvider, registerOnlineVideoProviders } from "../../../__app_modules/media/media/server/composition/content-providers.mjs";
+import { registerArtCanvasSources } from '../../../__app_modules/media/art/server/composition/canvas-providers.mjs';
+import { pianoCurriculumEnrichment } from '../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
 // Installed content-source assembly; retains product registration and ordering.
 import { createCatalogSources, registerRemoteCatalogSources, registerTextCatalogSources } from '../../../__capabilities/content-catalog/server/composition/installation.mjs';
 

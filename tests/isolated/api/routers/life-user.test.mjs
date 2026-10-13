@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import createLifeRouterBase from "../../../../__app_modules/life/server/api/life.mjs";
-import { LifeApiOperations } from "../../../../__app_modules/life/server/application/LifeApiOperations.mjs";
-import { LifePlanOperations } from "../../../../__app_modules/life/server/application/LifePlanOperations.mjs";
-import { presentBelief, presentGoal, presentLifePlan } from "../../../../__app_modules/life/server/application/presenters/lifePlanPresenter.mjs";
+import createLifeRouterBase from "../../../../__app_modules/personal/life/server/api/life.mjs";
+import { LifeApiOperations } from "../../../../__app_modules/personal/life/server/application/LifeApiOperations.mjs";
+import { LifePlanOperations } from "../../../../__app_modules/personal/life/server/application/LifePlanOperations.mjs";
+import { presentBelief, presentGoal, presentLifePlan } from "../../../../__app_modules/personal/life/server/application/presenters/lifePlanPresenter.mjs";
 
 const createLifeRouter = (config) => {
   const lifePlanOperations = config.lifePlanOperations || new LifePlanOperations({
