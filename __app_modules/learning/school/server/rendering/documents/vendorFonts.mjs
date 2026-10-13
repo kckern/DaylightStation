@@ -51,11 +51,20 @@ export const vendorFontDirFor = (mediaDir) => (mediaDir ? join(mediaDir, 'vendor
  * Resolve a vendor font file. Returns `{ path, missing }`; a missing file is
  * logged once (warn) and left to the caller to fail at the point of use.
  */
+/**
+ * Vendor font dir for a CLI run (no composition, no ConfigService): the same
+ * media dir install:assets and the backend use. null when neither env is set.
+ */
+export const vendorFontDirFromEnv = (env = process.env) => vendorFontDirFor(
+  env.DAYLIGHT_MEDIA_PATH || (env.DAYLIGHT_BASE_PATH ? join(env.DAYLIGHT_BASE_PATH, 'media') : null),
+);
+
 export function resolveVendorFont(file, vendorFontDir = defaultVendorFontDir) {
   const path = vendorFontDir ? join(vendorFontDir, file) : null;
   const missing = !path || !fileExists(path);
-  if (missing && !warned.has(file)) {
-    warned.add(file);
+  const key = `${vendorFontDir ?? ''}::${file}`;
+  if (missing && !warned.has(key)) {
+    warned.add(key);
     logger.warn('school.vendor-font.missing', {
       file, dir: vendorFontDir ?? null, fix: 'npm run install:assets',
     });
@@ -64,4 +73,5 @@ export function resolveVendorFont(file, vendorFontDir = defaultVendorFontDir) {
 }
 
 /** Test seam: forget which fonts were already warned about. */
+export const warnedKeys = () => [...warned];
 export function resetVendorFontWarnings() { warned.clear(); }

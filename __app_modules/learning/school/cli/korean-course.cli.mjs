@@ -23,8 +23,10 @@ import { createSchoolProgramEnrollmentValidators } from "../server/application/S
 import { SetAssignments } from "../server/application/usecases/SetAssignments.mjs";
 import { GrownUpGate } from "../server/application/GrownUpGate.mjs";
 import { validateLexicon, expandLexiconDeck } from "../server/domain/cardLadder/lexicon.mjs";
+import { setDefaultVendorFontDir, vendorFontDirFor } from "../server/rendering/documents/vendorFonts.mjs";
 const { values, positionals } = parseArgs({allowPositionals:true,options:{base:{type:'string'},out:{type:'string'},'source-dir':{type:'string'},course:{type:'string'},'course-title':{type:'string'},learner:{type:'string'},'assigned-by':{type:'string'},apply:{type:'boolean',default:false}}});
 const command=positionals[0],base=values.base,out=values.out;
+if(base)setDefaultVendorFontDir(vendorFontDirFor(path.join(base,'media')));
 if(!base||!out||!['build','audio','proofs','verify','install','enroll'].includes(command))throw Error('Usage: node cli/korean-course.cli.mjs build|audio|proofs|verify|install|enroll --base <content-base> --out <staging> [--learner <id> --assigned-by <adult-id> --apply]');
 // The course id only names data-volume folders; titles and the source book come from the course data (lesson-1 unit + lexicon), or --course-title.
 const COURSE=values.course??'korean-3-2',SCHOOL=`media/school/language/${COURSE}`,CONTENT='data/content/school',DECKS=`${CONTENT}/learning-catalog/flashcard-decks/language/${COURSE}`,UNITS=`${CONTENT}/language/${COURSE}/units`,DOCUMENTS=`${CONTENT}/learning-catalog/documents/language/${COURSE}`;

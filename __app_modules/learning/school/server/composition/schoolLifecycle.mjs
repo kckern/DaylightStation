@@ -327,6 +327,7 @@ export async function createSchoolLifecycle({
     // the same media dir the /vendor route serves. Set as the process default too:
     // measurement and report renderers reach the same fonts without each being wired.
     const vendorFontDir = vendorFontDirFor(configService.getMediaDir?.());
+    // Process-global, and safe: one media dir per process (same value every call).
     setDefaultVendorFontDir(vendorFontDir);
     const { createSchoolAssetResolver } = await import("../adapters/documents/FilesystemSchoolAssetResolver.mjs");
     const { createPrintDocumentRendering } = await import("../rendering/documents/PrintDocumentRendering.mjs");

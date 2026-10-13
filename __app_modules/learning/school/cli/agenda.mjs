@@ -44,6 +44,10 @@ import { writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { setDefaultVendorFontDir, vendorFontDirFromEnv } from "../server/rendering/documents/vendorFonts.mjs";
+
+// CLI runs have no composition: point the Hangul fallback face at the same media dir the backend uses.
+setDefaultVendorFontDir(vendorFontDirFromEnv());
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '..', '..', '..', '.env') });

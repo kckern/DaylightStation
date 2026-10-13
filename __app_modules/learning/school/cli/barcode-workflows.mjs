@@ -29,6 +29,10 @@ import { YamlWorkSessionDatastore } from "../server/adapters/persistence/YamlWor
 import { YamlTokenRegistry } from "../server/adapters/persistence/YamlTokenRegistry.mjs";
 import { YamlWorksheetInstanceStore } from "../server/adapters/persistence/YamlWorksheetInstanceStore.mjs";
 import { YamlFormMapStore } from "../server/adapters/persistence/YamlFormMapStore.mjs";
+import { setDefaultVendorFontDir, vendorFontDirFromEnv } from "../server/rendering/documents/vendorFonts.mjs";
+
+// CLI runs have no composition: point the Hangul fallback face at the same media dir the backend uses.
+setDefaultVendorFontDir(vendorFontDirFromEnv());
 
 /** School workflows used by the installed generic barcode simulator. */
 export function createSchoolBarcodeWorkflows({ createDispatcher, valueFlag }) {

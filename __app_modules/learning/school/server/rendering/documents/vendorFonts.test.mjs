@@ -6,7 +6,7 @@ import { createDocumentPdfRenderer } from "./DocumentPdfRenderer.mjs";
 import { createDocumentReceiptRenderer } from "./DocumentReceiptRenderer.mjs";
 import { createWorkbookTheme } from "./workbookTheme.mjs";
 import { texToSvg } from "./mathSvg.mjs";
-import { MissingVendorAssetError, resetVendorFontWarnings, setDefaultVendorFontDir, vendorFontDirFor } from "./vendorFonts.mjs";
+import { MissingVendorAssetError, resetVendorFontWarnings, setDefaultVendorFontDir, vendorFontDirFor, vendorFontDirFromEnv, resolveVendorFont, warnedKeys } from "./vendorFonts.mjs";
 
 const theme = createWorkbookTheme({ typeScale: 'young' });
 const doc = (md) => ({
@@ -41,4 +41,27 @@ describe('missing vendor font (Noto Sans KR not installed)', () => {
     await expect(renderer.createCanvas(card('UBKS 비둘기'), { tokens: {} }))
       .rejects.toThrow(/npm run install:assets/);
   });
+});
+
+describe('vendorFontDirFromEnv (CLI runs have no composition)', () => {
+  it('uses DAYLIGHT_MEDIA_PATH, else DAYLIGHT_BASE_PATH/media, else null', () => {
+    expect(vendorFontDirFromEnv({ DAYLIGHT_MEDIA_PATH: '/m' })).toBe('/m/vendor/fonts');
+    expect(vendorFontDirFromEnv({ DAYLIGHT_BASE_PATH: '/b' })).toBe('/b/media/vendor/fonts');
+    expect(vendorFontDirFromEnv({})).toBeNull();
+  });
+  it('the warn-once key includes the directory', () => {
+    resetVendorFontWarnings();
+    expect(resolveVendorFont('x.otf', '/nope-a').missing).toBe(true);
+    expect(resolveVendorFont('x.otf', '/nope-b').missing).toBe(true);
+    expect(warnedKeys()).toEqual(['/nope-a::x.otf', '/nope-b::x.otf']);
+  });
+});
+
+describe('every CLI that builds a renderer sets the vendor font dir', () => {
+  const cliDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../../../cli');
+  for (const f of ['agenda.mjs', 'sim.mjs', 'docs.mjs', 'barcode-workflows.mjs', 'korean-course.cli.mjs']) {
+    it(f, () => {
+      expect(fs.readFileSync(path.join(cliDir, f), 'utf8')).toMatch(/setDefaultVendorFontDir\(/);
+    });
+  }
 });

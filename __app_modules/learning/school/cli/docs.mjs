@@ -103,6 +103,10 @@ import { YamlAllocationStore } from "../server/adapters/documents/YamlAllocation
 import { rangesOverlap } from "../server/domain/documents/allocation.mjs";
 import { SAFE_WORKSHEET_INSTANCE_ID } from "../server/adapters/persistence/YamlWorksheetInstanceStore.mjs";
 import { createSchoolAssetResolver } from "../server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
+import { setDefaultVendorFontDir, vendorFontDirFromEnv } from "../server/rendering/documents/vendorFonts.mjs";
+
+// CLI runs have no composition: point the Hangul fallback face at the same media dir the backend uses.
+setDefaultVendorFontDir(vendorFontDirFromEnv());
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
