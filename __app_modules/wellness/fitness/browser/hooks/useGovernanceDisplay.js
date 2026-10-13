@@ -16,13 +16,19 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const {
     status,
     requirements,
-    challenge,
+    challenge: rawChallenge,
     deadline,
     gracePeriodTotal,
     videoLocked,
     hrInactiveUsers,
     activeUserCount
   } = govState;
+  // Recovery leaves cycling progress frozen in the engine snapshot. Use only
+  // base requirements for the generic panel; do not infer a lock, targets or
+  // completion credit from that temporarily suspended cycling challenge.
+  const challenge = rawChallenge?.type === 'cycle' && rawChallenge.sensorUnavailable
+    ? null
+    : rawChallenge;
   const normalizedRequirements = Array.isArray(requirements) ? requirements : [];
   const activityRequirements = normalizedRequirements.filter((req) => req?.type === 'activity_rate');
 

@@ -21,8 +21,23 @@ export function resolveLockScreen({ activeChallenge = null, governanceDisplay = 
   const cycleLocked = isCycle && activeChallenge?.cycleState === 'locked';
   const cycleFailed = isCycle && (activeChallenge?.status === 'failed' || activeChallenge?.status === 'abandoned');
 
-  // A cycle challenge owns its own presentation in EVERY state. The generic
-  // governance panel is never shown while a cycle challenge is active — it has
+  // Sensor loss freezes cycleState for resumption, but that frozen state must
+  // not keep a cycling lock or its audio active. Base HR remains authoritative.
+  if (isCycle && activeChallenge.sensorUnavailable) {
+    const baseLocked = Boolean(governanceDisplay?.videoLocked);
+    const showGovernance = baseLocked && Boolean(governanceDisplay?.show);
+    return {
+      variety: showGovernance ? 'governance' : 'none',
+      showGovernanceOverlay: showGovernance,
+      showCycleOverlay: true,
+      promoteCycle: false,
+      audioTrack: null,
+      videoLocked: baseLocked
+    };
+  }
+
+  // An available cycle challenge owns its own presentation in EVERY state. The generic
+  // governance panel is suppressed while cadence is available — it has
   // no cycle-aware content and previously rendered as a blank box for non-health
   // locks (and lingered after recovery). Promote the cycle overlay as a centered
   // lock stage for any lock reason and on terminal fail.

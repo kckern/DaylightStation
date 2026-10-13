@@ -26,7 +26,6 @@ import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
 import GovernanceWarningScrim from "./overlays/GovernanceWarningScrim.jsx";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
-import { usePlaybackUnlockGate } from "./usePlaybackUnlockGate.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import { shouldBypassGovernance } from "./governanceBypass.js";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
@@ -406,30 +405,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // the lock is absent/empty we pass no handler ⇒ no button ⇒ today's behavior.
   const governanceUnlockHandler = isLockActive('governance_bypass') ? openGovernanceUnlock : null;
 
-  // Playback unlock: items matching fitness.yml → playback_unlock (labels /
-  // libraries) are held until a user authorized for its named `lock` scans. Separate
-  // from governance — HR gating still applies once the item plays. An item that
-  // FitnessShow tagged nogovern already carries an adult scan, so it passes.
-  // Cancel closes the player; handleClose is defined further down, hence the ref.
-  const handleCloseRef = useRef(null);
-  const playbackUnlockRules = useMemo(() => {
-    const cfg = fitnessConfiguration || {};
-    return cfg.playback_unlock || cfg.fitness?.playback_unlock || null;
-  }, [fitnessConfiguration]);
-  const fetchPlaybackInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
-  const cancelPlaybackUnlock = useCallback(() => handleCloseRef.current?.(), []);
-  const playbackUnlock = usePlaybackUnlockGate({
-    currentItem,
-    active: Boolean(playbackUnlockRules?.lock) && isLockActive(playbackUnlockRules.lock),
-    rules: playbackUnlockRules,
-    preGranted: Boolean(currentItem?.nogovern),
-    registerUnlock,
-    clearUnlock,
-    onCancel: cancelPlaybackUnlock,
-    fetchInfo: fetchPlaybackInfo,
-  });
-  // Everything that holds the video for governance also holds it for the unlock.
-  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || playbackUnlock.blocked;
+  // Live content starts through exercise governance. Fingerprint content
+  // authorization is reserved for Fitness Home session replays.
+  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked);
 
   const [showChart, setShowChart] = useState(true);
 
@@ -858,7 +836,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // its lock threshold. Restores volume when the SFX ends.
   useGovernanceAudioDuck({
     videoVolume,
-    audioDuck: effectiveGovernanceState?.audioDuck
+    audioDuck: effectiveGovernanceState?.audioDuck,
+    suppress: !currentItem || governanceBypassed || govStatus === 'locked',
+    suppressCycle: Boolean(effectiveGovernanceState?.challenge?.sensorUnavailable),
+    itemKey: currentItemId
   });
 
   // Unlock the shared cue-audio element on the first user gesture (WebView
@@ -1436,7 +1417,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     closeWatchdog.requested(closeRequestPayload);
     executeClose();
   };
-  handleCloseRef.current = handleClose;
 
   // 4A: Track previous overlay state to detect true→false transition
   const prevOverlayOpenRef = useRef(voiceMemoOverlayState?.open);
@@ -2265,14 +2245,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         lockLabel={currentItem?.title || currentItem?.label || 'Governed content'}
         unlockedUser={unlockedUser}
         onCancel={closeGovernanceUnlock}
-      />
-      <UnlockPrompt
-        open={playbackUnlock.promptOpen}
-        state={unlockState}
-        lockLabel={currentItem?.grandparentTitle || currentItem?.show || currentItem?.title || 'Kids show'}
-        unlockedUser={unlockedUser}
-        onCancel={playbackUnlock.cancel}
-        {...(playbackUnlock.promptTimeoutMs ? { timeoutMs: playbackUnlock.promptTimeoutMs } : {})}
       />
       {/* HRSimTrigger moved to FitnessApp top level so it's visible across
           the whole fitness app, not just when a video is playing. */}

@@ -223,6 +223,44 @@ Registered challenge types:
 Unknown types fail eligibility/config normalization rather than silently behaving
 like an HR challenge.
 
+### Cycling cadence availability and recovery
+
+Automatic cycle selection requires available equipment cadence before rider
+eligibility: the equipment sample must be connected, have finite RPM (including
+zero), have a finite timestamp no more than **2000 ms** old and no later than the
+engine clock, and have no `transportStalled` flag. Manual starts may still force a
+cycle, but use the same recovery handling once active. Invalid or future samples
+cannot advance the cadence filter watermark and suppress later valid packets.
+
+During equipment-specific cadence loss, an active cycle freezes init/ramp clocks,
+phase progress, health, and the never-started failure stopwatch. Its display
+snapshot exposes `sensorUnavailable: true` and `sensorGraceRemainingMs`. The
+cycling widget announces **“Cadence sensor unavailable”** using a status role.
+Only the cycle's video lock is released; base HR governance can still lock the
+video. A fresh sample resumes at the same progress without charging disconnected
+time. Existing cadence smoothing and zero timeout remain unchanged.
+
+After **10,000 ms** of equipment-specific loss, the cycle is cancelled neutrally:
+`status: 'cancelled'`, `cancelReason: 'sensor_offline'`. The engine records one
+history entry (history is capped at 20), emits one `challenge_cancelled` session
+event, clears the cycle, and uses the normal challenge interval/queue path. No
+failure, reward, or rider cooldown is applied. Session summaries count ordinary
+`challenge` results; `challenge_cancelled` events do not increase total or failed
+challenges. Structured logs identify loss, recovery, and cancellation as
+`governance.cycle.sensor_unavailable`, `.sensor_recovered`, and `.cancelled`, with
+challenge/equipment IDs and loss duration.
+
+Playback pauses and transport-wide stalls do not consume the sensor recovery
+window. Transport stalls retain their existing cadence hold/freeze behavior. The
+recovery timer belongs to the active challenge rather than its rider, so swapping
+riders cannot restart it.
+
+`FitnessSession.getEquipmentCadence` uses finite packet `lastSeen` for freshness,
+falling back to `lastSignificantActivity` only when packet time is unavailable.
+Repeated fresh zero-RPM packets remain connected and still produce normal effort
+locks. Multi-sensor equipment remains available when any wheel sensor is live;
+the fastest live sensor supplies the reading.
+
 ### Step-mat lifecycle
 
 The pressure mat is dormant until the first classified session step. That first

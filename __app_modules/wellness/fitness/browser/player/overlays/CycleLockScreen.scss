@@ -17,6 +17,26 @@
     backdrop-filter: blur(2px);
   }
 
+  &__unlock {
+    position: absolute;
+    z-index: 1; // above scrim and scaled dial
+    top: clamp(16px, 4vh, 48px);
+    right: clamp(16px, 4vw, 48px);
+    padding: 12px 20px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 12px;
+    background: #111827;
+    color: #f8fafc;
+    font: inherit;
+    cursor: pointer;
+    pointer-events: auto;
+
+    &:focus-visible {
+      outline: 3px solid #93c5fd;
+      outline-offset: 4px;
+    }
+  }
+
   &__stage {
     position: relative;
     transform: scale(2);

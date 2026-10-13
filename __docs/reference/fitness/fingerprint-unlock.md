@@ -80,40 +80,45 @@ locks:
   governance_bypass:  [user_1, user_9]   # bypass the HR/effort governance lock
   skip_content:       [user_1, user_9]   # play a sequentially-locked episode
   emergency:          [user_1, user_9]   # arm/abort/release the emergency lockdown
-  kids_playback:      [user_1, user_9]   # start a playback_unlock-gated video (below)
+  kids_playback:      [user_1, user_9]   # watch a protected Home session replay (below)
 ```
 
-### Playback unlock — `fitness.yml → playback_unlock`
-Holds a video before it plays until an authorized user scans. Which videos, and which
-lock authorizes them, are entirely config — the code names no label, library or lock:
+### Home session replay authorization — `fitness.yml → playback_unlock`
+
+Biometric content authorization protects session replays watched from Fitness Home.
+A recap timelapse shows recorded content in picture-in-picture, so when
+`session_recaps: true`, any matching video in the session's `summary.media` requires
+an authorized scan to watch that session's recap. The existing `playback_unlock`
+config key remains the replay rule source; no data migration is needed.
 
 ```yaml
 playback_unlock:
   lock: kids_playback      # key of `locks:` above
-  labels: [KidsFun]        # any matching Plex label gates the item (case-insensitive)
-  libraries: [TV Shows]    # any item from these Plex libraries is gated
-  scope: show              # show = one scan covers the rest of that show; item = every item
-  prompt_timeout_seconds: 60  # scan prompt wait before it gives up (default: the prompt's 10s)
-  session_recaps: true     # also lock past sessions' recap videos (below)
+  labels: [KidsFun]        # matching recorded Plex labels (case-insensitive)
+  libraries: [TV Shows]    # matching recorded content libraries
+  scope: show             # legacy field; replay grants always cover one session
+  prompt_timeout_seconds: 60  # replay scan wait (default: the prompt's 10s)
+  session_recaps: true     # enable authorization for Home session replays
 ```
 
-The gate lives in the fitness player, so every launch path (show page, menu, URL, restored
-queue) passes through it. Labels are read off the queue item; when they don't decide it and
-`libraries` is set, the player looks the item up (`/api/v1/info/plex/:id` →
-`librarySectionTitle`). While that lookup is in flight, or if it fails, the item is held and
-a scan is asked for — fail closed. A matching scan releases the hold; a wrong finger leaves
-the prompt in its denied state; cancel — or the prompt timing out — closes the player. Grants live for the player's
-lifetime. An item already tagged `nogovern` by a `governance_bypass` scan passes without a
-second scan. HR governance still applies once the video plays. Events:
-`playback_unlock.{required,granted,denied,cancelled,lookup_failed}`.
-
-**Session recaps.** A recap timelapse shows the episode in picture-in-picture, so with
-`session_recaps: true` the Fitness Home session detail locks a recap whenever any video the
-session played (`summary.media`) matches the same labels/libraries. The poster shows with a
-padlock; tapping it opens the scan prompt and a match plays the recap for that session only.
-The recap is locked from the moment a session is selected until it is classified (fail
-closed), and stays locked where no IdentityProvider is mounted. Events:
+The gate lives in `useRecapUnlock`, used by the Fitness Home session detail widget.
+The recap is locked while classifying its recorded media. Matching labels require
+an unlock; when labels do not decide it and library rules exist, classification
+looks up `/api/v1/info/plex/:id` for `librarySectionTitle`. Lookup failures require
+an unlock (fail closed). The poster shows a padlock; tapping it requests a scan.
+An authorized match unlocks that session only. A wrong finger leaves the recap
+locked; cancel or timeout dismisses the prompt and leaves the recap locked.
+A protected recap also stays locked where no IdentityProvider is mounted. Events:
 `recap_unlock.{locked,requested,granted,denied}`.
+
+Live restricted content starts through exercise governance on every entry path,
+including queue changes and restored items. The existing unattended startup policy
+requires one eligible non-guest, non-exempt child to reach Hot when no configured
+superuser is present; base requirements and later Warm/Hot challenges still apply.
+A superuser in the live roster restores normal governance, and their departure
+re-arms Hot startup. KidsFun labels remain intact for both governance and replay
+classification. Explicit governance override, sequential skip, Dance Party, and
+emergency fingerprint actions remain available under their existing lock policies.
 
 `locks` must be surfaced to the fitness config the frontend reads (root or nested `fitness`
 block); the gated surfaces look it up there.
@@ -237,7 +242,21 @@ consumer (menu / show / player each own one).
 |---------|------|----------|
 | Dance Party menu item | `dance_party` | Lock badge; tap → register unlock + prompt → launch the module on a granting finger |
 | Governed show + sequential episode | `governance_bypass`, `skip_content` | "Unlock" affordance / locked-episode pill → on a `governance_bypass` match the whole show is marked to bypass governance; on a `skip_content` match the locked episode plays. State resets on show change |
-| In-player governance lock overlay | `governance_bypass` | "Skip / Unlock" button → on a match a **per-item** runtime bypass releases the current lock only (cleared when the next item starts, so one unlock can't disable governance for the rest of the session) |
+| Fitness Home session replay | `playback_unlock.lock` (for example `kids_playback`) | Protected recap stays locked; tap → scan prompt → a match unlocks that session only |
+| In-player governance and cycling lock/failure overlays | `governance_bypass` | "Skip / Unlock" button → on a match a **per-item** runtime bypass releases the current lock only (cleared when the next item starts, so one unlock can't disable governance for the rest of the session) |
+
+The same “Skip / Unlock” control is available on promoted cycling init, ramp,
+health locks and terminal failure screens when `governance_bypass` is configured.
+It authorizes a bypass for the **current video**, including its governance lock,
+challenge display and lock audio. It does not abandon the challenge or count a
+skipped challenge as success. Denial or cancellation retains the lock; advancing
+to the next item clears the bypass, and a scan started for an earlier item cannot
+unlock the new one.
+
+During cadence sensor recovery, the frozen cycling lock is not promoted and its
+lock audio stops; the recovery dial stays visible. Base heart-rate governance can
+still hold playback and show its normal lock panel and configured fingerprint
+control. A fresh cadence signal restores the original cycling presentation.
 
 A registered unlock shows the shared prompt with `scanning` / `granted` / `denied` states;
 a wrong finger marks *denied* but keeps the prompt open; cancel/close clears the unlock and

@@ -45,6 +45,8 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
 // is back in green. Replaces the old 3-second danger grace.
 const CYCLE_HEALTH_MAX_MS = 3000;
 const CYCLE_SUCCESS_PUBLISH_MS = 600;
+const CYCLE_SENSOR_FRESHNESS_MS = 2000;
+const CYCLE_SENSOR_RECOVERY_MS = 10000;
 // Never-started failure: once a cycle has been stuck in the init lock (rider at
 // 0 rpm, never reaching init.min_rpm) for at least this long, fail it so it is
 // recorded and the engine moves on instead of sitting locked forever. Floored
@@ -414,6 +416,9 @@ export class GovernanceEngine {
       .register('cycle', {
         managed: true,
         isEligible: (selection, ctx) => {
+          if (!this._hasAvailableCycleCadence(selection.equipment, this._now())) {
+            return { eligible: false, reason: 'sensor_unavailable' };
+          }
           const participants = new Set(ctx.activeParticipants || []);
           const claimed = ctx.equipmentRiderMap?.[selection.equipment] || null;
           const eligibleUsers = this._getEligibleUsers(selection.equipment);
@@ -644,8 +649,8 @@ export class GovernanceEngine {
    * Filtered RPM read for the given equipment.
    *
    * Returns { rpm, flags } where flags include `stale` and `lostSignal`. The
-   * caller decides what to do with stale/lost — for the cycle SM this means
-   * "do not lock on a stale read; do treat lostSignal as 0".
+   * filter still decays lost readings to zero for display. Active challenges
+   * freeze effort evaluation while the separate availability gate recovers.
    *
    * **Freshness contract:** the cadence map entry may be re-read every engine
    * tick even when the sensor has gone silent (the upstream pipeline doesn't
@@ -681,7 +686,7 @@ export class GovernanceEngine {
     const lastSeen = this._lastSeenCadenceTs.get(equipmentId) ?? -Infinity;
 
     const isFresh =
-      cadenceEntry &&
+      this._hasAvailableCycleCadence(equipmentId, nowTs) &&
       Number.isFinite(entryTs) &&
       entryTs > lastSeen &&
       Number.isFinite(entryRpm);
@@ -856,6 +861,10 @@ export class GovernanceEngine {
         status: activeChallenge.status,
         rider: { id: activeChallenge.rider, name: riderName },
         cycleState: publishedState,
+        sensorUnavailable: Boolean(activeChallenge.sensorUnavailable),
+        sensorGraceRemainingMs: activeChallenge.sensorUnavailable
+          ? Math.max(0, CYCLE_SENSOR_RECOVERY_MS - (activeChallenge.sensorUnavailableMs || 0))
+          : null,
         currentPhaseIndex: activeChallenge.currentPhaseIndex,
         totalPhases: activeChallenge.totalPhases,
         currentPhase: phase ? { ...phase } : null,
@@ -1823,6 +1832,8 @@ export class GovernanceEngine {
       if (Number.isFinite(active._pendingSince)) active._pendingSince += delta;
       if (Number.isFinite(active._publishedAt)) active._publishedAt += delta;
       if (Number.isFinite(active._initFailSince)) active._initFailSince += delta;
+      if (Number.isFinite(active.sensorUnavailableAt)) active.sensorUnavailableAt += delta;
+      if (Number.isFinite(active._sensorRecoveryLastTs)) active._sensorRecoveryLastTs += delta;
     }
   }
 
@@ -2094,10 +2105,10 @@ export class GovernanceEngine {
   }
 
   /**
-   * Compute the active audio-duck descriptor (or null) for the current
-   * governance/challenge state. Stateless: returns a stable `token` for the
-   * duration of each cue's lifecycle stage, and the React consumer dedupes by
-   * token — so each cue fires exactly once per stage transition.
+   * Compute a cue event (or null when there is no new cue this tick). Zone/HR
+   * stages use stable tokens; cycle edges and cooldown-gated hurry emit once.
+   * The React consumer dedupes tokens and owns playback through cue completion;
+   * a later null descriptor is not a request to cancel the previous cue.
    *
    * Triggers, in precedence order (highest first):
    *   - governance_warning : the grace phase (screen blur + health bar) begins,
@@ -2126,7 +2137,7 @@ export class GovernanceEngine {
         token,
         ...extra
       }, { maxPerMinute: 12, aggregate: true });
-      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
+      return { cueId: cue.id, trigger: cue.trigger, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
     // Governance grace phase (impending lock) takes precedence over challenge cues.
@@ -2147,6 +2158,10 @@ export class GovernanceEngine {
     // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
     if (!challengeSnapshot) return null;
     if (challengeSnapshot.type === 'cycle') {
+      // Frozen health and decayed RPM during sensor recovery are not effort
+      // failures. Suppress cycle edges/hurry before resolving or consuming its
+      // cooldown; the authoritative base HR warning branch above still applies.
+      if (challengeSnapshot.sensorUnavailable) return null;
       const cycleNow = this._now();
       const { trigger, cooldownUntil } = resolveCycleAudioCue(challengeSnapshot, {
         now: cycleNow,
@@ -2288,7 +2303,8 @@ export class GovernanceEngine {
       videoLocked: ((this.challengeState?.videoLocked || this._mediaIsGoverned())
           && this.phase !== 'unlocked' && this.phase !== 'warning')
         || (challengeSnapshot?.type === 'cycle'
-            && challengeSnapshot?.cycleState === 'locked'),
+            && challengeSnapshot?.cycleState === 'locked'
+            && !challengeSnapshot?.sensorUnavailable),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       audioDuck: this._computeAudioDuck(challengeSnapshot),
@@ -2497,6 +2513,11 @@ export class GovernanceEngine {
       }
       const filtered = this._filteredCadenceFor(active.equipment, this._now());
       const equipmentRpm = filtered.rpm;
+      active.currentRpm = equipmentRpm;
+      if (this._updateCycleSensorRecovery(active, this._now())) {
+        this._updateGlobalState();
+        return;
+      }
       this._evaluateCycleChallenge(active, {
         equipmentRpm,
         cadenceFlags: filtered.flags,
@@ -3916,6 +3937,101 @@ export class GovernanceEngine {
     return active;
   }
 
+  _hasAvailableCycleCadence(equipmentId, now) {
+    const sample = this._latestInputs?.equipmentCadenceMap?.[equipmentId];
+    return Boolean(sample?.connected
+      && !sample.transportStalled
+      && Number.isFinite(sample.rpm)
+      && Number.isFinite(sample.ts)
+      && sample.ts <= now
+      && now - sample.ts <= CYCLE_SENSOR_FRESHNESS_MS);
+  }
+
+  // Returns true while equipment-specific recovery owns this tick. The timer
+  // belongs to the challenge, so a rider swap cannot restart hardware recovery.
+  _updateCycleSensorRecovery(active, now, queueNextChallenge = null) {
+    if (active.status !== 'pending') return false;
+    const sample = this._latestInputs?.equipmentCadenceMap?.[active.equipment];
+    if (sample?.transportStalled) {
+      active._sensorRecoveryLastTs = now;
+      active._sensorRecoveryTransportStalled = true;
+      return false; // Keep the existing pipeline freeze and its edge logs.
+    }
+
+    const unavailableMs = (active.sensorUnavailableMs || 0)
+      + (active.sensorUnavailable && !active._sensorRecoveryTransportStalled
+        ? Math.max(0, now - active._sensorRecoveryLastTs) : 0);
+    // A returning packet cannot revive a challenge whose recovery window expired.
+    if (this._hasAvailableCycleCadence(active.equipment, now)
+        && unavailableMs < CYCLE_SENSOR_RECOVERY_MS) {
+      if (active.sensorUnavailable) {
+        // All effort stopwatches resume from the point at which cadence vanished.
+        if (Number.isFinite(active._initFailSince)) {
+          active._initFailSince += Math.max(0, now - active.sensorUnavailableAt);
+        }
+        active._lastCycleTs = now;
+        active.sensorUnavailable = false;
+        active.sensorUnavailableAt = null;
+        active.sensorUnavailableMs = 0;
+        getLogger().info('governance.cycle.sensor_recovered', {
+          challengeId: active.id, equipmentId: active.equipment, unavailableMs
+        });
+      }
+      active._sensorRecoveryTransportStalled = false;
+      return false;
+    }
+
+    if (!active.sensorUnavailable) {
+      active.sensorUnavailable = true;
+      active.sensorUnavailableAt = now;
+      active.sensorUnavailableMs = 0;
+      getLogger().warn('governance.cycle.sensor_unavailable', {
+        challengeId: active.id, equipmentId: active.equipment, unavailableMs: 0
+      });
+    } else {
+      active.sensorUnavailableMs = unavailableMs;
+    }
+    active._sensorRecoveryTransportStalled = false;
+    active._sensorRecoveryLastTs = now;
+    active._lastCycleTs = now;
+    this.challengeState.videoLocked = false;
+    if (active.sensorUnavailableMs >= CYCLE_SENSOR_RECOVERY_MS) {
+      active.status = 'cancelled';
+      this.challengeState.challengeHistory.push({
+        id: active.id, type: 'cycle', status: 'cancelled', cancelReason: 'sensor_offline',
+        equipment: active.equipment, rider: active.rider,
+        startedAt: active.startedAt, completedAt: now
+      });
+      if (this.challengeState.challengeHistory.length > 20) {
+        this.challengeState.challengeHistory.splice(0, this.challengeState.challengeHistory.length - 20);
+      }
+      this.session?.logEvent?.('challenge_cancelled', {
+        challengeId: active.id, type: 'cycle', reason: 'sensor_offline', equipmentId: active.equipment
+      }, now);
+      getLogger().info('governance.cycle.cancelled', {
+        challengeId: active.id, equipmentId: active.equipment,
+        reason: 'sensor_offline', unavailableMs: active.sensorUnavailableMs
+      });
+      this.challengeState.activeChallenge = null;
+      // Governed cycles use the same preview/queue path as step cancellation.
+      // Standalone manual cycles have no governing evaluation to build a preview;
+      // retain the normal interval for the next governed evaluation instead.
+      const policy = this.policies.find(p => p.id === active.policyId);
+      const config = policy?.challenges?.find(c => c.id === active.configId) || policy?.challenges?.[0];
+      const nextDelay = this._pickIntervalMs(config?.intervalRangeSeconds || [60, 60]);
+      if (queueNextChallenge) queueNextChallenge(nextDelay);
+      else {
+        this.challengeState.nextChallenge = null;
+        this.challengeState.nextChallengeAt = now + nextDelay;
+        this.challengeState.nextChallengeRemainingMs = nextDelay;
+      }
+      this._schedulePulse(50);
+    } else {
+      this._schedulePulse(Math.min(500, Math.max(50, CYCLE_SENSOR_RECOVERY_MS - active.sensorUnavailableMs)));
+    }
+    return true;
+  }
+
   _evaluateCycleChallenge(active, ctx) {
     // Stash the latest baseReqSatisfiedForRider so the snapshot can publish it
     // for the HR-zone indicator. Recorded BEFORE the terminal-status guard so
@@ -4778,6 +4894,7 @@ export class GovernanceEngine {
         if (this.challengeTypes.get(challenge.type)?.managed) {
           const filtered = this._filteredCadenceFor(challenge.equipment, this._now());
           const equipmentRpm = filtered.rpm;
+          challenge.currentRpm = equipmentRpm;
 
           const riderZone = userZoneMap?.[challenge.rider];
           const riderRank = this._getZoneRank(riderZone) ?? 0;
@@ -4799,6 +4916,7 @@ export class GovernanceEngine {
           // Mirrors how other transient flags (e.g. _lastAudioCueState) are
           // remembered between ticks.
           challenge.baseReqSatisfiedForRider = baseReqSatisfiedForRider;
+          if (this._updateCycleSensorRecovery(challenge, now, queueNextChallenge)) return;
 
           this._evaluateCycleChallenge(challenge, ctx);
           challenge.currentRpm = equipmentRpm;

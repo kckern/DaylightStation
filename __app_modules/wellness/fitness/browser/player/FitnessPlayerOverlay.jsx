@@ -171,19 +171,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
     ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
     : null;
 
-  // Cycle overlay shows for any active cycle challenge except terminal states
-  // (success/failed) and non-health locks. A health-lock keeps the overlay
-  // visible so the rider sees the empty health meter and "pedal back to green"
-  // signal while the video is paused — health-locks are NOT owned by
-  // GovernanceStateOverlay (the generic panel is suppressed for this case in
-  // useGovernanceDisplay).
-  // Cycle overlay shows for any active, non-terminal cycle challenge. When the
-  // resolver promotes it (cycle health-lock), it renders as a centered, scaled,
-  // dimmed lock screen instead of inside the deck (see promotedCycleLock below).
-  // The cycle overlay node renders for every non-success cycle state. When the
-  // challenge is locked or failed, resolveLockScreen promotes it (rendered as the
-  // centered lock stage below); otherwise it renders in-deck. Success is handled
-  // by the success-hold (cycleDoneOverlay).
+  // Locked/failed cycles are promoted; sensor recovery keeps the dial in-deck.
+  // Success is handled separately by the completion hold below.
   const cycleOverlayActive = isCycleChallenge
     && activeChallenge?.status !== 'success';
   const cycleOverlayNode = cycleOverlayActive ? (
@@ -224,6 +213,21 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
       <div className="cycle-lock-screen__stage">
         {cycleOverlayNode}
       </div>
+      {onGovernanceUnlock ? (
+        <button
+          type="button"
+          className="cycle-lock-screen__unlock"
+          onPointerDown={onGovernanceUnlock}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onGovernanceUnlock(event);
+            }
+          }}
+        >
+          Skip / Unlock
+        </button>
+      ) : null}
       {lockScreen.audioTrack ? (
         <GovernanceAudioPlayer trackKey={lockScreen.audioTrack} paused={voiceMemoOverlayOpen} />
       ) : null}

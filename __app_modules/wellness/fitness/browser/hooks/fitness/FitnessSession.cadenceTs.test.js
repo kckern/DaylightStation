@@ -16,9 +16,11 @@
  * Fix: emit `ts: device.lastSeen` (which DeviceManager.update advances
  * on every packet, line ~64) so 0 RPM readings flow through.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import { FitnessSession } from "./FitnessSession.js";
+
+afterEach(() => vi.useRealTimers());
 
 describe('FitnessSession.getEquipmentCadence — ts advances on every packet', () => {
   it('emits a ts that advances when a 0-RPM packet follows a non-zero packet', () => {
@@ -97,5 +99,34 @@ describe('FitnessSession.getEquipmentCadence — ts advances on every packet', (
     expect(samples.every((s) => s.connected && s.rpm === 0)).toBe(true);
 
     vi.useRealTimers();
+  });
+});
+
+
+describe('FitnessSession cadence packet liveness', () => {
+  it('keeps repeated fresh zero packets connected long past the last movement', () => {
+    vi.useFakeTimers(); vi.setSystemTime(1_000_000);
+    const session = new FitnessSession();
+    session._equipmentById.set('cycle_ace', { id: 'cycle_ace', cadence: 'cad-1' });
+    const device = session.deviceManager.registerDevice({ id: 'cad-1', type: 'cadence' });
+    device.update({ cadence: 80, lastSeen: Date.now() });
+    for (let i = 1; i <= 80; i++) {
+      vi.setSystemTime(1_000_000 + i * 500);
+      device.update({ cadence: 0, lastSeen: Date.now() });
+      expect(session.getEquipmentCadence('cycle_ace')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
+    }
+  });
+  it('uses a live zero sensor when the other wheel sensor is stale and HR remains live', () => {
+    vi.useFakeTimers(); vi.setSystemTime(1_000_000);
+    const session = new FitnessSession();
+    session._equipmentById.set('cycle_ace', { id: 'cycle_ace', cadence: ['cad-stale', 'cad-live'] });
+    const stale = session.deviceManager.registerDevice({ id: 'cad-stale', type: 'cadence' });
+    const live = session.deviceManager.registerDevice({ id: 'cad-live', type: 'cadence' });
+    stale.update({ cadence: 90, lastSeen: Date.now() });
+    live.update({ cadence: 70, lastSeen: Date.now() });
+    vi.setSystemTime(1_040_000);
+    live.update({ cadence: 0, lastSeen: Date.now() });
+    session.deviceManager.lastPacketAt = Date.now();
+    expect(session.getEquipmentCadence('cycle_ace')).toEqual({ rpm: 0, connected: true, ts: Date.now() });
   });
 });

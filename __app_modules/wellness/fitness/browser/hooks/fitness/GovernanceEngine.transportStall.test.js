@@ -2,7 +2,7 @@
  * A pipeline stall must never lock a cycle rider. 2026-09-02: the backend
  * blocked 6-8 s at a time; the rider held 77-99 RPM the entire challenge
  * (sensor-side proof in the bug report) and was locked seven times at
- * currentRpm 0. The contrast case proves genuine silence still locks.
+ * currentRpm 0. The contrast case proves fresh zero-RPM effort still locks.
  *
  * See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
  */
@@ -170,7 +170,7 @@ describe('Cycle SM — pipeline stall vs genuine silence', () => {
     expect(active.phaseProgressMs).toBe(progressBeforeStall);
   });
 
-  it('the same 8 s of genuine silence (pipeline alive, bike stopped) does lock', () => {
+  it('the same 8 s of fresh zero packets (pipeline alive, bike stopped) does lock', () => {
     const f = makeEngineWithActiveCycle();
     const { samples, ts: afterWarm } = warmUp();
     drive(f, samples);
@@ -178,7 +178,7 @@ describe('Cycle SM — pipeline stall vs genuine silence', () => {
 
     const silence = [];
     let ts = afterWarm;
-    for (let i = 0; i < 40; i += 1) { silence.push({ ts, entry: { rpm: 0, connected: false } }); ts += STEP; }
+    for (let i = 0; i < 40; i += 1) { silence.push({ ts, entry: fresh(0, ts) }); ts += STEP; }
     drive(f, silence);
     expect(f.engine.challengeState.activeChallenge.totalLockEventsCount).toBeGreaterThan(0);
   });

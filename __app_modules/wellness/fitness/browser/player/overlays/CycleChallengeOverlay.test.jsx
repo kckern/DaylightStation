@@ -330,3 +330,16 @@ describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no cou
     expect(container.querySelector('.cycle-challenge-overlay__countdown')).toBeNull();
   });
 });
+
+
+describe('CycleChallengeOverlay sensor recovery', () => {
+  it('announces the unavailable cadence sensor with exact recovery copy', () => {
+    render(<CycleChallengeOverlay challenge={{ ...baseChallenge, sensorUnavailable: true, sensorGraceRemainingMs: 9000 }} />);
+    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toHaveTextContent('Cadence sensor unavailable');
+  });
+  it('keeps readable zero RPM effort feedback for an available sensor', () => {
+    render(<CycleChallengeOverlay challenge={{ ...baseChallenge, currentRpm: 0, sensorUnavailable: false }} />);
+    expect(screen.getByLabelText('Current RPM 0')).toHaveTextContent('0RPM');
+    expect(screen.queryByText('Cadence sensor unavailable')).not.toBeInTheDocument();
+  });
+});

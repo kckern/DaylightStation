@@ -1243,9 +1243,10 @@ export class FitnessSession {
     const rpmRaw = device.cadence;
     if (!Number.isFinite(rpmRaw)) return disconnected;
     const { rpmZero, transportStallMs = 1200 } = this._getTimeouts();
-    const lastActivity = Number.isFinite(device.lastSignificantActivity)
-      ? device.lastSignificantActivity
-      : (Number.isFinite(device.lastSeen) ? device.lastSeen : null);
+    // Packet freshness includes stopped riders sending live zero-RPM samples.
+    const lastActivity = Number.isFinite(device.lastSeen)
+      ? device.lastSeen
+      : (Number.isFinite(device.lastSignificantActivity) ? device.lastSignificantActivity : null);
     if (lastActivity == null) return disconnected;
     // Pipeline stalled: NO device at all is delivering, so this device's silence
     // says nothing about its rider. Report `connected: false` — every existing
@@ -1256,12 +1257,12 @@ export class FitnessSession {
     // Do NOT report connected:true here: CycleGame would treat it as fresh
     // truth and accrue phantom race distance.
     if (this.deviceManager?.isTransportStalled?.(transportStallMs)) {
-      return { rpm: rpmRaw, connected: false, transportStalled: true, ts: device.lastSeen ?? lastActivity };
+      return { rpm: rpmRaw, connected: false, transportStalled: true, ts: lastActivity };
     }
     if (Date.now() - lastActivity > rpmZero) return disconnected;
     // Use lastSeen (advances on every packet, including 0 readings) so 0-RPM blips
     // between rotations reach CadenceFilter's EMA.
-    return { rpm: rpmRaw, connected: true, ts: device.lastSeen ?? lastActivity };
+    return { rpm: rpmRaw, connected: true, ts: lastActivity };
   }
 
   /**

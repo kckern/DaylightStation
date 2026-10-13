@@ -10,7 +10,8 @@ vi.mock('@/lib/logging/Logger.js', () => {
   return { default: () => logger };
 });
 
-import { useGovernanceAudioDuck } from "./useGovernanceAudioDuck.js";
+import { useGovernanceAudioDuck, playCueOnce } from "./useGovernanceAudioDuck.js";
+import { createCycleAudioEngine } from "../../../../../../tests/_fixtures/fitness/cycleAudioEngine.mjs";
 import { __resetCueAudioForTest } from "./audioCuePlayer.js";
 
 class FakeAudio {
@@ -28,7 +29,7 @@ class FakeAudio {
 
 const descriptor = (o = {}) => ({
   cueId: 'challenge_hurry', sound: 'apps/fitness/ux/challenge-hurry.mp3',
-  duckTo: 0.1, token: 'ch1:challenge_hurry', ...o,
+  duckTo: 0.1, token: 'ch1:challenge_hurry', trigger: 'challenge_remaining', ...o,
 });
 
 describe('useGovernanceAudioDuck', () => {
@@ -41,9 +42,9 @@ describe('useGovernanceAudioDuck', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  const render = (audioDuck) =>
-    renderHook(({ audioDuck }) => useGovernanceAudioDuck({ videoVolume, audioDuck }), {
-      initialProps: { audioDuck },
+  const render = (audioDuck, lifecycle = {}) =>
+    renderHook((props) => useGovernanceAudioDuck({ videoVolume, ...props }), {
+      initialProps: { audioDuck, ...lifecycle },
     });
 
   it('ducks (via setDuck) and plays the SFX on a new token', () => {
@@ -80,6 +81,161 @@ describe('useGovernanceAudioDuck', () => {
     rerender({ audioDuck: descriptor({ token: 'ch1:challenge_hurry', duckTo: 0.1 }) });
     expect(FakeAudio.instances).toHaveLength(1);        // shared element, not recreated
     expect(FakeAudio.instances[0].playCalls).toBe(2);   // played again for the new cue
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.1);
+  });
+
+  it('explicit suppression mid-cue stops its SFX and lifts the active governance duck once', () => {
+    const { rerender, unmount } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null, suppress: true });
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    expect(sfx.pauseCalls).toBe(1);
+    expect(sfx.paused).toBe(true);
+    expect(sfx._l.ended).toEqual([]);
+    expect(sfx._l.error).toEqual([]);
+    rerender({ audioDuck: null, suppress: true });
+    unmount();
+    expect(sfx.pauseCalls).toBe(1);
+  });
+
+  it('suppressing an active governance duck does not pause a superseding success cue on the shared element', () => {
+    const { rerender } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    const onDone = vi.fn();
+    act(() => playCueOnce({ sound: 'success.mp3', onDone }));
+    rerender({ audioDuck: null, suppress: true });
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    expect(sfx.src).toBe('/media/success.mp3');
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    act(() => sfx.fire('ended'));
+    expect(onDone).toHaveBeenCalledExactlyOnceWith('ended');
+    expect(videoVolume.setDuck).toHaveBeenCalledTimes(2);
+  });
+
+  it('suppressing a completed governance cue leaves later playback on the shared element alone', () => {
+    const { rerender } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    act(() => sfx.fire('ended'));
+    sfx.play(); // a later shared-element owner, after governance has lifted its duck
+    rerender({ audioDuck: null, suppress: true });
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    expect(sfx._l.ended).toEqual([]);
+    expect(sfx._l.error).toEqual([]);
+    expect(videoVolume.setDuck).toHaveBeenCalledTimes(2);
+  });
+
+  it('suppression with no governance session does not pause audio owned elsewhere', () => {
+    const { rerender } = render(null);
+    const independentAudio = new FakeAudio('independent-voice-memo.mp3');
+    independentAudio.play();
+    rerender({ audioDuck: null, suppress: true });
+    expect(independentAudio.paused).toBe(false);
+    expect(independentAudio.pauseCalls).toBe(0);
+    expect(videoVolume.setDuck).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['cycle_start', 'cycle_challenge_init'], ['cycle_fail', 'cycle_locked'],
+    ['cycle_end', 'cycle_success'], ['cycle_hurry', null],
+  ])('real-engine %s event keeps playing through later null ticks until ended', (cueId, cycleAudioCue) => {
+    const { engine } = createCycleAudioEngine();
+    const snapshot = { type: 'cycle', id: 'ordinary-cycle', status: 'pending', cycleState: 'maintain',
+      cycleAudioCue, currentRpm: cycleAudioCue ? 80 : 40, currentPhase: { loRpm: 60 }, cycleHealthPct: 0.5 };
+    const first = engine._computeAudioDuck(snapshot);
+    expect(first.cueId).toBe(cueId);
+    const { rerender } = render(first);
+    const sfx = FakeAudio.instances[0];
+    const next = engine._computeAudioDuck({ ...snapshot, cycleAudioCue: null, currentRpm: cycleAudioCue ? 80 : 40 });
+    expect(next).toBeNull();
+    rerender({ audioDuck: next });
+    rerender({ audioDuck: next });
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(first.duckTo);
+    act(() => sfx.fire('ended'));
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+  });
+
+  it('item identity changes cancel the old active cue once without replaying its token', () => {
+    const { rerender } = render(descriptor(), { itemKey: 'video-1' });
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null, itemKey: 'video-2' });
+    expect(sfx.paused).toBe(true);
+    expect(sfx.pauseCalls).toBe(1);
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    rerender({ audioDuck: descriptor(), itemKey: 'video-2' });
+    expect(sfx.playCalls).toBe(1);
+  });
+
+  it('real-engine recovery cancels the ongoing cycle cue once and emits no effort warning', () => {
+    const f = createCycleAudioEngine();
+    const first = f.start();
+    expect(first.audioDuck.cueId).toBe('cycle_start');
+    const { rerender } = render(first.audioDuck);
+    const sfx = FakeAudio.instances[0];
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain'; active.cycleHealthMs = 1500;
+    const recovery = f.tick(2700, null);
+    expect(recovery.challenge.sensorUnavailable).toBe(true);
+    expect(recovery.audioDuck).toBeNull();
+    rerender({ audioDuck: recovery.audioDuck, suppressCycle: recovery.challenge.sensorUnavailable });
+    expect(sfx.paused).toBe(true);
+    expect(sfx.pauseCalls).toBe(1);
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    const next = f.tick(200, null);
+    rerender({ audioDuck: next.audioDuck, suppressCycle: next.challenge.sensorUnavailable });
+    expect(sfx.pauseCalls).toBe(1);
+    expect(sfx.playCalls).toBe(1);
+  });
+
+  it('real-engine HR warning plays and remains active during the same cycle recovery', () => {
+    const f = createCycleAudioEngine();
+    const first = f.start();
+    const { rerender } = render(first.audioDuck);
+    const sfx = FakeAudio.instances[0];
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain'; active.cycleHealthMs = 1500;
+    const warning = f.tick(2700, null, 'cool');
+    expect(warning.status).toBe('warning');
+    expect(warning.challenge.sensorUnavailable).toBe(true);
+    expect(warning.audioDuck.cueId).toBe('hr_warning');
+    rerender({ audioDuck: warning.audioDuck, suppressCycle: true });
+    expect(sfx.src).toBe('/media/warning.mp3');
+    expect(sfx.paused).toBe(false);
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.15);
+    const next = f.tick(200, null, 'cool');
+    rerender({ audioDuck: next.audioDuck, suppressCycle: true });
+    expect(sfx.pauseCalls).toBe(1); // previous cycle session only
+    expect(sfx.playCalls).toBe(2);
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.15);
+    act(() => sfx.fire('ended'));
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+  });
+
+  it.each(['sensor recovery', 'item change'])('%s cancels its cycle duck while leaving a superseding success cue playing', (cause) => {
+    const first = createCycleAudioEngine().start();
+    const { rerender } = render(first.audioDuck, { itemKey: 'video-1' });
+    const sfx = FakeAudio.instances[0];
+    const onDone = vi.fn();
+    act(() => playCueOnce({ sound: 'success.mp3', onDone }));
+    rerender({ audioDuck: null, itemKey: cause === 'item change' ? 'video-2' : 'video-1',
+      suppressCycle: cause === 'sensor recovery' });
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    act(() => sfx.fire('ended'));
+    expect(onDone).toHaveBeenCalledExactlyOnceWith('ended');
+  });
+
+  it('cycle-only suppression does not interrupt an already-playing base HR cue', () => {
+    const warning = descriptor({ trigger: 'governance_warning' });
+    const { rerender } = render(warning);
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null, suppressCycle: true });
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.1);
   });
 

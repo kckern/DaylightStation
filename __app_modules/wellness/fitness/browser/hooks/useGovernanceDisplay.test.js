@@ -276,3 +276,32 @@ describe('resolveGovernanceDisplay — metRows', () => {
     expect(result.metRows).toEqual([]);
   });
 });
+
+
+describe('resolveGovernanceDisplay — cadence sensor recovery', () => {
+  it.each(['init', 'ramp', 'health'])('does not infer a video lock from frozen %s cycling state', (lockReason) => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      challenge: makeCycleChallenge({ cycleState: 'locked', lockReason, sensorUnavailable: true }),
+    }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.show).toBe(false);
+    expect(Boolean(result.videoLocked)).toBe(false);
+  });
+
+  it('keeps the base HR requirement without stale cycle targets or credits during recovery', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'locked', videoLocked: true,
+      requirements: [{ satisfied: false, zone: 'fat-burn', missingUsers: ['rider-b'], metUsers: [], requiredCount: 1 }],
+      challenge: makeCycleChallenge({
+        cycleState: 'locked', sensorUnavailable: true, zone: 'cardio', missingUsers: ['rider-a'], metUsers: ['stale-credit'],
+      }),
+    }), makeDisplayMap({
+      'rider-b': { displayName: 'Rider B', heartRate: 90, zoneId: 'fat-burn' },
+    }), zoneMetaWithCardio);
+    expect(result.show).toBe(true);
+    expect(result.videoLocked).toBe(true);
+    expect(result.rows.map((row) => row.userId)).toEqual(['rider-b']);
+    expect(result.rows[0].targetZone.id).toBe('fat-burn');
+    expect(result.metRows).toEqual([]);
+    expect(result.challenge).toBeNull();
+  });
+});

@@ -413,6 +413,11 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
           name, boost badge, phase blocks, and RPM readout stack
           without overlap and stay centered regardless of overlay diameter. */}
       <div className="cycle-challenge-overlay__stack">
+        {challenge.sensorUnavailable && (
+          <div role="status" aria-label="Cadence sensor unavailable">
+            Cadence sensor unavailable
+          </div>
+        )}
         {totalPhases > 0 && (
           <CompletionCountBlocks
             targetCount={totalPhases}
@@ -478,6 +483,8 @@ CycleChallengeOverlay.propTypes = {
     waitingForBaseReq: PropTypes.bool,
     clockPaused: PropTypes.bool,
     cycleHealthPct: PropTypes.number,
+    sensorUnavailable: PropTypes.bool,
+    sensorGraceRemainingMs: PropTypes.number,
     status: PropTypes.string
   }),
   onRequestSwap: PropTypes.func,

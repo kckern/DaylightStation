@@ -83,6 +83,7 @@ function startSession({ videoVolume, audioDuck }) {
   // Declared above the closures below so the dependency is lexically clear; the
   // closures still run after this is assigned in the try block.
   let audio = null;
+  let audioSource = null;
 
   let lifted = false;
   const lift = (reason = 'unknown') => {
@@ -107,6 +108,7 @@ function startSession({ videoVolume, audioDuck }) {
     audio = getCueAudioElement();
     if (!audio) { lift('no_element'); return null; }
     audio.src = DaylightMediaPath(`/media/${audioDuck.sound}`);
+    audioSource = audio.src;
     const vol = Number(audioDuck.volume);
     audio.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
     audio.currentTime = 0;
@@ -130,7 +132,7 @@ function startSession({ videoVolume, audioDuck }) {
     });
     lift('threw');
   }
-  return { token: audioDuck.token, audio, onEnded, onError, lift };
+  return { token: audioDuck.token, trigger: audioDuck.trigger, audio, audioSource, onEnded, onError, lift, isActive: () => !lifted };
 }
 
 /** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
@@ -142,7 +144,11 @@ function stopSession(session, reason = 'stopped') {
     if (onError) audio.removeEventListener('error', onError);
     // Do NOT clear src — the element is shared/reused; clearing it fires a
     // spurious 'error' (aborted load) on the next consumer.
-    try { audio.pause(); } catch { /* already released */ }
+    // Another cue owner may reuse this shared element before our duck ends.
+    // Detach our listeners and lift our duck without stopping its new source.
+    if (session.isActive() && audio.src === session.audioSource) {
+      try { audio.pause(); } catch { /* already released */ }
+    }
   }
   lift?.(reason);
 }
@@ -150,21 +156,29 @@ function stopSession(session, reason = 'stopped') {
 /**
  * Plays a one-shot SFX and ducks the video (via the volume system) when the
  * GovernanceEngine emits an `audioDuck` descriptor, lifting the duck when the SFX
- * ends. Reacts to `audioDuck.token` ONLY — the engine rebuilds the descriptor
- * object every tick, so keying on the object would tear the session down each
- * tick (cutting the SFX and bouncing the volume). Each distinct token plays at
+ * ends. Cue starts react to the token, not the descriptor object, which the
+ * engine rebuilds every tick. Explicit lifecycle inputs below control
+ * cancellation independently of event emissions. Each distinct token plays at
  * most once per mount (see firedTokensRef), so stable stage tokens survive
  * warning/lock interruptions without replaying.
  *
+ * A null descriptor means no new event. Explicit lifecycle inputs cancel
+ * current playback: suppress for bypass/base hard lock, suppressCycle for
+ * unavailable cadence only, and itemKey when the current video changes.
+ *
  * @param {object} params
  * @param {{ setDuck:(m:number)=>void, volumeRef?:{current:number} }|null} params.videoVolume
- * @param {{ cueId:string, sound:string, duckTo:number, volume?:number, token:string }|null} params.audioDuck
+ * @param {{ cueId:string, trigger?:string, sound:string, duckTo:number, volume?:number, token:string }|null} params.audioDuck
+ * @param {boolean} [params.suppress=false] - suppress all governance cues
+ * @param {boolean} [params.suppressCycle=false] - suppress only cycle_* cues
+ * @param {string|null} [params.itemKey=null] - current media item identity
  */
-export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
+export function useGovernanceAudioDuck({ videoVolume, audioDuck, suppress = false, suppressCycle = false, itemKey = null }) {
   const latestRef = useRef({ videoVolume, audioDuck });
   useEffect(() => { latestRef.current = { videoVolume, audioDuck }; });
 
   const sessionRef = useRef(null);
+  const itemKeyRef = useRef(itemKey);
   // Every token that has ever started a session this mount. Warning/lock
   // episodes interleave their own (timestamped, unique) tokens between a
   // challenge's stable stage tokens; when a stage token comes back after the
@@ -174,6 +188,16 @@ export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
   const token = audioDuck?.token || null;
 
   useEffect(() => {
+    const isCycleCue = (cue) => typeof cue?.trigger === 'string' && cue.trigger.startsWith('cycle_');
+    const itemChanged = itemKeyRef.current !== itemKey;
+    itemKeyRef.current = itemKey;
+    if (itemChanged || suppress || (suppressCycle && isCycleCue(sessionRef.current))) {
+      stopSession(sessionRef.current, itemChanged ? 'item_changed' : (suppress ? 'suppressed' : 'cycle_sensor_unavailable'));
+      sessionRef.current = null;
+    }
+    if (suppress || (suppressCycle && isCycleCue(latestRef.current.audioDuck))) return;
+    // Transient cycle edge descriptors are followed by null on ordinary ticks.
+    // Let the active cue complete unless a lifecycle input above cancels it.
     if (!token) return;
     if (firedTokensRef.current.has(token)) return;
     firedTokensRef.current.add(token);
@@ -183,7 +207,7 @@ export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
     }
     stopSession(sessionRef.current, 'superseded');
     sessionRef.current = startSession(latestRef.current);
-  }, [token]);
+  }, [token, suppress, suppressCycle, itemKey]);
 
   useEffect(() => () => {
     stopSession(sessionRef.current, 'unmount');

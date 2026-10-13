@@ -12,6 +12,7 @@ vi.mock("../../../../../../frontend/src/lib/logging/Logger.js", () => {
 });
 
 import { GovernanceEngine } from "./GovernanceEngine.js";
+import { createCycleAudioEngine } from "../../../../../../tests/_fixtures/fitness/cycleAudioEngine.mjs";
 
 const baseConfig = (audioCues) => ({
   governed_types: ['test'],
@@ -378,5 +379,38 @@ describe('GovernanceEngine — cycle audio duck', () => {
     const snap = { type: 'cycle', id: 'c1', cycleAudioCue: null, currentPhase: { loRpm: 60 }, currentRpm: 50, cycleHealthPct: 0.8 };
     expect(e._computeAudioDuck(snap)?.cueId).toBe('cyc_hurry');
     expect(e._computeAudioDuck(snap)).toBeNull();
+  });
+});
+
+
+describe('GovernanceEngine — recovery audio channel', () => {
+  it('partial health and decayed zero cadence emit no cycle effort cue during recovery or consume its cooldown', () => {
+    const f = createCycleAudioEngine();
+    f.start();
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain';
+    active.cycleHealthMs = 1500;
+    const recovery = f.tick(2700, null);
+    expect(recovery.challenge).toMatchObject({ sensorUnavailable: true, currentRpm: 0, cycleHealthPct: 0.5 });
+    expect(recovery.videoLocked).toBe(false);
+    expect(recovery.audioDuck).toBeNull();
+    expect(f.engine._cycleHurryCooldownUntil || 0).toBe(0);
+  });
+
+  it('a manually initialized cycle without signal produces no start cue', () => {
+    const recovery = createCycleAudioEngine().start(null);
+    expect(recovery.challenge.sensorUnavailable).toBe(true);
+    expect(recovery.audioDuck).toBeNull();
+  });
+
+  it('base HR warning still emits while a cycle is recovering', () => {
+    const f = createCycleAudioEngine();
+    f.start();
+    const active = f.engine.challengeState.activeChallenge;
+    active.cycleState = 'maintain'; active._publishedCycleState = 'maintain'; active.cycleHealthMs = 1500;
+    const warning = f.tick(2700, null, 'cool');
+    expect(warning.challenge.sensorUnavailable).toBe(true);
+    expect(warning.status).toBe('warning');
+    expect(warning.audioDuck).toMatchObject({ cueId: 'hr_warning', trigger: 'governance_warning' });
   });
 });
