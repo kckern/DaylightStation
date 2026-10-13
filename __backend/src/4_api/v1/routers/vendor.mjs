@@ -17,7 +17,13 @@ export function createVendorRouter({ vendorDir, logger = console }) {
     dotfiles: 'ignore',
     fallthrough: true,
     etag: true,
-    setHeaders: (res) => res.setHeader('Cache-Control', VENDOR_CACHE_CONTROL),
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', VENDOR_CACHE_CONTROL);
+      // SVG is scriptable same-origin content if navigated to directly. <img>, fetch(),
+      // @font-face and <script src> ignore a response CSP, so no consumer is affected.
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    },
   }));
 
   router.use((req, res) => {

@@ -36,6 +36,14 @@ describe('loadEmulatorShaders', () => {
     expect(JSON.stringify(warn.mock.calls[0][1])).toContain('install:assets');
   });
 
+  it('caches a failed load for the session (no refetch storm)', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 404 }));
+    await loadEmulatorShaders({ fetchImpl });
+    const calls = fetchImpl.mock.calls.length;
+    await loadEmulatorShaders({ fetchImpl });
+    expect(fetchImpl.mock.calls.length).toBe(calls);
+  });
+
   it('treats a network error like a miss', async () => {
     const fetchImpl = vi.fn(async () => { throw new Error('offline'); });
     expect(await loadEmulatorShaders({ fetchImpl })).toEqual({});

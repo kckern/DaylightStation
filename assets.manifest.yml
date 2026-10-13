@@ -14,7 +14,7 @@ version: 1
 assets:
   - id: noto-sans-kr-regular
     target: fonts/noto-sans-kr/NotoSansKR-Regular.otf
-    source: { url: https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf }
+    source: { url: https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf }
     sha256: 69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68
     licence: "OFL-1.1"
     notes: "Korean glyphs for PDF/receipt rendering. Task C4 points the document font loader here."
@@ -332,31 +332,31 @@ assets:
     notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
   - id: shader-crt-geom
     target: shaders/crt/crt-geom.glsl
-    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-geom.glsl }
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/148ce728155232a6b63be772c1810bd84728f359/crt/shaders/crt-geom.glsl }
     sha256: 6f4c98cc71e8d021d141f3b2f517bbbfeb93a6c9701469c5c855a5c67aaad2e9
     licence: "GPL-2.0-or-later"
     notes: "cgwg/Themaister/DOLLS. Identical to the crt-lab copy. Consumed by crtRenderer.js (C3)."
   - id: shader-crt-lottes
     target: shaders/crt/crt-lottes.glsl
-    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-lottes.glsl }
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/148ce728155232a6b63be772c1810bd84728f359/crt/shaders/crt-lottes.glsl }
     sha256: 699a947fc2744eb7e2dc4adb2c08a8b74e31685baa77cbc1face9593106b57ef
     licence: "public-domain"
     notes: "crt-lab dev harness only (C3)."
   - id: shader-crt-pi
     target: shaders/crt/crt-pi.glsl
-    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-pi.glsl }
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/148ce728155232a6b63be772c1810bd84728f359/crt/shaders/crt-pi.glsl }
     sha256: dc2676b46f57a12501acc1792637c6b52363a7cc1c91f97b80abb2a670aa81d6
     licence: "GPL-2.0"
     notes: "crt-lab dev harness only (C3)."
   - id: shader-crt-easymode
     target: shaders/crt/crt-easymode.glsl
-    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-easymode.glsl }
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/148ce728155232a6b63be772c1810bd84728f359/crt/shaders/crt-easymode.glsl }
     sha256: ed27bab460c53d98fcf727333210de0d746c957c86463028d8c0e4c15e29f3ab
     licence: "GPL-2.0"
     notes: "crt-lab dev harness only (C3)."
   - id: shader-crt-aperture
     target: shaders/crt/crt-aperture.glsl
-    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-aperture.glsl }
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/148ce728155232a6b63be772c1810bd84728f359/crt/shaders/crt-aperture.glsl }
     sha256: d7c20c972ae0cd9790280d8a070f1bd96bb4b9d90b4718a94c6296a58cc1f81e
     licence: "GPL"
     notes: "crt-lab dev harness only (C3)."

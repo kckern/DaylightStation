@@ -31,8 +31,13 @@ export function getCurriculumIndex(showRatingKey) {
       else reason = 'file-missing';
     } catch (err) { reason = `unreadable: ${err.message}`; }
   }
-  // Cached below, so this warns once per show key — never a silent null.
-  if (!index) logger.warn('piano.curriculum.unavailable', { show: key, dir: DIR, reason });
+  // Cached below, so this logs once per show key. Most Plex shows have no curriculum,
+  // so a missing per-show file is routine (debug); only a misconfigured or unreadable
+  // directory/file is worth a warn.
+  if (!index) {
+    const level = reason === 'file-missing' ? 'debug' : 'warn';
+    logger[level]('piano.curriculum.unavailable', { show: key, dir: DIR, reason });
+  }
   cache.set(key, index);
   return index;
 }

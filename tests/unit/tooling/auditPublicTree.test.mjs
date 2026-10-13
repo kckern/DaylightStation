@@ -57,6 +57,11 @@ describe('auditContent', () => {
 });
 
 describe('isProbablyBinary', () => {
+  it('knows ogg, flac, m4a, mov, bmp, ttc and sqlite by extension', () => {
+    for (const ext of ['ogg', 'flac', 'm4a', 'mov', 'bmp', 'ttc', 'sqlite']) {
+      expect(isProbablyBinary(`a.${ext}`, Buffer.from('plain text'))).toBe(true);
+    }
+  });
   it('skips by extension and by NUL byte', () => {
     expect(isProbablyBinary('a.png', Buffer.from('x'))).toBe(true);
     expect(isProbablyBinary('a.txt', Buffer.from([0x61, 0x00, 0x62]))).toBe(true);

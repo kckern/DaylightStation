@@ -68,5 +68,5 @@ largeText:
   - _extensions/playback-hub/playback-hub.sh
 
 # Tracked-but-scheduled-for-removal entries. Closed by task C6: must stay empty
-# (asserted by scripts/audit-public-tree.test.mjs). Delete, generate or externalize instead.
+# (asserted by tests/unit/tooling/auditPublicTree.test.mjs). Delete, generate or externalize instead.
 pending: []

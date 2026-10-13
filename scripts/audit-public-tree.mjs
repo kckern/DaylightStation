@@ -35,7 +35,7 @@ export const CONTENT_RULES = [
   { id: 'lan-address', re: /\b(?:10\.\d{1,3}\.\d{1,3}\.(?!0\b)\d{1,3}|192\.168\.\d{1,3}\.(?!0\b)\d{1,3})\b(?!\/)/, scope: A_SCOPE, why: 'LAN address' },
 ];
 
-const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|wasm|woff2?|ttf|otf|mp[34]|webm|wav|mid|sf2|a|o|so|jar|class|pyc)$/i;
+const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|wasm|woff2?|ttf|otf|mp[34]|webm|wav|mid|sf2|ogg|flac|m4a|mov|bmp|ttc|sqlite|a|o|so|jar|class|pyc)$/i;
 
 export function isProbablyBinary(path, buf) {
   if (BINARY_EXT.test(path)) return true;

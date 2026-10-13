@@ -30,6 +30,14 @@ describe('/vendor route (media/vendor)', () => {
     expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
   });
 
+  it('locks down scriptable types (SVG) with CSP and nosniff', async () => {
+    writeFileSync(join(media, 'vendor', 'fonts', 'p.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const res = await request(app).get('/vendor/fonts/p.svg');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+  });
+
   it('404s for an absent file', async () => {
     const res = await request(app).get('/vendor/fonts/missing.woff2');
     expect(res.status).toBe(404);

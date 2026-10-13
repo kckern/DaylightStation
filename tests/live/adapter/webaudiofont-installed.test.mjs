@@ -5,30 +5,33 @@
  * by the /vendor route), so it lives in the live tier, not the unit gate.
  * Fails — never skips — when anything is missing, naming the fix.
  *
- * Usage: DAYLIGHT_MEDIA_PATH=<media> npx vitest run --config tests/_infrastructure/config/vitest.config.mjs tests/live/adapter/webaudiofont-installed.test.mjs
+ * Usage: DAYLIGHT_MEDIA_PATH=<media> NODE_OPTIONS=--experimental-vm-modules npx jest --config tests/_infrastructure/config/jest.config.cjs tests/live/adapter/webaudiofont-installed.test.mjs
  */
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { describe, it, expect } from '@jest/globals';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { runEsm, repoUrl } from './nativeEsm.mjs';
+
+const media = process.env.DAYLIGHT_MEDIA_PATH
+  || (process.env.DAYLIGHT_BASE_PATH ? join(process.env.DAYLIGHT_BASE_PATH, 'media') : null);
+const dir = media && join(media, 'vendor', 'webaudiofont');
+
+// presetManifest.js is browser ESM (.js) and webaudiofont is a browser global script, so the
+// preset list is resolved in native Node (see nativeEsm.mjs) and handed back as JSON.
+const targets = JSON.parse(runEsm(`
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, basename } from 'node:path';
-import { GM_PROGRAMS, DRUM_NOTES } from '../../../__app_modules/learning/piano/browser/PianoKiosk/producer/presetManifest.js';
-
-const require = createRequire(new URL('../../../frontend/package.json', import.meta.url));
-const WebAudioFontPlayer = new Function(`${readFileSync(require.resolve('webaudiofont'), 'utf8')}\n;return WebAudioFontPlayer;`)();
+import { basename } from 'node:path';
+import { GM_PROGRAMS, DRUM_NOTES } from '${repoUrl('__app_modules/learning/piano/browser/PianoKiosk/producer/presetManifest.js')}';
+const require = createRequire(${JSON.stringify(repoUrl('frontend/package.json'))});
+const WebAudioFontPlayer = new Function(readFileSync(require.resolve('webaudiofont'), 'utf8') + '\\n;return WebAudioFontPlayer;')();
 const loader = new WebAudioFontPlayer().loader;
-
-function mediaDir() {
-  if (process.env.DAYLIGHT_MEDIA_PATH) return process.env.DAYLIGHT_MEDIA_PATH;
-  if (process.env.DAYLIGHT_BASE_PATH) return join(process.env.DAYLIGHT_BASE_PATH, 'media');
-  return null;
-}
-const dir = mediaDir() && join(mediaDir(), 'vendor', 'webaudiofont');
+const file = (info) => ({ file: basename(new URL(info.url).pathname), variable: info.variable });
+console.log(JSON.stringify([
+  ...GM_PROGRAMS.map((p) => ({ label: 'program ' + p, ...file(loader.instrumentInfo(loader.findInstrument(p))) })),
+  ...DRUM_NOTES.map((n) => ({ label: 'drum ' + n, ...file(loader.drumInfo(loader.findDrum(n))) })),
+]));`).trim().split('\n').pop());
 const fix = 'run `npm run install:assets` (set DAYLIGHT_MEDIA_PATH)';
-
-const targets = [
-  ...GM_PROGRAMS.map((p) => ({ label: `program ${p}`, info: loader.instrumentInfo(loader.findInstrument(p)) })),
-  ...DRUM_NOTES.map((n) => ({ label: `drum ${n}`, info: loader.drumInfo(loader.findDrum(n)) })),
-];
 
 describe('webaudiofont presets installed under media/vendor', () => {
   it('the vendor/webaudiofont dir exists', () => {
@@ -38,9 +41,8 @@ describe('webaudiofont presets installed under media/vendor', () => {
 
   it.each(targets.map((t) => [t.label, t]))('%s preset file present and defines its variable', (_l, t) => {
     expect(dir, `DAYLIGHT_MEDIA_PATH is not set — ${fix}`).toBeTruthy();
-    const file = basename(new URL(t.info.url).pathname);
-    const full = join(dir, file);
-    expect(existsSync(full), `missing ${file} — ${fix}`).toBe(true);
-    expect(readFileSync(full, 'utf8')).toContain(t.info.variable);
+    const full = join(dir, t.file);
+    expect(existsSync(full), `missing ${t.file} — ${fix}`).toBe(true);
+    expect(readFileSync(full, 'utf8')).toContain(t.variable);
   });
 });

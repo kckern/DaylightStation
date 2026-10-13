@@ -31,10 +31,12 @@ function logger() {
 
 let warned = false;
 let cached = null;
+let failed = false;
 
 export function resetEmulatorShadersForTest() {
   warned = false;
   cached = null;
+  failed = false;
 }
 
 function warnOnce(error) {
@@ -61,6 +63,7 @@ async function fetchText(url, fetchImpl) {
  */
 export async function loadEmulatorShaders({ fetchImpl = globalThis.fetch } = {}) {
   if (cached) return cached;
+  if (failed) return {};
   try {
     const passes = await Promise.all(GAMEBOY_PASS_NAMES.map(
       async (name) => [name, await fetchText(`${VENDOR_SHADER_BASE}/gameboy/${name}`, fetchImpl)],
@@ -71,6 +74,7 @@ export async function loadEmulatorShaders({ fetchImpl = globalThis.fetch } = {})
     });
     return cached;
   } catch (err) {
+    failed = true;
     warnOnce(err?.message || String(err));
     return {};
   }
