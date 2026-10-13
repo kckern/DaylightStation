@@ -108,6 +108,7 @@ config.app-local.yml
 !scripts/audit-css-ownership.mjs
 !scripts/audit-css-ownership.baseline.json
 !scripts/audit-css-ownership.test.mjs
+!scripts/audit-public-tree.mjs
 !scripts/livingroom-reading-idle.sh
 *.log
 .github/copilot-instructions.md
