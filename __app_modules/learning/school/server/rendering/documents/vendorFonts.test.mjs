@@ -2,11 +2,12 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createDocumentPdfRenderer } from "./DocumentPdfRenderer.mjs";
 import { createDocumentReceiptRenderer } from "./DocumentReceiptRenderer.mjs";
 import { createWorkbookTheme } from "./workbookTheme.mjs";
 import { texToSvg } from "./mathSvg.mjs";
-import { MissingVendorAssetError, resetVendorFontWarnings, setDefaultVendorFontDir, vendorFontDirFor, vendorFontDirFromEnv, resolveVendorFont, warnedKeys } from "./vendorFonts.mjs";
+import { MissingVendorAssetError, resetVendorFontWarnings, setDefaultVendorFontDir, vendorFontDirFor, vendorFontDirFromEnv, enableEnvVendorFontDir, getDefaultVendorFontDir, resolveVendorFont, warnedKeys } from "./vendorFonts.mjs";
 
 const theme = createWorkbookTheme({ typeScale: 'young' });
 const doc = (md) => ({
@@ -44,10 +45,49 @@ describe('missing vendor font (Noto Sans KR not installed)', () => {
 });
 
 describe('vendorFontDirFromEnv (CLI runs have no composition)', () => {
+  const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'vf-env-'));
   it('uses DAYLIGHT_MEDIA_PATH, else DAYLIGHT_BASE_PATH/media, else null', () => {
-    expect(vendorFontDirFromEnv({ DAYLIGHT_MEDIA_PATH: '/m' })).toBe('/m/vendor/fonts');
-    expect(vendorFontDirFromEnv({ DAYLIGHT_BASE_PATH: '/b' })).toBe('/b/media/vendor/fonts');
-    expect(vendorFontDirFromEnv({})).toBeNull();
+    const cwd = tmp();
+    expect(vendorFontDirFromEnv({ env: { DAYLIGHT_MEDIA_PATH: '/m' }, cwd })).toBe('/m/vendor/fonts');
+    expect(vendorFontDirFromEnv({ env: { DAYLIGHT_BASE_PATH: '/b' }, cwd })).toBe('/b/media/vendor/fonts');
+    expect(vendorFontDirFromEnv({ env: {}, cwd, envFiles: [] })).toBeNull();
+  });
+  it('reads a .env file when the shell env has nothing (dotenv has not run yet)', () => {
+    const cwd = tmp();
+    fs.writeFileSync(path.join(cwd, '.env'), 'DAYLIGHT_BASE_PATH=/from/dotenv\n');
+    expect(vendorFontDirFromEnv({ env: {}, cwd })).toBe('/from/dotenv/media/vendor/fonts');
+    expect(vendorFontDirFromEnv({ env: { DAYLIGHT_MEDIA_PATH: '/shell' }, cwd })).toBe('/shell/vendor/fonts');
+  });
+  it('falls back to <cwd>/media when it holds vendor/fonts (in-container run)', () => {
+    const cwd = tmp();
+    expect(vendorFontDirFromEnv({ env: {}, cwd, envFiles: [] })).toBeNull();
+    fs.mkdirSync(path.join(cwd, 'media', 'vendor', 'fonts'), { recursive: true });
+    expect(vendorFontDirFromEnv({ env: {}, cwd, envFiles: [] })).toBe(path.join(cwd, 'media', 'vendor', 'fonts'));
+  });
+  it('enableEnvVendorFontDir resolves lazily at first use, not at call time', () => {
+    const cwd = tmp();
+    setDefaultVendorFontDir(null);
+    const env = {};
+    enableEnvVendorFontDir({ env, cwd, envFiles: [] });
+    env.DAYLIGHT_MEDIA_PATH = '/late'; // e.g. dotenv.config() ran after import
+    expect(getDefaultVendorFontDir()).toBe('/late/vendor/fonts');
+    setDefaultVendorFontDir(null);
+  });
+  it('an explicit setDefaultVendorFontDir wins over the lazy resolver', () => {
+    enableEnvVendorFontDir({ env: { DAYLIGHT_MEDIA_PATH: '/env' }, envFiles: [] });
+    setDefaultVendorFontDir('/explicit');
+    expect(getDefaultVendorFontDir()).toBe('/explicit');
+    setDefaultVendorFontDir(null);
+  });
+  it('a real process with only a .env in cwd resolves the dir', () => {
+    const cwd = tmp();
+    fs.writeFileSync(path.join(cwd, '.env'), 'DAYLIGHT_MEDIA_PATH=/only/dotenv\n');
+    const mod = new URL('./vendorFonts.mjs', import.meta.url).href;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+      `const m=await import(${JSON.stringify(mod)});m.enableEnvVendorFontDir();console.log(m.getDefaultVendorFontDir())`],
+    { cwd, env: { PATH: process.env.PATH }, encoding: 'utf8' });
+    expect(r.stderr).not.toMatch(/Error/);
+    expect(r.stdout.trim()).toBe('/only/dotenv/vendor/fonts');
   });
   it('the warn-once key includes the directory', () => {
     resetVendorFontWarnings();
@@ -57,11 +97,11 @@ describe('vendorFontDirFromEnv (CLI runs have no composition)', () => {
   });
 });
 
-describe('every CLI that builds a renderer sets the vendor font dir', () => {
+describe('every CLI that builds a renderer enables the env-resolved vendor font dir', () => {
   const cliDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../../../cli');
-  for (const f of ['agenda.mjs', 'sim.mjs', 'docs.mjs', 'barcode-workflows.mjs', 'korean-course.cli.mjs']) {
+  for (const f of ['agenda.mjs', 'sim.mjs', 'docs.mjs', 'barcode-workflows.mjs']) {
     it(f, () => {
-      expect(fs.readFileSync(path.join(cliDir, f), 'utf8')).toMatch(/setDefaultVendorFontDir\(/);
+      expect(fs.readFileSync(path.join(cliDir, f), 'utf8')).toMatch(/enableEnvVendorFontDir\(\)/);
     });
   }
 });

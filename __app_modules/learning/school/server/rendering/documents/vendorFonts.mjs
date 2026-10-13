@@ -11,8 +11,10 @@
  *
  * @module rendering/school/documents/vendorFonts
  */
-import { fileExists } from '#system/utils/FileIO.mjs';
+import { fileExists, dirExists, readTextFromPath } from '#system/utils/FileIO.mjs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { createLogger } from '#system/logging/logger.mjs';
 
 const logger = createLogger({ source: 'backend', app: 'school', context: { component: 'vendor-fonts' } });
@@ -34,32 +36,57 @@ export class MissingVendorAssetError extends Error {
 export const HANGUL_PATTERN = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
 let defaultVendorFontDir = null;
+let lazyResolver = null;
 const warned = new Set();
 
 /** Composition sets this once from the configured media dir. */
 export function setDefaultVendorFontDir(dir) {
   defaultVendorFontDir = dir || null;
+  if (dir) lazyResolver = null;
 }
+/** The explicit default, else (CLI runs) the env-resolved dir, computed at first use. */
 export function getDefaultVendorFontDir() {
+  if (!defaultVendorFontDir && lazyResolver) defaultVendorFontDir = lazyResolver() ?? null;
   return defaultVendorFontDir;
 }
 
 /** `<mediaDir>/vendor/fonts`: the `/vendor` route's dir (vendorApi.mjs vendorDirFor) plus `fonts`; mediaDir is ConfigService.getMediaDir(). */
 export const vendorFontDirFor = (mediaDir) => (mediaDir ? join(mediaDir, 'vendor', 'fonts') : null);
 
+const REPO_ROOT = fileURLToPath(new URL('../../../../../../', import.meta.url));
+
+/**
+ * Vendor font dir for a CLI run (no composition, no ConfigService, and possibly
+ * no dotenv yet or no env at all inside the container). Same media dir
+ * install:assets and the backend use. Order: DAYLIGHT_MEDIA_PATH, then
+ * DAYLIGHT_BASE_PATH/media (shell env, then a `.env` in cwd or the repo root),
+ * then `<cwd>/media` when it holds vendor/fonts (the container's /usr/src/app).
+ */
+export function vendorFontDirFromEnv({
+  env = process.env, cwd = process.cwd(), envFiles = [join(cwd, '.env'), join(REPO_ROOT, '.env')],
+} = {}) {
+  const fromFiles = {};
+  for (const file of [...envFiles].reverse()) {
+    try { if (fileExists(file)) Object.assign(fromFiles, dotenv.parse(readTextFromPath(file))); } catch { /* unreadable .env: ignore */ }
+  }
+  const get = (key) => env[key] || fromFiles[key] || null;
+  const media = get('DAYLIGHT_MEDIA_PATH') || (get('DAYLIGHT_BASE_PATH') ? join(get('DAYLIGHT_BASE_PATH'), 'media') : null);
+  if (media) return vendorFontDirFor(media);
+  const local = vendorFontDirFor(join(cwd, 'media'));
+  return dirExists(local) ? local : null;
+}
+
+/** CLI entry points call this at import; the env is only read at first use, after any dotenv.config(). */
+export function enableEnvVendorFontDir(opts) {
+  lazyResolver = () => vendorFontDirFromEnv(opts);
+  defaultVendorFontDir = null;
+}
+
 /**
  * Resolve a vendor font file. Returns `{ path, missing }`; a missing file is
  * logged once (warn) and left to the caller to fail at the point of use.
  */
-/**
- * Vendor font dir for a CLI run (no composition, no ConfigService): the same
- * media dir install:assets and the backend use. null when neither env is set.
- */
-export const vendorFontDirFromEnv = (env = process.env) => vendorFontDirFor(
-  env.DAYLIGHT_MEDIA_PATH || (env.DAYLIGHT_BASE_PATH ? join(env.DAYLIGHT_BASE_PATH, 'media') : null),
-);
-
-export function resolveVendorFont(file, vendorFontDir = defaultVendorFontDir) {
+export function resolveVendorFont(file, vendorFontDir = getDefaultVendorFontDir()) {
   const path = vendorFontDir ? join(vendorFontDir, file) : null;
   const missing = !path || !fileExists(path);
   const key = `${vendorFontDir ?? ''}::${file}`;
@@ -72,6 +99,7 @@ export function resolveVendorFont(file, vendorFontDir = defaultVendorFontDir) {
   return { path, missing };
 }
 
-/** Test seam: forget which fonts were already warned about. */
 export const warnedKeys = () => [...warned];
+
+/** Test seam: forget which fonts were already warned about. */
 export function resetVendorFontWarnings() { warned.clear(); }

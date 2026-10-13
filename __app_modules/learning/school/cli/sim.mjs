@@ -41,10 +41,10 @@ import { YamlCurriculumDatastore } from "../server/adapters/persistence/YamlCurr
 import { YamlSchoolDatastore } from "../server/adapters/persistence/YamlSchoolDatastore.mjs";
 import { YamlAssignmentStore } from "../server/adapters/persistence/YamlAssignmentStore.mjs";
 import { createDocumentReceiptRenderer } from "../server/rendering/documents/DocumentReceiptRenderer.mjs";
-import { setDefaultVendorFontDir, vendorFontDirFromEnv } from "../server/rendering/documents/vendorFonts.mjs";
+import { enableEnvVendorFontDir } from "../server/rendering/documents/vendorFonts.mjs";
 
-// CLI runs have no composition: point the Hangul fallback face at the same media dir the backend uses.
-setDefaultVendorFontDir(vendorFontDirFromEnv());
+// CLI runs have no composition: point the Hangul fallback face at the media dir, resolved at first use (after dotenv, or in-container).
+enableEnvVendorFontDir();
 
 class MemorySessions {
   logs = new Map();
