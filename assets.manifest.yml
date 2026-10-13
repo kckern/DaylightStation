@@ -1,0 +1,362 @@
+# Third-party and owner-provided assets that are NOT stored in this repository.
+# `npm run install:assets` downloads each entry into <media>/vendor/<target>
+# (served by the backend at /vendor/<target>) and verifies it against sha256.
+#
+#   npm run install:assets                 install everything missing
+#   npm run install:assets -- --check      report missing/mismatched, exit 1
+#   npm run install:assets -- --only <id>  one entry
+#   --media-dir DIR                        default: DAYLIGHT_MEDIA_PATH, else DAYLIGHT_BASE_PATH/media
+#
+# Entry: { id, target, source: { url | npm: "<pkg>/<path>" | local: "<note>" }, sha256, licence, notes }
+#   local = owner-provided: never fetched, only checked (--check) against sha256.
+# Piano curriculum and Korean course data are household DATA (data/content/...), not media; they are not listed here.
+version: 1
+assets:
+  - id: noto-sans-kr-regular
+    target: fonts/noto-sans-kr/NotoSansKR-Regular.otf
+    source: { url: https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf }
+    sha256: 69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68
+    licence: "OFL-1.1"
+    notes: "Korean glyphs for PDF/receipt rendering. Task C4 points the document font loader here."
+  - id: webaudiofont-0000-jclive-sf2-file
+    target: webaudiofont/0000_JCLive_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0000_JCLive_sf2_file.js }
+    sha256: 201b5e975e6dfd30937c2c153f226e2ca5e0c413b778b5a4a22318d24381765a
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0040-aspirin-sf2-file
+    target: webaudiofont/0040_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0040_Aspirin_sf2_file.js }
+    sha256: 20161a22d1ee99a689b92ac7adc5a49b4246533e28965cefcd49ecdad056396e
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0240-aspirin-sf2-file
+    target: webaudiofont/0240_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0240_Aspirin_sf2_file.js }
+    sha256: 706b27e7011d91700fbef9575f1dee0babd9fce5aad4989d52788d4544291c75
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0253-acoustic-guitar-sf2-file
+    target: webaudiofont/0253_Acoustic_Guitar_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0253_Acoustic_Guitar_sf2_file.js }
+    sha256: 52a7617c033ab66f161218ac95dee79d535f34c30f7dcf8204f31001fd266dcc
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0320-aspirin-sf2-file
+    target: webaudiofont/0320_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0320_Aspirin_sf2_file.js }
+    sha256: 589b1cede443c9416435a7b9362cda264cdf822030ea4a4e8c657e01db9ae98b
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0330-aspirin-sf2-file
+    target: webaudiofont/0330_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0330_Aspirin_sf2_file.js }
+    sha256: 5730590ee5b0569fb8fab9be88311b626f98bf33ac1f43e7fe72df000058cb12
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0480-aspirin-sf2-file
+    target: webaudiofont/0480_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0480_Aspirin_sf2_file.js }
+    sha256: f236044492ee88fae3e5b515b12777d5e464fcd0345f1f9d3e9c6b8b55d5c44d
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-0880-aspirin-sf2-file
+    target: webaudiofont/0880_Aspirin_sf2_file.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/0880_Aspirin_sf2_file.js }
+    sha256: b2d6d400b3366511af0c2a9acf06c8e2dd28d5ee481947517b528cd0704f6c74
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12836-0-sblive-sf2
+    target: webaudiofont/12836_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12836_0_SBLive_sf2.js }
+    sha256: d36e777f18c6e7f250a429f5d57dc549c4c5f95b66d40e48fd1f8184b6bc703e
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12838-0-sblive-sf2
+    target: webaudiofont/12838_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12838_0_SBLive_sf2.js }
+    sha256: 37a75d1c69fa45c3c038f4b5f7e5773a727cd180a22defb2bcfed3535eca7dc0
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12842-0-sblive-sf2
+    target: webaudiofont/12842_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12842_0_SBLive_sf2.js }
+    sha256: a6d0c989fce9ac27244d1060051cafc2981faf727a3ce6149bd1d9254c9d4cda
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12845-0-sblive-sf2
+    target: webaudiofont/12845_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12845_0_SBLive_sf2.js }
+    sha256: 9cd79e028d995e50625453a623d825d9831f833448ef8c78d58072219baed48f
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12846-0-sblive-sf2
+    target: webaudiofont/12846_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12846_0_SBLive_sf2.js }
+    sha256: bdadefa738ab36111ca5b185fc2d1b6918f3c679e40fee020872964526ce5b07
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12847-0-sblive-sf2
+    target: webaudiofont/12847_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12847_0_SBLive_sf2.js }
+    sha256: 86a44e83b6518b9d801c832e2f791ef7c966bb22e8300dcb997943a907fe8174
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12849-0-sblive-sf2
+    target: webaudiofont/12849_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12849_0_SBLive_sf2.js }
+    sha256: 6cdd8b4721c581e1e08710842a257a297949f0183eb731443afe50e21059d9bf
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12850-0-sblive-sf2
+    target: webaudiofont/12850_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12850_0_SBLive_sf2.js }
+    sha256: 51f3c94acbf4dd6c17d9982398acc4ab96a2d5c92ee7e81e82680ffa99e1ed2a
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: webaudiofont-12851-0-sblive-sf2
+    target: webaudiofont/12851_0_SBLive_sf2.js
+    source: { url: https://surikov.github.io/webaudiofontdata/sound/12851_0_SBLive_sf2.js }
+    sha256: eaf6dfcbf1aaf77c6811fcd6df38c77ed80af6b326b11c420e7ad6c82ff77203
+    licence: "see-notes"
+    notes: "surikov/webaudiofont preset; soundfont bank origin varies (SBLive is a Creative bank), so it is fetched per install and never redistributed. Consumed by gmSynth (C3)."
+  - id: scripture-font
+    target: fonts/scripture.woff2
+    source: { local: "Goudy Scripture (CFF). Origin and licence unknown; copy from the previous install or supply your own." }
+    sha256: 1e6e863e27ae759248dd0e7e59c5faeb95c9cc2c2877f346f8c9744689ce9627
+    licence: "unknown"
+    notes: "Browser font for scripture text. index.html falls back (font-display swap) when absent. Consumed by C3."
+  - id: omr-1100-manual
+    target: omr/OMR1100Manual.pdf
+    source: { url: https://web.archive.org/web/2id_/http://www.omrsys.com/pdf_doc_files/OMR1100Manual.pdf }
+    sha256: cf30b5de25848f9461bcb853f9a5b576e5d8626ebf2c8ce60bd06f7001410203
+    licence: "vendor-copyright"
+    notes: "Chatsworth Data vendor manual recovered from the Wayback Machine (vendor defunct). Hash verified against the recovered copy on 2026-10-13. Consumed by C4."
+  - id: omr-1100-commands
+    target: omr/OMR1100commandsB.pdf
+    source: { url: https://web.archive.org/web/2id_/http://www.omrsys.com/pdf_doc_files/OMR1100commandsB.pdf }
+    sha256: abfb534147f7ed4bbf9d0727832f0e1d57d6be6245d8817338ee546026260bd8
+    licence: "vendor-copyright"
+    notes: "Chatsworth Data vendor manual recovered from the Wayback Machine (vendor defunct). Hash verified against the recovered copy on 2026-10-13. Consumed by C4."
+  - id: omr-1102-techmanual
+    target: omr/omr1102_techmanual.pdf
+    source: { url: https://web.archive.org/web/2id_/http://www.omrsys.com/PDFs/omr1102_techmanual.pdf }
+    sha256: c3f8e1dba8a3d8884f9cdd01e563e40d75914292b9809d0ef449c388b36e8659
+    licence: "vendor-copyright"
+    notes: "Chatsworth Data vendor manual recovered from the Wayback Machine (vendor defunct). Hash verified against the recovered copy on 2026-10-13. Consumed by C4."
+  - id: ds2278-quick-reference-pdf
+    target: kitchen-relay/ds2278-quick-reference.pdf
+    source: { local: "Generated by _extensions/kitchen-relay/tools/gen-ds2278-reference.py from Zebra DS2278 programming barcodes; regenerate with that tool and copy here." }
+    sha256: c250d6aca3e917de53c2f87761fcc51327d4f895762946aff9ff38f37fad4e26
+    licence: "vendor-copyright"
+    notes: "Zebra programming barcodes. Consumed by C4."
+  - id: ds2278-quick-reference-svg
+    target: kitchen-relay/ds2278-quick-reference.svg
+    source: { local: "Generated by _extensions/kitchen-relay/tools/gen-ds2278-reference.py from Zebra DS2278 programming barcodes; regenerate with that tool and copy here." }
+    sha256: 63ab65e652c1a48a1999b4bfb0b066f7345b3fdb782c48c88fc811c72c0d1a65
+    licence: "vendor-copyright"
+    notes: "Zebra programming barcodes. Consumed by C4."
+  - id: chess-piece-bishop-rot-dark-none
+    target: chess/pieces/bishop-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: d2a1a0030340cf10711bb7979d972d21057ccc77d8e66f61ed1f047f6cc9d5bd
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-bishop-rot-light-none
+    target: chess/pieces/bishop-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: b366194a0a901753451ba619954b8fced2ae81a8354e4d5bd0783230dc024d75
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-bishop-dark-none
+    target: chess/pieces/bishop_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: ba67da76ce919addc60ecb8b46801def073dd54149b2c038a2d07a16d904d5e4
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-bishop-light-none
+    target: chess/pieces/bishop_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 1d7beace24d455c923ee80d27125963eaf0287b956c5576dbf790c97ac0b97eb
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-king-rot-dark-none
+    target: chess/pieces/king-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: d8b9fe93080acb6e1c99e5017cc4194e761a1c9996cda28210a5c1a1869617d6
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-king-rot-light-none
+    target: chess/pieces/king-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 53e18a0ea15f55a0541be89312e2d7f84bb0884c2a6697c47c87b6e4a35af673
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-king-dark-none
+    target: chess/pieces/king_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 025eea92e0ef8eb1fd06b1c58d0d112948f08bf66cea6b5d003659569949b41c
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-king-light-none
+    target: chess/pieces/king_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 56f55c784843b1ac272b8745d740aa2a3e6c585513ef889978916f88e5d0b70b
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-knight-rot-dark-none
+    target: chess/pieces/knight-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: a41bcf3962dcffb3708c33a922565725d2e9f2cbf721770ec3f4a3f3f3ccdf51
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-knight-rot-light-none
+    target: chess/pieces/knight-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 390fc869039a787aeae9826e100ed936267179568b9ad3a693ef7f7cc0558dfe
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-knight-dark-none
+    target: chess/pieces/knight_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 735cc58315b123a56632d4877a6b976c827481fa97bf9a5c8f459ec969bc2549
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-knight-light-none
+    target: chess/pieces/knight_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 5486791207156f7ae8b8678187648df45085d726334c2862e73b077dea00641e
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-pawn-rot-dark-none
+    target: chess/pieces/pawn-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 7d6362fc15c83de77604f4572729a5f4652d2205eaa30573dcd12fd48481b585
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-pawn-rot-light-none
+    target: chess/pieces/pawn-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: b596785f97732b396410257ce992a2004dbdf98a3d736ddb51c59a1fe76d4799
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-pawn-dark-none
+    target: chess/pieces/pawn_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 4413bf7c18a341f9723d97e6f92c985e30b6167b037e80842cea59b7541bb074
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-pawn-light-none
+    target: chess/pieces/pawn_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: cc7de30708dcec8f4d593a89d10893d5f9c063682039a1c441e86c44cf2096db
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-queen-rot-dark-none
+    target: chess/pieces/queen-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 526b0232409e684dcf75edafa1987f042c72d60bd54c516ca44e74e2e3af18f8
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-queen-rot-light-none
+    target: chess/pieces/queen-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 537a8624c7e37ac483d29ba6aaf11f5ef893cff5a916fd2f606ac829d5a81f4d
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-queen-dark-none
+    target: chess/pieces/queen_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 70191a3fbc729ef629661e2419a66ab8024c49277aab8ccae3a5ef61372ab802
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-queen-light-none
+    target: chess/pieces/queen_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: b72b864e2a5b6c8f8afb7f260130c10e649ff063f4ef58190c00a35c56364327
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-rook-rot-dark-none
+    target: chess/pieces/rook-rot_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 6303b9671416066cd256fda417b35726701d1baac1c18a34b709e7184f6efa43
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-rook-rot-light-none
+    target: chess/pieces/rook-rot_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: ec3017e31f9586ebfe20789247a2658e966d3fb83a5a85f12ea90f3490415732
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-rook-dark-none
+    target: chess/pieces/rook_dark_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 6abf617a9e26902e0734d85897c9ca55e29d7be2928142aa21032c38967e34ba
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: chess-piece-rook-light-none
+    target: chess/pieces/rook_light_none.svg
+    source: { local: "Cburnett chess set (Wikimedia Commons), converted to this repo file naming; copy from the previous install." }
+    sha256: 4d42ab45afd862c704eb9b35317102d453a7a6b9b71d40f18958c8eadc829e4b
+    licence: "CC-BY-SA-3.0 OR GFDL"
+    notes: "Consumed by pieceAssets.js (C3)."
+  - id: shader-gameboy-pass0
+    target: shaders/gameboy/gb-pass0.glsl
+    source: { local: "libretro/glsl-shaders handheld/shaders/gameboy/shader-files/gb-pass0.glsl WITH local patches (see the emulator shaders README); copy from the previous install." }
+    sha256: 891e1a32500b6093ac19e9253e274bb4bc9e011b6a5403f73f00e30c3e12d0d6
+    licence: "GPL-3.0"
+    notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
+  - id: shader-gameboy-pass1
+    target: shaders/gameboy/gb-pass1.glsl
+    source: { local: "libretro/glsl-shaders handheld/shaders/gameboy/shader-files/gb-pass1.glsl WITH local patches (see the emulator shaders README); copy from the previous install." }
+    sha256: fee63353122f7c7e0bf80325621d8bfb2a053bf722fa56abb9856f229c1942e1
+    licence: "GPL-3.0"
+    notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
+  - id: shader-gameboy-pass2
+    target: shaders/gameboy/gb-pass2.glsl
+    source: { local: "libretro/glsl-shaders handheld/shaders/gameboy/shader-files/gb-pass2.glsl WITH local patches (see the emulator shaders README); copy from the previous install." }
+    sha256: 689927c0eabc40ec9286efc5a8f296af8671d8460f49be2c0ed96e32f8e14414
+    licence: "GPL-3.0"
+    notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
+  - id: shader-gameboy-pass3
+    target: shaders/gameboy/gb-pass3.glsl
+    source: { local: "libretro/glsl-shaders handheld/shaders/gameboy/shader-files/gb-pass3.glsl WITH local patches (see the emulator shaders README); copy from the previous install." }
+    sha256: 02cc90625f542bc9c495507f00b715d136003abc60106c4e130b2bfeaf3b6d8c
+    licence: "GPL-3.0"
+    notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
+  - id: shader-gameboy-pass4
+    target: shaders/gameboy/gb-pass4.glsl
+    source: { local: "libretro/glsl-shaders handheld/shaders/gameboy/shader-files/gb-pass4.glsl WITH local patches (see the emulator shaders README); copy from the previous install." }
+    sha256: 55d76e6d81dfea7c9231e3c3047d76014c2dc895417723075005e058d1b1373b
+    licence: "GPL-3.0"
+    notes: "Fetched at runtime so GPL text stays out of the MIT bundle. Consumed by emulatorShaders.js (C3)."
+  - id: shader-crt-geom
+    target: shaders/crt/crt-geom.glsl
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-geom.glsl }
+    sha256: 6f4c98cc71e8d021d141f3b2f517bbbfeb93a6c9701469c5c855a5c67aaad2e9
+    licence: "GPL-2.0-or-later"
+    notes: "cgwg/Themaister/DOLLS. Identical to the crt-lab copy. Consumed by crtRenderer.js (C3)."
+  - id: shader-crt-lottes
+    target: shaders/crt/crt-lottes.glsl
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-lottes.glsl }
+    sha256: 699a947fc2744eb7e2dc4adb2c08a8b74e31685baa77cbc1face9593106b57ef
+    licence: "public-domain"
+    notes: "crt-lab dev harness only (C3)."
+  - id: shader-crt-pi
+    target: shaders/crt/crt-pi.glsl
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-pi.glsl }
+    sha256: dc2676b46f57a12501acc1792637c6b52363a7cc1c91f97b80abb2a670aa81d6
+    licence: "GPL-2.0"
+    notes: "crt-lab dev harness only (C3)."
+  - id: shader-crt-easymode
+    target: shaders/crt/crt-easymode.glsl
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-easymode.glsl }
+    sha256: ed27bab460c53d98fcf727333210de0d746c957c86463028d8c0e4c15e29f3ab
+    licence: "GPL-2.0"
+    notes: "crt-lab dev harness only (C3)."
+  - id: shader-crt-aperture
+    target: shaders/crt/crt-aperture.glsl
+    source: { url: https://raw.githubusercontent.com/libretro/glsl-shaders/master/crt/shaders/crt-aperture.glsl }
+    sha256: d7c20c972ae0cd9790280d8a070f1bd96bb4b9d90b4718a94c6296a58cc1f81e
+    licence: "GPL"
+    notes: "crt-lab dev harness only (C3)."

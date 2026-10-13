@@ -136,6 +136,7 @@ export default defineConfig(({ mode }) => {
         // Proxy API and media requests to backend (running on app.port + 1)
         // Note: /api covers /api/v1/proxy/plex/* for Plex thumbnail proxying
         '/api': `http://localhost:${ports.backend}`,
+        '/vendor': `http://localhost:${ports.backend}`,
         '/ws': {
           target: `ws://localhost:${ports.backend}`,
           ws: true

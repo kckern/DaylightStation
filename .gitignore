@@ -10,6 +10,7 @@ __backend/node_modules
 /__capabilities/*/server/node_modules
 /__capabilities/*/browser/node_modules
 *.yml
+!/assets.manifest.yml
 # SchoolCalc GUI source assets are required to reproduce its native build.
 !/__app_modules/learning/school/satellites/ti86-app/gui/icons.yml
 !/__app_modules/learning/school/satellites/ti86-app/gui/design-system.yml
@@ -63,6 +64,8 @@ config.secrets.yml
 config.app-local.yml
 /scripts/*
 !scripts/media-gate-runner.mjs
+!scripts/install-assets.mjs
+!scripts/public-tree-allowlist.yml
 !scripts/generate-elementary-math-course.mjs
 !scripts/generate-elementary-math-course.test.mjs
 !scripts/school/

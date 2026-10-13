@@ -3,4 +3,4 @@ Copyright (c) 2026 the copyright holder named in LICENSE and DaylightStation con
 
 This project is licensed under the MIT License. See the LICENSE file for the full text.
 
-Third-party assets are not distributed in this repository; they are installed by `npm run install:assets`. See `assets.manifest.yml` for the list.
+Third-party assets are not distributed in this repository; they are installed into the media volume (`<media>/vendor`) by `npm run install:assets`, which downloads and checksum-verifies each entry listed in `assets.manifest.yml` (items marked `local` are owner-provided and only checked).

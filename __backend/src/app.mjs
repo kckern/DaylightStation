@@ -131,6 +131,7 @@ import { createHealthApiRouter, createHealthDashboardApiRouter } from "../../__a
 import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
 import { createLifelogApiRouter } from "../../__capabilities/lifelog/server/composition/lifelogApi.mjs";
 import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
+import { createVendorApiRouter } from '#composition/modules/vendorApi.mjs';
 import { equipmentImageMap } from "../../__app_modules/wellness/fitness/server/application-equipment-images.mjs";
 import { createCalendarApiRouter } from "../../__app_modules/personal/calendar/server/composition/calendarApi.mjs";
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
@@ -4072,6 +4073,13 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   } catch (error) {
     rootLogger.error('concierge.mount_failed', { error: error.message, stack: error.stack });
   }
+  // Installed third-party assets (npm run install:assets): media/vendor -> /vendor.
+  // Before the SPA catch-all so a missing file 404s instead of returning index.html.
+  app.use('/vendor', createVendorApiRouter({
+    mediaDir: mediaBasePath,
+    logger: rootLogger.child({ module: 'vendor-assets' })
+  }));
+
   // ==========================================================================
   // Frontend Static Files (Production Only) - MUST be before API router
   // ==========================================================================

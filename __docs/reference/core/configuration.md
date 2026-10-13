@@ -901,3 +901,20 @@ Check directory name matches pattern: `household/` for default, `household-{name
 | `__backend/src/0_system/config/configValidator.mjs` | Validation rules |
 | `frontend/vite.config.js` | Frontend port/proxy config |
 | `tests/_lib/configHelper.mjs` | Test config helper |
+
+## Third-party assets (`media/vendor`)
+
+Fonts, audio presets, shaders and vendor documents that are not ours to redistribute are not stored in the repo. They are listed in `assets.manifest.yml` (id, target, source, sha256, licence) and installed into `<media>/vendor/` by:
+
+```bash
+npm run install:assets                       # install everything missing, verify sha256
+npm run install:assets -- --check            # report missing/mismatched; exit 1, writes nothing
+npm run install:assets -- --only <id> --media-dir <dir>
+```
+
+- Media dir default: `DAYLIGHT_MEDIA_PATH`, else `DAYLIGHT_BASE_PATH/media` (from the environment or the repo `.env`). The running backend resolves the same directory via `ConfigService.getMediaDir()`.
+- Source kinds: `url` (https or file), `npm` (`<pkg>/<path>` under `node_modules`), `local` (owner-provided: never fetched, only checked).
+- A hash mismatch aborts that entry only; the file is not written. Re-running is idempotent.
+- The backend serves the directory at `/vendor/**` (`4_api/v1/routers/vendor.mjs`) with `Cache-Control: public, max-age=31536000, immutable`; an absent file is a 404 so callers can fall back. The Vite dev server proxies `/vendor` to the backend.
+- Household data (curriculum, course content) is not media and is not in the manifest; it lives under `data/content/`.
+- `npm run audit:public` fails on any tracked binary, or text file of 100 KB or more, that is not named in `scripts/public-tree-allowlist.yml` (`keep`, `largeText`, or the temporary `pending` list, each pending entry tagged with the task that removes it).

@@ -76,3 +76,53 @@ describe('audit CLI cwd', () => {
     expect(scanned(root + 'scripts')).toBe(fromRoot);
   });
 });
+
+import { auditAssets, matchesAllowlist, parseAllowlist, LARGE_TEXT_BYTES } from '../../../scripts/audit-public-tree.mjs';
+
+describe('auditAssets (binary + large-text gate)', () => {
+  const allow = parseAllowlist({
+    keep: ['frontend/public/icon-192.png', 'frontend/public/fonts/surround/*.woff2'],
+    largeText: ['package-lock.json'],
+    pending: [{ path: 'frontend/public/webaudiofont/*.js', task: 'C3' }],
+  });
+  const bin = (path) => ({ path, binary: true, bytes: 10 });
+  const txt = (path, bytes) => ({ path, binary: false, bytes });
+
+  it('flags a binary that is on no list', () => {
+    expect(auditAssets([bin('docs/new.png')], allow)).toEqual([{ rule: 'binary-not-allowlisted', path: 'docs/new.png' }]);
+  });
+
+  it('flags a text file of 100 KB or more that is on no list', () => {
+    expect(LARGE_TEXT_BYTES).toBe(100 * 1024);
+    expect(auditAssets([txt('a/big.json', LARGE_TEXT_BYTES)], allow))
+      .toEqual([{ rule: 'large-text-not-allowlisted', path: 'a/big.json' }]);
+    expect(auditAssets([txt('a/ok.json', LARGE_TEXT_BYTES - 1)], allow)).toEqual([]);
+  });
+
+  it('accepts exact paths and globs from keep, largeText and pending', () => {
+    expect(auditAssets([
+      bin('frontend/public/icon-192.png'),
+      bin('frontend/public/fonts/surround/a.woff2'),
+      txt('package-lock.json', 999999),
+      txt('frontend/public/webaudiofont/0000_x.js', 999999),
+    ], allow)).toEqual([]);
+  });
+
+  it('matches by path, never by extension: a new png elsewhere still fails', () => {
+    expect(auditAssets([bin('frontend/public/other.png'), bin('frontend/public/fonts/surround/deep/a.woff2')], allow)).toHaveLength(2);
+  });
+
+  it('keeps a binary allowlisted only under largeText flagged (lists are kind-specific)', () => {
+    expect(auditAssets([bin('package-lock.json')], allow)).toHaveLength(1);
+  });
+
+  it('supports ** across directories', () => {
+    expect(matchesAllowlist('a/b/c/d.png', ['a/**'])).toBe(true);
+    expect(matchesAllowlist('a/b.png', ['a/*.png'])).toBe(true);
+    expect(matchesAllowlist('a/b/c.png', ['a/*.png'])).toBe(false);
+  });
+
+  it('rejects a malformed allowlist (pending without a task id)', () => {
+    expect(() => parseAllowlist({ keep: [], largeText: [], pending: [{ path: 'x' }] })).toThrow(/task/);
+  });
+});

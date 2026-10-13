@@ -1,0 +1,99 @@
+# Binary / large-text gate for scripts/audit-public-tree.mjs (npm run audit:public).
+# Every tracked binary, and every text file >= 100 KB, must match one of the three
+# lists below by EXACT PATH or GLOB (* within a directory, ** across directories).
+# Never by extension: a new PNG anywhere else fails CI. Third-party assets belong
+# in assets.manifest.yml, not here.
+
+# Binaries that legitimately stay in the repo: allowed fonts, app icons, gradle
+# wrappers, tiny synthetic fixtures (several "binaries" below are 8-byte text stubs).
+keep:
+  - frontend/public/fonts/surround/*.woff2
+  - frontend/public/fonts/atkinson-hyperlegible-next/*.woff2
+  - frontend/public/fonts/kongtext.ttf
+  - __backend/assets/fonts/roboto-condensed/*.ttf
+  - __backend/assets/fonts/atkinson-hyperlegible/*.ttf
+  - __backend/assets/fonts/kongtext/kongtext.ttf
+  - __docs/assets/branding/Gabarito-VariableFont_wght.ttf
+  - frontend/public/favicon.ico
+  - frontend/public/icon-192.png
+  - frontend/public/icon-512.png
+  - frontend/public/apple-touch-icon.png
+  - _extensions/audio-bridge/app/gradle/wrapper/gradle-wrapper.jar
+  - __app_modules/learning/piano/satellites/piano-bridge/app/gradle/wrapper/gradle-wrapper.jar
+  - frontend/src/lib/audio/speex_aec.js
+  - tests/_fixtures/exercise-library/**
+  - tests/_fixtures/media/**
+  - tests/_fixtures/midi/groove-*.mid
+
+# Text >= 100 KB that legitimately stays: lockfiles, one authored GUI source, and
+# hand-written source/docs that are simply large (found by scanning HEAD; adding
+# to this list needs a reason, a new generated or data blob does not qualify).
+largeText:
+  - package-lock.json
+  - frontend/package-lock.json
+  - __backend/package-lock.json
+  - __app_modules/learning/school/satellites/ti86-app/gui/screens.yml
+  - __app_modules/learning/piano/browser/PianoApp.scss
+  - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.component.test.jsx
+  - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx
+  - __app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/ScorePlayer.jsx
+  - __app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/ScorePlayer.test.jsx
+  - __app_modules/learning/school/browser/Programs/SentenceLadder/SentenceLadderProgram.test.jsx
+  - __app_modules/learning/school/browser/School.scss
+  - __app_modules/learning/school/server/adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs
+  - __app_modules/media/media/browser/surround/modules/SegmentMap.jsx
+  - __app_modules/media/media/browser/surround/modules/SegmentMap.test.jsx
+  - __app_modules/wellness/fitness/browser/context/FitnessContext.jsx
+  - __app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js
+  - __app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js
+  - __backend/src/app.mjs
+  - __capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs
+  - __capabilities/gaming/cli/gaming-assets/lib.mjs
+  - __capabilities/playback/browser/player/Player.jsx
+  - __capabilities/playback/browser/surround/band.measure.test.jsx
+  - __capabilities/playback/server/adapters/surround/YamlSurroundStore.test.mjs
+  - __docs/reference/health/README.md
+  - __docs/reference/media/media-app-technical.md
+  - __docs/reference/school/README.md
+  - _extensions/playback-hub/playback-hub.sh
+  - scripts/generate-elementary-math-course.mjs
+
+# Still tracked, scheduled for removal by a later asset-externalization task.
+# Each entry names the task that removes it; task C6 asserts this list is empty.
+pending:
+  # C2: build-copy assets derived at prebuild
+  - { path: frontend/public/tfjs-backend-wasm.wasm, task: C2 }
+  - { path: frontend/public/tfjs-backend-wasm-simd.wasm, task: C2 }
+  - { path: frontend/public/tfjs-backend-wasm-threaded-simd.wasm, task: C2 }
+  - { path: frontend/public/crt-lab/vendor/shaka.js, task: C2 }
+  - { path: frontend/public/crt-lab/media/motion-480.mp4, task: C2 }
+  - { path: frontend/public/crt-lab/media/testcard-480.mp4, task: C2 }
+  - { path: frontend/public/filter-poc/clip.webm, task: C2 }
+  - { path: _extensions/omr-relay/docs/omr1100-test-strip.pdf, task: C2 }
+  # C3: browser assets served from /vendor
+  - { path: frontend/public/webaudiofont/*.js, task: C3 }
+  - { path: frontend/public/fonts/scripture.woff2, task: C3 }
+  - { path: frontend/src/assets/icons/*.png, task: C3 }
+  - { path: __capabilities/playback/browser/player/assets/paper.jpg, task: C3 }
+  # C4: backend assets and household content
+  - { path: __backend/assets/fonts/noto-sans-kr/NotoSansKR-Regular.otf, task: C4 }
+  - { path: _extensions/omr-relay/docs/recovered/*.pdf, task: C4 }
+  - { path: _extensions/kitchen-relay/ds2278-quick-reference.pdf, task: C4 }
+  - { path: _extensions/kitchen-relay/ds2278-quick-reference.svg, task: C4 }
+  - { path: __app_modules/learning/piano/server/adapters/plex-curriculum/curriculum/676490.json, task: C4 }
+  # C5: goldens and real-data fixtures
+  - { path: tests/isolated/rendering/school/golden/snapshots/*.png, task: C5 }
+  - { path: __app_modules/learning/school/server/application/documents/__proof__/**/*.png, task: C5 }
+  - { path: __app_modules/household/camera/server/domain/fixtures/search-*.json, task: C5 }
+  - { path: tests/fixtures/jamcorder/Jmx-A00005-Jan-02-2026.mid, task: C5 }
+  # C6: deletions and NUL-byte hygiene
+  - { path: __docs/assets/branding/static/*.ttf, task: C6 }
+  - { path: _extensions/omr-relay/docs/omr-relay-wiring.pdf, task: C6 }
+  - { path: __app_modules/learning/school/satellites/ticalc-relay/docs/hardware-build.pdf, task: C6 }
+  - { path: frontend/public/fonts/Roboto-Condensed-Regular.woff2, task: C6 }
+  - { path: frontend/public/keepalive.mp4, task: C6 }
+  - { path: __app_modules/learning/piano/browser/PianoKiosk/vsyncKeepalive.mp4, task: C6 }
+  - { path: frontend/public/favicon-16x16.png, task: C6 }
+  - { path: frontend/public/favicon-32x32.png, task: C6 }
+  - { path: __app_modules/learning/piano/cli/lilypond-import/header.mjs, task: C6 }
+  - { path: __app_modules/wellness/fitness/server/domain/workout/strengthLog.mjs, task: C6 }
