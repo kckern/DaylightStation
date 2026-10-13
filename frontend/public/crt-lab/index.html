@@ -459,8 +459,8 @@ void main(){
     let src;
     if (name === 'raw-passthrough') src = PASSTHROUGH;
     else {
-      const res = await fetch('shaders/' + name + '.glsl');
-      if (!res.ok) throw new Error('could not fetch shaders/' + name + '.glsl (' + res.status + ')');
+      const res = await fetch('/vendor/shaders/crt/' + name + '.glsl');
+      if (!res.ok) throw new Error('could not fetch /vendor/shaders/crt/' + name + '.glsl (' + res.status + ') - run npm run install:assets');
       src = await res.text();
     }
     const entry = { name, prog: build(src), params: parseParams(src) };

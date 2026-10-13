@@ -2,8 +2,8 @@
  * Harlequin dot-matrix shader — live proof that the Game Boys' picture shader
  * actually lands inside the core.
  *
- * `presentation.ejs_shader` names one of OUR presets (bundled with the
- * frontend, registered as EJS_shaders at boot). The settle barrier applies it
+ * `presentation.ejs_shader` names one of OUR presets (presets bundled with the
+ * frontend, registered as EJS_shaders at boot; pass sources fetched from /vendor/shaders). The settle barrier applies it
  * and reads it back from the core's filesystem. This test checks the read-back
  * the same way, plus the two things a unit test cannot see:
  *

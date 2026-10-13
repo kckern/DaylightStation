@@ -1,5 +1,11 @@
 # School Subject Icons — household set via SVG Repo
 
+> **Solar split.** 13 transport/utility icons (`back forward next pause play prev record restart rewind stop volume volume-mute writing`)
+> are pixel-identical to Solar (Bold) icons and are no longer tracked: they are generated at frontend `prebuild`
+> (`npm run prepare:assets`) from `@iconify-json/solar` per [`icons.manifest.json`](icons.manifest.json) into `svg/generated/`
+> (gitignored). `iconRegistry.test.js` fails if generation did not run. The rest stay tracked in `svg/` (no exact Solar equivalent);
+> the per-file rows below that name one of the 13 are historical.
+
 Source: user-curated icons from [SVG Repo](https://www.svgrepo.com/) (ingested
 2026-07-22 from `media/tmp/`), normalized to the shared inline-icon contract:
 `width="1em" height="1em"`, all fills/strokes `currentColor` — set color via

@@ -2,8 +2,10 @@
 /**
  * fetch-webaudiofont-presets — one-time dev-side download of the webaudiofont
  * preset files the piano Producer's gmSynth needs, into
- * `frontend/public/webaudiofont/` so the kiosk serves them itself (OFFLINE at
- * runtime — this script is the only thing that ever touches surikov's CDN).
+ * `<media>/vendor/webaudiofont/` so the backend's /vendor route serves them
+ * (OFFLINE at runtime — this script is the only thing that ever touches
+ * surikov's CDN). `npm run install:assets` installs the same files from
+ * assets.manifest.yml; this script is the dev-side way to (re)generate them.
  *
  * Filenames + preset-variable names are resolved with webaudiofont's own
  * loader catalog (findInstrument/instrumentInfo, findDrum/drumInfo), so they
@@ -11,7 +13,8 @@
  * script with no exports; we evaluate it in a Function scope to obtain the
  * WebAudioFontPlayer constructor (same trick gmSynth.js uses).
  *
- * Usage:  node frontend/scripts/fetch-webaudiofont-presets.mjs [--force]
+ * Usage:  node frontend/scripts/fetch-webaudiofont-presets.mjs [--out <dir>] [--force]
+ * Output dir: --out, else $WEBAUDIOFONT_OUT, else $DAYLIGHT_MEDIA_PATH/vendor/webaudiofont.
  * Idempotent: existing files are skipped unless --force.
  */
 import { readFileSync, mkdirSync, existsSync, writeFileSync, statSync } from 'node:fs';
@@ -23,7 +26,14 @@ import { GM_PROGRAMS, DRUM_NOTES } from "../../__app_modules/learning/piano/brow
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(__dirname, '..');
-const outDir = join(frontendRoot, 'public', 'webaudiofont');
+const argOut = process.argv.indexOf('--out');
+const outDir = argOut > -1 ? process.argv[argOut + 1]
+  : process.env.WEBAUDIOFONT_OUT
+    || (process.env.DAYLIGHT_MEDIA_PATH ? join(process.env.DAYLIGHT_MEDIA_PATH, 'vendor', 'webaudiofont') : null);
+if (!outDir) {
+  console.error('fetch-webaudiofont-presets: no output dir. Pass --out <dir>, or set WEBAUDIOFONT_OUT / DAYLIGHT_MEDIA_PATH.');
+  process.exit(2);
+}
 const force = process.argv.includes('--force');
 
 // ── obtain the loader catalog from the npm dist (no exports → Function eval) ──

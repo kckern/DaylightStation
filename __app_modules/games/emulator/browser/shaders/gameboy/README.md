@@ -11,7 +11,9 @@ see `__docs/reference/gaming/emulator-resilience.md`, "Picture shaders".
 
 ## Origin and licence
 
-`gb-pass0.glsl` … `gb-pass4.glsl` (here) and the textures `paper-bg.png` and
+`gb-pass0.glsl` … `gb-pass4.glsl` (installed to `media/vendor/shaders/gameboy/` by
+`npm run install:assets`, fetched at runtime from `/vendor/shaders/gameboy/`; not in
+this repo, which also keeps GPL text out of the MIT bundle) and the textures `paper-bg.png` and
 `gbp-palette.png` (unmodified, from `resources/sample-bgs/` and
 `resources/sample-palettes/`) come from
 [libretro/glsl-shaders](https://github.com/libretro/glsl-shaders)
@@ -22,7 +24,8 @@ media mount at `media/emulation/_engine/shaders/gameboy/`, and each console
 manifest names them in `presentation.ejs_shader_textures`. `EmulatorSession`
 fetches them at boot.
 The files keep their licence headers; the GPL applies to them, not to the rest
-of this MIT repository. The Shield TV in this household runs the same shader's
+of this MIT repository. If they are not installed the arcade shows the picture
+unfiltered and logs `emulator.shader.unavailable` once. The Shield TV in this household runs the same shader's
 slang v1.1 (Matt Akins, 2025) through RetroArch; this is the web port of its look.
 
 ## Local patches (diff against upstream)

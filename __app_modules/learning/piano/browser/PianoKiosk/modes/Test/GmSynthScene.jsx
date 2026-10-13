@@ -149,7 +149,7 @@ export function GmSynthScene() {
       <div style={{ maxWidth: 720, marginTop: 28, fontSize: 20, lineHeight: 1.5, color: '#9ab' }}>
         <p>
           Renders in the browser via webaudiofont (self-hosted presets under
-          <code style={{ color: '#dfe9f2' }}> /webaudiofont/</code> — no network needed).
+          <code style={{ color: '#dfe9f2' }}> /vendor/webaudiofont/</code> — no network needed).
           First tap creates the AudioContext; instrument load times land in
           <code style={{ color: '#dfe9f2' }}> gm-synth</code> log events.
         </p>

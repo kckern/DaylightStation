@@ -1,40 +1,12 @@
 import { parsePieceCode } from "../../../../__capabilities/gaming/portable/rulesets/chess/index.mjs";
 
-import bishopDark from "./pieces/bishop_dark_none.svg";
-import bishopLight from "./pieces/bishop_light_none.svg";
-import kingDark from "./pieces/king_dark_none.svg";
-import kingLight from "./pieces/king_light_none.svg";
-import knightDark from "./pieces/knight_dark_none.svg";
-import knightLight from "./pieces/knight_light_none.svg";
-import pawnDark from "./pieces/pawn_dark_none.svg";
-import pawnLight from "./pieces/pawn_light_none.svg";
-import queenDark from "./pieces/queen_dark_none.svg";
-import queenLight from "./pieces/queen_light_none.svg";
-import rookDark from "./pieces/rook_dark_none.svg";
-import rookLight from "./pieces/rook_light_none.svg";
-
-import bishopRotDark from "./pieces/bishop-rot_dark_none.svg";
-import bishopRotLight from "./pieces/bishop-rot_light_none.svg";
-import kingRotDark from "./pieces/king-rot_dark_none.svg";
-import kingRotLight from "./pieces/king-rot_light_none.svg";
-import knightRotDark from "./pieces/knight-rot_dark_none.svg";
-import knightRotLight from "./pieces/knight-rot_light_none.svg";
-import pawnRotDark from "./pieces/pawn-rot_dark_none.svg";
-import pawnRotLight from "./pieces/pawn-rot_light_none.svg";
-import queenRotDark from "./pieces/queen-rot_dark_none.svg";
-import queenRotLight from "./pieces/queen-rot_light_none.svg";
-import rookRotDark from "./pieces/rook-rot_dark_none.svg";
-import rookRotLight from "./pieces/rook-rot_light_none.svg";
-
 /**
- * Piece artwork, bundled with the app rather than fetched from the media tree.
+ * Piece artwork, served from the media volume at `/vendor/chess/pieces/`.
  *
- * The media route will not serve SVG as `image/svg+xml` — an SVG is
- * script-capable, so serving one from this origin would turn any file written
- * into the media tree into an XSS vector. It falls through to octet-stream with
- * `nosniff`, which an `<img>` refuses to render. These pieces are fixed app
- * chrome, not media, so importing them makes them build-time assets under our
- * control and drops the runtime dependency on the media mount.
+ * The 24 transparent Cburnett SVGs are third-party artwork and are NOT in the
+ * repo: `npm run install:assets` installs them (assets.manifest.yml,
+ * `chess-piece-*`). The /vendor route serves them as static files, so a plain
+ * `<img src>` renders them. A missing file is a broken image, not a build error.
  *
  * The full 72-variant set (light and dark background plates included) stays in
  * `media/games/chess/svg` with its manifest, for print and CLI use — that is
@@ -44,28 +16,19 @@ import rookRotLight from "./pieces/rook-rot_light_none.svg";
  * Cburnett, CC BY-SA 3.0 / GFDL.
  */
 
-const UPRIGHT = {
-  pawn: { light: pawnLight, dark: pawnDark },
-  knight: { light: knightLight, dark: knightDark },
-  bishop: { light: bishopLight, dark: bishopDark },
-  rook: { light: rookLight, dark: rookDark },
-  queen: { light: queenLight, dark: queenDark },
-  king: { light: kingLight, dark: kingDark },
-};
+const BASE = '/vendor/chess/pieces';
+const url = (name, rot, side) => `${BASE}/${name}${rot ? '-rot' : ''}_${side}_none.svg`;
+const set = (rot) => Object.fromEntries(
+  ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'].map((n) => [n, { light: url(n, rot, 'light'), dark: url(n, rot, 'dark') }]),
+);
 
-const ROTATED = {
-  pawn: { light: pawnRotLight, dark: pawnRotDark },
-  knight: { light: knightRotLight, dark: knightRotDark },
-  bishop: { light: bishopRotLight, dark: bishopRotDark },
-  rook: { light: rookRotLight, dark: rookRotDark },
-  queen: { light: queenRotLight, dark: queenRotDark },
-  king: { light: kingRotLight, dark: kingRotDark },
-};
+const UPRIGHT = set(false);
+const ROTATED = set(true);
 
-/** 'wP' -> a bundled URL. Null for anything that is not a piece code. */
+/** 'wP' -> a /vendor URL. Null for anything that is not a piece code. */
 export function pieceSource(code, { rotated = false } = {}) {
   const piece = parsePieceCode(code);
   if (!piece) return null;
-  const set = rotated ? ROTATED : UPRIGHT;
-  return set[piece.name]?.[piece.color === 'w' ? 'light' : 'dark'] ?? null;
+  const pieces = rotated ? ROTATED : UPRIGHT;
+  return pieces[piece.name]?.[piece.color === 'w' ? 'light' : 'dark'] ?? null;
 }

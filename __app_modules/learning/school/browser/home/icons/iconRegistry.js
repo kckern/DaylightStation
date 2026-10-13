@@ -1,9 +1,11 @@
 // iconRegistry.js — the School icon set + lookup, split out of Icon.jsx so
 // Fast Refresh can hot-reload the icon component on its own.
-const mods = import.meta.glob('./svg/*.svg', { eager: true, query: '?raw', import: 'default' });
+// Two sources: authored icons tracked in ./svg, and the Solar icons generated at
+// prebuild into ./svg/generated (icons.manifest.json; gitignored).
+const mods = import.meta.glob(['./svg/*.svg', './svg/generated/*.svg'], { eager: true, query: '?raw', import: 'default' });
 const ICONS = {};
 for (const [path, raw] of Object.entries(mods)) {
-  const name = path.replace('./svg/', '').replace('.svg', '');
+  const name = path.slice(path.lastIndexOf('/') + 1).replace('.svg', '');
   ICONS[name] = raw;
 }
 

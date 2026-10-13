@@ -61,11 +61,6 @@ largeText:
 # Still tracked, scheduled for removal by a later asset-externalization task.
 # Each entry names the task that removes it; task C6 asserts this list is empty.
 pending:
-  # C3: browser assets served from /vendor
-  - { path: frontend/public/webaudiofont/*.js, task: C3 }
-  - { path: frontend/public/fonts/scripture.woff2, task: C3 }
-  - { path: frontend/src/assets/icons/*.png, task: C3 }
-  - { path: __capabilities/playback/browser/player/assets/paper.jpg, task: C3 }
   # C4: backend assets and household content
   - { path: __backend/assets/fonts/noto-sans-kr/NotoSansKR-Regular.otf, task: C4 }
   - { path: _extensions/omr-relay/docs/recovered/*.pdf, task: C4 }

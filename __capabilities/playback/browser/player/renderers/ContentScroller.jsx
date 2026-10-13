@@ -9,7 +9,6 @@ import React, {
   import moment from "moment";
   import "../styles/ContentScroller.scss";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
-import paperBackground from "../assets/paper.jpg";
 import { useMediaKeyboardHandler } from "../../player-support/useMediaKeyboardHandler.js";
 import { useDynamicDimensions } from "../../player-support/useDynamicDimensions.js";
 import { useMediaReporter } from '../hooks/useMediaReporter.js';
@@ -521,7 +520,6 @@ import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVo
 
     return (
       <div className={`content-scroller ${type} ${className} ${shader}${isSeeking ? ' seeking' : ''}`} style={{
-        backgroundImage: `url(${paperBackground})`,
         backgroundPosition: `0px ${-yOffset}px`
       }}>
         {title && (

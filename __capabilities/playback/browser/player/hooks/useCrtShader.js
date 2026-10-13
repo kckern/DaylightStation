@@ -1,6 +1,7 @@
 // frontend/src/modules/Player/hooks/useCrtShader.js
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
+import { loadCrtGeomSource } from '../lib/crtShaderSource.js';
 import { createCrtRenderer, CRT_GEOM_PRESET, DEFAULT_PRE_FILTER } from '../lib/crtRenderer.js';
 
 /**
@@ -51,50 +52,64 @@ export function useCrtShader({
     const video = resolveVideo();
     if (!canvas || !video) return undefined;
 
-    const renderer = createCrtRenderer({
-      canvas, video, params, preFilter, renderScale, logger
-    });
-    rendererRef.current = renderer;
+    let disposed = false;
+    let teardown = null;
 
-    if (!renderer.supported) {
-      setActive(false);
-      setFellBack(true);
-      logger.warn('crt.fallback-to-css-overlay', { reason: renderer.reason });
-      return () => { rendererRef.current = null; };
-    }
+    // crt-geom is fetched from /vendor (GPL, not bundled). If it is not
+    // installed, the renderer reports unsupported and the CSS overlay takes over.
+    loadCrtGeomSource().then((shaderSrc) => {
+      if (disposed) return;
+      const renderer = createCrtRenderer({
+        canvas, video, params, preFilter, renderScale, shaderSrc, logger
+      });
+      rendererRef.current = renderer;
 
-    renderer.start();
-    setActive(true);
-    setFellBack(false);
-    logger.info('crt.mounted', {
-      sourceWidth: video.videoWidth,
-      sourceHeight: video.videoHeight,
-      renderScale
-    });
-
-    // A refused texture upload only surfaces on the first draw, so watch for it
-    // rather than assuming construction success means the effect is running.
-    const failWatch = setInterval(() => {
-      if (rendererRef.current && rendererRef.current.failed) {
-        clearInterval(failWatch);
-        renderer.stop();
+      if (!renderer.supported) {
         setActive(false);
         setFellBack(true);
-        logger.warn('crt.fallback-after-failure', {});
+        logger.warn('crt.fallback-to-css-overlay', { reason: renderer.reason });
+        teardown = () => { rendererRef.current = null; };
+        return;
       }
-    }, 1000);
 
-    const onResize = () => renderer.resize();
-    window.addEventListener('resize', onResize);
-    video.addEventListener('loadedmetadata', onResize);
+      renderer.start();
+      setActive(true);
+      setFellBack(false);
+      logger.info('crt.mounted', {
+        sourceWidth: video.videoWidth,
+        sourceHeight: video.videoHeight,
+        renderScale
+      });
+
+      // A refused texture upload only surfaces on the first draw, so watch for it
+      // rather than assuming construction success means the effect is running.
+      const failWatch = setInterval(() => {
+        if (rendererRef.current && rendererRef.current.failed) {
+          clearInterval(failWatch);
+          renderer.stop();
+          setActive(false);
+          setFellBack(true);
+          logger.warn('crt.fallback-after-failure', {});
+        }
+      }, 1000);
+
+      const onResize = () => renderer.resize();
+      window.addEventListener('resize', onResize);
+      video.addEventListener('loadedmetadata', onResize);
+
+      teardown = () => {
+        clearInterval(failWatch);
+        window.removeEventListener('resize', onResize);
+        video.removeEventListener('loadedmetadata', onResize);
+        renderer.destroy();
+        rendererRef.current = null;
+        setActive(false);
+      };
+    });
 
     return () => {
-      clearInterval(failWatch);
-      window.removeEventListener('resize', onResize);
-      video.removeEventListener('loadedmetadata', onResize);
-      renderer.destroy();
-      rendererRef.current = null;
-      setActive(false);
+      disposed = true;
+      if (teardown) teardown();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, canvasRef, mediaRef, logger, renderScale]);

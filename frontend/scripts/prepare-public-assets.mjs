@@ -10,6 +10,7 @@
  *   shaka  shaka-player compiled bundle                -> public/crt-lab/vendor/shaka.js
  *   flags  flag-icons 4x3 SVGs (codes in flag-codes.json) -> geography/flags/
  *   icons  @iconify-json/solar via icons.manifest.json -> piano ui/icons/svg/generated/
+ *          and school home/icons/svg/generated/
  *   media  ffmpeg testsrc2/smptebars clips             -> crt-lab/media, filter-poc
  *
  * Failure policy: a missing npm package is always fatal (the build would ship a
@@ -35,6 +36,7 @@ export const PATHS = {
   flagsDir: '__app_modules/learning/school/browser/geography/flags',
   flagCodes: '__app_modules/learning/school/browser/geography/flag-codes.json',
   iconsDir: '__app_modules/learning/piano/browser/ui/icons',
+  schoolIconsDir: '__app_modules/learning/school/browser/home/icons',
 };
 
 const defaultLog = (level, event, data) => {
@@ -105,11 +107,11 @@ export function renderIcon(entry, solar) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 ${w} ${h}">${body}</svg>`;
 }
 
-export function prepareIcons({ repoRoot = REPO_ROOT, frontendRoot = FRONTEND_ROOT } = {}) {
-  const manifest = JSON.parse(readFileSync(join(repoRoot, PATHS.iconsDir, 'icons.manifest.json'), 'utf8'));
+function prepareIconSet(dirRel, { repoRoot, frontendRoot }) {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, dirRel, 'icons.manifest.json'), 'utf8'));
   const solarPath = join(pkgDir(frontendRoot, '@iconify-json/solar'), 'icons.json');
   const solar = JSON.parse(readFileSync(solarPath, 'utf8'));
-  const outDir = join(repoRoot, PATHS.iconsDir, 'svg', 'generated');
+  const outDir = join(repoRoot, dirRel, 'svg', 'generated');
   rmSync(outDir, { recursive: true, force: true }); // drop icons removed from the manifest
   mkdirSync(outDir, { recursive: true });
   return Object.entries(manifest.icons).map(([id, entry]) => {
@@ -117,6 +119,13 @@ export function prepareIcons({ repoRoot = REPO_ROOT, frontendRoot = FRONTEND_ROO
     writeFileSync(to, renderIcon(entry, solar));
     return to;
   });
+}
+
+/** Piano UI icons and School home icons: Solar (Bold) rows -> svg/generated/. */
+export function prepareIcons({ repoRoot = REPO_ROOT, frontendRoot = FRONTEND_ROOT } = {}) {
+  return [PATHS.iconsDir, PATHS.schoolIconsDir]
+    .filter((dirRel) => existsSync(join(repoRoot, dirRel)))
+    .flatMap((dirRel) => prepareIconSet(dirRel, { repoRoot, frontendRoot }));
 }
 
 function haveFfmpeg(ffmpeg) {

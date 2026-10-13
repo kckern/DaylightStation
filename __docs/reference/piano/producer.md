@@ -207,13 +207,18 @@ tracker push a `loopNotes` Set to `PianoKeyboard`.
 
 ### gmSynth self-hosted presets
 
-`gmSynth.js` self-hosts webaudiofont preset files under
-`frontend/public/webaudiofont/` — **the kiosk must work offline, no CDN at
-runtime.** Run the fetch script once per fresh checkout:
+`gmSynth.js` self-hosts webaudiofont preset files on the media volume,
+served at `/vendor/webaudiofont/` — **the kiosk must work offline, no CDN at
+runtime.** `npm run install:assets` installs them (they are listed in
+`assets.manifest.yml`); the dev-side generator writes the same files:
 
 ```
-node frontend/scripts/fetch-webaudiofont-presets.mjs
+node frontend/scripts/fetch-webaudiofont-presets.mjs --out <media>/vendor/webaudiofont
 ```
+
+`gmSynth.catalog.test.js` (unit gate) checks every preset the catalog resolves is
+declared in the manifest; `tests/live/adapter/webaudiofont-installed.test.mjs`
+(live tier, needs the media mount) checks the files are actually installed.
 
 The drum presets are derived from `percussion.GM_DRUM` (via `producer/presetManifest.js`);
 if you change the kit, re-run the fetch script. `gmSynth`'s `AudioContext` is created

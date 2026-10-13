@@ -440,6 +440,22 @@ describe('createEmulatorSession.start custom shaders', () => {
     expect(engine.boot).toHaveBeenCalledWith(expect.objectContaining({ shaders }));
   });
 
+  it('awaits an async shader loader and hands its table to the engine', async () => {
+    const engine = makeEngine();
+    const shaders = { 'x.glslp': { shader: { type: 'text', value: 's' } } };
+    const s = createEmulatorSession({
+      engine,
+      mixer: makeMixer(),
+      governanceGate: makeGate(),
+      game: GAME,
+      engineConfig: { pathtodata: '/x', shaders: async () => shaders },
+      scheduler: makeScheduler(),
+      deps: { createWramCalibrator: () => ({ calibrate: async () => null }) },
+    });
+    await s.start({ mount: {} });
+    expect(engine.boot).toHaveBeenCalledWith(expect.objectContaining({ shaders }));
+  });
+
   const SHADERS = Object.freeze({
     'dm.glslp': Object.freeze({ shader: { type: 'text', value: 's' }, resources: [], binaries: {} }),
   });

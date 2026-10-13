@@ -279,6 +279,12 @@ describe('createGmSynth', () => {
       expect(fetchImpl.mock.calls[0][0]).toBe(`/webaudiofont/${keyFor(0)}.js`);
     });
 
+    it('defaults to the /vendor/webaudiofont mount', async () => {
+      const { synth, fetchImpl } = makeSynth();
+      await synth.load(0);
+      expect(fetchImpl.mock.calls[0][0]).toBe(`/vendor/webaudiofont/${keyFor(0)}.js`);
+    });
+
     it('rejects on HTTP failure and logs a warning', async () => {
       const fetchImpl = vi.fn(async () => ({ ok: false, status: 404, text: async () => '' }));
       const { synth } = makeSynth({ fetchImpl });

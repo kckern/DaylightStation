@@ -8,10 +8,11 @@ import {
   CRT_GEOM_PRESET,
   DEFAULT_PRE_FILTER
 } from './crtRenderer.js';
-import CRT_GEOM_SRC from '../shaders/crt-geom.glsl?raw';
+// Synthetic stub: the real GPL shader is fetched from /vendor at runtime.
+import CRT_GEOM_SRC from './__fixtures__/crt-geom.stub.glsl?raw';
 
 describe('parseShaderParams', () => {
-  it('reads every #pragma parameter out of the vendored crt-geom source', () => {
+  it('reads every #pragma parameter out of the crt-geom source (stub)', () => {
     const params = parseShaderParams(CRT_GEOM_SRC);
     const names = params.map((p) => p.name);
     expect(names).toContain('CRTgamma');
@@ -74,7 +75,7 @@ describe('createCrtRenderer', () => {
   it('reports unsupported when the browser has no WebGL context', () => {
     // happy-dom has no WebGL, which is exactly the fallback case we care about
     const canvas = document.createElement('canvas');
-    const r = createCrtRenderer({ canvas, video: video() });
+    const r = createCrtRenderer({ canvas, video: video(), shaderSrc: CRT_GEOM_SRC });
     expect(r.supported).toBe(false);
     expect(['no-webgl-context', 'getcontext-threw']).toContain(r.reason);
   });
@@ -98,10 +99,16 @@ describe('createCrtRenderer', () => {
     expect(r.stats()).toEqual({ drawn: 0, skipped: 0 });
   });
 
+  it('reports unsupported (CSS-overlay fallback) when the shader source was not fetched', () => {
+    const r = createCrtRenderer({ canvas: stubCanvas(), video: video() });
+    expect(r.supported).toBe(false);
+    expect(r.reason).toBe('shader-source-missing');
+  });
+
   it('surfaces getContext throwing rather than letting it escape', () => {
     const canvas = document.createElement('canvas');
     canvas.getContext = () => { throw new Error('boom'); };
-    const r = createCrtRenderer({ canvas, video: video() });
+    const r = createCrtRenderer({ canvas, video: video(), shaderSrc: CRT_GEOM_SRC });
     expect(r.supported).toBe(false);
     expect(r.reason).toBe('getcontext-threw');
   });
@@ -188,7 +195,7 @@ function presentFrame(video, presentedFrames, mediaTime = presentedFrames / 24) 
 
 describe('createCrtRenderer — frame pump', () => {
   it('reaches the supported path with a stand-in GL context', () => {
-    const r = createCrtRenderer({ canvas: stubCanvas(), video: stubVideo(), logger: stubLogger() });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video: stubVideo(), logger: stubLogger() });
     expect(r.supported).toBe(true);
     expect(r.stats()).toEqual({ drawn: 0, skipped: 0 });
   });
@@ -196,7 +203,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('reports the rVFC driver and counts every painted frame', () => {
     const log = stubLogger();
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     expect(log.info).toHaveBeenCalledWith('crt.renderer-created',
       expect.objectContaining({ driver: 'requestVideoFrameCallback' }));
     r.start();
@@ -208,7 +215,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('logs a gap in presentedFrames as skipped frames', () => {
     const log = stubLogger();
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     r.start();
     presentFrame(video, 10);
     presentFrame(video, 14); // 11, 12, 13 were composited but never drawn
@@ -228,7 +235,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('reports the per-callback gap, never the running total, as `skipped`', () => {
     const log = stubLogger();
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     r.start();
     presentFrame(video, 0);
     presentFrame(video, 4);  // gap 3, total 3
@@ -249,7 +256,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('passes the frame mediaTime through so a skip can be placed in the content', () => {
     const log = stubLogger();
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     r.start();
     presentFrame(video, 10);
     presentFrame(video, 14, 123.5);
@@ -264,7 +271,7 @@ describe('createCrtRenderer — frame pump', () => {
     const raf = vi.spyOn(globalThis, 'requestAnimationFrame')
       .mockImplementation((cb) => { frames.push(cb); return frames.length; });
     try {
-      const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+      const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
       expect(log.info).toHaveBeenCalledWith('crt.renderer-created',
         expect.objectContaining({ driver: 'requestAnimationFrame' }));
       r.start();
@@ -281,7 +288,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('keeps drawing when the injected logger has no .sampled', () => {
     const log = stubLogger({ sampled: false });
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     r.start();
     expect(() => { presentFrame(video, 1); presentFrame(video, 9); }).not.toThrow();
     expect(r.stats()).toEqual({ drawn: 2, skipped: 7 });
@@ -291,7 +298,7 @@ describe('createCrtRenderer — frame pump', () => {
   // pass that painted nothing must not be credited as a draw.
   it('does not count a pump pass that painted nothing', () => {
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: stubLogger() });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: stubLogger() });
     r.start();
     presentFrame(video, 1);
     video.readyState = 1;           // buffering: drawFrame returns early
@@ -307,7 +314,7 @@ describe('createCrtRenderer — frame pump', () => {
   it('stops pumping after stop() and reports the session totals once', () => {
     const log = stubLogger();
     const video = stubVideo();
-    const r = createCrtRenderer({ canvas: stubCanvas(), video, logger: log });
+    const r = createCrtRenderer({ shaderSrc: CRT_GEOM_SRC, canvas: stubCanvas(), video, logger: log });
     r.start();
     presentFrame(video, 1);
     presentFrame(video, 5);

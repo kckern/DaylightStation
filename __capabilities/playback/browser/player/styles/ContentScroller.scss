@@ -15,6 +15,13 @@
   flex-direction: column;
   font-family: 'Roboto Condensed', sans-serif;
   color: #ffffffaa;
+  // Paper: a flat tone plus a faint fibre texture drawn in CSS (no bitmap).
+  // The tile is fixed-size so the inline background-position can scroll it.
+  background-color: #eee8df;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 100, 70, 0.045) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, rgba(120, 100, 70, 0.03) 0 1px, transparent 1px 7px);
+  background-size: 35px 35px;
   transition: background-position 0.2s linear;
   &.seeking {
     transition: none !important;

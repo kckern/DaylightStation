@@ -1,6 +1,6 @@
 /**
  * presetManifest — single source of truth for which webaudiofont presets the
- * Producer's gmSynth self-hosts under `frontend/public/webaudiofont/`.
+ * Producer's gmSynth self-hosts under `<media>/vendor/webaudiofont/`.
  *
  * Imported by BOTH the runtime (gmSynth.js) and the dev-time downloader
  * (frontend/scripts/fetch-webaudiofont-presets.mjs), so the two can never
@@ -8,7 +8,7 @@
  * it in plain node, which is also why GM_DRUM below is imported by RELATIVE
  * path rather than the '@shared-music' vite alias. gmSynth.catalog.test.js
  * walks these lists through the real installed webaudiofont catalog and
- * asserts every resolved file exists on disk.
+ * asserts every resolved file is declared in assets.manifest.yml (the on-disk presence check is the live-tier test tests/live/adapter/webaudiofont-installed.test.mjs).
  */
 
 import { GM_DRUM } from "../../../../../../__capabilities/music-notation/portable/percussion.mjs";

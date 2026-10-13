@@ -21,7 +21,6 @@
 // Framework-free on purpose: no React in here, so it can be unit-tested and so the
 // frame pump is not tied to render cycles.
 
-import CRT_GEOM_SRC from '../shaders/crt-geom.glsl?raw';
 import { createCrtFrameStats } from './crtFrameStats.js';
 
 // crt-geom deltas from the shader's own defaults, settled 2026-08-18 in the CRT lab
@@ -125,6 +124,8 @@ export function fitContain(srcW, srcH, dstW, dstH) {
  * @param {Object} [options.params]            - crt-geom parameter overrides
  * @param {Object} [options.preFilter]         - { blurRadiusSourcePx, blurMix }
  * @param {number} [options.renderScale]       - backing-store multiplier over CSS px
+ * @param {string} options.shaderSrc            - crt-geom source text (fetched from /vendor by
+ *                                               crtShaderSource.js; GPL, not bundled)
  * @param {Object} [options.logger]            - child logger
  */
 export function createCrtRenderer({
@@ -133,6 +134,7 @@ export function createCrtRenderer({
   params: paramOverrides,
   preFilter: preFilterInput,
   renderScale = 1,
+  shaderSrc,
   logger
 } = {}) {
   const log = logger || { debug() {}, info() {}, warn() {}, error() {} };
@@ -143,6 +145,7 @@ export function createCrtRenderer({
   };
 
   if (!canvas || !video) return unsupported('missing-canvas-or-video');
+  if (typeof shaderSrc !== 'string' || !shaderSrc.trim()) return unsupported('shader-source-missing');
 
   let gl;
   try {
@@ -201,7 +204,7 @@ export function createCrtRenderer({
   let crtProg;
   let blurProg;
   try {
-    crtProg = build(CRT_GEOM_SRC, 'crt-geom');
+    crtProg = build(shaderSrc, 'crt-geom');
     blurProg = build(PRE_BLUR_SRC, 'pre-blur');
   } catch (e) {
     return unsupported('shader-build-failed', { error: e?.message });
@@ -247,7 +250,7 @@ export function createCrtRenderer({
   }
 
   // ---------------------------------------------------------------- state
-  let params = { ...resolveParams(CRT_GEOM_SRC), ...(paramOverrides || {}) };
+  let params = { ...resolveParams(shaderSrc), ...(paramOverrides || {}) };
   let preFilter = { ...DEFAULT_PRE_FILTER, ...(preFilterInput || {}) };
   let scale = renderScale;
   let view = { x: 0, y: 0, w: 0, h: 0 };

@@ -1,0 +1,44 @@
+{
+  "_comment": "Generated at prebuild into svg/generated/ by frontend/scripts/prepare-public-assets.mjs. id -> icon in @iconify-json/solar (MIT). Only icons whose rasterisation matches Solar are listed; the rest are authored/SVG Repo files tracked in svg/.",
+  "icons": {
+    "back": {
+      "solar": "alt-arrow-left-bold"
+    },
+    "forward": {
+      "solar": "rewind-forward-bold"
+    },
+    "next": {
+      "solar": "skip-next-bold"
+    },
+    "pause": {
+      "solar": "pause-bold"
+    },
+    "play": {
+      "solar": "play-bold"
+    },
+    "prev": {
+      "solar": "skip-previous-bold"
+    },
+    "record": {
+      "solar": "record-circle-linear"
+    },
+    "restart": {
+      "solar": "refresh-bold"
+    },
+    "rewind": {
+      "solar": "rewind-back-bold"
+    },
+    "stop": {
+      "solar": "stop-bold"
+    },
+    "volume-mute": {
+      "solar": "muted-bold"
+    },
+    "volume": {
+      "solar": "volume-loud-bold"
+    },
+    "writing": {
+      "solar": "keyboard-bold"
+    }
+  }
+}

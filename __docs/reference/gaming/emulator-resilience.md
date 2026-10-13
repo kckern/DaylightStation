@@ -98,7 +98,11 @@ a paper background with a light gap around it, a drop shadow beneath it and a
 short response-time trail; blank pixels draw nothing, so empty screen is plain
 paper. Our canvas grid cannot do any of that, because it never sees the game
 pixels — only a shader inside the core can. The files, their GPL-3.0 origin and
-the local patches are in `frontend/src/modules/Emulator/shaders/gameboy/README.md`.
+the local patches are in `__app_modules/games/emulator/browser/shaders/gameboy/README.md`.
+The five GPL pass files are not in the repo: `npm run install:assets` puts them in
+`media/vendor/shaders/gameboy/` and the browser fetches them from `/vendor/shaders/gameboy/`
+at boot. If they are absent the arcade shows the unfiltered picture and logs
+`emulator.shader.unavailable` once.
 
 A manifest that declares `ejs_shader` keeps its `shader` too: the console
 stands the canvas grid and CSS wash down when a core shader is declared, and a

@@ -106,7 +106,8 @@ export function createEmulatorSession({
   // Fetch them before boot and attach them to the preset. If any is missing,
   // drop the preset: EmulatorJS then shows the picture unfiltered.
   async function resolveShaderTable() {
-    const table = engineConfig.shaders;
+    // `shaders` is a table, or an async loader of one (fetches /vendor shader text).
+    const table = typeof engineConfig.shaders === 'function' ? await engineConfig.shaders() : engineConfig.shaders;
     const name = game.presentation?.ejs_shader;
     const textures = game.presentation?.ejs_shader_textures;
     if (!table?.[name] || !textures || !Object.keys(textures).length) return table;

@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import moment from "moment-timezone";
-import green from "../../assets/icons/green.png";
-import yellow from "../../assets/icons/yellow.png";
-import red from "../../assets/icons/red.png";
-import lime from "../../assets/icons/lime.png";
+import { aqiColor } from "./aqiColor.js";
 import { useScreenData } from "../../../../__capabilities/screen-host/browser/data.mjs";
 
 const codes = {
@@ -312,10 +309,7 @@ export default function Weather({ weatherData: weatherDataProp }) {
       feel: celciusToFahrenheit(current.feel),
       ...descdata
     };
-    processedCurrent.aircolor =
-      processedCurrent.aqi >= 150
-        ? red
-        : processedCurrent.aqi >= 100 ? yellow : processedCurrent.aqi >= 50 ? lime : green;
+    processedCurrent.aircolor = aqiColor(processedCurrent.aqi);
     setCurrentWeather(processedCurrent);
   }, []);
 
@@ -385,10 +379,17 @@ export default function Weather({ weatherData: weatherDataProp }) {
           </td>
           <td style={{ padding: "1rem", border: "0 solid #ddd" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <img
-                src={currentWeather.aircolor}
-                alt={"Air Quality"}
-                style={{ height: "3rem", margin: "0 auto", display: "block" }}
+              <span
+                role="img"
+                aria-label="Air Quality"
+                style={{
+                  width: "3rem",
+                  height: "3rem",
+                  borderRadius: "50%",
+                  background: currentWeather.aircolor,
+                  margin: "0 auto",
+                  display: "block"
+                }}
               />
               <div>Air Quality:</div>
               <div

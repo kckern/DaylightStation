@@ -1,22 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 import { GM_PROGRAMS, DRUM_NOTES } from './presetManifest.js';
 
 /**
- * Preset/catalog drift guard — no mocks. Walks the manifest lists through the
- * REAL installed webaudiofont catalog (the exact resolution path both
- * gmSynth.js and frontend/scripts/fetch-webaudiofont-presets.mjs use) and
- * asserts every resolved preset file actually exists in
- * frontend/public/webaudiofont/. Fails when someone edits the manifest without
- * re-running the fetch script, or when a webaudiofont upgrade changes which
- * variant its catalog picks for a program.
+ * Preset/catalog drift guard — no mocks, no media mount needed. Walks the
+ * manifest lists through the REAL installed webaudiofont catalog (the exact
+ * resolution path both gmSynth.js and frontend/scripts/fetch-webaudiofont-
+ * presets.mjs use) and asserts every resolved preset file is declared in
+ * assets.manifest.yml, with no orphan webaudiofont entries. Fails when someone
+ * edits the preset lists without updating the asset manifest, or when a
+ * webaudiofont upgrade changes which variant its catalog picks for a program.
+ * That the files are actually INSTALLED is tests/live/adapter/
+ * webaudiofont-installed.test.mjs (it needs the real media volume).
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
-const publicDir = join(here, '..', '..', '..', '..', '..', '..', 'frontend', 'public', 'webaudiofont');
+const repoRoot = join(here, '..', '..', '..', '..', '..', '..');
 
 // The npm dist has no module exports — extract the constructor Function-scope
 // style, same as gmSynth.js / the fetch script.
@@ -28,35 +31,35 @@ const loader = new WebAudioFontPlayer().loader;
 
 const fileFor = (url) => basename(new URL(url).pathname);
 
+const manifest = yaml.load(readFileSync(join(repoRoot, 'assets.manifest.yml'), 'utf8'));
+const declared = new Set(
+  (manifest.assets || manifest.entries || manifest)
+    .map((e) => e.target)
+    .filter((t) => typeof t === 'string' && t.startsWith('webaudiofont/'))
+    .map((t) => basename(t)),
+);
+const MSG = (file) => `${file} is not declared in assets.manifest.yml (add it, then npm run install:assets)`;
+
 describe('gmSynth preset catalog drift guard', () => {
-  it('the self-hosted preset folder exists (run frontend/scripts/fetch-webaudiofont-presets.mjs if not)', () => {
-    expect(existsSync(publicDir)).toBe(true);
+  it('the asset manifest declares webaudiofont presets', () => {
+    expect(declared.size).toBeGreaterThan(0);
   });
 
-  it.each(GM_PROGRAMS)('program %i resolves to a preset file present in public/webaudiofont', (program) => {
-    const info = loader.instrumentInfo(loader.findInstrument(program));
-    const file = fileFor(info.url);
-    expect(existsSync(join(publicDir, file)), `missing ${file} — run fetch-webaudiofont-presets.mjs`).toBe(true);
-    // The file must define the variable gmSynth extracts at runtime.
-    const text = readFileSync(join(publicDir, file), 'utf8');
-    expect(text).toContain(info.variable);
+  it.each(GM_PROGRAMS)('program %i resolves to a preset declared in assets.manifest.yml', (program) => {
+    const file = fileFor(loader.instrumentInfo(loader.findInstrument(program)).url);
+    expect(declared.has(file), MSG(file)).toBe(true);
   });
 
-  it.each(DRUM_NOTES)('drum pitch %i resolves to a preset file present in public/webaudiofont', (pitch) => {
-    const info = loader.drumInfo(loader.findDrum(pitch));
-    const file = fileFor(info.url);
-    expect(existsSync(join(publicDir, file)), `missing ${file} — run fetch-webaudiofont-presets.mjs`).toBe(true);
-    const text = readFileSync(join(publicDir, file), 'utf8');
-    expect(text).toContain(info.variable);
+  it.each(DRUM_NOTES)('drum pitch %i resolves to a preset declared in assets.manifest.yml', (pitch) => {
+    const file = fileFor(loader.drumInfo(loader.findDrum(pitch)).url);
+    expect(declared.has(file), MSG(file)).toBe(true);
   });
 
-  it('has no orphan files the manifest no longer references', () => {
+  it('declares no orphan presets the manifest lists no longer reference', () => {
     const expected = new Set([
       ...GM_PROGRAMS.map((p) => fileFor(loader.instrumentInfo(loader.findInstrument(p)).url)),
       ...DRUM_NOTES.map((n) => fileFor(loader.drumInfo(loader.findDrum(n)).url)),
     ]);
-    const onDisk = readdirSync(publicDir).filter((f) => f.endsWith('.js'));
-    const orphans = onDisk.filter((f) => !expected.has(f));
-    expect(orphans).toEqual([]);
+    expect([...declared].filter((f) => !expected.has(f))).toEqual([]);
   });
 });

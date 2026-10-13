@@ -11,7 +11,7 @@ import { EmulatorToasts } from "../../../../../games/emulator/browser/ui/Emulato
 import { buildEjsControls } from "../../../../../games/emulator/browser/input/buildEjsControls.js";
 import { createSaveClient } from "../../../../../games/emulator/browser/core/saveClient.js";
 import { supportsSave, freshLaunch, loadLaunch } from "../../../../../games/emulator/browser/core/launchModel.js";
-import { EMULATOR_SHADERS } from "../../../../../games/emulator/browser/shaders/emulatorShaders.js";
+import { loadEmulatorShaders } from "../../../../../games/emulator/browser/shaders/emulatorShaders.js";
 import { buildFitnessGameGate } from "./fitnessGameGate.js";
 import { useIdentity } from "../../identity/useIdentity.js";
 import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
@@ -234,7 +234,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       // Our own picture-shader presets, registered with EmulatorJS at boot so a
       // manifest's presentation.ejs_shader can name one (the Game Boys' Harlequin
       // dot matrix). EmulatorJS's built-ins stay available alongside.
-      shaders: EMULATOR_SHADERS,
+      shaders: loadEmulatorShaders,
     };
     return { game, engineConfig, gate, persistence: buildPersistence(game, { userId, persist }) };
   }, [library, getActivePlayerId, buildPersistence, config, unlockedUser]);

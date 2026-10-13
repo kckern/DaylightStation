@@ -49,7 +49,7 @@
       status.textContent = 'UNSUPPORTED: ' + r.reason;
     } else {
       r.start();
-      const p = resolveParams(await (await fetch('/src/modules/Player/shaders/crt-geom.glsl?raw')).text().catch(() => ''), CRT_GEOM_PRESET);
+      const p = resolveParams(await (await fetch('/vendor/shaders/crt/crt-geom.glsl')).text().catch(() => ''), CRT_GEOM_PRESET);
       status.textContent = [
         'shipped module OK',
         'source ' + video.videoWidth + '×' + video.videoHeight,
