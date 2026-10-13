@@ -1,19 +1,20 @@
 /**
- * Playback unlock — which queued items need an authorized fingerprint before
- * they may play. Pure policy; `usePlaybackUnlockGate` does the I/O.
+ * Session replay authorization — classify recorded content that requires an
+ * authorized fingerprint to watch from Fitness Home. Pure policy;
+ * `useRecapUnlock` owns classification I/O and the replay unlock request.
+ * Live playback starts through exercise governance, including Hot startup.
  *
- * Everything is defined in fitness.yml — nothing here names a label, library
- * or lock:
+ * Keep the existing fitness.yml key for compatibility — no config migration:
  *   playback_unlock:
- *     lock: kids_playback        # a key of `locks:` (who may unlock)
- *     labels: [KidsFun]          # any matching Plex label gates the item
- *     libraries: [TV Shows]      # any item from these Plex libraries is gated
- *     scope: show                # show = one scan covers the show; item = every item
- *     prompt_timeout_seconds: 60 # how long the scan prompt waits before giving up
- *     session_recaps: true       # also lock a past session's recap video when any
- *                                # video it played matches (the recap shows it in PiP)
+ *     lock: kids_playback        # a key of `locks:` (who may unlock the replay)
+ *     labels: [KidsFun]          # recorded content with any matching Plex label
+ *     libraries: [TV Shows]      # recorded content from any matching library
+ *     scope: show                # legacy field; replay grants cover one session
+ *     prompt_timeout_seconds: 60 # how long the replay scan prompt waits
+ *     session_recaps: true       # lock a past session's recap when any video it
+ *                                # played matches (the recap shows it in PiP)
  *   locks: { kids_playback: [user_1, user_9] }
- * No `lock`, no rules, or an empty lock list ⇒ nothing is gated.
+ * Replay authorization requires session_recaps, rules and an active named lock.
  */
 
 const norm = (v) => String(v ?? '').trim().toLowerCase();
@@ -58,7 +59,7 @@ export function needsLibraryLookup(item, rules) {
   return !item?.librarySectionTitle;
 }
 
-/** scope 'show': one scan unlocks the whole show; 'item' (or a standalone item): only itself. */
+/** Legacy scope helper retained for compatibility; Home replay grants are per session. */
 export function playbackUnlockScope(item, scope = 'show') {
   if (!item) return null;
   if (scope === 'item') return String(item.contentId || item.id);
@@ -69,9 +70,9 @@ export function playbackUnlockScope(item, scope = 'show') {
 
 /**
  * Decide whether a past session's recap must be unlocked: required when ANY
- * video the session played is gated. Labels decide synchronously; items whose
- * labels don't and that could be library-gated are looked up via `fetchInfo`.
- * A failed lookup counts as gated (fail closed).
+ * video the session played matches the replay rules. Labels decide synchronously;
+ * items whose labels don't decide it are looked up via `fetchInfo` when the library
+ * could require authorization. A failed lookup requires a scan (fail closed).
  * @param {Array<{contentId?: string, labels?: string[]}>} mediaList - session summary.media
  * @returns {Promise<{ required: boolean, reason: string|null }>}
  */

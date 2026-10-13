@@ -352,8 +352,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   }, [sessionData, fitnessCtx?.plexConfig]);
 
   // The recap shows the episode in picture-in-picture, so a session that played
-  // gated content (fitness.yml → playback_unlock, session_recaps) keeps its recap
-  // behind the same fingerprint lock as the episode itself.
+  // protected replay content (fitness.yml → playback_unlock, session_recaps)
+  // requires a fingerprint to watch from Home. Live episodes use exercise governance.
   // No IdentityProvider (widget rendered outside the fitness app): a gated recap
   // stays locked — there is no reader to unlock it with.
   const identity = useOptionalIdentity();
