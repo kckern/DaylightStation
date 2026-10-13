@@ -35,14 +35,14 @@ const fix = 'run `npm run install:assets` (set DAYLIGHT_MEDIA_PATH)';
 
 describe('webaudiofont presets installed under media/vendor', () => {
   it('the vendor/webaudiofont dir exists', () => {
-    expect(dir, `DAYLIGHT_MEDIA_PATH is not set — ${fix}`).toBeTruthy();
-    expect(existsSync(dir), `${dir} is absent — ${fix}`).toBe(true);
+    if (!dir) throw new Error(`DAYLIGHT_MEDIA_PATH is not set — ${fix}`);
+    if (!existsSync(dir)) throw new Error(`${dir} is absent — ${fix}`);
   });
 
   it.each(targets.map((t) => [t.label, t]))('%s preset file present and defines its variable', (_l, t) => {
-    expect(dir, `DAYLIGHT_MEDIA_PATH is not set — ${fix}`).toBeTruthy();
+    if (!dir) throw new Error(`DAYLIGHT_MEDIA_PATH is not set — ${fix}`);
     const full = join(dir, t.file);
-    expect(existsSync(full), `missing ${t.file} — ${fix}`).toBe(true);
+    if (!existsSync(full)) throw new Error(`missing ${t.file} — ${fix}`);
     expect(readFileSync(full, 'utf8')).toContain(t.variable);
   });
 });
