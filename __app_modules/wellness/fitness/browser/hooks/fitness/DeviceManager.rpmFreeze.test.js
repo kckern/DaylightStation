@@ -13,7 +13,7 @@
  * Fix: significance must be derived from the incoming `data` payload, not
  * from the device's persisted state.
  *
- * See: __docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md
+ * See: ops:docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

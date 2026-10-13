@@ -318,7 +318,7 @@ describe('selectPrimaryMediaSummary (flat summary.media shape)', () => {
 // ranking on that field drops real workouts out of the cascade entirely.
 // The played span (end - start) is on every event and cannot be corrupted the
 // same way — it is what the summary path has always used.
-// See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+// See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
 describe('ranks on the played span, not the stored nominal duration', () => {
   test('picks the longer PLAYED item when both nominal durations are corrupt', () => {
     const events = [

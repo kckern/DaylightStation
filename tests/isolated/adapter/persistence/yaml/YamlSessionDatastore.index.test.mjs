@@ -33,7 +33,7 @@ describe('YamlSessionDatastore — findInRange index', () => {
       participants: {},
       // DELIBERATELY the LEGACY `coins` key. Every session on disk written
       // before 2026-08-26 carries it, and the datastore must keep reading them
-      // until cli/rings-migration.mjs has run. Seeding `rings` here instead
+      // until the retired rings migration has run. Seeding `rings` here instead
       // would make this test pass while the entire pre-rename archive silently
       // reported zero. The ASSERTION below reads `totalRings` — legacy in, new
       // name out, which is exactly the dual-read contract.

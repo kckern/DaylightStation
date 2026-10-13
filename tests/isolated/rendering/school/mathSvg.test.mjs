@@ -4,7 +4,7 @@ import { texToSvg, MathRenderError } from "../../../../__app_modules/learning/sc
 const viewBoxOf = (svgString) => svgString.match(/viewBox="([^"]+)"/)[1].split(/\s+/).map(Number);
 const rootTagOf = (svgString) => svgString.slice(0, svgString.indexOf('>') + 1);
 
-// Spike stress corpus (__docs/_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
+// Spike stress corpus (ops:docs/_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
 const STRESS_CORPUS = {
   'nested fractions': '\\frac{\\frac{a}{b}}{\\frac{c}{d}}',
   radicals: '\\sqrt[3]{\\frac{x+1}{y-2}}',

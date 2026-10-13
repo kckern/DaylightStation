@@ -7,7 +7,7 @@ screen fills with modules synchronized to the playhead. This document covers the
 piece to it.
 
 For the framework itself (seams, ports, module contract), see the design and spec
-in `__docs/_wip/plans/2026-08-18-player-surround-*.md`.
+in `ops:docs/_wip/plans/2026-08-18-player-surround-*.md`.
 
 ---
 
@@ -17,7 +17,7 @@ Knowledge and performance live in **separate trees**, and the pixels in a third.
 The split is deliberate: the corpus is subject-neutral reference data that a future
 School music-appreciation projection reads on the same terms the player does, and
 one work commonly has more than one recording. See
-`__docs/_wip/plans/2026-08-19-classical-library-corpus-design.md` for the rationale.
+`ops:docs/_wip/plans/2026-08-19-classical-library-corpus-design.md` for the rationale.
 
 ```text
 data/content/library/classical/            THE CORPUS — knowledge only

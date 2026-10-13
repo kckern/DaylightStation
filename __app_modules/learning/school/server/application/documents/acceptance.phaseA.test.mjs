@@ -1,6 +1,6 @@
 /**
  * Phase A acceptance sweep — spec §12 items tagged `[A]` (see
- * `__docs/_wip/plans/2026-08-04-print-design-system-requirements.md`).
+ * `ops:docs/_wip/plans/2026-08-04-print-design-system-requirements.md`).
  *
  * This is a falsifiability sweep, not a unit suite: every item below is
  * exercised through the REAL pipeline (`RenderPrintDocument`, the actual
@@ -16,7 +16,7 @@
  * furniture (footer band, duplex gutter) across 3 pages
  * at both type-scale presets, rasterizes every page with poppler, commits
  * the PDFs + PNGs as reviewable evidence under
- * `__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/`, and pins
+ * `__proof__/phase-a`, and pins
  * one page as a real regression-checked image snapshot (pixel-diff, same
  * tolerance model as `tests/isolated/rendering/school/golden/`).
  *
@@ -58,7 +58,7 @@ const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
 });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EVIDENCE_DIR = path.join(HERE, "../../../../../../__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance");
+const EVIDENCE_DIR = path.join(HERE, "__proof__/phase-a");
 /** Set to regenerate the ONE pinned visual snapshot after reviewing the new render. */
 const UPDATE_PROOF = process.env.UPDATE_PROOF === '1';
 /** Same whole-page tolerance the golden suite uses — loose enough to absorb antialiasing jitter. */

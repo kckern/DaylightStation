@@ -5,7 +5,7 @@
  * The app container cannot see the NAS share; only the Plex container mounts
  * it. So this runs one fixed command on the host over SSH: the key it uses is
  * restricted in the host's authorized_keys to a forced command
- * (`scripts/media-source-heal.sh`), which only accepts a path under the media
+ * (a media-source-heal script installed on the host, kept in the private ops repo), which only accepts a path under the media
  * root. The path is passed base64-encoded so no shell quoting is involved.
  *
  * Plex reports paths as it sees them inside its container

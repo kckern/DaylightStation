@@ -992,7 +992,7 @@ Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
 ## 3. Reserved
 
 *(A point-in-time contract gap analysis previously lived here; it tracked the
-initial build-out and is obsolete. Delivery status belongs in `__docs/_wip/`
+initial build-out and is obsolete. Delivery status belongs in `ops:docs/_wip/`
 plans, not in this reference.)*
 
 ---

@@ -202,7 +202,7 @@ The journal shares `current.json` with the projection and every commit rewrites
 the whole file, so these bounds are the cost of every write — not just a
 storage ceiling. They were 5,000 / 30 days until 2026-09-02, which let the file
 reach 2.6 MB and never compact; see
-`__docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md`.
+`ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md`.
 Each write is about 5 ms (`state-gates.state.written`, sampled).
 
 Compaction removes only complete published revision batches, oldest first. It never
@@ -220,7 +220,7 @@ provenance even after their transition envelopes age out.
   build keeps committing between the CLI run and the container stop — about
   255 commits a day, 2–3 a minute during a workout — and anything committed in
   that window is lost. Do it in this order:
-  1. confirm `./scripts/deploy-gate.sh` reports clear;
+  1. confirm `ops:scripts/deploy-gate.sh` reports clear;
   2. run the converter inside the container:
      `node cli/state-gates-legacy-yaml.cli.mjs data/household/state-gates/current.json data/household/state-gates/current.yml`
   3. immediately stop the container — anything committed between step 2 and

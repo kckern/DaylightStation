@@ -1,6 +1,6 @@
 /**
  * ScanDataRepair - pure planners for the 2026-09-22 scan data-quality repair
- * (__docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
+ * (ops:docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
  *
  * Nothing here reads or writes storage. `cli/health-scan-repair.cli.mjs`
  * gathers the rows, the catalog and the placeholder photos, calls these, and

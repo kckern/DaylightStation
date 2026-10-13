@@ -405,7 +405,7 @@ import { useScreenVolume } from '../../../../../frontend/src/lib/volume/ScreenVo
     // Fallback advance when HTML5 `ended` never fires — e.g. DASH with a
     // zero-byte trailing fragment leaves the element paused at duration
     // with mediaEl.seeking stuck true. See audit
-    // __docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
+    // ops:docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
     useEndOfContentWatchdog({
       mediaRef: mainRef,
       sourceKey: mainMediaUrl,

@@ -9,7 +9,7 @@ menu entry already registered in `PianoMenu.jsx` under id `composer`).
 Distinct from the **Composers** educational-reference mode.
 
 Provenance: requirements gathered 2026-07-17
-(`__docs/_wip/plans/2026-07-17-composer-requirements.md` — UX benchmark +
+(`ops:docs/_wip/plans/2026-07-17-composer-requirements.md` — UX benchmark +
 engine research), spec revised same day after an adversarial design review
 whose confirmed findings are folded in throughout (data-fidelity round-trip,
 aged-page latency protocol, entry disarm state, persistence hardening).

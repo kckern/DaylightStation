@@ -1,0 +1,6 @@
+DaylightStation
+Copyright (c) 2026 the copyright holder named in LICENSE and DaylightStation contributors
+
+This project is licensed under the MIT License. See the LICENSE file for the full text.
+
+Third-party assets are not distributed in this repository; they are installed by `npm run install:assets`. See `assets.manifest.yml` for the list.

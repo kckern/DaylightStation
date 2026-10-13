@@ -138,7 +138,7 @@ A structured `fitness.music.player_error` warn log fires for every kind with `{ 
 When stuck:
 - If `playerError` is non-null, the explicit error message is already showing (no extra UI change).
 - If `playerError` is null, the title area falls back to a generic `Music unavailable — tap to retry` affordance using `kind: 'unknown'`.
-- A structured `fitness.music.stuck_loading` warning is emitted **once** per stuck episode (deduped via `stuckLoggedRef`) with a `silentFailure: <bool>` flag set to `!hasExplicitError`. **A `silentFailure: true` event is a bug indicator** — it means a failure path upstream of the explicit error channel was hit and needs to be instrumented. See `__docs/_wip/bugs/2026-05-23-music-player-loading-and-unavailable-states-are-bugs.md`.
+- A structured `fitness.music.stuck_loading` warning is emitted **once** per stuck episode (deduped via `stuckLoggedRef`) with a `silentFailure: <bool>` flag set to `!hasExplicitError`. **A `silentFailure: true` event is a bug indicator** — it means a failure path upstream of the explicit error channel was hit and needs to be instrumented. See `ops:docs/_wip/bugs/2026-05-23-music-player-loading-and-unavailable-states-are-bugs.md`.
 
 ### Distinct Plex client session
 

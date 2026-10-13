@@ -145,7 +145,7 @@ export function useCommonMediaController({
   // below re-runs on ~20 deps; a listener that outlives one run must never be
   // able to call the onProgress it was created with. That is exactly how a dead
   // FitnessPlayer closure (governance "locked") kept re-pausing the video on
-  // 2026-09-22 — see __docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
+  // 2026-09-22 — see ops:docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
   // Same for onEnd. FitnessPlayer's close/next handlers are plain functions, so

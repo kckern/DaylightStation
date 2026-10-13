@@ -2,7 +2,7 @@
 
 How runs of consecutive **no-video** fitness sessions (e.g. cycle-game races) are merged at read-time into one "giant session," enriched with the games that happened inside them, and rendered with seams + race-band overlays.
 
-> Implemented on branch `feature/race-session-grouping` (2026-06-05). Design: `__docs/plans/2026-06-05-race-session-grouping.md`.
+> Implemented on branch `feature/race-session-grouping` (2026-06-05). Design: `ops:docs/plans/2026-06-05-race-session-grouping.md`.
 
 ## Why
 

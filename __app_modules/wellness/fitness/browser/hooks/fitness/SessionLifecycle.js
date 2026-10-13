@@ -9,7 +9,7 @@
  * - Tick timer management
  * - Session persistence to API
  * 
- * @see /__docs/notes/fitness-architecture-review.md Phase 4
+ * @see /ops:docs/notes/fitness-architecture-review.md Phase 4
  */
 
 import { formatSessionId } from "./types.js";

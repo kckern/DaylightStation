@@ -93,12 +93,12 @@ ssh kckern-playback-hub 'systemctl --user start playback-hub.service'
 
 ## Reporting issues
 
-If any step fails, file a bug in `__docs/_wip/bugs/` with:
+If any step fails, file a bug in `ops:docs/_wip/bugs/` with:
 
 - The card / route / scheduled fire that failed
 - Backend log excerpt (filter on `playback-hub.*`)
 - WS broadcast stream from browser console (`window.DAYLIGHT_LOG_LEVEL = 'debug'`)
 - The `devices.yml` state on the hub (`ssh kckern-playback-hub 'cat ~/playback-hub/devices.yml'`)
 
-See `__docs/_wip/plans/2026-05-27-playback-hub-admin-impl.md` for the full design
+See `ops:docs/_wip/plans/2026-05-27-playback-hub-admin-impl.md` for the full design
 and bounded-context tour.

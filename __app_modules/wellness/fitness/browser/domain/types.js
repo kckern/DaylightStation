@@ -5,7 +5,7 @@
  * These types serve as the single source of truth for key concepts
  * like participant status, activity periods, and chart segments.
  * 
- * @see /__docs/notes/fitness-architecture-review.md for rationale
+ * @see /ops:docs/notes/fitness-architecture-review.md for rationale
  */
 
 /**

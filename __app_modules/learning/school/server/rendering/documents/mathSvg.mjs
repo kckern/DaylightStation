@@ -3,7 +3,7 @@
  *
  * svg-to-pdfkit misreads MathJax's SVG as emitted; every normalization here
  * exists because of a specific silent failure verified in the rendering spike
- * (__docs/_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
+ * (ops:docs/_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
  */
 
 import { mathjax } from 'mathjax-full/js/mathjax.js';

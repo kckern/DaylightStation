@@ -19,8 +19,8 @@
  * re-evaluates current state — so after `reset()` the watchdog is monitoring
  * again from this instant, without the caller needing to issue an extra tick.
  *
- * See: __docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
- *      __docs/superpowers/plans/2026-05-23-screens-player-end-of-video-recovery.md
+ * See: ops:docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
+ *      ops:docs/superpowers/plans/2026-05-23-screens-player-end-of-video-recovery.md
  */
 import { isNearEnd } from './nearEnd.js';
 
@@ -57,7 +57,7 @@ export function createEndOfContentWatchdog({
     // `paused === false` and `ended === false` (2026-07-10, plex:674553). What
     // actually distinguishes end-of-content from playback is that the clock has
     // not moved for the whole idle window.
-    // See __docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+    // See ops:docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
     const info = getMediaInfo();
     if (!info || !isAtDuration(info)) return;
     if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) return;

@@ -4,7 +4,7 @@
  * This is the guaranteed "tier 2" voice output for the Producer: it always
  * works because it renders locally in Web Audio, regardless of what the piano
  * hardware supports. A later `gmSynthTier` adapter wraps this for the
- * VoiceRouter (see __docs/_wip/plans/2026-07-01-piano-producer-overhaul-plan.md
+ * VoiceRouter (see ops:docs/_wip/plans/2026-07-01-piano-producer-overhaul-plan.md
  * Task 0.2 / Phase 3).
  *
  * ── Channel convention ──────────────────────────────────────────────────────

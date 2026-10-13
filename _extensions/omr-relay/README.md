@@ -31,7 +31,7 @@
 > **System reference — protocol, card spec, troubleshooting, and where to buy
 > cards — is `__docs/reference/omr/README.md` in the main repo docs; that doc
 > is authoritative.** This README covers building and flashing the relay.
-> Remaining work: `__docs/_wip/plans/2026-07-21-omr-relay-bringup.md`.
+> Remaining work: `ops:docs/_wip/plans/2026-07-21-omr-relay-bringup.md`.
 
 An **M5Stack ATOM Lite** (ESP32-PICO-D4) taps the **RS-232 serial output** of a
 **Chatsworth Data OMR-1100** optical-mark-recognition (bubble-sheet / scantron)

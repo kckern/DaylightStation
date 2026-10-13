@@ -264,8 +264,8 @@ These endpoints remain in legacy and are not planned for DDD migration:
 
 ## Related Documentation
 
-- [Parity Test Results](../../_wip/audits/2026-01-21-parity-audit-results.md)
-- [Endpoint Migration Tracker](../../_wip/audits/2026-01-21-endpoint-migration-tracker.md)
+- Parity Test Results (ops:docs/_wip/audits/2026-01-21-parity-audit-results.md)
+- Endpoint Migration Tracker (ops:docs/_wip/audits/2026-01-21-endpoint-migration-tracker.md)
 - Testing: `tests/integration/api/fitness-parity.test.mjs`
 - Testing: `tests/integration/api/finance-parity.test.mjs`
 - Testing: `tests/integration/api/fitness-plex-parity.test.mjs`

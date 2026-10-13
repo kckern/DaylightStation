@@ -100,7 +100,7 @@
 >
 > **Build JDK:** openjdk@17 (used for v26–v30; the "JDK 11 only" note below is stale).
 >
-> ## Architecture: `__docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md`
+> ## Architecture: `ops:docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md`
 > Shell = manifest entry points, permissions, a11y xml, native `.so`, `PianoEngine`
 > (in `shell-api`), `PayloadLoader`/`PayloadStore` (13 JVM tests), `ShellServer`.
 > Payload = everything else (`BridgeCore` is the old service body). Verified with dexdump:

@@ -13,7 +13,7 @@
  * hundred KB of JSONL per day. That is what makes it safe to schedule ahead of
  * the archiving pipelines.
  *
- * Design: __docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
+ * Design: ops:docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  *
  * @module 3_applications/camera/cameraLedgerJobHandler
  */

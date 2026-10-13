@@ -24,5 +24,5 @@ has no `fprintd`).
   the enroll CLI; unit-tested in `test/profileStore.test.mjs` (`node --test`).
 
 Templates never leave the box; only uuids appear in `profile.yml`. See the design/plan:
-`__docs/_wip/plans/2026-06-17-fingerprint-unlock-*.md` and the simulation runbook
+`ops:docs/_wip/plans/2026-06-17-fingerprint-unlock-*.md` and the simulation runbook
 `__docs/runbooks/fingerprint-unlock-simulation.md`.

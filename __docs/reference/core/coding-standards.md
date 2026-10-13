@@ -223,7 +223,7 @@ class Session {
 
 New entities MUST NOT define `toJSON()` / `static fromJSON()`; datastores own
 hydration/dehydration (see the adapter-layer Hydration Pattern and
-`__docs/_wip/plans/2026-07-08-serialization-ownership-migration.md`). The storage
+`ops:docs/_wip/plans/2026-07-08-serialization-ownership-migration.md`). The storage
 format is an adapter concern — an entity that serializes itself couples the
 domain model to the file shape.
 
@@ -644,4 +644,4 @@ Admin editing surfaces fall into two interaction models. Pick by intent; do not 
 - **One confirmation model.** Destructive config actions use `shared/ConfirmModal`. Destructive curation actions prefer an Undo toast (`shared/feedback.js` `showUndoToast`) over a modal gate. Never `window.confirm`.
 - **Shared formatters live in `Admin/utils/formatters.js`.** Do not re-implement `formatSize`/`formatDuration`/`cronToHuman`/`capitalize` locally — import them. Extend the shared version (with a test) if a caller needs more.
 
-See `__docs/_wip/audits/2026-07-09-admin-ux-user-journey-and-combobox-audit.md` (C1–C5) for the findings this codifies.
+See `ops:docs/_wip/audits/2026-07-09-admin-ux-user-journey-and-combobox-audit.md` (C1–C5) for the findings this codifies.

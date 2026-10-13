@@ -13,7 +13,7 @@
  * - Activity mask generation from heart_rate
  * - Segment merging and gap detection
  * 
- * @see /__docs/notes/fitness-architecture-review.md Phase 3
+ * @see /ops:docs/notes/fitness-architecture-review.md Phase 3
  */
 
 import {

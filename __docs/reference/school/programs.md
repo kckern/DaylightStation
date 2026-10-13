@@ -294,7 +294,7 @@ Closing those needs an **owed-set** comparison, because the gate response names 
 course while `status()` is gated on *any* owed enrollment; comparing against the
 single shown course would evict a learner legitimately working a second owed one.
 That is an API change, not a route guard. Vectors and reasoning:
-`__docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md`.
+`ops:docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md`.
 
 A completion that belongs to no enrolled course is correctly ignored — a Hot Cross
 Buns lesson must not discharge a Reading Music obligation — but it is no longer

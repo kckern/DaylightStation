@@ -2,11 +2,12 @@
  * Baseline management - track known violations
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 import yaml from 'yaml';
 import { hasFileDisableAnnotation, hasLineAnnotation } from './utils.mjs';
 
-const BASELINE_PATH = '__docs/_wip/audits/baseline.yml';
+const BASELINE_PATH = '.reports/audit/baseline.yml';
 
 /**
  * Load baseline from YAML file
@@ -49,6 +50,7 @@ export async function saveBaseline(baseline) {
     nullStr: ''
   });
 
+  mkdirSync(dirname(BASELINE_PATH), { recursive: true });
   writeFileSync(BASELINE_PATH, content, 'utf-8');
 }
 

@@ -23,7 +23,7 @@
  * pre-ledger UX (dash errors fire immediately) while still recording —
  * so dash-error activity pushes the shared cooldown window forward.
  *
- * Bug ref: __docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §2
+ * Bug ref: ops:docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §2
  */
 
 import { getRecoveryLedger } from './recoveryLedger.js';

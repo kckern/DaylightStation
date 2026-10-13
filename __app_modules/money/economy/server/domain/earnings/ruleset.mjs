@@ -2,8 +2,8 @@
  * Earn rules: what the household pays in silver (and gems) for which evidence.
  * Pure — validation, defaults and per-learner resolution; no I/O, no clock.
  *
- * Vocabulary: __docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
- * Design: __docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
+ * Vocabulary: ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
+ * Design: ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
  *
  * Seven kinds, one per earning trigger (scope × period):
  *   unit            each served unit matching the selector        School × Unit

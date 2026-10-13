@@ -19,6 +19,7 @@ For local infrastructure details (Docker, secrets, networking, cron jobs, data p
   "env": {
     "prod_host": "<prod-host>",
     "docker_container": "<container-name>",
+    "ops_docs": "<path-to-ops-repo>/docs",
     "ports": {
       "app": 3111,
       "backend": 3112
@@ -134,7 +135,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 
 Before deleting any branch, document it for potential restoration:
 
-1. Record the branch name and commit hash in `__docs/_archive/deleted-branches.md`
+1. Record the branch name and commit hash in `ops:docs/_archive/deleted-branches.md` (in the ops repo)
 2. Format: `| YYYY-MM-DD | branch-name | commit-hash | brief description |`
 3. Then delete: `git branch -d branch-name` (or `-D` if unmerged)
 
@@ -161,14 +162,14 @@ __docs/
 ├── reference/
 │   └── core/         # Backend architecture, DDD layer guidelines, coding standards
 │       └── layers-of-abstraction/  # Per-layer guidelines
-├── runbooks/         # Operational procedures
-├── _wip/             # Work in progress
-│   ├── plans/        # Implementation plans (date-prefixed)
-│   ├── audits/       # Code audits
-│   ├── bugs/         # Bug investigations
-│   └── refactors/    # Structural-change initiatives — index + status per refactor
-└── _archive/         # Obsolete docs (preserved for reference)
+└── runbooks/         # Operational procedures
 ```
+
+Public docs are `__docs/reference/`, `__docs/runbooks/`, `__docs/ai-context/` and
+the `docs/` folders inside modules. Internal working docs (plans, audits, bugs,
+refactor indexes, specs, archive) live in the private companion repo, not here:
+`/opt/Code/DaylightStation-ops/docs/` (`env.ops_docs` in `.claude/settings.local.json`).
+Code comments cite them as `ops:docs/<folder>/<file>`.
 
 ### Reference Structure
 The `reference/core/` folder contains DDD architecture documentation:
@@ -185,25 +186,26 @@ When modifying code, check if related docs need updating:
 
 ### Freshness Audit
 ```bash
-# See code changes since last docs review
-git diff $(cat __docs/docs-last-updated.txt)..HEAD --name-only
+# See code changes since last docs review (marker lives in the ops repo)
+git diff $(cat {env.ops_docs}/docs-last-updated.txt)..HEAD --name-only
 
 # After updating docs, update the marker
-git rev-parse HEAD > __docs/docs-last-updated.txt
+git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 ```
 
 ### Rules
 
-1. **New work goes to `_wip/`** - Bug investigations, audits, plans, temporary analysis
-2. **Use appropriate subfolder** - `_wip/plans/`, `_wip/bugs/`, `_wip/audits/`, `_wip/refactors/`
-   - A **refactor** spans all three and needs a home of its own: one index page
+1. **Public reference docs stay in `__docs/reference/` and module `docs/` folders** - Update them in the same change as the code
+2. **Plans, audits, bugs, specs and archive go to `{env.ops_docs}`** - Subfolders `_wip/plans/`, `_wip/bugs/`, `_wip/audits/`, `_wip/refactors/`, `superpowers/specs|plans/`, `_archive/`; commit them in the ops repo, never in this one
+   - A **refactor** spans plans, audits and bugs and needs a home of its own: one index page
      per initiative saying whether it is live, what has actually changed in the
      codebase, and where every plan and packet lives. Link the material, do not
-     move it. See `_wip/refactors/README.md`.
+     move it. See `ops:docs/_wip/refactors/README.md`.
 3. **Always date-prefix** - Format: `YYYY-MM-DD-topic-name.md`
-4. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
-5. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
-6. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{env.prod_host}` or reference `.claude/settings.local.json`
+4. **Archive when obsolete** - Move to `_archive/` in the ops docs when superseded or no longer relevant
+5. **Superpowers specs/plans default location** - `{env.ops_docs}/superpowers/specs/` and `{env.ops_docs}/superpowers/plans/`, not this repo
+6. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
+7. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{env.prod_host}` or reference `.claude/settings.local.json`
 
 ---
 

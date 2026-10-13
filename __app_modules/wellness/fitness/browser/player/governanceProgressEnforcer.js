@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef } from 'react';
  * boolean. On 2026-09-22 a progress handler that had captured `locked=true`
  * during the startup lock survived (via a leaked media listener) and kept
  * pausing the video after governance unlocked — 41 play presses overruled.
- * See __docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
+ * See ops:docs/_wip/plans/2026-09-22-fitness-play-means-play.md.
  *
  * @param {{paused: boolean}} progress  native element state from onProgress
  * @param {object} deps

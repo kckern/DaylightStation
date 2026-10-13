@@ -159,5 +159,5 @@ Add `?nogovern` to any fitness URL to bypass governance lock and sequential show
 ## Related docs
 
 - `__docs/reference/content/content-playback.md` — DASH Video Playback section
-- `__docs/plans/2026-03-11-dash-transcode-warmup-resilience.md` — original implementation plan
-- `__docs/_wip/audits/2026-03-11-fitness-video-dash-playback-failure-audit.md` — root cause audit
+- `ops:docs/plans/2026-03-11-dash-transcode-warmup-resilience.md` — original implementation plan
+- `ops:docs/_wip/audits/2026-03-11-fitness-video-dash-playback-failure-audit.md` — root cause audit

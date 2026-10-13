@@ -176,7 +176,7 @@ computed from those exact entries. A budget setup error does not hide the food l
 
 ### The Today budget card — one job at a time
 
-Design: `__docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
+Design: `ops:docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
 in four situations, and its headline answers whichever one applies
 (`today/budgetStory.js`, pinned by `budgetStory.test.js`):
 
@@ -307,7 +307,7 @@ reloaded day will. It does not recalculate goals, burn or the range. The overlay
    goals, macros, microCoverage }`. `/budget/range` returns the same per-day fields
    (minus `sessions`/`goals`), from the same private assembler.
 
-A one-off CLI, `cli/health-budget-settings-migrate.cli.mjs --user <id> [--apply]`,
+A one-off CLI, `ops:retired/cli/health-budget-settings-migrate.cli.mjs --user <id> [--apply]`,
 reports every legacy floor/target setting (profile `calories_min/max`, the coach's
 `goals.yml`, the coaching `min_calories`) and their conflicts. `--apply` only fills an
 **unset** `budgetFloor`; it never sets a `targetDate`.
@@ -1622,7 +1622,7 @@ snapshots in one ledger command. Children retain their hierarchy under new IDs;
 mass, micronutrients, provenance, icons and evidence references travel with them.
 
 Kept meals are templates. Existing saved meals can be migrated with
-`cli/migrate-saved-meals-to-templates.mjs` using its dry-run option first.
+`ops:retired/cli/migrate-saved-meals-to-templates.mjs` using its dry-run option first.
 
 ---
 

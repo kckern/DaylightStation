@@ -434,7 +434,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
           // board that repaints every five minutes.
           //
           // `coins` is the pre-2026-08-26 name and is read until the migration
-          // clears it (cli/rings-migration.mjs). `?? null` distinguishes "no
+          // clears it (the retired rings migration). `?? null` distinguishes "no
           // ring data recorded" from a real zero.
           rings: p?.rings ?? p?.coins ?? null,
           // Average heart rate over the session — what the Health budget needs

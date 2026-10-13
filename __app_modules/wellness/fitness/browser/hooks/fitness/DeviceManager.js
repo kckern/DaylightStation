@@ -7,7 +7,7 @@ import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
  * 0 bpm to null). Without this, a HR strap reading 0 bpm degrades to 'unknown'
  * equipment and becomes un-assignable. Profile strings observed in the garage
  * backend broadcasts: 'HR', 'CAD', 'PWR'.
- * See __docs/_wip/plans/2026-06-25-fitness-hr-profile-classification.md
+ * See ops:docs/_wip/plans/2026-06-25-fitness-hr-profile-classification.md
  */
 const PROFILE_TYPE_MAP = {
   HR: 'heart_rate',
@@ -91,7 +91,7 @@ export class Device {
     // non-cadence pages (battery, manufacturer, common 80-82) for 60-120s
     // after pedaling stops; reading post-merge `this.cadence` here would let
     // those frames refresh the timer forever via stale data.
-    // See __docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md
+    // See ops:docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md
     const payloadHasHeartRate = Number.isFinite(data.heartRate) && data.heartRate > 0;
     const payloadHasCadence   = Number.isFinite(data.cadence)   && data.cadence   > 0;
     const payloadHasPower     = Number.isFinite(data.power)     && data.power     > 0;
@@ -151,13 +151,13 @@ export class DeviceManager {
     // Monotonic counter bumped on any mutation that can change roster output
     // (device add/update/remove, inactive-state transitions). Read by
     // ParticipantRoster's roster cache to know when a rebuild is required.
-    // See __docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
+    // See ops:docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
     this.mutationVersion = 0;
     // Wall-clock of the last packet from ANY device — the pipeline's liveness
     // signal. While it advances, one device's silence is that device (the
     // rider stopped). When it stops advancing, nothing is being delivered
     // (__backend/socket stalled) and per-device staleness is meaningless.
-    // See __docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+    // See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
     this.lastPacketAt = 0;
     this._transportStalledSince = null;
   }

@@ -663,7 +663,7 @@ export class IssueDocument {
       // session PERMANENTLY unprintable: "already issued" (this branch was
       // reached) and "doesn't exist" (the bytes are gone) are both true, and
       // there was no third option. See
-      // __docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
+      // ops:docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
       //
       // The integrity rule this branch exists for stays intact: we never
       // claim a fresh rendering IS the original. `#issueNew` regenerates from

@@ -3,7 +3,7 @@
  *
  * Aggregate root: holds Message ENTITIES internally (not plain JSON blobs).
  * Persistence (de)hydration is owned by the datastore adapter — see
- * __docs/_wip/plans/2026-07-08-serialization-ownership-migration.md.
+ * ops:docs/_wip/plans/2026-07-08-serialization-ownership-migration.md.
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';

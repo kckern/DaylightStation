@@ -1,5 +1,5 @@
 // Characterization test: the STORED YAML SHAPE of the food catalog must not
-// change across the serialization-ownership migration (__docs/_wip/plans/
+// change across the serialization-ownership migration (ops:docs/_wip/plans/
 // 2026-07-08-serialization-ownership-migration.md, phase 2 — nutrition group).
 // It drives YamlFoodCatalogDatastore over an in-memory dataService stub and
 // asserts the exact plain-object array written to the catalog file key.

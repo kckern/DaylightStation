@@ -6,7 +6,7 @@
  * the per-game config (`config.games['side-scroller'].theme`), which lives in
  * the household piano YAML in the data dir — not the repo. DEFAULT_THEME
  * reproduces the Mega Man + procedural-CSS look so an absent/empty theme is a
- * no-op. See __docs/plans/2026-06-24-side-scroller-theme-config-design.md.
+ * no-op. See ops:docs/plans/2026-06-24-side-scroller-theme-config-design.md.
  */
 
 // Original appearance, encoded as the fallback theme. The legacy source is

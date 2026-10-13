@@ -14,7 +14,7 @@
 // reintroduce Classic BT here: NimBLE has no Classic support at all, and the
 // Bluedroid stack that does is mutually exclusive with it (one BLE stack per
 // binary). The retired Classic board is recorded in
-// __docs/_archive/deleted-extensions.md.
+// ops:docs/_archive/deleted-extensions.md.
 //
 // Message shapes sent to the bus — ONE source, dispatched backend-side by `type`:
 //   {"source":"kitchen-relay","type":"scale","id":"kitchen-food-scale","grams":240,"stable":true,"unit":"g","ts":<ms>}
@@ -1088,7 +1088,7 @@ void setup() {
   // central, so there is no pairing profile, no SDP record and no link-key
   // ceremony to expose -- all of that belonged to the Classic-SPP DS6878 and now
   // belonged to the retired DS6878 board (see
-  // __docs/_archive/deleted-extensions.md).
+  // ops:docs/_archive/deleted-extensions.md).
   http.on("/barcode/disconnect", [](){
     if (g_hidClient) g_hidClient->disconnect();
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"disconnect\"}");

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-// Refusal recovery on a SCREEN (__docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md).
+// Refusal recovery on a SCREEN (ops:docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md).
 // Owner ruling: a screen HOLDS a refused video — quiet "Fixing this video…"
 // note, no auto-skip through the queue — and resumes at the spot when the file
 // is readable again. Requires `tests/_lib/media-redesign-server.mjs` (BASE_URL):

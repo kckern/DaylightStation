@@ -77,7 +77,7 @@ export function stampNote(eventTime, source) {
 // Monotonic counter across ALL outbound control messages, so logs reveal the
 // exact send ORDER + timing — the key signal for the "settings respond one turn
 // late" bug (a control sent at seq N only taking audible effect when seq N+1 is
-// sent). See __docs/_wip/bugs/2026-06-26-piano-midi-settings-one-turn-late.md.
+// sent). See ops:docs/_wip/bugs/2026-06-26-piano-midi-settings-one-turn-late.md.
 let _outSeq = 0;
 const hex = (bytes) => bytes.map((b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');
 

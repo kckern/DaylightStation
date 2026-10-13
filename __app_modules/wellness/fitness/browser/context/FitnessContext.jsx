@@ -1303,7 +1303,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Park/unpark HR + cycle governance while an ungoverned screen takeover
   // (the CycleGame race) owns the display. Keyed to the race container's
-  // mount/unmount. See __docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+  // mount/unmount. See ops:docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
   // and-stale-media-audit.md (Issue 2).
   const setGovernanceSuspended = React.useCallback((suspended) => {
     const session = fitnessSessionRef.current;
@@ -1555,7 +1555,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // registering devices that then persist forever because no prune ran.
   // Pruning is cheap (small map iteration) and the staleness logic already
   // handles the empty-map and no-significant-activity cases correctly.
-  // See __docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md (Bug 2)
+  // See ops:docs/_wip/bugs/2026-05-28-fitness-rpm-cadence-freeze-and-ghost-devices.md (Bug 2)
   useEffect(() => {
     const session = fitnessSessionRef.current;
     if (!session) return;

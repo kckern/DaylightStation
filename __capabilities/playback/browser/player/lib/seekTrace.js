@@ -13,7 +13,7 @@
  * Capture `Error().stack` whenever the `seeking` event fires with an intent
  * within `thresholdSeconds` of duration. Sampled at the call site.
  *
- * See: __docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md §2.1
+ * See: ops:docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md §2.1
  */
 export function shouldTraceSeekAtDuration({ currentTime, duration, thresholdSeconds = 0.5 }) {
   if (!Number.isFinite(duration) || duration <= 0) return false;

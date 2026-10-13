@@ -112,7 +112,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
         //
         // Absent on everything that is not a media surface — speakers, cameras,
         // scanners and relays are not Plex clients and get no session.
-        // See __docs/superpowers/specs/2026-09-16-plex-first-class-clients-design.md
+        // See ops:docs/superpowers/specs/2026-09-16-plex-first-class-clients-design.md
         plexClient: source.plex ?? null,
       },
       capabilities,

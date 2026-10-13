@@ -1,7 +1,7 @@
 # The reading log — a child's books, on paper, on the panel, and in the console
 
 > **Status:** current as of 2026-09-29. This is the durable reference; the
-> dated files in `__docs/_wip/plans/` are the point-in-time record of how it got
+> dated files in `ops:docs/_wip/plans/` are the point-in-time record of how it got
 > here and why particular decisions were reversed.
 
 A child reads a physical book off-screen and records it themselves: type the
@@ -39,7 +39,7 @@ This was got wrong once and cost a redesign. The original key was
 correcting a mis-scanned ISBN made the id disagree with its own record, and
 moving a book to the sibling who actually read it was structurally impossible,
 because the store parsed the learner back out of the id to choose which file to
-write. The audit is `_wip/plans/2026-09-06-book-log-data-model-redesign.md`.
+write. The audit is `ops:docs/_wip/plans/2026-09-06-book-log-data-model-redesign.md`.
 
 ### The stored shape
 
@@ -334,7 +334,7 @@ log is another course.
 
 `/school/teacher/students/:learnerId/reading` — observe, correct, account for.
 Full verb table in
-`_wip/plans/2026-09-06-teacher-reading-admin-design.md` §3.
+`ops:docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md` §3.
 
 **Every write appends a revision** — who, when, what changed, why, and whether
 the child was told. Nothing is edited without a trace.

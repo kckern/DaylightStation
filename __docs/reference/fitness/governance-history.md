@@ -347,7 +347,7 @@ if (heartRate >= exitThreshold) {
 
 ### Era 12: Seek Thrashing, Display Zone & Chart Bleed (Mar 4)
 
-Three user-reported bugs from the Mar 4 session (audit: `__docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md`).
+Three user-reported bugs from the Mar 4 session (audit: `ops:docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md`).
 
 #### Bug 1 (P1): Video stall on seek — pause/play thrashing
 
@@ -731,6 +731,6 @@ satisfiedOnce && graceActive -> warning
 
 - `governance-engine.md` -- API reference, configuration, testing patterns
 - `governance-system-architecture.md` -- Event-driven architecture, SSoT boundaries, data flow sequences
-- `__docs/plans/2026-02-18-governance-remaining-fixes.md` -- Era 11 implementation plan
-- `__docs/plans/2026-03-04-fitness-mar04-audit-remediation.md` -- Era 12 implementation plan
-- `__docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md` -- Mar 4 session audit (source for Era 12)
+- `ops:docs/plans/2026-02-18-governance-remaining-fixes.md` -- Era 11 implementation plan
+- `ops:docs/plans/2026-03-04-fitness-mar04-audit-remediation.md` -- Era 12 implementation plan
+- `ops:docs/_wip/audits/2026-03-04-fitness-session-mar04-audit.md` -- Mar 4 session audit (source for Era 12)

@@ -1,6 +1,6 @@
 //
 // The Today budget card, told as the job the person has right now
-// (__docs/_wip/plans/2026-09-25-health-budget-card-jobs.md):
+// (ops:docs/_wip/plans/2026-09-25-health-budget-card-jobs.md):
 //
 //   trust    live, under the floor, not closed — the free number, dimmed
 //   afford   live, within the plan — what is free, then what the rest costs

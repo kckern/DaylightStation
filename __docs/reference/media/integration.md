@@ -117,7 +117,7 @@ layer, or account automation surface.
 ## Kanopy video
 
 **Designed, not implemented.** See
-[the design](../../_wip/plans/2026-09-22-kanopy-adapter-design.md).
+the design (ops:docs/_wip/plans/2026-09-22-kanopy-adapter-design.md).
 
 Kanopy is addressed as:
 

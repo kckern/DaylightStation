@@ -4,7 +4,7 @@
 must happen in this order on the prod host.
 
 - **Merged to main:** `96e6866ad` (22 commits, 2026-08-22)
-- **Design + plan:** `__docs/_wip/plans/2026-08-21-retire-household-config-*.md`
+- **Design + plan:** `ops:docs/_wip/plans/2026-08-21-retire-household-config-*.md`
 - **The registry:** `shared/contracts/householdConfig.mjs`
 
 ---
@@ -88,14 +88,14 @@ Only after step 1 is deployed and verified.
 
 ```bash
 cd /opt/Code/DaylightStation
-node scripts/migrate-household-config.mjs              # DRY RUN — default
+node ops:retired/scripts/migrate-household-config.mjs              # DRY RUN — default
 ```
 
 Expect **34 planned moves**, 9 "already migrated" notes, no `ABORT`. Read every
 line. Then:
 
 ```bash
-node scripts/migrate-household-config.mjs --apply
+node ops:retired/scripts/migrate-household-config.mjs --apply
 ```
 
 The script refuses to overwrite an existing destination, never deletes (retired

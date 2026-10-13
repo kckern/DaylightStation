@@ -174,7 +174,7 @@ export function VideoPlayer({
   // are commonly zero-byte, so dash.js never calls endOfStream() and the element
   // parks at duration. The resilience jolt ladder deliberately ignores this state
   // (see useMediaResilience `atEnd`), which makes this watchdog the ONLY thing
-  // that advances the queue. See __docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+  // that advances the queue. See ops:docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
   useEndOfContentWatchdog({
     getMediaEl,
     sourceKey: media?.mediaKey || media?.src || media?.mediaUrl,

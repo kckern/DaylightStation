@@ -1,5 +1,5 @@
 // Characterization test: the STORED YAML SHAPE of gratitude data must not
-// change across the serialization-ownership migration (__docs/_wip/plans/
+// change across the serialization-ownership migration (ops:docs/_wip/plans/
 // 2026-07-08-serialization-ownership-migration.md, phase 1).
 // It drives GratitudeService + YamlGratitudeDatastore over an in-memory
 // dataService stub and asserts the exact shape written to each file key.

@@ -3,7 +3,7 @@
 > **Status:** built on `feature/media-lesson-checkpoints`, 2026-08-27. Not yet run
 > on the living-room TV, and **not yet reachable in production even once the code
 > deploys** — three data edits have to be applied by hand, in the order §10
-> describes. Design: `__docs/_wip/plans/2026-08-27-media-lesson-checkpoints-design.md`
+> describes. Design: `ops:docs/_wip/plans/2026-08-27-media-lesson-checkpoints-design.md`
 > (the authority on *why the shape is this shape*); this document is the authority
 > on *behaviour* and on the contracts other code has to keep.
 

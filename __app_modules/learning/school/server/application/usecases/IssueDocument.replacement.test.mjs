@@ -5,7 +5,7 @@
  * session issued something once" (`state.issuedArtifacts.length > 0`) as a
  * synonym for "a reprintable copy exists", and refused outright the moment
  * retention had no bytes. See
- * __docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
+ * ops:docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
  *
  * These tests pin two things at once: the dead end is gone (a replacement
  * prints), AND the healthy exact-reprint path — the one every other scan in

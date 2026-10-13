@@ -1,6 +1,6 @@
 /**
  * Phase B acceptance sweep — spec §12 items tagged `[B]`, plus the Phase-B
- * slice of §12.10 (see `__docs/_wip/plans/2026-08-04-print-design-system-requirements.md`
+ * slice of §12.10 (see `ops:docs/_wip/plans/2026-08-04-print-design-system-requirements.md`
  * §12, and the Phase B task plan at
  * `.superpowers/sdd/2026-08-04-print-design-system-phase-b-plan/`).
  *
@@ -50,7 +50,7 @@ const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
 });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EVIDENCE_DIR = path.join(HERE, "../../../../../../__docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance");
+const EVIDENCE_DIR = path.join(HERE, "__proof__/phase-b");
 /** Set to regenerate the ONE pinned visual snapshot after reviewing the new render. */
 const UPDATE_PROOF = process.env.UPDATE_PROOF === '1';
 /** Same whole-page tolerance the Phase A proof suite / golden suite use. */

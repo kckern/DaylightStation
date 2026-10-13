@@ -142,7 +142,7 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
  * emitted rider-anchored across [lastPlaceM − behindM, leaderM + aheadM] so the
  * TRAILING rider (whom the camera follows) always rides a labelled road with lap
  * arches — not the leader-anchored blank road the audit found.
- * See __docs/superpowers/specs/2026-06-06-pov-grid-threejs-camera-controls-design.md
+ * See ops:docs/superpowers/specs/2026-06-06-pov-grid-threejs-camera-controls-design.md
  *
  * @returns {{ riders, leaderZ, lastZ, leaderM, lastM, anchorM, marks, gates }}
  */

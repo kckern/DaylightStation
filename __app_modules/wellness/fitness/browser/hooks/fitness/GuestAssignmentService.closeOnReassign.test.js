@@ -10,7 +10,7 @@
 // non-negative elapsed time is >= a 0ms threshold, regardless of how fast
 // the test executes.
 //
-// @see /opt/Code/DaylightStation/__docs/superpowers/specs/2026-07-16-fitness-identity-reconciliation-design.md
+// @see ops:docs/superpowers/specs/2026-07-16-fitness-identity-reconciliation-design.md
 
 import { describe, it, expect } from 'vitest';
 import { FitnessSession } from "./FitnessSession.js";

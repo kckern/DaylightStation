@@ -5,7 +5,7 @@ import { durationFromSeconds, durationFromMs } from '#frontend/modules/Player/ut
 // ("1800 is > 1000 so treated as 1800ms -> 2s") that corrupted every video
 // longer than 16m40s once its input switched from milliseconds to seconds.
 // Units are now declared by the caller, so no test can assert a guess.
-// See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+// See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
 
 describe('durationFromSeconds', () => {
   it('takes a seconds value as-is, rounded', () => {

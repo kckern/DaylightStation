@@ -11,7 +11,7 @@ import { safeClone } from "./utils/safeClone.mjs";
  *   2. Mutators capture system prompt, model, tool calls, output, errors.
  *   3. flush() writes the JSON to disk in a finally block.
  *
- * Schema: see __docs/superpowers/specs/2026-05-05-agent-transcripts-design.md
+ * Schema: see ops:docs/superpowers/specs/2026-05-05-agent-transcripts-design.md
  */
 export class AgentTranscript {
   constructor({ agentId, userId = null, turnId = null, input, logger = console, transcriptStore = null } = {}) {

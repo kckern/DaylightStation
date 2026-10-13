@@ -3,7 +3,7 @@
  *
  * Identifies four kinds of broken state caused by the resume-check / Strava-match
  * regressions documented in:
- *   __docs/_wip/audits/2026-05-06-fitness-session-strava-sync-fragmentation-audit.md
+ *   ops:docs/_wip/audits/2026-05-06-fitness-session-strava-sync-fragmentation-audit.md
  *
  * 1. SAME-DAY SAME-CONTENT FRAGMENTS — adjacent sessions with identical
  *    summary.media[*].contentId (primary), gap < 30min, neither finalized.

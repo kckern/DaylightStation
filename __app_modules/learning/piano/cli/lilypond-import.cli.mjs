@@ -11,7 +11,7 @@
  *   node cli/lilypond-import.cli.mjs --all --out /tmp/scores --dry-run
  *   LY_BIN=/path/to/venv/bin/ly node cli/lilypond-import.cli.mjs --all --out /tmp/scores
  *
- * Design: __docs/superpowers/specs/2026-08-10-lilypond-musicxml-design.md
+ * Design: ops:docs/superpowers/specs/2026-08-10-lilypond-musicxml-design.md
  */
 import path from 'node:path';
 import process from 'node:process';

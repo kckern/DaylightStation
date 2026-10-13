@@ -37,7 +37,7 @@ describe('createEndOfContentWatchdog', () => {
     // currentTime===duration (frozen at duration) and asserted no advance —
     // that encoded the very bug being fixed. A genuinely playing video has a
     // moving clock, so it re-arms every tick and must never fire.
-    // See __docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+    // See ops:docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
     const onAdvance = vi.fn();
     let info = { currentTime: 441.4, duration: 441.76, paused: false, seeking: false };
     const wd = createEndOfContentWatchdog({

@@ -9,7 +9,7 @@
  * change, not an implementation detail.
  *
  * This file pins the shape as it stands BEFORE strength runs are logged into
- * the record (__docs/_wip/plans/2026-08-11-exercise-library-implementation.md,
+ * the record (ops:docs/_wip/plans/2026-08-11-exercise-library-implementation.md,
  * task 13). It must pass unchanged afterwards — that is the proof the strength
  * block is purely additive.
  *

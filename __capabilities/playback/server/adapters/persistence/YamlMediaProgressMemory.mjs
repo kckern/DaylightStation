@@ -116,7 +116,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
   /**
    * Convert persisted YAML data to domain entity.
    *
-   * CANONICAL FORMAT (after migrate-watch-history.mjs P0 migration):
+   * CANONICAL FORMAT (after the P0 watch-history migration):
    *   playhead, duration, percent, playCount, lastPlayed, watchTime
    *
    * @param {string} contentId

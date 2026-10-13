@@ -350,7 +350,7 @@ A recovery reload resets `totalVideoFrames` to 0 while `lastFpsCheck` keeps the 
 - `__docs/reference/player/playback-encoding-resilience.md` — the transcode decision pipeline
 - `__docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook
 - `__docs/runbooks/fitness-player-recovery.md` — operator-facing recovery
-- Source incidents live under `__docs/_wip/audits/`, `__docs/_wip/bugs/`, and `__docs/plans/` (dates cited inline above)
+- Source incidents live under `ops:docs/_wip/audits/`, `ops:docs/_wip/bugs/`, and `ops:docs/plans/` (dates cited inline above)
 
 ## Type size is a function of the frame's CSS-pixel width
 

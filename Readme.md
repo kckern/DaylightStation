@@ -80,6 +80,13 @@ Open `http://localhost:3111`
 
 Start with [the contributor map](__docs/reference/core/project-layout.md) for source ownership and the repository layout.
 
+## Architecture for contributors
+
+- **Apps** live in `__app_modules/<category>/<app>`. This is where contributors build; see [`__app_modules/README.md`](__app_modules/README.md) for the module layout and conventions.
+- **`__backend/`** is the framework, organized in DDD layers (system, adapters, domains, applications, API). Apps consume it as-is.
+- **`__capabilities/`** holds shared cross-app capabilities, also consumed as-is.
+- **Household data** (config, users, secrets) comes from the mounted data volume, never from the repository.
+
 ## Configuration
 
 | File | Purpose |

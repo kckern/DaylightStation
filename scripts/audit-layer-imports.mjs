@@ -184,7 +184,7 @@ export const CONTENT_RULES = [
   // Serialization ownership (audit D-3): entities must not define their storage
   // format; datastores own hydration/dehydration. Counts toJSON() method
   // DEFINITIONS (line starts with the method), not `.toJSON()` call sites.
-  // Migration: __docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
+  // Migration: ops:docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
   { rule: 'domains-tojson', layer: '2_domains/', re: /^\s*toJSON\s*\(\s*\)\s*\{/ },
   // Stored-record hydration belongs to adapters/application mappers, not domain
   // entities or value objects. Constructors accept already-reconstituted props.
@@ -212,7 +212,7 @@ export const CONTENT_RULES = [
     // cli/ is deliberately NOT here: a CLI is its own composition root, so
     // naming a path there is legitimate wiring, not a layer violation. What
     // the chess archive bug actually showed is that a reader and a writer must
-    // share one constant; that is `npm run audit:paths`'s job, not this rule's.
+    // share one constant; that is the ops repo's household-path audit's job, not this rule's.
     layer: ['__backend/src/', 'shared/'],
     re: /['"`]household\/[a-z]|'household'\s*,\s*'/,
     exclude: ['1_adapters/', '0_system/config/', '5_composition/', 'src/app.mjs', '3_applications/admin/'],

@@ -23,7 +23,7 @@
 // concerns are decoupled: persistence policy can change without touching the
 // relay firmware or the ingest path.
 //
-// Design: __docs/plans/2026-07-10-food-scale-relay-design.md
+// Design: ops:docs/plans/2026-07-10-food-scale-relay-design.md
 
 // Ingest discriminators we accept. `kitchen-relay` is the unified kitchen board
 // (_extensions/kitchen-relay), which carries the scale AND the DS2278 scanner and

@@ -12,7 +12,7 @@
  *
  *     useEndOfContentWatchdog({ mediaRef: mainRef, sourceKey: mainMediaUrl, onAdvance });
  *
- * See: __docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
+ * See: ops:docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
  *      frontend/src/modules/Player/lib/endOfContentWatchdog.js
  */
 import { useEffect, useRef } from 'react';

@@ -41,7 +41,7 @@ GNSS satellites ──u-blox M9────▶   │ trips → onboard flash (Li
                                                   └─▶ history/automotive/<vehicle-id>/
 ```
 
-Design: `__docs/_wip/plans/2026-07-14-obd-relay-design.md` (decisions, message
+Design: `ops:docs/_wip/plans/2026-07-14-obd-relay-design.md` (decisions, message
 shapes, behavior model).
 
 ## Why this hardware (and not…)

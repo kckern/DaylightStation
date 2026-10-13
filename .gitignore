@@ -25,13 +25,8 @@ __backend/node_modules
 !tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
-!__backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 !__backend/src/2_domains/fitness/services/__fixtures__/*.yml
 !__backend/src/3_applications/school/sources/geography/*.yml
-# Rubik's Cube course content — `courseCatalog.mjs` degrades gracefully when
-# this is absent (no throw at import), but a real one authored here must be
-# committable rather than silently swallowed by the blanket `*.yml` rule.
-!__backend/src/3_applications/school/rubiksCube/course.yml
 # Backend-scoped fixture tree (mirrors the `!tests/_fixtures/**` rule above for
 # the root suite). These ARE test inputs — without this the suite only passes on
 # a machine where they happen to sit untracked in the working tree.
@@ -59,7 +54,6 @@ known_hosts
 /_extentions/fitness/node_modules
 /_extentions/fitness/_reference
 *.dev
-/__docs/ops
 __backend/logs/
 /config
 
@@ -79,12 +73,7 @@ config.app-local.yml
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
 !scripts/config/
-!scripts/media-source-heal.sh
 !scripts/test-env.sh
-!scripts/update-test-imports.mjs
-!scripts/migrate-lists-to-watchlists.mjs
-!scripts/migrate-content-structure.sh
-!scripts/migrate-watch-state.mjs
 !scripts/gen-sheet.mjs
 !scripts/audit-baseline.unit.txt
 !scripts/audit-layer-imports.mjs
@@ -97,8 +86,6 @@ config.app-local.yml
 !scripts/audit-baseline.vitest.txt
 !scripts/build-daylight.sh
 !scripts/school-smoke.mjs
-!scripts/school-reorg-rehearse.sh
-!scripts/audit-household-paths.mjs
 !scripts/check-parse.mjs
 !scripts/check-scss-build.mjs
 !scripts/probe-printer-jobstate.mjs
@@ -108,14 +95,14 @@ config.app-local.yml
 !scripts/audit-css-ownership.mjs
 !scripts/audit-css-ownership.baseline.json
 !scripts/audit-css-ownership.test.mjs
-!scripts/livingroom-reading-idle.sh
+!scripts/audit-public-tree.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
 /tests/test-results
-/test-results
+/.reports/
 # Runtime test outputs (but track test source files)
 tests/runtime/output/
 tests/runtime/*.log
@@ -130,8 +117,6 @@ CLAUDE.local.md
 /.playwright-mcp
 /coverage
 tests/output/
-/__docs/marketing/jop
-/__docs/ideas
 /_extensions/audio-bridge/app/app/build
 /_extensions/audio-bridge/app/.gradle
 /_extensions/audio-bridge/app/local.properties
@@ -164,7 +149,6 @@ dev.log*
 
 # PII-scrub tooling (contains the real->alias map; local only, never commit)
 .pii-scrub/
-!scripts/migrate-trigger-config.mjs
 # Portal Keys Android build outputs — same treatment as audio-bridge above.
 # (Superseded three reactive per-subdirectory rules that only covered whichever
 # intermediates happened to churn; the whole build tree is generated.)
@@ -177,10 +161,6 @@ dev.log*
 # a fresh clone reproduces the same tree with `idf.py reconfigure`.
 /_extensions/food-scale-relay/firmware/managed_components/
 /_extensions/food-scale-relay/firmware/build/
-# ...but the refetch ALSO needs the manifest, and the global `*.yml` rule at the
-# top of this file was swallowing it. Without this negation a fresh clone gets
-# the lock and no manifest, and the firmware cannot be built at all.
-!/_extensions/food-scale-relay/firmware/src/idf_component.yml
 
 # Extension config TEMPLATES. These document each extension's schema and are
 # meant to be committed — the global `*.yml` rule at the top was hiding them,
@@ -188,7 +168,6 @@ dev.log*
 # in the household data volume and are still ignored.
 !/_extensions/content-barcode-relay/config.example.yml
 !/_extensions/ir-blaster/config.example.yml
-!/_extensions/piano/recorder/config.example.yml
 
 # Golden-test failure artifacts (regenerated on every failing run, never source)
 tests/isolated/rendering/school/golden/snapshots/*.diff.png
@@ -204,16 +183,15 @@ __sabotage_*.mjs
 # sheets.yml + scales.yml and is not byte-stable anyway (pdfkit stamps a creation
 # date), so committing it would churn on every regeneration.
 /*.pdf
-__docs/_moveme/
 /.agents
-!scripts/migrate-household-config.mjs
-*.png
-!tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
 # Committed visual baselines the print-design acceptance sweeps compare against
 # (they write a fresh one and FAIL when it is missing, so it must be tracked).
-!__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/proof-standard-p02.png
-!__docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance/kitchen-sink-student-p01.png
-!__docs/_wip/audits/2026-08-04-print-design-phase-c-acceptance/card-continuation-student-p01.png
+# Every other proof render is scratch output.
+__app_modules/learning/school/server/application/documents/__proof__/**/*.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-a/proof-standard-p02.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-b/kitchen-sink-student-p01.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-c/card-continuation-student-p01.png
+__app_modules/learning/school/server/application/documents/__proof__/**/*.pdf
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at
@@ -242,36 +220,10 @@ __app_modules/*/*/satellites/**/node_modules/
 # Playwright screenshot artifacts (visual gates)
 tests/_artifacts/
 
-# The same PIXELS argument, for the two file types it does not cover.
-#
-# `*.png` above already catches every audit screenshot. It does NOT catch the
-# machine-readable sidecar an audit writes beside them, which holds the same
-# telemetry as TEXT — the 2026-09-05 health audit's measurements.json carries a
-# real weight series, body-fat percentage and dated calorie history. Nor does it
-# catch AUDIO: a room recording is household telemetry too, and no scrub can
-# read it.
-#
-# Scratch analysis output, both of them, regenerable from the source capture.
+# Scratch analysis output and room recordings: household telemetry, regenerable
+# from the source capture.
 recording-analysis/
 *.wav
-__docs/_wip/audits/**/measurements.json
-
-# Generated audit LEDGERS. An audit's findings are its markdown; the JSON
-# beside it is machine output from the tooling in
-# tests/preimplementation/*/tooling/, which is committed — so the ledgers are
-# regenerable and do not belong in history.
-#
-# Concretely: the 2026-09-05 application-module audit carried 323 JSON files,
-# 3.19M lines, 121MB, against 42 markdown files totalling 7k lines. Beyond the
-# size, millions of lines of machine-generated NUMBERS collide with the numeric
-# device-id patterns in the push guard: a `"bytes":` field in one ledger
-# happened to equal a real ANT+ sensor id and blocked an unrelated commit on
-# main, because the guard scans every unpushed ref. Each collision costs a full
-# investigation to clear, forever. Keep the findings, drop the ledgers.
-#
-# Already-tracked files are unaffected (gitignore only governs new adds), so
-# the small curated evidence indexes committed alongside an audit stay.
-__docs/_wip/audits/**/*.json
 
 # Personal data authoring and one-off root probes belong outside the code tree.
 /data-drafts/
@@ -297,3 +249,27 @@ __docs/_wip/audits/**/*.json
 !/__app_modules/learning/school/satellites/ti86-app/testing/mame-scenarios.yml
 !/__app_modules/learning/school/satellites/ti86-app/testing/state-capitals.yml
 !/__app_modules/learning/school/satellites/ticalc-relay/tools/build-ti86-graph-link.sh
+
+# Scoped bitmap ignores (replaces the old global `*.png`). Bitmaps are tracked by
+# default so favicons, golden snapshots and doc images can be committed; only
+# generated output and scratch captures are ignored here. Screenshots of a running
+# household kiosk show real names and telemetry as pixels -- keep them out.
+test-results/
+playwright-report/
+**/__screenshots__/actual/
+*.tmp.png
+*.diff.png
+node_modules/
+
+# Stale pre-restructure roots: the code now lives in the __-prefixed trees. These
+# names must never be resurrected by a careless `git add`.
+/backend/
+/docs/
+/modules/
+/capabilities/
+/recording-analysis/
+/data-drafts/
+/households/
+/test-results/
+/dev.log*
+

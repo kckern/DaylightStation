@@ -10,7 +10,7 @@ multi-phase workout with a health-pool punishment model and a social boost.
 > shipped system diverged from that spec (the health pool replacing the
 > dim-band/lo-floor model; the promoted-overlay lock screen replacing the RPM-pill
 > row; the trimmed overlay), this reflects what the code does today. See
-> `__docs/_wip/audits/2026-06-19-cycle-challenge-overlay-as-built-audit.md` for the
+> `ops:docs/_wip/audits/2026-06-19-cycle-challenge-overlay-as-built-audit.md` for the
 > drift findings that motivated the rewrite. The overlay's own behavior is
 > documented in detail at `__docs/reference/fitness/cycing-challenge.md`.
 

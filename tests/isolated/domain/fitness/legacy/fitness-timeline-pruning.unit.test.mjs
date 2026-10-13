@@ -14,7 +14,7 @@ import { FitnessTimeline, MAX_SERIES_LENGTH } from "../../../../../__app_modules
  * even though pruning worked perfectly. A test that copies a constant tests
  * the copy.
  *
- * Related: __docs/_wip/audits/2026-01-19-fitness-memory-audit.md
+ * Related: ops:docs/_wip/audits/2026-01-19-fitness-memory-audit.md
  * Related code: frontend/src/hooks/fitness/FitnessTimeline.js
  */
 describe('FitnessTimeline pruning', () => {

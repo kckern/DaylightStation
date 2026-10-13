@@ -270,6 +270,6 @@ async function createCanvas(model) {
 
 ## Related Documentation
 
-- [Rendering Layer Design](../../_wip/plans/2026-02-11-rendering-layer-design.md) — Design decision and migration plan
+- Rendering Layer Design (ops:docs/_wip/plans/2026-02-11-rendering-layer-design.md) — Design decision and migration plan
 - [Adapter Layer Guidelines](../adapter-layer-guidelines.md) — Peer layer guidelines
 - [Backend Architecture](../backend-architecture.md) — Overall layer structure

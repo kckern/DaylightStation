@@ -2,7 +2,7 @@
 
 This directory contains the new Domain-Driven Design architecture.
 
-**Full documentation:** `__docs/_wip/plans/2026-01-10-backend-ddd-architecture.md`
+**Full documentation:** `ops:docs/_wip/plans/2026-01-10-backend-ddd-architecture.md`
 
 ## Layers
 

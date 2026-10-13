@@ -13,7 +13,7 @@ const TERMINAL_STATUSES = new Set([SESSION_STATUSES.COMPLETE, SESSION_STATUSES.A
  * lost, on every mount, and the host's archive files the same result again.
  * The kernel refuses commands on a terminal session, so a resumed one is not
  * even playable — a fresh game is the only honest answer. See
- * __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+ * ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
  */
 export function isResumableSession(session) {
   return Boolean(session) && !TERMINAL_STATUSES.has(session.header?.status);

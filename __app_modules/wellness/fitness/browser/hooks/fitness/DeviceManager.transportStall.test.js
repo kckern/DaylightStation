@@ -7,7 +7,7 @@
  * challenge read 0 RPM and paused the video seven times on a rider holding
  * 85 RPM. "No data" and "0 RPM" must be different states.
  *
- * See __docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+ * See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

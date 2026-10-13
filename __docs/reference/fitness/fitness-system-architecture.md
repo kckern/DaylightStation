@@ -703,7 +703,7 @@ than per tick, so a persistently broken config costs two lines per session.
 > climb then ran to the top rung. On 2026-09-16 a rider holding a steady 134bpm
 > against a warm threshold of 140 was celebrated for reaching Fire, and the same
 > committed zone pays rings and coins.
-> Design: `__docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md`
+> Design: `ops:docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md`
 
 ---
 
@@ -1356,17 +1356,17 @@ Total                        25+          81              5
 
 | Document | Date | Category |
 |----------|------|----------|
-| `__docs/_wip/audits/2026-02-16-fitness-session-crash-postmortem.md` | Feb 16 | Timer, Governance, Crash Loop |
-| `__docs/_wip/bugs/2026-01-31-fitness-state-machine-audit.md` | Jan 31 | Governance, SSOT, Timer, Crash Loop |
-| `__docs/_wip/audits/2026-02-15-session-chart-historical-rendering-audit.md` | Feb 15 | Config Propagation, Persistence |
-| `__docs/_wip/audits/2026-02-12-fitness-events-deduplication-audit.md` | Feb 12 | Persistence |
-| `__docs/_wip/audits/2026-02-06-fitness-session-persistence-nerf-audit.md` | Feb 6 | Persistence |
-| `__docs/_wip/audits/2026-02-03-fitness-module-architecture-audit.md` | Feb 3 | SSOT, Architectural Debt |
-| `__docs/_wip/audits/2026-02-03-fitness-display-name-architecture-problems.md` | Feb 3 | SSOT |
-| `__docs/_wip/bugs/2026-02-03-fitness-music-player-scrollbar-thrashing.md` | Feb 3 | Timer/Render |
-| `__docs/_wip/bugs/2026-02-03-fitness-music-player-not-playable.md` | Feb 3 | Config Propagation |
-| `__docs/_wip/bugs/2026-02-02-fitness-zoom-seek-offset-bug.md` | Feb 2 | State Machine |
-| `__docs/_wip/bugs/2026-01-27-fitness-watch-history-not-syncing.md` | Jan 27 | Persistence |
+| `ops:docs/_wip/audits/2026-02-16-fitness-session-crash-postmortem.md` | Feb 16 | Timer, Governance, Crash Loop |
+| `ops:docs/_wip/bugs/2026-01-31-fitness-state-machine-audit.md` | Jan 31 | Governance, SSOT, Timer, Crash Loop |
+| `ops:docs/_wip/audits/2026-02-15-session-chart-historical-rendering-audit.md` | Feb 15 | Config Propagation, Persistence |
+| `ops:docs/_wip/audits/2026-02-12-fitness-events-deduplication-audit.md` | Feb 12 | Persistence |
+| `ops:docs/_wip/audits/2026-02-06-fitness-session-persistence-nerf-audit.md` | Feb 6 | Persistence |
+| `ops:docs/_wip/audits/2026-02-03-fitness-module-architecture-audit.md` | Feb 3 | SSOT, Architectural Debt |
+| `ops:docs/_wip/audits/2026-02-03-fitness-display-name-architecture-problems.md` | Feb 3 | SSOT |
+| `ops:docs/_wip/bugs/2026-02-03-fitness-music-player-scrollbar-thrashing.md` | Feb 3 | Timer/Render |
+| `ops:docs/_wip/bugs/2026-02-03-fitness-music-player-not-playable.md` | Feb 3 | Config Propagation |
+| `ops:docs/_wip/bugs/2026-02-02-fitness-zoom-seek-offset-bug.md` | Feb 2 | State Machine |
+| `ops:docs/_wip/bugs/2026-01-27-fitness-watch-history-not-syncing.md` | Jan 27 | Persistence |
 
 ---
 

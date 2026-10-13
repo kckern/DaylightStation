@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-22
 **Status:** Implemented and verified
-**Problem:** [Shield TV USB Audio WebView Audit](../../__docs/_wip/audits/2026-02-22-shield-tv-usb-audio-webview-audit.md)
+**Problem:** [Shield TV USB Audio WebView Audit](ops:docs/_wip/audits/2026-02-22-shield-tv-usb-audio-webview-audit.md)
 
 ---
 
@@ -367,7 +367,7 @@ curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=acousticScreenOn&value
 ## Echo Cancellation (AEC)
 
 **Added:** 2026-02-23
-**Roadmap:** `__docs/roadmap/2026-02-23-software-aec-audio-bridge.md`
+**Roadmap:** `ops:docs/roadmap/2026-02-23-software-aec-audio-bridge.md`
 
 ### Problem
 

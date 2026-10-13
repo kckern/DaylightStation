@@ -5,7 +5,7 @@
  * Reads the archived `korean.kckern.info` payload (sentence TSV, sentence audio,
  * and the surviving 2016–2017 voice recordings) and lands it in the shapes the
  * Glossika program expects, per
- * __docs/_wip/plans/2026-07-21-glossika-program-design.md §2 and §6.
+ * ops:docs/_wip/plans/2026-07-21-glossika-program-design.md §2 and §6.
  *
  * Everything is scoped by corpus id, so a learner studying two courses never
  * has their counters or recordings collide. `content/school/language/{corpusId}.yml`

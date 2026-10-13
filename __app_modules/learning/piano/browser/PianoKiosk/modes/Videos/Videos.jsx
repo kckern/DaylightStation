@@ -126,7 +126,7 @@ function useVideoCapRedirect(gate, learnerId, route, logger) {
  *   5. A reload or a watchdog remount on a stale URL.
  * Full list, and why closing them needs the gate API to return the owed SET
  * rather than one course, under "Residual escape vectors" in
- * __docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md.
+ * ops:docs/_wip/bugs/2026-09-01-piano-lesson-gate-escapes-via-course-grid.md.
  */
 export function CourseGridRoute({ groups }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUT_DIR = path.join(process.cwd(), '__docs/_wip/audits/teacher-workspace');
+const OUT_DIR = path.join(process.cwd(), 'test-results/teacher-workspace');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const learnerB = { id: 'user_2', name: 'User_2' };

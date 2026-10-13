@@ -1,6 +1,6 @@
 # DoNow — Reference
 
-**Design spec:** `__docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`
+**Design spec:** `ops:docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`
 
 DoNow is the household's "start this, there, now" dispatch facade. A single
 `DoNowService` sits in front of eight surfaces (TVs, the garage fitness kiosk,

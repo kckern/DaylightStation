@@ -33,7 +33,7 @@
  *
  * UNVERIFIED against real hardware: these bounds are reasoned from the transport
  * described above, not measured off the kiosk. A capture of real two-hand onsets
- * would settle it — see __docs/_wip/plans/2026-08-12-chord-staff-relative-rhythm-design.md.
+ * would settle it — see ops:docs/_wip/plans/2026-08-12-chord-staff-relative-rhythm-design.md.
  */
 export const SIMULTANEITY_MS = 90;
 

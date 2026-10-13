@@ -4,7 +4,7 @@
 // buffered trips + streams live snapshots over WebSocket to the DaylightStation
 // event bus (/ws) whenever the car is on home WiFi. Ignition off = power cut
 // mid-write, by design: trip files are append+flush, finalized on next boot.
-// See ../../README.md and __docs/_wip/plans/2026-07-14-obd-relay-design.md.
+// See ../../README.md and ops:docs/_wip/plans/2026-07-14-obd-relay-design.md.
 //
 // Build layers (platformio.ini):
 //   USE_FREEMATICS — real OBD co-processor + GNSS via FreematicsPlus

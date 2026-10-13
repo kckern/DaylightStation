@@ -243,8 +243,8 @@ username: user@example.com
 password: xxxxx
 
 # users/{username}/auth/strava.yml (✅ already working)
-refresh: ***REMOVED***
-access_token: ***REMOVED***
+refresh: <redacted>
+access_token: <redacted>
 expires_at: 1767136504
 ```
 

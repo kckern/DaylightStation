@@ -369,7 +369,7 @@ export class YamlCostDatastore extends ICostRepository {
    * @returns {Promise<{ entriesCompacted: number, summariesCreated: number, bytesReclaimed: number }>}
    *
    * @todo Implement compaction logic in Phase 9
-   * @see __docs/plans/2026-01-30-cost-domain-design.md
+   * @see ops:docs/plans/2026-01-30-cost-domain-design.md
    */
   async compact(olderThan) {
     // TODO(Phase 9): Implement compaction - roll up entries into summaries
@@ -395,7 +395,7 @@ export class YamlCostDatastore extends ICostRepository {
    * @returns {Promise<void>}
    *
    * @todo Implement archive logic in Phase 9
-   * @see __docs/plans/2026-01-30-cost-domain-design.md
+   * @see ops:docs/plans/2026-01-30-cost-domain-design.md
    */
   async archive(entries, archiveId) {
     // TODO(Phase 9): Implement archive - write to gzipped YAML

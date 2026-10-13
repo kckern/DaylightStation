@@ -176,7 +176,7 @@ unaffected: a remount already starts a fresh watchdog.
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |
 
-> 2026-07-09: the Shaka-era "buffer resilience" layer (`useBufferResilience`/`BufferResilienceManager`) was removed as dead code — it was never mounted after the move to dash.js; the live 0-byte detector is VideoPlayer's transcode-warmup emitter. The unreachable quality/ABR engine and `stallConfig` strategy-override machinery were removed at the same time (see `__docs/_wip/audits/2026-07-09-player-module-sedimentary-fixes-audit.md` §4).
+> 2026-07-09: the Shaka-era "buffer resilience" layer (`useBufferResilience`/`BufferResilienceManager`) was removed as dead code — it was never mounted after the move to dash.js; the live 0-byte detector is VideoPlayer's transcode-warmup emitter. The unreachable quality/ABR engine and `stallConfig` strategy-override machinery were removed at the same time (see `ops:docs/_wip/audits/2026-07-09-player-module-sedimentary-fixes-audit.md` §4).
 >
 > 2026-07-09 (Milestone B): the controller's private `_recoveryTracker` and VideoPlayer's `dashErrorRefreshAttemptsRef` were replaced by the shared `recoveryLedger`; the controller's internal escalation ladder was demoted to detection + nudge/softReinit, with all escalation owned by the resilience jolt ladder. See the audit's §8 Phase 1 DONE note for the behavior-change register.
 

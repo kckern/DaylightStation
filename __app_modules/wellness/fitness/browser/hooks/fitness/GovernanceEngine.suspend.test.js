@@ -1,6 +1,6 @@
 // Issue 2 — governance must go dormant while suspended (e.g. the CycleGame
 // race owns the screen) even though this.media still points at the paused
-// governed video. See __docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+// governed video. See ops:docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
 // and-stale-media-audit.md.
 import { describe, it, expect } from 'vitest';
 import { GovernanceEngine } from "./GovernanceEngine.js";

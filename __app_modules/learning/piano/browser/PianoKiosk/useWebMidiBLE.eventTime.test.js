@@ -8,7 +8,7 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
 
 import { useWebMidiBLE } from './useWebMidiBLE.js';
 
-// Contract: input timestamps (__docs/_wip/plans/2026-09-22-timed-grading-single-judge-design.md).
+// Contract: input timestamps (ops:docs/_wip/plans/2026-09-22-timed-grading-single-judge-design.md).
 // A hardware note is stored under its EVENT time when that time is trustworthy,
 // so a grader judges when the key went down, not when the WebView read it.
 

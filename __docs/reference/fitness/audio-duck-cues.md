@@ -21,8 +21,8 @@ model, the duck/restore lifecycle, and the edge cases. For the **config** (the
 
 > History: shipped 2026-06-05 on the (since-merged-and-deleted) branch
 > `feature/governance-audio-duck-cues`. Design spec:
-> `__docs/_wip/plans/2026-06-05-governance-audio-duck-cues-design.md`. Reworked
-> 2026-06-06 (`__docs/_wip/plans/2026-06-06-audio-duck-volume-authority.md`): the duck
+> `ops:docs/_wip/plans/2026-06-05-governance-audio-duck-cues-design.md`. Reworked
+> 2026-06-06 (`ops:docs/_wip/plans/2026-06-06-audio-duck-volume-authority.md`): the duck
 > became a multiplier owned by the volume system (see *Single volume authority*).
 
 ---

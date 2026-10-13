@@ -4,7 +4,7 @@
  * Rings were called "coins" until 2026-08-26, and the on-disk series keys said
  * so: `<slug>:coins`, `user:<slug>:coins_total`. Every session written before
  * the rename still carries those keys, and the migration that rewrites them
- * (__docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md §8)
+ * (ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md §8)
  * runs AFTER this code ships — deliberately, so there is no flag day where the
  * app and the archive disagree.
  *

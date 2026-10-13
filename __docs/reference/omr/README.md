@@ -11,7 +11,7 @@ invisible from the outside; both are captured below.
 
 **Status (2026-07-21):** protocol solved and verified end-to-end on hardware;
 cards decode correctly. See
-[remaining work](../../_wip/plans/2026-07-21-omr-relay-bringup.md).
+remaining work (ops:docs/_wip/plans/2026-07-21-omr-relay-bringup.md).
 
 **Update (2026-07-29):** the extension was renamed `scantron-relay` → `omr-relay`
 (bus topic `scantron` → `omr`, source `scantron-relay` → `omr-relay`, config

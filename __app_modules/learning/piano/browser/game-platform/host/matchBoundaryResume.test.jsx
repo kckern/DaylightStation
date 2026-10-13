@@ -19,7 +19,7 @@
  *
  * On 2026-09-01 that cost one child ten phantom ranked losses and ten scale
  * challenges paid to re-enter the same lost board — see
- * __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+ * ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
  *
  * Connect Four is driven the whole way through the real production path (play a
  * real winning line, unmount, mount again). Chess and checkers assert the same

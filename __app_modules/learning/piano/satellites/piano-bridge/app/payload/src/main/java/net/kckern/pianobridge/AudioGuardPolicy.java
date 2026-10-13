@@ -6,7 +6,7 @@ package net.kckern.pianobridge;
  * holds no state, so the reconciler that calls it is trivially idempotent.
  *
  * Fail-closed: any world that does not positively demonstrate a live A2DP route
- * gates the synth. See __docs/_wip/plans/2026-07-09-piano-tablet-fail-closed-audio-guard.md.
+ * gates the synth. See ops:docs/_wip/plans/2026-07-09-piano-tablet-fail-closed-audio-guard.md.
  */
 public final class AudioGuardPolicy {
 

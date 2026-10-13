@@ -13,7 +13,7 @@
  *   IDLE → ACTIVE (resumed broadcasting)
  *   ACTIVE/IDLE → REMOVED (timeout exceeded)
  * 
- * @see /__docs/notes/fitness-architecture-review.md
+ * @see /ops:docs/notes/fitness-architecture-review.md
  */
 
 import { 

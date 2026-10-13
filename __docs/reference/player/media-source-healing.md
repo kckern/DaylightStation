@@ -72,7 +72,7 @@ check endpoint's job, and it answers `missing`.
 | Plex `checkFiles=1` probe, then a one-byte request of the part itself: `checkFiles` only stats the file, and Plex can say `accessible` while serving the part 404 (mid scan). A 403 or 404 on the part is `unreadable` with `reason: part-refused`; an error on that request never escalates. | `__backend/src/1_adapters/content/media/plex/PlexSourceProbe.mjs`, `PlexClient.partStatus` |
 | Host SSH heal | `__backend/src/1_adapters/media/SshMediaHostHealer.mjs` |
 | Router | `__backend/src/4_api/v1/routers/mediaSource.mjs` |
-| Host script (forced command) | `scripts/media-source-heal.sh` |
+| Host script (forced command) | `ops:scripts/media-source-heal.sh` |
 
 Request: `{ contentId: 'plex:696316', deviceId?, origin? }` (`origin: 'proxy'` = the proxy refused the file: refresh it on the host even if Plex says readable).
 Response: `{ state, contentId, unreadableSince?, unreadableMs?, steps[] }`, where
@@ -320,7 +320,7 @@ which rungs are live.
 
 ### Host setup (once per host)
 
-1. Copy `scripts/media-source-heal.sh` to `~/bin/` for the host user. Re-copy it
+1. Copy `ops:scripts/media-source-heal.sh` (from the ops repo, not this one) to `~/bin/` for the host user. Re-copy it
    after changing it: the forced command runs the installed copy, not the repo.
 2. Generate an ed25519 key. Put the private half at the data-volume path above
    (mode 600), with the `ssh/` folder and both files **owned by the container's
@@ -339,7 +339,7 @@ On 2026-10-07 the living-room Shield burned ~6 Bluey episodes in a row: Plex
 refused each (an NFS per-user ghost, `Permission denied`), each stalled, recovery
 exhausted and the queue auto-skipped. The ghost lasted 25+ minutes; the host
 heal clears it in under a second. Recovery existed and never ran. Design:
-`__docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md`.
+`ops:docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md`.
 
 | Gap | Fix |
 |---|---|

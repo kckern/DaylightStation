@@ -45,7 +45,7 @@ Each strategy has a max-attempts limit. Failure means escalation to the next.
 
 ## Bugs Fixed (2026-03-07)
 
-These fixes were identified by auditing a session where 13 minutes of playback were lost during stall recovery on a 4.6-hour video. See `__docs/_wip/audits/2026-03-07-video-resume-position-loss-audit.md` for the full timeline.
+These fixes were identified by auditing a session where 13 minutes of playback were lost during stall recovery on a 4.6-hour video. See `ops:docs/_wip/audits/2026-03-07-video-resume-position-loss-audit.md` for the full timeline.
 
 ### 1. `__appliedStartByKey` blocking remount start time (P0)
 
@@ -177,7 +177,7 @@ Key log events during recovery:
 
 | Document | Relevance |
 |----------|-----------|
-| `__docs/_wip/audits/2026-03-07-video-resume-position-loss-audit.md` | Full incident timeline and root cause analysis |
-| `__docs/plans/2026-03-07-video-resume-position-loss-fix.md` | Implementation plan (6 tasks) |
-| `__docs/_wip/audits/2026-02-27-video-playback-failure-audit.md` | Earlier audit: `seeked` at t=0 terminal state, SourceBuffer orphans |
-| `__docs/_wip/audits/2026-03-05-media-player-ux-design-audit.md` | Infinite seek-retry loop (200+ retries) |
+| `ops:docs/_wip/audits/2026-03-07-video-resume-position-loss-audit.md` | Full incident timeline and root cause analysis |
+| `ops:docs/plans/2026-03-07-video-resume-position-loss-fix.md` | Implementation plan (6 tasks) |
+| `ops:docs/_wip/audits/2026-02-27-video-playback-failure-audit.md` | Earlier audit: `seeked` at t=0 terminal state, SourceBuffer orphans |
+| `ops:docs/_wip/audits/2026-03-05-media-player-ux-design-audit.md` | Infinite seek-retry loop (200+ retries) |

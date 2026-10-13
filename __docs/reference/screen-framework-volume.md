@@ -139,4 +139,4 @@ Fitness, Feed, and Weekly Review have their own provider trees and volume system
 ## See Also
 
 - Implementation commit: `cc9437ca2` — `feat(screen-framework): software master volume`
-- Design notes: `__docs/_archive/` once the WIP docs roll off (currently `__docs/_wip/plans/2026-05-05-screen-framework-software-volume-design.md`, `__docs/_wip/audits/2026-05-05-screen-framework-software-volume-audit.md`)
+- Design notes: `ops:docs/_archive/` once the WIP docs roll off (currently `ops:docs/_wip/plans/2026-05-05-screen-framework-software-volume-design.md`, `ops:docs/_wip/audits/2026-05-05-screen-framework-software-volume-audit.md`)

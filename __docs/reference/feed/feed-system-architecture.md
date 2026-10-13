@@ -313,7 +313,7 @@ headlines:
     label_confidence: 0.6 # confidence to replace the keyword label (promote)
 ```
 
-Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdict, with legacy agreement), `feed.headlines.jev-review` (per page per harvest: `evaluated`, `cached`, `failed`, `skipped`, `multiSourceServed`, `multiSourceWithJev`), `feed.headlines.jev-pair-failed` / `jev-label-failed` / `jev-review-failed` / `jev-breaker-open`. Shadow-to-promote criteria: `__docs/_wip/plans/2026-09-24-jev-headlines-clustering.md` → Rollout.
+Log events: `feed.headlines.jev-pair`, `feed.headlines.jev-label` (per new verdict, with legacy agreement), `feed.headlines.jev-review` (per page per harvest: `evaluated`, `cached`, `failed`, `skipped`, `multiSourceServed`, `multiSourceWithJev`), `feed.headlines.jev-pair-failed` / `jev-label-failed` / `jev-review-failed` / `jev-breaker-open`. Shadow-to-promote criteria: `ops:docs/_wip/plans/2026-09-24-jev-headlines-clustering.md` → Rollout.
 
 ---
 

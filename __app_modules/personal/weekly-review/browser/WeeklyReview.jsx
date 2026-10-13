@@ -38,7 +38,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   // global config SYNCHRONOUSLY on first render (not in an effect) so the lazy hook
   // loggers (recorder/uploader), which emit from effects registered below this point,
   // inherit the context before their first event. See audit
-  // __docs/_wip/audits/2026-06-07-weekly-review-session-logging-gap.md.
+  // ops:docs/_wip/audits/2026-06-07-weekly-review-session-logging-gap.md.
   const sessionLogConfiguredRef = useRef(false);
   if (!sessionLogConfiguredRef.current) {
     configure({ context: { app: 'weekly-review', sessionLog: true } });

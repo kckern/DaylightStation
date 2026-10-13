@@ -59,7 +59,7 @@ export function useAddressedBoardGame({
   // Whether the ladder read has ANSWERED — not whether it produced a ladder.
   // `level` falls back to 1 until it does, and a result filed in that window
   // is filed against a rung nobody is on. See the level:1 fingerprint in
-  // __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+  // ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
   const [ladderSettled, setLadderSettled] = useState(false);
   // Whether the config read has ANSWERED. Games take no input before it does:
   // the defaults are the house's vocabulary, not this player's (2026-09-25 —
@@ -146,7 +146,7 @@ export function useAddressedBoardGame({
   // a transcript that arrived already finished never does. That difference is
   // the only thing that separates a real result from a phantom, and on
   // 2026-09-01 nothing was checking it — see
-  // __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+  // ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
   //
   // This effect is declared before the save effect below, so on any commit it
   // runs first and the save effect always sees a count that includes the render
