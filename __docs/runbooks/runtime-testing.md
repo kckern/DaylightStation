@@ -6,25 +6,25 @@ Runtime tests use Playwright to test the frontend in a real browser against a ru
 
 ```bash
 # All player runtime tests
-npx playwright test tests/runtime/player/
+npm run test:browser -- tests/runtime/player/
 
 # Specific test file
-npx playwright test tests/runtime/player/video-playback.runtime.test.mjs
+npm run test:browser -- tests/runtime/player/video-playback.runtime.test.mjs
 
 # With Playwright UI (for debugging)
-npx playwright test --ui
+npm run test:browser -- --ui
 
 # Show browser (not headless)
-npx playwright test --headed
+npm run test:browser -- --headed
 ```
 
 ## Configuration
 
-Key settings in `playwright.config.js`:
+Key settings in `tests/_infrastructure/config/playwright.config.mjs`:
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| `testDir` | `./tests/runtime` | Test file location |
+| `testDir` | `tests/` | Test file location |
 | `testMatch` | `**/*.runtime.test.mjs` | Test file pattern |
 | `timeout` | `90000` | 90 second test timeout |
 | `headless` | `true` | Run without visible browser |
@@ -139,6 +139,6 @@ test('requires specific condition', async ({ page }, testInfo) => {
 
 ## Related
 
-- `playwright.config.js` - Test configuration
+- `tests/_infrastructure/config/playwright.config.mjs` - Test configuration
 - `dev.log` - Frontend log output during tests
 - `test-results/` - Screenshots and artifacts from failed tests

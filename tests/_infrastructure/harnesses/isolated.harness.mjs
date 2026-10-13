@@ -48,7 +48,7 @@ const TARGETS = [...JEST_TARGETS, ...VITEST_TARGETS, VITEST_COLOCATED_TARGET];
 function runVitest(files) {
   return new Promise((resolve, reject) => {
     const vitestBin = path.join(ROOT_DIR, 'frontend/node_modules/.bin/vitest');
-    const configPath = path.join(ROOT_DIR, 'vitest.config.mjs');
+    const configPath = path.join(ROOT_DIR, 'tests/_infrastructure/config/vitest.config.mjs');
     const child = spawn(vitestBin, ['run', '--config', configPath, ...files], {
       stdio: 'inherit',
       cwd: ROOT_DIR,

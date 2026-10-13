@@ -2,6 +2,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'node:url';
 
 export const COLORS = {
   reset: '\x1b[0m',
@@ -103,6 +104,7 @@ export function runJest(files, options = {}) {
   return new Promise((resolve, reject) => {
     const jestArgs = [
       'jest',
+      '--config', fileURLToPath(new URL('../config/jest.config.cjs', import.meta.url)),
       ...files,
       '--colors',
     ];

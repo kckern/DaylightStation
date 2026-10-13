@@ -74,14 +74,7 @@ logs/
 *.log
 
 # Dev tools
-playwright.config.js
-jest.config.js
-babel.config.js
-nodemon.json
-dev
-sandbox.sh
-Dockerfile.dev
-docker-compose.dev.yml
+scripts/config/
 
 # Extensions (separate build)
 _extensions/

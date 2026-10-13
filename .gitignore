@@ -18,7 +18,7 @@ __backend/node_modules
 !/__app_modules/school/satellites/ticalc-relay/config.example.yml
 !content/seeds/**/*.yml
 !__docs/configuration/*.example.yml
-!docker-compose.test.yml
+!docker/docker-compose.test.yml
 /shared/gaming/fixtures/
 /shared/presentation/fixtures/
 !tests/_fixtures/**/*.yml
@@ -78,6 +78,7 @@ config.app-local.yml
 !scripts/bench/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
+!scripts/config/
 !scripts/media-source-heal.sh
 !scripts/test-env.sh
 !scripts/update-test-imports.mjs

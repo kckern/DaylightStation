@@ -238,6 +238,7 @@ function parseJestOutput(output) {
 function buildJestArgs(args, folders) {
   const jestArgs = [
     '--passWithNoTests',
+    '--config=tests/_infrastructure/config/jest.config.cjs',
   ];
 
   if (args.smoke) {

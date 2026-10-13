@@ -216,7 +216,7 @@ Each scanner device references a `policy_group` in `devices.yml`, which maps to 
 
 ```bash
 # All barcode tests (54 tests across 5 suites)
-npx jest tests/isolated/domain/barcode/ tests/isolated/assembly/adapters/barcode/ tests/isolated/assembly/barcode/ --no-coverage
+npm run test:jest -- tests/isolated/domain/barcode/ tests/isolated/assembly/adapters/barcode/ tests/isolated/assembly/barcode/ --no-coverage
 ```
 
 | Suite | Tests | Covers |

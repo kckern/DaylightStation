@@ -19,7 +19,7 @@
 // facts at the three sizes the fleet actually runs.
 //
 // WHY VITEST AND NOT PLAYWRIGHT. Both are available here. The Playwright specs
-// under `tests/live/flow/` are RUNTIME gates: `playwright.config.mjs` boots
+// under `tests/live/flow/` are RUNTIME gates: `tests/_infrastructure/config/playwright.config.mjs` boots
 // `npm run dev` and drives the real app, which is right for asserting that a
 // deployed frame behaves, and wrong for asserting arithmetic — it costs a dev
 // server and a two-minute startup budget to measure a stylesheet that does not

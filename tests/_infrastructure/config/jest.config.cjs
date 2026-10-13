@@ -1,7 +1,10 @@
+const path = require('node:path');
+
 module.exports = {
+  rootDir: path.resolve(__dirname, '../../..'),
   testEnvironment: 'node',
   transform: {
-    '^.+\\.m?[tj]s$': 'babel-jest',
+    '^.+\\.m?[tj]s$': ['babel-jest', { configFile: path.join(__dirname, 'babel.config.cjs') }],
   },
   // Path aliases - use # prefix (matches package.json imports field)
   // This ensures Jest and Node resolve the same paths
@@ -37,11 +40,17 @@ module.exports = {
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
+    '<rootDir>/_deleteme/',
     '/tests/runtime/',           // Playwright handles these
     '/tests/integration/external/', // External API tests require credentials - run explicitly
     '/tests/_archive/',          // Archived tests
     '<rootDir>/\\.worktrees/',   // Only ignore the main repo's .worktrees/, not tests within a worktree
     '<rootDir>/\\.claude/worktrees/', // Ignore Claude Code native worktrees (sibling checkouts would double-collect tests)
+  ],
+  modulePathIgnorePatterns: [
+    '<rootDir>/_deleteme/',
+    '<rootDir>/\\.worktrees/',
+    '<rootDir>/\\.claude/worktrees/',
   ],
   // Coverage configuration
   collectCoverageFrom: [

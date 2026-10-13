@@ -246,6 +246,7 @@ function buildJestArgs(args, folders) {
   const jestArgs = [
     `--testPathPattern=^${suiteRoot}`,
     '--passWithNoTests',
+    '--config=tests/_infrastructure/config/jest.config.cjs',
   ];
 
   // Runner ownership is declared by the file, not solely by its historical

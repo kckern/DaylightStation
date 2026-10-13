@@ -39,13 +39,13 @@ Todoist, Gmail, Google Calendar, Withings, LDSGC, Weather, Scripture, ClickUp, L
 
 ```bash
 # Single harvester
-npx jest -t "Todoist"
+npm run test:jest -- -t "Todoist"
 
 # Integration tests only
-npx jest harvest.integration.test.mjs
+npm run test:jest -- harvest.integration.test.mjs
 
 # Verbose output
-npx jest --verbose harvest.test.mjs
+npm run test:jest -- --verbose harvest.test.mjs
 ```
 
 ## Test Features
@@ -98,8 +98,8 @@ describe('New Harvester', () => {
 
 | Problem | Solution |
 |---------|----------|
-| Tests won't run | `npx jest --clearCache && npm install` |
-| Module not found | Check jest.config.js paths |
+| Tests won't run | `npm run test:jest -- --clearCache && npm install` |
+| Module not found | Check tests/_infrastructure/config/jest.config.cjs paths |
 | Tests hang | Check for unresolved promises |
 
 ## Stats

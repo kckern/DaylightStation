@@ -1,10 +1,12 @@
 # Testing Infrastructure
 
-**Related code:** `tests/`, `jest.config.js`
+**Related code:** `tests/`, `tests/_infrastructure/config/jest.config.cjs`
 
 ## Overview
 
-DaylightStation uses dedicated test harnesses for running tests, with Jest under the hood. Playwright handles e2e runtime tests separately.
+Vitest runs most unit and isolated tests. Dedicated Jest harnesses own the legacy
+unit/integration suites. Playwright handles browser runtime tests. Runner configs
+live under `tests/_infrastructure/config/`; npm commands select them explicitly.
 
 ## Test Harnesses
 
@@ -115,7 +117,7 @@ tests/
 
 ## Path Aliases
 
-Tests use path aliases instead of relative paths. Configured in `jest.config.js`:
+Tests use path aliases instead of relative paths. Configured in `tests/_infrastructure/config/jest.config.cjs`:
 
 | Alias | Resolves To | Example |
 |-------|-------------|---------|
@@ -144,7 +146,7 @@ node tests/lib/migrate-imports.mjs
 | Unit | `node tests/unit/harness.mjs` | `_fixtures/` (dummy) |
 | Integration | `node tests/integration/harness.mjs` | testDataService |
 | External | `node tests/integration/external/harness.mjs` | Live APIs |
-| Runtime | `npx playwright test` | Real backend |
+| Runtime | `npm run test:browser --` | Real backend |
 
 ## testDataService
 

@@ -624,7 +624,7 @@ meta: { title?, author, keyShift, bpm }
 | Producer frontend (Vitest) | `cd frontend && npx vitest run src/modules/Piano/PianoKiosk/modes/Producer src/modules/Piano/PianoKiosk/producer --reporter=dot --silent` | 759 |
 | Producer lint | `cd frontend && npx eslint src/modules/Piano/PianoKiosk/modes/Producer src/modules/Piano/PianoKiosk/producer --ext js,jsx --report-unused-disable-directives --max-warnings 0` | 0 errors, 0 warnings |
 | Scheduler (node:test) | `node --test shared/music/loopScheduler.test.mjs` | 27 |
-| Schema + API (Vitest/Supertest) | `npx vitest run tests/isolated/api/piano-producer.test.mjs __backend/src/3_applications/piano/{producerRecords,loopManifest}.test.mjs` | 53 |
+| Schema + API (Vitest/Supertest) | `npm run test:file -- tests/isolated/api/piano-producer.test.mjs __backend/src/3_applications/piano/{producerRecords,loopManifest}.test.mjs` | 53 |
 | Migration/prefab/catalog tools (node:test) | `node --test cli/piano-producer-migrate.cli.test.mjs cli/piano-producer-prefabs.cli.test.mjs cli/piano-producer-catalog.cli.test.mjs` | 10 |
 | Read-only runtime at 1280×800 | `npm run piano:producer:test:runtime:readonly` | 6 pass, 3 persistence checks intentionally skipped |
 | Production bundle | `npm run build --prefix frontend` | must exit 0 |

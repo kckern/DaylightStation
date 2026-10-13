@@ -138,7 +138,7 @@ fallback.
 Before refreshing the live course, run:
 
 ```bash
-npx vitest run scripts/generate-elementary-math-course.test.mjs cli/school/math-assets.test.mjs
+npm run test:file -- scripts/generate-elementary-math-course.test.mjs cli/school/math-assets.test.mjs
 node scripts/generate-elementary-math-course.mjs --check --data-dir "$DAYLIGHT_BASE_PATH/data"
 node cli/school.mjs decoys audit math/elementary-math-2-3 --data-dir "$DAYLIGHT_BASE_PATH/data"
 ```

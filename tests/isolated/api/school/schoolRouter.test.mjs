@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // The repo's default vitest environment is a happy-dom shim (see
-// vitest.config.mjs + tests/_infrastructure/frontend-env.mjs) so React
+// tests/_infrastructure/config/vitest.config.mjs + tests/_infrastructure/frontend-env.mjs) so React
 // component tests get a DOM. happy-dom's `fetch` enforces browser-style
 // same-origin/CORS rules, which rejects plain cross-port requests to our
 // ephemeral test server. This router test needs the real Node `fetch`

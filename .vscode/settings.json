@@ -10,5 +10,17 @@
     "**/node_modules": true,
     "**/coverage": true,
     "**/logs": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.git": true,
+    "**/.venv": true,
+    "_deleteme": true,
+    ".pii-scrub": true,
+    ".worktrees": true,
+    "frontend/dist": true,
+    "coverage": true,
+    "logs": true,
+    "test-results": true
   }
 }

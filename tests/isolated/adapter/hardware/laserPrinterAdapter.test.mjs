@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// The suite's default environment (happy-dom, see vitest.config.mjs) patches
+// The suite's default environment (happy-dom, see tests/_infrastructure/config/vitest.config.mjs) patches
 // global `fetch` for DOM-flavored use and mangles the binary IPP request
 // bodies LaserPrinterAdapter sends (Buffer.readUInt16BE on the server side
 // started going out-of-bounds — the body arrived truncated/re-encoded).

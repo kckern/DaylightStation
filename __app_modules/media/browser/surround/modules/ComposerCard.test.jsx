@@ -280,7 +280,7 @@ describe('ComposerCard', () => {
  * from the original 742-on-720 defect.
  *
  * This harness's vitest config runs `css: false` (the project default — see
- * vitest.config.mjs), so `import './ComposerCard.scss'` inside the component
+ * tests/_infrastructure/config/vitest.config.mjs), so `import './ComposerCard.scss'` inside the component
  * injects no stylesheet into the test DOM at all; asserting computed style off
  * a plain render would read UA defaults, not the shipped rule, and would pass
  * whether or not the SCSS actually clamps anything (a vacuously-true test).

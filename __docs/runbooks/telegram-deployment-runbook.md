@@ -116,7 +116,7 @@ node __backend/chatbots/cli/telegram-admin.mjs commands:set nutribot
 2. **Deploy code:**
    ```bash
    # Deploy via standard pipeline
-   ./deploy.sh
+   ./docker/deploy.sh
    ```
 
 3. **Post-deployment verification:**
@@ -405,7 +405,7 @@ If bot is compromised:
 1. **Switch to known-good version:**
    ```bash
    git checkout <last-known-good-tag>
-   ./deploy.sh
+   ./docker/deploy.sh
    ```
 
 2. **Verify webhook is working:**

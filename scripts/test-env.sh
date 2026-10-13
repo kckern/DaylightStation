@@ -4,7 +4,8 @@
 
 set -e
 
-COMPOSE_FILE="docker-compose.test.yml"
+cd "$(dirname "$0")/.."
+COMPOSE_FILE="docker/docker-compose.test.yml"
 CONTAINER_NAME="daylight-test"
 
 case "$1" in

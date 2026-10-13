@@ -59,7 +59,8 @@ DaylightStation/
 ```
 
 Start feature work in `__app_modules/<app>/`. Work on shared behavior in
-`__capabilities/<capability>/`. Many tests live beside their source. See the
+`__capabilities/<capability>/`. Many tests live beside their source. Test runner configs live under
+`tests/_infrastructure/config/`. See the
 [contributor map](__docs/reference/core/project-layout.md) for ownership and
 dependency conventions.
 
@@ -71,6 +72,7 @@ npm run audit:owners        # Application/capability boundaries
 npm run audit:links         # Static local import contracts
 npm run test:isolated       # Isolated feature tests
 npm run test:unit:vitest    # Gated unit tests
+npm run test:file -- <path> # One Vitest test file
 ```
 
 ## Code Style

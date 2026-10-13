@@ -332,14 +332,14 @@ is a product outcome, not an infrastructure alert.
 Use each suite's actual runner:
 
 ```bash
-npx vitest run \
+npm run test:file -- \
   frontend/src/modules/Piano/performance/assessmentAttempt.test.js \
   frontend/src/modules/Piano/performance/assessmentRuntime.test.js \
   frontend/src/modules/Piano/performance/attemptEvidence.test.js
 
 node --test shared/music/assessmentRecord.test.mjs
 
-npx vitest run \
+npm run test:file -- \
   __backend/src/1_adapters/persistence/yaml/piano/YamlPianoAttemptStore.test.mjs \
   __backend/src/4_api/v1/routers/piano.attempts.test.mjs
 

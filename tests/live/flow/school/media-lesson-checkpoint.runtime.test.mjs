@@ -76,7 +76,7 @@
 //   * `ffmpeg` on PATH — the fixture clip is generated per run.
 //   * The ONE dev stack serving the app port (`tests/_lib/configHelper.mjs`
 //     SSOT). Only Vite is really needed — every API this page touches is
-//     intercepted — but `playwright.config.mjs` reuses an existing server, and
+//     intercepted — but `tests/_infrastructure/config/playwright.config.mjs` reuses an existing server, and
 //     per CLAUDE.local.md a SECOND backend must never be started to run this.
 //
 // Run it with the user's stack already up:

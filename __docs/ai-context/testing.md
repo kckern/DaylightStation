@@ -21,7 +21,7 @@ under the right runner.
 Two traps:
 
 - **A file that imports nothing still runs under vitest**, because
-  `vitest.config.mjs` sets `globals: true`. Seven files in `__backend/tests` do
+  `tests/_infrastructure/config/vitest.config.mjs` sets `globals: true`. Seven files in `__backend/tests` do
   exactly this. Absence of a `vitest` import does not mean it is a node:test
   file.
 - **`@jest/globals` throws under vitest** and no jest glob covers
@@ -40,7 +40,7 @@ existed, and one testing a deleted module.
 | Unit | `node tests/unit/harness.mjs` | `_fixtures/` (dummy) |
 | Integration | `node tests/integration/harness.mjs` | testDataService |
 | External | `node tests/integration/external/harness.mjs` | Live APIs |
-| Runtime | `npx playwright test` | Real backend |
+| Runtime | `npm run test:browser --` | Real backend |
 
 ## Running Tests
 
@@ -167,11 +167,11 @@ The Media app's journeys (`tests/live/flow/media/`) run against `tests/_lib/medi
 | Virtual device steps | `media-ordinary-device-fixture.mjs` | A load that names `volume` runs the REAL volume step on any fixture screen and records `{action:'volume',level}`; a screen with virtual `device_control` (`acceptance-power`) also runs the REAL wake step ("Turning on…") and records `{action:'on',via:'wake'}`. Both are readable at `/api/v1/device/<id>/device-control-calls`, cleared by reset, never hardware. Queue item actions and edits (`queue/item-action|undo|remove|reorder|jump|clear`), `session/item-action/<id>/cancel` (Undo of a far start) and `shuffle`/`repeat` are open for virtual screens; starting content stays on the load route. |
 | Controllable search stream | `tests/live/flow/media/lib/sseServer.mjs` | `startSseServer()` + `sse.install(page)` redirect the app's own search request to a tiny stream whose frames (real event vocabulary: `pending`, `results`, `source_error`, `complete`) the test releases with gates: the only way to see "still searching" and widened/empty states deterministically. |
 | Shared journey helpers | `lib/receivers.mjs`, `lib/search.mjs` | `openReceiver`/`reopenReceiver`/`startOn` (incl. `asDevice` = started by another device)/`resetControls`/`gotoMedia` (bounded retry for a lost dev-module fetch)/`warmMedia`/`openRemote`; `openSearch`/`resultRow`/`resultRows` that read the same on the phone's SearchMode and the dock combobox. |
-| One Media worker | `playwright.config.mjs` project `media` (`workers: 1`) | The household reset in `beforeEach` wipes shared server state, so `tests/live/flow/media/**` never runs in parallel with itself. The household fixture's `reset` builds the new tree beside the live one and swaps it in with `renameSync`, so no read sees a half-copied tree. |
+| One Media worker | `tests/_infrastructure/config/playwright.config.mjs` project `media` (`workers: 1`) | The household reset in `beforeEach` wipes shared server state, so `tests/live/flow/media/**` never runs in parallel with itself. The household fixture's `reset` builds the new tree beside the live one and swaps it in with `renameSync`, so no read sees a half-copied tree. |
 | Gates | `scripts/media-p0-gate.mjs`, `scripts/media-stable-core-gate.mjs`, `scripts/media-gate-runner.mjs` | Never abort: every group runs and the run exits 1 listing every failed group. One retry per group, only after a failed attempt and only when `os.loadavg()[0] < os.cpus().length` (else `DEFERRED: load`); each attempt writes its own `-attempt-N` json/log. Lines read `PASS`, `PASS-AFTER-RETRY (flaky)`, `FAIL`; `--strict` refuses ledger-grade acceptance when any group passed only after a retry. |
 | Source check (read-only) | `tests/_lib/media-redesign-server.mjs` `answerMediaSourceCheck` | `POST /api/v1/media-source/check` is answered by the acceptance server itself: it only tries to stream the allowlisted title (`readable` / `unreadable` on a proxy 503 / `unknown`) and never asks the real healer to chmod anything. The ordinary-journey allowlist used to answer it 403, so a file Plex refused for a few seconds (NFS `Permission denied (13)` in the Plex log) was never waited on and 'Faith audio'/local-video starts failed inside their window. Proof: `media-app-source-refusal.runtime.test.mjs`. |
 
-Unit tests for each: `tests/_lib/media-household-fixture.test.mjs`, `media-phase1-fixture.test.mjs`, `media-house-fixture.test.mjs`, `media-ordinary-device-fixture.test.mjs` (`npx vitest run tests/_lib`). Live demos of every helper: `tests/live/flow/media/media-app-infra-helpers.runtime.test.mjs`. To exercise a new criterion against household rules, seed the state it needs in `tests/_fixtures/media-household-seed/` (never in the journey), and assert what the real services answer.
+Unit tests for each: `tests/_lib/media-household-fixture.test.mjs`, `media-phase1-fixture.test.mjs`, `media-house-fixture.test.mjs`, `media-ordinary-device-fixture.test.mjs` (`npm run test:file -- tests/_lib`). Live demos of every helper: `tests/live/flow/media/media-app-infra-helpers.runtime.test.mjs`. To exercise a new criterion against household rules, seed the state it needs in `tests/_fixtures/media-household-seed/` (never in the journey), and assert what the real services answer.
 
 ## Reference
 

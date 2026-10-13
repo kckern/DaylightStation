@@ -1160,7 +1160,7 @@ load (logging `media.failed` at warn).
 FKB's **autoplay** setting must be enabled on the Portal for cue and answer
 audio to play without a tap-to-unlock stall — see the
 [School runbook](../../runbooks/school/README.md). Drive a scenario headless
-with `CARD_LADDER_TEST_LEARNER=<id> npx playwright test
+with `CARD_LADDER_TEST_LEARNER=<id> npm run test:browser --
 tests/live/flow/school/card-ladder-stage.runtime.test.mjs`, or open
 `/school/go/<learner>/card-ladder/test?scenario=fresh` in a grown-up's browser
 by hand.

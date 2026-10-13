@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, realpathSync } from 'fs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 // In worktrees, frontend/node_modules may not exist — fall back to the main repo.
 // Worktrees can live either INSIDE the main repo (.claude/worktrees/<name>, 3 levels
 // deep) or as a SIBLING checkout. To cover both, resolve candidate locations and pick
@@ -26,6 +26,7 @@ const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/
 const RUNNING_IN_WORKTREE = /[\\/]\.(claude[\\/]|claire[\\/])?worktrees[\\/]/.test(__dirname);
 
 export default {
+  root: __dirname,
   // Numeric loopback avoids DNS during confined middleware-only test startup.
   server: { host: '127.0.0.1' },
   // React plugin enables automatic JSX runtime so test files don't need `import React`.

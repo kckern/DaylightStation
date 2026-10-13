@@ -14,7 +14,7 @@ Tests for that feature usually live beside its implementation.
 | `cli/` | Stable command entry points; application commands forward to their owner |
 | `tests/` | Shared test helpers, fixtures, harnesses, and cross-feature tests |
 | `scripts/` | Development, build, and architecture checks |
-| `docker/` | Production image and entry point |
+| `docker/` | Production image, entry point, and test compose |
 | `_extensions/` | Remaining independent satellite source |
 | `__docs/` | Configuration, architecture, feature references, and runbooks |
 
@@ -40,3 +40,16 @@ Reusable HTTP test transports live in `tests/_lib/memory-http/`.
 
 Personal data, authoring drafts, logs, coverage, and scratch captures stay out
 of version control. `_deleteme/` is an ignored local quarantine.
+
+Tool configs live with their workflows: test runners use
+`tests/_infrastructure/config/`, and nodemon uses `scripts/config/`.
+Run one test file with `npm run test:file -- <path>`, or use
+`npm run test:browser -- <path>` for browser tests. The specialized teacher
+and reading commands keep their existing npm names. Legacy Jest is available
+through `npm run test:jest -- <path>`.
+
+Project history lives in `__docs/project-history.md`; branding sources and
+font licenses live in `__docs/assets/branding/`. The local agent settings
+example is `__docs/ai-context/CLAUDE.local.example.md`. Root agent entry files,
+package manifests, Git/Docker ignore files, `.nvmrc`, and the environment
+example remain at the root where their tools and contributors expect them.

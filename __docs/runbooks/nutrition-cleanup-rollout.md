@@ -35,11 +35,11 @@ user edits; use version-checked Undo for individual food changes.
 Verification entry points:
 
 ```sh
-node node_modules/vitest/vitest.mjs run tests/isolated/adapters/agents __backend/src/3_applications/nutrition frontend/src/modules/Health/cleanup tests/isolated/api/health-contract.test.mjs
+npm run test:file -- tests/isolated/adapters/agents __backend/src/3_applications/nutrition frontend/src/modules/Health/cleanup tests/isolated/api/health-contract.test.mjs
 node scripts/audit-layer-imports.mjs
 node scripts/audit-ui-tokens.mjs
 npm run build --prefix frontend
-node node_modules/@playwright/test/cli.js test --config=playwright.health-review.config.mjs
+node node_modules/@playwright/test/cli.js test --config=tests/_infrastructure/config/playwright.health-review.config.mjs
 ```
 
 The Playwright config starts only a static frontend preview with fixture API

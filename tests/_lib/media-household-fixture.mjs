@@ -32,7 +32,7 @@ import { MarkContentWatched } from "../../__capabilities/playback/server/applica
 import { YamlHouseholdMediaListsDatastore } from "../../__app_modules/media/server/adapters/persistence/YamlHouseholdMediaListsDatastore.mjs";
 import { YamlMediaProgressMemory } from "../../__capabilities/playback/server/adapters/persistence/YamlMediaProgressMemory.mjs";
 import { YamlPlayLedgerDatastore } from "../../__app_modules/media/server/adapters/persistence/YamlPlayLedgerDatastore.mjs";
-import { ProgressWriteRuntime } from "../../__capabilities/playback/server/adapters/ProgressWriteRuntime.mjs";
+import { ProgressWriteRuntime } from "../../__backend/src/0_system/scheduling/ProgressWriteRuntime.mjs";
 import { PLAY_LEDGER_RETENTION_DAYS } from "../../__app_modules/media/server/domain/playLedger.mjs";
 import { formatLocalTimestamp } from '../../__backend/src/0_system/utils/time.mjs';
 

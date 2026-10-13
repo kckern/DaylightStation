@@ -498,7 +498,7 @@ Test URLs come from system config - **NOT hardcoded**. The port is determined by
 
 1. `tests/_lib/configHelper.mjs` reads from `system.yml` in the data path
 2. Default fallback is 3111 if no config found
-3. `playwright.config.mjs` uses `getAppPort()` from configHelper
+3. `tests/_infrastructure/config/playwright.config.mjs` uses `getAppPort()` from configHelper
 
 **This means tests use the same port as the running dev server.** If Vite is on 3111, tests connect to 3111.
 
@@ -506,21 +506,21 @@ Test URLs come from system config - **NOT hardcoded**. The port is determined by
 
 ```bash
 # Run all flow tests (headless)
-npx playwright test tests/live/flow/
+npm run test:browser -- tests/live/flow/
 
 # Run specific test
-npx playwright test tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs
+npm run test:browser -- tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs
 
 # Run headed (visible browser)
-npx playwright test tests/live/flow/ --headed
+npm run test:browser -- tests/live/flow/ --headed
 
 # Run with line reporter for cleaner output
-npx playwright test tests/live/flow/ --reporter=line
+npm run test:browser -- tests/live/flow/ --reporter=line
 ```
 
 ### Dev Server Handling
 
-Playwright's `webServer` config (in `playwright.config.mjs`) automatically:
+Playwright's `webServer` config (in `tests/_infrastructure/config/playwright.config.mjs`) automatically:
 1. Checks if a server is running on the configured port
 2. If `reuseExistingServer: true`, uses existing server
 3. If no server running, starts `npm run dev`

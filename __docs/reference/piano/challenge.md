@@ -282,5 +282,5 @@ After changing the grammar, regenerate this page and run its drift test:
 
 ```sh
 node scripts/render-piano-challenge-grammar-doc.mjs
-npx vitest run scripts/render-piano-challenge-grammar-doc.test.mjs
+npm run test:file -- scripts/render-piano-challenge-grammar-doc.test.mjs
 ```

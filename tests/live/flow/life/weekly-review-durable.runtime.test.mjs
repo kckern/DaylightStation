@@ -11,7 +11,7 @@
  * Environment notes:
  * - Requires Chrome flags for fake audio in headless mode:
  *   --use-fake-ui-for-media-stream --use-fake-device-for-media-stream
- *   Add to playwright.config.mjs launchOptions.args if mic prompts block the test.
+ *   Add to tests/_infrastructure/config/playwright.config.mjs launchOptions.args if mic prompts block the test.
  * - The test grants microphone permission via browser context, but the MediaRecorder
  *   will silently produce zero-byte chunks without a real (or fake) audio device.
  *   In CI, enable fake device flags; on kckern-server the real mic may not be present.
@@ -33,7 +33,7 @@ test.describe('Weekly Review durable recording', () => {
 
   test('chunks are uploaded every 5s and survive a page reload', async ({ browser }) => {
     // Grant microphone — Chrome will use a fake silent track in headless mode
-    // only if --use-fake-device-for-media-stream is passed (see playwright.config.mjs).
+    // only if --use-fake-device-for-media-stream is passed (see tests/_infrastructure/config/playwright.config.mjs).
     const context = await browser.newContext({ permissions: ['microphone'] });
     const page = await context.newPage();
 

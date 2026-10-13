@@ -20,7 +20,7 @@ scoped by USB serial so no other keyboard is affected.
 
 The live mapping is installed by hand on the box and is deliberately **not** in
 source control and **not** in any deploy pipeline. It is a single-host physical
-convenience with no counterpart anywhere else, and wiring it into `deploy.sh`
+convenience with no counterpart anywhere else, and wiring it into `docker/deploy.sh`
 would imply a fleet that does not exist. This runbook is the recovery path: it
 contains everything needed to rebuild after a wipe.
 

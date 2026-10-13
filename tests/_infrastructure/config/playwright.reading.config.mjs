@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const baseURL = 'http://127.0.0.1:3114';
 
@@ -6,7 +9,8 @@ const baseURL = 'http://127.0.0.1:3114';
 // response is intercepted by the test, so this must never boot a second copy
 // of the household backend or write to the real reading log.
 export default defineConfig({
-  testDir: './tests/live/flow/school',
+  outputDir: `${repoRoot}test-results`,
+  testDir: '../../live/flow/school',
   testMatch: 'reading-shelf-contract.runtime.test.mjs',
   timeout: 45_000,
   use: {
@@ -15,6 +19,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
+    cwd: repoRoot,
     command: 'npm run dev --prefix frontend -- --host 127.0.0.1 --port 3114 --strictPort',
     url: baseURL,
     reuseExistingServer: true,

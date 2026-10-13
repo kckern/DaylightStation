@@ -30,7 +30,7 @@
 //   2. It is also the only way to get REAL Node module resolution. This
 //      repo's `#composition/*` subpath import (package.json `imports`) is
 //      resolved by Node natively — jest's own `moduleNameMapper` in
-//      `jest.config.js` does not mirror it, so an in-process `import` of
+//      `tests/_infrastructure/config/jest.config.cjs` does not mirror it, so an in-process `import` of
 //      `schoolLifecycle.mjs` from inside this test would resolve
 //      differently than production does anyway.
 //

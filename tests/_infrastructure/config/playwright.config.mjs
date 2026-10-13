@@ -1,10 +1,14 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
-import { getAppPort } from './tests/_lib/configHelper.mjs';
+import { getAppPort } from '../../_lib/configHelper.mjs';
+
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const appPort = getAppPort();
 
 export default defineConfig({
-  testDir: './tests',
+  outputDir: `${repoRoot}test-results`,
+  testDir: '../../',
   testMatch: '**/*.runtime.test.mjs',
   timeout: 90000,
   // The Media journeys reset the one shared household/server state in
@@ -46,6 +50,7 @@ export default defineConfig({
   // worktree). Do not start a different stack on the default port when that
   // unrelated server is unavailable.
   webServer: process.env.BASE_URL ? undefined : {
+    cwd: repoRoot,
     command: 'npm run dev',
     url: `http://localhost:${appPort}`,
     reuseExistingServer: true,

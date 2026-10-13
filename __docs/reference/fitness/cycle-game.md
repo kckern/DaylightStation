@@ -890,7 +890,7 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 - **Live (Playwright):** `tests/live/flow/fitness/cycle-game-*.runtime.test.mjs`
   drive the simulator through full lifecycles via `FitnessSimHelper`
   (`launchCycleGame`, `setEquipmentRider`, `setRpm`).
-- **Run unit tests:** `npx vitest run --config vitest.config.mjs <path>`.
+- **Run unit tests:** `npx vitest run --config tests/_infrastructure/config/vitest.config.mjs <path>`.
 
 > Visual verification (kiosk 1280×720) is the only way to catch SCSS/layout
 > regressions — jsdom asserts structure, not pixels.

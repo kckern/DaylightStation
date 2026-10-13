@@ -221,7 +221,7 @@ function runVitest(files) {
     const chunkOut = `${outFile}.${index}`;
     res = spawnSync(
       'npx',
-      ['vitest', 'run', ...chunk, '--config', 'vitest.config.mjs',
+      ['vitest', 'run', ...chunk, '--config', 'tests/_infrastructure/config/vitest.config.mjs',
        `--max-workers=${workers}`,
        '--reporter=json', `--outputFile=${chunkOut}`],
       { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28 }
@@ -261,7 +261,7 @@ function runVitest(files) {
     process.exit(2);
   }
   const report = JSON.parse(readFileSync(outFile, 'utf8'));
-  // RECONCILE THE POPULATION AGAINST WHAT ACTUALLY RAN. `vitest.config.mjs`
+  // RECONCILE THE POPULATION AGAINST WHAT ACTUALLY RAN. `tests/_infrastructure/config/vitest.config.mjs`
   // applies its `exclude` globs even to paths passed explicitly on the command
   // line, so a file can be counted in the population here and quietly not run
   // — the population number would keep rising while coverage fell, which is
@@ -275,7 +275,7 @@ function runVitest(files) {
       + `${report.testResults.length} in the report.`);
     if (missing.length) {
       console.error(`gate-vitest: ${missing.length} file(s) in the population that vitest did not run `
-        + '(check `exclude` in vitest.config.mjs — it applies to explicit paths too):');
+        + '(check `exclude` in tests/_infrastructure/config/vitest.config.mjs — it applies to explicit paths too):');
       missing.forEach((f) => console.error('  ? ' + f));
     }
     if (extra.length) {

@@ -54,7 +54,7 @@ export function loadAllowsRetry(loadavg = os.loadavg, cpus = () => os.cpus().len
 
 export function playwrightExecute(journey, { cwd, env }) {
   const target = path.join(MEDIA_JOURNEY_DIRECTORY, journey.file);
-  const args = ['playwright', 'test', target, '--grep', journey.grep, '--workers=1', '--reporter=json'];
+  const args = ['playwright', 'test', '--config', 'tests/_infrastructure/config/playwright.config.mjs', target, '--grep', journey.grep, '--workers=1', '--reporter=json'];
   const result = spawnSync('npx', args, { cwd, env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   return { args, status: result.status, signal: result.signal, stdout: result.stdout || '', stderr: result.stderr || '', error: result.error };
 }

@@ -90,7 +90,7 @@ backlog → on deck → in progress → ready → done
 
 ### Phase 5: Ship (User → Production)
 
-1. User runs `./deploy.sh` (manual per workspace rules)
+1. User runs `./docker/deploy.sh` (manual per workspace rules)
 2. Copilot sets status to `done`
 3. Copilot adds final comment with deployment notes
 
