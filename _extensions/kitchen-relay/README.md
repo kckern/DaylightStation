@@ -97,8 +97,9 @@ decoupled and records to disk regardless.
 
 ### Quick reference — print this
 
-**[`ds2278-quick-reference.pdf`](./ds2278-quick-reference.pdf)** (also
-[`.svg`](./ds2278-quick-reference.svg)) is a one-page sheet with every bar code
+**`ds2278-quick-reference.pdf`** (also `.svg`; installed at
+`media/vendor/kitchen-relay/` by `npm run install:assets`, not tracked in the
+repo because it is derived from Zebra's guide) is a one-page sheet with every bar code
 you need — re-bond, discoverable mode, beeper volume, factory reset — in the
 order you actually scan them. Scan them straight off the page or a screen.
 

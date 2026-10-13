@@ -61,12 +61,6 @@ largeText:
 # Still tracked, scheduled for removal by a later asset-externalization task.
 # Each entry names the task that removes it; task C6 asserts this list is empty.
 pending:
-  # C4: backend assets and household content
-  - { path: __backend/assets/fonts/noto-sans-kr/NotoSansKR-Regular.otf, task: C4 }
-  - { path: _extensions/omr-relay/docs/recovered/*.pdf, task: C4 }
-  - { path: _extensions/kitchen-relay/ds2278-quick-reference.pdf, task: C4 }
-  - { path: _extensions/kitchen-relay/ds2278-quick-reference.svg, task: C4 }
-  - { path: __app_modules/learning/piano/server/adapters/plex-curriculum/curriculum/676490.json, task: C4 }
   # C5: goldens and real-data fixtures
   - { path: tests/isolated/rendering/school/golden/snapshots/*.png, task: C5 }
   - { path: __app_modules/learning/school/server/application/documents/__proof__/**/*.png, task: C5 }

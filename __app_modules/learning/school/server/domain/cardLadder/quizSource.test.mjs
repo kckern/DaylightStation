@@ -6,6 +6,7 @@ import { createDocumentPdfRenderer } from "../../rendering/documents/DocumentPdf
 import { createMeasurementDocument, measureDocumentFragments } from "../../rendering/documents/measure.mjs";
 import { createWorkbookTheme } from "../../rendering/documents/workbookTheme.mjs";
 import { texToSvg } from "../../rendering/documents/mathSvg.mjs";
+import { makeStandInVendorFontDir } from "../../../../../../tests/_lib/school/vendorFontStandIn.mjs";
 import {
   DEFAULT_SETTINGS, buildLearnerQuizSource, buildWordQuizSource, emptyDay, emptyStatusV3, emptyWordV3, expandLexiconDeck, foldPaperAttempts, openDay, quizDocumentIdFor, validateLexicon,
 } from "./index.mjs";
@@ -131,7 +132,9 @@ describe('buildWordQuizSource', () => {
   it('renders the instruction line under the title, inside the content width, with Hangul embedded', async () => {
     const { published, bank } = publishDocument(source);
     const theme = createWorkbookTheme({ typeScale: 'young' });
-    const measureDoc = createMeasurementDocument({ theme });
+    // Stand-in vendor face: real Noto Sans KR is asserted in tests/live/adapter/korean-font-installed.test.mjs.
+    const vendorFontDir = makeStandInVendorFontDir();
+    const measureDoc = createMeasurementDocument({ theme, vendorFontDir });
     const [header] = measureDocumentFragments(published, { doc: measureDoc, theme, texToSvg });
     expect(header.nodes[0].instructions).toBe(QUIZ_INSTRUCTIONS);
     const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
@@ -139,8 +142,8 @@ describe('buildWordQuizSource', () => {
     // The line is drawn with lineBreak:false, so it must fit the quiz's gutter-narrowed content box.
     const contentWidthPt = theme.page.widthPt - 2 * theme.page.marginPt - theme.furniture.gutterPt;
     expect(width).toBeLessThanOrEqual(contentWidthPt);
-    const { pdf } = await createDocumentPdfRenderer({ theme, texToSvg }).render(published, { bank });
-    expect(pdf.toString('latin1')).toMatch(/NotoSansKR-Regular/);
+    const { pdf } = await createDocumentPdfRenderer({ theme, texToSvg, vendorFontDir }).render(published, { bank });
+    expect(pdf.toString('latin1')).toMatch(/RobotoCondensed-Regular/);
   });
 });
 

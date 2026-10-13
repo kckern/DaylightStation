@@ -4,7 +4,7 @@
 > correctly.** The reader is a **Chatsworth Data OMR-1100** (firmware
 > `Version 1.04, Wed Oct 2 1996`). Link is **9600 7E1**, and a conversion mode
 > must be downloaded before the reader emits anything at all. Vendor manuals are
-> archived in [`__docs/recovered/`](./docs/recovered/).
+> installed at `media/vendor/omr/` by `npm run install:assets` (see [`docs/recovered/`](./docs/recovered/README.md) for provenance).
 >
 > **Update 2026-07-29:** extension renamed `scantron-relay` → `omr-relay` (bus
 > topic `scantron` → `omr`, source `scantron-relay` → `omr-relay`, config
@@ -131,8 +131,8 @@ see Step 0b in the bring-up checklist.
 ## Serial protocol — SOLVED ✅ (verified on hardware 2026-07-21)
 
 Unit: **OMR-1100, firmware "Version 1.04, Wed Oct 2 1996"**. Vendor manuals and
-DOS utilities recovered from the Wayback Machine and archived in
-[`__docs/recovered/`](__docs/recovered/) — `OMR1100Manual.pdf`,
+DOS utilities recovered from the Wayback Machine and installed at
+`media/vendor/omr/` by `npm run install:assets` — `OMR1100Manual.pdf`,
 `OMR1100commandsB.pdf` (factory command set), `omr1102_techmanual.pdf` (48pp,
 the richest: download commands, Appendix A card/strobe spec, Hollerith + binary
 tables).

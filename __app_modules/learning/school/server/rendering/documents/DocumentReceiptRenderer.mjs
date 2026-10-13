@@ -28,6 +28,9 @@ import { wrapText } from '#rendering/lib/TextRenderer.mjs';
 import QRCode from 'qrcode';
 
 import { parseRichText } from "./measure.mjs";
+import {
+  resolveVendorFont, getDefaultVendorFontDir, MissingVendorAssetError, HANGUL_PATTERN,
+} from "./vendorFonts.mjs";
 import { documentReceiptTheme } from "./documentReceiptTheme.mjs";
 import { texToSvg as mathJaxTexToSvg } from "./mathSvg.mjs";
 import {
@@ -63,6 +66,7 @@ export function createDocumentReceiptRenderer({
   texToSvg = mathJaxTexToSvg,
   rasterizeSvg = defaultRasterizeSvg,
   fontDir = undefined,
+  vendorFontDir = undefined,
   resolveSubjectIcon = null,
   scanCodes = 'box',
 } = {}) {
@@ -648,6 +652,15 @@ export function createDocumentReceiptRenderer({
    *   codes: Array<{action: string, code: string, kind: string, lines: string[]}>, drawnMath: Array<{widthPx: number, heightPx: number}>}>}
    */
   async function createCanvas(document, { tokens = null } = {}) {
+    // Noto Sans KR lives on the media volume. An English-only receipt never
+    // needs it; a Korean one printed without it would be tofu boxes on paper.
+    const hangulFont = theme.fonts.hangulFontPath
+      ? resolveVendorFont(theme.fonts.hangulFontPath, vendorFontDir ?? getDefaultVendorFontDir())
+      : null;
+    if (hangulFont?.missing && HANGUL_PATTERN.test(JSON.stringify(document))) {
+      throw new MissingVendorAssetError(theme.fonts.hangulFontPath, vendorFontDir ?? getDefaultVendorFontDir());
+    }
+    const vendorHangulFile = hangulFont && !hangulFont.missing ? hangulFont.path : null;
     const fontConfig = {
       fontDir, fontFile: theme.fonts.fontPath, fontFamily: theme.fonts.family,
       extraFonts: [
@@ -664,8 +677,8 @@ export function createDocumentReceiptRenderer({
         // is process-global and must run before `wrapText`/`fillText`
         // measure anything, and an English-only receipt paying for an unused
         // face is a rounding error next to a Korean card printing tofu.
-        ...(theme.fonts.hangulFontPath
-          ? [{ file: theme.fonts.hangulFontPath, family: theme.fonts.hangulFamily }]
+        ...(vendorHangulFile
+          ? [{ file: vendorHangulFile, family: theme.fonts.hangulFamily }]
           : []),
       ],
     };

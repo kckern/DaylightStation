@@ -1,0 +1,100 @@
+# Card ladder lexicon — the sample-vocab word package (invented sample words, English meanings).
+# Synthetic worked example: every term is an invented syllable string, so no real course
+# content lives in the repo. The household's real packages are seeded from the data volume
+# (data/content/school/seeds/<package>/) with the same script.
+# Installed to media/school/language/sample-vocab/lexicon.yml.
+# Ids are permanent once studied (status is keyed by them); `group` is the course
+# unit that FIRST introduced the word and names its media folder
+# (words/<group>/<id>/{image.jpg, term.mp3, gloss.mp3}).
+# Decoys: at least 3 per side, confusable, never the answer; an in-set decoy
+# must be the same kind (phrase decoys only from phrases).
+schema: school.word-lexicon/v2
+package: sample-vocab
+language:
+  code: ko
+  name: Korean
+gloss:
+  code: en
+  name: English
+program:
+  title: Sample words
+quiz:
+  topics: [sample, vocabulary]
+  instructions: Not sure of a word? Open Sample words on the Portal and review the cards, then come back.
+entries:
+  - id: kite
+    kind: phrase
+    group: week-01-sample
+    term: 카나다 가
+    gloss: Kite, please
+    pronunciation: ka-na-da ga
+    decoys:
+      term: [라마바 라, 사아자 사, 차카타 차]
+      gloss: [Lantern, please, Anchor]
+  - id: lantern
+    kind: phrase
+    group: week-01-sample
+    term: 라마바 라
+    gloss: Lantern, please
+    pronunciation: ra-ma-ba ra
+    decoys:
+      term: [카나다 가, 사아자 사, 차카타 차]
+      gloss: [Kite, please, Anchor]
+  - id: anchor
+    kind: phrase
+    group: week-01-sample
+    term: 사아자 사
+    gloss: Anchor, please
+    pronunciation: sa-a-ja sa
+    decoys:
+      term: [카나다 가, 라마바 라, 차카타 차]
+      gloss: [Kite, please, Lantern]
+  - id: orchard
+    kind: phrase
+    group: week-01-sample
+    term: 차카타 차
+    gloss: Orchard, please
+    pronunciation: cha-ka-ta cha
+    decoys:
+      term: [카나다 가, 라마바 라, 사아자 사]
+      gloss: [Kite, please, Lantern]
+  - id: ribbon
+    kind: word
+    group: week-01-sample
+    term: 파하가
+    gloss: Ribbon
+    decoys:
+      term: [나다라, 마바사, 아자차]
+      gloss: [Saddle, Thimble, Compass]
+  - id: saddle
+    kind: word
+    group: week-01-sample
+    term: 나다라
+    gloss: Saddle
+    decoys:
+      term: [파하가, 마바사, 아자차]
+      gloss: [Ribbon, Thimble, Compass]
+  - id: thimble
+    kind: word
+    group: week-01-sample
+    term: 마바사
+    gloss: Thimble
+    decoys:
+      term: [파하가, 나다라, 아자차]
+      gloss: [Ribbon, Saddle, Compass]
+  - id: compass
+    kind: word
+    group: week-01-sample
+    term: 아자차
+    gloss: Compass
+    decoys:
+      term: [파하가, 나다라, 마바사]
+      gloss: [Ribbon, Saddle, Thimble]
+  - id: quilt
+    kind: word
+    group: week-01-sample
+    term: 카타파
+    gloss: Quilt
+    decoys:
+      term: [파하가, 나다라, 마바사]
+      gloss: [Ribbon, Saddle, Thimble]

@@ -163,6 +163,7 @@ import { TermVerdictService } from "../application/TermVerdictService.mjs";
 import { GetLearnerTerm } from "../application/usecases/GetLearnerTerm.mjs";
 import { RebuildLearnerTerm } from "../application/usecases/RebuildLearnerTerm.mjs";
 import { studentDisplayName } from "./studentNames.mjs";
+import { vendorFontDirFor, setDefaultVendorFontDir } from "../rendering/documents/vendorFonts.mjs";
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -322,6 +323,11 @@ export async function createSchoolLifecycle({
   let schoolAssetResolver = null;
   try {
     const { createDocumentPdfRenderer } = await import("../rendering/documents/DocumentPdfRenderer.mjs");
+    // Noto Sans KR is installed under <media>/vendor/fonts (npm run install:assets),
+    // the same media dir the /vendor route serves. Set as the process default too:
+    // measurement and report renderers reach the same fonts without each being wired.
+    const vendorFontDir = vendorFontDirFor(configService.getMediaDir());
+    setDefaultVendorFontDir(vendorFontDir);
     const { createSchoolAssetResolver } = await import("../adapters/documents/FilesystemSchoolAssetResolver.mjs");
     const { createPrintDocumentRendering } = await import("../rendering/documents/PrintDocumentRendering.mjs");
     const resolveAsset = createSchoolAssetResolver({
@@ -335,6 +341,7 @@ export async function createSchoolLifecycle({
     documentRenderer = new DocumentRendererAdapter({
       renderer: createDocumentPdfRenderer({
         resolveAsset,
+        vendorFontDir,
       }),
     });
   } catch (err) {
@@ -391,6 +398,7 @@ export async function createSchoolLifecycle({
     const { createDocumentReceiptRenderer } = await import("../rendering/documents/DocumentReceiptRenderer.mjs");
     receiptPngRenderer = createDocumentReceiptRenderer({
       scanCodes: 'qr',
+      vendorFontDir: vendorFontDirFor(configService.getMediaDir()),
       resolveSubjectIcon: schoolAssetResolver,
     });
   } catch (err) {

@@ -12,7 +12,7 @@ import { registerLifeplanGuide } from '../../../__app_modules/personal/life/serv
 import { registerPagedMediaToc } from '../../../__app_modules/media/media/server/agent-registration.mjs';
 import { createConciergeServices as createConciergeModule } from '../../../__app_modules/household/concierge/server/composition.mjs';
 import {relocatedProviderManifests} from './integrations/providerManifests.mjs';
-import {pianoCurriculumEnrichment} from '../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
+import {pianoCurriculumEnrichment,configurePianoCurriculum} from '../../../__app_modules/learning/piano/server/composition/plex-curriculum.mjs';
 
 import { createHomebotServices as createOwnedHomebotServices } from '../../../__app_modules/household/homebot/server/composition.mjs';
 import { createJournalistServices as createOwnedJournalistServices } from '../../../__app_modules/personal/journalist/server/composition.mjs';
@@ -425,6 +425,9 @@ export async function initializeIntegrations(config) {
       }))
     });
   }
+
+  // Piano curriculum files live in the data volume (content/piano/curriculum).
+  configurePianoCurriculum(configService);
 
   // Create integration loader (singleton)
   if (!integrationLoaderInstance) {

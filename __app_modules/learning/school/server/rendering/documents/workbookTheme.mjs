@@ -186,7 +186,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       // Script fallback faces, keyed by script (`measure.mjs#SCRIPT_FALLBACKS`).
       // pdfkit registration is lazy, so a document with no text in that script
       // embeds nothing and stays byte-identical.
-      hangul: { name: 'workbook-hangul', file: 'noto-sans-kr/NotoSansKR-Regular.otf' },
+      hangul: { name: 'workbook-hangul', file: 'noto-sans-kr/NotoSansKR-Regular.otf', root: 'vendor' },
     },
 
     styles,

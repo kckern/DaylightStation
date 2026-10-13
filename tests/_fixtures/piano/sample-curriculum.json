@@ -1,0 +1,11 @@
+{
+  "show": 900001,
+  "seasons": {
+    "8": { "title": "Song Library", "lane": "repertoire", "facets": ["difficulty", "instructor", "style"], "episodes": 2 },
+    "1": { "title": "Soloing", "lane": "lessons", "sequential": true, "groups": ["Sample Soloing"] }
+  },
+  "episodes": {
+    "8:1": { "season": 8, "episode": 1, "title": "Intro", "plot": "Intro. From a sample course.", "course": "Sample Tune", "styles": ["Jazz Ballads"], "skill": "Beginner", "focus": ["Songs"], "type": "Course", "instructor": "Sample Teacher", "part": 1, "lane": "repertoire", "song": "Sample Tune", "treatment": "tutorial" },
+    "8:2": { "season": 8, "episode": 2, "title": "Lead Sheet", "course": "Sample Tune", "styles": ["Jazz Ballads"], "skill": "Beginner", "type": "Course", "instructor": "Sample Teacher", "part": 2, "lane": "repertoire", "song": "Sample Tune", "treatment": "tutorial" }
+  }
+}

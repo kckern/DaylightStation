@@ -1,0 +1,69 @@
+schema: school.unit/v1
+unitId: korean-3-2.lesson-01
+title: 'Korean 3-2 · Lesson 1: Sample lesson'
+courseId: korean-3-2
+sequence: 1
+subject: language
+description: Practice 10 sample vocabulary and model-expression cards, then demonstrate the two sample patterns on paper.
+reading: Textbook pages 1–2; workbook pages 1–2.
+sourceTitle: Sample course
+objectives:
+  - Recognize the sample vocabulary in both directions.
+  - Ask permission with the first invented sample pattern.
+  - Offer an action with the second invented sample pattern.
+passing:
+  percent: 100
+retry:
+  variants: 2
+practice:
+  programId: flashcards
+  deckId: language/korean-3-2/lesson-01
+  requiredCardIds:
+    - kite-sample
+    - lantern-sample
+    - anchor-sample
+    - orchard-sample
+    - ask-sample
+    - photo-sample
+    - eat-sample
+    - dad-sample
+    - hold-sample
+    - wake-sample
+  questionCards:
+    permission-01:
+      cardIds:
+        - ask-sample
+      kind: application
+      explanation: Invented sample explanation 1.
+    permission-02:
+      cardIds:
+        - photo-sample
+      kind: application
+      explanation: Invented sample explanation 2.
+    permission-03:
+      cardIds:
+        - eat-sample
+      kind: application
+      explanation: Invented sample explanation 3.
+    intention-01:
+      cardIds:
+        - dad-sample
+      kind: application
+      explanation: Invented sample explanation 4.
+    intention-02:
+      cardIds:
+        - hold-sample
+      kind: application
+      explanation: Invented sample explanation 5.
+    intention-03:
+      cardIds:
+        - wake-sample
+      kind: application
+      explanation: Invented sample explanation 6.
+provenance:
+  source: Synthetic test fixture; invented content.
+  reviewState: approved
+document: print/korean-3-2-lesson-01-a@b743e44ca
+assessmentForms:
+  - print/korean-3-2-lesson-01-a@b743e44ca
+  - print/korean-3-2-lesson-01-b@2c7141d9d

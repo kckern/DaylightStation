@@ -3,7 +3,7 @@
 gen-test-strip.py — generate a printable Chatsworth OMR-1100 test strip PDF.
 
 Geometry follows the recovered document specification (OMR-1102 Technical
-Manual, Appendix A — docs/recovered/omr1102_techmanual.pdf), which also governs
+Manual, Appendix A — media/vendor/omr/omr1102_techmanual.pdf), which also governs
 the OMR-1100:
 
   - card 3.250" wide, strip here is 10" long (spec allows 5"-14")
@@ -120,7 +120,7 @@ def build_content():
         (7.6, 9, "first tick 0.375 in from leading edge; 12 rows at"),
         (7.4, 9, "0.250 in centerlines from strobe edge."),
         (7.0, 9, "Spec: omr1102_techmanual.pdf Appendix A"),
-        (6.8, 9, "(docs/recovered/, via web.archive.org)"),
+        (6.8, 9, "(media/vendor/omr/, via web.archive.org)"),
     ]
     for yin, size, s in lines:
         s = s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

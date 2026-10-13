@@ -1,0 +1,101 @@
+schema: school.document-source/v1
+id: korean-3-2-lesson-01-a
+seed: 3201
+variant: 0
+target:
+  - letter
+archetype: quiz
+title: Korean 3-2 · Lesson 1 · Form A
+blocks:
+  - type: rich_text
+    md: Choose the sample expression that fits the English instruction. Mark ONE answer for each question. If a question is uncertain, leave it blank and ask for help.
+  - type: question
+    itemId: permission-01
+    number: 1
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 1 (A): 가가나___'
+      - type: omr_response
+        itemId: permission-01
+        choices: 4
+    choices:
+      - 가가나다
+      - 가가나니
+      - 가가나고
+      - 가가나면
+    answer: 가가나다
+  - type: question
+    itemId: permission-02
+    number: 2
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 2 (A): 다다라___'
+      - type: omr_response
+        itemId: permission-02
+        choices: 4
+    choices:
+      - 다다라니
+      - 다다라다
+      - 다다라고
+      - 다다라면
+    answer: 다다라다
+  - type: question
+    itemId: permission-03
+    number: 3
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 3 (A): 마마바___'
+      - type: omr_response
+        itemId: permission-03
+        choices: 4
+    choices:
+      - 마마바니
+      - 마마바고
+      - 마마바다
+      - 마마바면
+    answer: 마마바다
+  - type: question
+    itemId: intention-01
+    number: 4
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 4 (A): 사사아___'
+      - type: omr_response
+        itemId: intention-01
+        choices: 4
+    choices:
+      - 사사아니
+      - 사사아고
+      - 사사아면
+      - 사사아다
+    answer: 사사아다
+  - type: question
+    itemId: intention-02
+    number: 5
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 5 (A): 자자차___'
+      - type: omr_response
+        itemId: intention-02
+        choices: 4
+    choices:
+      - 자자차다
+      - 자자차니
+      - 자자차고
+      - 자자차면
+    answer: 자자차다
+  - type: question
+    itemId: intention-03
+    number: 6
+    blocks:
+      - type: rich_text
+        md: 'Sample prompt 6 (A): 카카타___'
+      - type: omr_response
+        itemId: intention-03
+        choices: 4
+    choices:
+      - 카카타니
+      - 카카타다
+      - 카카타고
+      - 카카타면
+    answer: 카카타다

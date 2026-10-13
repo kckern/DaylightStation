@@ -1,8 +1,8 @@
 # Chatsworth OMR card specification
 
 Transcribed from *Technical Manual for OMR 1102*, Appendix A "Document
-Specifications" (retained as PDF in
-`_extensions/omr-relay/docs/recovered/`), cross-checked against the
+Specifications" (PDF installed at
+`media/vendor/omr/` by `npm run install:assets`), cross-checked against the
 OMR-1100 operator guide and the ACP-100 datasheet, which state the same
 geometry.
 

@@ -3,6 +3,7 @@
  * @module 1_rendering/lib/CanvasFactory
  */
 
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Bundled font assets (__backend/assets/fonts), resolved relative to this module —
@@ -30,7 +31,7 @@ export async function initCanvas(config) {
   const register = (file, family, weight) => {
     if (!file || !family) return;
     try {
-      registerFont(`${fontDir || DEFAULT_FONT_DIR}/${file}`, {
+      registerFont(isAbsolute(file) ? file : `${fontDir || DEFAULT_FONT_DIR}/${file}`, {
         family, ...(weight ? { weight } : {}),
       });
     } catch { /* fall back to system fonts */ }

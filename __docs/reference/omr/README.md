@@ -556,7 +556,7 @@ unrelated Chatsworth Products rack company, and the vendor's old domain now
 redirects to a print storefront.
 
 Everything was recovered from the **Wayback Machine CDX index of the vendor's
-dead domain** and is archived at `_extensions/omr-relay/docs/recovered/`:
+dead domain** and is installed at `media/vendor/omr/` by `npm run install:assets` (provenance in `_extensions/omr-relay/docs/recovered/README.md`):
 
 | File | Contents |
 |---|---|
@@ -566,7 +566,7 @@ dead domain** and is archived at `_extensions/omr-relay/docs/recovered/`:
 
 Everything operationally relevant is transcribed into
 [`command-reference.md`](command-reference.md) and
-[`card-specification.md`](card-specification.md); the PDFs are retained as
+[`card-specification.md`](card-specification.md); the PDFs (installed at `media/vendor/omr/`) are the
 primary source for verification. Also recovered but **not** kept in-repo, since
 their content is fully transcribed or irrelevant: the ACP-100 technical manual
 and datasheets (sibling models), the OMR-1102 datasheet, the 2006 stock-card

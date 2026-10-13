@@ -31,6 +31,7 @@ import { answerSheetIdenticon } from "../../domain/documents/answerSheetIdentity
 import { placeFragments } from "./layout.mjs";
 import { documentPdfTheme } from "./documentPdfTheme.mjs";
 import { texToSvg as mathJaxTexToSvg } from "./mathSvg.mjs";
+import { resolveVendorFont, MissingVendorAssetError, getDefaultVendorFontDir } from "./vendorFonts.mjs";
 import { INLINE_SPAN_PLAIN, INLINE_SPAN_ITALIC } from "./inlineGrammar.mjs";
 
 /** Bundled font assets, resolved against this module — never the process cwd. */
@@ -137,9 +138,28 @@ export class UnresolvedAssetError extends Error {
  * Shared by the measurement document and the output document so both resolve
  * `theme.fonts.bold` to the same face.
  */
-export function registerDocumentFonts(doc, { theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR } = {}) {
+export function registerDocumentFonts(doc, {
+  theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR, vendorFontDir = getDefaultVendorFontDir(),
+} = {}) {
+  const missing = new Map();
   for (const font of Object.values(theme.fonts)) {
-    doc.registerFont(font.name, `${fontDir}/${font.file}`);
+    if (font.root === 'vendor') {
+      // Third-party face on the media volume. pdfkit loads lazily, so a missing
+      // file only matters to a document that actually sets text in it: that
+      // document throws (below); every other document renders untouched.
+      const resolved = resolveVendorFont(font.file, vendorFontDir);
+      if (resolved.missing) { missing.set(font.name, font.file); continue; }
+      doc.registerFont(font.name, resolved.path);
+    } else {
+      doc.registerFont(font.name, `${fontDir}/${font.file}`);
+    }
+  }
+  if (missing.size) {
+    const select = doc.font.bind(doc);
+    doc.font = (name, ...rest) => {
+      if (missing.has(name)) throw new MissingVendorAssetError(missing.get(name), vendorFontDir);
+      return select(name, ...rest);
+    };
   }
   return doc;
 }
@@ -148,9 +168,11 @@ export function registerDocumentFonts(doc, { theme = documentPdfTheme, fontDir =
  * A PDFDocument used only for `widthOfString`. It is never ended, never
  * streamed, and never written to disk.
  */
-export function createMeasurementDocument({ theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR } = {}) {
+export function createMeasurementDocument({
+  theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR, vendorFontDir = getDefaultVendorFontDir(),
+} = {}) {
   const doc = new PDFDocument({ size: 'letter', margin: theme.page.marginPt, autoFirstPage: false });
-  return registerDocumentFonts(doc, { theme, fontDir });
+  return registerDocumentFonts(doc, { theme, fontDir, vendorFontDir });
 }
 
 const stringWidth = (doc, theme, fontKey, sizePt, text) =>

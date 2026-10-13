@@ -1,17 +1,38 @@
 // CurriculumIndex.mjs — loads a per-show curriculum index and merges it onto items.
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { fileExists, readTextFromPath } from '#system/utils/FileIO.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 
-const DIR = join(dirname(fileURLToPath(import.meta.url)), 'curriculum');
+const logger = createLogger({ source: 'backend', app: 'piano', context: { component: 'plex-curriculum' } });
+
+// Household data, not code: <dataDir>/content/piano/curriculum/<showRatingKey>.json.
+// Composition injects the directory (configureCurriculumDir) from the config data path.
+let DIR = null;
 const cache = new Map(); // showRatingKey -> index | null
+
+/** Directory of per-show curriculum files, relative to a config data dir. */
+export const curriculumDirFor = (dataDir) => join(dataDir, 'content', 'piano', 'curriculum');
+
+export function configureCurriculumDir(dir) {
+  DIR = dir || null;
+  cache.clear();
+}
 
 export function getCurriculumIndex(showRatingKey) {
   const key = String(showRatingKey);
   if (cache.has(key)) return cache.get(key);
-  const path = join(DIR, `${key}.json`);
+  const path = DIR ? join(DIR, `${key}.json`) : null;
   let index = null;
-  try { if (fileExists(path)) index = JSON.parse(readTextFromPath(path)); } catch { index = null; }
+  let reason = null;
+  if (!path) reason = 'curriculum-dir-not-configured';
+  else {
+    try {
+      if (fileExists(path)) index = JSON.parse(readTextFromPath(path));
+      else reason = 'file-missing';
+    } catch (err) { reason = `unreadable: ${err.message}`; }
+  }
+  // Cached below, so this warns once per show key — never a silent null.
+  if (!index) logger.warn('piano.curriculum.unavailable', { show: key, dir: DIR, reason });
   cache.set(key, index);
   return index;
 }

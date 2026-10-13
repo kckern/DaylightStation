@@ -1,0 +1,161 @@
+schema: school.card-lexicon/v3
+package: korean-3-2
+target:
+  code: ko
+  name: Korean
+anchor:
+  code: en
+  name: English
+program:
+  title: Korean 3-2 · Lesson 1
+entries:
+  - id: kite-sample
+    group: lesson-01
+    kind: word
+    term: 카나다
+    gloss: kite one
+    pronunciation: kanada
+    decoys:
+      term:
+        - 라마바
+        - 사아자
+        - 차카타
+      gloss:
+        - lantern one
+        - anchor one
+        - orchard one
+  - id: lantern-sample
+    group: lesson-01
+    kind: word
+    term: 라마바
+    gloss: lantern one
+    pronunciation: ramaba
+    decoys:
+      term:
+        - 카나다
+        - 사아자
+        - 차카타
+      gloss:
+        - kite one
+        - anchor one
+        - orchard one
+  - id: anchor-sample
+    group: lesson-01
+    kind: word
+    term: 사아자
+    gloss: anchor one
+    pronunciation: saaja
+    decoys:
+      term:
+        - 카나다
+        - 라마바
+        - 차카타
+      gloss:
+        - kite one
+        - lantern one
+        - orchard one
+  - id: orchard-sample
+    group: lesson-01
+    kind: word
+    term: 차카타
+    gloss: orchard one
+    pronunciation: chakata
+    decoys:
+      term:
+        - 카나다
+        - 라마바
+        - 사아자
+      gloss:
+        - kite one
+        - lantern one
+        - anchor one
+  - id: ask-sample
+    group: lesson-01
+    kind: phrase
+    term: 가가나 나나다
+    gloss: ask a sample
+    pronunciation: gaga na nanada
+    decoys:
+      term:
+        - 다다라 라라마
+        - 마마바 바바사
+        - 사사아 아아자
+      gloss:
+        - photo a sample
+        - eat a sample
+        - dad samples
+  - id: photo-sample
+    group: lesson-01
+    kind: phrase
+    term: 다다라 라라마
+    gloss: photo a sample
+    pronunciation: dada ra raramaba
+    decoys:
+      term:
+        - 가가나 나나다
+        - 마마바 바바사
+        - 사사아 아아자
+      gloss:
+        - ask a sample
+        - eat a sample
+        - dad samples
+  - id: eat-sample
+    group: lesson-01
+    kind: phrase
+    term: 마마바 바바사
+    gloss: eat a sample
+    pronunciation: mama ba babasa
+    decoys:
+      term:
+        - 가가나 나나다
+        - 다다라 라라마
+        - 사사아 아아자
+      gloss:
+        - ask a sample
+        - photo a sample
+        - dad samples
+  - id: dad-sample
+    group: lesson-01
+    kind: phrase
+    term: 사사아 아아자
+    gloss: dad samples
+    pronunciation: sasa a aaja
+    decoys:
+      term:
+        - 가가나 나나다
+        - 다다라 라라마
+        - 마마바 바바사
+      gloss:
+        - ask a sample
+        - photo a sample
+        - eat a sample
+  - id: hold-sample
+    group: lesson-01
+    kind: phrase
+    term: 자자차 차차카
+    gloss: hold a sample
+    pronunciation: jaja cha chachaka
+    decoys:
+      term:
+        - 가가나 나나다
+        - 다다라 라라마
+        - 마마바 바바사
+      gloss:
+        - ask a sample
+        - photo a sample
+        - eat a sample
+  - id: wake-sample
+    group: lesson-01
+    kind: phrase
+    term: 카카타 타타가
+    gloss: wake a sample
+    pronunciation: kaka ta tataga
+    decoys:
+      term:
+        - 가가나 나나다
+        - 다다라 라라마
+        - 마마바 바바사
+      gloss:
+        - ask a sample
+        - photo a sample
+        - eat a sample

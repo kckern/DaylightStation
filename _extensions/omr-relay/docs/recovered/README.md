@@ -10,7 +10,11 @@ generalizes: for any dead hardware vendor, query the CDX API across the whole
 domain and grep the result for `.pdf`, `.exe`, and `.zip` rather than trusting
 search engines.
 
-## Retained here
+## Installed, not tracked
+
+The PDFs are third-party documents, so they are not in the repo. `npm run install:assets`
+downloads them from the Wayback Machine (URLs and sha256 pinned in `assets.manifest.yml`)
+into `media/vendor/omr/`.
 
 | File | Contents |
 |---|---|
@@ -27,7 +31,7 @@ working reference:
 - `__docs/reference/omr/command-reference.md` — full command set
 - `__docs/reference/omr/card-specification.md` — Appendix A card spec
 
-The PDFs are kept as primary source so transcription errors can be caught.
+The PDFs stay available as primary source (installed at `media/vendor/omr/`) so transcription errors can be caught.
 
 ## Recovered but not kept
 

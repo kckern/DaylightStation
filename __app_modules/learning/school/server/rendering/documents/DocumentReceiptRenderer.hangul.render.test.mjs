@@ -13,14 +13,10 @@
  * bold/code faces it already registers.
  */
 import { describe, expect, it } from 'vitest';
-import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import * as fontkit from 'fontkit';
 import { createDocumentReceiptRenderer } from "./DocumentReceiptRenderer.mjs";
+import { makeStandInVendorFontDir } from "../../../../../../tests/_lib/school/vendorFontStandIn.mjs";
 import { documentReceiptTheme as theme } from "./documentReceiptTheme.mjs";
 
-const FONTS = fileURLToPath(new URL("../../../../../../__backend/assets/fonts", import.meta.url));
 const HANGUL = 'UBKS 비둘기';
 
 const card = (label) => ({
@@ -47,20 +43,6 @@ describe('receipt theme carries a Hangul fallback family', () => {
     expect(theme.fonts.hangulFontPath).toBeTruthy();
     expect(theme.fonts.hangulFamily).toBe('Noto Sans KR');
   });
-
-  it('the bundled Noto Sans KR file exists and the house face has no Hangul glyphs', () => {
-    const robotoPath = path.join(FONTS, theme.fonts.fontPath);
-    const notoPath = path.join(FONTS, theme.fonts.hangulFontPath);
-    expect(fs.existsSync(robotoPath)).toBe(true);
-    expect(fs.existsSync(notoPath)).toBe(true);
-    const roboto = fontkit.openSync(robotoPath);
-    const noto = fontkit.openSync(notoPath);
-    // '비' (U+BE44) — the .notdef glyph id is 0.
-    expect(roboto.glyphForCodePoint('비'.codePointAt(0)).id).toBe(0);
-    for (const ch of '비둘기') {
-      expect(noto.glyphForCodePoint(ch.codePointAt(0)).id, ch).not.toBe(0);
-    }
-  });
 });
 
 // A pixel/measureText comparison between "Roboto Condensed" alone and the
@@ -81,7 +63,7 @@ describe('receipt theme carries a Hangul fallback family', () => {
 // (Letter) target.
 describe('Hangul glyphs actually draw on canvas (not tofu)', () => {
   it('renders a card whose label is Hangul without throwing, and the glyph area is non-blank', async () => {
-    const renderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
+    const renderer = createDocumentReceiptRenderer({ scanCodes: 'qr', vendorFontDir: makeStandInVendorFontDir() });
     const { canvas, height } = await renderer.createCanvas(card(HANGUL), { tokens: {} });
     expect(height).toBeGreaterThan(0);
     const buf = canvas.toBuffer('image/png');

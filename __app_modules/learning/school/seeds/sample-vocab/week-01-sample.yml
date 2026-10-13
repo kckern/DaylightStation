@@ -1,0 +1,19 @@
+# Installed to data/content/school/learning-catalog/flashcard-decks/language/sample/week-01-sample.yml.
+# A weekly deck never changes its words once in use; next week is a new file
+# (and its new words get a new lexicon group). Installed by
+# scripts/school/seed-word-package.sh __app_modules/learning/school/seeds/sample-vocab.
+schema: school.flashcard-deck/v1
+id: language/sample/week-01-sample
+title: Sample words
+revision: 1
+lexicon: media:language/sample-vocab/lexicon.yml
+words:
+  - kite
+  - lantern
+  - anchor
+  - orchard
+  - ribbon
+  - saddle
+  - thimble
+  - compass
+  - quilt

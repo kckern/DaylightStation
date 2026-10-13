@@ -2,13 +2,13 @@
 import {it,expect} from 'vitest';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
+import {syntheticLessons} from "../../_fixtures/school/sample-course/syntheticCourse.mjs";
 import * as repair from "../../../__app_modules/learning/school/cli/lib/korean-course-repair.mjs";
 import {assembleKoreanCourse} from "../../../__app_modules/learning/school/cli/lib/korean-course.mjs";
-const fixture=new URL('../../_fixtures/school/korean-3-2/',import.meta.url);
+const fixture=new URL('../../_fixtures/school/sample-course/',import.meta.url);
 const read=n=>yaml.load(fs.readFileSync(new URL(n,fixture),'utf8'));
 function input(){
- const dir=new URL('full-course/lessons/',fixture);
- const built=assembleKoreanCourse({baseLexicon:read('lexicon.yml'),baseUnit:read('korean-3-2.lesson-01.yml'),lessons:fs.readdirSync(dir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(new URL(n,dir),'utf8')))});
+ const built=assembleKoreanCourse({baseLexicon:read('lexicon.yml'),baseUnit:read('korean-3-2.lesson-01.yml'),lessons:syntheticLessons()});
  return {units:built.units,sources:[read('lesson-01-a.yml'),read('lesson-01-b.yml'),...built.documents]};
 }
 it('guards choices-only source revisions and document-pins-only unit revisions',()=>{

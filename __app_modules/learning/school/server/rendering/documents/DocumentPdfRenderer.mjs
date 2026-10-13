@@ -174,12 +174,14 @@ function createChoiceResolver(bank) {
  *   Defaults to a resolver that THROWS: an asset that cannot be drawn must not
  *   become a blank rectangle on a child's worksheet.
  * @param {string} [deps.fontDir] - override the bundled font directory
+ * @param {string} [deps.vendorFontDir] - media/vendor/fonts (Noto Sans KR); a Korean document throws naming `npm run install:assets` if it is absent
  */
 export function createDocumentPdfRenderer({
   theme = documentPdfTheme,
   texToSvg = mathJaxTexToSvg,
   resolveAsset = null,
   fontDir = undefined,
+  vendorFontDir = undefined,
 } = {}) {
   if (typeof texToSvg !== 'function') {
     throw new TypeError('createDocumentPdfRenderer needs a texToSvg function');
@@ -1049,7 +1051,7 @@ export function createDocumentPdfRenderer({
     // full page width while drawing/placing at a gutter-narrowed one is
     // exactly the "gutter is furniture-only" bug F2 fixes.
     const box = furniture ? contentBox(theme, furniture) : null;
-    const measurementDoc = createMeasurementDocument({ theme, fontDir });
+    const measurementDoc = createMeasurementDocument({ theme, fontDir, ...(vendorFontDir ? { vendorFontDir } : {}) });
     const fragments = measureDocumentFragments(document, {
       doc: measurementDoc,
       theme,
@@ -1169,7 +1171,7 @@ export function createDocumentPdfRenderer({
         autoFirstPage: false,
         info: { CreationDate: PINNED_CREATION_DATE },
       });
-      registerDocumentFonts(out, { theme, fontDir });
+      registerDocumentFonts(out, { theme, fontDir, ...(vendorFontDir ? { vendorFontDir } : {}) });
 
       const chunks = [];
       out.on('data', (chunk) => chunks.push(chunk));

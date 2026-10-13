@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Build the DS2278 quick-reference barcode sheet (vector, no bitmaps).
 
-    python3 tools/gen-ds2278-reference.py /path/to/ds2278-prg-en.pdf
+    python3 tools/gen-ds2278-reference.py /path/to/ds2278-prg-en.pdf [OUT_DIR]
 
-Writes ds2278-quick-reference.{pdf,svg} beside the extension README.
+Writes ds2278-quick-reference.{pdf,svg} into OUT_DIR. The sheet is derived from
+Zebra's guide, so it is not tracked in the repo: OUT_DIR defaults to
+$DAYLIGHT_MEDIA_PATH/vendor/kitchen-relay (where `npm run install:assets`
+expects it) and the script refuses to guess when neither is given.
 
 WHY THIS EXISTS
 ---------------
@@ -37,9 +40,20 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import code128  # noqa: E402
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT_PDF = os.path.join(HERE, "ds2278-quick-reference.pdf")
-OUT_SVG = os.path.join(HERE, "ds2278-quick-reference.svg")
+OUT_NAME = "ds2278-quick-reference"
+OUT_PDF = OUT_SVG = None  # set by resolve_out_dir()
+
+
+def resolve_out_dir(arg):
+    """OUT_DIR argument, else $DAYLIGHT_MEDIA_PATH/vendor/kitchen-relay; never a repo path."""
+    global OUT_PDF, OUT_SVG
+    media = os.environ.get("DAYLIGHT_MEDIA_PATH")
+    out_dir = arg or (os.path.join(media, "vendor", "kitchen-relay") if media else None)
+    if not out_dir:
+        sys.exit("ds2278: pass OUT_DIR or set DAYLIGHT_MEDIA_PATH (output is not written into the repo)")
+    os.makedirs(out_dir, exist_ok=True)
+    OUT_PDF = os.path.join(out_dir, OUT_NAME + ".pdf")
+    OUT_SVG = os.path.join(out_dir, OUT_NAME + ".svg")
 
 # Vector bar codes, located by geometry in the guide and verified by decoding
 # (see the module docstring). `page` is the PDF page number, not the printed
@@ -148,7 +162,8 @@ def draw_code128(page, values, x, y, module=1.0, height=BAR_H):
     return cx - x
 
 
-def main(src_path):
+def main(src_path, out_dir=None):
+    resolve_out_dir(out_dir)
     src = fitz.open(src_path)
     volumes = volume_symbol_values(src)
 
@@ -260,7 +275,7 @@ def main(src_path):
     text("Kitchen relay: _extensions/kitchen-relay | scanner MAC c8:1c:fe:fd:ce:90 | "
          "health at http://<relay-ip>/status",
          MARGIN, y, size=7, color=(0.45, 0.45, 0.45))
-    text("Regenerate: python3 tools/gen-ds2278-reference.py <ds2278-prg-en.pdf>",
+    text("Regenerate: python3 tools/gen-ds2278-reference.py <ds2278-prg-en.pdf> [OUT_DIR]",
          MARGIN, y + 9, size=7, color=(0.45, 0.45, 0.45))
 
     out.save(OUT_PDF, garbage=4, deflate=True)
@@ -289,4 +304,4 @@ def main(src_path):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
+import { syntheticLessons } from "../../_fixtures/school/sample-course/syntheticCourse.mjs";
 import { assembleKoreanCourse } from "../../../__app_modules/learning/school/cli/lib/korean-course.mjs";
 import { preserveExistingEnrollments } from "../../../__app_modules/learning/school/cli/lib/preserve-existing-enrollments.mjs";
 import { createSchoolProgramEnrollmentValidators } from "../../../__app_modules/learning/school/server/application/SchoolProgramEnrollmentValidators.mjs";
@@ -14,10 +15,9 @@ import { SetAssignments } from "../../../__app_modules/learning/school/server/ap
 it('adds Korean lessons while preserving unrelated decks, linked courses and service-backed programs', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'korean-enrollment-'));
   const base = path.join(root, 'base'), out = path.join(root, 'out');
-  const fixture = new URL('../../_fixtures/school/korean-3-2/', import.meta.url);
+  const fixture = new URL('../../_fixtures/school/sample-course/', import.meta.url);
   const load = name => yaml.load(fs.readFileSync(new URL(name, fixture), 'utf8'));
-  const lessonsDir = new URL('full-course/lessons/', fixture);
-  const lessons = fs.readdirSync(lessonsDir).map(name => JSON.parse(fs.readFileSync(new URL(name, lessonsDir), 'utf8')));
+  const lessons = syntheticLessons();
   const course = assembleKoreanCourse({ baseLexicon: load('lexicon.yml'), baseUnit: load('korean-3-2.lesson-01.yml'), lessons });
   const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, yaml.dump(value)); };
   const old = { learnerId: 'kid', courses: [{ courseId: 'biology' }], units: ['other.work'], updatedAt: '2026-10-01T00:00:00Z', assignedBy: 'adult', programs: [

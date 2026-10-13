@@ -1,6 +1,6 @@
 import {YamlComposerSongStore as ComposerSongStore} from './adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import {YamlPianoGameBudgetStore} from './adapters/persistence/YamlPianoGameBudgetStore.mjs';
-import {getCurriculumIndex,mergeSeason} from './adapters/plex-curriculum/CurriculumIndex.mjs';
+import {getCurriculumIndex,mergeSeason,configureCurriculumDir,curriculumDirFor} from './adapters/plex-curriculum/CurriculumIndex.mjs';
 import {join} from "node:path";
 import { createPianoRouter } from "./api/piano.mjs";
 import { PianoContainer } from "./application/PianoContainer.mjs";
@@ -99,6 +99,7 @@ export async function createPianoModule({configService, userService, rootLogger,
   const pianoSchoolAssignments = createLearnerAssignmentReader({
     configService, logger: rootLogger.child({ module: 'piano-school-assignments' }),
   });
+  configureCurriculumDir(curriculumDirFor(configService.getDataDir()));
   const pianoContainer = new PianoContainer({
     // D1: the use case receives the Plex curriculum reader, never imports it.
     curriculumIndex: { getCurriculumIndex, mergeSeason },

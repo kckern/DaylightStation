@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { parseArgs, isDeepStrictEqual, promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 import { spawnSync, execFile } from 'node:child_process';
 import yaml from 'js-yaml';
 import { createCanvas } from '@napi-rs/canvas';
@@ -43,7 +42,9 @@ function verifyMedia(lexicon){
  }
 }
 if(command==='build'){
- const sourceDir=values['source-dir']??fileURLToPath(new URL("../../../../tests/_fixtures/school/korean-3-2/full-course/lessons/",import.meta.url));
+ // The authored lesson JSON is household content in the data volume, not in the repo: --source-dir, or <base>/<DOCUMENTS>/full-course/lessons.
+ const sourceDir=values['source-dir']??path.join(base,DOCUMENTS,'full-course','lessons');
+ if(!fs.existsSync(sourceDir))throw Error(`Lesson source directory not found: ${sourceDir}. Pass --source-dir <dir of NN.json lesson files> or place them under ${DOCUMENTS}/full-course/lessons in the data volume.`);
  const lessons=fs.readdirSync(sourceDir).filter(name=>name.endsWith('.json')).map(name=>JSON.parse(fs.readFileSync(path.join(sourceDir,name),'utf8')));
  const result=assembleKoreanCourse({baseLexicon:read(path.join(base,SCHOOL,'lexicon.yml')),baseUnit:read(path.join(base,UNITS,'korean-3-2.lesson-01.yml')),lessons});
  save(`${SCHOOL}/lexicon.yml`,result.lexicon);

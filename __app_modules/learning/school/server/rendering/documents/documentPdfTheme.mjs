@@ -43,7 +43,7 @@ export const documentPdfTheme = Object.freeze({
     code: { name: 'school-doc-code', file: 'kongtext/kongtext.ttf' },
     // Script fallback faces, keyed by script (`measure.mjs#SCRIPT_FALLBACKS`).
     // Lazy registration keeps goldens identical.
-    hangul: { name: 'school-doc-hangul', file: 'noto-sans-kr/NotoSansKR-Regular.otf' },
+    hangul: { name: 'school-doc-hangul', file: 'noto-sans-kr/NotoSansKR-Regular.otf', root: 'vendor' },
   },
 
   /**

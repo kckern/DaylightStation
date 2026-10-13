@@ -5,15 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import yaml from 'js-yaml';
+import {syntheticLessons} from "../../_fixtures/school/sample-course/syntheticCourse.mjs";
 import {assembleKoreanCourse} from "../../../__app_modules/learning/school/cli/lib/korean-course.mjs";
 import {publishDocument} from "../../../__app_modules/learning/school/server/domain/documents/documentSource.mjs";
-const fixture=new URL('../../_fixtures/school/korean-3-2/',import.meta.url);
+const fixture=new URL('../../_fixtures/school/sample-course/',import.meta.url);
 const read=n=>yaml.load(fs.readFileSync(new URL(n,fixture),'utf8'));
 it('previews without base mutation, refuses stale save and retains original published keys on apply',()=>{
  const base=fs.mkdtempSync(path.join(os.tmpdir(),'korean-repair-base-')),out=fs.mkdtempSync(path.join(os.tmpdir(),'korean-repair-stage-'));
  const save=(rel,obj)=>{const f=path.join(base,rel);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,yaml.dump(obj));};
- const dir=new URL('full-course/lessons/',fixture);
- const built=assembleKoreanCourse({baseLexicon:read('lexicon.yml'),baseUnit:read('korean-3-2.lesson-01.yml'),lessons:fs.readdirSync(dir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(new URL(n,dir),'utf8')))});
+ const built=assembleKoreanCourse({baseLexicon:read('lexicon.yml'),baseUnit:read('korean-3-2.lesson-01.yml'),lessons:syntheticLessons()});
  save('media/school/language/korean-3-2/lexicon.yml',built.lexicon);
  for(const deck of built.decks)save(`data/content/school/learning-catalog/flashcard-decks/${deck.id}.yml`,deck);
  const sources=[read('lesson-01-a.yml'),read('lesson-01-b.yml'),...built.documents];

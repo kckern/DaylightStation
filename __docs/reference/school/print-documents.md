@@ -424,21 +424,31 @@ keeps a `SCRIPT_FALLBACKS` table — one row per script (`script`, a coverage
 `pattern`, the theme `fontKey`) — and any inline text run containing a listed
 script is set in that script's face, while Latin runs keep the house font.
 Today's one row is Hangul (U+1100–11FF, U+3130–318F, U+AC00–D7AF) → Noto Sans
-KR (`__backend/assets/fonts/noto-sans-kr/`, OFL), the themes' `hangul` face.
+KR (OFL), the themes' `hangul` face. The font is a third-party asset, not in
+the repo: it is installed at `<media>/vendor/fonts/noto-sans-kr/` by
+`npm run install:assets`, and the theme entry carries `root: 'vendor'`.
+`rendering/documents/vendorFonts.mjs` resolves it against the directory
+composition injects (`vendorFontDir`, from `ConfigService.getMediaDir()`; also
+the process default). If it is absent, a document with no Hangul still renders
+(pdfkit loads lazily) and a Hangul one throws `MissingVendorAssetError` naming
+`npm run install:assets`; a `school.vendor-font.missing` warn logs once.
 Adding a script = one table row + a font entry under the same key in
-`workbookTheme` and `documentPdfTheme` + the font file; fonts are not
+`workbookTheme` and `documentPdfTheme` (+ a manifest entry for the file); fonts are not
 configured in YAML. The swap happens where runs are built
 (`measure.mjs#withScriptFont`), so measurement and drawing agree. Bold and
 italic Hangul print in the regular weight. Header text (title, subtitle,
 instructions) is drawn outside the run grammar and must stay Latin.
-`hangulFallback.render.test.mjs` asserts the glyphs exist and the font is
-embedded, so a Korean worksheet cannot silently print `.notdef` boxes.
+Unit tests render with a committed stand-in face (`vendorFontStandIn.mjs`);
+`tests/live/adapter/korean-font-installed.test.mjs` asserts the real font's
+glyph coverage and embedding, so a Korean worksheet cannot silently print
+`.notdef` boxes.
 
 **The thermal receipt target is a separate font-resolution path** —
 `DocumentReceiptRenderer.mjs` draws with node-canvas, not pdfkit, so
 `measure.mjs#withScriptFont`/`SCRIPT_FALLBACKS` do not reach it.
 `documentReceiptTheme.fonts.hangulFamily`/`hangulFontPath` register the same
-Noto Sans KR face there, and every prose font string in the theme is a
+Noto Sans KR face there (from the vendor dir; a Hangul receipt with the font
+absent throws the same install error), and every prose font string in the theme is a
 CSS-style family list — `'... "Roboto Condensed", "Noto Sans KR"'` — which
 node-canvas resolves per-glyph the way a browser does, so Latin still draws
 in Roboto Condensed and a Hangul run falls through to Noto Sans KR in the

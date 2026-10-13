@@ -13,13 +13,17 @@ import { RenderPrintDocument } from "./documents/RenderPrintDocument.mjs";
 import { ResolveCardScan } from "./documents/ResolveCardScan.mjs";
 import { YamlPrintDocumentRepository } from "../adapters/documents/YamlPrintDocumentRepository.mjs";
 import { YamlAllocationStore } from "../adapters/documents/YamlAllocationStore.mjs";
+import { setDefaultVendorFontDir } from "../rendering/documents/vendorFonts.mjs";
+import { makeStandInVendorFontDir } from "../../../../../tests/_lib/school/vendorFontStandIn.mjs";
 import { createPrintDocumentRendering } from "../rendering/documents/PrintDocumentRendering.mjs";
 import { createEvent, reduceSession } from "../domain/sessions/sessionEvents.mjs";
 import { FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore, FakeLaserPrinter, fakeClock, sequentialIds, silentLogger, fakeGrownUps } from "../../../../../tests/_lib/school/lifecycleFakes.mjs";
-const fixture = (name) => yaml.load(fs.readFileSync(new URL(`../../../../../tests/_fixtures/school/korean-3-2/${name}.yml`, import.meta.url), 'utf8'));
+const fixture = (name) => yaml.load(fs.readFileSync(new URL(`../../../../../tests/_fixtures/school/sample-course/${name}.yml`, import.meta.url), 'utf8'));
 it('prints 6 → 2 → 1 questions, preserving credits and requiring fresh mapped checks between paper attempts', async () => {
  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'practice-assessment-loop-'));
  try {
+ // The Hangul fallback face lives on the media volume; unit tests render with a stand-in.
+ setDefaultVendorFontDir(makeStandInVendorFontDir());
  const unit = fixture('korean-3-2.lesson-01');
  const sessions = new FakeSessionRepository(), tokens = new FakeTokenRegistry(), printer = new FakeLaserPrinter();
  const clock = fakeClock('2026-10-07T16:00:00Z');
@@ -73,5 +77,5 @@ it('prints 6 → 2 → 1 questions, preserving credits and requiring fresh mappe
  await review();
  const corrected=await service.print(args);expect(corrected.status).toBe('issued');
  expect(reduceSession(await sessions.readEvents(corrected.sessionId)).practiceAssessment.questionIds).toEqual(['permission-01']);
- } finally { fs.rmSync(directory,{recursive:true,force:true}); }
+ } finally { setDefaultVendorFontDir(null); fs.rmSync(directory,{recursive:true,force:true}); }
 });
