@@ -29,6 +29,8 @@ jobs:
           npm run audit:layers
           npm run audit:fs
           npm run audit:links
+      - name: Public-tree audit (no private data)
+        run: npm run audit:public
       - name: Verify working-tree and staged violation controls
         run: >-
           node --test
