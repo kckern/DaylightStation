@@ -25,13 +25,8 @@ __backend/node_modules
 !tests/fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 !tests/_infrastructure/environments.yml
-!__backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 !__backend/src/2_domains/fitness/services/__fixtures__/*.yml
 !__backend/src/3_applications/school/sources/geography/*.yml
-# Rubik's Cube course content — `courseCatalog.mjs` degrades gracefully when
-# this is absent (no throw at import), but a real one authored here must be
-# committable rather than silently swallowed by the blanket `*.yml` rule.
-!__backend/src/3_applications/school/rubiksCube/course.yml
 # Backend-scoped fixture tree (mirrors the `!tests/_fixtures/**` rule above for
 # the root suite). These ARE test inputs — without this the suite only passes on
 # a machine where they happen to sit untracked in the working tree.
@@ -80,10 +75,6 @@ config.app-local.yml
 !scripts/dev-server.sh
 !scripts/config/
 !scripts/test-env.sh
-!scripts/update-test-imports.mjs
-!scripts/migrate-lists-to-watchlists.mjs
-!scripts/migrate-content-structure.sh
-!scripts/migrate-watch-state.mjs
 !scripts/gen-sheet.mjs
 !scripts/audit-baseline.unit.txt
 !scripts/audit-layer-imports.mjs
@@ -162,7 +153,6 @@ dev.log*
 
 # PII-scrub tooling (contains the real->alias map; local only, never commit)
 .pii-scrub/
-!scripts/migrate-trigger-config.mjs
 # Portal Keys Android build outputs — same treatment as audio-bridge above.
 # (Superseded three reactive per-subdirectory rules that only covered whichever
 # intermediates happened to churn; the whole build tree is generated.)
@@ -175,10 +165,6 @@ dev.log*
 # a fresh clone reproduces the same tree with `idf.py reconfigure`.
 /_extensions/food-scale-relay/firmware/managed_components/
 /_extensions/food-scale-relay/firmware/build/
-# ...but the refetch ALSO needs the manifest, and the global `*.yml` rule at the
-# top of this file was swallowing it. Without this negation a fresh clone gets
-# the lock and no manifest, and the firmware cannot be built at all.
-!/_extensions/food-scale-relay/firmware/src/idf_component.yml
 
 # Extension config TEMPLATES. These document each extension's schema and are
 # meant to be committed — the global `*.yml` rule at the top was hiding them,
@@ -186,7 +172,6 @@ dev.log*
 # in the household data volume and are still ignored.
 !/_extensions/content-barcode-relay/config.example.yml
 !/_extensions/ir-blaster/config.example.yml
-!/_extensions/piano/recorder/config.example.yml
 
 # Golden-test failure artifacts (regenerated on every failing run, never source)
 tests/isolated/rendering/school/golden/snapshots/*.diff.png
@@ -204,11 +189,10 @@ __sabotage_*.mjs
 /*.pdf
 __docs/_moveme/
 /.agents
-!scripts/migrate-household-config.mjs
-*.png
-!tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
 # Committed visual baselines the print-design acceptance sweeps compare against
 # (they write a fresh one and FAIL when it is missing, so it must be tracked).
+# Every other proof render is scratch output.
+__app_modules/learning/school/server/application/documents/__proof__/**/*.png
 !__app_modules/learning/school/server/application/documents/__proof__/phase-a/proof-standard-p02.png
 !__app_modules/learning/school/server/application/documents/__proof__/phase-b/kitchen-sink-student-p01.png
 !__app_modules/learning/school/server/application/documents/__proof__/phase-c/card-continuation-student-p01.png
@@ -296,3 +280,26 @@ __docs/_wip/audits/**/*.json
 !/__app_modules/learning/school/satellites/ti86-app/testing/mame-scenarios.yml
 !/__app_modules/learning/school/satellites/ti86-app/testing/state-capitals.yml
 !/__app_modules/learning/school/satellites/ticalc-relay/tools/build-ti86-graph-link.sh
+
+# Scoped bitmap ignores (replaces the old global `*.png`). Bitmaps are tracked by
+# default so favicons, golden snapshots and doc images can be committed; only
+# generated output and scratch captures are ignored here. Screenshots of a running
+# household kiosk show real names and telemetry as pixels -- keep them out.
+test-results/
+playwright-report/
+**/__screenshots__/actual/
+*.tmp.png
+*.diff.png
+node_modules/
+
+# Stale pre-restructure roots: the code now lives in the __-prefixed trees. These
+# names must never be resurrected by a careless `git add`.
+/backend/
+/docs/
+/modules/
+/capabilities/
+/recording-analysis/
+/data-drafts/
+/households/
+/test-results/
+/dev.log*
