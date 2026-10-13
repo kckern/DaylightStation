@@ -1,0 +1,42 @@
+schema: school.study-reference-map/v1
+course: sample-math
+note: Synthetic test fixture.
+materials:
+  wb-a:
+    title: Sample Workbook A
+    pages:
+      - 3
+      - 4
+      - 5
+    section: Numbers
+  wb-b:
+    title: Sample Workbook A
+    pages:
+      - 10
+      - 11
+    section: Sums
+lessons:
+  sm-01-01-place-value-to-100:
+    - wb-a
+    - wb-b
+  sm-01-02-greatest-numbers:
+    - wb-a
+    - wb-b
+  sm-01-90-hundreds-challenge:
+    - wb-a
+    - wb-b
+  sm-01-99-counting-and-comparing-mastery:
+    - wb-a
+    - wb-b
+  sm-02-01-add-small-numbers:
+    - wb-b
+    - wb-a
+  sm-02-02-ten-frame-counting:
+    - wb-b
+    - wb-a
+  sm-02-90-subtraction-challenge:
+    - wb-b
+    - wb-a
+  sm-02-99-sums-and-differences-mastery:
+    - wb-b
+    - wb-a

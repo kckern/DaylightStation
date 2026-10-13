@@ -1,0 +1,314 @@
+{
+  "id": "sm-02-99-sums-and-differences-mastery",
+  "title": "Sums and Differences Mastery",
+  "kind": "mastery",
+  "source": "authored",
+  "module": "sums",
+  "sequence": 8,
+  "required": true,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-02-99-sums-and-differences-mastery-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "mastery"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q01",
+      "type": "multiple_choice",
+      "prompt": "What is $653 + 281$?",
+      "answer": "934",
+      "decoys": [
+        "944",
+        "924",
+        "372",
+        "1034"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 91)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q02",
+      "type": "multiple_choice",
+      "prompt": "What is $1500 − 644$?",
+      "answer": "856",
+      "decoys": [
+        "866",
+        "846",
+        "2144",
+        "956"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 644 from 1500 by place value; regroup if a top digit is smaller (case 212)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q03",
+      "type": "multiple_choice",
+      "prompt": "What is $667 + 287$?",
+      "answer": "954",
+      "decoys": [
+        "964",
+        "944",
+        "380",
+        "1054"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 93)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q04",
+      "type": "multiple_choice",
+      "prompt": "What is $1514 − 650$?",
+      "answer": "864",
+      "decoys": [
+        "874",
+        "854",
+        "2164",
+        "964"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 650 from 1514 by place value; regroup if a top digit is smaller (case 214)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q05",
+      "type": "multiple_choice",
+      "prompt": "What is $681 + 293$?",
+      "answer": "974",
+      "decoys": [
+        "984",
+        "964",
+        "388",
+        "1074"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 95)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q06",
+      "type": "multiple_choice",
+      "prompt": "What is $1528 − 656$?",
+      "answer": "872",
+      "decoys": [
+        "882",
+        "862",
+        "2184",
+        "972"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 656 from 1528 by place value; regroup if a top digit is smaller (case 216)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q07",
+      "type": "multiple_choice",
+      "prompt": "What is $695 + 299$?",
+      "answer": "994",
+      "decoys": [
+        "1004",
+        "984",
+        "396",
+        "1094"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 97)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q08",
+      "type": "multiple_choice",
+      "prompt": "What is $1542 − 662$?",
+      "answer": "880",
+      "decoys": [
+        "890",
+        "870",
+        "2204",
+        "980"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 662 from 1542 by place value; regroup if a top digit is smaller (case 218)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q09",
+      "type": "multiple_choice",
+      "prompt": "What is $709 + 305$?",
+      "answer": "1014",
+      "decoys": [
+        "1024",
+        "1004",
+        "404",
+        "1114"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 99)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q10",
+      "type": "multiple_choice",
+      "prompt": "What is $1556 − 668$?",
+      "answer": "888",
+      "decoys": [
+        "898",
+        "878",
+        "2224",
+        "988"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 668 from 1556 by place value; regroup if a top digit is smaller (case 220)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q11",
+      "type": "multiple_choice",
+      "prompt": "What is $723 + 311$?",
+      "answer": "1034",
+      "decoys": [
+        "1044",
+        "1024",
+        "412",
+        "1134"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 101)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-99-sums-and-differences-mastery-q12",
+      "type": "multiple_choice",
+      "prompt": "What is $1570 − 674$?",
+      "answer": "896",
+      "decoys": [
+        "906",
+        "886",
+        "2244",
+        "996"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 674 from 1570 by place value; regroup if a top digit is smaller (case 222)."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

@@ -257,13 +257,13 @@ describe('which questions were missed, on the text receipt', () => {
     const text = textOf(renderer.render(scored({
       correctCount: 4, marks: [false, true, false, true, true, true],
       hints: [
-        '7: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.',
-        '9: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.',
+        '7: review Sample Workbook A Guide, pages 24–29 · Ones, Tens, Hundreds.',
+        '9: review Sample Workbook A Guide, pages 24–29 · Ones, Tens, Hundreds.',
       ],
     })));
     expect(text).toContain('REVIEW BEFORE YOU RETRY');
-    expect(text).toContain('7: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.');
-    expect(text).toContain('9: review Beast Academy 2A Guide, pages 24–29 · Ones, Tens, Hundreds.');
+    expect(text).toContain('7: review Sample Workbook A Guide, pages 24–29 · Ones, Tens, Hundreds.');
+    expect(text).toContain('9: review Sample Workbook A Guide, pages 24–29 · Ones, Tens, Hundreds.');
     expect(text).not.toMatch(/correct answer/i);
   });
 

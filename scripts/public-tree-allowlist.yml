@@ -56,7 +56,6 @@ largeText:
   - __docs/reference/media/media-app-technical.md
   - __docs/reference/school/README.md
   - _extensions/playback-hub/playback-hub.sh
-  - scripts/generate-elementary-math-course.mjs
 
 # Still tracked, scheduled for removal by a later asset-externalization task.
 # Each entry names the task that removes it; task C6 asserts this list is empty.

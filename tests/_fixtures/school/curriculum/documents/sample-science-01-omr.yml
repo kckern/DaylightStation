@@ -1,0 +1,51 @@
+id: sample-science-01-omr
+title: Kites, Wind, and Lift Checkpoint
+seed: 20260824
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Kites, Wind, and Lift
+
+      Fill in one bubble for each question. Erase completely if you change an answer.
+  - type: question
+    itemId: sample-q1
+    number: 1
+    blocks:
+      - { type: rich_text, md: "Which part of a sample kite catches the wind?" }
+      - { type: omr_response, itemId: sample-q1, choices: 4 }
+  - type: question
+    itemId: sample-q2
+    number: 2
+    blocks:
+      - { type: rich_text, md: "What does adding a longer tail to a sample kite mostly do?" }
+      - { type: omr_response, itemId: sample-q2, choices: 4 }
+  - type: question
+    itemId: sample-q3
+    number: 3
+    blocks:
+      - { type: rich_text, md: "Which is a gust?" }
+      - { type: omr_response, itemId: sample-q3, choices: 4 }
+  - type: question
+    itemId: sample-q4
+    number: 4
+    blocks:
+      - { type: rich_text, md: "Which string pull makes a sample kite climb?" }
+      - { type: omr_response, itemId: sample-q4, choices: 4 }
+  - type: question
+    itemId: sample-q5
+    number: 5
+    blocks:
+      - { type: rich_text, md: "Which sample material is lightest?" }
+      - { type: omr_response, itemId: sample-q5, choices: 4 }
+  - type: question
+    itemId: sample-q6
+    number: 6
+    blocks:
+      - { type: rich_text, md: "What does a flag on a pole show about the air?" }
+      - { type: omr_response, itemId: sample-q6, choices: 4 }
+  - type: scan_action
+    action: recovery
+    label: Scan this code if you need another copy of this sheet

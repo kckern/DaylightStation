@@ -1,0 +1,302 @@
+{
+  "id": "sm-01-01-place-value-to-100",
+  "title": "Place Value to 100",
+  "kind": "place_value",
+  "source": "workbook",
+  "module": "counting",
+  "sequence": 1,
+  "required": true,
+  "moduleRole": "overview",
+  "params": {},
+  "workedExample": {
+    "id": "sm-01-01-place-value-to-100-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "place-value"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-01-01-place-value-to-100-q01",
+      "type": "multiple_choice",
+      "prompt": "In 120, what amount does the digit 1 represent?",
+      "answer": "100",
+      "decoys": [
+        "1",
+        "1000",
+        "120",
+        "107"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 1 is in the hundreds place, so it represents 100."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q02",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the tens place in 174?",
+      "answer": "7",
+      "decoys": [
+        "8",
+        "0",
+        "2",
+        "4"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 174 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q03",
+      "type": "multiple_choice",
+      "prompt": "In 228, what amount does the digit 8 represent?",
+      "answer": "8",
+      "decoys": [
+        "80",
+        "228",
+        "15",
+        "78"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 8 is in the ones place, so it represents 8."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q04",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the hundreds place in 282?",
+      "answer": "2",
+      "decoys": [
+        "3",
+        "5",
+        "7",
+        "9"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 282 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q05",
+      "type": "multiple_choice",
+      "prompt": "In 336, what amount does the digit 3 represent?",
+      "answer": "30",
+      "decoys": [
+        "3",
+        "300",
+        "336",
+        "37"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 3 is in the tens place, so it represents 30."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q06",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the ones place in 390?",
+      "answer": "0",
+      "decoys": [
+        "1",
+        "3",
+        "5",
+        "7"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 390 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q07",
+      "type": "multiple_choice",
+      "prompt": "In 444, what amount does the digit 4 represent?",
+      "answer": "400",
+      "decoys": [
+        "4",
+        "4000",
+        "444",
+        "407"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 4 is in the hundreds place, so it represents 400."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q08",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the tens place in 498?",
+      "answer": "9",
+      "decoys": [
+        "0",
+        "2",
+        "4",
+        "6"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 498 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q09",
+      "type": "multiple_choice",
+      "prompt": "In 552, what amount does the digit 2 represent?",
+      "answer": "2",
+      "decoys": [
+        "20",
+        "552",
+        "9",
+        "72"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 2 is in the ones place, so it represents 2."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q10",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the hundreds place in 606?",
+      "answer": "6",
+      "decoys": [
+        "7",
+        "9",
+        "1",
+        "3"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 606 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q11",
+      "type": "multiple_choice",
+      "prompt": "In 660, what amount does the digit 6 represent?",
+      "answer": "60",
+      "decoys": [
+        "6",
+        "600",
+        "660",
+        "67"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 6 is in the tens place, so it represents 60."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-01-place-value-to-100-q12",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the ones place in 714?",
+      "answer": "4",
+      "decoys": [
+        "5",
+        "7",
+        "9",
+        "1"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 714 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

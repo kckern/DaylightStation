@@ -45,7 +45,7 @@ export function getDefaultVendorFontDir() {
 }
 
 /** `<mediaDir>/vendor/fonts`: the `/vendor` route's dir (vendorApi.mjs vendorDirFor) plus `fonts`; mediaDir is ConfigService.getMediaDir(). */
-export const vendorFontDirFor = (mediaDir) => join(mediaDir, 'vendor', 'fonts');
+export const vendorFontDirFor = (mediaDir) => (mediaDir ? join(mediaDir, 'vendor', 'fonts') : null);
 
 /**
  * Resolve a vendor font file. Returns `{ path, missing }`; a missing file is

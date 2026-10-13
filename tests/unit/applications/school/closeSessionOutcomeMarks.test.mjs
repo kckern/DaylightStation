@@ -113,7 +113,7 @@ describe('marks: reachable per-question evidence is threaded onto the document',
   it('prints the physical-book remediation reference for a missed original question', async () => {
     const questions = SIX_QUESTIONS.map((question, index) => (index === 0 ? {
       ...question,
-      reviewReference: { title: 'Beast Academy 2A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
+      reviewReference: { title: 'Sample Workbook A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
     } : question));
     build({
       worksheetInstances: fakeWorksheetInstances({
@@ -124,7 +124,7 @@ describe('marks: reachable per-question evidence is threaded onto the document',
     const result = await close.execute({ sessionId: SID });
     const summary = result.document.blocks.find((block) => block.type === 'result_summary');
     expect(summary.reviewHints).toEqual([
-      '1: review Beast Academy 2A Guide, pages 24–27 · Ones, Tens, Hundreds.',
+      '1: review Sample Workbook A Guide, pages 24–27 · Ones, Tens, Hundreds.',
     ]);
   });
 });

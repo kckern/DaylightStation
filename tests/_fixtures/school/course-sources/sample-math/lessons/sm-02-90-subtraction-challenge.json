@@ -1,0 +1,302 @@
+{
+  "id": "sm-02-90-subtraction-challenge",
+  "title": "Subtraction Challenge",
+  "kind": "calculation",
+  "source": "workbook",
+  "module": "sums",
+  "sequence": 7,
+  "required": false,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-02-90-subtraction-challenge-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "calculation"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-02-90-subtraction-challenge-q01",
+      "type": "multiple_choice",
+      "prompt": "What is $303 − 131$?",
+      "answer": "172",
+      "decoys": [
+        "182",
+        "162",
+        "434",
+        "272"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 131 from 303 by place value; regroup if a top digit is smaller (case 41)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q02",
+      "type": "multiple_choice",
+      "prompt": "What is $310 − 134$?",
+      "answer": "176",
+      "decoys": [
+        "186",
+        "166",
+        "444",
+        "276"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 134 from 310 by place value; regroup if a top digit is smaller (case 42)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q03",
+      "type": "multiple_choice",
+      "prompt": "What is $317 − 137$?",
+      "answer": "180",
+      "decoys": [
+        "190",
+        "170",
+        "454",
+        "280"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 137 from 317 by place value; regroup if a top digit is smaller (case 43)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q04",
+      "type": "multiple_choice",
+      "prompt": "What is $324 − 140$?",
+      "answer": "184",
+      "decoys": [
+        "194",
+        "174",
+        "464",
+        "284"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 140 from 324 by place value; regroup if a top digit is smaller (case 44)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q05",
+      "type": "multiple_choice",
+      "prompt": "What is $331 − 143$?",
+      "answer": "188",
+      "decoys": [
+        "198",
+        "178",
+        "474",
+        "288"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 143 from 331 by place value; regroup if a top digit is smaller (case 45)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q06",
+      "type": "multiple_choice",
+      "prompt": "What is $338 − 146$?",
+      "answer": "192",
+      "decoys": [
+        "202",
+        "182",
+        "484",
+        "292"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 146 from 338 by place value; regroup if a top digit is smaller (case 46)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q07",
+      "type": "multiple_choice",
+      "prompt": "What is $345 − 149$?",
+      "answer": "196",
+      "decoys": [
+        "206",
+        "186",
+        "494",
+        "296"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 149 from 345 by place value; regroup if a top digit is smaller (case 47)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q08",
+      "type": "multiple_choice",
+      "prompt": "What is $352 − 152$?",
+      "answer": "200",
+      "decoys": [
+        "210",
+        "190",
+        "504",
+        "300"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 152 from 352 by place value; regroup if a top digit is smaller (case 48)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q09",
+      "type": "multiple_choice",
+      "prompt": "What is $359 − 155$?",
+      "answer": "204",
+      "decoys": [
+        "214",
+        "194",
+        "514",
+        "304"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 155 from 359 by place value; regroup if a top digit is smaller (case 49)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q10",
+      "type": "multiple_choice",
+      "prompt": "What is $366 − 158$?",
+      "answer": "208",
+      "decoys": [
+        "218",
+        "198",
+        "524",
+        "308"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 158 from 366 by place value; regroup if a top digit is smaller (case 50)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q11",
+      "type": "multiple_choice",
+      "prompt": "What is $373 − 161$?",
+      "answer": "212",
+      "decoys": [
+        "222",
+        "202",
+        "534",
+        "312"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 161 from 373 by place value; regroup if a top digit is smaller (case 51)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-90-subtraction-challenge-q12",
+      "type": "multiple_choice",
+      "prompt": "What is $380 − 164$?",
+      "answer": "216",
+      "decoys": [
+        "226",
+        "206",
+        "544",
+        "316"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Subtract 164 from 380 by place value; regroup if a top digit is smaller (case 52)."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

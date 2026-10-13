@@ -58,13 +58,13 @@ describe('worksheet lesson-card presentation', () => {
     expect(worksheetPresentation({ unit: {
       courseId: 'elementary-math-2-3', module: 'number-sense',
       studyReferences: [
-        { role: 'primary', title: 'Beast Academy 2A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
-        { role: 'alternate', title: 'Beast Academy 2A Practice', pages: [14, 15], section: 'Place Value Practice' },
+        { role: 'primary', title: 'Sample Workbook A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
+        { role: 'alternate', title: 'Sample Workbook A Practice', pages: [14, 15], section: 'Place Value Practice' },
       ],
       provenance: { source: 'Original parallel practice' },
     } }).reading).toBe(
-      'Reference if needed: Beast Academy 2A Guide, pp. 24–27 — Ones, Tens, Hundreds. '
-      + 'Also: Beast Academy 2A Practice, pp. 14–15 — Place Value Practice.',
+      'Reference if needed: Sample Workbook A Guide, pp. 24–27 — Ones, Tens, Hundreds. '
+      + 'Also: Sample Workbook A Practice, pp. 14–15 — Place Value Practice.',
     );
   });
 

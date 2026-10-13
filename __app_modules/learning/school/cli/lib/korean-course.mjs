@@ -40,16 +40,25 @@ const requireValid = (errors, context) => { if (errors?.length) throw new Error(
 const requiredText = (text, context) => { if (typeof text !== 'string' || !text.trim()) throw new Error(`${context}: text is required`); return text.trim(); };
 const assertSource = (source, context) => { if (!['textbook','workbook'].includes(source?.book) || !Number.isInteger(source.page) || source.page < 1) throw new Error(`${context}: source page is required`); };
 
-export function assembleKoreanCourse({ baseLexicon, baseUnit, lessons, requireComplete = true }) {
+/**
+ * Course identity comes from the course source (the lesson-1 base unit and lexicon), never from code:
+ * id = baseUnit.courseId, sourceTitle = baseUnit.sourceTitle, title = the lexicon program title
+ * without its trailing " · Lesson N" suffix. Pass `course` to override any of the three.
+ */
+export function assembleKoreanCourse({ baseLexicon, baseUnit, lessons, requireComplete = true, course = {} }) {
+  const courseId = course.id ?? baseUnit.courseId;
+  const courseTitle = course.title ?? String(baseLexicon.program?.title ?? '').split(' · ')[0];
+  const sourceTitle = course.sourceTitle ?? baseUnit.sourceTitle;
+  if (!courseId || !courseTitle) throw new Error('Course identity missing: base unit needs courseId and base lexicon needs program.title (or pass course.{id,title}).');
   const sorted = [...lessons].sort((a,b) => a.lesson-b.lesson);
   const roster = sorted.map((lesson) => lesson.lesson);
   if (requireComplete && JSON.stringify(roster) !== JSON.stringify(Array.from({length:15},(_,i)=>i+2))) throw new Error('Complete course requires exactly lessons 2 through 16.');
   if (new Set(roster).size !== roster.length || roster.some((n) => !Number.isInteger(n) || n<2 || n>16)) throw new Error('Lesson numbers must be unique, from 2 through 16.');
   const lexicon = structuredClone(baseLexicon);
-  lexicon.program.title = 'Korean 3-2';
+  lexicon.program.title = courseTitle;
   const existing = new Set(lexicon.entries.map((entry)=>entry.id));
   const canonical = new Map(lexicon.entries.map((entry)=>[termKey(entry.term),entry]));
-  const baseDeck = {schema:'school.flashcard-deck/v1',id:baseUnit.practice.deckId,title:baseUnit.title,revision:1,lexicon:'media:language/korean-3-2/lexicon.yml',words:[...baseUnit.practice.requiredCardIds]};
+  const baseDeck = {schema:'school.flashcard-deck/v1',id:baseUnit.practice.deckId,title:baseUnit.title,revision:1,lexicon:`media:language/${courseId}/lexicon.yml`,words:[...baseUnit.practice.requiredCardIds]};
   const units=[structuredClone(baseUnit)],decks=[baseDeck],documents=[],published=[],inventory=[];
   const priorPatternCards=new Map();
   const addCard = (raw,lesson,isModel) => {
@@ -64,7 +73,7 @@ export function assembleKoreanCourse({ baseLexicon, baseUnit, lessons, requireCo
     lexicon.entries.push(entry);existing.add(id);canonical.set(termKey(entry.term),entry);return id;
   };
   for(const lesson of sorted){
-    const n=lesson.lesson,group=`lesson-${pad(n)}`,unitId=`korean-3-2.${group}`,deckId=`language/korean-3-2/${group}`;
+    const n=lesson.lesson,group=`lesson-${pad(n)}`,unitId=`${courseId}.${group}`,deckId=`language/${courseId}/${group}`;
     const expectedKind=n===16?'final':[3,6,9,12,15].includes(n)?'review':'new';
     if(lesson.kind!==expectedKind)throw new Error(`Lesson ${n}: expected ${expectedKind}.`);
     if(requireComplete && lesson.patterns.length!==(expectedKind==='new'?2:expectedKind==='review'?4:20))throw new Error(`Lesson ${n}: grammar pattern coverage differs.`);
@@ -99,16 +108,16 @@ export function assembleKoreanCourse({ baseLexicon, baseUnit, lessons, requireCo
     if(requireComplete && questions.length!==(expectedKind==='new'?6:expectedKind==='review'?8:20))throw new Error(`Lesson ${n}: wrong question count.`);
     // Final review owns no new vocabulary list and checks all acquired cards.
     const cardIds=[...new Set(expectedKind==='final'? [...decks.flatMap(d=>d.words),...words]:words)];
-    const title=`Korean 3-2 · Lesson ${n}: ${lesson.title}`;
+    const title=`${courseTitle} · Lesson ${n}: ${lesson.title}`;
     const refs=[];
     const answerKeys=koreanAnswerKeys(questions.length,n);
     for(const [variant,key] of ['formA','formB'].entries()){
       const letter=variant?'b':'a';
-      const source={schema:'school.document-source/v1',id:`korean-3-2-${group}-${letter}`,seed:3200+n*10+variant,variant,target:['letter'],archetype:'quiz',title:`Korean 3-2 · Lesson ${n} · Form ${letter.toUpperCase()}`,blocks:[{type:'rich_text',md:'Choose the Korean expression that fits the English instruction. Mark ONE answer for each question. Leave uncertain answers blank and ask for help.'},...questions.map((question,index)=>({type:'question',itemId:question.id,number:index+1,blocks:[{type:'rich_text',md:question[key].prompt},{type:'omr_response',itemId:question.id,choices:4}],choices:reorderKoreanChoices(question[key].choices,question[key].answer,answerKeys[variant][index]),answer:question[key].answer}))]};
+      const source={schema:'school.document-source/v1',id:`${courseId}-${group}-${letter}`,seed:3200+n*10+variant,variant,target:['letter'],archetype:'quiz',title:`${courseTitle} · Lesson ${n} · Form ${letter.toUpperCase()}`,blocks:[{type:'rich_text',md:'Choose the Korean expression that fits the English instruction. Mark ONE answer for each question. Leave uncertain answers blank and ask for help.'},...questions.map((question,index)=>({type:'question',itemId:question.id,number:index+1,blocks:[{type:'rich_text',md:question[key].prompt},{type:'omr_response',itemId:question.id,choices:4}],choices:reorderKoreanChoices(question[key].choices,question[key].answer,answerKeys[variant][index]),answer:question[key].answer}))]};
       const result=publishDocument(source);requireValid(result.errors,source.id);
       documents.push(source);published.push(result);refs.push(`print/${source.id}@${result.rev}`);
     }
-    const unit={schema:'school.unit/v1',unitId,title,courseId:'korean-3-2',sequence:n,subject:'language',description:`${expectedKind==='new'?'Learn':expectedKind==='review'?'Review':'Integrate'} vocabulary and expression cards, then resolve ${questions.length} grammar targets on paper.`,reading:`Textbook pages ${lesson.textbookPages.join('–')}; workbook pages ${lesson.workbookPages.join('–')}.`,sourceTitle:'재외동포를 위한 한국어 3-2',objectives:lesson.objectives,document:refs[0],assessmentForms:refs,passing:{percent:100},retry:{variants:2},practice:{programId:'flashcards',deckId,requiredCardIds:cardIds,questionCards},provenance:{source:`Textbook pp. ${lesson.textbookPages.join('–')}; workbook pp. ${lesson.workbookPages.join('–')}. Quiz examples are authored applications of source grammar.`,reviewState:'approved'}};
+    const unit={schema:'school.unit/v1',unitId,title,courseId,sequence:n,subject:'language',description:`${expectedKind==='new'?'Learn':expectedKind==='review'?'Review':'Integrate'} vocabulary and expression cards, then resolve ${questions.length} grammar targets on paper.`,reading:`Textbook pages ${lesson.textbookPages.join('–')}; workbook pages ${lesson.workbookPages.join('–')}.`,...(sourceTitle?{sourceTitle}:{}),objectives:lesson.objectives,document:refs[0],assessmentForms:refs,passing:{percent:100},retry:{variants:2},practice:{programId:'flashcards',deckId,requiredCardIds:cardIds,questionCards},provenance:{source:`Textbook pp. ${lesson.textbookPages.join('–')}; workbook pp. ${lesson.workbookPages.join('–')}. Quiz examples are authored applications of source grammar.`,reviewState:'approved'}};
     requireValid(validateUnit(unit).errors,unitId);
     decks.push({schema:'school.flashcard-deck/v1',id:deckId,title,revision:1,lexicon:baseDeck.lexicon,words:cardIds});units.push(unit);
     inventory.push({lesson:n,title:lesson.title,kind:expectedKind,vocabulary:lesson.vocabulary.length,cards:cardIds.length,questions:questions.length,patterns,textbookPages:lesson.textbookPages,workbookPages:lesson.workbookPages});

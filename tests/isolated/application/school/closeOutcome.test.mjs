@@ -311,7 +311,7 @@ describe('the result receipt', () => {
     // kid1 is assigned two COURSES in different subjects. Passing a math
     // lesson must point the receipt at science, not at the next math unit.
     build({ assignments: new FakeAssignmentStore([
-      { learnerId: 'kid1', courses: ['math-fractions', 'how-chemistry-surrounds-you'] },
+      { learnerId: 'kid1', courses: ['math-fractions', 'sample-science'] },
     ]) });
     await graded({ unitId: MEDIA_UNIT, percent: 100 });
     const result = await close.execute({ sessionId: SID });
@@ -344,7 +344,7 @@ describe('the result receipt', () => {
 
   it('mints exactly one forward action, never a stack of tiers', async () => {
     build({ assignments: new FakeAssignmentStore([
-      { learnerId: 'kid1', courses: ['math-fractions', 'how-chemistry-surrounds-you'] },
+      { learnerId: 'kid1', courses: ['math-fractions', 'sample-science'] },
     ]) });
     await graded({ unitId: MEDIA_UNIT, percent: 100 });
     const result = await close.execute({ sessionId: SID });

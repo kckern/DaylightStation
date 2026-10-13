@@ -4,13 +4,13 @@
 id: math-fractions-word-problems-audio
 locator: plex:492117
 title: Fraction Word Problems Read Aloud
-series: Daylight Math Read Alouds
+series: Sample Math Read Alouds
 aliases:
   - Fraction Word Problems Read Aloud
   - Fractions Read Aloud Set 1
 durationSec: 428
 provenance:
-  source: household-recording
+  source: synthetic-recording
   addedBy: parent
   addedOn: '2026-07-22'
   note: Four word problems, each read twice with a pause between readings.

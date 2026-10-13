@@ -1,0 +1,471 @@
+{
+  "id": "sm-02-02-ten-frame-counting",
+  "title": "Ten-Frame Counting",
+  "kind": "ten_frame",
+  "source": "workbook",
+  "module": "sums",
+  "sequence": 6,
+  "required": true,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-02-02-ten-frame-counting-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "ten-frame"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-02-02-ten-frame-counting-q01",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "3",
+      "decoys": [
+        "6",
+        "13",
+        "1",
+        "16"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces, not the empty spaces, in the ten-frame."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q01",
+        "alt": "Ten-frame model showing 3 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q02",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "4",
+      "decoys": [
+        "7",
+        "8",
+        "14",
+        "1"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces, not the empty spaces, in the ten-frame."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q02",
+        "alt": "Ten-frame model showing 4 filled counters."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q03",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "5",
+      "decoys": [
+        "8",
+        "10",
+        "15",
+        "2"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces, not the empty spaces, in the ten-frame."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q03",
+        "alt": "Ten-frame model showing 5 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q04",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "6",
+      "decoys": [
+        "9",
+        "12",
+        "16",
+        "3"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces one by one; 6 of the ten spaces hold counters."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q04",
+        "alt": "Ten-frame model showing 6 filled counters."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q05",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "7",
+      "decoys": [
+        "10",
+        "14",
+        "17",
+        "4"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces one by one; 7 of the ten spaces hold counters."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q05",
+        "alt": "Ten-frame model showing 7 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q06",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "8",
+      "decoys": [
+        "11",
+        "16",
+        "18",
+        "5"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces one by one; 8 of the ten spaces hold counters."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q06",
+        "alt": "Ten-frame model showing 8 filled counters."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q07",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "9",
+      "decoys": [
+        "12",
+        "18",
+        "19",
+        "6"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces one by one; 9 of the ten spaces hold counters."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q07",
+        "alt": "Ten-frame model showing 9 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q08",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "10",
+      "decoys": [
+        "13",
+        "20",
+        "7",
+        "23"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "Count the filled spaces one by one; 10 of the ten spaces hold counters."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q08",
+        "alt": "Ten-frame model showing 10 filled counters."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q09",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "11",
+      "decoys": [
+        "14",
+        "22",
+        "21",
+        "8"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "A full frame is ten; count the counters in the second frame and add them to ten."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q09",
+        "alt": "Ten-frame model showing 11 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q10",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "12",
+      "decoys": [
+        "15",
+        "24",
+        "22",
+        "9"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "A full frame is ten; count the counters in the second frame and add them to ten."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q10",
+        "alt": "Ten-frame model showing 12 filled counters."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q11",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "13",
+      "decoys": [
+        "16",
+        "26",
+        "23",
+        "10"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "A full frame is ten; count the counters in the second frame and add them to ten."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q11",
+        "alt": "Ten-frame model showing 13 filled counters."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-02-ten-frame-counting-q12",
+      "type": "multiple_choice",
+      "prompt": "How many counters are shown?",
+      "answer": "14",
+      "decoys": [
+        "17",
+        "28",
+        "24",
+        "11"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "ten-frame"
+      ],
+      "feedback": {
+        "incorrect": "A full frame is ten; count the counters in the second frame and add them to ten."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q12",
+        "alt": "Ten-frame model showing 14 filled counters."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": [
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q01",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 3 filled counters.",
+      "params": {
+        "filled": 3,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q02",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 4 filled counters.",
+      "params": {
+        "filled": 4,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q03",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 5 filled counters.",
+      "params": {
+        "filled": 5,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q04",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 6 filled counters.",
+      "params": {
+        "filled": 6,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q05",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 7 filled counters.",
+      "params": {
+        "filled": 7,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q06",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 8 filled counters.",
+      "params": {
+        "filled": 8,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q07",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 9 filled counters.",
+      "params": {
+        "filled": 9,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q08",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 10 filled counters.",
+      "params": {
+        "filled": 10,
+        "frames": 1
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q09",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 11 filled counters.",
+      "params": {
+        "filled": 11,
+        "frames": 2
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q10",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 12 filled counters.",
+      "params": {
+        "filled": 12,
+        "frames": 2
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q11",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 13 filled counters.",
+      "params": {
+        "filled": 13,
+        "frames": 2
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-02-02-ten-frame-counting-q12",
+      "kind": "ten_frame",
+      "alt": "Ten-frame model showing 14 filled counters.",
+      "params": {
+        "filled": 14,
+        "frames": 2
+      }
+    }
+  ]
+}

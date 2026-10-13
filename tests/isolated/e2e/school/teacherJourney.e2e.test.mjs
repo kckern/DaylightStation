@@ -1,6 +1,6 @@
 /**
  * The teacher-console journey (goal addition, plan W5-5): a fake household
- * student enrolls in the household chemistry course through the TEACHER write path,
+ * student enrolls in the sample science course through the TEACHER write path,
  * takes the printed quiz through the VIRTUAL OMR reader (real form map,
  * real grading engine — no hardware), and every teacher-side read then
  * tells the truth about it: the today digest, the report card, milestone
@@ -16,9 +16,9 @@ import { GetMilestoneStatuses } from "../../../../__app_modules/learning/school/
 import { YamlMilestoneStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlMilestoneStore.mjs";
 import { YamlSchoolDatastore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlSchoolDatastore.mjs";
 
-const CHEMISTRY_COURSE = 'how-chemistry-surrounds-you';
-const CHEMISTRY_UNIT = 'how-chemistry-surrounds-you.01';
-const CHEMISTRY_BANK = 'science/how-chemistry-surrounds-you/01-checkpoint';
+const SAMPLE_SCIENCE_COURSE = 'sample-science';
+const SAMPLE_SCIENCE_UNIT = 'sample-science.01';
+const SAMPLE_SCIENCE_BANK = 'science/sample-science/01-checkpoint';
 const STUDENT = 'marie';
 const TEACHER = 'grownup1';
 
@@ -28,7 +28,7 @@ const ROSTER = [
   { id: TEACHER, name: 'Teacher', birthyear: 1980 },
 ];
 
-describe('fake student → chemistry course → virtual OMR → results → teacher view', () => {
+describe('fake student → sample science course → virtual OMR → results → teacher view', () => {
   let h;
 
   beforeAll(async () => {
@@ -38,31 +38,31 @@ describe('fake student → chemistry course → virtual OMR → results → teac
   it('runs the lifecycle on the production composition; teacher views on the same classes app.mjs wires', async () => {
     // --- the TEACHER enrolls the student (the console's own write path) -----
     const enrolled = await h.useCases.setAssignments.execute({
-      learnerId: STUDENT, courses: [CHEMISTRY_COURSE], units: [], assignedBy: TEACHER,
+      learnerId: STUDENT, courses: [SAMPLE_SCIENCE_COURSE], units: [], assignedBy: TEACHER,
     });
     // Storage boundary normalizes shorthand course-id strings to enrollment
     // records (bfdbe7598, YamlAssignmentStore#normalizeEnrollment) — every
     // other assignments test in the suite (lifecycleStores, EnrollLearner,
     // IssueComposedWorksheet, parentWrites) already asserts the object shape.
-    expect(enrolled.courses).toEqual([{ courseId: CHEMISTRY_COURSE }]);
+    expect(enrolled.courses).toEqual([{ courseId: SAMPLE_SCIENCE_COURSE }]);
 
     // --- the student taps their card; the agenda offers the course ----------
     const scan = await h.as(STUDENT).scanCard();
     expect(scan.status).toBe('agenda_printed');
     const tape = h.lastReceiptText();
     expect(tape).toMatch(/MARIE/i); // the header band prints the name uppercased
-    expect(tape).toMatch(/Matter, Atoms, and Molecules/i);
+    expect(tape).toMatch(/Kites, Wind, and Lift/i);
 
     // --- scanning the science ticket prints the OMR quiz sheet --------------
-    const issued = await h.scanTokenMatching(/Matter, Atoms, and Molecules/i);
+    const issued = await h.scanTokenMatching(/Kites, Wind, and Lift/i);
     expect(issued.status).toBe('issued');
     const sessionId = issued.sessionId;
     const formMap = await h.formMapFor(sessionId);
-    expect(formMap.documentId).toBe('how-chemistry-surrounds-you-01-omr');
+    expect(formMap.documentId).toBe('sample-science-01-omr');
     expect(formMap.marks).toHaveLength(24); // six questions x four bubbles
 
     // --- the student bubbles 5 of 6 right; the VIRTUAL reader reads the paper
-    const chosen = await h.correctBubbles({ sessionId, bankId: CHEMISTRY_BANK, wrong: ['chemistry-q4'] });
+    const chosen = await h.correctBubbles({ sessionId, bankId: SAMPLE_SCIENCE_BANK, wrong: ['sample-q4'] });
     const submitted = await h.omrSubmit(chosen, { sessionId, submittedBy: TEACHER });
     expect(submitted.status).toBe('submitted');
     expect(submitted.review).toEqual([]); // machine marks need no human
@@ -76,11 +76,11 @@ describe('fake student → chemistry course → virtual OMR → results → teac
     expect(closed.result).toBe('passed');
 
     // --- RESULTS: the one grading engine recorded real, attributed evidence -
-    const attempts = h.attemptsFor(STUDENT).filter((a) => a.bankId === CHEMISTRY_BANK);
+    const attempts = h.attemptsFor(STUDENT).filter((a) => a.bankId === SAMPLE_SCIENCE_BANK);
     expect(attempts).toHaveLength(6);
     expect(attempts.every((a) => a.attributedTo === STUDENT && a.transport === 'paper')).toBe(true);
     expect(attempts.filter((a) => a.correct).length).toBe(5);
-    const bank = fixtureBank(CHEMISTRY_BANK);
+    const bank = fixtureBank(SAMPLE_SCIENCE_BANK);
     expect(new Set(attempts.map((a) => a.itemId))).toEqual(new Set(bank.items.map((i) => i.id)));
 
     // --- TEACHER VIEW 1: the today digest (the console's roster strip) ------
@@ -109,7 +109,7 @@ describe('fake student → chemistry course → virtual OMR → results → teac
     const digest = await teacherToday.execute();
     const studentRow = digest.find((r) => r.learnerId === STUDENT);
     expect(studentRow).toMatchObject({ attemptsToday: 6, correctToday: 5, pendingReview: 0 });
-    expect(studentRow.sessionsToday.some((s) => s.unitId === CHEMISTRY_UNIT)).toBe(true);
+    expect(studentRow.sessionsToday.some((s) => s.unitId === SAMPLE_SCIENCE_UNIT)).toBe(true);
     // The sibling who did nothing shows a quiet zero row, not an absence.
     expect(digest.find((r) => r.learnerId === 'linus')).toMatchObject({ attemptsToday: 0 });
 
@@ -133,10 +133,10 @@ describe('fake student → chemistry course → virtual OMR → results → teac
       clock: () => h.clock.now(),
     });
     const card = await reportCard.execute({ learnerId: STUDENT, periodId: '2026-fall' });
-    const course = card.courses.find((c) => c.courseId === CHEMISTRY_COURSE);
+    const course = card.courses.find((c) => c.courseId === SAMPLE_SCIENCE_COURSE);
     expect(course).toBeTruthy();
     expect(course.coursePercent).toBeCloseTo(83.33, 1);
-    expect(course.unitGrades.find((u) => u.unitId === CHEMISTRY_UNIT)).toMatchObject({ passed: true, bestPercent: 83.33 });
+    expect(course.unitGrades.find((u) => u.unitId === SAMPLE_SCIENCE_UNIT)).toMatchObject({ passed: true, bestPercent: 83.33 });
     expect(card.activeDays.total).toBeGreaterThanOrEqual(1);
 
     // --- TEACHER VIEW 3: milestone pacing — the passed unit reads met -------
@@ -144,7 +144,7 @@ describe('fake student → chemistry course → virtual OMR → results → teac
       configService: { getHouseholdPath: (rel) => path.join(h.dataDir, 'household', rel) },
     });
     await milestoneStore.replace([
-      { id: 'm-chemistry', learnerId: STUDENT, courseId: CHEMISTRY_COURSE, unitId: CHEMISTRY_UNIT, dueBy: '2026-09-01' },
+      { id: 'm-science', learnerId: STUDENT, courseId: SAMPLE_SCIENCE_COURSE, unitId: SAMPLE_SCIENCE_UNIT, dueBy: '2026-09-01' },
     ], { editedBy: TEACHER });
     const milestoneStatuses = new GetMilestoneStatuses({
       store: milestoneStore, sessions: h.stores.sessions, clock: () => h.clock.now(),

@@ -1,0 +1,314 @@
+{
+  "id": "sm-01-99-counting-and-comparing-mastery",
+  "title": "Counting and Comparing Mastery",
+  "kind": "mastery",
+  "source": "authored",
+  "module": "counting",
+  "sequence": 4,
+  "required": true,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-01-99-counting-and-comparing-mastery-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "mastery"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q01",
+      "type": "multiple_choice",
+      "prompt": "In 980, what amount does the digit 9 represent?",
+      "answer": "900",
+      "decoys": [
+        "9",
+        "9000",
+        "980",
+        "907"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 9 is in the hundreds place, so it represents 900."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q02",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 92)",
+      "answer": "3667",
+      "decoys": [
+        "3626",
+        "3559",
+        "3504",
+        "3648"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 3667, 3626, 3559, 3504, 3648."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q03",
+      "type": "multiple_choice",
+      "prompt": "In 288, what amount does the digit 8 represent?",
+      "answer": "8",
+      "decoys": [
+        "80",
+        "288",
+        "15",
+        "78"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 8 is in the ones place, so it represents 8."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q04",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 94)",
+      "answer": "3741",
+      "decoys": [
+        "3700",
+        "3633",
+        "3578",
+        "3722"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 3741, 3700, 3633, 3578, 3722."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q05",
+      "type": "multiple_choice",
+      "prompt": "In 396, what amount does the digit 9 represent?",
+      "answer": "90",
+      "decoys": [
+        "9",
+        "900",
+        "396",
+        "97"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 9 is in the tens place, so it represents 90."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q06",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 96)",
+      "answer": "3815",
+      "decoys": [
+        "3774",
+        "3707",
+        "3652",
+        "3796"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 3815, 3774, 3707, 3652, 3796."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q07",
+      "type": "multiple_choice",
+      "prompt": "In 504, what amount does the digit 5 represent?",
+      "answer": "500",
+      "decoys": [
+        "5",
+        "5000",
+        "504",
+        "507"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 5 is in the hundreds place, so it represents 500."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q08",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 98)",
+      "answer": "3889",
+      "decoys": [
+        "3848",
+        "3781",
+        "3726",
+        "3870"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 3889, 3848, 3781, 3726, 3870."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q09",
+      "type": "multiple_choice",
+      "prompt": "In 612, what amount does the digit 2 represent?",
+      "answer": "2",
+      "decoys": [
+        "20",
+        "612",
+        "9",
+        "72"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 2 is in the ones place, so it represents 2."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q10",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 100)",
+      "answer": "3963",
+      "decoys": [
+        "3922",
+        "3855",
+        "3800",
+        "3944"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 3963, 3922, 3855, 3800, 3944."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q11",
+      "type": "multiple_choice",
+      "prompt": "In 720, what amount does the digit 2 represent?",
+      "answer": "20",
+      "decoys": [
+        "2",
+        "200",
+        "720",
+        "27"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 2 is in the tens place, so it represents 20."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-99-counting-and-comparing-mastery-q12",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 102)",
+      "answer": "4037",
+      "decoys": [
+        "3996",
+        "3929",
+        "3874",
+        "4018"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "mastery",
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 4037, 3996, 3929, 3874, 4018."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

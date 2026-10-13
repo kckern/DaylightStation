@@ -8,7 +8,7 @@ import { spawnSync, execFile } from 'node:child_process';
 import yaml from 'js-yaml';
 import { createCanvas } from '@napi-rs/canvas';
 import { assembleKoreanCourse } from "./lib/korean-course.mjs";
-import { renderKoreanCourseGuide } from "./lib/korean-course-guide.mjs";
+import { renderKoreanCourseGuide, baseUnitRow } from "./lib/korean-course-guide.mjs";
 import { preserveExistingEnrollments } from "./lib/preserve-existing-enrollments.mjs";
 import { YamlCurriculumDatastore } from "../server/adapters/persistence/YamlCurriculumDatastore.mjs";
 import { YamlPrintDocumentRepository } from "../server/adapters/documents/YamlPrintDocumentRepository.mjs";
@@ -23,10 +23,11 @@ import { createSchoolProgramEnrollmentValidators } from "../server/application/S
 import { SetAssignments } from "../server/application/usecases/SetAssignments.mjs";
 import { GrownUpGate } from "../server/application/GrownUpGate.mjs";
 import { validateLexicon, expandLexiconDeck } from "../server/domain/cardLadder/lexicon.mjs";
-const { values, positionals } = parseArgs({allowPositionals:true,options:{base:{type:'string'},out:{type:'string'},'source-dir':{type:'string'},learner:{type:'string'},'assigned-by':{type:'string'},apply:{type:'boolean',default:false}}});
+const { values, positionals } = parseArgs({allowPositionals:true,options:{base:{type:'string'},out:{type:'string'},'source-dir':{type:'string'},course:{type:'string'},'course-title':{type:'string'},learner:{type:'string'},'assigned-by':{type:'string'},apply:{type:'boolean',default:false}}});
 const command=positionals[0],base=values.base,out=values.out;
 if(!base||!out||!['build','audio','proofs','verify','install','enroll'].includes(command))throw Error('Usage: node cli/korean-course.cli.mjs build|audio|proofs|verify|install|enroll --base <content-base> --out <staging> [--learner <id> --assigned-by <adult-id> --apply]');
-const SCHOOL='media/school/language/korean-3-2',CONTENT='data/content/school',DECKS=`${CONTENT}/learning-catalog/flashcard-decks/language/korean-3-2`,UNITS=`${CONTENT}/language/korean-3-2/units`,DOCUMENTS=`${CONTENT}/learning-catalog/documents/language/korean-3-2`;
+// The course id only names data-volume folders; titles and the source book come from the course data (lesson-1 unit + lexicon), or --course-title.
+const COURSE=values.course??'korean-3-2',SCHOOL=`media/school/language/${COURSE}`,CONTENT='data/content/school',DECKS=`${CONTENT}/learning-catalog/flashcard-decks/language/${COURSE}`,UNITS=`${CONTENT}/language/${COURSE}/units`,DOCUMENTS=`${CONTENT}/learning-catalog/documents/language/${COURSE}`;
 const logger={info(){},debug(){},warn(event,data){process.stderr.write(`${event}: ${data?.error??''}\n`);},error(event){process.stderr.write(`${event}\n`);}};
 const read=(file)=>yaml.load(fs.readFileSync(file,'utf8'));
 const write=(file,bytes)=>{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,bytes);};
@@ -46,12 +47,12 @@ if(command==='build'){
  const sourceDir=values['source-dir']??path.join(base,DOCUMENTS,'full-course','lessons');
  if(!fs.existsSync(sourceDir))throw Error(`Lesson source directory not found: ${sourceDir}. Pass --source-dir <dir of NN.json lesson files> or place them under ${DOCUMENTS}/full-course/lessons in the data volume.`);
  const lessons=fs.readdirSync(sourceDir).filter(name=>name.endsWith('.json')).map(name=>JSON.parse(fs.readFileSync(path.join(sourceDir,name),'utf8')));
- const result=assembleKoreanCourse({baseLexicon:read(path.join(base,SCHOOL,'lexicon.yml')),baseUnit:read(path.join(base,UNITS,'korean-3-2.lesson-01.yml')),lessons});
+ const result=assembleKoreanCourse({baseLexicon:read(path.join(base,SCHOOL,'lexicon.yml')),baseUnit:read(path.join(base,UNITS,`${COURSE}.lesson-01.yml`)),lessons,course:{id:COURSE,...(values['course-title']?{title:values['course-title']}:{})}});
  save(`${SCHOOL}/lexicon.yml`,result.lexicon);
  for(const deck of result.decks)save(`${DECKS}/${deck.id.split('/').at(-1)}.yml`,deck);
  for(const unit of result.units)save(`${UNITS}/${unit.unitId}.yml`,unit);
  const publisher=new PublishPrintDocument({repository:repository(out)});
- for(const source of result.documents){save(`${DOCUMENTS}/${source.id.replace('korean-3-2-','')}.yml`,source);await publisher.execute({source});}
+ for(const source of result.documents){save(`${DOCUMENTS}/${source.id.replace(`${COURSE}-`,'')}.yml`,source);await publisher.execute({source});}
  // Seed the two original immutable forms for all-course proofing.
  const originalPublisher=new PublishPrintDocument({repository:repository(out)});
  for(const letter of ['a','b']){const relative=`${DOCUMENTS}/lesson-01-${letter}.yml`;save(relative,read(path.join(base,relative)));await originalPublisher.execute({source:read(path.join(base,relative))});}
@@ -60,12 +61,14 @@ if(command==='build'){
   if(fs.existsSync(asset(entry,'image.jpg')))continue;
   const canvas=createCanvas(960,640),ctx=canvas.getContext('2d');ctx.fillStyle='#eef4f7';ctx.fillRect(0,0,960,640);ctx.fillStyle='#25384b';ctx.font='bold 48px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
   const lines=[''];for(const word of entry.gloss.split(' ')){const i=lines.length-1,candidate=(lines[i]+' '+word).trim();if(ctx.measureText(candidate).width>820)lines.push(word);else lines[i]=candidate;}
-  lines.forEach((line,i)=>ctx.fillText(line,480,300+(i-(lines.length-1)/2)*66));ctx.font='24px sans-serif';ctx.fillStyle='#597388';ctx.fillText(`Korean 3-2 · ${entry.group.replace('lesson-','Lesson ')}`,480,560);
+  lines.forEach((line,i)=>ctx.fillText(line,480,300+(i-(lines.length-1)/2)*66));ctx.font='24px sans-serif';ctx.fillStyle='#597388';ctx.fillText(`${result.lexicon.program.title} · ${entry.group.replace('lesson-','Lesson ')}`,480,560);
   write(asset(entry,'image.jpg'),canvas.toBuffer('image/jpeg'));
  }
- const courseManifest={schema:'korean-3-2-authoring/v1',cards:result.lexicon.entries.length,questions:result.units.reduce((sum,u)=>sum+Object.keys(u.practice.questionCards).length,0),units:result.units.map(u=>({unitId:u.unitId,deckId:u.practice.deckId,forms:u.assessmentForms,cards:u.practice.requiredCardIds.length,questions:Object.keys(u.practice.questionCards).length})),inventory:result.inventory};
+ const courseManifest={schema:`${COURSE}-authoring/v1`,cards:result.lexicon.entries.length,questions:result.units.reduce((sum,u)=>sum+Object.keys(u.practice.questionCards).length,0),units:result.units.map(u=>({unitId:u.unitId,deckId:u.practice.deckId,forms:u.assessmentForms,cards:u.practice.requiredCardIds.length,questions:Object.keys(u.practice.questionCards).length})),inventory:result.inventory};
  write(path.join(out,'manifest.json'),JSON.stringify(courseManifest,null,2));
- write(path.join(out,CONTENT,'language/korean-3-2/teacher-guide.md'),renderKoreanCourseGuide(courseManifest));
+ const guideTemplate=path.join(sourceDir,'..','teacher-guide.template.md');
+ if(!fs.existsSync(guideTemplate))throw Error(`Teacher guide template not found: ${guideTemplate}. The guide prose is course content: place teacher-guide.template.md beside the lessons directory.`);
+ write(path.join(out,CONTENT,`language/${COURSE}/teacher-guide.md`),renderKoreanCourseGuide({...courseManifest,baseRow:baseUnitRow(read(path.join(base,UNITS,`${COURSE}.lesson-01.yml`)))},fs.readFileSync(guideTemplate,'utf8')));
  process.stdout.write(`Built ${result.units.length} units, ${result.lexicon.entries.length} unique cards, 32 quiz forms.\n`);
 }else if(command==='audio'){
  const lexicon=stagedLexicon(),cache=new Map(),jobs=[];
@@ -114,13 +117,13 @@ if(command==='build'){
  const copy=(relative)=>{const from=path.join(out,relative),to=path.join(base,relative);if(fs.existsSync(to)&&!fs.readFileSync(to).equals(fs.readFileSync(from)))throw Error(`Existing content differs: ${relative}`);write(to,fs.readFileSync(from));};
  const publisher=new PublishPrintDocument({repository:repository(base)});
  for(const row of manifest().units.filter(row=>!row.unitId.endsWith('lesson-01'))){
-  for(const letter of ['a','b']){const relative=`${DOCUMENTS}/${row.unitId.replace('korean-3-2.','')}-${letter}.yml`;copy(relative);await publisher.execute({source:read(path.join(out,relative))});}
+  for(const letter of ['a','b']){const relative=`${DOCUMENTS}/${row.unitId.replace(`${COURSE}.`,'')}-${letter}.yml`;copy(relative);await publisher.execute({source:read(path.join(out,relative))});}
   copy(`${DECKS}/${row.deckId.split('/').at(-1)}.yml`);copy(`${UNITS}/${row.unitId}.yml`);
  }
  for(const entry of lexicon.entries)for(const name of ['image.jpg','term.mp3','gloss.mp3'])copy(path.relative(out,asset(entry,name)));
  // Single permitted replacement: package lexicon append, checked above against every existing entry.
  write(path.join(base,SCHOOL,'lexicon.yml'),fs.readFileSync(path.join(out,SCHOOL,'lexicon.yml')));
- const guide=`${CONTENT}/language/korean-3-2/teacher-guide.md`;if(fs.existsSync(path.join(out,guide)))write(path.join(base,guide),fs.readFileSync(path.join(out,guide)));
+ const guide=`${CONTENT}/language/${COURSE}/teacher-guide.md`;if(fs.existsSync(path.join(out,guide)))write(path.join(base,guide),fs.readFileSync(path.join(out,guide)));
  process.stdout.write('Installed full course; existing Lesson 1 cards/forms/units unchanged.\n');
 }else if(command==='enroll'){
  const learner=values.learner,adult=values['assigned-by'];if(!learner||!adult)throw Error('enroll requires --learner and --assigned-by');
@@ -130,7 +133,7 @@ if(command==='build'){
  const decks=new Map(manifest().units.map(row=>{const raw=read(path.join(base,DECKS,`${row.deckId.split('/').at(-1)}.yml`));return [row.deckId,expandLexiconDeck(raw,lexicon).deck];}));
  const units=manifest().units.map(row=>read(path.join(base,UNITS,`${row.unitId}.yml`)));
  const programs=[...old.programs];for(const row of manifest().units){const existing=programs.find(p=>p.programId==='flashcards'&&(p.deckId??p.corpusId)===row.deckId);if(existing){if(existing.linkedUnitId!==row.unitId)throw Error('Existing deck has a conflicting course link.');continue;}programs.push({programId:'flashcards',deckId:row.deckId,linkedUnitId:row.unitId,title:units.find(u=>u.unitId===row.unitId).title,subject:'language',policy:{mode:'card-ladder'},schedule:{daysOfWeek:[1,2,3,4,5]}});}
- const courses=[...old.courses];if(!courses.some(c=>(typeof c==='string'?c:c.courseId)==='korean-3-2'))courses.push({courseId:'korean-3-2',schedule:{daysOfWeek:[1,2,3,4,5]}});
+ const courses=[...old.courses];if(!courses.some(c=>(typeof c==='string'?c:c.courseId)===COURSE))courses.push({courseId:COURSE,schedule:{daysOfWeek:[1,2,3,4,5]}});
  if(isDeepStrictEqual(programs,old.programs)&&isDeepStrictEqual(courses,old.courses)){process.stdout.write('All sixteen lessons are already enrolled; no write.\n');process.exit(0);}
  const validators=createSchoolProgramEnrollmentValidators({languageStudyService:new SentenceLadderService({datastore:new YamlLanguageStudyDatastore({configService}),logger}),pianoCourseLauncher:{},flashcardStudyService:{getDeck:async id=>{if(!decks.has(id))throw Error('Unknown deck');return decks.get(id);}}});
  // Unchanged durable enrollments do not depend on this importer's narrow

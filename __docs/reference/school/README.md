@@ -2249,7 +2249,7 @@ session that nobody typed answers into. Both are gated writes. Standalone teache
 same delivery surfaces as review notes: merged into `GET /review/learner`
 (kind:'note') and the agenda's "Notes for you" window. The **e2e journey
 test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
-fake student through teacher enrollment → the *How Chemistry Surrounds You*
+fake student through teacher enrollment → the synthetic *Sample Science*
 printed checkpoint → the
 virtual OMR reader → grading → and asserts the today digest, report card,
 and milestone pacing all tell the truth about it.

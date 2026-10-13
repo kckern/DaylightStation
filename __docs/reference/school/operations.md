@@ -276,7 +276,7 @@ node cli/school.mjs ops grade-adjust ses_123 \
 # Other dry-run-first repair lanes
 node cli/school.mjs ops grade-retract ses_123 --adjustment adj_1 \
   --reason "correction applied to wrong session" --teacher kckern
-node cli/school.mjs ops regrade science/how-chemistry-surrounds-you/01-checkpoint \
+node cli/school.mjs ops regrade science/sample-science/01-checkpoint \
   --from-day 2026-08-01 --to-day 2026-08-24 --reason "bank answer-key correction" \
   --teacher kckern
 node cli/school.mjs ops reassign assessment_123 --from learner3 --to learner4 \

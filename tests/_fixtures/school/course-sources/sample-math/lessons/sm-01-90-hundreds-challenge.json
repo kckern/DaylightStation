@@ -1,0 +1,302 @@
+{
+  "id": "sm-01-90-hundreds-challenge",
+  "title": "Hundreds Challenge",
+  "kind": "place_value",
+  "source": "workbook",
+  "module": "counting",
+  "sequence": 3,
+  "required": false,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-01-90-hundreds-challenge-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "place-value"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-01-90-hundreds-challenge-q01",
+      "type": "multiple_choice",
+      "prompt": "In 420, what amount does the digit 0 represent?",
+      "answer": "0",
+      "decoys": [
+        "420",
+        "7",
+        "70",
+        "13"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 0 is in the ones place, so it represents 0."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q02",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the hundreds place in 474?",
+      "answer": "4",
+      "decoys": [
+        "5",
+        "7",
+        "9",
+        "1"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 474 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q03",
+      "type": "multiple_choice",
+      "prompt": "In 528, what amount does the digit 2 represent?",
+      "answer": "20",
+      "decoys": [
+        "2",
+        "200",
+        "528",
+        "27"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 2 is in the tens place, so it represents 20."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q04",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the ones place in 582?",
+      "answer": "2",
+      "decoys": [
+        "3",
+        "5",
+        "7",
+        "9"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 582 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q05",
+      "type": "multiple_choice",
+      "prompt": "In 636, what amount does the digit 6 represent?",
+      "answer": "600",
+      "decoys": [
+        "6",
+        "6000",
+        "636",
+        "607"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 6 is in the hundreds place, so it represents 600."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q06",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the tens place in 690?",
+      "answer": "9",
+      "decoys": [
+        "0",
+        "2",
+        "4",
+        "6"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 690 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q07",
+      "type": "multiple_choice",
+      "prompt": "In 744, what amount does the digit 4 represent?",
+      "answer": "4",
+      "decoys": [
+        "40",
+        "744",
+        "11",
+        "74"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 4 is in the ones place, so it represents 4."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q08",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the hundreds place in 798?",
+      "answer": "7",
+      "decoys": [
+        "8",
+        "0",
+        "2",
+        "4"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 798 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q09",
+      "type": "multiple_choice",
+      "prompt": "In 852, what amount does the digit 5 represent?",
+      "answer": "50",
+      "decoys": [
+        "5",
+        "500",
+        "852",
+        "57"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 5 is in the tens place, so it represents 50."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q10",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the ones place in 906?",
+      "answer": "6",
+      "decoys": [
+        "7",
+        "9",
+        "1",
+        "3"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 906 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q11",
+      "type": "multiple_choice",
+      "prompt": "In 960, what amount does the digit 9 represent?",
+      "answer": "900",
+      "decoys": [
+        "9",
+        "9000",
+        "960",
+        "907"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "The 9 is in the hundreds place, so it represents 900."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-90-hundreds-challenge-q12",
+      "type": "multiple_choice",
+      "prompt": "Which digit is in the tens place in 214?",
+      "answer": "1",
+      "decoys": [
+        "2",
+        "4",
+        "6",
+        "8"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "place-value"
+      ],
+      "feedback": {
+        "incorrect": "Read 214 from the left: hundreds, then tens, then ones."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

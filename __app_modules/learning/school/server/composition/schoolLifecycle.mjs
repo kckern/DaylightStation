@@ -326,7 +326,7 @@ export async function createSchoolLifecycle({
     // Noto Sans KR is installed under <media>/vendor/fonts (npm run install:assets),
     // the same media dir the /vendor route serves. Set as the process default too:
     // measurement and report renderers reach the same fonts without each being wired.
-    const vendorFontDir = vendorFontDirFor(configService.getMediaDir());
+    const vendorFontDir = vendorFontDirFor(configService.getMediaDir?.());
     setDefaultVendorFontDir(vendorFontDir);
     const { createSchoolAssetResolver } = await import("../adapters/documents/FilesystemSchoolAssetResolver.mjs");
     const { createPrintDocumentRendering } = await import("../rendering/documents/PrintDocumentRendering.mjs");
@@ -398,7 +398,7 @@ export async function createSchoolLifecycle({
     const { createDocumentReceiptRenderer } = await import("../rendering/documents/DocumentReceiptRenderer.mjs");
     receiptPngRenderer = createDocumentReceiptRenderer({
       scanCodes: 'qr',
-      vendorFontDir: vendorFontDirFor(configService.getMediaDir()),
+      vendorFontDir: vendorFontDirFor(configService.getMediaDir?.()),
       resolveSubjectIcon: schoolAssetResolver,
     });
   } catch (err) {

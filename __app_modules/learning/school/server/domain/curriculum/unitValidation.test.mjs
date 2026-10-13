@@ -60,14 +60,14 @@ describe('unit learner-facing reading metadata', () => {
     const { errors, unit } = validateUnit({
       ...base,
       studyReferences: [
-        { role: 'primary', title: 'Beast Academy 2A Guide', pages: [27, 24, 25, 26], section: 'Ones, Tens, Hundreds' },
-        { role: 'alternate', title: 'Beast Academy 2A Practice', pages: [14, 15], section: 'Place Value Practice' },
+        { role: 'primary', title: 'Sample Workbook A Guide', pages: [27, 24, 25, 26], section: 'Ones, Tens, Hundreds' },
+        { role: 'alternate', title: 'Sample Workbook A Practice', pages: [14, 15], section: 'Place Value Practice' },
       ],
     }, sets);
     expect(errors).toEqual([]);
     expect(unit.studyReferences).toEqual([
-      { role: 'primary', title: 'Beast Academy 2A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
-      { role: 'alternate', title: 'Beast Academy 2A Practice', pages: [14, 15], section: 'Place Value Practice' },
+      { role: 'primary', title: 'Sample Workbook A Guide', pages: [24, 25, 26, 27], section: 'Ones, Tens, Hundreds' },
+      { role: 'alternate', title: 'Sample Workbook A Practice', pages: [14, 15], section: 'Place Value Practice' },
     ]);
   });
 

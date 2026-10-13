@@ -26,7 +26,7 @@ describe('validateQuestionBank review references', () => {
 
   it('accepts an exact physical-book remediation locator', () => {
     const result = validateQuestionBank({ ...base, items: [{ ...item,
-      reviewReference: { title: 'Math Boosters', pages: [30, 31], section: 'Adding Sums up to 18' },
+      reviewReference: { title: 'Sample Boosters', pages: [30, 31], section: 'Adding Sums up to 18' },
     }] });
     expect(result.ok).toBe(true);
   });

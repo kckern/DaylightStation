@@ -1,0 +1,302 @@
+{
+  "id": "sm-01-02-greatest-numbers",
+  "title": "Greatest Numbers",
+  "kind": "compare",
+  "source": "workbook",
+  "module": "counting",
+  "sequence": 2,
+  "required": true,
+  "moduleRole": "lesson",
+  "params": {},
+  "workedExample": {
+    "id": "sm-01-02-greatest-numbers-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "compare"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-01-02-greatest-numbers-q01",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 1)",
+      "answer": "300",
+      "decoys": [
+        "259",
+        "192",
+        "137",
+        "281"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 300, 259, 192, 137, 281."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q02",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 2)",
+      "answer": "337",
+      "decoys": [
+        "296",
+        "229",
+        "174",
+        "318"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 337, 296, 229, 174, 318."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q03",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 3)",
+      "answer": "374",
+      "decoys": [
+        "333",
+        "266",
+        "211",
+        "355"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 374, 333, 266, 211, 355."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q04",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 4)",
+      "answer": "411",
+      "decoys": [
+        "370",
+        "303",
+        "248",
+        "392"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 411, 370, 303, 248, 392."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q05",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 5)",
+      "answer": "448",
+      "decoys": [
+        "407",
+        "340",
+        "285",
+        "429"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 448, 407, 340, 285, 429."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q06",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 6)",
+      "answer": "485",
+      "decoys": [
+        "444",
+        "377",
+        "322",
+        "466"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 485, 444, 377, 322, 466."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q07",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 7)",
+      "answer": "522",
+      "decoys": [
+        "481",
+        "414",
+        "359",
+        "503"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 522, 481, 414, 359, 503."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q08",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 8)",
+      "answer": "559",
+      "decoys": [
+        "518",
+        "451",
+        "396",
+        "540"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 559, 518, 451, 396, 540."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q09",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 9)",
+      "answer": "596",
+      "decoys": [
+        "555",
+        "488",
+        "433",
+        "577"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 596, 555, 488, 433, 577."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q10",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 10)",
+      "answer": "633",
+      "decoys": [
+        "592",
+        "525",
+        "470",
+        "614"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 633, 592, 525, 470, 614."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q11",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 11)",
+      "answer": "670",
+      "decoys": [
+        "629",
+        "562",
+        "507",
+        "651"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 670, 629, 562, 507, 651."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-01-02-greatest-numbers-q12",
+      "type": "multiple_choice",
+      "prompt": "Which number is greatest? (set 12)",
+      "answer": "707",
+      "decoys": [
+        "666",
+        "599",
+        "544",
+        "688"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "compare"
+      ],
+      "feedback": {
+        "incorrect": "Compare the hundreds first, then the tens, to find the greatest of 707, 666, 599, 544, 688."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

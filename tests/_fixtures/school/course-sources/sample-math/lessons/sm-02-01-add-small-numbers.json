@@ -1,0 +1,302 @@
+{
+  "id": "sm-02-01-add-small-numbers",
+  "title": "Add Small Numbers",
+  "kind": "calculation",
+  "source": "workbook",
+  "module": "sums",
+  "sequence": 5,
+  "required": true,
+  "moduleRole": "overview",
+  "params": {},
+  "workedExample": {
+    "id": "sm-02-01-add-small-numbers-worked-example",
+    "title": "Worked example",
+    "appliesTo": {
+      "concepts": [
+        "calculation"
+      ]
+    },
+    "question": {
+      "type": "multiple_choice",
+      "prompt": "What is $20 + 5$?",
+      "choices": [
+        "15",
+        "25",
+        "205"
+      ]
+    },
+    "solution": {
+      "steps": [
+        "Add the tens and ones: 20 + 5 = 25."
+      ],
+      "answer": "25"
+    }
+  },
+  "items": [
+    {
+      "id": "sm-02-01-add-small-numbers-q01",
+      "type": "multiple_choice",
+      "prompt": "What is $23 + 11$?",
+      "answer": "34",
+      "decoys": [
+        "44",
+        "24",
+        "12",
+        "134"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 1)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q02",
+      "type": "multiple_choice",
+      "prompt": "What is $30 + 14$?",
+      "answer": "44",
+      "decoys": [
+        "54",
+        "34",
+        "16",
+        "144"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 2)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q03",
+      "type": "multiple_choice",
+      "prompt": "What is $37 + 17$?",
+      "answer": "54",
+      "decoys": [
+        "64",
+        "44",
+        "20",
+        "154"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 3)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q04",
+      "type": "multiple_choice",
+      "prompt": "What is $44 + 20$?",
+      "answer": "64",
+      "decoys": [
+        "74",
+        "54",
+        "24",
+        "164"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 4)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q05",
+      "type": "multiple_choice",
+      "prompt": "What is $51 + 23$?",
+      "answer": "74",
+      "decoys": [
+        "84",
+        "64",
+        "28",
+        "174"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 5)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q06",
+      "type": "multiple_choice",
+      "prompt": "What is $58 + 26$?",
+      "answer": "84",
+      "decoys": [
+        "94",
+        "74",
+        "32",
+        "184"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 6)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q07",
+      "type": "multiple_choice",
+      "prompt": "What is $65 + 29$?",
+      "answer": "94",
+      "decoys": [
+        "104",
+        "84",
+        "36",
+        "194"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 7)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q08",
+      "type": "multiple_choice",
+      "prompt": "What is $72 + 32$?",
+      "answer": "104",
+      "decoys": [
+        "114",
+        "94",
+        "40",
+        "204"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 8)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q09",
+      "type": "multiple_choice",
+      "prompt": "What is $79 + 35$?",
+      "answer": "114",
+      "decoys": [
+        "124",
+        "104",
+        "44",
+        "214"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 9)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q10",
+      "type": "multiple_choice",
+      "prompt": "What is $86 + 38$?",
+      "answer": "124",
+      "decoys": [
+        "134",
+        "114",
+        "48",
+        "224"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 10)."
+      },
+      "referenceIndex": 1
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q11",
+      "type": "multiple_choice",
+      "prompt": "What is $93 + 41$?",
+      "answer": "134",
+      "decoys": [
+        "144",
+        "124",
+        "52",
+        "234"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 11)."
+      },
+      "referenceIndex": 0
+    },
+    {
+      "id": "sm-02-01-add-small-numbers-q12",
+      "type": "multiple_choice",
+      "prompt": "What is $100 + 44$?",
+      "answer": "144",
+      "decoys": [
+        "154",
+        "134",
+        "56",
+        "244"
+      ],
+      "levels": [
+        "lower"
+      ],
+      "concepts": [
+        "calculation"
+      ],
+      "feedback": {
+        "incorrect": "Add the ones, then the tens, and regroup when a column reaches ten (case 12)."
+      },
+      "referenceIndex": 1
+    }
+  ],
+  "figures": []
+}

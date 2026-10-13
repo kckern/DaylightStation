@@ -39,7 +39,7 @@ describe('question-bank/v2', () => {
     const referenced = {
       ...bank,
       items: bank.items.map((entry) => ({ ...entry,
-        reviewReference: { title: 'Beast Academy 2A Guide', pages: [24, 25], section: 'Place Value' },
+        reviewReference: { title: 'Sample Workbook A Guide', pages: [24, 25], section: 'Place Value' },
       })),
     };
     const issued = issueWorksheet({
@@ -47,7 +47,7 @@ describe('question-bank/v2', () => {
       lessonId: 'place-value', profile: 'lower', seed: 'reference',
     });
     expect(issued.items[0].reviewReference).toEqual({
-      title: 'Beast Academy 2A Guide', pages: [24, 25], section: 'Place Value',
+      title: 'Sample Workbook A Guide', pages: [24, 25], section: 'Place Value',
     });
     const document = worksheetInstanceDocument(createWorksheetInstance({
       id: 'ws-reference', sessionId: 'ses-reference', bank: referenced,

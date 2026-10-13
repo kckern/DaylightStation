@@ -1,0 +1,24 @@
+# The teacher-operations e2e course: an invented printable science sequence used to
+# prove enrollment, agenda, grading, history, reporting, and corrective work.
+unitId: sample-science.01
+title: Kites, Wind, and Lift
+subject: science
+courseId: sample-science
+sequence: 1
+grades:
+  - lower
+  - upper
+objectives:
+  - Describe how wind and tail weight affect a sample kite.
+  - Tell a steady breeze from a gust.
+document: sample-science-01-omr
+bank: science/sample-science/01-checkpoint
+passing:
+  percent: 80
+reward:
+  amount: 5
+provenance:
+  source: synthetic test curriculum
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-08-24'

@@ -1,0 +1,39 @@
+id: science/sample-science/01-checkpoint
+title: Kites, Wind, and Lift Checkpoint
+subject: science
+audience: assigned
+unit: sample-science.01
+topics:
+  - wind
+  - kites
+items:
+  - id: sample-q1
+    type: multiple_choice
+    prompt: Which part of a sample kite catches the wind?
+    choices: [The sail, The spool, The knot, The handle]
+    answer: The sail
+  - id: sample-q2
+    type: multiple_choice
+    prompt: What does adding a longer tail to a sample kite mostly do?
+    choices: [Steadies it, Shrinks it, Tears it, Colors it]
+    answer: Steadies it
+  - id: sample-q3
+    type: multiple_choice
+    prompt: Which is a gust?
+    choices: [A sudden burst of wind, A flat calm, A paper tag, A string length]
+    answer: A sudden burst of wind
+  - id: sample-q4
+    type: multiple_choice
+    prompt: Which string pull makes a sample kite climb?
+    choices: [A short tug, Letting go, Tying it off, Cutting it]
+    answer: A short tug
+  - id: sample-q5
+    type: multiple_choice
+    prompt: Which sample material is lightest?
+    choices: [Tissue paper, Wet clay, A spoon, A coin]
+    answer: Tissue paper
+  - id: sample-q6
+    type: multiple_choice
+    prompt: What does a flag on a pole show about the air?
+    choices: [Its direction, Its price, Its color, Its weight]
+    answer: Its direction

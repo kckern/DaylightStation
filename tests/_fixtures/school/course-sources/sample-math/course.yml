@@ -1,0 +1,62 @@
+schema: school.course-source/v1
+id: sample-math
+title: Sample Arithmetic Course
+sourceFamilies:
+  workbook:
+    name: Sample Workbook A
+  authored:
+    name: Original synthetic course
+weeks:
+  counting: 1–2
+  sums: 3–4
+objective: Solve sample problems involving {title}.
+index:
+  schema: school.course/v2
+  poster: poster.jpg
+  work: sample-math
+  title: Sample Arithmetic Course
+  short_title: Sample Math
+  subject: math
+  category: course
+  medium: paper
+  structure:
+    shape: modules
+    module: unit
+    items:
+      from: units
+      order: sequence
+  grading:
+    gate: omr
+    scope: item
+    pass_percent: 80
+    exit: Complete every required unit mastery worksheet.
+  printables:
+    - document: elementary-math-dynamic-worksheet
+      when: study
+      scan: omr
+  progression:
+    mode: module_blocks
+    required_opening_module: counting
+    one_active_module: true
+    module_order: fixed
+    lesson_order: fixed
+  profiles:
+    lower:
+      question_count: 6
+      visible_choices:
+        - 3
+        - 4
+      multi_select: 0
+      receipt_answers: locator_only
+  sources:
+    - title: Sample Workbook A
+      publisher: Example Press
+  modules:
+    - module: counting
+      title: Counting and Comparing
+      short_title: Counting and Comparing
+      number: 1
+    - module: sums
+      title: Sums and Differences
+      short_title: Sums and Differences
+      number: 2

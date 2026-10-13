@@ -119,11 +119,17 @@ fraction bars, clocks, graphs, and shape sets. Generated specs use
 
 ### Elementary Math 2–3 release gate
 
-`scripts/generate-elementary-math-course.mjs` is the authoring source for the
-`elementary-math-2-3` course. Module mastery questions live in
-`scripts/school/elementary-math-mastery.mjs`; they are fresh transfer items,
-not copies sampled from lesson banks. Named challenge and cumulative lessons
-also have independent builders so a new title cannot conceal a cloned bank.
+`scripts/generate-elementary-math-course.mjs` is the generic renderer, auditor and
+publisher for a math course. The course itself (lessons, items, worked examples,
+figure specs, printed-page study references, titles, book names, poster) is
+household content and lives in the data mount as a course source:
+`data/content/school/course-sources/<course>/` holds `course.yml`,
+`source-map.yml`, `poster.svg` and one `lessons/<lesson-id>.json` per lesson.
+The generator reads `--source <dir>` (default: that data path) and fails naming
+the missing `course.yml` when the source is absent. A synthetic source for the
+tests is `tests/_fixtures/school/course-sources/sample-math/`. Module mastery
+items are fresh transfer items, not copies sampled from lesson banks; they are
+ordinary lessons in the source.
 
 The generator refuses publication when any twelve-item bank has a semantic
 duplicate, fewer than three item-specific feedback variants, the mechanical
@@ -139,7 +145,7 @@ Before refreshing the live course, run:
 
 ```bash
 npm run test:file -- scripts/generate-elementary-math-course.test.mjs cli/school/math-assets.test.mjs
-node scripts/generate-elementary-math-course.mjs --check --data-dir "$DAYLIGHT_BASE_PATH/data"
+node scripts/generate-elementary-math-course.mjs --check --data-dir "$DAYLIGHT_BASE_PATH/data" [--course elementary-math-2-3] [--source <dir>]
 node cli/school.mjs decoys audit math/elementary-math-2-3 --data-dir "$DAYLIGHT_BASE_PATH/data"
 ```
 
