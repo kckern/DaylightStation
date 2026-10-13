@@ -10,12 +10,14 @@ import {prepareKoreanRepair} from "./lib/korean-course-repair.mjs";
 import {publishDocument} from "../server/domain/documents/documentSource.mjs";
 import {YamlPrintDocumentRepository} from "../server/adapters/documents/YamlPrintDocumentRepository.mjs";
 import {PublishPrintDocument} from "../server/application/documents/PublishPrintDocument.mjs";
-const {values}=parseArgs({options:{base:{type:'string'},out:{type:'string'},apply:{type:'boolean',default:false}}});
-if(!values.base||!values.out)throw Error('Usage: node cli/korean-course-repair.cli.mjs --base <content-base> --out <stage> [--apply]');
+const {values}=parseArgs({options:{course:{type:'string',default:'korean-3-2'},base:{type:'string'},out:{type:'string'},apply:{type:'boolean',default:false}}});
+if(!values.base||!values.out)throw Error('Usage: node cli/korean-course-repair.cli.mjs --base <content-base> --out <stage> [--course <id>] [--apply]');
+const courseId=values.course;
+if(!/^[a-z0-9][a-z0-9-]*$/.test(courseId))throw Error(`Invalid --course: ${courseId}`);
 const base=fs.realpathSync(values.base),out=path.resolve(values.out);
 fs.mkdirSync(out,{recursive:true});
 if(fs.realpathSync(out)===base||fs.realpathSync(out).startsWith(base+path.sep))throw Error('Staging must be outside the content base');
-const content='data/content/school',sourcesDir=`${content}/learning-catalog/documents/language/korean-3-2`,unitsDir=`${content}/language/korean-3-2/units`;
+const content='data/content/school',sourcesDir=`${content}/learning-catalog/documents/language/${courseId}`,unitsDir=`${content}/language/${courseId}/units`;
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const dump=value=>yaml.dump(value,{noRefs:true,lineWidth:-1});
 const load=(root,rel)=>yaml.load(fs.readFileSync(path.join(root,rel),'utf8'));
@@ -23,11 +25,11 @@ const write=(root,rel,bytes)=>{const file=path.join(root,rel);fs.mkdirSync(path.
 const repository=root=>new YamlPrintDocumentRepository({directory:path.join(root,'data/household/school/artifacts/print'),sourceDirectory:path.join(root,content,'learning-catalog/documents')});
 const original={units:[],sources:[]},paths=[];
 for(let n=1;n<=16;n++){
- const lesson=`lesson-${String(n).padStart(2,'0')}`,unitPath=`${unitsDir}/korean-3-2.${lesson}.yml`;
+ const lesson=`lesson-${String(n).padStart(2,'0')}`,unitPath=`${unitsDir}/${courseId}.${lesson}.yml`;
  original.units.push(load(base,unitPath));paths.push({kind:'unit',index:n-1,path:unitPath});
  for(const letter of ['a','b']){const rel=`${sourcesDir}/${lesson}-${letter}.yml`;original.sources.push(load(base,rel));paths.push({kind:'source',index:original.sources.length-1,path:rel});}
 }
-const lexiconValidation=validateLexicon(load(base,'media/school/language/korean-3-2/lexicon.yml'));
+const lexiconValidation=validateLexicon(load(base,`media/school/language/${courseId}/lexicon.yml`));
 if(lexiconValidation.errors.length)throw Error(lexiconValidation.errors.join('; '));
 for(const unit of original.units){
  const deckPath=`${content}/learning-catalog/flashcard-decks/${unit.practice.deckId}.yml`;
@@ -44,9 +46,9 @@ for(let i=0;i<32;i++){
   if(!isDeepStrictEqual(JSON.parse(JSON.stringify(actual)),JSON.parse(JSON.stringify(expected))))throw Error('Current published artifact does not match source');
  }
 }
-const next=prepareKoreanRepair(original);
+const next=prepareKoreanRepair(original,{courseId});
 const files=paths.map(row=>{const obj=(row.kind==='unit'?next.units:next.sources)[row.index],prior=(row.kind==='unit'?original.units:original.sources)[row.index];return {...row,before:hash(fs.readFileSync(path.join(base,row.path))),after:hash(dump(obj)),changed:!isDeepStrictEqual(prior,obj)};});
-const manifest={schema:'korean-3-2-choice-repair/v1',base,files,revisions:next.qa.map((row,i)=>({...row,beforeRev:publishDocument(original.sources[i]).rev,beforeKey:publishDocument(original.sources[i]).bank.items.map(q=>'ABCD'[q.choices.indexOf(q.answer)]).join('')}))};
+const manifest={schema:'korean-choice-repair/v1',course:courseId,base,files,revisions:next.qa.map((row,i)=>({...row,beforeRev:publishDocument(original.sources[i]).rev,beforeKey:publishDocument(original.sources[i]).bank.items.map(q=>'ABCD'[q.choices.indexOf(q.answer)]).join('')}))};
 const manifestPath=path.join(out,'revision-manifest.json');
 function assertFresh(){for(const row of files)if(hash(fs.readFileSync(path.join(base,row.path)))!==row.before)throw Error(`Stale content: ${row.path}`);}
 if(values.apply){

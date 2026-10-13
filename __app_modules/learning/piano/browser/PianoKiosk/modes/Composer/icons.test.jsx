@@ -69,7 +69,7 @@ describe('Composer icon set', () => {
 // so this scans the mode's own source — the guard that actually holds the line
 // when someone adds a control later.
 describe('Composer source carries no tofu glyphs', () => {
-  const dir = new URL('../../../../../../../frontend/src/modules/Piano/PianoKiosk/modes/Composer', import.meta.url).pathname;
+  const dir = new URL('.', import.meta.url).pathname;
   const sources = readdirSync(dir).filter((f) => /\.(jsx?|scss)$/.test(f) && !/\.test\./.test(f));
 
   it('finds source files to scan (guards against a silently empty sweep)', () => {

@@ -4,9 +4,10 @@
 // serves that directory at /vendor. Idempotent: an entry whose file already
 // matches is skipped. A failed entry aborts only that entry (exit 1 overall).
 //
-//   node scripts/install-assets.mjs [--media-dir DIR] [--only ID] [--check]
+//   node scripts/install-assets.mjs [--media-dir DIR] [--only ID] [--check] [--no-dotenv]
 //
 // --check writes nothing: it reports missing / mismatched entries and exits 1.
+// --no-dotenv skips loading the repo's .env (the media dir then comes from --media-dir or the environment).
 // Entries with `source.local` are owner-provided: never fetched, only checked.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';

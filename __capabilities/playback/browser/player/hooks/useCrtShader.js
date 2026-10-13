@@ -105,6 +105,12 @@ export function useCrtShader({
         rendererRef.current = null;
         setActive(false);
       };
+    }).catch((error) => {
+      if (disposed) return;
+      rendererRef.current = null;
+      setActive(false);
+      setFellBack(true);
+      logger.warn('crt.fallback-after-failure', { error: error?.message || String(error) });
     });
 
     return () => {

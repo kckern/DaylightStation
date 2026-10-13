@@ -31,4 +31,12 @@ describe('loadCrtGeomSource', () => {
   it('treats a network error as not installed', async () => {
     expect(await loadCrtGeomSource({ fetchImpl: async () => { throw new Error('offline'); } })).toBeNull();
   });
+
+  it('remembers a failed fetch for the session: one request, not one per mount', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 404 }));
+    await loadCrtGeomSource({ fetchImpl });
+    await loadCrtGeomSource({ fetchImpl });
+    await loadCrtGeomSource({ fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

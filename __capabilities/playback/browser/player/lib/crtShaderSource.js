@@ -16,10 +16,12 @@ function logger() {
 
 let cached = null;
 let warned = false;
+let failed = false; // a miss is cached for the session: no repeated 404 per mount
 
 export function resetCrtShaderSourceForTest() {
   cached = null;
   warned = false;
+  failed = false;
 }
 
 /**
@@ -27,6 +29,7 @@ export function resetCrtShaderSourceForTest() {
  */
 export async function loadCrtGeomSource({ fetchImpl = globalThis.fetch, url = CRT_GEOM_URL } = {}) {
   if (cached) return cached;
+  if (failed) return null;
   try {
     const res = await fetchImpl(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -35,6 +38,7 @@ export async function loadCrtGeomSource({ fetchImpl = globalThis.fetch, url = CR
     cached = text;
     return text;
   } catch (err) {
+    failed = true;
     if (!warned) {
       warned = true;
       logger().warn('crt.shader-unavailable', {

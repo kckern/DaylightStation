@@ -46,4 +46,17 @@ describe('/vendor route (media/vendor)', () => {
     const res = await request(app).get('/vendor/..%2fsecret.txt');
     expect(res.status).toBe(404);
   });
+
+  it.each([
+    ['encoded dot-dot', '/vendor/%2e%2e/secret.txt'],
+    ['encoded dot-dot with encoded slash', '/vendor/%2e%2e%2fsecret.txt'],
+    ['double-encoded dot-dot', '/vendor/%252e%252e%252fsecret.txt'],
+    ['NUL byte', '/vendor/fonts/a.txt%00.png'],
+    ['dotfile', '/vendor/.env'],
+    ['dotfile in subdir', '/vendor/fonts/.hidden'],
+  ])('never serves outside media/vendor: %s', async (_name, url) => {
+    const res = await request(app).get(url);
+    expect([400, 404]).toContain(res.status);
+    expect(res.text || '').not.toContain('nope');
+  });
 });

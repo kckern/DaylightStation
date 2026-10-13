@@ -256,47 +256,86 @@
     {
       "id": "sm-01-90-hundreds-challenge-q11",
       "type": "multiple_choice",
-      "prompt": "In 960, what amount does the digit 9 represent?",
-      "answer": "900",
+      "prompt": "Which color has the most votes?",
+      "answer": "Red",
       "decoys": [
-        "9",
-        "9000",
-        "960",
-        "907"
+        "Blue",
+        "Green",
+        "Gold",
+        "Purple"
       ],
       "levels": [
         "lower"
       ],
       "concepts": [
-        "place-value"
+        "graph"
       ],
       "feedback": {
-        "incorrect": "The 9 is in the hundreds place, so it represents 900."
+        "incorrect": "Read each bar and pick the tallest one."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-01-90-hundreds-challenge-q11",
+        "alt": "Bar graph. Red: 5, Blue: 3, Green: 2, Gold: 4."
       },
       "referenceIndex": 0
     },
     {
       "id": "sm-01-90-hundreds-challenge-q12",
       "type": "multiple_choice",
-      "prompt": "Which digit is in the tens place in 214?",
-      "answer": "1",
+      "prompt": "What fraction of the bar is shaded?",
+      "answer": "3/4",
       "decoys": [
-        "2",
-        "4",
-        "6",
-        "8"
+        "1/4",
+        "1/2",
+        "2/3",
+        "3/5"
       ],
       "levels": [
         "lower"
       ],
       "concepts": [
-        "place-value"
+        "fractions"
       ],
       "feedback": {
-        "incorrect": "Read 214 from the left: hundreds, then tens, then ones."
+        "incorrect": "Count the shaded parts, then the parts in all."
+      },
+      "stimulus": {
+        "type": "asset",
+        "ref": "school/math/sample-math/figures/sm-01-90-hundreds-challenge-q12",
+        "alt": "A bar split into 4 equal parts with 3 shaded."
       },
       "referenceIndex": 1
     }
   ],
-  "figures": []
+  "figures": [
+    {
+      "ref": "school/math/sample-math/figures/sm-01-90-hundreds-challenge-q11",
+      "kind": "data_graph",
+      "alt": "Bar graph. Red: 5, Blue: 3, Green: 2, Gold: 4.",
+      "params": {
+        "labels": [
+          "Red",
+          "Blue",
+          "Green",
+          "Gold"
+        ],
+        "values": [
+          5,
+          3,
+          2,
+          4
+        ]
+      }
+    },
+    {
+      "ref": "school/math/sample-math/figures/sm-01-90-hundreds-challenge-q12",
+      "kind": "fraction_model",
+      "alt": "A bar split into 4 equal parts with 3 shaded.",
+      "params": {
+        "numerator": 3,
+        "denominator": 4
+      }
+    }
+  ]
 }

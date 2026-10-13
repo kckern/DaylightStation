@@ -5,7 +5,7 @@
 // cleans that area, so the audit is green at every step and "done" is a rule,
 // not a judgement. Exit 1 on any violation.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, statSync } from 'node:fs';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -114,6 +114,21 @@ export function auditAssets(entries, allow) {
   return out;
 }
 
+// An unreadable tracked file (dangling symlink, permissions) must not slip past the gate.
+// A symlink whose target resolves is not content itself (the target is tracked on its
+// own path, or is a directory of tracked files): it is skipped, not read.
+export function readTracked(path, { read = readFileSync, lstat = lstatSync, stat = statSync } = {}) {
+  try {
+    if (lstat(path).isSymbolicLink()) {
+      stat(path); // throws when dangling
+      return { symlink: true };
+    }
+    return { buf: read(path) };
+  } catch {
+    return { finding: { rule: 'unreadable-tracked-file', path } };
+  }
+}
+
 function main() {
   // git ls-files prints cwd-relative paths; every anchored rule assumes repo root.
   process.chdir(resolve(fileURLToPath(import.meta.url), '..', '..'));
@@ -123,8 +138,9 @@ function main() {
   const allow = parseAllowlist(yaml.load(readFileSync(ALLOWLIST_PATH, 'utf8')));
   const assetEntries = [];
   for (const path of files) {
-    let buf;
-    try { buf = readFileSync(path); } catch { continue; }
+    const { buf, finding, symlink } = readTracked(path);
+    if (finding) { violations.push(finding); continue; }
+    if (symlink) continue;
     const binary = isProbablyBinary(path, buf);
     assetEntries.push({ path, binary, bytes: statSync(path).size });
     if (binary) continue;

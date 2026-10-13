@@ -17,16 +17,16 @@ export function assertKoreanRepairScope(before,after){
   if(!isDeepStrictEqual(stripPins(before.units[i]),stripPins(after.units[i])))throw Error(`Only unit document pins permitted: ${before.units[i].unitId}`);
  }
 }
-export function prepareKoreanRepair({units,sources}){
+export function prepareKoreanRepair({units,sources},{courseId='korean-3-2'}={}){
  const next={units:structuredClone(units),sources:structuredClone(sources)},qa=[];
  for(let i=0;i<16;i++){
   const unit=next.units[i];
-  if(unit.sequence!==i+1||unit.unitId!==`korean-3-2.lesson-${String(i+1).padStart(2,'0')}`)throw Error('Unexpected course order/identity');
+  if(unit.sequence!==i+1||unit.unitId!==`${courseId}.lesson-${String(i+1).padStart(2,'0')}`)throw Error('Unexpected course order/identity');
   const keys=koreanAnswerKeys(questions(next.sources[i*2]).length,i+1),formKeys=[];
   const refs=[];
   for(let v=0;v<2;v++){
    const source=next.sources[i*2+v];
-   if(source.id!==`korean-3-2-lesson-${String(i+1).padStart(2,'0')}-${v?'b':'a'}`)throw Error('Unexpected form identity');
+   if(source.id!==`${courseId}-lesson-${String(i+1).padStart(2,'0')}-${v?'b':'a'}`)throw Error('Unexpected form identity');
    if(i>0)questions(source).forEach((q,j)=>{q.choices=reorderKoreanChoices(q.choices,q.answer,keys[v][j]);});
    const published=publishDocument(source);if(published.errors)throw Error(published.errors.join('; '));
    const ids=published.bank.items.map(q=>q.id);

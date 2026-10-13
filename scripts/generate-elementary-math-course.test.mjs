@@ -21,7 +21,7 @@ describe('elementary math course generator', () => {
     const result = generateElementaryMathCourse({ dataDir: root, sourceDir: SAMPLE_SOURCE });
     expect(result.bankCount).toBe(8);
     expect(result.itemCount).toBe(96);
-    expect(result.assetCount).toBe(12);
+    expect(result.assetCount).toBe(14);
     const index = yaml.load(fs.readFileSync(path.join(result.courseRoot, '_index.yml'), 'utf8'));
     expect(index).toMatchObject({ work: 'sample-math', medium: 'paper', profiles: { lower: { question_count: 6 } } });
     const banks = fs.readdirSync(result.courseRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())
@@ -75,6 +75,7 @@ describe('elementary math course generator', () => {
     refs.forEach((ref) => expect(fs.existsSync(path.join(root, 'content', 'assets', `${ref}.svg`))).toBe(true));
     const fractionChoices = banks.flatMap((bank) => bank.items.flatMap((item) => [item.answer, ...item.decoys]))
       .map((choice) => /^(\d+)\/(\d+)$/u.exec(String(choice))).filter(Boolean);
+    expect(fractionChoices.length).toBeGreaterThan(0);
     fractionChoices.forEach(([, numerator, denominator]) => {
       expect(Number(numerator)).toBeLessThanOrEqual(Number(denominator));
     });
@@ -91,6 +92,18 @@ describe('elementary math course generator', () => {
     expect(placeValue.items.some((entry) => /what amount does the digit/iu.test(entry.prompt))).toBe(true);
     expect(placeValue.items.some((entry) => /Which digit is in the/iu.test(entry.prompt))).toBe(true);
     expect(placeValue.items.some((entry) => /what amount does the digit/iu.test(entry.prompt))).toBe(true);
+    const graphBanks = banks.filter((bank) => bank.concepts.some((entry) => entry.conceptId === 'graph'));
+    expect(graphBanks.length).toBeGreaterThan(0);
+    graphBanks.forEach((bank) => {
+      bank.items.filter((entry) => /most/iu.test(entry.prompt)).forEach((entry) => {
+        const counts = (entry.stimulus.alt.match(/(?:Red|Blue|Green|Gold): \d+/gu) ?? []).map((label) => Number(label.split(': ')[1]));
+        expect(counts.length).toBeGreaterThan(1);
+        expect(counts.filter((count) => count === Math.max(...counts))).toHaveLength(1);
+      });
+    });
+    // Source book names that carry a "Practice" suffix must not leak into published references.
+    expect(JSON.stringify([index, expandedMap, banks])).not.toMatch(/Practice/u);
+
     const bareUnderscore = structuredClone(placeValue);
     Object.assign(bareUnderscore.items[0], { prompt: 'What comes next? $230, 240, 250, ___$' });
     expect(auditElementaryMathBank(bareUnderscore).join('\n')).toMatch(/TeX does not render — prompt: Missing open brace for subscript/u);

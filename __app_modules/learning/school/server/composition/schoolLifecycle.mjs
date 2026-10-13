@@ -317,6 +317,12 @@ export async function createSchoolLifecycle({
   const captureRoot = configService.getHouseholdPath('school/artifacts/captures');
 
   // --- rendering (the one dependency the application layer cannot import) ----
+  // Korean print documents need <media>/vendor/fonts. Say once, at composition, when
+  // there is no media dir to find them in (the render would otherwise fail much later).
+  const mediaDir = configService.getMediaDir?.();
+  if (!mediaDir) {
+    logger.warn?.('school.lifecycle.no-media-dir', { hint: 'vendor fonts unavailable; Korean documents will not render. Set the media dir and run `npm run install:assets`.' });
+  }
   let documentRenderer = null;
   let printDocumentRendering = null;
   let receiptRenderer = null;
@@ -326,7 +332,7 @@ export async function createSchoolLifecycle({
     // Noto Sans KR is installed under <media>/vendor/fonts (npm run install:assets),
     // the same media dir the /vendor route serves. Set as the process default too:
     // measurement and report renderers reach the same fonts without each being wired.
-    const vendorFontDir = vendorFontDirFor(configService.getMediaDir?.());
+    const vendorFontDir = vendorFontDirFor(mediaDir);
     // Process-global, and safe: one media dir per process (same value every call).
     setDefaultVendorFontDir(vendorFontDir);
     const { createSchoolAssetResolver } = await import("../adapters/documents/FilesystemSchoolAssetResolver.mjs");
@@ -399,7 +405,7 @@ export async function createSchoolLifecycle({
     const { createDocumentReceiptRenderer } = await import("../rendering/documents/DocumentReceiptRenderer.mjs");
     receiptPngRenderer = createDocumentReceiptRenderer({
       scanCodes: 'qr',
-      vendorFontDir: vendorFontDirFor(configService.getMediaDir?.()),
+      vendorFontDir: vendorFontDirFor(mediaDir),
       resolveSubjectIcon: schoolAssetResolver,
     });
   } catch (err) {

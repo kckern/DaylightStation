@@ -5,7 +5,6 @@ import { flagFor } from "./flags.js";
 const CODES = JSON.parse(readFileSync(new URL('./flag-codes.json', import.meta.url), 'utf8'));
 const HINT = 'run `npm run prepare:assets` in frontend/ (prebuild copies the flags from flag-icons)';
 
-
 describe('flagFor', () => {
   it('resolves a known iso (case-insensitive) to a url', () => {
     expect(flagFor('FR')).toBeTruthy();

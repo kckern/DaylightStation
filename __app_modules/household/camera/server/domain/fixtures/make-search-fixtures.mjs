@@ -1,5 +1,7 @@
 /**
  * Generates the synthetic NVR search responses `selection.test.mjs` runs against.
+ * The record counts and ranking expectations asserted in selection.test.mjs derive
+ * from this generator: change one, regenerate, and update the other together.
  *
  *   node __app_modules/household/camera/server/domain/fixtures/make-search-fixtures.mjs
  *

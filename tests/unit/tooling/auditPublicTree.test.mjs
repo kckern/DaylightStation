@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import yaml from 'js-yaml';
 import { auditPaths, auditContent, isProbablyBinary } from '../../../scripts/audit-public-tree.mjs';
 
 describe('auditPaths', () => {
@@ -77,7 +79,7 @@ describe('audit CLI cwd', () => {
   });
 });
 
-import { auditAssets, matchesAllowlist, parseAllowlist, LARGE_TEXT_BYTES } from '../../../scripts/audit-public-tree.mjs';
+import { auditAssets, matchesAllowlist, parseAllowlist, readTracked, LARGE_TEXT_BYTES } from '../../../scripts/audit-public-tree.mjs';
 
 describe('auditAssets (binary + large-text gate)', () => {
   const allow = parseAllowlist({
@@ -124,5 +126,22 @@ describe('auditAssets (binary + large-text gate)', () => {
 
   it('rejects a malformed allowlist (pending without a task id)', () => {
     expect(() => parseAllowlist({ keep: [], largeText: [], pending: [{ path: 'x' }] })).toThrow(/task/);
+  });
+});
+
+describe('gate closure', () => {
+  it('the committed allowlist has an empty pending section', () => {
+    const raw = yaml.load(readFileSync(new URL('../../../scripts/public-tree-allowlist.yml', import.meta.url), 'utf8'));
+    expect(parseAllowlist(raw).pendingEntries).toEqual([]);
+  });
+
+  it('reports an unreadable tracked file as a finding instead of skipping it', () => {
+    const boom = () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); };
+    expect(readTracked('missing', { lstat: boom })).toEqual({ finding: { rule: 'unreadable-tracked-file', path: 'missing' } });
+    const link = { isSymbolicLink: () => true };
+    expect(readTracked('dangling', { lstat: () => link, stat: boom })).toEqual({ finding: { rule: 'unreadable-tracked-file', path: 'dangling' } });
+    expect(readTracked('dir-link', { lstat: () => link, stat: () => ({}) })).toEqual({ symlink: true });
+    const file = { isSymbolicLink: () => false };
+    expect(readTracked('ok', { lstat: () => file, read: () => Buffer.from('x') }).buf.toString()).toBe('x');
   });
 });
