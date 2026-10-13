@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeProgress, classifyChange, buildFillKeyframes, parseScaleX, GLIDE_MS,
+  normalizeProgress, classifyChange, buildFillKeyframes, parseScaleX, GLIDE_MS, predictRunFraction,
 } from './progressModel.js';
 
 describe('normalizeProgress', () => {
@@ -79,5 +79,13 @@ describe('parseScaleX', () => {
     expect(parseScaleX('matrix(0.4, 0, 0, 1, 0, 0)')).toBe(0.4);
     expect(parseScaleX('none')).toBeNull();
     expect(parseScaleX('')).toBeNull();
+  });
+});
+
+describe('predictRunFraction', () => {
+  it('maps a run animation\'s currentTime back to the fraction it shows', () => {
+    expect(predictRunFraction({ anchorFraction: 0.5, currentTimeMs: 1000, rate: 2, duration: 100 })).toBeCloseTo(0.52, 10);
+    expect(predictRunFraction({ anchorFraction: 0.99, currentTimeMs: 60000, rate: 1, duration: 100 })).toBe(1);
+    expect(predictRunFraction({ anchorFraction: 0.5, currentTimeMs: null, rate: 1, duration: 100 })).toBeNull();
   });
 });

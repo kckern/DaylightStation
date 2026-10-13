@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
 import {
   GLIDE_MS, SEEK_FWD_EPS, normalizeProgress, classifyChange, buildFillKeyframes, parseScaleX,
+  predictRunFraction,
 } from './progressModel.js';
 
 let _logger;
@@ -27,7 +28,7 @@ export function ProgressBar({ percent, onClick, durationSeconds = 0, offsetSecon
   const model = normalizeProgress({ durationSeconds, offsetSeconds, percent });
   const rate = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1;
   const fillRef = useRef(null);
-  const animRef = useRef(null);   // { animation, kind: 'run'|'hold' }
+  const animRef = useRef(null);   // { animation, kind: 'run'|'hold', anchorFraction }
   const stateRef = useRef(null);  // last anchored { offset, running, rate, duration }
   const canAnimate = typeof Element !== 'undefined' && typeof Element.prototype.animate === 'function';
   const animated = canAnimate && model.mode === 'timed';
@@ -40,9 +41,25 @@ export function ProgressBar({ percent, onClick, durationSeconds = 0, offsetSecon
       stateRef.current = null;
       return;
     }
-    const next = { offset: model.offset, running: !paused, rate, duration: model.duration };
-    const reason = classifyChange(stateRef.current, next);
-    if (!reason) { stateRef.current.offset = next.offset; return; }
+    // A playhead still at 0 is not running yet: the controller reports an
+    // element paused at the start as playing, which would crawl the fill
+    // while nothing plays. The first real tick resumes it.
+    const next = { offset: model.offset, running: !paused && model.offset > 0, rate, duration: model.duration };
+    let reason = classifyChange(stateRef.current, next);
+    if (!reason) {
+      // Steady tick: also check the animation against the media clock, so an
+      // undetected stall or a missed resume cannot leave the bar ahead or
+      // behind for the rest of the item. currentTime is a plain read.
+      const cur = animRef.current;
+      const shown = cur?.kind === 'run' && next.running
+        ? predictRunFraction({ anchorFraction: cur.anchorFraction, currentTimeMs: cur.animation.currentTime, rate, duration: model.duration })
+        : null;
+      if (shown === null || Math.abs(shown - model.fraction) * model.duration <= SEEK_FWD_EPS) {
+        stateRef.current.offset = next.offset;
+        return;
+      }
+      reason = 'drift';
+    }
 
     const current = animRef.current;
     const visible = parseScaleX(window.getComputedStyle(el).transform);
@@ -51,7 +68,9 @@ export function ProgressBar({ percent, onClick, durationSeconds = 0, offsetSecon
       stateRef.current = next;
       return;
     }
-    if (current && reason === 'resume' && current.kind === 'run'
+    // play() on a FINISHED animation restarts it from keyframe 0 — only an
+    // animation actually paused mid-run may resume in place.
+    if (current && reason === 'resume' && current.kind === 'run' && current.animation.playState === 'paused'
       && visible !== null && Math.abs(visible - model.fraction) * model.duration <= SEEK_FWD_EPS) {
       current.animation.play();
       stateRef.current = next;
@@ -64,11 +83,11 @@ export function ProgressBar({ percent, onClick, durationSeconds = 0, offsetSecon
       rate, glideMs, running: next.running,
     });
     current?.animation.cancel();
-    animRef.current = { animation: el.animate(keyframes, timing), kind };
+    animRef.current = { animation: el.animate(keyframes, timing), kind, anchorFraction: model.fraction };
     stateRef.current = next;
     logger().sampled('progress.reanchor', {
       reason, from: visible, to: Math.round(model.fraction * 1000) / 1000, kind, glide: glideMs > 0,
-    }, { maxPerMinute: 20, aggregate: true });
+    }, { maxPerMinute: 20, aggregate: false, level: 'debug' });
   }, [animated, model.offset, model.duration, model.fraction, paused, rate]);
 
   useEffect(() => () => { animRef.current?.animation.cancel(); }, []);

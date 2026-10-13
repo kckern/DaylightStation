@@ -1,17 +1,27 @@
 import { render, cleanup } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { ProgressBar } from './ProgressBar.jsx';
+
+const sampled = vi.fn();
+vi.mock('../../../lib/logging/Logger.js', () => ({
+  default: () => ({ child: () => ({ sampled, debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
+}));
+
+const { ProgressBar } = await import('./ProgressBar.jsx');
 
 const fill = (c) => c.querySelector('.progress');
 let created;
 let visible;
 
 function fakeAnimation(keyframes, timing) {
-  return { keyframes, timing, pause: vi.fn(), play: vi.fn(), cancel: vi.fn() };
+  const a = { keyframes, timing, playState: 'running', currentTime: 0, cancel: vi.fn() };
+  a.pause = vi.fn(() => { a.playState = 'paused'; });
+  a.play = vi.fn(() => { a.playState = 'running'; });
+  return a;
 }
 
 beforeEach(() => {
+  sampled.mockClear();
   created = [];
   visible = null;
   Element.prototype.animate = vi.fn(function animate(keyframes, timing) {
@@ -95,6 +105,52 @@ describe('ProgressBar — Web Animations', () => {
     const { unmount } = render(bar());
     unmount();
     expect(created[0].cancel).toHaveBeenCalled();
+  });
+});
+
+describe('ProgressBar — review fixes', () => {
+  it('rebuilds instead of play()ing a finished animation (play would restart it from 0)', () => {
+    const { rerender } = render(bar());
+    visible = 'scaleX(0.1)';
+    rerender(bar({ paused: true }));
+    created[0].playState = 'finished';
+    rerender(bar({ paused: false }));
+    expect(created[0].play).not.toHaveBeenCalled();
+    expect(created).toHaveLength(2);
+  });
+
+  it('re-anchors when the animation drifts from the media clock on steady ticks', () => {
+    const { rerender } = render(bar());
+    visible = 'scaleX(0.1)';
+    created[0].currentTime = 0; // animation frozen at the anchor (e.g. undetected stall the other way)
+    for (const offset of [10.5, 11, 11.5, 12]) rerender(bar({ offsetSeconds: offset }));
+    expect(created).toHaveLength(2);
+    expect(sampled).toHaveBeenLastCalledWith('progress.reanchor',
+      expect.objectContaining({ reason: 'drift' }), expect.anything());
+  });
+
+  it('does not re-anchor while the animation tracks the media', () => {
+    const { rerender } = render(bar());
+    for (const offset of [10.5, 11, 11.5, 12, 12.5]) {
+      created[0].currentTime = (offset - 10) * 1000;
+      rerender(bar({ offsetSeconds: offset }));
+    }
+    expect(created).toHaveLength(1);
+  });
+
+  it('logs re-anchors at debug level', () => {
+    render(bar());
+    expect(sampled).toHaveBeenCalledWith('progress.reanchor', expect.anything(),
+      expect.objectContaining({ level: 'debug' }));
+  });
+
+  it('does not run while the playhead is still at 0 (element paused at the start reads as playing)', () => {
+    const { rerender } = render(bar({ offsetSeconds: 0 }));
+    expect(created[0].keyframes).toEqual([{ transform: 'scaleX(0)' }, { transform: 'scaleX(0)' }]);
+    visible = 'scaleX(0)';
+    rerender(bar({ offsetSeconds: 0.25 }));
+    expect(created).toHaveLength(2);
+    expect(created[1].keyframes.at(-1).transform).toBe('scaleX(1)');
   });
 });
 

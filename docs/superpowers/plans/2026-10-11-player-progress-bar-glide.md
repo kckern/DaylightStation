@@ -17,7 +17,7 @@
 
 ## Global Constraints
 
-- Logging only via `frontend/src/lib/logging/Logger.js` (lazy module logger); `progress.reanchor` at debug, sampled `maxPerMinute: 20`.
+- Logging only via `frontend/src/lib/logging/Logger.js` (lazy module logger); `progress.reanchor` at debug, sampled `maxPerMinute: 20`, no aggregate (the aggregate summary always ships at info).
 - Seek thresholds unchanged: back > 0.25 s, forward > 1.5 s. Glide 250 ms.
 - No change to `handleProgressClick` or seek semantics.
 - Keep `ProgressBar`'s existing prop names; `percent` stays accepted (fallback when no timing data).

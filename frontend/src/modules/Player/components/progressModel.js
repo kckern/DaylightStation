@@ -75,3 +75,13 @@ export function parseScaleX(transform) {
   const v = m ? Number(m[1]) : NaN;
   return Number.isFinite(v) ? v : null;
 }
+
+/**
+ * The fraction a running `run` animation is showing right now, from its
+ * currentTime alone (no style read). Valid through the glide too: the landing
+ * keyframe is placed where linear playback from the anchor would be.
+ */
+export function predictRunFraction({ anchorFraction, currentTimeMs, rate, duration }) {
+  if (!Number.isFinite(currentTimeMs) || !(duration > 0)) return null;
+  return clamp01(anchorFraction + (currentTimeMs / 1000) * (rate > 0 ? rate : 1) / duration);
+}
