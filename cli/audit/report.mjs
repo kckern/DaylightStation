@@ -2,7 +2,7 @@
  * Report generator - creates markdown audit reports
  */
 
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 
 /**
  * Generate markdown report from scan results
@@ -215,10 +215,11 @@ function calculateGrade(violations) {
 /**
  * Write report to file
  */
-export function writeReport(content, scope) {
+export function writeReport(content, scope, outDir = '.reports/audit') {
   const date = new Date().toISOString().split('T')[0];
   const scopeSlug = scope === 'full' ? 'full-codebase' : scope;
-  const filename = `__docs/_wip/audits/${date}-${scopeSlug}-audit.md`;
+  const filename = `${outDir}/${date}-${scopeSlug}-audit.md`;
+  mkdirSync(outDir, { recursive: true });
 
   writeFileSync(filename, content, 'utf-8');
   return filename;

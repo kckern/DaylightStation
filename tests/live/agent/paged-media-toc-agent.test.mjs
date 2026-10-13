@@ -4,7 +4,7 @@
  *
  * Tests agent registration and the background run endpoint.
  * Does NOT test full vision extraction (too slow for CI).
- * Use cli/paged-media-toc-backfill.cli.mjs for actual backfill execution.
+ * The one-off backfill CLI has been retired.
  */
 
 import { agentAPI } from './_agent-test-helper.mjs';

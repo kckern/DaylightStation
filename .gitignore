@@ -113,6 +113,7 @@ config.app-local.yml
 /_extentions/piano/node_modules
 /tests/test-results
 /test-results
+/.reports/
 # Runtime test outputs (but track test source files)
 tests/runtime/output/
 tests/runtime/*.log

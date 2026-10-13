@@ -149,7 +149,7 @@ describe('TemplatePicker', () => {
 // two of the three deletions planned in Phase 5 would have removed live
 // behaviour. So before the sheet was deleted, this block DROVE BOTH COMPONENTS
 // side by side over the same meal — the saved meal, and the template
-// `cli/migrate-saved-meals-to-templates.mjs` turns it into — and asserted every
+// the retired saved-meals migration turned it into — and asserted every
 // observable the sheet had against the picker. All five passed (Task 10.4);
 // the sheet was deleted in the same commit and these are the picker halves,
 // kept so a regression that would have broken parity still fails.

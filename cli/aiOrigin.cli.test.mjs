@@ -11,7 +11,6 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 describe.each([
-  ['backfill-toc-offset.cli.mjs', 'cli:backfill-toc-offset', 'media'],
   ['journalist-debrief-preview.cli.mjs', 'cli:journalist-debrief-preview', 'journalist'],
 ])('%s', (file, origin, app) => {
   const implementation = file === 'journalist-debrief-preview.cli.mjs'

@@ -45,7 +45,7 @@
 // regardless of readdir order. Every loser is reported.
 //
 // Usage:
-//   node cli/curate-nutrition-icons.mjs                      # draft to __docs/_wip/
+//   node cli/curate-nutrition-icons.mjs                      # draft to .reports/nutrition-icons/
 //   node cli/curate-nutrition-icons.mjs --out /tmp/draft.yml
 //   node cli/curate-nutrition-icons.mjs --media-root /path/to/media
 
@@ -194,7 +194,7 @@ function main(argv) {
     return i === -1 ? fallback : argv[i + 1];
   };
   const mediaRoot = resolveMediaRoot(arg('--media-root', null));
-  const outPath = path.resolve(arg('--out', path.join(REPO_ROOT, '__docs/_wip/2026-09-03-icon-manifest-draft.yml')));
+  const outPath = path.resolve(arg('--out', path.join(REPO_ROOT, '.reports/nutrition-icons/icon-manifest-draft.yml')));
 
   const hiResPrefix = 'img/nutrition/icons';
   const flatPrefix = 'img/icons/food';
