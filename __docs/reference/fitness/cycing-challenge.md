@@ -32,6 +32,7 @@ in the governance engine's display projection and carries:
 | `boostMultiplier` | Drives the `×N.N` multiplier badge (shown only when > 1). `boostingUsers` is still emitted by the engine but no longer rendered. |
 | `baseReqSatisfiedForRider` / `waitingForBaseReq` | Heart-rate gate status, shown as a dot on the rider avatar. |
 | `swapAllowed` | Whether tapping the rider avatar may request a swap (engine allows it only during `init`, or `ramp` while on phase 0). |
+| `sensorUnavailable` / `sensorGraceRemainingMs` | Equipment recovery status and remaining milliseconds in the 10,000 ms grace window. The widget announces “Cadence sensor unavailable” with a status role. |
 | `cadenceFlags` | `{ lostSignal, stale, … }` — surfaced as overlay modifier classes. |
 
 `getCycleOverlayVisuals(challenge)` (in `cycleOverlayVisuals.js`) is the first
@@ -39,6 +40,28 @@ gatekeeper. It returns `{ visible: false, … }` for anything that is not a cycl
 challenge with a recognised `cycleState`, and otherwise maps the snapshot to ring
 colour, ring opacity, the dim pulse flag, and the clamped progress/danger values. If
 `visible` is false — or `challenge` is null — the component renders nothing.
+
+---
+
+## Cadence sensor recovery
+
+Automatic cycling challenges require connected cadence with finite RPM (zero is
+valid), a finite timestamp between the engine clock and 2000 ms before it, and no
+transport stall. An active cycle with unavailable equipment freezes its effort
+clocks and health and releases its own video lock. Base HR governance still
+controls playback. The overlay displays **“Cadence sensor unavailable”** with a
+status role while `sensorUnavailable` is true; available zero RPM remains readable
+as ordinary effort feedback.
+
+A sample returning within the **10,000 ms** recovery window resumes the same phase
+progress without disconnected-time catchup. Persistent loss cancels the challenge
+neutrally with `status: 'cancelled'` and `cancelReason: 'sensor_offline'`, records
+one history/session event, and schedules the normal next interval. This adds no
+failure, reward, or rider cooldown, and no failed challenge in session summaries.
+Paused playback and transport-wide stalls do not consume the equipment recovery
+window. Rider swapping cannot reset it. Fresh zero packets retain packet
+freshness through `lastSeen`, including when another sensor on the same equipment
+is stale.
 
 ---
 

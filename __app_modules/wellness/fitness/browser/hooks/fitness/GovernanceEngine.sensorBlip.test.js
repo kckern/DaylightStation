@@ -993,3 +993,22 @@ describe('Cycle SM — never-started failure timeout', () => {
     expect(successEntry).toBeTruthy();
   });
 });
+
+
+describe('Cycle SM — unavailable sample isolation', () => {
+  it('does not let a future-dated unavailable sample suppress current packets after recovery', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(42);
+    tick(engine, engine._now(), { rpm: 80 });
+    advance(200);
+    engine.evaluate({
+      activeParticipants: ['user_2'], userZoneMap: { user_2: 'active' }, totalCount: 1,
+      zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3 },
+      equipmentCadenceMap: { cycle_ace: { rpm: 0, connected: true, ts: engine._now() + 60000 } }
+    });
+    expect(engine.state.challenge.sensorUnavailable).toBe(true);
+    advance(200);
+    tick(engine, engine._now(), { rpm: 80 });
+    expect(engine.state.challenge.sensorUnavailable).toBe(false);
+    expect(engine.state.challenge.currentRpm).toBe(80);
+  });
+});
