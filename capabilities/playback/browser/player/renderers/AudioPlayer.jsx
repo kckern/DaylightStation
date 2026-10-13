@@ -48,6 +48,8 @@ export function AudioPlayer({
   const {
     seconds,
     duration,
+    isPaused,
+    isStalled,
     containerRef,
     handleProgressClick,
     getMediaEl,
@@ -271,7 +273,14 @@ export function AudioPlayer({
   return (
     <div ref={audioPlayerRef} className={`audio-player ${shader}`}>
       <div ref={shaderRef} className={`shader ${shaderState}`} />
-      <ProgressBar percent={percent} onClick={handleProgressClick} />
+      <ProgressBar
+        percent={percent}
+        onClick={handleProgressClick}
+        durationSeconds={Number.isFinite(duration) ? duration : 0}
+        offsetSeconds={Number.isFinite(seconds) ? seconds : null}
+        paused={isPaused || isStalled}
+        playbackRate={playbackRate || media.playbackRate || 1}
+      />
       <div className="audio-content">
         <div className="image-container">
           {effectiveImage && (

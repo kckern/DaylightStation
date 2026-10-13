@@ -124,18 +124,21 @@
     width: 100%;
     z-index: var(--player-layer-progress-fill, 21);
     background-color: #2a9d8f99;
-    /* When ProgressBar runs in keyframe mode it drives the fill via a GPU
-       transform (scaleX) rather than width, so the bar advances on the
-       compositor clock at display refresh instead of stepping per JS tick. */
+    /* The fill is ALWAYS a scaleX transform, never width: a GPU transform on
+       the compositor, no layout. ProgressBar drives it with one Web Animation
+       (linear run + eased glides on seeks); see progressModel.js. */
     transform-origin: left center;
     will-change: transform;
 }
 
-/* Linear fill used by ProgressBar's smooth (keyframe) mode. Seeded per-item via
-   inline animation-duration/-delay/-play-state so it tracks real playback. */
-@keyframes playerProgressFill{
-    from { transform: scaleX(0); }
-    to   { transform: scaleX(1); }
+/* Fallback when there is no timing data or no Web Animations API: each tick's
+   new scaleX is eased in rather than cut to. */
+.player .progress-bar > .progress.progress--stepped{
+    transition: transform 250ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce){
+    .player .progress-bar > .progress.progress--stepped{ transition: none; }
 }
 
 /* Content-filter blur/pixelate paints a `backdrop-filter: blur()` overlay
