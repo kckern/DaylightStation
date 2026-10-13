@@ -10,7 +10,7 @@ vi.mock('@/lib/logging/Logger.js', () => {
   return { default: () => logger };
 });
 
-import { useGovernanceAudioDuck } from "./useGovernanceAudioDuck.js";
+import { useGovernanceAudioDuck, playCueOnce } from "./useGovernanceAudioDuck.js";
 import { __resetCueAudioForTest } from "./audioCuePlayer.js";
 
 class FakeAudio {
@@ -94,6 +94,21 @@ describe('useGovernanceAudioDuck', () => {
     expect(sfx._l.error).toEqual([]);
     unmount();
     expect(sfx.pauseCalls).toBe(1);
+  });
+
+  it('clearing an active governance duck does not pause a superseding success cue on the shared element', () => {
+    const { rerender } = render(descriptor());
+    const sfx = FakeAudio.instances[0];
+    const onDone = vi.fn();
+    act(() => playCueOnce({ sound: 'success.mp3', onDone }));
+    rerender({ audioDuck: null });
+    expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+    expect(sfx.src).toBe('/media/success.mp3');
+    expect(sfx.paused).toBe(false);
+    expect(sfx.pauseCalls).toBe(0);
+    act(() => sfx.fire('ended'));
+    expect(onDone).toHaveBeenCalledExactlyOnceWith('ended');
+    expect(videoVolume.setDuck).toHaveBeenCalledTimes(2);
   });
 
   it('clearing a completed governance cue leaves later playback on the shared element alone', () => {

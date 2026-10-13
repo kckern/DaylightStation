@@ -83,6 +83,7 @@ function startSession({ videoVolume, audioDuck }) {
   // Declared above the closures below so the dependency is lexically clear; the
   // closures still run after this is assigned in the try block.
   let audio = null;
+  let audioSource = null;
 
   let lifted = false;
   const lift = (reason = 'unknown') => {
@@ -107,6 +108,7 @@ function startSession({ videoVolume, audioDuck }) {
     audio = getCueAudioElement();
     if (!audio) { lift('no_element'); return null; }
     audio.src = DaylightMediaPath(`/media/${audioDuck.sound}`);
+    audioSource = audio.src;
     const vol = Number(audioDuck.volume);
     audio.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
     audio.currentTime = 0;
@@ -130,7 +132,7 @@ function startSession({ videoVolume, audioDuck }) {
     });
     lift('threw');
   }
-  return { token: audioDuck.token, audio, onEnded, onError, lift, isActive: () => !lifted };
+  return { token: audioDuck.token, audio, audioSource, onEnded, onError, lift, isActive: () => !lifted };
 }
 
 /** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
@@ -142,9 +144,9 @@ function stopSession(session, reason = 'stopped') {
     if (onError) audio.removeEventListener('error', onError);
     // Do NOT clear src — the element is shared/reused; clearing it fires a
     // spurious 'error' (aborted load) on the next consumer.
-    // Once the duck has lifted, another cue owner may be using this shared
-    // element. Detach our listeners without stopping that later playback.
-    if (session.isActive()) {
+    // Another cue owner may reuse this shared element before our duck ends.
+    // Detach our listeners and lift our duck without stopping its new source.
+    if (session.isActive() && audio.src === session.audioSource) {
       try { audio.pause(); } catch { /* already released */ }
     }
   }
