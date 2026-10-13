@@ -105,6 +105,7 @@ config.app-local.yml
 /_extentions/piano/node_modules
 /tests/test-results
 /.reports/
+tests/live/flow/**/reports/
 # Runtime test outputs (but track test source files)
 tests/runtime/output/
 tests/runtime/*.log
@@ -241,8 +242,8 @@ recording-analysis/
 !/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/componentDefs.js
 !/__app_modules/wellness/fitness/cli/scripts/organize-fitness-pdfs.sh
 !/__app_modules/wellness/fitness/server/adapters/courses/mountain-pass.yml
-!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260627195941.yml
-!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20260923183528.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20010101100000.yml
+!/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20010102100000.yml
 !/__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seed.yml
 !/__app_modules/media/media/cli/brain/media-scenarios.example.yml
 !/__app_modules/learning/piano/satellites/piano/recorder/config.example.yml

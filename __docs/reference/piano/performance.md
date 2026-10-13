@@ -216,7 +216,7 @@ load. The working theory: the CSS driver's near-invisible animation (`opacity 0.
 classified imperceptible by the current WebView (Chrome 149) and unscheduled.
 
 **Fix: belt-and-suspenders keep-alive, both drivers compositor-perceptible** (KeepAliveVideo.jsx):
-a muted looping 2 KB near-black H.264 video (`public/vsync-keepalive.mp4`, 48 px, opaque, parked in
+a muted looping 2 KB near-black H.264 video (a binary asset since removed from the repo, 48 px, opaque, parked in
 the dark header band — FKB has `autoplayVideos=true` so no gesture is needed; the old video's real
 defects were a broken source, 6 px size, and a needless gesture gate) **plus** the CSS transform
 driver, now opaque near-background color instead of ghost opacity. Telemetry (`keepalive.playing` /

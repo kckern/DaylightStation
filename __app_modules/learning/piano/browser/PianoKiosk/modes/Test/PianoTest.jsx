@@ -54,37 +54,6 @@ const SWEEP_NOTES = (() => { const a = []; for (let n = 48; n <= 72; n++) if (is
 const NOOP = () => {};
 
 /**
- * Keep-alive: tiny visible muted looping video. autoplay attr alone is unreliable
- * in WebView, so call play() explicitly and log the real state so we can tell
- * whether it actually drives the compositor. Logs `piano.test.keepalive`.
- */
-function KeepAlive() {
-  const ref = useRef(null);
-  const logger = useMemo(() => getLogger().child({ component: 'piano-test' }), []);
-  useEffect(() => {
-    const v = ref.current;
-    if (!v) return undefined;
-    v.muted = true;
-    v.play().then(() => logger.info('piano.test.keepalive', { state: 'play-ok' }))
-      .catch((e) => logger.warn('piano.test.keepalive', { state: 'play-rejected', err: e?.name }));
-    const onPlaying = () => logger.info('piano.test.keepalive', { state: 'playing', t: Math.round(v.currentTime * 100) / 100 });
-    const onError = () => logger.warn('piano.test.keepalive', { state: 'error', code: v.error?.code });
-    const tick = setInterval(() => logger.info('piano.test.keepalive', { state: 'tick', t: Math.round(v.currentTime * 100) / 100, paused: v.paused }), 3000);
-    v.addEventListener('playing', onPlaying);
-    v.addEventListener('error', onError);
-    return () => { clearInterval(tick); v.removeEventListener('playing', onPlaying); v.removeEventListener('error', onError); };
-  }, [logger]);
-  return (
-    <video
-      ref={ref}
-      src="/keepalive.mp4"
-      autoPlay loop muted playsInline
-      style={{ position: 'fixed', bottom: 0, right: 0, width: 6, height: 6, opacity: 0.02, pointerEvents: 'none', zIndex: 1 }}
-    />
-  );
-}
-
-/**
  * Waterfall stress scene — mounts the real NoteWaterfall (which runs its own
  * per-frame rAF re-render) and floods it with a dense, self-driving note stream
  * so the screen stays full of falling notes. A second rAF counts presented frames
@@ -181,7 +150,6 @@ export default function PianoTest() {
       probeMs: numAt(null, 'probeMs', 200),
       probeNote: numAt(null, 'note', 60),
       sweepMs: numAt(null, 'sweepMs', 140),
-      keepalive: numAt(null, 'keepalive', 0),
       holdMs: numAt(null, 'hold', TEST_DEFAULTS.holdMs),
       lo: numAt(null, 'lo', TEST_DEFAULTS.lo),
       hi: numAt(null, 'hi', TEST_DEFAULTS.hi),
@@ -259,12 +227,6 @@ export default function PianoTest() {
     return () => clearInterval(id);
   }, [params, logger]);
 
-  // Keep-alive: a tiny visible muted looping video. A playing <video> drives the
-  // compositor to present a new frame every vsync via the media path, a known
-  // workaround for the WebView BeginFrame/rAF stall. Must be technically visible
-  // (not display:none / opacity:0) to force compositing.
-  const keepEl = params.keepalive ? <KeepAlive /> : null;
-
   if (params.scene === 'effect-audit') {
     return <EffectAudit autoRun={sp.get('run') === '1'} />;
   }
@@ -284,7 +246,6 @@ export default function PianoTest() {
   if (params.scene === 'waterfall') {
     return (
       <>
-        {keepEl}
         <WaterfallScene sweepMs={params.sweepMs} holdMs={params.holdMs} lo={params.lo} hi={params.hi} />
       </>
     );
@@ -293,7 +254,6 @@ export default function PianoTest() {
   if (params.scene === 'scroller') {
     return (
       <div className="piano-test piano-test--scroller" data-testid="piano-test">
-        {keepEl}
         <div className="piano-test-hud" data-testid="piano-test-hud">
           <div><b>SIDE-SCROLLER FPS TEST</b></div>
           <div>white-key sweep every {params.sweepMs}ms · active={active.size}</div>
@@ -306,7 +266,6 @@ export default function PianoTest() {
 
   return (
     <div className="piano-test" data-testid="piano-test">
-      {keepEl}
       <div className="piano-test-hud" data-testid="piano-test-hud">
         <div><b>{params.scene === 'latency' ? 'KEYBOARD LATENCY TEST' : 'KEYBOARD PAINT TEST'}</b> — scene={params.scene}</div>
         <div>bg load={params.bgNps}nps/{params.bgPoly} · {params.scene === 'latency' ? `probe ${params.probeMs}ms · ` : ''}active={active.size}</div>

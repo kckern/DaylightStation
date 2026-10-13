@@ -129,8 +129,7 @@ The local telemetry schema and failure runbooks are in
 The approved decisions and unresolved design gaps are in
 [`__docs/v1-design.md`](./docs/v1-design.md).
 The plain-language ATOM Lite build and first-test guide is
-[`__docs/hardware-build.md`](./docs/hardware-build.md), with a printable
-[PDF](./docs/hardware-build.pdf).
+[`__docs/hardware-build.md`](./docs/hardware-build.md).
 The OMR relay's operational conventions are followed here: generated config,
 LAN health diagnostics, and a non-blocking retry-oriented device loop.
 

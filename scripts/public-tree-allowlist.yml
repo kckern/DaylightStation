@@ -21,6 +21,8 @@ keep:
   - _extensions/audio-bridge/app/gradle/wrapper/gradle-wrapper.jar
   - __app_modules/learning/piano/satellites/piano-bridge/app/gradle/wrapper/gradle-wrapper.jar
   - frontend/src/lib/audio/speex_aec.js
+  # Globs (not exact files) on purpose: these two trees are tiny synthetic stubs
+  # (1x1 images, 8-byte "mp4" text) whose names are the test's own contract.
   - tests/_fixtures/exercise-library/**
   - tests/_fixtures/media/**
   - tests/_fixtures/midi/groove-*.mid
@@ -65,17 +67,6 @@ largeText:
   - __docs/reference/school/README.md
   - _extensions/playback-hub/playback-hub.sh
 
-# Still tracked, scheduled for removal by a later asset-externalization task.
-# Each entry names the task that removes it; task C6 asserts this list is empty.
-pending:
-  # C6: deletions and NUL-byte hygiene
-  - { path: __docs/assets/branding/static/*.ttf, task: C6 }
-  - { path: _extensions/omr-relay/docs/omr-relay-wiring.pdf, task: C6 }
-  - { path: __app_modules/learning/school/satellites/ticalc-relay/docs/hardware-build.pdf, task: C6 }
-  - { path: frontend/public/fonts/Roboto-Condensed-Regular.woff2, task: C6 }
-  - { path: frontend/public/keepalive.mp4, task: C6 }
-  - { path: __app_modules/learning/piano/browser/PianoKiosk/vsyncKeepalive.mp4, task: C6 }
-  - { path: frontend/public/favicon-16x16.png, task: C6 }
-  - { path: frontend/public/favicon-32x32.png, task: C6 }
-  - { path: __app_modules/learning/piano/cli/lilypond-import/header.mjs, task: C6 }
-  - { path: __app_modules/wellness/fitness/server/domain/workout/strengthLog.mjs, task: C6 }
+# Tracked-but-scheduled-for-removal entries. Closed by task C6: must stay empty
+# (asserted by scripts/audit-public-tree.test.mjs). Delete, generate or externalize instead.
+pending: []
