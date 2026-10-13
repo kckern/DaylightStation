@@ -79,7 +79,6 @@ config.app-local.yml
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
 !scripts/config/
-!scripts/media-source-heal.sh
 !scripts/test-env.sh
 !scripts/update-test-imports.mjs
 !scripts/migrate-lists-to-watchlists.mjs
@@ -97,8 +96,6 @@ config.app-local.yml
 !scripts/audit-baseline.vitest.txt
 !scripts/build-daylight.sh
 !scripts/school-smoke.mjs
-!scripts/school-reorg-rehearse.sh
-!scripts/audit-household-paths.mjs
 !scripts/check-parse.mjs
 !scripts/check-scss-build.mjs
 !scripts/probe-printer-jobstate.mjs
@@ -109,7 +106,6 @@ config.app-local.yml
 !scripts/audit-css-ownership.baseline.json
 !scripts/audit-css-ownership.test.mjs
 !scripts/audit-public-tree.mjs
-!scripts/livingroom-reading-idle.sh
 *.log
 .github/copilot-instructions.md
 # Skill local configs
