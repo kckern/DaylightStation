@@ -2,7 +2,7 @@
 /**
  * rings-migration — rewrite stored fitness "coins" keys as "rings".
  *
- * Companion to __docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md
+ * Companion to ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md
  * (§6-§9). The code ships dual-read FIRST (backend ringSeries.mjs, frontend
  * buildSessionSummary/SessionSerializerV3), so this can run at any time
  * afterwards with the app live: a half-migrated archive is a supported state.

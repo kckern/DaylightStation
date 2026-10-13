@@ -27,8 +27,8 @@
 > is now ~60 s (§9), a book tapped while the first card is in flight is HELD and
 > applied on the ACK (§9), and a card scanned while the reader's last unclaimed
 > book is playing ADOPTS that story in place (D12).
-> Implementation plans: `__docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`,
-> `__docs/_archive/2026-09-11-reading-launch-card-and-timeout-race.md`.
+> Implementation plans: `ops:docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`,
+> `ops:docs/_archive/2026-09-11-reading-launch-card-and-timeout-race.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
 
 A preschooler taps their own NFC card on the living-room reader, the TV opens to a
@@ -609,7 +609,7 @@ One known gap remains deliberate:
 
 The full taxonomy — the jobs, which element owns each, and which are
 deliberately absent from which surface — is
-[`_wip/plans/2026-09-09-reading-information-taxonomy.md`](../../_wip/plans/2026-09-09-reading-information-taxonomy.md).
+`_wip/plans/2026-09-09-reading-information-taxonomy.md`.
 The short version:
 
 | Surface | Its question | Carries |

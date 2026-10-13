@@ -9,7 +9,7 @@
  * - Timeline tick recording
  * - Activity monitoring integration
  * 
- * @see /__docs/notes/fitness-architecture-review.md Phase 4
+ * @see /ops:docs/notes/fitness-architecture-review.md Phase 4
  */
 
 // Note: slugifyId has been removed - we now use user.id directly

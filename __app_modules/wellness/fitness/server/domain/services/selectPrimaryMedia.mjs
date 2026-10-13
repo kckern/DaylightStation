@@ -138,7 +138,7 @@ function buildDeprioritizedChecker(config) {
  * synthetic events `selectPrimaryMediaSummary` builds, where the caller has
  * already resolved the played time into that field.
  *
- * See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+ * See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
  */
 /**
  * The EFFORT an item represents, when that is knowable.

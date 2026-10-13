@@ -14,12 +14,12 @@
 > pass bars, per-enrollment report-card rows, writing/composition delivery, and
 > typing tutor, general PDF/EPUB reading.
 >
-> **Requirements (the whole programme):** [`__docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`](../../superpowers/specs/2026-07-21-portal-homeschool-requirements.md)
+> **Requirements (the whole programme):** `ops:docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`
 >
-> **Roadmap (candidate future work, categorized):** [`__docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
+> **Roadmap (candidate future work, categorized):** `ops:docs/roadmap/2026-07-21-school-module-roadmap.md`
 >
 > **Pen Pal — conversational language learning (proposed, not built):**
-> [`__docs/roadmap/2026-09-11-conversational-language-program-design.md`](../../roadmap/2026-09-11-conversational-language-program-design.md)
+> `ops:docs/roadmap/2026-09-11-conversational-language-program-design.md`
 > — glossed agent chat over a shared lexicon service. Only its last phase is
 > School-specific; the chat, gloss and dictionary layers are app-wide.
 >
@@ -329,7 +329,7 @@ Any screen's config YAML may carry an optional top-level `surfaceProfile: <surfa
 Sessions are **in memory by design**. A restart costs the rest of one sitting,
 never a recorded attempt — those are already on disk.
 
-**Design spec:** [`2026-07-21-school-identity-quiz-design.md`](../../superpowers/specs/2026-07-21-school-identity-quiz-design.md)
+**Design spec:** `2026-07-21-school-identity-quiz-design.md` (ops:docs/superpowers/specs/2026-07-21-school-identity-quiz-design.md)
 
 ### The home shell
 
@@ -384,7 +384,7 @@ Back steps one navigation level: runner → shelf → home → exit. The exit
 control only exists when School is mounted as an app; on the Portal, where
 School is the screen, home is the root and no exit affordance renders.
 
-**Design specs:** [`2026-07-22-school-nine-subjects-design.md`](../../superpowers/specs/2026-07-22-school-nine-subjects-design.md), [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
+**Design specs:** `2026-07-22-school-nine-subjects-design.md` (ops:docs/superpowers/specs/2026-07-22-school-nine-subjects-design.md), `2026-07-22-school-home-topics-redesign-design.md` (ops:docs/superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), `2026-07-22-school-materials-framework-design.md` (ops:docs/superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
 
 ### The materials framework
 
@@ -752,7 +752,7 @@ supplier is an adapter.
 | Per-user | `data/users/{id}/apps/school/language/{corpusId}/` (progress + append-only log) |
 | Media | `media/school/language/{corpusId}/` (audio + per-user recordings) |
 
-**Design spec:** [`2026-07-21-glossika-program-design.md`](../../_wip/plans/2026-07-21-glossika-program-design.md)
+**Design spec:** `2026-07-21-glossika-program-design.md` (ops:docs/_wip/plans/2026-07-21-glossika-program-design.md)
 
 ### Geography / interactive quizzes
 
@@ -975,7 +975,7 @@ Asset licenses are recorded next to the assets themselves (the clickable
 US-states SVG and the flag set each carry a source + license note in their own
 folder).
 
-**Design spec:** [`2026-07-23-interactive-geography-quizzes-design.md`](../../superpowers/specs/2026-07-23-interactive-geography-quizzes-design.md)
+**Design spec:** `2026-07-23-interactive-geography-quizzes-design.md` (ops:docs/superpowers/specs/2026-07-23-interactive-geography-quizzes-design.md)
 
 ### Printing (worksheets on the kitchen laser printer)
 
@@ -1262,7 +1262,7 @@ reference a printed quiz as `document: print/<id>@<rev>`.
 > **Status (2026-07-29): LIVE in production.** Enabled via `school.yml` →
 > `lifecycle.enabled: true`, and the tap-to-agenda path is verified on real
 > hardware — see [NFC personal cards](#nfc-personal-cards--tap-to-agenda) below.
-> Architecture: [`2026-07-27-school-physical-console-architecture.md`](../../superpowers/specs/2026-07-27-school-physical-console-architecture.md).
+> Architecture: `2026-07-27-school-physical-console-architecture.md` (ops:docs/superpowers/specs/2026-07-27-school-physical-console-architecture.md).
 >
 > An earlier revision of this section said "built on a feature branch
 > `feature/school-document-system`, not yet merged or deployed". That branch
@@ -1333,7 +1333,7 @@ one source. The block set is closed in code, the same posture as
 - Rendering is pure-JS in-process (pdfkit + MathJax→SVG + svg-to-pdfkit); no
   typesetting binary in the container. **Three svg-to-pdfkit normalizations are
   mandatory** and a fourth MathJax rule besides — see
-  [the spike results](../../_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
+  the spike results (ops:docs/_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
   Skipping any one produces silently wrong output, not an error.
 - **What was recorded is checked against what was printed.** The renderer writes
   each bubble's geometry into the form map and the grader reads that same
@@ -1919,7 +1919,7 @@ assignments normalize at the boundary) or a `school.yml`
 selecting from DoNow's closed *surface* vocabulary (`garage-fitness`,
 `piano-kiosk`, `portal`, ...), the household "start this, there, now" dispatch
 facade every program launcher now calls through
-(`__docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`). It
+(`ops:docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`). It
 is the surface set that stays closed in code, same posture as
 `categories.mjs` — not the program id set; a `programs:` entry whose id
 collides with a code-registered launcher is a **boot-time error**, never a
@@ -2272,7 +2272,7 @@ math shared with `GetTeacherToday`.
 | Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`; `/school/teacher-next[/*]` redirects here (retired rollout alias, trim wave 5.5) |
 | Config | `data/household/school/school.yml` → `teachers:` |
 
-**Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
+**Design spec:** `2026-08-06-school-teacher-console-design.md` (ops:docs/superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
 
 ### The teacher workspace's organizing unit: the Learner Day
 
@@ -2500,8 +2500,8 @@ links its spec.
 
 | Sub-project | Spec | Shape |
 |---|---|---|
-| **Writing assignments** | [`2026-07-26-school-composition-delivery-design.md`](../../superpowers/specs/2026-07-26-school-composition-delivery-design.md) | Keyboard-first composition, curriculum-defined submission, advisory rubric feedback, and parent-controlled print/email/postal outbox |
-| **Typing tutor** | [`2026-07-21-school-typing-tutor-design.md`](../../superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
+| **Writing assignments** | `2026-07-26-school-composition-delivery-design.md` (ops:docs/superpowers/specs/2026-07-26-school-composition-delivery-design.md) | Keyboard-first composition, curriculum-defined submission, advisory rubric feedback, and parent-controlled print/email/postal outbox |
+| **Typing tutor** | `2026-07-21-school-typing-tutor-design.md` (ops:docs/superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
 | Reading (PDF / EPUB) | — | Not yet designed. Adapters exist; the two renderers are stubs |
 
 ### Decisions already made in those specs

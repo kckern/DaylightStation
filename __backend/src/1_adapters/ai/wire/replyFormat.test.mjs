@@ -352,7 +352,7 @@ describe('decodeReply END marker', () => {
 
 // 2026-10-02 A/B: 9 of 20 gpt-4.1 replies wrote the table rows without the
 // 2-space indent, and 5 copied the primer's placeholder header (`name[N<TAB>]`)
-// literally. See __docs/_wip/plans/2026-10-02-ai-wire-layer-rollout.md.
+// literally. See ops:docs/_wip/plans/2026-10-02-ai-wire-layer-rollout.md.
 describe('A/B findings', () => {
   it('decodes rows written without their indent', () => {
     const reply = ended('date: 2026-10-02\ntime: morning\nitems[2\t]{name\tunit\tgrams\tdish}:\nScrambled Eggs\tg\t100\t\nSourdough Toast\tslice\t40\tBreakfast');

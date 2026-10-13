@@ -8,7 +8,7 @@ import './StudioTopPane.scss';
  * height, white background, border, radius) and a centered content slot. By
  * default it renders the live grand staff; pass `children` to swap the content
  * (the future music-theory triptych composes in here — see
- * __docs/_wip/audits/2026-06-24-piano-studio-theory-triptych-circle-of-fifths-chord-naming.md).
+ * ops:docs/_wip/audits/2026-06-24-piano-studio-theory-triptych-circle-of-fifths-chord-naming.md).
  *
  * @param {React.ReactNode} [children] - content slot; defaults to <CurrentChordStaff/>
  * @param {Map} [activeNotes] - forwarded to the default CurrentChordStaff when no children

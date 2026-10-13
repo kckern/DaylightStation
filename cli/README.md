@@ -2,7 +2,7 @@
 
 Single-binary CLI exposing DaylightStation skills and services as composable shell subcommands. Built for AI coding agents, shell users, and ad-hoc automation. JSON-first output. No backend startup needed for most commands (direct-import application services).
 
-See `__docs/superpowers/specs/2026-05-02-dscli-design.md` for the full design.
+See `ops:docs/superpowers/specs/2026-05-02-dscli-design.md` for the full design.
 
 ## Usage
 

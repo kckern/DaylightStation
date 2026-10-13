@@ -111,7 +111,7 @@ tree, not in git.
 
 ```bash
 node cli/health-scan-repair.cli.mjs --nutrition-dir <dir> --manifest <icon-manifest.yml> \
-  --icon-table <private-table.yml> --food-names __docs/_wip/plans/2026-09-22-icon-food-names.yml \
+  --icon-table <private-table.yml> --food-names ops:docs/_wip/plans/2026-09-22-icon-food-names.yml \
   [--delete-ids id1,id2] --report <new-report.json>
 node cli/health-scan-repair.cli.mjs --apply <new-report.json> --backup <new-dir> --offline
 ```

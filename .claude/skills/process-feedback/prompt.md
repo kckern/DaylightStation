@@ -1,13 +1,13 @@
 ---
 name: process-feedback
-description: Turn collected voice-feedback inbox items into actionable bug/audit docs in __docs/_wip/, then mark each item filed
+description: Turn collected voice-feedback inbox items into actionable bug/audit docs in ops:docs/_wip/, then mark each item filed
 ---
 
 # Process Feedback
 
 Drain the app-wide voice-feedback inbox: read each captured note, turn it into one
-or more **actionable, spec-ready docs** under `__docs/_wip/bugs/` or
-`__docs/_wip/audits/`, then mark the inbox item **filed** with a pointer back to what
+or more **actionable, spec-ready docs** under `ops:docs/_wip/bugs/` or
+`ops:docs/_wip/audits/`, then mark the inbox item **filed** with a pointer back to what
 you created. The goal is that every raw feedback item ends up as a concrete unit of
 work ready for `/brainstorm` (spec) or a plan, and the inbox returns to empty.
 
@@ -33,7 +33,7 @@ curl -s "http://localhost:$PORT/api/v1/feedback/<app>/<id>"
 # Mark filed (do this LAST, only after the doc(s) exist):
 curl -s -X PATCH "http://localhost:$PORT/api/v1/feedback/<app>/<id>" \
   -H 'Content-Type: application/json' \
-  -d '{"status":"filed","notes":"__docs/_wip/bugs/2026-06-24-piano-... .md; __docs/_wip/audits/2026-06-24-piano-... .md"}'
+  -d '{"status":"filed","notes":"ops:docs/_wip/bugs/2026-06-24-piano-... .md; ops:docs/_wip/audits/2026-06-24-piano-... .md"}'
 ```
 
 The audio lives at `media/audio/feedback/<app>/<id>.webm` (read via `sudo docker exec
@@ -54,8 +54,8 @@ report; `logs.appLogDir` points at the persisted session log for deeper detail.
    idea. Split them. Group only tightly-coupled points into one doc.
 
 4. **Classify each concern, then write a doc** (one per concern, or per tight group):
-   - **Bug** — something broken, wrong, or regressed → `__docs/_wip/bugs/`.
-   - **Improvement / UX / refactor / new feature / idea** → `__docs/_wip/audits/`.
+   - **Bug** — something broken, wrong, or regressed → `ops:docs/_wip/bugs/`.
+   - **Improvement / UX / refactor / new feature / idea** → `ops:docs/_wip/audits/`.
    - Filename: `YYYY-MM-DD-<app>-<kebab-slug>.md`, where the date is the feedback
      item's `created` date (traceability to when it was reported) and the slug is a
      short topic (e.g. `piano-studio-staff-bar-styling`).

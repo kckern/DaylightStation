@@ -11,8 +11,8 @@
 // tab bar (thumb reach) IS the mobile layout, and the desktop rail is what it
 // becomes CSS-side, rather than a TV layout squeezed down.
 //
-// Design: __docs/_wip/plans/2026-08-12-auto-app-design.md
-// DS migration (Task M2): __docs/superpowers/... — pack 'auto' (teal), Roboto
+// Design: ops:docs/_wip/plans/2026-08-12-auto-app-design.md
+// DS migration (Task M2): ops:docs/superpowers/... — pack 'auto' (teal), Roboto
 // Condensed kept via an app-level font-family rule (no raw colors) rather
 // than a pack `font` field, since AppThemeProvider/createAppTheme don't yet
 // read one and a single scoped rule is the smaller, reversible change.

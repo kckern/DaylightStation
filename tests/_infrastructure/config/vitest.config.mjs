@@ -150,7 +150,7 @@ export default {
       // under `node --test` it fails 3 of 5 real tests (OpponentLadder
       // rejects entries built by PianoGamesContainer.recordGame, plus a
       // 'Level 1' vs 'Diglett' mismatch). That is a genuine bug, not glob
-      // noise — see __docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
+      // noise — see ops:docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
       // entries-rejected.md. Excluding it would hide the failure instead of
       // just fixing how it is reported.
     ],

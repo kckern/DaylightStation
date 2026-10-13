@@ -339,7 +339,7 @@ On 2026-10-07 the living-room Shield burned ~6 Bluey episodes in a row: Plex
 refused each (an NFS per-user ghost, `Permission denied`), each stalled, recovery
 exhausted and the queue auto-skipped. The ghost lasted 25+ minutes; the host
 heal clears it in under a second. Recovery existed and never ran. Design:
-`__docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md`.
+`ops:docs/superpowers/specs/2026-10-07-media-refusal-recovery-design.md`.
 
 | Gap | Fix |
 |---|---|

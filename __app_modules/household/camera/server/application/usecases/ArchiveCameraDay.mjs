@@ -18,7 +18,7 @@
  * The budget cap is what makes this safe to run unattended for years: a party,
  * a storm, or a stuck floodlight cannot blow the daily allowance.
  *
- * Design: __docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
+ * Design: ops:docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  *
  * @module 3_applications/camera/usecases/ArchiveCameraDay
  */

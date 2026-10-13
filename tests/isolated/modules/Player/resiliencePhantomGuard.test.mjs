@@ -10,7 +10,7 @@ import { shouldSkipResilienceReload } from '../../../../__capabilities/playback/
  * Attempting to remount for such an entry always fails and can
  * destroy working playback in a different track.
  *
- * See: __docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
+ * See: ops:docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
  */
 
 describe('shouldSkipResilienceReload', () => {

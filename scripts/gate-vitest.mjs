@@ -4,7 +4,7 @@
  * OUTSIDE tests/unit/suite/ (which the jest harness owns) and outside the
  * node:test tree under __backend/tests/. Before this gate, ~594 vitest files
  * were run by no npm script at all — a real regression once shipped through
- * every gate undetected (see __docs/_wip/audits/2026-07-08-test-runner-
+ * every gate undetected (see ops:docs/_wip/audits/2026-07-08-test-runner-
  * bifurcation-ungated-vitest.md, the P1.4 PeriodResolver escape).
  *
  * FRONTEND IS IN THE POPULATION. It was not, until 2026-08-27, and nothing

@@ -176,7 +176,7 @@ computed from those exact entries. A budget setup error does not hide the food l
 
 ### The Today budget card — one job at a time
 
-Design: `__docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
+Design: `ops:docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
 in four situations, and its headline answers whichever one applies
 (`today/budgetStory.js`, pinned by `budgetStory.test.js`):
 

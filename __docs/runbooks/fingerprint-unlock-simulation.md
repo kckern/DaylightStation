@@ -5,8 +5,8 @@ Exercise the **entire** fingerprint action-unlock chain — kiosk tap → backen
 UI unlock — **without** the physical DigitalPersona reader. Only the on-box *identify* step
 is simulated; everything else is the real wiring.
 
-> Design: `__docs/_wip/plans/2026-06-17-fingerprint-unlock-design.md`
-> Plan: `__docs/_wip/plans/2026-06-17-fingerprint-unlock-plan.md` (Phase 1.5)
+> Design: `ops:docs/_wip/plans/2026-06-17-fingerprint-unlock-design.md`
+> Plan: `ops:docs/_wip/plans/2026-06-17-fingerprint-unlock-plan.md` (Phase 1.5)
 
 ## Prerequisites
 

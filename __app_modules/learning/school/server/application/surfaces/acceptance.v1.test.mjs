@@ -14,7 +14,7 @@
  * §12.1 (golden-digest/bundle suites), §12.4 (paper capture, proven in
  * Task 7), §12.5 (real-corpus inventory), §12.6 (determinism), and §12.7
  * (contract + architecture coverage) are recorded in
- * __docs/_wip/audits/2026-08-04-learning-surfaces-acceptance.md rather than
+ * ops:docs/_wip/audits/2026-08-04-learning-surfaces-acceptance.md rather than
  * re-asserted here — they are op/process checks, not new unit behavior.
  */
 import { describe, expect, it, vi } from 'vitest';

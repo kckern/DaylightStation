@@ -26,7 +26,7 @@ Start with [Feed System Architecture](./feed-system-architecture.md) for the cro
 
 ## Verification and remaining scope
 
-The implementation closure and requirement-by-requirement status live in [the 2026-08-24 product audit](../../_wip/audits/2026-08-24-feed-app-product-ux-audit.md). Automated tests cover state, workspace migration, mutation replay, annotations, export/import, briefing/timeline construction, navigation, list windowing, and the API surface. Deterministic Chromium acceptance covers phone Reader/Scroll, desktop Headlines, a 500-item bounded Scroll render, and cold-link IndexedDB recovery. Target-display TV acceptance and field performance budgets remain operational gates rather than claims made by unit tests.
+The implementation closure and requirement-by-requirement status live in the 2026-08-24 product audit (ops:docs/_wip/audits/2026-08-24-feed-app-product-ux-audit.md). Automated tests cover state, workspace migration, mutation replay, annotations, export/import, briefing/timeline construction, navigation, list windowing, and the API surface. Deterministic Chromium acceptance covers phone Reader/Scroll, desktop Headlines, a 500-item bounded Scroll render, and cold-link IndexedDB recovery. Target-display TV acceptance and field performance budgets remain operational gates rather than claims made by unit tests.
 
 ## Deliberate limits
 

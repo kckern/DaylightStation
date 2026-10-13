@@ -11,7 +11,7 @@ const loggerOf = async () => (await import("../../../../../../frontend/src/lib/l
  * The false "ON FIRE" celebration, 2026-09-16 — replayed at the layer that
  * decides a rider's committed zone.
  *
- * Design: __docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
+ * Design: ops:docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
  */
 
 const GOOD = [

@@ -35,7 +35,7 @@ but current Exercises, Battle Stadium, and the verification CLI consume
 `expected_events`, `assessment`, and `requirement`. Authored durations and onset
 offsets are never replaced with synthetic one-beat spacing.
 
-Taxonomy and rationale: [exercise taxonomy design](../../_wip/plans/2026-08-11-exercise-taxonomy-design.md).
+Taxonomy and rationale: exercise taxonomy design (ops:docs/_wip/plans/2026-08-11-exercise-taxonomy-design.md).
 
 ## Two rules
 

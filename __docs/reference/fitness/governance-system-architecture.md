@@ -345,7 +345,7 @@ enforcer does nothing, so a listener on a dead element cannot call
 `setVideoPlayerPaused` and freeze the engine's timers. Every pause it makes emits
 `fitness.governance.pause-enforced`; a controller pause without that event while
 governance is unlocked is a regression. Incident:
-`__docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
+`ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
 
 ### Dual-Write Antipattern
 
@@ -507,7 +507,7 @@ which froze the engine.
 **Fix:** listeners are removed on cleanup, `<Player>` callbacks are read through
 refs, and governance enforcement goes through `useGovernanceProgressEnforcer`
 (see "Enforcement invariant: play means play"). Detail:
-`__docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
+`ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md`.
 
 **Lesson:** a callback handed to a media element must read live state. Anything
 it captures can outlive the render that made it.
@@ -586,5 +586,5 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 ## See Also
 
 - `governance-engine.md` — API reference, configuration, testing patterns
-- `__docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` — Test flakiness investigation
-- `__docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` — Play presses re-paused after unlock by a stale closure
+- `ops:docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` — Test flakiness investigation
+- `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` — Play presses re-paused after unlock by a stale closure

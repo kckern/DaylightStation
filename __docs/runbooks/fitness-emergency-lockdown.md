@@ -8,8 +8,8 @@ Assistant script (TV, speaker, fan, LEDs, heater off) and locks the screen for a
 configured duration. State persists server-side and survives reboot. It is
 reversible by an admin fingerprint.
 
-Design: `__docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-design.md`.
-Plan: `__docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-plan.md`.
+Design: `ops:docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-design.md`.
+Plan: `ops:docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-plan.md`.
 
 > **2026-07-11 — fail-safe redesign.** The admin-press ceremony no longer
 > auto-commits when a timer elapses. It now requires a deliberate **3s
@@ -20,7 +20,7 @@ Plan: `__docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-plan.md`.
 > where a legit arcade game-unlock scan was read as an emergency shutdown and
 > auto-committed a 30-min lock + `garage_deactivate`. The **scanner-abuse
 > auto-trip below is unchanged** — it still server-commits regardless of the
-> browser ceremony. Plan: `__docs/_wip/plans/2026-07-11-fitness-emergency-lockdown-failsafe.md`.
+> browser ceremony. Plan: `ops:docs/_wip/plans/2026-07-11-fitness-emergency-lockdown-failsafe.md`.
 
 ---
 

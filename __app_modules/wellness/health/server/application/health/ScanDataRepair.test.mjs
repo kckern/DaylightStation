@@ -3,7 +3,7 @@ import { planScanDataRepair, planCatalogIconRepair, manifestVocabulary } from ".
 import { NUTRIENT_KEYS } from '../../../portable/contracts/health/foodQuantity.mjs';
 
 // Fixtures mirror the 2026-09-22 data-quality audit
-// (__docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
+// (ops:docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
 const NULL_NUTRIENTS = { calories: null, protein: null, carbs: null, fat: null, fiber: null, sugar: null, sodium: null, cholesterol: null };
 const row = ({ id, item, startedAt = '2026-09-21T12:00:00.000Z', source = 'upc', ...over }) => ({
   id, uuid: id, item, version: 1, date: '2026-09-21', mealTime: 'evening',

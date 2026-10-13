@@ -18,7 +18,7 @@ and they age out.
 
 ## Incident case studies
 
-Full postmortems live in `__docs/_wip/bugs/` — these are condensed for the
+Full postmortems live in `ops:docs/_wip/bugs/` — these are condensed for the
 failure *patterns* they reveal, which recur in other subsystems too.
 
 ### 2026-09-06 — one reading code, thirty-six opens, and a finish dated into a closed week
@@ -82,7 +82,7 @@ store against the data volume; none of them raised anything above `info`.
 
 ### 2026-08-25 — one tap became five, and a timed-out print became blank paper
 
-Full report: `__docs/_wip/bugs/2026-08-25-school-morning-scan-and-print-incident.md`
+Full report: `ops:docs/_wip/bugs/2026-08-25-school-morning-scan-and-print-incident.md`
 
 One physical NFC tap produced **five electrical reads in 103ms**. Two
 independent bugs compounded:
@@ -113,7 +113,7 @@ after the caller has already moved on and cleaned up.
 
 ### 2026-08-26 — a fed sheet produced no ceremony and no sound
 
-Full report: `__docs/_wip/bugs/2026-08-26-school-scan-silent-on-unmarked-live-rows.md`
+Full report: `ops:docs/_wip/bugs/2026-08-26-school-scan-silent-on-unmarked-live-rows.md`
 
 A child fed a cumulative OMR card **four times over 2.5 minutes**. Every
 decode succeeded. The room stayed completely silent: no receipt, no banner,

@@ -2,7 +2,7 @@
 
 **Status:** Accepted by the owner on 2026-09-14 (including the P0/P1/P2 priorities) and **delivered**: P0 (remaining-P0 Tasks 1–8), P1 and P2 are merged. This document **replaced** the earlier C1–C10 / N1–N6 requirements; §9 records how every one of those was carried over. What shipped, and how each story is evidenced, is in [`media-app.md`](./media-app.md), [`media-app-technical.md`](./media-app-technical.md) and the acceptance ledger.
 
-**Sources** (history; all archived or in `_wip`): the baseline audit and the adversarial review (`__docs/_archive/media-app-redesign/`), the [ideal jobs taxonomy](../../_wip/plans/2026-09-14-media-app-ideal-jtbd-taxonomy.md) (jobs, stories, personas; owner decisions Q1–Q11 in §5; adopted review changes in §6), and the [implementation handoff](../../_wip/plans/2026-09-14-media-app-redesign-handoff.md).
+**Sources** (history; all archived or in `_wip`): the baseline audit and the adversarial review (`ops:docs/_archive/media-app-redesign/`), the ideal jobs taxonomy (ops:docs/_wip/plans/2026-09-14-media-app-ideal-jtbd-taxonomy.md) (jobs, stories, personas; owner decisions Q1–Q11 in §5; adopted review changes in §6), and the implementation handoff (ops:docs/_wip/plans/2026-09-14-media-app-redesign-handoff.md).
 
 ---
 

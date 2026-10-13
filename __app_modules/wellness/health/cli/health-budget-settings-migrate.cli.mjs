@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Report (default) or apply (--apply) the budget-range settings migration
- * (__docs/_wip/plans/2026-09-24-health-budget-range-design.md, Phase 1).
+ * (ops:docs/_wip/plans/2026-09-24-health-budget-range-design.md, Phase 1).
  * Run inside the app container, from the app root, so data/ is the live tree:
  *
  *   node cli/health-budget-settings-migrate.cli.mjs --user <id>            # report only

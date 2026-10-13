@@ -1,7 +1,7 @@
 /**
  * useContentFilter — applies a resolved content-filter EDL to a playing media
  * element in real time (the consumer of the 3-layer cascade; see
- * __docs/_wip/plans/2026-06-30-content-filter-layer-design.md).
+ * ops:docs/_wip/plans/2026-06-30-content-filter-layer-design.md).
  *
  * Effects are dispatched through the registry in filterEffects.js. On each
  * `timeupdate` the hook diffs the set of active cues and fires each cue's

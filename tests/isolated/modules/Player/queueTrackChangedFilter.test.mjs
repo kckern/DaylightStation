@@ -8,7 +8,7 @@ import { shouldEmitTrackChanged } from '../../../../__capabilities/playback/brow
  * that appear before the queue API response arrives. These have a guid
  * but no title, no mediaType, no media URL — they're placeholders.
  *
- * See: __docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
+ * See: ops:docs/_wip/bugs/2026-03-17-morning-program-spinner-audio-plays.md
  */
 
 describe('shouldEmitTrackChanged', () => {

@@ -282,4 +282,4 @@ npm run test -- tests/integration/fitness/memory-leak.test.mjs
 
 ## Related Audits
 
-- [__docs/_wip/audits/2026-01-19-fitness-memory-audit.md](../_wip/audits/2026-01-19-fitness-memory-audit.md) - Memory leak investigation that led to this runbook
+- ops:docs/_wip/audits/2026-01-19-fitness-memory-audit.md - Memory leak investigation that led to this runbook

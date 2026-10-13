@@ -208,9 +208,10 @@ __docs/_moveme/
 !tests/isolated/rendering/school/golden/snapshots/answer-sheet-*.png
 # Committed visual baselines the print-design acceptance sweeps compare against
 # (they write a fresh one and FAIL when it is missing, so it must be tracked).
-!__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance/proof-standard-p02.png
-!__docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance/kitchen-sink-student-p01.png
-!__docs/_wip/audits/2026-08-04-print-design-phase-c-acceptance/card-continuation-student-p01.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-a/proof-standard-p02.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-b/kitchen-sink-student-p01.png
+!__app_modules/learning/school/server/application/documents/__proof__/phase-c/card-continuation-student-p01.png
+__app_modules/learning/school/server/application/documents/__proof__/**/*.pdf
 
 # TI-86 install images are BUILD OUTPUT, regenerable by tools/build-*-install.mjs.
 # 31MB of binaries, and the .86s payloads carry learner identities baked in at

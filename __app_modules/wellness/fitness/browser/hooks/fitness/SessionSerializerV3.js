@@ -2,7 +2,7 @@ import moment from 'moment-timezone';
 
 /**
  * Serialize session data to v3 YAML format.
- * @see __docs/_wip/plans/2026-01-06-session-yaml-v3-schema-design.md
+ * @see ops:docs/_wip/plans/2026-01-06-session-yaml-v3-schema-design.md
  */
 export class SessionSerializerV3 {
   /**

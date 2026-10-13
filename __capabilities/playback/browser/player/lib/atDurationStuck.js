@@ -17,7 +17,7 @@
  * expected to emit `playback.at-duration-stuck` exactly once per arming
  * episode, gated by an `alreadyLogged` flag the caller maintains.
  *
- * See: __docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md §2.2
+ * See: ops:docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md §2.2
  */
 import { isNearEnd } from './nearEnd.js';
 

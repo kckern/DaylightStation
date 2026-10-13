@@ -184,7 +184,7 @@ export const CONTENT_RULES = [
   // Serialization ownership (audit D-3): entities must not define their storage
   // format; datastores own hydration/dehydration. Counts toJSON() method
   // DEFINITIONS (line starts with the method), not `.toJSON()` call sites.
-  // Migration: __docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
+  // Migration: ops:docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
   { rule: 'domains-tojson', layer: '2_domains/', re: /^\s*toJSON\s*\(\s*\)\s*\{/ },
   // Stored-record hydration belongs to adapters/application mappers, not domain
   // entities or value objects. Constructors accept already-reconstituted props.

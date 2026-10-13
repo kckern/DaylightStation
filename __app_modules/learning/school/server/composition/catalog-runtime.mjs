@@ -279,7 +279,7 @@ const schoolCatalog = createSchoolCatalog({
     // readAllBankRaws), which is what made the fitness wall read 0 RPM on a
     // schedule. The count cannot show that; the duration can, and it is the
     // only direct check that the fix is still holding.
-    // See __docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+    // See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
     const warmSchoolBanks = () => {
       const startedAt = Date.now();
       return schoolService.warmBanks({ force: true })

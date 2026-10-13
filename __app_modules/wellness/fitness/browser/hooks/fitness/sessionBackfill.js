@@ -23,8 +23,8 @@
  * Pure function: no side effects. Returns a plan (segments + transfers) the
  * caller applies via the save-time series merge / participant rebuild.
  *
- * @see /__docs/_wip/audits/2026-05-26-guest-mode-ux-audit.md (Decisions §5 / §7)
- * @see /__docs/_wip/plans/2026-05-26-guest-mode-redesign-spec.md (W1.B)
+ * @see /ops:docs/_wip/audits/2026-05-26-guest-mode-ux-audit.md (Decisions §5 / §7)
+ * @see /ops:docs/_wip/plans/2026-05-26-guest-mode-redesign-spec.md (W1.B)
  */
 
 /**

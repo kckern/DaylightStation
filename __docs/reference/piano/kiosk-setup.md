@@ -116,7 +116,7 @@ Session=sway
 
 ## Jank Resolution
 
-The piano side-scroller and other 60fps games exhibited ~270ms single-frame jank spikes every ~10 seconds. Full investigation documented in `__docs/_wip/bugs/2026-02-28-piano-jank-cpu-contention.md`.
+The piano side-scroller and other 60fps games exhibited ~270ms single-frame jank spikes every ~10 seconds. Full investigation documented in `ops:docs/_wip/bugs/2026-02-28-piano-jank-cpu-contention.md`.
 
 ### Investigation Summary
 

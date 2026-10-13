@@ -1,6 +1,6 @@
 /**
  * The phone's copy of a school event (design:
- * __docs/_wip/plans/2026-09-22-household-push-notifications-design.md §1).
+ * ops:docs/_wip/plans/2026-09-22-household-push-notifications-design.md §1).
  *
  * Title: `{emoji} {Child} — {Course}: {Lesson}`. Body: one plain line, no
  * percentages, no ids, no trailing period. Returns null when the phone

@@ -12,7 +12,7 @@ runs, what it is allowed to do, what it cost, and where to see all of it.
 
 Status: implemented on branch `feat/nutrition-auditor-transparency`, pending
 deploy. Design and plan:
-`__docs/_wip/plans/2026-09-25-nutrition-auditor-transparency-{design,plan}.md`.
+`ops:docs/_wip/plans/2026-09-25-nutrition-auditor-transparency-{design,plan}.md`.
 
 ## Why this exists
 

@@ -56,7 +56,7 @@ export function useChessPersistenceLifecycle({
   // reached one child's chess history in August — same move count as a real
   // game earlier the same day, `level: null`, `opponent: null`, three to six
   // seconds of "play". See
-  // __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+  // ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
   //
   // Keyed by game id and reset in the render body beside the lifecycle it
   // belongs to — see the turnover below: an identity that moves on while the

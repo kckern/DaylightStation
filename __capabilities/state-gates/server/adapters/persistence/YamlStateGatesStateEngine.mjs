@@ -78,7 +78,7 @@ function emptyState() {
 
 // Storage is JSON (current.json, schema v2) since 2026-09-25; the class keeps
 // its Yaml- name to avoid churning blame in a performance fix. See
-// __docs/_wip/plans/2026-09-25-state-gates-json-persistence-design.md.
+// ops:docs/_wip/plans/2026-09-25-state-gates-json-persistence-design.md.
 export class YamlStateGatesStateEngine {
   #resolveFilePath; #load; #save; #maxEntries; #maxAgeMs; #queues = new Map(); #cache = new Map(); #logger;
   #resolveLegacyFilePath; #loadLegacy; #mtime;

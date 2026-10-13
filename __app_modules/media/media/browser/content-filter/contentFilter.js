@@ -1,7 +1,7 @@
 /**
  * Content-filter resolver (pure logic, no DOM).
  *
- * The 3-layer cascade (see __docs/_wip/plans/2026-06-30-content-filter-layer-design.md):
+ * The 3-layer cascade (see ops:docs/_wip/plans/2026-06-30-content-filter-layer-design.md):
  *   L1 base EDL (observation: category/channel/severity/in/out)
  *   L2 profile   (category -> effect + params, theming)
  *   L3 override  (per-title: addCues, cueOverrides, plot cards)

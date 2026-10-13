@@ -23,7 +23,7 @@ export class VaultSecretsProvider extends ISecretsProvider {
     super();
     throw new Error(
       'VaultSecretsProvider not yet implemented. ' +
-      'See __docs/plans/2026-01-28-secrets-handler-design.md for planned implementation.'
+      'See ops:docs/plans/2026-01-28-secrets-handler-design.md for planned implementation.'
     );
   }
 }

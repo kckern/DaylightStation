@@ -4,7 +4,7 @@
  *
  * Transient runtime snapshot of a slot's state — published by the
  * HubStatusBroadcaster. Fields follow the wire-shape documented in
- * `__docs/_wip/plans/2026-05-27-playback-hub-admin-design.md` (snapshot section):
+ * `ops:docs/_wip/plans/2026-05-27-playback-hub-admin-design.md` (snapshot section):
  *
  *   { position, color, bt_connected, paused, now_playing,
  *     volume, playlist_pos, playlist_count, armed_source }

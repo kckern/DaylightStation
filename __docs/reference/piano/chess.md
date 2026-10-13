@@ -742,7 +742,7 @@ caller cannot forget it.
 - **Inversions as distinct squares.** Graded by difficulty so a beginner is never addressed in
   slash chords.
 - **The opponent ladder** — 21 personas over the engine's skill levels, promotion by recent form,
-  per-user progress. Captured in `__docs/_wip/plans/2026-08-12-piano-chess-opponent-ladder.md`.
+  per-user progress. Captured in `ops:docs/_wip/plans/2026-08-12-piano-chess-opponent-ladder.md`.
 
 ## Board sizing
 

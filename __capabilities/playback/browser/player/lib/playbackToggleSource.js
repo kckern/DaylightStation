@@ -14,7 +14,7 @@
  * source in the log payload. Untagged calls (dash.js internal retries,
  * browser auto-pause on `waiting`) read as `'dom-event'`.
  *
- * Bug ref: __docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §3
+ * Bug ref: ops:docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §3
  */
 
 const PAUSE_KEY = '__pauseSource';

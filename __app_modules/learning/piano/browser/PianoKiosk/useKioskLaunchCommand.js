@@ -55,7 +55,7 @@ function logger() {
  * (Videos/Music/… content ids, or a bare colon-less legacy id) still has no
  * resolver and warns + no-ops there. So: piano-kiosk IS registrable/reachable
  * for sheet-music content ids today; other content kinds remain the v1
- * boundary. See `__docs/superpowers/plans/2026-07-30-donow-and-agenda-preview.md`
+ * boundary. See `ops:docs/superpowers/plans/2026-07-30-donow-and-agenda-preview.md`
  * Task 9/13 — Task 13 should default-register `piano-kiosk` on this basis,
  * with curriculum validation scoped to the reachable (sheet-music) shape.
  *

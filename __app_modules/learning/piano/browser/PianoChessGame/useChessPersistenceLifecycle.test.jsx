@@ -45,7 +45,7 @@ const props = (currentGame, overrides = {}) => ({
  * A match this component actually WATCHED get played: mounted while the board
  * was still playable, and present for the ply before its last. Rendering
  * straight into a finished board is the shape of a phantom, not of a game — see
- * __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+ * ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
  */
 function renderPlayedGame(overrides = {}) {
   const utils = renderHook(

@@ -1,3 +1,0 @@
-# Home Architecture
-
-**TODO:** Document.

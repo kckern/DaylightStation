@@ -50,7 +50,7 @@ const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
 });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EVIDENCE_DIR = path.join(HERE, "../../../../../../__docs/_wip/audits/2026-08-04-print-design-phase-b-acceptance");
+const EVIDENCE_DIR = path.join(HERE, "__proof__/phase-b");
 /** Set to regenerate the ONE pinned visual snapshot after reviewing the new render. */
 const UPDATE_PROOF = process.env.UPDATE_PROOF === '1';
 /** Same whole-page tolerance the Phase A proof suite / golden suite use. */

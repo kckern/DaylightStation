@@ -2467,7 +2467,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // ==========================================================================
   // DoNow — the household "start this, there, now" dispatch facade
-  // (__docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md).
+  // (ops:docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md).
   // HOUSEHOLD-LEVEL (spec §2 decision 2), constructed here — AFTER
   // `wakeAndLoadService`, `homeAutomationAdapters` and `playbackHubContainer`
   // all exist, since three of its seven v1 surfaces delegate straight to

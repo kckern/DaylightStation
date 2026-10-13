@@ -3,9 +3,9 @@
 > **Status (2026-08-10):** Release candidate. The direct route is enabled, but
 > the Piano home-menu tile remains intentionally disabled until the mounted
 > schema/prefab writes and the physical SM-T590 audio/WebView check pass.
-> **Design:** [`__docs/_wip/plans/2026-07-01-piano-producer-overhaul-design.md`](../../_wip/plans/2026-07-01-piano-producer-overhaul-design.md)
-> **Requirements:** [`__docs/_wip/plans/2026-07-01-piano-producer-song-builder-requirements.md`](../../_wip/plans/2026-07-01-piano-producer-song-builder-requirements.md)
-> **Delivery history:** [`__docs/_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md`](../../_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md)
+> **Design:** `ops:docs/_wip/plans/2026-07-01-piano-producer-overhaul-design.md`
+> **Requirements:** `ops:docs/_wip/plans/2026-07-01-piano-producer-song-builder-requirements.md`
+> **Delivery history:** `ops:docs/_wip/plans/2026-07-01-piano-producer-overhaul-STATUS.md`
 > This is the durable map. The design doc is the frozen intent; this describes
 > what the code actually does. It is a sibling of [README.md](./README.md) (the
 > whole-kiosk map) and [performance.md](./performance.md).

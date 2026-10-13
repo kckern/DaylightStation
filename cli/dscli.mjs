@@ -5,7 +5,7 @@
  * Entry point. Parses argv, dispatches to cli/commands/<subcommand>.mjs via
  * dynamic import, exits with the command's returned exit code.
  *
- * See __docs/superpowers/specs/2026-05-02-dscli-design.md for the full contract.
+ * See ops:docs/superpowers/specs/2026-05-02-dscli-design.md for the full contract.
  */
 
 import path from 'node:path';
@@ -42,7 +42,7 @@ function printTopLevelHelp(stdout) {
     '  JSON to stdout on success (exit 0).',
     '  JSON error to stderr on failure (exit 1+).',
     '',
-    'See __docs/superpowers/specs/2026-05-02-dscli-design.md for the full contract.',
+    'See ops:docs/superpowers/specs/2026-05-02-dscli-design.md for the full contract.',
     '',
   ].join('\n'));
 }

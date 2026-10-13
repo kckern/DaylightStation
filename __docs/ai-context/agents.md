@@ -210,8 +210,8 @@ curl -X POST http://localhost:3112/agents/echo/run \
 
 ## Related Docs
 
-- Design: `__docs/plans/2026-01-26-ai-agents-architecture-design.md`
-- Agent Framework Design: `__docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md`
-- Implementation Plan: `__docs/plans/2026-02-14-agent-framework.md`
-- Health Coach Plan: `__docs/plans/2026-02-14-health-coach-agent.md`
+- Design: `ops:docs/plans/2026-01-26-ai-agents-architecture-design.md`
+- Agent Framework Design: `ops:docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md`
+- Implementation Plan: `ops:docs/plans/2026-02-14-agent-framework.md`
+- Health Coach Plan: `ops:docs/plans/2026-02-14-health-coach-agent.md`
 - Smoke test: `__docs/runbooks/agents-smoke-test.md`

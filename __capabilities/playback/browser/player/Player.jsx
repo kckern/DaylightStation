@@ -1823,7 +1823,7 @@ const Player = forwardRef(function Player(props, ref) {
     // vanished" produced no log line naming which of the two happened or why —
     // and a consumer that observes `clear` (the school reading session uses it
     // only for dismissal cleanup) had no way to tell a missing call from a
-    // no-op one. See __docs/_wip/bugs/2026-08-28-story-time-portal-launch-*.
+    // no-op one. See ops:docs/_wip/bugs/2026-08-28-story-time-portal-launch-*.
     playbackLog('single-item-ended', {
       action: singlePlayerProps?.continuous ? 'loop' : 'clear',
       assetId: singlePlayerProps?.assetId ?? null,

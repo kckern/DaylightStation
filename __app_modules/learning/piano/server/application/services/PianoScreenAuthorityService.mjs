@@ -4,7 +4,7 @@
  * side of that screen.
  *
  * The one invariant this service continuously enforces (see
- * __docs/_wip/plans/2026-07-01-piano-tablet-screen-power-sync.md):
+ * ops:docs/_wip/plans/2026-07-01-piano-tablet-screen-power-sync.md):
  *
  *     piano OFF           ⇒  screen OFF   (continuous — reconciled)
  *     piano OFF→ON edge   ⇒  pulse screen ON   (the "flip the piano on" wake)

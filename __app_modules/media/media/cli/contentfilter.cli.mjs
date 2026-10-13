@@ -15,7 +15,7 @@
  * keyed to VidAngel's own source recording, NOT your local file. Treat the
  * export as a COARSE FIRST PASS / locator: a millisecond-accurate mute/bleep
  * needs a local refinement pass (subtitle snap or Whisper forced-alignment in a
- * small window around each tag). See `__docs/plans/*content-filter*`.
+ * small window around each tag). See `ops:docs/plans/*content-filter*`.
  *
  * Usage:
  *   node contentfilter.cli.mjs <command> [options]

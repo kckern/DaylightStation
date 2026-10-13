@@ -25,9 +25,9 @@ Genuinely unbuilt: the memo flow and the `fd:` food grammar — and no code has 
 off printed ink rather than rendered pixels. See [Implementation status](#implementation-status)
 before relying on anything here.
 Fusion design (quiet-commit, memo, ACK-on-refusal):
-[`__docs/_wip/plans/2026-08-18-nutribot-input-fusion-design.md`](../../_wip/plans/2026-08-18-nutribot-input-fusion-design.md). Design rationale:
-[`__docs/plans/2026-07-21-scan-enriched-food-logging-design.md`](../../plans/2026-07-21-scan-enriched-food-logging-design.md).
-Task plan: [`__docs/plans/2026-07-21-scan-enriched-food-logging.md`](../../plans/2026-07-21-scan-enriched-food-logging.md).
+`ops:docs/_wip/plans/2026-08-18-nutribot-input-fusion-design.md`. Design rationale:
+`ops:docs/plans/2026-07-21-scan-enriched-food-logging-design.md`.
+Task plan: `ops:docs/plans/2026-07-21-scan-enriched-food-logging.md`.
 
 ---
 
@@ -537,7 +537,7 @@ window, and quiet-commit timing are unaffected and unrelated to it.
 - [`__docs/reference/barcode-scanning/README.md`](../barcode-scanning/README.md) — the scan
   ingest path. **Note:** that doc still describes `BarcodeScanService.handle`, which is retired;
   dispatch now goes through `triggerDispatchService.handleEvent`.
-- [`__docs/plans/2026-07-10-food-scale-relay-design.md`](../../plans/2026-07-10-food-scale-relay-design.md)
+- `ops:docs/plans/2026-07-10-food-scale-relay-design.md`
   — scale protocol and frame decoding.
 - [`_extensions/kitchen-relay/README.md`](../../../_extensions/kitchen-relay/README.md)
   — firmware, flashing, and the scale-to-nutribot link.

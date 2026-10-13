@@ -30,7 +30,7 @@ import { pathToFileURL } from 'node:url';
 // mDNS today. That makes the fleet undiscoverable in principle: a lease change
 // silently breaks every entry below. The defaults are a stopgap so the tool
 // works before any reflash — override with --host or ESP_HOST, or add mDNS to
-// the firmware (see __docs/plans/2026-07-22-esp-fleet-cli-design.md).
+// the firmware (see ops:docs/plans/2026-07-22-esp-fleet-cli-design.md).
 // ---------------------------------------------------------------------------
 const REGISTRY = {
   'food-scale': {

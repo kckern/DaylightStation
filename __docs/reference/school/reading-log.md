@@ -1,7 +1,7 @@
 # The reading log — a child's books, on paper, on the panel, and in the console
 
 > **Status:** current as of 2026-09-29. This is the durable reference; the
-> dated files in `__docs/_wip/plans/` are the point-in-time record of how it got
+> dated files in `ops:docs/_wip/plans/` are the point-in-time record of how it got
 > here and why particular decisions were reversed.
 
 A child reads a physical book off-screen and records it themselves: type the

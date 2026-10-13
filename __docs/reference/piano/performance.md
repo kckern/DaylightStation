@@ -150,7 +150,7 @@ page** — the only honest aged-page probe; the CLI `jank`/`fps` probes reload a
    legitimately stop when rAF suspends) with L1 skipped.
 
 Full hypothesis set, the compositor-alive/main-dead constraint analysis, and the ordered
-attack plan: [`__docs/_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md`](../../_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md).
+attack plan: `ops:docs/_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md`.
 
 ### The 2026-08-23 live episode: it's THERMAL — a hot WiFi PA gets the GPU/memory clamped
 
@@ -310,7 +310,7 @@ death. And the whole SPA (and its telemetry) dies if the bridge process it depen
 
 The fix for that blind spot: move health-sensing to the one process that **survives** WebView
 failure — the piano-bridge APK — and give it authority to act. See
-`__docs/_wip/plans/2026-07-03-piano-kiosk-out-of-process-watchdog.md`.
+`ops:docs/_wip/plans/2026-07-03-piano-kiosk-out-of-process-watchdog.md`.
 
 - **Heartbeat (page → bridge).** `useRenderWatchdog` POSTs a per-second beat
   (`{fps, visibility, url}`) to `http://localhost:8770/kiosk/beat`. Beat *silence* is itself the
@@ -345,7 +345,7 @@ React render cascade via the MIDI context.
 > **Status: IMPLEMENTED** on branch `worktree-piano-playback-decoupling` (2026-07-06). All
 > Piano + MusicNotation unit tests green (157 files / 1583 tests). **On-device timing is NOT
 > yet validated** — see the caveat below. Audit + finding→commit map:
-> [`__docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`](../../_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md).
+> `ops:docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`.
 
 **The design (two clocks).** The **audio plane** — MIDI note sends — is scheduled ~400 ms
 ahead as timestamped Web-MIDI sends off a coarse `setInterval` (NOT rAF), so Chromium's

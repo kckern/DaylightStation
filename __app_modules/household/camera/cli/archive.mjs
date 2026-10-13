@@ -16,7 +16,7 @@
  * All logic is imported from the backend layers — this is an entry point, not
  * a second implementation.
  *
- * Design: __docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
+ * Design: ops:docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  */
 
 import { readFile, mkdir, rm } from 'fs/promises';
@@ -599,7 +599,7 @@ Options
   --config <path>
   --dry-run          plan and report sizes without fetching
 
-Design: __docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
+Design: ops:docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
 `;
 
 async function main() {

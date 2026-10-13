@@ -28,7 +28,7 @@ No host daemon — **firmware only**, config-driven from the household SSOT
 > reintroduce Classic BT here — NimBLE supports none of it, and the Bluedroid
 > stack that does is mutually exclusive with NimBLE (one BLE stack per binary).
 > The retired Classic board is recorded in
-> [`__docs/_archive/deleted-extensions.md`](../../__docs/_archive/deleted-extensions.md).
+> [`ops:docs/_archive/deleted-extensions.md`](../../ops:docs/_archive/deleted-extensions.md).
 
 ## Messages sent to the bus
 
@@ -61,7 +61,7 @@ and `barcode-relay`.
 10-byte frame: `FF A5 | weight(uint16 BE) | mirror | b6 | b7 | unit(b8) | checksum`.
 Weight = grams (÷1); b6 `0xAA`=settled/`0xA0`=changing; b8 `0x00`=g/`0x02`=ml;
 checksum = `sum(b2..b8) & 0xFF`. Full write-up:
-`__docs/plans/2026-07-10-food-scale-relay-design.md`.
+`ops:docs/plans/2026-07-10-food-scale-relay-design.md`.
 
 Backend dispatch (`__backend/src/3_applications/hardware/foodScaleRelay.mjs`)
 rebroadcasts and persists two record kinds:

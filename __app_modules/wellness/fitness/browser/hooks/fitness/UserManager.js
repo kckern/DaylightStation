@@ -306,7 +306,7 @@ export class UserManager {
     this._ownershipIndex = new DeviceOwnershipIndex();
     // Monotonic counter bumped on mutations that change roster output (user
     // set, guest/ledger assignments). Read by ParticipantRoster's roster cache.
-    // See __docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
+    // See ops:docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
     this.mutationVersion = 0;
   }
 

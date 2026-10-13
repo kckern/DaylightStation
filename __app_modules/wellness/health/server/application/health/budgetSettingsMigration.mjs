@@ -1,5 +1,5 @@
 // One-off planner for the budget-range migration (Phase 1 of
-// __docs/_wip/plans/2026-09-24-health-budget-range-design.md). Reads the legacy
+// ops:docs/_wip/plans/2026-09-24-health-budget-range-design.md). Reads the legacy
 // floor/target settings, reports every value and disagreement, and proposes
 // only one change: filling an UNSET budgetFloor. It never invents a targetDate
 // — that is a personal decision, surfaced as a conflict instead.

@@ -110,4 +110,4 @@ Check your network requests for these headers to identify any endpoints you may 
 If you encounter issues during migration:
 1. Check the response shape matches what you expect
 2. Look for `X-Deprecated` headers indicating which new endpoint to use
-3. Review the API Consumer Inventory in `__docs/_wip/plans/2026-01-10-api-consumer-inventory.md`
+3. Review the API Consumer Inventory in `ops:docs/_wip/plans/2026-01-10-api-consumer-inventory.md`

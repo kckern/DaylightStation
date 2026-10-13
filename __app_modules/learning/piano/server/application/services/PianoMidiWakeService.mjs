@@ -2,7 +2,7 @@
  * PianoMidiWakeService — wakes the yellow-room piano tablet's FKB backlight when
  * someone plays the piano, using an always-on signal that survives a dark WebView.
  *
- * Why this exists (see __docs/_wip/plans/2026-07-01-piano-tablet-screen-power-sync.md,
+ * Why this exists (see ops:docs/_wip/plans/2026-07-01-piano-tablet-screen-power-sync.md,
  * "The three wake paths" → optional hardening):
  *   The in-browser screensaver's MIDI/touch wake is unreliable once the backlight
  *   is off — a backgrounded WebView gets its timers + Web MIDI throttled/suspended

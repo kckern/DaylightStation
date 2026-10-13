@@ -1,7 +1,7 @@
 # Household Coin Economy — Reference
 
 **Status:** Phase 1 implemented on `feature/household-economy` (2026-07-17).
-**Design & plan:** `__docs/_wip/plans/2026-07-17-household-economy-design.md`, `…-implementation.md`.
+**Design & plan:** `ops:docs/_wip/plans/2026-07-17-household-economy-design.md`, `…-implementation.md`.
 
 Kids earn a household currency — **coins** — by completing piano lessons (or via
 parent deposits) and spend it as a metered drain playing the Fitness arcade
@@ -10,7 +10,7 @@ ledger is append-only and auditable.
 
 > **"coins" vs "rings":** the household currency is `coins`. The Fitness
 > HR-zone effort measure is **rings** (renamed from "fitness coins", see
-> `__docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
+> `ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
 > are a measure, not money. They are never exchanged or debited; reaching ring
 > thresholds and winning the weekly ring contest earn coin *awards* (not yet wired).
 
@@ -124,8 +124,8 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 
 **Status:** preview only (2026-09-26). It prices a week of evidence in
 **silver** (the weekly currency of the taxonomy,
-`__docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`) and writes nothing to
-any ledger. Design: `__docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
+`ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`) and writes nothing to
+any ledger. Design: `ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
 
 ### Earn rules
 

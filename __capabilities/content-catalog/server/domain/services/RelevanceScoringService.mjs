@@ -19,7 +19,7 @@ import { getCategoryScore, getCategoryTiebreak } from "../value-objects/ContentC
  *    (10..20) sat below the ceiling of any container category (125..150), so a
  *    perfect exact-title episode lost to a movie that merely contained the term
  *    somewhere in a long subtitle. See
- *    __docs/_wip/audits/2026-08-16-content-search-and-image-preview-audit.md.
+ *    ops:docs/_wip/audits/2026-08-16-content-search-and-image-preview-audit.md.
  */
 
 /** Direct-id matches short-circuit everything else. */

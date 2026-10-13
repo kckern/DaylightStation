@@ -58,7 +58,7 @@ const createRenderPrintDocument = (deps = {}) => new RenderPrintDocument({
 });
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EVIDENCE_DIR = path.join(HERE, "../../../../../../__docs/_wip/audits/2026-08-04-print-design-phase-a-acceptance");
+const EVIDENCE_DIR = path.join(HERE, "__proof__/phase-a");
 /** Set to regenerate the ONE pinned visual snapshot after reviewing the new render. */
 const UPDATE_PROOF = process.env.UPDATE_PROOF === '1';
 /** Same whole-page tolerance the golden suite uses — loose enough to absorb antialiasing jitter. */

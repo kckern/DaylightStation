@@ -9,7 +9,7 @@
 // A source time is trusted only when finite and within MAX_SKEW_MS of receipt.
 // Outside that window the clock pairing is suspect (a stale or skewed stamp),
 // and receipt time is the safer answer. See
-// __docs/_wip/plans/2026-09-22-timed-grading-single-judge-design.md
+// ops:docs/_wip/plans/2026-09-22-timed-grading-single-judge-design.md
 // ("Contract: input timestamps").
 
 export const MAX_SKEW_MS = 1000;

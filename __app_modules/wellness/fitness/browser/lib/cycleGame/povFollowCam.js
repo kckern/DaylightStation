@@ -7,7 +7,7 @@
  * does not zoom past the cap (close riders cluster — proximity is highlighted, not
  * stretched). The hard pixel cap is also enforced by cameraControls.minDistance.
  * Coordinates are in metres; leaderZ/lastZ are ≤ 0 (further = more negative).
- * See __docs/superpowers/specs/2026-06-06-pov-grid-threejs-camera-controls-design.md
+ * See ops:docs/superpowers/specs/2026-06-06-pov-grid-threejs-camera-controls-design.md
  *
  * @returns {{ min:{x,y,z}, max:{x,y,z} }}
  */

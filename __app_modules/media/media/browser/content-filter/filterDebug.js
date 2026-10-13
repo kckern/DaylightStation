@@ -1,6 +1,6 @@
 /**
  * filterDebug — pure helpers for the content-filter debug HUD
- * (see __docs/_wip/plans/2026-06-30-content-filter-layer-design.md §6).
+ * (see ops:docs/_wip/plans/2026-06-30-content-filter-layer-design.md §6).
  *
  * These compute, from the resolved `effectiveCues` (already sorted by `in`) plus
  * the current playhead time, what the HUD should show and where the ◀/▶ go-to

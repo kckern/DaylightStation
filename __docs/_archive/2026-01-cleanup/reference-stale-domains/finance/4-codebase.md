@@ -1,3 +1,0 @@
-# Finance Codebase
-
-**TODO:** Document.

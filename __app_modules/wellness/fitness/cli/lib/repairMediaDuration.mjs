@@ -26,7 +26,7 @@
  *
  * Dry-run by default — prints what would change and writes nothing.
  *
- * See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+ * See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
  *
  * @module cli/lib/fitness/repairMediaDuration
  */

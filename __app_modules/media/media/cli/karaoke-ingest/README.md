@@ -2,7 +2,7 @@
 
 Builds the **Karaoke** Plex show (`Slow TV/Karaoke/`) from a curated setlist.
 Seasons = categories, episodes = songs. See the design spec:
-`__docs/superpowers/specs/2026-07-10-karaoke-plex-show-ingest-design.md`.
+`ops:docs/superpowers/specs/2026-07-10-karaoke-plex-show-ingest-design.md`.
 
 ## Setlist
 

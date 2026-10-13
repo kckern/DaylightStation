@@ -1,7 +1,7 @@
 // __backend/src/5_composition/modules/donow.mjs
 //
 // Composition wiring for DoNow — the household "start this, there, now"
-// dispatch facade (spec `__docs/superpowers/specs/2026-07-30-household-donow-
+// dispatch facade (spec `ops:docs/superpowers/specs/2026-07-30-household-donow-
 // dispatch-design.md`). This is the ONE place that names concrete adapters
 // for all eight surfaces; every use case above it takes ports.
 //

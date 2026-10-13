@@ -3,7 +3,7 @@
 // serving, product photo and icon their catalog entries never kept, clear the
 // `{grams: 0, amount: 0}` portions quick-add remembered, and give the rows those
 // quick-adds logged (amount null) the serving and photo
-// (__docs/_wip/plans/2026-09-23-health-today-ui-refresh-design.md §6).
+// (ops:docs/_wip/plans/2026-09-23-health-today-ui-refresh-design.md §6).
 //
 // Plan: __backend/src/3_applications/health/CatalogServingRepair.mjs (pure).
 //

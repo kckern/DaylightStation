@@ -4,7 +4,7 @@
  * (sensor-side proof in the bug report) and was locked seven times at
  * currentRpm 0. The contrast case proves genuine silence still locks.
  *
- * See __docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+ * See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
  */
 import { describe, it, expect, vi } from 'vitest';
 

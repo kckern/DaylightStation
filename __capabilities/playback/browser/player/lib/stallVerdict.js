@@ -18,7 +18,7 @@
  *    past `softMs` AND `currentTime` has not advanced. Caller should declare
  *    the stall.
  *
- * Bug ref: __docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §1
+ * Bug ref: ops:docs/_wip/bugs/2026-05-23-fitness-stall-watchdog-noise-and-play-fails-during-real-stall.md §1
  */
 export function decideStallVerdict({
   now,

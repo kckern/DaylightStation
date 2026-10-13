@@ -1,7 +1,7 @@
 /**
  * A RESULT THIS COMPONENT NEVER PLAYED IS NOT A RESULT.
  *
- * See __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md — a
+ * See ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md — a
  * resurrected transcript arrived already finished and this hook filed it as a
  * ranked loss on every mount, ten times, silently.
  */

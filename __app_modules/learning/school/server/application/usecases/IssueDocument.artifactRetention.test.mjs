@@ -85,7 +85,7 @@ describe('IssueDocument artifact retention', () => {
     // was never captured (retention predates the session). The old behaviour
     // returned `status: 'unavailable'` and left the child unable to print at
     // all — "already issued" and "doesn't exist" were both true with no third
-    // option. See __docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
+    // option. See ops:docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md.
     const sessions = new FakeSessionRepository();
     const retained = new Map();
     const issuedArtifacts = {

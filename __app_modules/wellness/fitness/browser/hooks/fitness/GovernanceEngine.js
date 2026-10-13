@@ -3997,7 +3997,7 @@ export class GovernanceEngine {
     // cadence — the rider pedals back into the green to resume. The base-
     // requirement pause gate (HR governance) must not freeze a locked cycle,
     // or a swapped-in rider whose HR hasn't yet caught up can never recover
-    // (deadlock — see __docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+    // (deadlock — see ops:docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
     // and-stale-media-audit.md). Non-locked states still freeze as before.
     if (ctx.baseReqSatisfiedGlobal === false && !active.manualTrigger && active.cycleState !== 'locked') {
       if (active._pausedAt == null) {

@@ -40,7 +40,7 @@ This returns JSON with all detected violations.
 
 ### 3. Load Baseline
 
-Read `__docs/_wip/audits/baseline.yml` to get:
+Read `ops:docs/_wip/audits/baseline.yml` to get:
 - `known`: Previously identified violations
 - `exceptions`: Intentionally ignored violations
 - `resolved`: Recently fixed violations
@@ -59,7 +59,7 @@ Also identify FIXED: items in baseline.known not in current scan.
 
 ### 5. Generate Report
 
-Create markdown report at `__docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`:
+Create markdown report at `ops:docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`:
 
 ```markdown
 # Code Standards Audit Report

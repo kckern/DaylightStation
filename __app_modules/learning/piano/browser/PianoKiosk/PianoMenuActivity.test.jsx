@@ -157,7 +157,7 @@ describe('PianoMenuActivity — loading silhouette', () => {
   // It surfaced as a roaming gate flake, passing every solo run: the population
   // grew from 1447 to 2605 files when frontend/ entered the vitest gate, which
   // put more files on each worker and widened the window. See
-  // __docs/_wip/bugs/2026-08-27-vitest-gate-nondeterministic-at-2605-files.md.
+  // ops:docs/_wip/bugs/2026-08-27-vitest-gate-nondeterministic-at-2605-files.md.
   //
   // Waiting on `readShape()` itself is not merely a longer wait — it retries
   // the actual claim until the effect lands, so the test can no longer pass or

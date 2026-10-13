@@ -6,7 +6,7 @@
  * Invokes the HealthArchiveIngestion service for every enabled category in a
  * user's `health-archive.yml` config, writes per-category `manifest.yml`, and
  * prints a summary. See plan: F-101 of the personalized-pattern-aware-coaching
- * design (__docs/roadmap/2026-05-01-personalized-pattern-aware-coaching-design.md).
+ * design (ops:docs/roadmap/2026-05-01-personalized-pattern-aware-coaching-design.md).
  *
  * Run:
  *   npm run ingest:health-archive -- --user <userId> [--dry-run] [--category <c>]

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // health-scan-repair.cli.mjs — repair the ledger rows and catalog entries the
 // 2026-09-22 scan data-quality audit found
-// (__docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
+// (ops:docs/_wip/audits/2026-09-22-health-app-data-quality-audit.md).
 //
 // Plans (pure, __backend/src/3_applications/health/ScanDataRepair.mjs):
 //   ledger  - delete UPC re-fires (same day/meal/name/calories, <= 30 s apart)

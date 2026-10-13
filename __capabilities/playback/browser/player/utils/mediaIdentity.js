@@ -54,7 +54,7 @@ const firstPositive = (candidates) => {
  * 1-11 second duration. No threshold can separate "1941 seconds" from "1941
  * milliseconds", so the guess is removed rather than retuned.
  *
- * See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+ * See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
  *
  * @param {...(number|string|null|undefined)} candidates - seconds, in preference order
  * @returns {number|null}

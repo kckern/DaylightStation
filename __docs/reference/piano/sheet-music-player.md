@@ -546,7 +546,7 @@ credit**: the displayed/stored score is the base score scaled up, and can
 exceed 100 — that's the reward for playing faster than written.
 
 > The multiplier is under review. The
-> [rubric design](../../_wip/plans/2026-08-12-assessment-rubric-design.md)
+> rubric design (ops:docs/_wip/plans/2026-08-12-assessment-rubric-design.md)
 > argues speed should be a **gate** against the item's target tempo rather than a
 > score multiplier: weighting speed teaches a child to rush, and a multiplier
 > makes scores incomparable across runs, which is the one thing tier bests
@@ -887,8 +887,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `../../MusicNotation/renderers/osmdRender.js` | OSMD adapter: engrave, sliced extract, per-staff geometry, transpose, measure model |
 | `../../MusicNotation/renderers/MusicXmlRenderer.jsx` | React wrapper: paint-first + progress + transpose |
 
-Design/history: `__docs/plans/2026-07-03-sheet-music-overhaul.md` (infra),
-`__docs/plans/2026-07-03-sheet-music-modes-design.md` + `-modes.md` (four modes,
-original design), `__docs/_wip/plans/2026-07-29-sheetmusic-wave3-design.md`
+Design/history: `ops:docs/plans/2026-07-03-sheet-music-overhaul.md` (infra),
+`ops:docs/plans/2026-07-03-sheet-music-modes-design.md` + `-modes.md` (four modes,
+original design), `ops:docs/_wip/plans/2026-07-29-sheetmusic-wave3-design.md`
 (wave-3: hands model, Learn state matrix, practice history, wet ink, loop
 handles, Polish tiers, Perform cleanup).

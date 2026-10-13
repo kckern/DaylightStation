@@ -13,7 +13,7 @@ The ingest path is a **Zebra DS2278 bridged over Bluetooth LE by an ESP32**
 **Any reader can be handed any sticker.** What a code means is decided by the CODE, through a
 house-wide scan vocabulary, not by which reader read it. The reader's configured `route` is now a
 last resort for codes that say nothing about themselves. Design rationale and the forks that were
-settled to get here: [`__docs/plans/2026-07-28-universal-scan-vocabulary-design.md`](../../plans/2026-07-28-universal-scan-vocabulary-design.md).
+settled to get here: `ops:docs/plans/2026-07-28-universal-scan-vocabulary-design.md`.
 
 ---
 

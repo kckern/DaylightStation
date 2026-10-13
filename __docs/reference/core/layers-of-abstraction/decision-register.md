@@ -1,6 +1,6 @@
 # DDD Compliance Decision Register
 
-> Authoritative record of the architecture rulings (D1–D7) made during the DDD compliance remediation. These are FINAL — record them, don't re-debate. Source analysis: [`__docs/_wip/audits/2026-07-06-ddd-layer-compliance-mega-audit.md`](../../../_wip/audits/2026-07-06-ddd-layer-compliance-mega-audit.md). Execution plan: [`__docs/_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md`](../../../_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md).
+> Authoritative record of the architecture rulings (D1–D7) made during the DDD compliance remediation. These are FINAL — record them, don't re-debate. Source analysis: `ops:docs/_wip/audits/2026-07-06-ddd-layer-compliance-mega-audit.md`. Execution plan: `ops:docs/_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md`.
 
 Each ruling below is referenced from the layer guideline docs as `Decision D#`. When a task references a Decision, the ruling here is settled and not up for re-litigation during execution.
 

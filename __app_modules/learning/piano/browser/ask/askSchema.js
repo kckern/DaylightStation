@@ -3,7 +3,7 @@
  * constraint table, as one single source of truth.
  *
  * "The Ask — what is played, how it is shown, how it is judged"
- * (`__docs/superpowers/specs/2026-08-28-ask-platform-roadmap-design.md`) maps
+ * (`ops:docs/superpowers/specs/2026-08-28-ask-platform-roadmap-design.md`) maps
  * directly onto the three fields `expandAsk` returns:
  *   - **what is played** → `texture`, `hands`, `source` → carried in `material`
  *     (this module passes material through untouched; resolving it is a

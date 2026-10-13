@@ -382,4 +382,4 @@ gap in `healthy` means the supervisor itself is not running.
 - Path IN:  piano →USB→ JamCorder →BLE→ APK →WebSocket→ browser
 - Path OUT: browser →HTTP→ APK →BLE→ JamCorder →USB/DIN→ piano
 - FKB sets `mdmDisableADB: true`, so ADB is refused until flipped via `setBooleanSetting`
-- Prior investigation: `__docs/_wip/bugs/2026-08-22-piano-midi-one-way-outage.md`
+- Prior investigation: `ops:docs/_wip/bugs/2026-08-22-piano-midi-one-way-outage.md`

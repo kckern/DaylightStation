@@ -8,7 +8,7 @@
  * - Guest/member resolution
  * - Zone information integration
  * 
- * @see /__docs/notes/fitness-architecture-review.md Phase 4
+ * @see /ops:docs/notes/fitness-architecture-review.md Phase 4
  */
 
 import { resolveDisplayLabel } from "./types.js";
@@ -73,7 +73,7 @@ export class ParticipantRoster {
     // changes (tracked via mutationVersion stamps on DeviceManager/UserManager)
     // or the TTL backstop expires. Collapses the ~34 rebuilds/sec render-storm
     // (2026-07-17 incident) down to ~data rate. See
-    // __docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
+    // ops:docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
     this._cachedRoster = null;
     this._cacheVersion = 0;
     this._cachedKey = null; // `${deviceMutationVersion}:${userMutationVersion}`

@@ -6,8 +6,8 @@
 > evidence, and advances the work session — with anything a machine cannot
 > honestly grade routed to a person.
 >
-> **Requirements:** [`__docs/_wip/plans/2026-08-04-print-design-system-requirements.md`](../../_wip/plans/2026-08-04-print-design-system-requirements.md)
-> · Fix-wave plan: [`2026-08-05-print-scan-rereview-fixes.md`](../../_wip/plans/2026-08-05-print-scan-rereview-fixes.md)
+> **Requirements:** `ops:docs/_wip/plans/2026-08-04-print-design-system-requirements.md`
+> · Fix-wave plan: `2026-08-05-print-scan-rereview-fixes.md` (ops:docs/_wip/plans/2026-08-05-print-scan-rereview-fixes.md)
 >
 > This system supersedes nothing: the quota-based worksheet printing described
 > in the [School README](./README.md#printing-worksheets-on-the-kitchen-laser-printer)
@@ -1378,7 +1378,7 @@ row — the **gate row** — and **a sheet whose gate row is blank or wrong does
 pass, however well it scored.**
 
 Design rationale and the full decision list live in
-`__docs/_wip/plans/2026-08-27-companion-media-gating-requirements.md` §0.
+`ops:docs/_wip/plans/2026-08-27-companion-media-gating-requirements.md` §0.
 
 ### Three "codes" live in this domain. They are different things.
 

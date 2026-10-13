@@ -544,7 +544,7 @@ const _consolidateEvents = (events) => {
     // mix-up upstream stored 32-minute workouts as `2` for months without a
     // single error. Drop the value rather than persist a number that reads as
     // valid; consumers handle an absent duration, they cannot detect a wrong one.
-    // See __docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
+    // See ops:docs/_wip/bugs/2026-09-01-media-duration-divided-twice.md
     const nominalSeconds = s.durationSeconds ?? e.durationSeconds ?? null;
     const startMs = Number(startEvt?.timestamp) || null;
     const endMs = Number(endEvt?.timestamp) || null;
@@ -1000,7 +1000,7 @@ export class PersistenceManager {
     // (set in the payload build) so a mid-workout crash/reload can resume it via
     // /resumable instead of forking and losing the opening minutes (2026-07-17).
     // The junk gates below (insufficient-ticks, no-meaningful-data, no-participants)
-    // still keep noise out. See __docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 3).
+    // still keep noise out. See ops:docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 3).
     if (sessionData.durationMs < 60000) {
       return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }

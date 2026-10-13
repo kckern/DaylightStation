@@ -161,7 +161,7 @@ carries `baseRevisionCount` and a stale one is refused, never merged
 (invariant 5). A shelf that could not be read shows a named error and **no edit
 controls at all**, deep link included: a damaged year of evidence must never
 present as a shelf a grown-up starts "fixing". Full design:
-`__docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
+`ops:docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
 
 **Cards** (tab id `words`) is one panel per card-ladder deck the learner is enrolled in
 (`CardLadderWordsPanel`). The word table carries the grown-up word controls

@@ -855,10 +855,10 @@ zones:
 
 ## See Also
 
-- `__docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
-- `__docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
-- `__docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
-- `__docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
+- `ops:docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
+- `ops:docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
+- `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
+- `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
 
 ## Cadence floor — holding a rider to the ride they started
 

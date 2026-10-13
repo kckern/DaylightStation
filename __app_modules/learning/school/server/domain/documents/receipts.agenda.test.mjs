@@ -84,7 +84,7 @@ describe('agendaDocument lesson cards', () => {
 
 // --- the reading-log card ----------------------------------------------------
 // It is a LESSON card like every other thing a child is asked to do that day.
-// See __docs/_wip/plans/2026-09-06-reading-log-card-parity-design.md §3.
+// See ops:docs/_wip/plans/2026-09-06-reading-log-card-parity-design.md §3.
 
 const READING_TOKEN = 'sch:READINGREADING1';
 

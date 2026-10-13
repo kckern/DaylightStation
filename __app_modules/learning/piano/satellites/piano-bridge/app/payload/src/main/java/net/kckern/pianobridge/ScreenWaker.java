@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * when the piano is played, so a BLE-MIDI note wakes the tablet even when the
  * WebView is dark.
  *
- * Why the bridge does this (see __docs/_wip/plans/2026-07-01-piano-tablet-screen-
+ * Why the bridge does this (see ops:docs/_wip/plans/2026-07-01-piano-tablet-screen-
  * power-sync.md, "The three wake paths" → optional hardening): once FKB has
  * powered the backlight off, the in-browser screensaver's own MIDI/touch wake
  * can't fire — a backgrounded WebView gets its timers + Web MIDI throttled and

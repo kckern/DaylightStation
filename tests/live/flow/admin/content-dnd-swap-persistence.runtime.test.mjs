@@ -1,7 +1,7 @@
 /**
  * Content DnD Swap Persistence Test
  *
- * Reproduces the race condition from __docs/_wip/bugs/2026-03-08-content-dnd-swap-not-persisted.md
+ * Reproduces the race condition from ops:docs/_wip/bugs/2026-03-08-content-dnd-swap-not-persisted.md
  *
  * Verifies:
  * 1. Single content swap via DnD persists after page reload

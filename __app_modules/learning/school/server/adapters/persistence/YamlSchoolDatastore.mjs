@@ -114,7 +114,7 @@ export class YamlSchoolDatastore {
    * and re-parse the whole course once PER BANK ID through #bankFile: O(N^2)
    * synchronous YAML that blocked the event loop ~8 s on every 4-minute
    * prewarm, independent of anything else running.
-   * See __docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
+   * See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
    *
    * Every question-bank YAML inside a v2 course is a typed bank artifact.
    * This is intentionally semantic discovery: compact `<lessonId>.yml` files

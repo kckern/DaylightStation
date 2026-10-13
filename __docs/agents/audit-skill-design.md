@@ -22,10 +22,10 @@ A Claude Code skill that scans the codebase for violations of coding standards a
 ## How It Works
 
 1. Reads `__docs/reference/core/coding-standards.md` and layer guidelines
-2. Loads `__docs/_wip/audits/baseline.yml` for known violations
+2. Loads `ops:docs/_wip/audits/baseline.yml` for known violations
 3. Scans target files for violations
 4. Compares against baseline to flag NEW vs KNOWN
-5. Outputs report to `__docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`
+5. Outputs report to `ops:docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`
 6. Updates baseline with newly detected violations
 
 ---
@@ -63,7 +63,7 @@ Based on `coding-standards.md` and layer guidelines:
 
 ## Baseline File
 
-**Location:** `__docs/_wip/audits/baseline.yml`
+**Location:** `ops:docs/_wip/audits/baseline.yml`
 
 Tracks known violations across audit runs. Updated automatically by `/audit`, manually triaged by developer.
 
@@ -116,7 +116,7 @@ toJSON() { ... }
 
 ## Report Output Format
 
-**Location:** `__docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`
+**Location:** `ops:docs/_wip/audits/YYYY-MM-DD-<scope>-audit.md`
 
 ```markdown
 # Code Standards Audit Report
@@ -207,7 +207,7 @@ cli/audit/
     └── domain.mjs     # Domain purity rules
 
 .claude/skills/audit.md  # Claude Code skill definition
-__docs/_wip/audits/baseline.yml  # Violation tracking
+ops:docs/_wip/audits/baseline.yml  # Violation tracking
 ```
 
 ### CLI Usage

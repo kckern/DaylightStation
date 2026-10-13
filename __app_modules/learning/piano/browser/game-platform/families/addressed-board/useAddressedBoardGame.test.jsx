@@ -228,7 +228,7 @@ describe('useAddressedBoardGame', () => {
     // this back to flipping 'loss' straight to 'win' on an unchanged
     // transcript — that is the stale-render duplicate the guard exists to
     // refuse, and it filed a phantom under a fresh session id. See
-    // __docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
+    // ops:docs/_wip/bugs/2026-09-01-connect-four-rematch-resumes-lost-game.md.
     await act(async () => { rerender({ moves: [1, 2], result: null }); });
     await act(async () => { rerender({ moves: [1, 2, 3], result: 'win' }); });
     expect(client.saveGame).toHaveBeenCalledTimes(2);

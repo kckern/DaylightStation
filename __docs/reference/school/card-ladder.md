@@ -36,7 +36,7 @@ the client's languages are `langs = {target, anchor, targetScript}`, and
 The progress rungs (new → introduced → learning → recognised → mastered) and
 the sort piles (Not yet / Familiar / Got it) are unchanged.
 
-Spec: `__docs/_wip/plans/2026-09-22-word-ladder-mastery-redesign.md` (rev 4).
+Spec: `ops:docs/_wip/plans/2026-09-22-word-ladder-mastery-redesign.md` (rev 4).
 This page describes what **Plan 1 (core loop)** and **Plan 2 (tricky-word
 drill, speaking, on-screen keypad, practice menu)** actually ship; see
 [What is not yet built](#what-is-not-yet-built) for the rest.

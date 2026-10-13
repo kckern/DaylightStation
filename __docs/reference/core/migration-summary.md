@@ -168,7 +168,7 @@ Routes can be switched between legacy and new implementations via config file. M
 
 5. **Archive documentation**
    ```bash
-   mv __docs/_wip/plans/2026-01-* __docs/_archive/migration-2026-01/
+   mv ops:docs/_wip/plans/2026-01-* ops:docs/_archive/migration-2026-01/
    ```
 
 ---
@@ -177,7 +177,7 @@ Routes can be switched between legacy and new implementations via config file. M
 
 - [Backend Architecture](./backend-architecture.md) - Layer overview
 - [DDD File Map](./ddd-file-map.md) - Complete file listing
-- [Finish Line Workplan](../../_wip/plans/2026-01-12-finish-line-workplan.md) - Remaining tasks
+- Finish Line Workplan (ops:docs/_wip/plans/2026-01-12-finish-line-workplan.md) - Remaining tasks
 
 ---
 
@@ -195,4 +195,4 @@ These documents were used during the migration and are archived for reference:
 | `2026-01-12-external-api-adapters-design.md` | Harvester design |
 | `2026-01-12-finish-line-workplan.md` | Final cleanup tasks |
 
-Location: `__docs/_archive/migration-2026-01/`
+Location: `ops:docs/_archive/migration-2026-01/`

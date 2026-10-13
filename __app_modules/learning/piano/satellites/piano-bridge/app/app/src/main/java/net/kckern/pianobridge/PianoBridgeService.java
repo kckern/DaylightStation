@@ -23,7 +23,7 @@ import java.io.File;
  * notification, the Service lifecycle, the JNI engine whose .so ships in the APK —
  * and hands everything else to a hot-swappable payload via {@link PayloadLoader}.
  * The old body lives on, unchanged in substance, as {@code BridgeCore} inside the
- * payload. See __docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md.
+ * payload. See ops:docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md.
  *
  * Rule for editing this file: if it can live in the payload, it does not belong here.
  */

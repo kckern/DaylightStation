@@ -379,7 +379,7 @@ remount at the saved position. Full design:
 A 2026-07-10 production soak found three defects in the merged resilience refactor,
 all of the same shape: the code trusted a bare event instead of checking for genuine
 forward motion. Two invariants and one ownership boundary keep them fixed. Full
-writeup: `__docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
+writeup: `ops:docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
 
 1. **`recordSuccess` requires strictly-forward playhead motion.** A progress event at
    a frozen position is NOT recovery. `usePlaybackHealth` bumps `progressToken` on any

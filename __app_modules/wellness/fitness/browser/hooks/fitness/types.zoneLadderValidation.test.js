@@ -10,7 +10,7 @@ import { validateZoneLadder, buildZoneConfig, MIN_COOL_BASELINE } from "./types.
  * finite — so every Number.isFinite guard downstream accepted it, and a rung at
  * 0 is enterable by any rider with a pulse. The zone climb then ran to the top.
  *
- * Design: __docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
+ * Design: ops:docs/_wip/plans/2026-09-16-zone-ladder-validation-design.md
  */
 
 const ladder = (...mins) => {

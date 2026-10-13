@@ -19,7 +19,7 @@
 #
 # Bypass is `git push --no-verify`, and it is the wrong answer: scrub the hunk
 # instead. Real values belong in the gitignored data tree, aliases in the repo
-# (see .pii-scrub/pii-scrub.mjs and __docs/_wip/plans/2026-07-08-pii-externalization-handoff.md).
+# (see .pii-scrub/pii-scrub.mjs and ops:docs/_wip/plans/2026-07-08-pii-externalization-handoff.md).
 
 set -u
 

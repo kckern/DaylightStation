@@ -5,7 +5,7 @@ import { computeGoto, debugCueState, DEFAULT_LEAD_SEC } from "./filterDebug.js";
 
 /**
  * FilterDebugHud — a QA overlay for authoring/verifying content-filter EDLs
- * (see __docs/_wip/plans/2026-06-30-content-filter-layer-design.md §6). Mounted only
+ * (see ops:docs/_wip/plans/2026-06-30-content-filter-layer-design.md §6). Mounted only
  * when ?filter-debug=1. Pinned bottom-left above <FilterOverlay>, it shows the
  * cue currently firing (or the next armed one), a live countdown, and ◀/▶ buttons
  * that seek LEAD seconds before the prev/next cue so you watch each filter arm.

@@ -1,5 +1,5 @@
 // MIDI -> MusicXML converter for the self-indexing loop migration.
-// Design: __docs/plans/2026-07-03-self-indexing-midi-loops-design.md
+// Design: ops:docs/plans/2026-07-03-self-indexing-midi-loops-design.md
 //
 // SAFETY: reads canonical loops/*.mid (never mutates them) and writes MusicXML
 // into a SEPARATE staging tree, plus a JSONL ledger. Revert = delete the tree.

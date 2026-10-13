@@ -10,7 +10,7 @@
  * bitrate density alone. That is why `camera-ledger` is scheduled earlier in
  * the night; the dependency is ordering, not a hard requirement.
  *
- * Design: __docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
+ * Design: ops:docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  *
  * @module 3_applications/camera/cameraArchiveJobHandler
  */

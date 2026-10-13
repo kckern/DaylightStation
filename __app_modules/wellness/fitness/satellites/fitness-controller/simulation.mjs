@@ -7,7 +7,7 @@
  * - For Playwright tests: Use FitnessSimHelper from tests/_lib/
  *
  * This file will be removed in a future release.
- * See __docs/_wip/plans/2026-02-03-hr-simulation-panel-v2.md
+ * See ops:docs/_wip/plans/2026-02-03-hr-simulation-panel-v2.md
  */
 console.warn('⚠️  DEPRECATED: fitness/simulation.mjs is deprecated. Use browser-based simulation panel instead.');
 

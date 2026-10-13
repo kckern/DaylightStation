@@ -21,7 +21,7 @@ const CATEGORIES = ['gratitude', 'hopes'];
  * Explicit DTO mappers for outward-facing plain shapes (bootstrap payloads,
  * print formatting). Built from entity getters — entities do not own their
  * serialized format; storage (de)hydration lives in the datastore adapter.
- * See __docs/_wip/plans/2026-07-08-serialization-ownership-migration.md.
+ * See ops:docs/_wip/plans/2026-07-08-serialization-ownership-migration.md.
  */
 function toPlainItem(item) {
   return { id: item.id, text: item.text };

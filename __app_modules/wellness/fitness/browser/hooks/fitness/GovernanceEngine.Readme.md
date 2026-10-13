@@ -193,7 +193,7 @@ equipment:
     ...
 ```
 
-Full design reference: `__docs/_wip/plans/2026-04-17-cycle-challenge-design.md`.
+Full design reference: `ops:docs/_wip/plans/2026-04-17-cycle-challenge-design.md`.
 
 ## Participant Display
 
