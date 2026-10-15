@@ -1,5 +1,16 @@
 # Piano Bridge (APK)
 
+> **2026-10-14: PAYLOAD p28 (`p28-foreground-watch`).** The bridge samples the window
+> list every second through its own accessibility service (`ForegroundWatch`) and logs
+> every change of the app in front to the log store, at once:
+> `kiosk.foreground.left` (warn: who took over, plus the trail of windows that appeared
+> over the kiosk just before), `kiosk.foreground.changed` (warn), `kiosk.foreground.returned`
+> (info: `awayMs`, `path`), `kiosk.window.overlay` (info, capped 20/min) and
+> `kiosk.guard.note` (recalls, auth failures). Query `context.app:piano-bridge AND _msg:kiosk.*`.
+> The foreground guard reads this watcher before FKB, so it no longer depends on
+> `fkbPassword`, and leaving FKB triggers a recall at once (measured: Camera recalled
+> in 2.2 s). Live view: `GET :8770/kiosk/foreground`.
+
 > **2026-10-14: PAYLOAD p26 (`p26-fkb-auth`).** FKB answers a wrong `fkbPassword` with
 > HTTP 200 and `{"status":"Error","statustext":"Please login"}`. Every bridge call used
 > to read that as success or "unknown", so a stale password silently blinded the
@@ -197,7 +208,10 @@ Settings (FKB `startIntent`), and from Settings they reached other apps. The dri
 guard below saw nothing wrong, because nothing in FKB's settings had changed.
 
 So the same guard also asks, every 10 s, **is FKB actually in front?**
-(`KioskSettingsGuard.foregroundTick`, reading FKB `deviceInfo.foregroundApp`):
+(`KioskSettingsGuard.foregroundTick`). Since p28 it reads the answer from the bridge's
+own 1 Hz `ForegroundWatch` first (no FKB password involved) and falls back to FKB
+`deviceInfo.foregroundApp`; the watch also runs a pass the moment FKB loses the screen,
+so a recall lands in ~1–2 s rather than on the next tick:
 
 | In front | Action |
 |---|---|

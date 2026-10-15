@@ -106,6 +106,7 @@ public class BridgeCore {
     private TouchPulser touchPulser;
     private KioskWatchdog kioskWatchdog;
     private KioskSettingsGuard kioskSettingsGuard;
+    private ForegroundWatch foregroundWatch;
     private Heartbeat heartbeat;
     private Loopback loopback;
     // Raw MIDI-IN tap: the last chunks the read port delivered, exactly as received.
@@ -213,6 +214,15 @@ public class BridgeCore {
             kioskSettingsGuard.updateConfig(config);
         }
 
+        // 1 Hz foreground watch: logs every change of the app in front and feeds the
+        // guard above (which it must follow, since it calls into it).
+        if (foregroundWatch == null) {
+            foregroundWatch = new ForegroundWatch(this, config);
+            foregroundWatch.start();
+        } else {
+            foregroundWatch.updateConfig(config);
+        }
+
         // Outbound heartbeat — the only thing the tablet says unprompted. Same
         // create-once / update-config lifecycle as the guards.
         if (loopback == null) loopback = new Loopback(this);
@@ -228,6 +238,7 @@ public class BridgeCore {
     public void stop() {
         Log.i(TAG, "BridgeCore stopping");
         if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
+        if (foregroundWatch != null) { foregroundWatch.stop(); foregroundWatch = null; }
         if (kioskSettingsGuard != null) { kioskSettingsGuard.stop(); kioskSettingsGuard = null; }
         if (heartbeat != null) { heartbeat.stop(); heartbeat = null; }
         CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
@@ -425,6 +436,7 @@ public class BridgeCore {
     public KioskWatchdog getKioskWatchdog() { return kioskWatchdog; }
 
     public KioskSettingsGuard getKioskSettingsGuard() { return kioskSettingsGuard; }
+    public ForegroundWatch getForegroundWatch() { return foregroundWatch; }
 
     /**
      * Stamp an install request (POST /update) so the kiosk-settings guard stands down.

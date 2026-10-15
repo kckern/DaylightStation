@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p26-fkb-auth";
+    public static final String BUILT_BY = "p28-foreground-watch";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -225,6 +225,11 @@ public class ControlServer extends NanoWSD {
                     // The consolidated "see everything" snapshot: time, cpu, mem, thermal,
                     // battery, bridge, kiosk (WebView watchdog + FKB app), crash record.
                     return json(SystemDiagnostics.snapshot(service));
+                case "/kiosk/foreground": {
+                    // The 1 Hz window trail: what is in front, and what came and went.
+                    ForegroundWatch fw = service.getForegroundWatch();
+                    return json(fw != null ? fw.snapshot().put("ok", true) : err("no_foreground_watch"));
+                }
                 case "/kiosk": {
                     KioskWatchdog wd = service.getKioskWatchdog();
                     return json(wd != null ? wd.snapshot() : err("no_watchdog"));

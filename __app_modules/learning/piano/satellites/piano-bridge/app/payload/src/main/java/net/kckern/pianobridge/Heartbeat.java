@@ -259,15 +259,21 @@ public final class Heartbeat {
      * LogsQL filters work ({@code context.app:piano-bridge}, {@code data.ble:CONNECTED}).
      */
     static String toLogStoreLine(JSONObject body) {
+        // A blind guard is a warning, so `level:warn` finds it without knowing the field.
+        String level = body.optBoolean("fkbAuthOk", true) ? "info" : "warn";
+        return toLogStoreLine("bridge.heartbeat", level, body.optString("deviceId", "piano-tablet"), body);
+    }
+
+    /** Any bridge event in the same envelope (see {@link LogEvents}). */
+    static String toLogStoreLine(String msg, String level, String deviceId, JSONObject body) {
         try {
             JSONObject line = new JSONObject();
-            line.put("_msg", "bridge.heartbeat");
+            line.put("_msg", msg);
             line.put("_time", iso(System.currentTimeMillis()));
-            // A blind guard is a warning, so `level:warn` finds it without knowing the field.
-            line.put("level", body.optBoolean("fkbAuthOk", true) ? "info" : "warn");
+            line.put("level", level);
             line.put("context.source", "piano-bridge");
             line.put("context.app", "piano-bridge");
-            line.put("context.device", body.optString("deviceId", "piano-tablet"));
+            line.put("context.device", deviceId == null || deviceId.isEmpty() ? "piano-tablet" : deviceId);
             java.util.Iterator<String> it = body.keys();
             while (it.hasNext()) {
                 String k = it.next();
@@ -282,7 +288,7 @@ public final class Heartbeat {
             }
             return line.toString() + "\n";
         } catch (Exception e) {
-            return "{\"_msg\":\"bridge.heartbeat\",\"level\":\"error\",\"data.buildError\":\"" + e.getMessage() + "\"}\n";
+            return "{\"_msg\":\"" + msg + "\",\"level\":\"error\",\"data.buildError\":\"" + e.getMessage() + "\"}\n";
         }
     }
 

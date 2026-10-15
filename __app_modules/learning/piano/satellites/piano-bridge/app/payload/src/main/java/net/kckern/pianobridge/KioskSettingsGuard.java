@@ -204,6 +204,10 @@ public final class KioskSettingsGuard {
             @Override public boolean setBoolean(String key, String value) { return set("setBooleanSetting", key, value); }
             @Override public boolean setString(String key, String value) { return set("setStringSetting", key, value); }
             @Override public String foregroundApp() {
+                // Our own accessibility service first: it needs no FKB password, so a
+                // stale fkbPassword cannot blind the guard again (2026-10-14).
+                String seen = ForegroundWatch.front();
+                if (seen != null) return seen;
                 JSONObject info = FkbRest.deviceInfo(held[0]);
                 Object fg = info.opt("foreground");
                 return fg == null || fg == JSONObject.NULL ? null : String.valueOf(fg);
@@ -226,7 +230,15 @@ public final class KioskSettingsGuard {
                 return code >= 200 && code < 400;
             }
         };
-        this.notes = CrashLog::note;
+        // Durable on the tablet AND in the log store: a recall or a blind guard is
+        // exactly what has to be findable afterwards without reaching the tablet.
+        this.notes = (kind, msg) -> {
+            CrashLog.note(kind, msg);
+            JSONObject d = new JSONObject();
+            try { d.put("kind", kind).put("note", msg); } catch (Exception ignored) { }
+            // Startup is routine; everything else this guard notes is a recall or a fault.
+            LogEvents.emit(held[0], "kiosk.guard.note", msg.startsWith("guard started") ? "info" : "warn", d);
+        };
         this.clock = System::currentTimeMillis;
         // Persist through the MERGING writeOverride (no sibling key is disturbed), then
         // refresh the cached DeviceConfig so the persisted half of every deadline pair

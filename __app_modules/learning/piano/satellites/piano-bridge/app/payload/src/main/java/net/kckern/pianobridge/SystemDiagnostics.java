@@ -120,6 +120,9 @@ public final class SystemDiagnostics {
         // Third view: is FKB still CONFIGURED as a kiosk? A tablet can be presenting
         // frames from a healthy FKB and still be sitting unlocked with kioskMode=false.
         o.put("settings", sg != null ? sg.snapshot() : JSONObject.NULL);
+        // Fourth view: which app is actually in front, from our own a11y service.
+        ForegroundWatch fw = service.getForegroundWatch();
+        o.put("foreground", fw != null ? fw.snapshot() : JSONObject.NULL);
         return o;
     }
 
