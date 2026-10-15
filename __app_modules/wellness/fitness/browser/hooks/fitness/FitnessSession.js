@@ -18,6 +18,7 @@ import { VibrationActivityTracker } from "./VibrationActivityTracker.js";
 import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from "./PressureMatActivityTracker.js";
 import { EndedDeviceHold } from "./EndedDeviceHold.js";
 import { findUnclosedMedia } from "./closeOpenMedia.js";
+import { findOpenChallenges } from "./closeOpenChallenges.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { heapSnapshotFields } from "../../../../../../frontend/src/lib/perf/memoryProbe.js";
 
@@ -2547,6 +2548,10 @@ export class FitnessSession {
 
     this._collectTimelineTick({ timestamp: now });
     this._closeOpenMedia(now);
+    // A challenge still pending at session end (frozen outside 'unlocked', or a
+    // cycle paused by the base requirement) never reached success/failed, and
+    // reset() below drops it silently: close it as unresolved before the save.
+    this._closeOpenChallenges(now);
     // Close every open stint so the saved segments carry real end times.
     for (const stint of this.entityRegistry.getActive()) {
       this.entityRegistry.endEntity(stint.entityId, { status: 'ended', timestamp: now, reason: 'session-end' });
@@ -2622,6 +2627,13 @@ export class FitnessSession {
 
     for (const contentId of findUnclosedMedia(this.timeline.events)) {
       this.logEvent('media_end', { contentId, source: 'session_end' }, now);
+    }
+  }
+
+  _closeOpenChallenges(now) {
+    if (!this.timeline?.events) return;
+    for (const challengeId of findOpenChallenges(this.timeline.events)) {
+      this.logEvent('challenge_end', { challengeId, result: 'abandoned', reason: 'session_end' }, now);
     }
   }
 
