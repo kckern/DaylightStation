@@ -10,6 +10,21 @@ import "./FitnessTimeline.scss";
 
 import { tickToX, buildHrAreaPath } from "./hrAreaPath.js";
 
+// Lane avatars stay small: the plot starts CHART_MARGIN.left in (it shares its
+// time axis with the rings chart above), so a lane-height avatar on a solo lane
+// covered the first minutes of heart rate. A tall lane pins it to the top-left.
+const AVATAR_MAX = 56;
+const AVATAR_TOP_INSET = 4;
+
+function laneAvatar(lane, maxAvatarSize) {
+  const cap = maxAvatarSize > 0 ? Math.min(maxAvatarSize, AVATAR_MAX) : AVATAR_MAX;
+  const size = Math.min(lane.laneHeight, cap);
+  const top = lane.laneHeight > size + AVATAR_TOP_INSET * 2
+    ? lane.laneTop + AVATAR_TOP_INSET
+    : lane.laneTop + (lane.laneHeight - size) / 2;
+  return { size, r: size / 2, top, cy: top + size / 2 };
+}
+
 export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMediaKey }) {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -103,10 +118,8 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMed
       <svg width={width} height={height} className="fitness-timeline__svg">
         <defs>
           {lanes.map((lane) => {
-            const avatarSize = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
-            const r = avatarSize / 2;
+            const { r, cy } = laneAvatar(lane, maxAvatarSize);
             const cx = r;
-            const cy = lane.laneTop + lane.laneHeight / 2;
             return (
               <clipPath key={`clip-${lane.userId}`} id={`avatar-clip-${lane.userId}`}>
                 <circle cx={cx} cy={cy} r={r} />
@@ -139,7 +152,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMed
           return (
             <g key={`lane-meta-${lane.userId}`}>
               {Number.isFinite(lane.hrMax) && (
-                <text className="fitness-timeline__hr-max" x={lane.laneHeight + 8} y={lane.laneTop + 12}>
+                <text className="fitness-timeline__hr-max" x={laneAvatar(lane, maxAvatarSize).size + 8} y={lane.laneTop + 12}>
                   {Math.round(lane.hrMax)} bpm
                 </text>
               )}
@@ -168,15 +181,16 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMed
         {/* avatars — drawn LAST so they sit above every indicator line/rect */}
         {lanes.map((lane) => {
           if (!lane.avatarUrl) return null;
-          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
-          const r = size / 2;
+          const { size, r, top, cy } = laneAvatar(lane, maxAvatarSize);
           const borderWidth = 3;
           return (
             <g key={`avatar-${lane.userId}`}>
+              {/* Shows until the image decodes — never a black hole on a cold cache. */}
+              <circle className="fitness-timeline__avatar-placeholder" cx={r} cy={cy} r={r} />
               <image
                 href={lane.avatarUrl}
                 x={0}
-                y={lane.laneTop + (lane.laneHeight - size) / 2}
+                y={top}
                 width={size}
                 height={size}
                 clipPath={`url(#avatar-clip-${lane.userId})`}
@@ -184,7 +198,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMed
               />
               <circle
                 cx={r}
-                cy={lane.laneTop + lane.laneHeight / 2}
+                cy={cy}
                 r={r - borderWidth / 2}
                 fill="none"
                 stroke="rgba(0, 0, 0, 0.7)"
@@ -196,13 +210,13 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMed
         {/* guest chips — small muted marker beside the avatar (audit N10) */}
         {lanes.map((lane) => {
           if (!lane.isGuest) return null;
-          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
+          const { size, cy } = laneAvatar(lane, maxAvatarSize);
           return (
             <text
               key={`guest-${lane.userId}`}
               className="fitness-timeline__guest-chip"
               x={size + 6}
-              y={lane.laneTop + lane.laneHeight / 2}
+              y={cy}
               dominantBaseline="central"
             >
               guest

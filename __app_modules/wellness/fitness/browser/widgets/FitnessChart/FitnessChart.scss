@@ -207,6 +207,10 @@
   .race-chart__avatar-backdrop {
     fill: rgba(0, 0, 0, 0.6);
   }
+
+  .race-chart__avatar-placeholder {
+    opacity: 0.35;
+  }
   
   .race-chart__ring-label {
       fill: white;

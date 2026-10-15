@@ -8,6 +8,8 @@ import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import FitnessTimeline from "./FitnessTimeline.jsx";
 import MarkerGutter from "./MarkerGutter.jsx";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
+import DetailActions from "./DetailActions.jsx";
+import SessionDetailSkeleton from "./SessionDetailSkeleton.jsx";
 import SportIcon from "../_shared/SportIcon.jsx";
 import RouteMap from "./RouteMap.jsx";
 import "./FitnessSessionDetailWidget.scss";
@@ -24,10 +26,11 @@ import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isKioskEnv } from "@/lib/kioskEnv.js";
 import { DaylightAPI } from "@/lib/api.mjs";
 import RingIcon from '@/lib/icons/RingIcon.jsx';
-import Skeleton from '@/lib/ui/Skeleton.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
+const DELETE_ARM_MS = 3000;
+
 function logger() {
   if (!_logger) _logger = getLogger().child({ app: 'fitness', component: 'session-detail' });
   return _logger;
@@ -151,7 +154,11 @@ function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, brea
 
 export default function FitnessSessionDetailWidget({ sessionId }) {
   const [sessionData, setSessionData] = useState(null);
+  // The session `sessionData` belongs to. While another session loads, the pane
+  // keeps showing this one (dimmed) instead of blanking to a skeleton.
+  const [dataSessionId, setDataSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [error, setError] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
@@ -170,10 +177,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   // `background` refreshes keep the current detail on screen: the skeleton is
   // for a first load only. Swapping a rendered detail back to a skeleton to
   // refresh it is what made the pane blank out and redraw during hydration.
+  // Switching sessions keeps the previous detail up too (see `stale` below):
+  // most loads finish in ~100ms, and a skeleton flash on every tap was worse
+  // than a brief dim of the outgoing session.
+  const hasDataRef = useRef(false);
+  hasDataRef.current = sessionData != null;
   const fetchSession = useCallback(({ background = false } = {}) => {
     if (!sessionId) return;
     if (!background) {
-      setLoading(true);
+      if (!hasDataRef.current) setLoading(true);
       setError(null);
     }
     const startedAt = performance.now();
@@ -185,6 +197,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       .then((data) => {
         if (activeSessionIdRef.current !== sessionId) return;
         setSessionData(data.session || data);
+        setDataSessionId(sessionId);
         setError(null);
         setLoading(false);
         logger().info('session-detail.loaded', {
@@ -203,8 +216,23 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       });
   }, [sessionId]);
 
+  // Delete takes two taps: the first arms it ("Delete?") for a few seconds. One
+  // stray touch on a kiosk must never delete a workout.
+  const disarmTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(disarmTimerRef.current), []);
+  useEffect(() => { setDeleteArmed(false); clearTimeout(disarmTimerRef.current); }, [sessionId]);
   const handleDelete = useCallback(async () => {
     if (!sessionId || deleting) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      clearTimeout(disarmTimerRef.current);
+      disarmTimerRef.current = setTimeout(() => setDeleteArmed(false), DELETE_ARM_MS);
+      logger().info('session-detail.delete-armed', { sessionId });
+      return;
+    }
+    clearTimeout(disarmTimerRef.current);
+    setDeleteArmed(false);
+    logger().info('session-detail.delete-confirmed', { sessionId });
     setDeleting(true);
     try {
       const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
@@ -215,7 +243,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       setDeleting(false);
       setError(`Delete failed: ${err.message}`);
     }
-  }, [sessionId, deleting, restore, refetchScreenData]);
+  }, [sessionId, deleting, deleteArmed, restore, refetchScreenData]);
 
   const handleAddVoiceMemo = useCallback(() => {
     if (!sessionId) return;
@@ -401,13 +429,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     }
   }, [recapVideoRef]);
 
-  if (loading) {
-    return (
-      <div className="session-detail" style={{ padding: '2rem', gap: '1rem' }}>
-        <Skeleton height={20} width="40%" />
-        <Skeleton height="100%" style={{ flex: 1 }} />
-      </div>
-    );
+  if (loading && !sessionData) {
+    return <SessionDetailSkeleton />;
   }
 
   if (error) {
@@ -438,8 +461,21 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const hasVideoChanges = !header?.stravaHasMap &&
     selectVideoMarkerEvents(events, header?.primaryMediaKey).length > 0;
 
+  // Another session is loading; the outgoing one stays up, dimmed and inert.
+  const stale = sessionData != null && dataSessionId != null && dataSessionId !== sessionId;
+  const shownSessionId = dataSessionId || sessionId;
+  const actions = (
+    <DetailActions
+      onClose={() => restore('right-area')}
+      onDelete={handleDelete}
+      deleting={deleting}
+      deleteArmed={deleteArmed}
+      onAddMemo={handleAddVoiceMemo}
+    />
+  );
+
   return (
-    <div className="session-detail">
+    <div className={`session-detail${stale ? ' session-detail--stale' : ''}`} aria-busy={stale || undefined}>
       {/* Header (25%) */}
       <div className="session-detail__header">
         {header?.posterUrl ? (
@@ -471,7 +507,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder">
             <SportIcon
               type={header?.stravaType}
-              sessionId={sessionId}
+              sessionId={shownSessionId}
               variant="detail"
             />
           </div>
@@ -488,6 +524,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               {(() => {
                 // Build only the present meta items, then interleave separators — no dangling
                 // "·" when time/duration/rings are missing (e.g. merged race-group sessions).
+                // The totals (rings, suffer) are one unbreakable group set off by a gap, not a
+                // dot: when the line is too narrow the group wraps whole, and no separator is
+                // left hanging at a line end.
                 const items = [];
                 if (header?.date) items.push(<span key="date" className="session-detail__meta-item">{header.date}</span>);
                 if (header?.time) items.push(
@@ -497,22 +536,33 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 );
                 if (header?.elapsedLabel) items.push(<span key="dur" className="session-detail__meta-item">{header.elapsedLabel}</span>);
                 if (header?.isGroup && header?.raceCount > 0) items.push(<span key="races" className="session-detail__meta-item">{header.raceCount} races</span>);
-                if (header?.totalRings > 0) items.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
-                if (header?.sufferScore != null) items.push(
+                const totals = [];
+                if (header?.totalRings > 0) totals.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
+                if (header?.sufferScore != null) totals.push(
                   header.stravaActivityId
                     ? <a key="suffer" href={`https://www.strava.com/activities/${header.stravaActivityId}`} target="_blank" rel="noopener noreferrer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</a>
                     : <span key="suffer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</span>
                 );
-                return items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node]);
+                const timing = items.length > 0 && (
+                  <span key="timing" className="session-detail__meta-timing">
+                    {items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node])}
+                  </span>
+                );
+                return [timing, totals.length > 0 && <span key="totals" className="session-detail__meta-totals">{totals}</span>];
               })()}
             </div>
-            {header?.riders?.some((rider) => rider.measuredDurationMs > 0) && (
-              <div className="session-detail__measured-row">
-                {header.riders.filter((rider) => rider.measuredDurationMs > 0).map((rider) => (
-                  <span key={rider.id}>{rider.name} {Math.max(1, Math.round(rider.measuredDurationMs / 60000))}m measured</span>
-                ))}
-              </div>
-            )}
+            <div className="session-detail__measured-row">
+              {header?.riders?.filter((rider) => rider.measuredDurationMs > 0).map((rider) => (
+                <span key={rider.id}>{rider.name} {Math.max(1, Math.round(rider.measuredDurationMs / 60000))}m measured</span>
+              ))}
+              {shownSessionId && (
+                <code
+                  className="session-detail__session-id"
+                  onClick={() => navigator.clipboard?.writeText(shownSessionId)}
+                  title="Click to copy session ID"
+                >{shownSessionId}</code>
+              )}
+            </div>
             {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
                 {header.voiceMemos?.map((memo, i) => (
@@ -574,30 +624,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             {header?.recapProcessing && !header?.hasRecap && (
               <div className="session-detail__recap-processing">Recap rendering…</div>
             )}
-            <button
-              className="session-detail__close"
-              onClick={() => restore('right-area')}
-              title="Close"
-            >&times;</button>
-            <button
-              className="session-detail__delete"
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete session"
-            >{deleting ? '...' : '\u2715'}</button>
-            <button
-              className="session-detail__add-memo"
-              onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }}
-              title="Add voice memo to this session"
-              aria-label="Add voice memo"
-            >{'\uD83C\uDF99'}</button>
-            {sessionId && (
-              <code
-                className="session-detail__session-id"
-                onClick={() => navigator.clipboard?.writeText(sessionId)}
-                title="Click to copy session ID"
-              >{sessionId}</code>
-            )}
+            {actions}
             {header?.description && (
               <div className="session-detail__thumb-desc">
                 <span>{header.description}</span>
@@ -606,9 +633,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           </div>
         ) : sessionData?.strava ? (
           <div className="session-detail__thumb session-detail__thumb--strava-stats">
-            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
-            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
-            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
+            {actions}
             <div className="session-detail__strava-stats">
               {sessionData.strava.distance > 0 && (
                 <div className="session-detail__stat">
@@ -641,26 +666,18 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 </div>
               )}
             </div>
-            {sessionId && (
-              <code className="session-detail__session-id" onClick={() => navigator.clipboard?.writeText(sessionId)} title="Click to copy session ID">{sessionId}</code>
-            )}
           </div>
-        ) : header?.isGroup ? (
+        ) : (header?.isGroup || header?.riders?.length > 0) ? (
+          // No video to show: who rode fills the box instead of an empty panel.
           <GroupSummaryPanel
             riders={header.riders}
-            segmentCount={header.segmentCount}
+            segmentCount={header.isGroup ? header.segmentCount : 0}
             elapsedMs={header.elapsedMs}
-            sessionId={sessionId}
-            onClose={() => restore('right-area')}
-            onDelete={handleDelete}
-            deleting={deleting}
-            onAddMemo={handleAddVoiceMemo}
+            actions={actions}
           />
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder">
-            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
-            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
-            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
+            {actions}
           </div>
         )}
       </div>
