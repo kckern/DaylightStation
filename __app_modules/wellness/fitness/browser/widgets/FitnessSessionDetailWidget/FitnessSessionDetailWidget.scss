@@ -267,7 +267,7 @@
     right: 0;
     z-index: 1;
     transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
-    padding: 24px 8px 6px;
+    padding: 24px 64px 6px 8px; // right side clear of the always-visible memo/delete buttons
     background: linear-gradient(
       rgba(0, 0, 0, 0) 0%,
       rgba(0, 0, 0, 0.4) 15%,
