@@ -23,7 +23,7 @@ import moment from 'moment-timezone';
 import { buildActivityDescription } from "../domain/services/buildActivityDescription.mjs";
 import { evaluateActivitySessionMatch } from "../domain/services/activitySessionMatch.mjs";
 import { absorbOverlappingSlivers } from "./sliverAbsorption.mjs";
-import { buildStravaSessionTimeline, applyStravaTimeline } from "../domain/services/StravaSessionBuilder.mjs";
+import { buildStravaSessionTimeline, applyStravaTimeline, buildRouteTrack } from "../domain/services/StravaSessionBuilder.mjs";
 
 const MAX_RETRIES = 3;
 const MAX_TOTAL_ATTEMPTS = 10;            // hard cap before abandoning
@@ -502,6 +502,10 @@ export class FitnessActivityEnrichmentService {
         startLatLng: activity.start_latlng || [],
         endLatLng: activity.end_latlng || [],
       };
+      // Time-stamped positions: the detail pane's time cursor places the rider on
+      // the route with them (the polyline is shape only).
+      const track = await this._fetchRouteTrack(activity, activityGateway);
+      if (track) mapData.track = track;
     }
 
     let sessionData = {
@@ -624,6 +628,27 @@ export class FitnessActivityEnrichmentService {
     }
 
     return null;
+  }
+
+  /**
+   * @private
+   * Fetch the GPS + time streams and downsample them into a route track
+   * (buildRouteTrack). Optional: a failure leaves the map without a time cursor.
+   */
+  async _fetchRouteTrack(activity, activityGateway) {
+    if (!activityGateway) return null;
+    try {
+      const streams = await activityGateway.getActivityStreams(activity.id, ['latlng', 'time']);
+      const track = buildRouteTrack(streams?.latlng?.data, streams?.time?.data);
+      this.#logger.info?.('strava.enrichment.route_track', {
+        activityId: activity.id, points: track?.points.length || 0,
+        spanSeconds: track ? track.t[track.t.length - 1] : null,
+      });
+      return track;
+    } catch (err) {
+      this.#logger.warn?.('strava.enrichment.route_track_failed', { activityId: activity.id, error: err?.message });
+      return null;
+    }
   }
 
   /**

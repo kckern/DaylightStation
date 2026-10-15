@@ -10,6 +10,7 @@ import MarkerGutter from "./MarkerGutter.jsx";
 import TimelineOverlay from "./TimelineOverlay.jsx";
 import { buildSessionAxis, buildSessionMarks } from "./sessionTimeline.js";
 import { elapsedMsFromX, xFromElapsedMs, videoTimeFromElapsedMs, elapsedMsFromVideoTime } from "./recapTimeMap.js";
+import { positionAtElapsedMs } from "./routeTrack.js";
 import { CHART_MARGIN } from "../../lib/chartConstants.js";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
 import DetailActions from "./DetailActions.jsx";
@@ -348,10 +349,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   // Single sessions only (a merged group has no recap, and its axis is gap-compressed).
   const recapSpeedup = header?.recapSpeedup;
   const recapSeekable = recapViewable && current && !header?.isGroup && recapSpeedup > 0;
+  // A route with time on it (strava.map.track): the same cursor places the rider on the map.
+  const routeTrack = current ? (detail?.strava?.map?.track || null) : null;
+  const cursorEnabled = recapSeekable || !!routeTrack;
   const [playheadMs, setPlayheadMs] = useState(null);
+  useEffect(() => { setPlayheadMs(null); }, [sessionId]);
   useEffect(() => {
     const v = recapVideoRef.current;
-    if (!recapSeekable || !v) { setPlayheadMs(null); return undefined; }
+    if (!recapSeekable || !v) return undefined;
     const onTime = () => setPlayheadMs(elapsedMsFromVideoTime(v.currentTime, recapSpeedup));
     v.addEventListener('timeupdate', onTime);
     v.addEventListener('seeked', onTime);
@@ -363,23 +368,34 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   }, [recapSeekable, recapSpeedup, header?.recapUrl, recapVideoRef]);
 
   const handleStackPointer = useCallback((e) => {
-    if (!recapSeekable || !axis || !stackBox) return;
+    if (!cursorEnabled || !axis || !stackBox) return;
     const target = e.target;
     if (target.closest?.('button, a, .race-chart__focus-filter, .marker-gutter__chip')) return;
-    if (!target.closest?.('.session-detail__chart, .session-detail__gutter, .session-detail__timeline')) return;
-    const v = recapVideoRef.current;
+    // On a map session the chart row is the map, which pans on drag: only the
+    // gutter and lanes set the time there.
+    const zones = header?.stravaHasMap
+      ? '.session-detail__gutter, .session-detail__timeline'
+      : '.session-detail__chart, .session-detail__gutter, .session-detail__timeline';
+    if (!target.closest?.(zones)) return;
     const root = rootRef.current;
-    if (!v || !root) return;
+    if (!root) return;
     const x = e.clientX - root.getBoundingClientRect().left;
     const ms = elapsedMsFromX(x, axis, stackBox.width);
     if (ms == null) return;
-    const t = videoTimeFromElapsedMs(ms, recapSpeedup, v.duration);
-    v.currentTime = t;
     setPlayheadMs(ms);
-    logger().info('session-detail.recap-seek', {
-      sessionId, elapsedMs: Math.round(ms), videoTime: Math.round(t * 100) / 100, speedup: recapSpeedup,
+    const v = recapVideoRef.current;
+    let videoTime = null;
+    if (recapSeekable && v) {
+      videoTime = videoTimeFromElapsedMs(ms, recapSpeedup, v.duration);
+      v.currentTime = videoTime;
+    }
+    logger().info('session-detail.time-cursor', {
+      sessionId, elapsedMs: Math.round(ms),
+      videoTime: videoTime == null ? null : Math.round(videoTime * 100) / 100,
+      route: !!routeTrack,
     });
-  }, [recapSeekable, axis, stackBox, recapSpeedup, recapVideoRef, sessionId]);
+  }, [cursorEnabled, axis, stackBox, header?.stravaHasMap, recapSeekable, recapSpeedup, recapVideoRef, routeTrack, sessionId]);
+  const routeCursor = routeTrack && playheadMs != null ? positionAtElapsedMs(routeTrack, playheadMs) : null;
 
   // The recap is a muted, looping timelapse — glanceable, not scrub-worthy. Tap
   // toggles native (edge-to-edge) fullscreen symmetrically: tap the thumb to ENTER,
@@ -445,7 +461,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     <div
       ref={rootRef}
       onPointerDown={handleStackPointer}
-      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}${recapSeekable ? ' session-detail--seekable' : ''}`}
+      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}${cursorEnabled ? ' session-detail--seekable' : ''}`}
       aria-busy={(stale || pending) || undefined}
     >
       {/* Header (25%) */}
@@ -682,6 +698,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <ChartSkeleton />
         ) : header?.stravaHasMap ? (
           <RouteMap
+            cursor={routeCursor}
             polyline={detail.strava?.map?.polyline}
             sessionId={sessionId}
             distance={detail.strava?.distance}
