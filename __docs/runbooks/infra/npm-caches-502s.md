@@ -22,15 +22,20 @@ On 2026-09-11 this served a cached 502 for `/favicon.ico` **1294 times**, for
 registered), and for two instrument SVGs. Every poisoning timestamp is inside a
 deploy window.
 
-**Why hashed assets are immune.** `index-BRX-JNUg.js` gets a new key every
-build, so a poisoned one is simply never asked for again. Only assets shipped
-under a stable name can be poisoned across a deploy.
+**Content hashes alone are not enough.** Vite names a chunk by the hash of its
+content, so a chunk whose code did not change keeps the same URL across builds.
+On 2026-10-15 an outage of ~13 minutes left nine such chunks
+(`pianoLearningApi-fDjGfwHr.js`, `playlist-…`, `hls-…`, `ruleModule-…`, a
+`ChessBoard` stylesheet, …) cached as 502s; the next bundle still referenced them,
+a lazy import failed, and the garage kiosk rendered a black screen.
 
 ## What the app already does
 
-Stable-URL assets carry the build id (`/sw.js?v=<build>`, injected into
-`index.html` by a Vite plugin — see `frontend/vite.config.js`), giving them the
-same immunity the bundles have. The favicon is declared explicitly for the same
+Every built asset carries the build id in its file name
+(`assets/[name]-[hash]-<build>.ext`, `build.rollupOptions.output` in
+`frontend/vite.config.js`), so a new build only requests URLs nobody has asked for
+before. Stable-URL assets carry it as a query string (`/sw.js?v=<build>`, injected
+into `index.html` by a Vite plugin), giving them the same immunity. The favicon is declared explicitly for the same
 reason: undeclared, browsers request the bare `/favicon.ico` implicitly, and an
 implicit request cannot be versioned.
 
