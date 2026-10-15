@@ -174,9 +174,12 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
   const ringsBuckets = treasureBox?.buckets ?? {};
 
   // ---------- Challenges ----------
+  // Only resolved challenges count. 'abandoned' (open at session end), 'started'
+  // (saved before that fix), 'cleared' / 'replaced' (vanished unresolved) are
+  // neutral, like a sensor cancellation — not failures.
   const challengeEvents = safeEvents.filter(e => e.type === 'challenge');
   const succeeded = challengeEvents.filter(e => e.data?.result === 'success').length;
-  const failed = challengeEvents.length - succeeded;
+  const failed = challengeEvents.filter(e => e.data?.result === 'failed').length;
 
   // ---------- Voice memos ----------
   const voiceMemos = safeEvents
@@ -191,7 +194,7 @@ export function buildSessionSummary({ participants, series, events, treasureBox,
     participants: participantsSummary,
     media,
     rings: { total: ringsTotal, buckets: ringsBuckets },
-    challenges: { total: challengeEvents.length, succeeded, failed },
+    challenges: { total: succeeded + failed, succeeded, failed },
     voiceMemos,
   };
 }

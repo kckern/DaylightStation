@@ -70,7 +70,7 @@ describe('clamping to the plot', () => {
   });
 });
 
-import { computeVideoMarkers, computeChallengeMarkers } from "./timelineOverlay.js";
+import { computeVideoMarkers, computeChallengeMarkers, UNRESOLVED_STUB_PX } from "./timelineOverlay.js";
 
 const MARKER_OPTS = { intervalMs: 5000, effectiveTicks: 121, plotWidth: 600, marginLeft: 0, sessionStartMs: 1_000_000 };
 
@@ -179,15 +179,15 @@ describe('computeChallengeMarkers', () => {
     expect(m.xEnd).toBeCloseTo(120, 1);
   });
 
-  it('extends an unfinished challenge (end:null) to the axis end', () => {
+  it('draws an unfinished challenge (end:null) as a stub at its start', () => {
     const events = [
       { type: 'challenge', data: { challengeId: 'a', zoneId: 'hot', start: 1_060_000, end: null, result: 'started' } }
     ];
     const [m] = computeChallengeMarkers(events, MARKER_OPTS);
     expect(m.zoneId).toBe('hot');
-    // axis end = (effectiveTicks-1)*intervalMs from start => clamps to right edge (plotWidth)
-    expect(m.xEnd).toBeCloseTo(MARKER_OPTS.marginLeft + MARKER_OPTS.plotWidth, 5);
-    expect(m.width).toBeGreaterThan(0);
+    expect(m.unresolved).toBe(true);
+    expect(m.xEnd).toBeCloseTo(m.x + UNRESOLVED_STUB_PX, 5);
+    expect(m.width).toBeCloseTo(UNRESOLVED_STUB_PX, 5);
   });
 });
 
@@ -277,5 +277,28 @@ describe('snapChallengeEndsToZoneTicks', () => {
     const out = snapChallengeEndsToZoneTicks([cyc, inZone], zoneSeries, opts);
     expect(out[0].xEnd).toBeCloseTo(40, 5);
     expect(out[1].xEnd).toBeCloseTo(30, 5); // tick 6 already warm -> snap to floor tick = 6
+  });
+});
+
+describe('computeChallengeMarkers — unresolved challenges', () => {
+  const opts = { intervalMs: 5000, effectiveTicks: 101, plotWidth: 500, marginLeft: 30, sessionStartMs: 0 };
+  const ev = (data) => ({ type: 'challenge', data: { type: 'zone', zoneId: 'warm', ...data } });
+
+  it('gives a challenge with no end a short stub instead of a bar to the axis end', () => {
+    const [m] = computeChallengeMarkers([ev({ start: 100_000, end: null, result: 'started' })], opts);
+    expect(m.unresolved).toBe(true);
+    expect(m.xEnd - m.x).toBeCloseTo(UNRESOLVED_STUB_PX, 6);
+  });
+  it('treats an abandoned challenge as unresolved even when its end is the session end', () => {
+    const [m] = computeChallengeMarkers([ev({ start: 100_000, end: 480_000, result: 'abandoned' })], opts);
+    expect(m.unresolved).toBe(true);
+    expect(m.xEnd - m.x).toBeCloseTo(UNRESOLVED_STUB_PX, 6);
+  });
+  it('keeps resolved spans, including cleared and replaced, at their real end', () => {
+    for (const result of ['success', 'failed', 'cleared', 'replaced']) {
+      const [m] = computeChallengeMarkers([ev({ start: 100_000, end: 160_000, result })], opts);
+      expect(m.unresolved).toBe(false);
+      expect(m.width).toBeGreaterThan(UNRESOLVED_STUB_PX);
+    }
   });
 });
