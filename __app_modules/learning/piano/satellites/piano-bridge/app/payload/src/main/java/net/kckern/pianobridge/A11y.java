@@ -183,6 +183,35 @@ public final class A11y {
     }
 
     /**
+     * Every window on screen (app, system, keyboard, overlay) with its package, title
+     * and whether it is active. Cheap — the window list, not the node tree below each
+     * root — so {@link ForegroundWatch} can sample it every second. Needs
+     * flagRetrieveInteractiveWindows, which the shell's service config declares.
+     */
+    static java.util.List<ForegroundTrail.Win> windows() {
+        java.util.List<ForegroundTrail.Win> out = new java.util.ArrayList<>();
+        AccessibilityService s = svc;
+        if (s == null) return null;
+        try {
+            for (android.view.accessibility.AccessibilityWindowInfo w : s.getWindows()) {
+                String pkg = "";
+                AccessibilityNodeInfo root = w.getRoot();
+                if (root != null) {
+                    CharSequence p = root.getPackageName();
+                    if (p != null) pkg = p.toString();
+                    root.recycle();
+                }
+                CharSequence t = w.getTitle();
+                out.add(new ForegroundTrail.Win(w.getType(), pkg, t == null ? "" : t.toString(), w.isActive()));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "windows failed: " + e.getMessage());
+            return null;
+        }
+        return out;
+    }
+
+    /**
      * Every node with text in the active window, for remote operation of a system
      * screen (2026-10-09: the tablet's timezone had to be put back through
      * Settings with ADB off). Each entry: text, desc, clickable, scrollable, id.
