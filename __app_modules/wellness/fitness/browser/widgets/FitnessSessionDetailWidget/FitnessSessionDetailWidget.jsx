@@ -9,16 +9,12 @@ import FitnessTimeline from "./FitnessTimeline.jsx";
 import MarkerGutter from "./MarkerGutter.jsx";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
 import DetailActions from "./DetailActions.jsx";
-import SessionDetailSkeleton from "./SessionDetailSkeleton.jsx";
+import SessionDetailSkeleton, { ChartSkeleton, LanesSkeleton } from "./SessionDetailSkeleton.jsx";
 import SportIcon from "../_shared/SportIcon.jsx";
 import RouteMap from "./RouteMap.jsx";
 import "./FitnessSessionDetailWidget.scss";
-import { formatFitnessDate } from "../../lib/dateFormatter.js";
-import { getActivityDisplay, primaryActivity } from "../../lib/activities/fitnessActivityRegistry.js";
-import { selectPrimaryMedia, buildSelectionConfig } from "../../hooks/fitness/selectPrimaryMedia.js";
-import { mediaDisplayUrl, mediaIdentityKey } from "./sessionDetailUtils.js";
 import { selectVideoMarkerEvents } from "./timelineOverlay.js";
-import { deriveRecap } from "./recapVideo.js";
+import { headerFromDetail, headerFromListRow, mergeHeaders } from "./sessionHeader.js";
 import { useSettledRecapPlay } from "./recapPlayback.js";
 import { useRecapUnlock } from "./useRecapUnlock.js";
 import { useOptionalIdentity } from "../../identity/useIdentity.js";
@@ -26,6 +22,7 @@ import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isKioskEnv } from "@/lib/kioskEnv.js";
 import { DaylightAPI } from "@/lib/api.mjs";
 import RingIcon from '@/lib/icons/RingIcon.jsx';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
@@ -41,32 +38,6 @@ const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
     <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
   </svg>
 );
-
-function formatTime(startTime, timezone) {
-  if (!startTime) return '--';
-  const opts = { hour: 'numeric', minute: '2-digit' };
-  if (timezone) opts.timeZone = timezone;
-  return new Date(startTime).toLocaleTimeString([], opts).toLowerCase().replace(' ', '');
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  return formatFitnessDate(dateStr + 'T12:00:00');
-}
-
-function formatElapsed(durationMs) {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
-  const minutes = Math.max(1, Math.round(durationMs / 60000));
-  if (minutes < 60) return `${minutes}m elapsed`;
-  const remainder = minutes % 60;
-  return `${Math.floor(minutes / 60)}h${remainder ? ` ${remainder}m` : ''} elapsed`;
-}
-
-function measuredDurationMs(participant = {}) {
-  if (Number.isFinite(participant.measuredDurationMs)) return participant.measuredDurationMs;
-  return Object.values(participant.zone_minutes || participant.zoneMinutes || {})
-    .reduce((total, value) => total + (Number(value) || 0), 0) * 60000;
-}
 
 function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, breakOn, className }) {
   const containerRef = useRef(null);
@@ -287,97 +258,25 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     fetchSession({ background: true });
   }, [sessionId, listRow, fetchSession]);
 
-  const header = useMemo(() => {
-    if (!sessionData) return null;
-    const summary = sessionData.summary || {};
-    // Re-derive primary rather than trusting the stored `primary` flag — old
-    // sessions carry a stale flag on the wrong item (a music track, or a brief
-    // bleed-over episode from the previous session). selectPrimaryMedia filters
-    // audio and keys on actual played time. Fall back to the flag, then media[0].
-    const mediaList = Array.isArray(summary.media) ? summary.media : null;
-    const pm = mediaList
-      ? (selectPrimaryMedia(mediaList, buildSelectionConfig(fitnessCtx?.plexConfig))
-        || mediaList.find(m => m.primary)
-        || mediaList[0])
-      : null;
-    const session = sessionData.session || {};
-
-    const dateStr = sessionData.date
-      || (sessionData.sessionId
-        ? `${sessionData.sessionId.slice(0, 4)}-${sessionData.sessionId.slice(4, 6)}-${sessionData.sessionId.slice(6, 8)}`
-        : null);
-
-    // Group detail puts start/end/duration at the ROOT; normal sessions nest them under .session.
-    const startMs = session.start ? new Date(session.start).getTime()
-      : (sessionData.start != null ? new Date(sessionData.start).getTime()
-        : (Number.isFinite(sessionData.startTime) ? sessionData.startTime : null));
-    const endMs = Number.isFinite(sessionData.endTime) ? sessionData.endTime
-      : (session.end ? new Date(session.end).getTime()
-        : (sessionData.end ? new Date(sessionData.end).getTime() : null));
-    const durationSec = session.duration_seconds ?? sessionData.duration_seconds ?? 0;
-    const durationMs = durationSec * 1000;
-    const elapsedMs = sessionData.elapsedMs || (startMs && endMs ? Math.max(0, endMs - startMs) : durationMs);
-
-    // Extract max suffer score and first activityId across all participants
-    const participants = sessionData.participants || {};
-    const participantSummaries = summary.participants || {};
-    let sufferScore = null;
-    let stravaActivityId = null;
-    for (const p of Object.values(participants)) {
-      const ss = p.strava?.sufferScore;
-      if (ss != null && (sufferScore === null || ss > sufferScore)) {
-        sufferScore = ss;
-        stravaActivityId = p.strava?.activityId || null;
-      }
-    }
-
-    const stravaBlock = sessionData.strava || null;
-
-    const act = !pm ? primaryActivity(sessionData?.activities) : null;
-    const actDisplay = act ? getActivityDisplay(act.type) : null;
-    // Prefer the show/video over the generic Strava activity name when the
-    // episode title is absent.
-    const title = pm?.title || pm?.showTitle || pm?.grandparentTitle || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
-
-    const recap = deriveRecap(sessionData.timelapse);
-
-    return {
-      title,
-      // Identity of the video the header shows — the overlay layers leave this one
-      // out of the marker gutter, so they must agree on it with the header.
-      primaryMediaKey: pm ? mediaIdentityKey(pm) : null,
-      activityPoster: actDisplay?.Poster || null,
-      activityAccent: actDisplay?.accent || null,
-      showTitle: pm?.showTitle || pm?.grandparentTitle || null,
-      grandparentId: pm?.grandparentId || null,
-      posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
-      thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
-      recapUrl: recap.url,
-      hasRecap: recap.ready,
-      recapProcessing: recap.processing,
-      description: pm?.description || null,
-      date: dateStr ? formatDate(dateStr) : '',
-      time: startMs ? formatTime(startMs, sessionData.timezone) : null,
-      endTime: endMs ? formatTime(endMs, sessionData.timezone) : null,
-      elapsedLabel: formatElapsed(elapsedMs),
-      isGroup: !!sessionData.isGroup,
-      raceCount: act?.count || 0,
-      segmentCount: Array.isArray(sessionData.segments) ? sessionData.segments.length : 0,
-      riders: [...new Set([...Object.keys(participants), ...Object.keys(participantSummaries)])].map((id) => ({
-        id,
-        name: participants[id]?.displayName || participants[id]?.display_name || id,
-        measuredDurationMs: measuredDurationMs(participants[id]) || measuredDurationMs(participantSummaries[id]),
-      })),
-      elapsedMs,
-      totalRings: sessionData.treasureBox?.totalRings || summary.rings?.total || sessionData.totalRings || 0,
-      sufferScore,
-      stravaActivityId,
-      voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
-      stravaNotes: sessionData.strava_notes?.text || sessionData.stravaNotes || null,
-      stravaType: stravaBlock?.type || null,
-      stravaHasMap: !!(stravaBlock?.map?.polyline),
-    };
-  }, [sessionData, fitnessCtx?.plexConfig]);
+  const detailHeader = useMemo(
+    () => (sessionData ? headerFromDetail(sessionData, fitnessCtx?.plexConfig) : null),
+    [sessionData, fitnessCtx?.plexConfig]
+  );
+  // The tapped session's header comes straight from its home-list row; only the
+  // detail-only parts (charts, lanes, recap video, Strava stats) wait for the fetch.
+  const listRowData = useMemo(
+    () => (listRow ? JSON.parse(listRow) : null),
+    [listRow]
+  );
+  const previewHeader = useMemo(() => headerFromListRow(listRowData), [listRowData]);
+  // `current`: the loaded detail is the session on screen. `pending`: it is not
+  // (yet), but the list row lets us show this session's header now.
+  const current = sessionData != null && dataSessionId === sessionId;
+  const pending = !current && previewHeader != null;
+  // No row for it either (a deep link): keep the outgoing session up, dimmed.
+  const stale = !current && !pending && sessionData != null;
+  const header = current ? mergeHeaders(detailHeader, previewHeader) : (previewHeader || detailHeader);
+  const detail = (current || stale) ? sessionData : null;
 
   // The recap shows the episode in picture-in-picture, so a session that played
   // protected replay content (fitness.yml → playback_unlock, session_recaps)
@@ -397,7 +296,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     const name = unlockRules?.lock;
     return Boolean(name) && isKioskEnv() && Array.isArray(locks[name]) && locks[name].length > 0;
   }, [fitnessCtx?.fitnessConfiguration, unlockRules]);
-  const sessionMedia = sessionData?.summary?.media || null;
+  const sessionMedia = detail?.summary?.media || null;
   const fetchRecapInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
   const recapUnlock = useRecapUnlock({
     sessionId,
@@ -429,7 +328,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     }
   }, [recapVideoRef]);
 
-  if (loading && !sessionData) {
+  if (!sessionData && !previewHeader) {
     return <SessionDetailSkeleton />;
   }
 
@@ -457,13 +356,11 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   // top of the line chart), so it earns its 66px only when a card will actually render.
   // Same selection the gutter uses, so the band never opens empty. Strava-map sessions
   // never show it.
-  const events = sessionData?.timeline?.events;
-  const hasVideoChanges = !header?.stravaHasMap &&
+  const events = detail?.timeline?.events;
+  const hasVideoChanges = !!detail && !header?.stravaHasMap &&
     selectVideoMarkerEvents(events, header?.primaryMediaKey).length > 0;
 
-  // Another session is loading; the outgoing one stays up, dimmed and inert.
-  const stale = sessionData != null && dataSessionId != null && dataSessionId !== sessionId;
-  const shownSessionId = dataSessionId || sessionId;
+  const shownSessionId = stale ? dataSessionId : sessionId;
   const actions = (
     <DetailActions
       onClose={() => restore('right-area')}
@@ -475,7 +372,10 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   );
 
   return (
-    <div className={`session-detail${stale ? ' session-detail--stale' : ''}`} aria-busy={stale || undefined}>
+    <div
+      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}`}
+      aria-busy={(stale || pending) || undefined}
+    >
       {/* Header (25%) */}
       <div className="session-detail__header">
         {header?.posterUrl ? (
@@ -582,7 +482,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           </div>
         </div>
 
-        {(header?.thumbUrl || header?.hasRecap) ? (
+        {/* A group keeps its rider summary (who rode, blocks sandwiched) unless it has a recap. */}
+        {(header?.hasRecap || (header?.thumbUrl && !header?.isGroup)) ? (
           <div className="session-detail__thumb">
             {header?.hasRecap && recapUnlock.locked ? (
               <button
@@ -631,37 +532,43 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               </div>
             )}
           </div>
-        ) : sessionData?.strava ? (
+        ) : header?.pendingStrava && pending ? (
+          // Strava stats need the detail (moving time, max HR, elevation gain).
+          <div className="session-detail__thumb session-detail__thumb--strava-stats">
+            {actions}
+            <Skeleton className="session-detail__thumb-pending" radius="sm" />
+          </div>
+        ) : detail?.strava ? (
           <div className="session-detail__thumb session-detail__thumb--strava-stats">
             {actions}
             <div className="session-detail__strava-stats">
-              {sessionData.strava.distance > 0 && (
+              {detail.strava.distance > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{(sessionData.strava.distance / 1000).toFixed(1)}</span>
+                  <span className="session-detail__stat-value">{(detail.strava.distance / 1000).toFixed(1)}</span>
                   <span className="session-detail__stat-label">km</span>
                 </div>
               )}
-              {sessionData.strava.movingTime > 0 && (
+              {detail.strava.movingTime > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.movingTime / 60)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.movingTime / 60)}</span>
                   <span className="session-detail__stat-label">min</span>
                 </div>
               )}
-              {sessionData.strava.avgHeartrate && (
+              {detail.strava.avgHeartrate && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.avgHeartrate)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.avgHeartrate)}</span>
                   <span className="session-detail__stat-label">avg HR</span>
                 </div>
               )}
-              {sessionData.strava.maxHeartrate && (
+              {detail.strava.maxHeartrate && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.maxHeartrate)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.maxHeartrate)}</span>
                   <span className="session-detail__stat-label">max HR</span>
                 </div>
               )}
-              {sessionData.strava.totalElevationGain > 0 && (
+              {detail.strava.totalElevationGain > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.totalElevationGain)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.totalElevationGain)}</span>
                   <span className="session-detail__stat-label">m elev</span>
                 </div>
               )}
@@ -684,15 +591,17 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
       {/* Chart (40%) */}
       <div className="session-detail__chart">
-        {header?.stravaHasMap ? (
+        {!detail ? (
+          <ChartSkeleton />
+        ) : header?.stravaHasMap ? (
           <RouteMap
-            polyline={sessionData.strava?.map?.polyline}
+            polyline={detail.strava?.map?.polyline}
             sessionId={sessionId}
-            distance={sessionData.strava?.distance}
-            elevation={sessionData.strava?.totalElevationGain}
+            distance={detail.strava?.distance}
+            elevation={detail.strava?.totalElevationGain}
           />
         ) : ChartComponent ? (
-          <ChartComponent sessionData={sessionData} mode="standalone" primaryMediaKey={header?.primaryMediaKey} />
+          <ChartComponent sessionData={detail} mode="standalone" primaryMediaKey={header?.primaryMediaKey} />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
         )}
@@ -701,13 +610,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
       {hasVideoChanges && (
         <div className="session-detail__gutter">
-          <MarkerGutter sessionData={sessionData} primaryMediaKey={header?.primaryMediaKey} />
+          <MarkerGutter sessionData={detail} primaryMediaKey={header?.primaryMediaKey} />
         </div>
       )}
 
       {/* Timeline (35%) */}
       <div className="session-detail__timeline">
-        <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
+        {detail
+          ? <FitnessTimeline sessionData={detail} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
+          : <LanesSkeleton count={Math.max(1, Math.min(header?.riders?.length || 3, 6))} />}
       </div>
 
       <UnlockPrompt

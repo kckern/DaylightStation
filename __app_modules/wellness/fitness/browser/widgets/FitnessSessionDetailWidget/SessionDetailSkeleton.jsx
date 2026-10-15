@@ -11,6 +11,28 @@ import { CHART_MARGIN } from '../../lib/chartConstants.js';
  */
 const LANES = 3;
 
+/** Plot-area placeholder, inset by the real chart margins. */
+export function ChartSkeleton() {
+  return (
+    <Skeleton
+      className="session-detail__skeleton-plot"
+      radius="xs"
+      style={{ top: CHART_MARGIN.top, right: CHART_MARGIN.right, bottom: CHART_MARGIN.bottom, left: CHART_MARGIN.left }}
+    />
+  );
+}
+
+/** Heart-rate lane placeholders — one per rider when the count is known. */
+export function LanesSkeleton({ count = LANES }) {
+  return (
+    <div className="session-detail__skeleton-lanes" style={{ left: CHART_MARGIN.left, right: CHART_MARGIN.right }}>
+      {Array.from({ length: count }, (_, i) => (
+        <Skeleton key={i} radius="xs" className="session-detail__skeleton-lane" />
+      ))}
+    </div>
+  );
+}
+
 export default function SessionDetailSkeleton() {
   return (
     <div className="session-detail session-detail--skeleton" aria-busy="true">
@@ -27,20 +49,8 @@ export default function SessionDetailSkeleton() {
         </div>
         <Skeleton className="session-detail__thumb" radius="sm" />
       </div>
-      <div className="session-detail__chart">
-        <Skeleton
-          className="session-detail__skeleton-plot"
-          radius="xs"
-          style={{ top: CHART_MARGIN.top, right: CHART_MARGIN.right, bottom: CHART_MARGIN.bottom, left: CHART_MARGIN.left }}
-        />
-      </div>
-      <div className="session-detail__timeline">
-        <div className="session-detail__skeleton-lanes" style={{ left: CHART_MARGIN.left, right: CHART_MARGIN.right }}>
-          {Array.from({ length: LANES }, (_, i) => (
-            <Skeleton key={i} radius="xs" className="session-detail__skeleton-lane" />
-          ))}
-        </div>
-      </div>
+      <div className="session-detail__chart"><ChartSkeleton /></div>
+      <div className="session-detail__timeline"><LanesSkeleton /></div>
     </div>
   );
 }

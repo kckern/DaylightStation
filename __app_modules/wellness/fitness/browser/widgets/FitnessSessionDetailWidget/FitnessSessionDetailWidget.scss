@@ -1,7 +1,12 @@
+// The screen framework sizes this widget from its content (flex: 0 1 auto in the
+// area) and shrinks it to fit. Asking for the full viewport height makes every
+// state — skeleton, pre-hydrated header, a short map session, a tall chart — shrink
+// to the SAME box, so the 25% header / chart / 33% lanes resolve identically and
+// nothing moves when data lands (a map session used to stop 40px short).
 .session-detail {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
   width: 100%;
   overflow: hidden;
   background: transparent;
@@ -17,13 +22,14 @@
     transition: opacity 0.2s ease 0.15s;
   }
 
+  &__thumb-pending {
+    position: absolute;
+    inset: 0;
+    width: auto;
+  }
+
   &--skeleton {
     pointer-events: none;
-    // The screen framework sizes this widget from its content (flex: 0 1 auto in
-    // the area) and shrinks it to fit. A hydrated pane's content is tall, so it
-    // fills the area; the skeleton has none, so it must ask for the full height
-    // itself — then the 25% header / chart / 33% lanes resolve against the same box.
-    height: 100vh;
 
     .session-detail__hero { border-bottom-color: transparent; }
     // .ds-skeleton is width:100%; these boxes size from height + aspect-ratio.
