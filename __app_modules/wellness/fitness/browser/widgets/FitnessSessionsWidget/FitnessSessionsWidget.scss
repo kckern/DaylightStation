@@ -2,14 +2,12 @@
 
 // --- Skeleton Loading ---
 
+// Same geometry as a hydrated row (see SessionsCardSkeleton) — only inert.
 .session-row--skeleton {
   pointer-events: none;
 
-  .session-row__info {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+  .session-row__show-line { gap: 6px; }
+  .session-row__participants { gap: 0 8px; }
 }
 
 // --- Date Headers ---
@@ -84,13 +82,19 @@
   }
 }
 
+// The row is exactly the poster plus its padding — content never makes a row
+// taller than its poster. Every line below is sized to fit that budget.
+$session-row-poster-h: 120px;
+$session-row-pad: 0.4rem;
+
 .session-row__top {
   position: relative;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.4rem;
-  min-height: 60px;
+  padding: $session-row-pad;
+  height: calc(#{$session-row-poster-h} + 2 * #{$session-row-pad});
+  box-sizing: border-box;
 }
 
 // --- Poster ---
@@ -193,10 +197,17 @@
 .session-row__info {
   flex: 1;
   min-width: 0;
+  max-height: $session-row-poster-h;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
+
+  // Mantine's default 1.55 line-height is a paragraph rhythm; rows want tight lines.
+  .mantine-Text-root {
+    line-height: 1.2;
+  }
 }
 
 .session-row__title-line {
@@ -204,7 +215,6 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
-  min-height: 36px;
 
   > * {
     min-width: 0;
@@ -220,8 +230,6 @@
   gap: 6px;
   flex-wrap: nowrap;
   line-height: 1;
-  margin-top: 2px;
-  min-height: 18px;
 }
 
 // --- Participants ---
@@ -234,8 +242,7 @@
   flex-wrap: nowrap;
   align-items: center;
   gap: 0 12px;
-  margin-top: 2px;
-  min-height: 30px;
+  min-height: 26px;
   min-width: 0;
 }
 
@@ -304,8 +311,8 @@
 }
 
 .session-avatar {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid rgba(30, 30, 50, 0.9);
@@ -359,7 +366,7 @@
 .session-row__memo-icon {
   flex-shrink: 0;
   font-size: 0.65rem;
-  line-height: 1.4;
+  line-height: 1.25;
 }
 
 .session-row__memo-text {
@@ -368,7 +375,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 0.7rem;
-  line-height: 1.4;
+  line-height: 1.25;
   color: rgba(255, 255, 255, 0.55);
   font-style: italic;
   min-width: 0;
