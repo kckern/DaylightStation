@@ -80,7 +80,7 @@ function SessionsCardSkeleton() {
       <Stack gap={4}>
         <div>
           {/* A real line box (nbsp) so the header is exactly as tall as a hydrated one. */}
-          <Text size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
+          <Text component="div" size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
             {'\u00a0'}
             <Skeleton height="0.8em" width={64} radius="xs" style={{ display: 'inline-block', verticalAlign: 'middle' }} />
           </Text>
