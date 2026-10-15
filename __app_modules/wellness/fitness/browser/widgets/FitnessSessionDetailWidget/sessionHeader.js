@@ -89,7 +89,13 @@ export function headerFromDetail(sessionData, plexConfig) {
   // episode title is absent.
   const title = pm?.title || pm?.showTitle || pm?.grandparentTitle || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
 
-  const recap = deriveRecap(sessionData.timelapse);
+  // Elapsed length for deriving an older recap's speedup. When start and end are
+  // both the stored local-time strings, their difference cancels the browser's
+  // timezone (it parses them as local); mixing a string with an epoch would not.
+  const recapDurationMs = (session.start && session.end)
+    ? new Date(session.end).getTime() - new Date(session.start).getTime()
+    : (startMs && endMs ? endMs - startMs : null);
+  const recap = deriveRecap(sessionData.timelapse, recapDurationMs);
 
   return {
     title,
@@ -103,6 +109,7 @@ export function headerFromDetail(sessionData, plexConfig) {
     posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
     thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
     recapUrl: recap.url,
+    recapSpeedup: recap.speedup,
     hasRecap: recap.ready,
     recapProcessing: recap.processing,
     description: pm?.description || null,

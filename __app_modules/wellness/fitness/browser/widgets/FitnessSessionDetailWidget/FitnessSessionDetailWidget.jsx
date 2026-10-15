@@ -9,6 +9,7 @@ import FitnessTimeline from "./FitnessTimeline.jsx";
 import MarkerGutter from "./MarkerGutter.jsx";
 import TimelineOverlay from "./TimelineOverlay.jsx";
 import { buildSessionAxis, buildSessionMarks } from "./sessionTimeline.js";
+import { elapsedMsFromX, xFromElapsedMs, videoTimeFromElapsedMs, elapsedMsFromVideoTime } from "./recapTimeMap.js";
 import { CHART_MARGIN } from "../../lib/chartConstants.js";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
 import DetailActions from "./DetailActions.jsx";
@@ -342,6 +343,44 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: recapViewable, srcKey: header?.recapUrl });
 
+  // Recap ↔ chart time cursor (recapTimeMap.js): a tap on the chart, gutter or lanes
+  // seeks the recap to that moment, and a playhead on the stack follows the recap.
+  // Single sessions only (a merged group has no recap, and its axis is gap-compressed).
+  const recapSpeedup = header?.recapSpeedup;
+  const recapSeekable = recapViewable && current && !header?.isGroup && recapSpeedup > 0;
+  const [playheadMs, setPlayheadMs] = useState(null);
+  useEffect(() => {
+    const v = recapVideoRef.current;
+    if (!recapSeekable || !v) { setPlayheadMs(null); return undefined; }
+    const onTime = () => setPlayheadMs(elapsedMsFromVideoTime(v.currentTime, recapSpeedup));
+    v.addEventListener('timeupdate', onTime);
+    v.addEventListener('seeked', onTime);
+    onTime();
+    return () => {
+      v.removeEventListener('timeupdate', onTime);
+      v.removeEventListener('seeked', onTime);
+    };
+  }, [recapSeekable, recapSpeedup, header?.recapUrl, recapVideoRef]);
+
+  const handleStackPointer = useCallback((e) => {
+    if (!recapSeekable || !axis || !stackBox) return;
+    const target = e.target;
+    if (target.closest?.('button, a, .race-chart__focus-filter, .marker-gutter__chip')) return;
+    if (!target.closest?.('.session-detail__chart, .session-detail__gutter, .session-detail__timeline')) return;
+    const v = recapVideoRef.current;
+    const root = rootRef.current;
+    if (!v || !root) return;
+    const x = e.clientX - root.getBoundingClientRect().left;
+    const ms = elapsedMsFromX(x, axis, stackBox.width);
+    if (ms == null) return;
+    const t = videoTimeFromElapsedMs(ms, recapSpeedup, v.duration);
+    v.currentTime = t;
+    setPlayheadMs(ms);
+    logger().info('session-detail.recap-seek', {
+      sessionId, elapsedMs: Math.round(ms), videoTime: Math.round(t * 100) / 100, speedup: recapSpeedup,
+    });
+  }, [recapSeekable, axis, stackBox, recapSpeedup, recapVideoRef, sessionId]);
+
   // The recap is a muted, looping timelapse — glanceable, not scrub-worthy. Tap
   // toggles native (edge-to-edge) fullscreen symmetrically: tap the thumb to ENTER,
   // tap the fullscreen video to EXIT. Kept chrome-free (no native scrubber) so the
@@ -405,7 +444,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   return (
     <div
       ref={rootRef}
-      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}`}
+      onPointerDown={handleStackPointer}
+      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}${recapSeekable ? ' session-detail--seekable' : ''}`}
       aria-busy={(stale || pending) || undefined}
     >
       {/* Header (25%) */}
@@ -627,7 +667,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
       {/* Every vertical mark, once, full height behind chart · gutter · lanes */}
       {detail && stackBox && (
-        <TimelineOverlay marks={marks} width={stackBox.width} top={stackBox.top} height={stackBox.height} />
+        <TimelineOverlay
+          marks={marks}
+          width={stackBox.width}
+          top={stackBox.top}
+          height={stackBox.height}
+          playheadX={playheadMs != null ? xFromElapsedMs(playheadMs, axis, stackBox.width) : null}
+        />
       )}
 
       {/* Chart (40%) */}
