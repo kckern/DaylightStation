@@ -30,6 +30,8 @@ import * as reconstruct from "./lib/reconstruct.mjs";
 import * as dropParticipant from "./lib/dropParticipant.mjs";
 import * as repairSessionWindow from "./lib/repairSessionWindow.mjs";
 
+import * as repairOpenChallenges from "./lib/repairOpenChallenges.mjs";
+
 import * as enrichPlex from "./lib/enrichPlex.mjs";
 import * as backfillMediaMemory from "./lib/backfillMediaMemory.mjs";
 import * as backfillPrimaryMedia from "./lib/backfillPrimaryMedia.mjs";
@@ -63,6 +65,7 @@ const GROUPS = {
       reconstruct: cmd(reconstruct),
       'drop-participant': cmd(dropParticipant),
       'repair-window': cmd(repairSessionWindow),
+      'repair-open-challenges': cmd(repairOpenChallenges),
     },
     aliases: new Set(),
   },
