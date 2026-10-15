@@ -666,13 +666,13 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 			{yTicks.map((tick) => (
 				<g key={tick.value} transform={`translate(0, ${tick.y})`}>
 					<line x1="0" x2="8" y1="0" y2="0" />
-					<text x="12" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
+					<text x="16" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
 				</g>
 			))}
 			<text
 				className="race-chart__axis-title"
 				x={-CHART_MARGIN.top}
-				y={14}
+				y={10}
 				transform="rotate(-90)"
 				textAnchor="end"
 				fontSize={12}
@@ -826,6 +826,13 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 								</text>
 							)}
 							<circle className="race-chart__avatar-backdrop" r={AVATAR_RADIUS + 6} />
+							{/* Identity-tinted disc under the image: what shows while it decodes,
+							    instead of the backdrop's black. */}
+							<circle
+								className="race-chart__avatar-placeholder"
+								r={AVATAR_RADIUS}
+								fill={avatar.identityColor || avatar.color}
+							/>
 							<circle
 								className="race-chart__avatar-zone"
 								r={AVATAR_RADIUS + 1.5}

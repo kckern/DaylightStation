@@ -126,4 +126,44 @@ describe('FitnessSessionDetailWidget — refresh when its list row changes', () 
     await new Promise((r) => setTimeout(r, 50));
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('switching sessions keeps the outgoing detail up (dimmed) instead of a skeleton', async () => {
+    const { rerender, container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(container.querySelector('.session-detail__header')).not.toBeNull());
+
+    global.fetch.mockImplementationOnce(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    rerender(<FitnessSessionDetailWidget sessionId="20260601080000" />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+
+    expect(container.querySelector('.session-detail--skeleton')).toBeNull();
+    expect(container.querySelector('.session-detail--stale .session-detail__header')).not.toBeNull();
+    expect(container.textContent).toContain(ID);
+
+    resolveFetch({ ok: true, json: async () => ({ sessionId: '20260601080000', summary: { voiceMemos: [] }, timeline: {} }) });
+    await waitFor(() => expect(container.querySelector('.session-detail--stale')).toBeNull());
+    expect(container.textContent).toContain('20260601080000');
+  });
+
+  it('first load shows the layout skeleton (header, chart, lanes)', () => {
+    global.fetch.mockImplementationOnce(() => new Promise(() => {}));
+    const { container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    const skel = container.querySelector('.session-detail--skeleton');
+    expect(skel).not.toBeNull();
+    expect(skel.querySelector('.session-detail__header .session-detail__poster')).not.toBeNull();
+    expect(skel.querySelector('.session-detail__chart')).not.toBeNull();
+    expect(skel.querySelector('.session-detail__timeline')).not.toBeNull();
+  });
+
+  it('delete takes two taps: the first only arms it', async () => {
+    const { container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(container.querySelector('.session-detail__delete')).not.toBeNull());
+    const del = () => container.querySelector('.session-detail__delete');
+
+    del().click();
+    await waitFor(() => expect(del().textContent).toBe('Delete?'));
+    expect(global.fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+
+    del().click();
+    await waitFor(() => expect(global.fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true));
+  });
 });

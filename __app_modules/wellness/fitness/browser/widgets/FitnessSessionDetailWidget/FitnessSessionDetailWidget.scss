@@ -8,6 +8,49 @@
   padding-bottom: 8px;
   box-sizing: border-box;
 
+  // Another session is loading: the outgoing one stays in place, inert, and only
+  // dims if the load outlasts a blink (most finish in ~100ms). Leaving the state
+  // drops the transition, so the new session appears at full opacity at once.
+  &--stale > * {
+    pointer-events: none;
+    opacity: 0.45;
+    transition: opacity 0.2s ease 0.15s;
+  }
+
+  &--skeleton {
+    pointer-events: none;
+    // The screen framework sizes this widget from its content (flex: 0 1 auto in
+    // the area) and shrinks it to fit. A hydrated pane's content is tall, so it
+    // fills the area; the skeleton has none, so it must ask for the full height
+    // itself — then the 25% header / chart / 33% lanes resolve against the same box.
+    height: 100vh;
+
+    .session-detail__hero { border-bottom-color: transparent; }
+    // .ds-skeleton is width:100%; these boxes size from height + aspect-ratio.
+    .session-detail__poster,
+    .session-detail__thumb { width: auto; }
+    .session-detail__meta-bottom { gap: 8px; }
+  }
+
+  &__skeleton-plot {
+    position: absolute;
+    opacity: 0.6;
+  }
+
+  &__skeleton-lanes {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__skeleton-lane {
+    flex: 1 1 0;
+    opacity: 0.6;
+  }
+
   // Header row (25%)
   &__header {
     flex: 0 0 25%;
@@ -143,8 +186,8 @@
     height: 24px;
     border: none;
     border-radius: 50%;
-    background: rgba(180, 40, 40, 0.5);
-    color: rgba(255, 255, 255, 0.6);
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.55);
     font-size: 0.7rem;
     line-height: 1;
     cursor: pointer;
@@ -152,16 +195,19 @@
     align-items: center;
     justify-content: center;
     padding: 0;
-    opacity: 0;
-    transition: opacity 0.2s;
+    transition: background 0.15s, color 0.15s;
 
-    .session-detail__thumb:hover & {
-      opacity: 1;
-    }
-
-    &:hover {
-      background: rgba(200, 40, 40, 0.85);
+    // Touch has no hover: always visible, quiet until armed.
+    &--armed {
+      width: auto;
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 13px;
+      background: rgba(200, 40, 40, 0.92);
       color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
     }
 
     &:disabled {
@@ -174,6 +220,10 @@
     position: absolute;
     bottom: 4px;
     right: 32px;          // left of the delete button
+
+    .session-detail__delete--armed + & {
+      right: 84px;        // clear of the wider "Delete?" pill
+    }
     z-index: 2;
     transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
     width: 26px;
@@ -189,28 +239,21 @@
     align-items: center;
     justify-content: center;
     padding: 0;
-    opacity: 0;
-    transition: opacity 0.2s, background 0.15s;
-
-    .session-detail__thumb:hover & {
-      opacity: 1;
-    }
+    transition: background 0.15s;
 
     &:hover {
       background: rgba(30, 120, 220, 1);
     }
   }
 
+  // Lives at the end of the measured row — it used to sit under the close button.
   &__session-id {
-    position: absolute;
-    top: 2px;
-    right: 3px;
-    font-size: 0.5rem;
+    margin-left: auto;
+    font-size: 0.55rem;
     opacity: 0.3;
     color: #fff;
+    background: none;
     cursor: pointer;
-    z-index: 1;
-    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
 
     &:active {
       opacity: 0.8;
@@ -258,6 +301,7 @@
   // Hero title — "Show — Episode" dynamically sized by JS to fill width
   &__hero {
     flex: 1 1 0;
+    min-height: 2.4rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -270,21 +314,39 @@
   }
 
   // Metadata area — stats row + voice memos stacked
+  // Sized by its content (stats, measured row, memos); the hero title fits into
+  // what is left. It was a fixed half that scrolled, so a memo lost its last line.
   &__meta-bottom {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    overflow-y: auto;
+    justify-content: flex-start;
+    gap: 3px;
+    padding-top: 6px;
+    overflow: hidden;
     min-height: 0;
   }
 
+  // Wraps rather than clipping its tail (the suffer score fell off with a
+  // 12-hour clock).
   &__stats-row {
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
+    gap: 2px 14px;
     flex-shrink: 0;
+  }
+
+  &__meta-timing,
+  &__meta-totals {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  &__meta-totals {
+    gap: 12px;
   }
 
   &__meta-item {
@@ -336,31 +398,32 @@
 
   &__memo-icon {
     flex-shrink: 0;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     line-height: 1.3;
   }
 
   &__memo-text {
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     line-height: 1.3;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.62);
     display: -webkit-box;
-    -webkit-line-clamp: 4;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
 
+  // Right padding keeps the stats clear of the close button.
   &__thumb--strava-stats {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding: 1rem;
+    padding: 0.75rem 2.75rem 0.75rem 0.75rem;
   }
 
   &__strava-stats {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem 0.5rem;
   }
 
   &__stat {
@@ -370,7 +433,7 @@
   }
 
   &__stat-value {
-    font-size: 1.4rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.9);
   }
@@ -459,6 +522,7 @@
   &__measured-row {
     display: flex;
     flex-wrap: wrap;
+    align-items: baseline;
     gap: 0.3rem 0.75rem;
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.65rem;
@@ -470,6 +534,21 @@
     min-height: 0;
     overflow: hidden;
     position: relative;
+
+    // The rider legend (tap to focus) sat in the right margin, where the
+    // end-of-line ring labels go, and covered them. Ring totals only rise, so
+    // the top-left of the plot is always empty: put it there, as a row.
+    .race-chart__focus-filter {
+      top: 64px; // below the challenge-badge band pinned along the chart top
+      bottom: auto;
+      left: 84px;
+      right: auto;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 2px 10px;
+      max-width: 55%;
+    }
   }
 
   // Center gutter: marker icons + labels live here; the chart (above) and the
