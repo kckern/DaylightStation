@@ -45,3 +45,10 @@ test('timelapse survives stored-record reconstitution', () => {
   assert.equal(round.timelapse.status, 'ready');
   assert.equal(round.timelapse.videoPath, 'p.mp4');
 });
+
+test('attachTimelapse records the time mapping (speedup, startMs)', () => {
+  const s = activeSession();
+  s.attachTimelapse({ videoPath: 'p.mp4', durationSeconds: 228, fps: 10, frameCount: 2276, speedup: 10, startMs: 1792069231281, now: Date.now() });
+  assert.equal(s.timelapse.speedup, 10);
+  assert.equal(s.timelapse.startMs, 1792069231281);
+});

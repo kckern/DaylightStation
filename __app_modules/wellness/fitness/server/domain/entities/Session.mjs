@@ -91,12 +91,17 @@ export class Session {
     this.timelapse = { status: 'processing', startedAt: now };
   }
 
-  attachTimelapse({ videoPath, durationSeconds = null, fps = null, frameCount = null, now }) {
+  /**
+   * `speedup` (session seconds per video second) and `startMs` (session instant of
+   * frame 0) are the recap's time mapping: video t ↔ session elapsed t × speedup.
+   * The detail pane seeks the recap from the charts with it.
+   */
+  attachTimelapse({ videoPath, durationSeconds = null, fps = null, frameCount = null, speedup = null, startMs = null, now }) {
     if (videoPath == null) {
       throw new ValidationError('videoPath required', { code: 'MISSING_VIDEO_PATH', field: 'videoPath' });
     }
     Session.#requireNow(now);
-    this.timelapse = { status: 'ready', videoPath, durationSeconds, fps, frameCount, createdAt: now };
+    this.timelapse = { status: 'ready', videoPath, durationSeconds, fps, frameCount, speedup, startMs, createdAt: now };
   }
 
   markTimelapseSkipped(reason = 'no-captures', now) {

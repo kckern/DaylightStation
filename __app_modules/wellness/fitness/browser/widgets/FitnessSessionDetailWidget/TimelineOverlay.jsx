@@ -13,7 +13,7 @@ import { MARKER_FILL_OPACITY } from "../../lib/chartConstants.js";
  * top of the marks. Badges and video cards stay in their layers as annotations,
  * placed from the same marks.
  */
-export default function TimelineOverlay({ marks, width, top, height }) {
+export default function TimelineOverlay({ marks, width, top, height, playheadX = null }) {
   if (!marks || !(width > 0) || !(height > 0)) return null;
   const { bands, seams, challenges, videos, accent } = marks;
   return (
@@ -48,6 +48,13 @@ export default function TimelineOverlay({ marks, width, top, height }) {
         <line key={`vid-${i}`} x1={v.x} y1={0} x2={v.x} y2={height}
           stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="6 4" />
       ))}
+      {/* recap playhead — where the timelapse is now (recapTimeMap.js) */}
+      {Number.isFinite(playheadX) && (
+        <g className="session-detail__playhead">
+          <line x1={playheadX} y1={0} x2={playheadX} y2={height} stroke="#fff" strokeWidth={2} opacity={0.9} />
+          <circle cx={playheadX} cy={0} r={4} fill="#fff" />
+        </g>
+      )}
     </svg>
   );
 }

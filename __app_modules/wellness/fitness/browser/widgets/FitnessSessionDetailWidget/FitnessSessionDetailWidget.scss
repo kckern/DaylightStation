@@ -29,6 +29,13 @@
     width: auto;
   }
 
+  // A recap is open and mapped: the chart, gutter and lanes seek it on tap.
+  &--seekable {
+    .session-detail__chart,
+    .session-detail__gutter,
+    .session-detail__timeline { cursor: crosshair; }
+  }
+
   &--skeleton {
     pointer-events: none;
 

@@ -200,7 +200,12 @@ export class GenerateSessionTimelapse {
       // untouched (it only removes the temp dir), so a re-run can retry instead of
       // destroying the only copy of the screenshots.
       if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
-      session.attachTimelapse({ videoPath, durationSeconds, fps, frameCount: written, now: Date.now() });
+      const recapStartMs = typeof session.startTime === 'number' ? session.startTime : new Date(session.startTime).getTime();
+      session.attachTimelapse({
+        videoPath, durationSeconds, fps, frameCount: written,
+        speedup, startMs: Number.isFinite(recapStartMs) ? recapStartMs : null,
+        now: Date.now(),
+      });
       await sessionDatastore.save(session, householdId);
 
       // Plex-library copy: a TV-convention hardlink (`Family Fitness - SxxExx - …`)
