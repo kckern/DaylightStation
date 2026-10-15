@@ -26,7 +26,7 @@ function laneAvatar(lane, maxAvatarSize) {
  * TimelineOverlay behind the whole stack; this draws only the lanes, on the
  * pane's shared axis (`effectiveTicks`).
  */
-export default function FitnessTimeline({ sessionData, maxAvatarSize, effectiveTicks: sharedTicks }) {
+export default function FitnessTimeline({ sessionData, maxAvatarSize, effectiveTicks: sharedTicks, focusedUserId = null, onAvatarTap = null }) {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -109,7 +109,8 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, effectiveT
         </defs>
         {/* HR-area fills (under the indicator overlays) */}
         {lanes.map((lane) => (
-          <g key={`fills-${lane.userId}`}>
+          // A focused rider (shared with the rings chart) leaves the other lanes dimmed.
+          <g key={`fills-${lane.userId}`} opacity={focusedUserId && lane.userId !== focusedUserId ? 0.25 : 1}>
             {lane.fills.map((fill, i) => (
               <path key={i} d={fill.d} fill={fill.color} opacity={0.6} stroke="none" />
             ))}
@@ -141,7 +142,12 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize, effectiveT
           const { size, r, top, cy } = laneAvatar(lane, maxAvatarSize);
           const borderWidth = 3;
           return (
-            <g key={`avatar-${lane.userId}`}>
+            <g
+              key={`avatar-${lane.userId}`}
+              className={`fitness-timeline__avatar${onAvatarTap ? ' fitness-timeline__avatar--tappable' : ''}`}
+              opacity={focusedUserId && lane.userId !== focusedUserId ? 0.4 : 1}
+              onPointerDown={onAvatarTap ? (e) => { e.stopPropagation(); onAvatarTap(lane.userId); } : undefined}
+            >
               {/* Shows until the image decodes — never a black hole on a cold cache. */}
               <circle className="fitness-timeline__avatar-placeholder" cx={r} cy={cy} r={r} />
               <image

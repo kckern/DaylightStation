@@ -353,7 +353,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const routeTrack = current ? (detail?.strava?.map?.track || null) : null;
   const cursorEnabled = recapSeekable || !!routeTrack;
   const [playheadMs, setPlayheadMs] = useState(null);
-  useEffect(() => { setPlayheadMs(null); }, [sessionId]);
+  // One focused rider for the rings chart and the HR lanes: tapping either
+  // avatar focuses that rider in both (tap again to clear).
+  const [focusedRider, setFocusedRider] = useState(null);
+  useEffect(() => { setPlayheadMs(null); setFocusedRider(null); }, [sessionId]);
+  const toggleRiderFocus = useCallback((id) => {
+    setFocusedRider((prev) => (prev === id ? null : id));
+    logger().info('session-detail.rider-focus', { sessionId, userId: id, source: 'lane' });
+  }, [sessionId]);
   useEffect(() => {
     const v = recapVideoRef.current;
     if (!recapSeekable || !v) return undefined;
@@ -370,7 +377,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const handleStackPointer = useCallback((e) => {
     if (!cursorEnabled || !axis || !stackBox) return;
     const target = e.target;
-    if (target.closest?.('button, a, .race-chart__focus-filter, .race-chart__avatar-group, .marker-gutter__chip')) return;
+    if (target.closest?.('button, a, .race-chart__focus-filter, .race-chart__avatar-group, .fitness-timeline__avatar, .marker-gutter__chip')) return;
     // On a map session the chart row is the map, which pans on drag: only the
     // gutter and lanes set the time there.
     const zones = header?.stravaHasMap
@@ -713,6 +720,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             marks={marks}
             avatarSizing="fit"
             showFocusLegend={false}
+            focusUserId={focusedRider}
+            onFocusChange={setFocusedRider}
           />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
@@ -729,7 +738,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Timeline (35%) */}
       <div ref={timelineRef} className="session-detail__timeline">
         {detail
-          ? <FitnessTimeline sessionData={detail} maxAvatarSize={posterWidth} effectiveTicks={axis?.effectiveTicks} />
+          ? (
+            <FitnessTimeline
+              sessionData={detail}
+              maxAvatarSize={posterWidth}
+              effectiveTicks={axis?.effectiveTicks}
+              focusedUserId={focusedRider}
+              onAvatarTap={(detail?.participants && Object.keys(detail.participants).length > 1) || header?.isGroup ? toggleRiderFocus : null}
+            />
+          )
           : <LanesSkeleton count={Math.max(1, Math.min(header?.riders?.length || 3, 6))} />}
       </div>
 
