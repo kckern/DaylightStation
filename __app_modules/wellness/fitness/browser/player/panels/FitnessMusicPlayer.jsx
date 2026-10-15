@@ -11,6 +11,7 @@ import { durationFromSeconds } from "../../../../../../__capabilities/playback/b
 import { guid } from "../../../../../../__capabilities/playback/browser/contracts.mjs";
 import getLogger from '@/lib/logging/Logger.js';
 import { musicShouldPause } from "./musicVideoSync.js";
+import { marqueeScrollDistance } from "./marqueeDistance.js";
 import { useMusicRecovery } from "./useMusicRecovery.js";
 import { formatMusicErrorMessage, isRecoverableMusicError } from "./musicPlayerErrorFormat.js";
 
@@ -159,35 +160,36 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   }, [selectedPlaylistId]);
 
-  // Measure text overflow for marquee scroll distance
-  // Uses double-RAF to ensure measurement happens after paint, avoiding layout thrashing
+  // Measure text overflow for marquee scroll distance. Re-measured whenever the
+  // title box or the text changes size — not only on a new title: the sidebar
+  // sits at width 0 in fullscreen and is resized by the size mode, and a
+  // measurement taken there must not outlive it. Text changes (new track,
+  // loading, error copy, late web font) resize the span, so they count too.
   useEffect(() => {
-    if (!titleContainerRef.current || !marqueeTextRef.current) return;
+    const container = titleContainerRef.current;
+    const text = marqueeTextRef.current;
+    if (!container || !text) return undefined;
 
     let rafId = null;
-    let innerRafId = null;
-
     const measureOverflow = () => {
-      if (!titleContainerRef.current || !marqueeTextRef.current) return;
-
-      const containerWidth = titleContainerRef.current.offsetWidth;
-      const textWidth = marqueeTextRef.current.scrollWidth;
-      const overflow = textWidth - containerWidth;
-
-      // Only scroll if text overflows (negative value = scroll left by this amount)
-      setScrollDistance(overflow > 0 ? -overflow : 0);
+      rafId = null;
+      setScrollDistance(marqueeScrollDistance(container.offsetWidth, text.scrollWidth));
+    };
+    // Coalesce bursts (both elements resizing in one frame) into one measure.
+    const scheduleMeasure = () => {
+      if (rafId === null) rafId = requestAnimationFrame(measureOverflow);
     };
 
-    // Double RAF ensures measurement happens after browser paint
-    rafId = requestAnimationFrame(() => {
-      innerRafId = requestAnimationFrame(measureOverflow);
-    });
+    scheduleMeasure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleMeasure) : null;
+    observer?.observe(container);
+    observer?.observe(text);
 
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      if (innerRafId) cancelAnimationFrame(innerRafId);
+      observer?.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [currentTrack?.title, currentTrack?.label]);
+  }, [selectedPlaylistId, currentTrack?.title, currentTrack?.label]);
 
   const currentTrackIdentity = useMemo(() => {
     if (!currentTrack) return null;
