@@ -370,7 +370,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const handleStackPointer = useCallback((e) => {
     if (!cursorEnabled || !axis || !stackBox) return;
     const target = e.target;
-    if (target.closest?.('button, a, .race-chart__focus-filter, .marker-gutter__chip')) return;
+    if (target.closest?.('button, a, .race-chart__focus-filter, .race-chart__avatar-group, .marker-gutter__chip')) return;
     // On a map session the chart row is the map, which pans on drag: only the
     // gutter and lanes set the time there.
     const zones = header?.stravaHasMap
@@ -711,6 +711,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             primaryMediaKey={header?.primaryMediaKey}
             axisTicks={axis?.effectiveTicks}
             marks={marks}
+            avatarSizing="fit"
+            showFocusLegend={false}
           />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
