@@ -154,3 +154,14 @@ test('allocateBucketsRedistribute: preserves custom bonus-ring buckets', () => {
   assert.equal(colors.reduce((total, color) => total + (part1[color] || 0), 0), 2);
   assert.equal(colors.reduce((total, color) => total + (part2[color] || 0), 0), 3);
 });
+
+test('recomputeSummaryForPart counts only success and failed challenges alongside neutral ones', () => {
+  const series = { 'user_3:hr': [120, 130], 'user_3:zone': ['a', 'w'], 'user_3:rings': [5, 10] };
+  const events = [
+    { type: 'challenge', data: { result: 'success' } },
+    { type: 'challenge', data: { result: 'failed' } },
+    { type: 'challenge', data: { result: 'abandoned' } },
+  ];
+  const { summary } = recomputeSummaryForPart({ series, slugs: ['user_3'], events, intervalMs: 5000, ringTimeUnitMs: 5000 });
+  assert.deepEqual(summary.challenges, { total: 2, succeeded: 1, failed: 1 });
+});

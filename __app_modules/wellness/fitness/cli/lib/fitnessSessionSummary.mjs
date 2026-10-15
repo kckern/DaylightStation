@@ -163,7 +163,7 @@ export function buildSummary({ participants, series, events, treasureBox, interv
 
   const challengeEvents = (events || []).filter(e => e.type === 'challenge');
   const succeeded = challengeEvents.filter(e => e.data?.result === 'success').length;
-  const failed = challengeEvents.length - succeeded;
+  const failed = challengeEvents.filter(e => e.data?.result === 'failed').length; // Neutral: abandoned, started, cleared, replaced, ended
 
   const voiceMemos = (events || [])
     .filter(e => e.type === 'voice_memo')
@@ -177,7 +177,7 @@ export function buildSummary({ participants, series, events, treasureBox, interv
     participants: participantsSummary,
     media,
     coins: { total: treasureBox?.totalCoins ?? 0, buckets: treasureBox?.buckets ?? {} },
-    challenges: { total: challengeEvents.length, succeeded, failed },
+    challenges: { total: succeeded + failed, succeeded, failed },
     voiceMemos
   };
 }

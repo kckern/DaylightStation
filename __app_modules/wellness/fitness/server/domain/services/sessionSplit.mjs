@@ -234,7 +234,7 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, rin
       participants,
       media,
       rings: { total: totalRings, buckets },
-      challenges: { total: challengeEvents.length, succeeded, failed },
+      challenges: { total: succeeded + failed, succeeded, failed }, // Neutral: abandoned, started, cleared, replaced, ended
     },
     treasureBox: { ringTimeUnitMs, totalRings, buckets },
   };

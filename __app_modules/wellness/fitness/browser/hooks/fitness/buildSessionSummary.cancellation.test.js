@@ -8,7 +8,7 @@ describe('neutral challenge cancellation summaries', () => {
   it('counts only an ordinary failure alongside a sensor cancellation', () => {
     expect(buildSessionSummary({ events: [{ type: 'challenge', data: { result: 'failed' } }, cancelled], intervalSeconds: 5 }).challenges).toEqual({ total: 1, succeeded: 0, failed: 1 });
   });
-  it('does not count unresolved challenges (abandoned, started, cleared, replaced) as attempted or failed', () => {
+  it('does not count unresolved challenges (abandoned, started, cleared, replaced, ended) as attempted or failed', () => {
     const events = ['abandoned', 'started', 'cleared', 'replaced', 'ended'].map((result) => ({ type: 'challenge', data: { result } }));
     expect(buildSessionSummary({ events, intervalSeconds: 5 }).challenges).toEqual({ total: 0, succeeded: 0, failed: 0 });
   });

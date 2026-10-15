@@ -73,7 +73,7 @@ describe('buildSummary', () => {
   const events = [
     { type: 'media', timestamp: 1000, data: { contentId: 'plex:1', title: 'Test Video', start: 1000, end: 2000 } },
     { type: 'challenge', timestamp: 1500, data: { result: 'success' } },
-    { type: 'challenge', timestamp: 1600, data: { result: 'fail' } },
+    { type: 'challenge', timestamp: 1600, data: { result: 'failed' } },
     { type: 'voice_memo', timestamp: 1800, data: { transcript: 'hi', durationSeconds: 5 } }
   ];
   const treasureBox = { totalCoins: 7, buckets: { blue: 1, green: 2, yellow: 3, orange: 1, red: 0 } };
@@ -113,5 +113,15 @@ describe('buildSummary', () => {
 
   it('pins coin totals/buckets from treasureBox', () => {
     expect(summary.coins).toEqual({ total: 7, buckets: treasureBox.buckets });
+  });
+
+  it('counts only success and failed challenges alongside neutral ones', () => {
+    const events = [
+      { type: 'challenge', data: { result: 'success' } },
+      { type: 'challenge', data: { result: 'failed' } },
+      { type: 'challenge', data: { result: 'abandoned' } },
+    ];
+    const summary = buildSummary({ participants: {}, events, treasureBox: {}, intervalSeconds: 5 });
+    expect(summary.challenges).toEqual({ total: 2, succeeded: 1, failed: 1 });
   });
 });
