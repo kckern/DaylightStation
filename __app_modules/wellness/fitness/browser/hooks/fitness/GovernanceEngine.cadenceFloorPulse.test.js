@@ -62,7 +62,7 @@ describe('cadence_floor across pulse-path evaluations', () => {
     engine._captureLatestInputs(snapshot(rpm));
     floorSummary();
     vi.advanceTimersByTime(500);
-    engine._captureLatestInputs({ activeParticipants: [RIDER] }); // pulse: no cadence map
+    engine._captureLatestInputs({ activeParticipants: [RIDER] }); // no-session fallback: no map in hand
     return floorSummary();
   };
 
@@ -86,5 +86,16 @@ describe('cadence_floor across pulse-path evaluations', () => {
     for (let i = 0; i < 12; i += 1) summary = second(0);
     expect(summary.satisfied).toBe(false);
     expect(summary.missingUsers).toEqual([RIDER]);
+  });
+
+  it('a no-arg evaluate() reads live cadence from the session', () => {
+    const live = { tricycle: { rpm: 42, connected: true } };
+    engine.session = {
+      getActiveParticipantState: () => ({ participants: [RIDER], zoneMap: {}, totalCount: 1, hrInactiveUsers: [] }),
+      getEquipmentCadenceMap: () => live,
+    };
+    engine._captureLatestInputs(snapshot(55));
+    engine.evaluate(); // the timer-pulse / zone-change path
+    expect(engine._latestInputs.equipmentCadenceMap).toEqual(live);
   });
 });

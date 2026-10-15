@@ -960,8 +960,7 @@ Timer pulses and zone-change debounces call `evaluate()` with no sensor data.
 They read live cadence from `session.getEquipmentCadenceMap()`, and a capture
 that still has no map keeps the previous one. An omitted map must never become
 `{}`: the evaluator reads an empty map as `no_cadence_source` and disarms,
-which reset the evidence on every pulse until 2026-10-14 — the gate armed once
-in a week of logs and was disarmed six seconds later
+resetting the rider's evidence on every pulse
 (`GovernanceEngine.cadenceFloorPulse.test.js`).
 
 Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
