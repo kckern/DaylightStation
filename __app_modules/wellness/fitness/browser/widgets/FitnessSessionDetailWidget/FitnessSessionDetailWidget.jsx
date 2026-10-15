@@ -7,6 +7,9 @@ import { useFitnessScreen } from "../../useFitnessScreen.js";
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import FitnessTimeline from "./FitnessTimeline.jsx";
 import MarkerGutter from "./MarkerGutter.jsx";
+import TimelineOverlay from "./TimelineOverlay.jsx";
+import { buildSessionAxis, buildSessionMarks } from "./sessionTimeline.js";
+import { CHART_MARGIN } from "../../lib/chartConstants.js";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
 import DetailActions from "./DetailActions.jsx";
 import SessionDetailSkeleton, { ChartSkeleton, LanesSkeleton } from "./SessionDetailSkeleton.jsx";
@@ -296,6 +299,34 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     const name = unlockRules?.lock;
     return Boolean(name) && isKioskEnv() && Array.isArray(locks[name]) && locks[name].length > 0;
   }, [fitnessCtx?.fitnessConfiguration, unlockRules]);
+  // One time axis + one mark list for the chart · gutter · lanes stack.
+  const axis = useMemo(() => buildSessionAxis(detail), [detail]);
+  const rootRef = useRef(null);
+  const chartRef = useRef(null);
+  const timelineRef = useRef(null);
+  // The overlay spans from the chart's plot top to the lanes' bottom.
+  const [stackBox, setStackBox] = useState(null);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const measure = () => {
+      const c = chartRef.current;
+      const tl = timelineRef.current;
+      if (!c || !tl) { setStackBox(null); return; }
+      const top = c.offsetTop + CHART_MARGIN.top;
+      const next = { width: root.clientWidth, top, height: tl.offsetTop + tl.offsetHeight - top };
+      setStackBox((prev) => (prev && prev.width === next.width && prev.top === next.top && prev.height === next.height ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    [root, chartRef.current, timelineRef.current].forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [detail]);
+  const marks = useMemo(
+    () => (detail && axis && stackBox ? buildSessionMarks(detail, axis, stackBox.width, header?.primaryMediaKey) : null),
+    [detail, axis, stackBox, header?.primaryMediaKey]
+  );
+
   const sessionMedia = detail?.summary?.media || null;
   const fetchRecapInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
   const recapUnlock = useRecapUnlock({
@@ -373,6 +404,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
   return (
     <div
+      ref={rootRef}
       className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}`}
       aria-busy={(stale || pending) || undefined}
     >
@@ -465,12 +497,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             </div>
             {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
-                {header.voiceMemos?.map((memo, i) => (
-                  <div key={`memo-${i}`} className="session-detail__memo">
+                {/* One clamped block for all memos (joined like the list row): each memo
+                    clamping on its own let two of them overflow and cut the second mid-line. */}
+                {header.voiceMemos?.length > 0 && (
+                  <div className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83C\uDF99'}</span>
-                    <span className="session-detail__memo-text">{memo.transcript}</span>
+                    <span className="session-detail__memo-text">
+                      {header.voiceMemos.map((memo) => memo.transcript).join(' \u2022 ')}
+                    </span>
                   </div>
-                ))}
+                )}
                 {header.stravaNotes && !header.voiceMemos?.length && (
                   <div className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83D\uDCDD'}</span>
@@ -589,8 +625,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         )}
       </div>
 
+      {/* Every vertical mark, once, full height behind chart · gutter · lanes */}
+      {detail && stackBox && (
+        <TimelineOverlay marks={marks} width={stackBox.width} top={stackBox.top} height={stackBox.height} />
+      )}
+
       {/* Chart (40%) */}
-      <div className="session-detail__chart">
+      <div ref={chartRef} className="session-detail__chart">
         {!detail ? (
           <ChartSkeleton />
         ) : header?.stravaHasMap ? (
@@ -601,7 +642,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             elevation={detail.strava?.totalElevationGain}
           />
         ) : ChartComponent ? (
-          <ChartComponent sessionData={detail} mode="standalone" primaryMediaKey={header?.primaryMediaKey} />
+          <ChartComponent
+            sessionData={detail}
+            mode="standalone"
+            primaryMediaKey={header?.primaryMediaKey}
+            axisTicks={axis?.effectiveTicks}
+            marks={marks}
+          />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
         )}
@@ -610,14 +657,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
       {hasVideoChanges && (
         <div className="session-detail__gutter">
-          <MarkerGutter sessionData={detail} primaryMediaKey={header?.primaryMediaKey} />
+          <MarkerGutter videoMarkers={marks?.videos || []} />
         </div>
       )}
 
       {/* Timeline (35%) */}
-      <div className="session-detail__timeline">
+      <div ref={timelineRef} className="session-detail__timeline">
         {detail
-          ? <FitnessTimeline sessionData={detail} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
+          ? <FitnessTimeline sessionData={detail} maxAvatarSize={posterWidth} effectiveTicks={axis?.effectiveTicks} />
           : <LanesSkeleton count={Math.max(1, Math.min(header?.riders?.length || 3, 6))} />}
       </div>
 
