@@ -1232,6 +1232,19 @@ export class FitnessSession {
     return best || stalled || disconnected;
   }
 
+  /**
+   * Live cadence for every configured equipment, keyed by equipment id. The
+   * governance engine reads this on timer pulses, which carry no sensor data.
+   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number }>}
+   */
+  getEquipmentCadenceMap() {
+    const map = {};
+    this._equipmentById.forEach((entry, equipmentId) => {
+      if (entry && equipmentId) map[equipmentId] = this.getEquipmentCadence(equipmentId);
+    });
+    return map;
+  }
+
   // Read a single cadence device's live reading (rpm + connected + ts), applying the
   // same staleness rule as DeviceManager.pruneStaleDevices so readers see
   // "disconnected" even between prune cycles.
@@ -2278,14 +2291,9 @@ export class FitnessSession {
         });
     }
 
-    // Build equipmentCadenceMap: maps equipmentId -> { rpm, connected }
-    // so the governance engine can read live cadence for cycle challenges.
-    const equipmentCadenceMap = {};
-    this._equipmentById.forEach((entry, equipmentId) => {
-      if (entry && equipmentId) {
-        equipmentCadenceMap[equipmentId] = this.getEquipmentCadence(equipmentId);
-      }
-    });
+    // equipmentId -> { rpm, connected } so the governance engine can read live
+    // cadence for cycle challenges and cadence_floor requirements.
+    const equipmentCadenceMap = this.getEquipmentCadenceMap();
 
     // Build equipmentRiderMap: equipmentId -> claimed userId (or absent if unclaimed)
     const equipmentRiderMap = {};

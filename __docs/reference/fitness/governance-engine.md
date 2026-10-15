@@ -956,5 +956,12 @@ stopped. That is accepted — the rider must be present with a live strap, a
 warning precedes the lock, and a dead sensor on a machine someone is actively
 riding is a fault worth surfacing.
 
+Timer pulses and zone-change debounces call `evaluate()` with no sensor data.
+They read live cadence from `session.getEquipmentCadenceMap()`, and a capture
+that still has no map keeps the previous one. An omitted map must never become
+`{}`: the evaluator reads an empty map as `no_cadence_source` and disarms,
+resetting the rider's evidence on every pulse
+(`GovernanceEngine.cadenceFloorPulse.test.js`).
+
 Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
 `.tripped`.
