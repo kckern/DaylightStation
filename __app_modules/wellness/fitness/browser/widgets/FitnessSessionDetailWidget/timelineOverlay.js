@@ -95,25 +95,31 @@ export function computeVideoMarkers(events, opts) {
 /**
  * Challenge markers as duration spans. Each marker carries x..xEnd (width) from the
  * event's start/end, plus type/zoneId so the renderer can tint by challenge type
- * (cycle) or HR zone (warm/hot). An unfinished challenge (`end` null/absent) extends
- * to the axis end so it reads as "still running at session end" rather than a sliver.
+ * (cycle) or HR zone (warm/hot). An unfinished challenge (no outcome) is a short stub.
  */
+// A challenge with no outcome (open at session end, or saved before that was
+// recorded) is drawn as a short stub at its start, not a bar to the session end.
+export const UNRESOLVED_STUB_PX = 14;
+const RESOLVED_RESULTS = new Set(['success', 'failed', 'cleared', 'replaced']);
+
 export function computeChallengeMarkers(events, opts) {
   if (!Array.isArray(events) || !Number.isFinite(opts?.sessionStartMs)) return [];
-  // Absolute ms at the right edge of the compressed axis (last tick).
-  const axisEndMs = opts.sessionStartMs + Math.max(0, (opts.effectiveTicks - 1)) * opts.intervalMs;
   return events
     .filter((e) => e?.type === 'challenge' && Number.isFinite(e.data?.start))
     .map((e) => {
       const d = e.data;
       const startMs = d.start;
-      const endMs = Number.isFinite(d.end) ? d.end : axisEndMs;
+      const unresolved = !RESOLVED_RESULTS.has(d.result) || !Number.isFinite(d.end);
       const x = clampX(msToTickX(startMs - opts.sessionStartMs, opts), opts);
-      const xEnd = clampX(msToTickX(Math.max(endMs, startMs) - opts.sessionStartMs, opts), opts);
+      const endMs = unresolved ? startMs : Math.max(d.end, startMs);
+      const xEnd = unresolved
+        ? Math.min(opts.marginLeft + opts.plotWidth, x + UNRESOLVED_STUB_PX)
+        : clampX(msToTickX(endMs - opts.sessionStartMs, opts), opts);
       return {
         x,
         xEnd,
         width: Math.max(0, xEnd - x),
+        unresolved,
         type: resolveChallengeMarkerType(e),
         zoneId: d.zoneId ?? null,
         result: d.result || null,
@@ -180,6 +186,7 @@ export function snapChallengeEndsToZoneTicks(markers, zoneSeriesByUser, opts) {
   if (!markers?.length || !zoneSeriesByUser) return markers || [];
   const targetRankOf = (zoneId) => ZONE_RANK[zoneId] ?? null;
   return markers.map((m) => {
+    if (m.unresolved) return m;
     const rank = m.type === 'zone' ? targetRankOf(m.zoneId) : null;
     if (rank == null || !Number.isFinite(m.endMs) || !m.metUsers?.length) return m;
     const endTick = (m.endMs - opts.sessionStartMs) / opts.intervalMs;

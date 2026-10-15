@@ -34,9 +34,12 @@ export default function TimelineOverlay({ marks, width, top, height, playheadX =
         const color = getChallengeMarkerColor(m);
         return (
           <g key={`chal-${i}`}>
-            <rect x={m.x} y={0} width={Math.max(m.width, 2)} height={height} fill={color} opacity={MARKER_FILL_OPACITY} />
-            {/* solid edge on the right = challenge end */}
-            <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.8} />
+            <rect x={m.x} y={0} width={Math.max(m.width, 2)} height={height} fill={color}
+              opacity={m.unresolved ? MARKER_FILL_OPACITY * 0.6 : MARKER_FILL_OPACITY} />
+            {/* unresolved: dashed start line; resolved: solid edge on the right = challenge end */}
+            {m.unresolved
+              ? <line x1={m.x} y1={0} x2={m.x} y2={height} stroke={color} strokeWidth={1} strokeDasharray="3 4" opacity={0.6} />
+              : <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.8} />}
           </g>
         );
       })}

@@ -643,7 +643,9 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 								<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
 							)}
 							{/* duration bracket hanging under the badge row: start → end */}
-							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
+							{!m.unresolved && (
+								<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
+							)}
 							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8);
 							    with an external overlay the full-height end line is TimelineOverlay's */}
 							{!overlay.external && <line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />}
@@ -867,9 +869,13 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 						{m.badgeX != null && Math.abs(m.badgeX - m.xEnd) > 1 && (
 							<line x1={m.xEnd} y1={cy + r} x2={m.badgeX} y2={cy + r} stroke={color} strokeWidth={1} opacity={0.5} />
 						)}
-						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
+						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r}
+							fill={m.unresolved ? 'rgba(0,0,0,0.6)' : color}
+							stroke={m.unresolved ? color : 'rgba(0,0,0,0.7)'}
+							strokeWidth={m.unresolved ? 2 : 1.5}
+							strokeDasharray={m.unresolved ? '3 2' : undefined} />
 						{m.requiredCount != null && (
-							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
+							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill={m.unresolved ? color : '#1a1a1a'}>{m.requiredCount}</text>
 						)}
 					</g>
 				);
