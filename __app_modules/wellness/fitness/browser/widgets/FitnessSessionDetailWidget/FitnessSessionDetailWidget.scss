@@ -559,21 +559,6 @@
     overflow: hidden;
     position: relative;
     z-index: 1;
-
-    // The rider legend (tap to focus) sat in the right margin, where the
-    // end-of-line ring labels go, and covered them. Ring totals only rise, so
-    // the top-left of the plot is always empty: put it there, as a row.
-    .race-chart__focus-filter {
-      top: 64px; // below the challenge-badge band pinned along the chart top
-      bottom: auto;
-      left: 84px;
-      right: auto;
-      flex-direction: row;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 2px 10px;
-      max-width: 55%;
-    }
   }
 
   // Center gutter: marker icons + labels live here; the chart (above) and the
