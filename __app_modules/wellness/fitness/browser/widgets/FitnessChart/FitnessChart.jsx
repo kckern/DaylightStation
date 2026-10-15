@@ -881,7 +881,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
-const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey, axisTicks, marks, avatarSizing = 'fixed', showFocusLegend = true }) => {
+const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey, axisTicks, marks, avatarSizing = 'fixed', showFocusLegend = true, focusUserId, onFocusChange }) => {
 	useRenderProfiler('FitnessChart');
 	const {
 		participants,
@@ -1094,7 +1094,15 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 	const yScaleBase = Y_SCALE_BASE;
 	const [persisted, setPersisted] = useState(null);
 	const [useLogScale, setUseLogScale] = useState(true);
-	const [focusedUserId, setFocusedUserId] = useState(null);
+	// Focus is controlled when the host passes onFocusChange (session detail shares
+	// it with the HR lanes); otherwise the chart keeps its own.
+	const [internalFocus, setInternalFocus] = useState(null);
+	const focusControlled = typeof onFocusChange === 'function';
+	const focusedUserId = focusControlled ? (focusUserId ?? null) : internalFocus;
+	const setFocusedUserId = useCallback((next) => {
+		if (!focusControlled) { setInternalFocus(next); return; }
+		onFocusChange(typeof next === 'function' ? next(focusUserId ?? null) : next);
+	}, [focusControlled, onFocusChange, focusUserId]);
 	// Issue C — History Mode. When the live session ends (sessionId -> null) we
 	// FREEZE the persisted snapshot on screen indefinitely instead of clearing it.
 	const [historyMode, setHistoryMode] = useState(false);
