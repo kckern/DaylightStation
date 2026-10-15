@@ -37,6 +37,50 @@ public final class FkbRest {
 
     private FkbRest() { }
 
+    // --- auth state ---------------------------------------------------------
+    //
+    // FKB answers a wrong password with HTTP 200 and {"status":"Error","statustext":
+    // "Please login"}. On 2026-10-14 a stale fkbPassword made every call get that, and
+    // every caller read it as success or "unknown": the foreground guard sat at UNKNOWN
+    // while a child was in the Play Store for 40 minutes, the settings guard said OK,
+    // and the recovery ladder's commands were no-ops. So every call records whether
+    // FKB accepted the password, and authFailing() makes that state visible.
+
+    private static volatile long lastAuthOkAtMs = 0;
+    private static volatile long lastAuthFailAtMs = 0;
+
+    static void recordAuth(boolean ok) {
+        long now = System.currentTimeMillis();
+        // Strictly increasing, so two records in the same millisecond still order.
+        if (ok) lastAuthOkAtMs = Math.max(now, lastAuthFailAtMs + 1);
+        else lastAuthFailAtMs = Math.max(now, lastAuthOkAtMs + 1);
+    }
+
+    /** True when FKB's most recent answer to this bridge was a login refusal. */
+    public static boolean authFailing() { return lastAuthFailAtMs > lastAuthOkAtMs; }
+
+    /** Epoch ms of the most recent login refusal, 0 if none since boot. */
+    public static long lastAuthFailAtMs() { return lastAuthFailAtMs; }
+
+    /**
+     * The statustext of an FKB error envelope ({"status":"Error",…}), or null when the
+     * body is anything else: an OK ack, a payload (deviceInfo/listSettings carry no
+     * status key), non-JSON, or empty.
+     */
+    static String errorEnvelope(String body) {
+        if (body == null) return null;
+        String t = body.trim();
+        if (!t.startsWith("{")) return null;
+        try {
+            JSONObject o = new JSONObject(t);
+            if (!"Error".equalsIgnoreCase(o.optString("status", ""))) return null;
+            String text = o.optString("statustext", "");
+            return text.isEmpty() ? "Error" : text;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String base(DeviceConfig cfg) {
         return "http://" + cfg.fkbHost() + ":" + cfg.fkbPort() + "/";
     }
@@ -91,6 +135,17 @@ public final class FkbRest {
             c.setReadTimeout(4000);
             c.setRequestMethod("GET");
             int code = c.getResponseCode();
+            if (code >= 200 && code < 400) {
+                String err = errorEnvelope(drain(c.getInputStream()));
+                if (err != null) {
+                    // HTTP 200, but FKB refused it. Report it as the 401 it is, so
+                    // callers' 2xx checks stop counting it as done.
+                    recordAuth(false);
+                    Log.w(TAG, "cmd " + cmd + " -> refused by FKB: " + err);
+                    return 401;
+                }
+                recordAuth(true);
+            }
             Log.i(TAG, "cmd " + cmd + " -> HTTP " + code);
             return code;
         } catch (Exception e) {
@@ -135,8 +190,17 @@ public final class FkbRest {
             String body = drain(in);
             o.put("reachable", true);
             o.put("httpCode", code);
+            String err = errorEnvelope(body);
+            if (err != null) {
+                recordAuth(false);
+                o.put("authOk", false);
+                o.put("note", "FKB refused the password: " + err);
+                return o;
+            }
             try {
                 JSONObject info = new JSONObject(body);
+                recordAuth(true);
+                o.put("authOk", true);
                 // Surface the fields that actually matter for "is the kiosk OK".
                 o.put("screenOn", info.opt("screenOn"));
                 o.put("currentPageUrl", info.opt("currentTabUrl") != null && !info.isNull("currentTabUrl")
@@ -167,7 +231,7 @@ public final class FkbRest {
      * back as {@code "true"} and {@code reloadPageFailure} as {@code "30"}.
      *
      * <p><b>Empty means UNKNOWN, never "everything is wrong."</b> Unreachable FKB, a
-     * wrong password (FKB serves an HTML login page), a truncated body — all return an
+     * wrong password (an HTTP-200 {"status":"Error"} envelope; see authFailing), a truncated body — all return an
      * empty map. {@link KioskSettings#detect} treats empty as "no drift", so a network
      * blip can never trigger a blind rewrite of every setting.
      */
@@ -183,7 +247,16 @@ public final class FkbRest {
                 Log.w(TAG, "listSettings -> HTTP " + code);
                 return Collections.emptyMap();
             }
-            return parseSettings(drain(c.getInputStream()));
+            String body = drain(c.getInputStream());
+            String err = errorEnvelope(body);
+            if (err != null) {
+                recordAuth(false);
+                Log.w(TAG, "listSettings -> refused by FKB: " + err);
+                return Collections.emptyMap();
+            }
+            Map<String, String> out = parseSettings(body);
+            if (!out.isEmpty()) recordAuth(true);
+            return out;
         } catch (Exception e) {
             Log.w(TAG, "listSettings failed: " + e.getMessage());
             return Collections.emptyMap();
@@ -200,6 +273,7 @@ public final class FkbRest {
      */
     static Map<String, String> parseSettings(String body) {
         if (body == null || body.trim().isEmpty()) return Collections.emptyMap();
+        if (errorEnvelope(body) != null) return Collections.emptyMap();
         LinkedHashMap<String, String> out = new LinkedHashMap<>();
         try {
             JSONObject o = new JSONObject(body);

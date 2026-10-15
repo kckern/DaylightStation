@@ -40,6 +40,18 @@ public class HeartbeatTest {
         assertEquals(2, line.getInt("data.beatFailures.backend"));
     }
 
+    @Test public void refusedFkbPasswordRaisesTheLineToWarn() throws Exception {
+        // 2026-10-14: a stale fkbPassword blinded both kiosk guards while every beat
+        // said info. level:warn must find it without anyone knowing the field name.
+        JSONObject refused = new JSONObject().put("fkbAuthOk", false).put("kioskForeground", "AUTH_FAILED");
+        JSONObject line = new JSONObject(Heartbeat.toLogStoreLine(refused).trim());
+        assertEquals("warn", line.getString("level"));
+        assertEquals("AUTH_FAILED", line.getString("data.kioskForeground"));
+
+        JSONObject ok = new JSONObject().put("fkbAuthOk", true);
+        assertEquals("info", new JSONObject(Heartbeat.toLogStoreLine(ok).trim()).getString("level"));
+    }
+
     @Test public void lineIsNewlineTerminatedForJsonlineInsert() {
         String s = Heartbeat.toLogStoreLine(new JSONObject());
         assertTrue(s.endsWith("\n"));

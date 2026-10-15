@@ -211,6 +211,15 @@ public final class Heartbeat {
             String verdict = !"CONNECTED".equals(bleState) ? "DOWN" : (outVerified ? "VERIFIED" : "ZOMBIE");
             o.put("linkVerdict", verdict);
             o.put("fkbReachable", FkbRest.reachable(c));
+            // Reachable is not usable: FKB answers a stale fkbPassword with HTTP 200 and
+            // a login refusal, which blinded both guards and the recovery ladder for an
+            // evening (2026-10-14) while every heartbeat looked fine.
+            o.put("fkbAuthOk", !FkbRest.authFailing());
+            KioskSettingsGuard sg = core.getKioskSettingsGuard();
+            if (sg != null) {
+                JSONObject fg = sg.snapshot().optJSONObject("foreground");
+                if (fg != null) o.put("kioskForeground", fg.optString("verdict", "?"));
+            }
 
             KioskWatchdog wd = core.getKioskWatchdog();
             if (wd != null) {
@@ -254,7 +263,8 @@ public final class Heartbeat {
             JSONObject line = new JSONObject();
             line.put("_msg", "bridge.heartbeat");
             line.put("_time", iso(System.currentTimeMillis()));
-            line.put("level", "info");
+            // A blind guard is a warning, so `level:warn` finds it without knowing the field.
+            line.put("level", body.optBoolean("fkbAuthOk", true) ? "info" : "warn");
             line.put("context.source", "piano-bridge");
             line.put("context.app", "piano-bridge");
             line.put("context.device", body.optString("deviceId", "piano-tablet"));
