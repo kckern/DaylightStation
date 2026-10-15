@@ -51,8 +51,9 @@ export default function TimelineOverlay({ marks, width, top, height, playheadX =
       {/* recap playhead — where the timelapse is now (recapTimeMap.js) */}
       {Number.isFinite(playheadX) && (
         <g className="session-detail__playhead">
-          <line x1={playheadX} y1={0} x2={playheadX} y2={height} stroke="#fff" strokeWidth={2} opacity={0.9} />
-          <circle cx={playheadX} cy={0} r={4} fill="#fff" />
+          {/* quiet on purpose: a reference line, not a mark competing with the data */}
+          <line x1={playheadX} y1={0} x2={playheadX} y2={height} stroke="#fff" strokeWidth={1} opacity={0.4} />
+          <circle cx={playheadX} cy={0} r={2.5} fill="#fff" opacity={0.6} />
         </g>
       )}
     </svg>
