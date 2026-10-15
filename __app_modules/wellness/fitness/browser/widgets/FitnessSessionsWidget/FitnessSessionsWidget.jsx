@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
 import { useScreenData } from "../../../../../../__capabilities/screen-host/browser/data.mjs";
@@ -68,23 +69,45 @@ function formatClock(timestamp, timezone) {
 
 // ─── Sessions Card ─────────────────────────────────────────
 
+// Mirrors the hydrated card exactly — same wrapper (no title), same Stack gap,
+// the real date-header element and the real row geometry (fixed poster-height
+// rows) — so data replaces placeholders in place with no shift.
+const SKELETON_ROWS = 6;
+
 function SessionsCardSkeleton() {
   return (
-    <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
-      <Stack gap="xs">
-        <div className="skeleton shimmer" style={{ height: 14, width: 100, borderRadius: 4 }} />
-        {[0, 1, 2].map(i => (
-          <div key={i} className="session-row session-row--skeleton">
-            <div className="session-row__top">
-              <div className="session-poster skeleton shimmer" />
-              <div className="session-row__info">
-                <div className="skeleton shimmer" style={{ height: 12, width: '60%', borderRadius: 3 }} />
-                <div className="skeleton shimmer" style={{ height: 10, width: '80%', borderRadius: 3 }} />
-                <div className="skeleton shimmer" style={{ height: 10, width: '40%', borderRadius: 3 }} />
+    <DashboardCard title={null} className="dashboard-card--workouts">
+      <Stack gap={4}>
+        <div>
+          {/* A real line box (nbsp) so the header is exactly as tall as a hydrated one. */}
+          <Text size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
+            {'\u00a0'}
+            <Skeleton height="0.8em" width={64} radius="xs" style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+          </Text>
+          {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+            <div key={i} className="session-row session-row--skeleton" aria-hidden="true">
+              <div className="session-row__top">
+                <Skeleton className="session-poster" radius="sm" />
+                <div className="session-row__info">
+                  <div className="session-row__title-line">
+                    <div className="session-row__show-line">
+                      <Skeleton height={15} width={30} radius="xs" />
+                      <Skeleton height={10} width="35%" radius="xs" />
+                    </div>
+                    <Skeleton height={16} width={i % 2 ? '55%' : '70%'} radius="xs" />
+                  </div>
+                  <div className="session-row__participants">
+                    <Skeleton circle height={26} width={26} />
+                    <Skeleton height={20} width={56} radius="xs" />
+                  </div>
+                  <div className="session-row__meta">
+                    <Skeleton height={10} width="40%" radius="xs" />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </Stack>
     </DashboardCard>
   );
