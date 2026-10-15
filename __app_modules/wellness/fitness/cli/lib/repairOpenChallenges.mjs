@@ -12,7 +12,7 @@ import { parseArgs, bool, num } from './argv.mjs';
 export const spec = {
   name: 'repair-open-challenges',
   summary: "mark saved challenges that never resolved as 'abandoned'",
-  usage: 'repair-open-challenges [--days 365] [--apply]',
+  usage: 'fitness session repair-open-challenges [--days 365] [--apply]',
   details: "Challenges saved as result 'started' with no end are rewritten to result 'abandoned' (reason 'unresolved_at_save'). Dry-run unless --apply.",
 };
 

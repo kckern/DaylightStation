@@ -2635,6 +2635,17 @@ export class FitnessSession {
     for (const challengeId of findOpenChallenges(this.timeline.events)) {
       this.logEvent('challenge_end', { challengeId, result: 'abandoned', reason: 'session_end' }, now);
     }
+    // A resumed session restores already-consolidated records; one left open
+    // across a crash/reload is a `challenge` record, not a start/end pair.
+    for (const evt of this.timeline.events) {
+      const d = evt?.data;
+      if (evt?.type !== 'challenge' || !d) continue;
+      if (d.result != null && d.result !== 'started') continue;
+      if (Number.isFinite(d.end)) continue;
+      d.result = 'abandoned';
+      d.reason = 'session_end';
+      d.end = now;
+    }
   }
 
   /**

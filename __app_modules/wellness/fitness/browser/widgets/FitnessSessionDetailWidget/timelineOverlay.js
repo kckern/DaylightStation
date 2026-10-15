@@ -92,16 +92,16 @@ export function computeVideoMarkers(events, opts) {
   });
 }
 
-/**
- * Challenge markers as duration spans. Each marker carries x..xEnd (width) from the
- * event's start/end, plus type/zoneId so the renderer can tint by challenge type
- * (cycle) or HR zone (warm/hot). An unfinished challenge (no outcome) is a short stub.
- */
 // A challenge with no outcome (open at session end, or saved before that was
 // recorded) is drawn as a short stub at its start, not a bar to the session end.
 export const UNRESOLVED_STUB_PX = 14;
 const RESOLVED_RESULTS = new Set(['success', 'failed', 'cleared', 'replaced']);
 
+/**
+ * Challenge markers as duration spans. Each marker carries x..xEnd (width) from the
+ * event's start/end, plus type/zoneId so the renderer can tint by challenge type
+ * (cycle) or HR zone (warm/hot). An unfinished challenge (no outcome) is a short stub.
+ */
 export function computeChallengeMarkers(events, opts) {
   if (!Array.isArray(events) || !Number.isFinite(opts?.sessionStartMs)) return [];
   return events
