@@ -43,6 +43,7 @@ import * as backfillCalories from "./lib/backfillCalories.mjs";
 import * as backfillEnrichment from "./lib/backfillEnrichment.mjs";
 import * as push from "./lib/push.mjs";
 import * as repairNotes from "./lib/repairNotes.mjs";
+import * as backfillRouteTracks from "./lib/backfillRouteTracks.mjs";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -86,6 +87,7 @@ const GROUPS = {
       'backfill-enrichment': cmd(backfillEnrichment),
       push: cmd(push),
       'repair-notes': cmd(repairNotes),
+      'backfill-route-tracks': cmd(backfillRouteTracks),
     },
     aliases: stravaCrud.aliases,
   },

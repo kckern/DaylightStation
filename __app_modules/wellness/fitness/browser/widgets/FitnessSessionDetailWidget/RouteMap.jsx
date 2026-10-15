@@ -70,7 +70,7 @@ function computeTilesAndRoute(decodedPoints, zoom, centerX, centerY, viewW, view
   return { tiles, routePoints, start: routePoints[0], end: routePoints[routePoints.length - 1] };
 }
 
-export default function RouteMap({ polyline, sessionId, distance, elevation }) {
+export default function RouteMap({ polyline, sessionId, distance, elevation, cursor = null }) {
   const containerRef = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(null);
@@ -127,6 +127,12 @@ export default function RouteMap({ polyline, sessionId, distance, elevation }) {
     if (!decoded || !activeCenter || activeZoom == null || size.width === 0) return null;
     return computeTilesAndRoute(decoded, activeZoom, activeCenter.x, activeCenter.y, size.width, size.height);
   }, [decoded, activeZoom, activeCenter, size.width, size.height]);
+  // Same projection and offset as the route (computeTilesAndRoute).
+  const cursorPx = useMemo(() => {
+    if (!cursor || !activeCenter || activeZoom == null || size.width === 0) return null;
+    const [px, py] = latLngToPixel(cursor[0], cursor[1], activeZoom);
+    return [px + size.width / 2 - activeCenter.x, py + size.height / 2 - activeCenter.y];
+  }, [cursor, activeZoom, activeCenter, size.width, size.height]);
 
   // Wheel zoom — zoom toward mouse position
   const handleWheel = useCallback((e) => {
@@ -259,6 +265,13 @@ export default function RouteMap({ polyline, sessionId, distance, elevation }) {
             <polyline points={svgPoints} fill="none" stroke={routeColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
             {mapData.start && <circle cx={mapData.start[0]} cy={mapData.start[1]} r="6" fill="#4ade80" stroke="#166534" strokeWidth="2" />}
             {mapData.end && <circle cx={mapData.end[0]} cy={mapData.end[1]} r="6" fill="#f87171" stroke="#991b1b" strokeWidth="2" />}
+            {/* where the rider was at the pane's time cursor (routeTrack.js) */}
+            {cursorPx && (
+              <g className="route-map__cursor">
+                <circle cx={cursorPx[0]} cy={cursorPx[1]} r="13" fill="#fff" opacity="0.25" />
+                <circle cx={cursorPx[0]} cy={cursorPx[1]} r="7" fill="#fff" stroke="#111" strokeWidth="2" />
+              </g>
+            )}
           </svg>
         </>
       )}

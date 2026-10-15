@@ -200,3 +200,34 @@ export function applyStravaTimeline(session, timeline, username) {
     },
   };
 }
+
+/**
+ * A route with time on it: Strava's `latlng` + `time` streams downsampled to one
+ * point per `stepSeconds` (and always the last), positions rounded to 5 decimals
+ * (~1 m). `t[i]` is seconds from the activity start — which is the session start
+ * for a Strava-built session — so the detail pane can place a rider on the route
+ * at any moment of the shared time axis. The summary polyline has no times.
+ *
+ * @param {Array<[number, number]>} latlng
+ * @param {number[]} time - seconds from activity start, same length as latlng
+ * @returns {{ stepSeconds: number, t: number[], points: Array<[number, number]> }|null}
+ */
+export function buildRouteTrack(latlng, time, stepSeconds = 5) {
+  if (!Array.isArray(latlng) || !Array.isArray(time) || latlng.length < 2 || latlng.length !== time.length) return null;
+  const round = (n) => Math.round(n * 1e5) / 1e5;
+  const t = [];
+  const points = [];
+  let nextAt = -Infinity;
+  for (let i = 0; i < latlng.length; i++) {
+    const p = latlng[i];
+    const s = Number(time[i]);
+    if (!Array.isArray(p) || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || !Number.isFinite(s)) continue;
+    const last = i === latlng.length - 1;
+    if (s >= nextAt || last) {
+      t.push(s);
+      points.push([round(p[0]), round(p[1])]);
+      nextAt = s + stepSeconds;
+    }
+  }
+  return points.length >= 2 ? { stepSeconds, t, points } : null;
+}
