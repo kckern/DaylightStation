@@ -166,4 +166,38 @@ describe('FitnessSessionDetailWidget — refresh when its list row changes', () 
     del().click();
     await waitFor(() => expect(global.fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true));
   });
+
+  it('switching to a session in the list renders its header from the row at once; only the charts wait', async () => {
+    const NEXT = '20261009153448';
+    sessionsValue = list(
+      { sessionId: ID, date: '2026-05-28' },
+      {
+        sessionId: NEXT, date: '2026-10-09', timezone: 'UTC',
+        startTime: Date.parse('2026-10-09T15:34:00Z'), endTime: Date.parse('2026-10-09T16:17:00Z'), elapsedMs: 43 * 60_000,
+        media: { primary: { title: 'Sonic & Sega All Stars Racing', showTitle: 'Game Cycling', contentId: 'plex:1', grandparentId: 'plex:2' } },
+        participants: { 'test-rider': { displayName: 'Test Rider', measuredDurationMs: 39 * 60_000 } },
+        totalRings: 2293, maxSufferScore: 8,
+        voiceMemos: [{ transcript: 'We finished the egg cup.' }],
+      },
+    );
+    const { rerender, container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(container.querySelector('.session-detail__header')).not.toBeNull());
+
+    global.fetch.mockImplementationOnce(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    rerender(<FitnessSessionDetailWidget sessionId={NEXT} />);
+
+    const root = container.querySelector('.session-detail');
+    expect(root.classList.contains('session-detail--pending')).toBe(true);
+    expect(root.classList.contains('session-detail--stale')).toBe(false);
+    expect(container.textContent).toContain('Sonic & Sega All Stars Racing');
+    expect(container.textContent).toContain('2293');
+    expect(container.textContent).toContain('We finished the egg cup.');
+    expect(container.textContent).toContain('Test Rider 39m measured');
+    expect(container.textContent).toContain('3:34pm – 4:17pm');
+    expect(container.querySelector('.session-detail__chart .session-detail__skeleton-plot')).not.toBeNull();
+    expect(container.querySelectorAll('.session-detail__skeleton-lane')).toHaveLength(1);
+
+    resolveFetch({ ok: true, json: async () => ({ sessionId: NEXT, summary: { voiceMemos: [] }, timeline: {} }) });
+    await waitFor(() => expect(container.querySelector('.session-detail--pending')).toBeNull());
+  });
 });
