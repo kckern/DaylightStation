@@ -1,44 +1,29 @@
-import React from 'react';
-import { useTimelineMarkers } from "./useTimelineMarkers.js";
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { layoutVideoCards } from "./videoCardLayout.js";
-import { getChallengeMarkerColor } from "../../lib/activities/challengeTypeRegistry.js";
-import { MARKER_FILL_OPACITY } from "../../lib/chartConstants.js";
 import "./MarkerGutter.scss";
 
 /**
- * Center gutter between the line chart (top) and the HR-area lanes (bottom).
- *
- * It carries the vertical indicators THROUGH this band — challenge duration rectangles
- * (solid edge on the right = challenge end) and video-change dashed lines — so the
- * indicators read as one continuous cut across all three layers (line chart, gutter,
- * lanes). Video-change poster cards live here; challenge number badges live at the top
- * of the line chart. Same tick axis (useTimelineMarkers) keeps everything aligned.
+ * Center gutter between the rings chart (top) and the heart-rate lanes (bottom):
+ * it holds the video-change poster cards. The vertical lines that run through it
+ * — video changes, challenges, race bands, seams — are TimelineOverlay's, drawn
+ * once for the whole stack; the cards are placed from the same marks
+ * (buildSessionMarks), so each card sits on its line.
  */
-export default function MarkerGutter({ sessionData, primaryMediaKey }) {
-  const { ref, width, height, challengeMarkers, videoMarkers } = useTimelineMarkers(sessionData, primaryMediaKey);
+export default function MarkerGutter({ videoMarkers = [] }) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const cardLayout = layoutVideoCards(videoMarkers, width);
 
   return (
     <div ref={ref} className="marker-gutter">
-      <svg className="marker-gutter__lines" width={width} height={height} aria-hidden="true">
-        {challengeMarkers.map((m, i) => {
-          const color = getChallengeMarkerColor(m);
-          const w = Math.max(m.width, 2);
-          return (
-            <g key={`gl-chal-${i}`}>
-              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={MARKER_FILL_OPACITY} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.8} />
-            </g>
-          );
-        })}
-        {videoMarkers.map((m, i) => (
-          <g key={`gl-vid-${i}`}>
-            <line x1={m.x} y1={0} x2={m.x} y2={height}
-              stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="6 4" />
-          </g>
-        ))}
-      </svg>
-      {videoMarkers.map((m, i) => {
+      {width > 0 && videoMarkers.map((m, i) => {
         const { flip, captionWidth, zIndex } = cardLayout[i];
         return (
           <div

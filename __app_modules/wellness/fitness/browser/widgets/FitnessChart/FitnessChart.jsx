@@ -639,11 +639,14 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 					return (
 						<g key={`co-chal-${i}`}>
 							{/* whisper fill — the bracket + edge line carry the duration signal */}
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
+							{!overlay.external && (
+								<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
+							)}
 							{/* duration bracket hanging under the badge row: start → end */}
 							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
-							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8) */}
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8);
+							    with an external overlay the full-height end line is TimelineOverlay's */}
+							{!overlay.external && <line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />}
 						</g>
 					);
 				})}
@@ -877,7 +880,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
-const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey }) => {
+const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey, axisTicks, marks }) => {
 	useRenderProfiler('FitnessChart');
 	const {
 		participants,
@@ -1074,7 +1077,16 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
 		return Number(src?.timeline?.tick_count) || 0;
 	})();
-	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
+	// Session detail passes the pane's shared axis (`axisTicks`, sessionTimeline.js):
+	// the chart, the HR lanes and the full-height mark overlay must use ONE tick
+	// count, not three that agree only by convention.
+	const ownTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
+	const effectiveTicks = axisTicks > 0 ? axisTicks : ownTicks;
+	useEffect(() => {
+		if (axisTicks > 0 && maxIndex + 1 > axisTicks) {
+			getLogger().warn('fitness_chart.axis_overrun', { axisTicks, seriesTicks: maxIndex + 1 });
+		}
+	}, [axisTicks, maxIndex]);
 	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
 	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : Y_SCALE_BASE * MIN_GRID_LINES;
 	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing
@@ -1347,6 +1359,20 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 	// chart below in alignment. Detail-only: live mode has no sessionData.seams/activities.
 	const raceOverlay = useMemo(() => {
 		if (!isHistorical) return null;
+		// Detail pane: marks come pre-built on the shared axis, and TimelineOverlay
+		// draws their fills and lines full-height behind the stack. The chart keeps
+		// only its annotations — challenge badges and their duration brackets.
+		if (marks) {
+			return {
+				external: true,
+				bands: [],
+				seams: [],
+				challengeMarkers: marks.challenges || [],
+				videoMarkers: [],
+				top: CHART_MARGIN.top,
+				bottom: chartHeight - CHART_MARGIN.bottom,
+			};
+		}
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
 		const seams = src?.seams;
 		const activities = src?.activities;
@@ -1385,7 +1411,7 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
-	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries, primaryMediaKey]);
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries, primaryMediaKey, marks]);
 
 	const hasData = allEntries.length > 0 && paths.length > 0;
 

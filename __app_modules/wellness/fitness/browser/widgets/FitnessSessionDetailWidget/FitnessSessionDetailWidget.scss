@@ -4,6 +4,7 @@
 // to the SAME box, so the 25% header / chart / 33% lanes resolve identically and
 // nothing moves when data lands (a map session used to stop 40px short).
 .session-detail {
+  position: relative; // TimelineOverlay is placed against the pane
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -534,12 +535,23 @@
     font-size: 0.65rem;
   }
 
+  // The stack's vertical marks (TimelineOverlay): one SVG behind the chart,
+  // gutter and lanes, which are transparent and draw on top of it.
+  &__overlay {
+    position: absolute;
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+
   // Chart row — grows to fill space left by header + gutter + timeline
   &__chart {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
     position: relative;
+    z-index: 1;
 
     // The rider legend (tap to focus) sat in the right margin, where the
     // end-of-line ring labels go, and covered them. Ring totals only rise, so
@@ -572,5 +584,6 @@
     flex: 0 0 33%;
     overflow: hidden;
     position: relative;
+    z-index: 1;
   }
 }
