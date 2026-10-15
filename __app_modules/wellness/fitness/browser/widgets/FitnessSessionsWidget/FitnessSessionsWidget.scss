@@ -59,10 +59,10 @@
       background: linear-gradient(
         to right,
         rgba(26, 26, 46, 1) 0%,
-        rgba(26, 26, 46, 1) 45%,
-        rgba(26, 26, 46, 0.8) 65%,
-        rgba(26, 26, 46, 0.3) 85%,
-        rgba(26, 26, 46, 0) 100%
+        rgba(26, 26, 46, 1) 55%,
+        rgba(26, 26, 46, 0.85) 72%,
+        rgba(26, 26, 46, 0.45) 88%,
+        rgba(26, 26, 46, 0.15) 100%
       );
     }
 
@@ -75,10 +75,10 @@
       background: linear-gradient(
         to right,
         rgba(20, 40, 80, 1) 0%,
-        rgba(20, 40, 80, 0.95) 45%,
-        rgba(20, 40, 80, 0.7) 65%,
-        rgba(20, 40, 80, 0.3) 85%,
-        rgba(34, 139, 230, 0) 100%
+        rgba(20, 40, 80, 1) 55%,
+        rgba(20, 40, 80, 0.85) 72%,
+        rgba(20, 40, 80, 0.45) 88%,
+        rgba(34, 139, 230, 0.15) 100%
       );
     }
   }
@@ -176,6 +176,7 @@
 
 .session-row__duration-badge {
   flex-shrink: 0;
+  align-self: flex-start; // alone in the column title-line it would stretch full width
   background: rgba(0, 0, 0, 0.65);
   color: rgba(255, 255, 255, 0.85);
   font-size: 0.65rem;
@@ -224,14 +225,44 @@
 }
 
 // --- Participants ---
+// Riders and totals share one line. The totals (rings, suffer) are the
+// session's summary and must never be the part that falls off: the rider group
+// is the one that shrinks and clips; the totals sit right after it, unshrinkable.
 
 .session-row__participants {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0 6px;
-  margin-top: 4px;
+  gap: 0 12px;
+  margin-top: 2px;
   min-height: 30px;
+  min-width: 0;
+}
+
+.session-row__riders {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+
+  // 3+ riders: overlapping avatars, minutes move to the tooltip.
+  &--stacked {
+    gap: 0;
+
+    .session-row__participant + .session-row__participant {
+      margin-left: -8px;
+    }
+  }
+}
+
+.session-row__totals {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .session-row__participant-time {
@@ -266,13 +297,10 @@
 
 .session-row__rings {
   background: #f5c54266;
-  margin-left: 6px;
 }
 
 .session-row__suffer {
   background: #fc4c0266;
-  text-decoration: none;
-  color: #fff;
 }
 
 .session-avatar {
@@ -319,18 +347,13 @@
 
 // --- Voice Memo Snippet ---
 
+// Its own full-width line under the time line — it used to share a line with
+// the time and got about six words.
 .session-row__memo-line {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  margin-top: 2px;
-}
-
-.session-row__memo-time {
-  flex-shrink: 0;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  min-width: 0;
 }
 
 .session-row__memo-icon {
@@ -346,10 +369,7 @@
   overflow: hidden;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
   font-style: italic;
-
-  &--2line {
-    -webkit-line-clamp: 2;
-  }
+  min-width: 0;
 }

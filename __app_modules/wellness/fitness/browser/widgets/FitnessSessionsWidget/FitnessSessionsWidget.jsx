@@ -103,15 +103,17 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
     );
   }
 
-  const groups = [];
-  let currentDate = null;
+  // Group by date even when a day's sessions are not adjacent in the list (a
+  // skeletal record with no start time sorts last): a second group for the same
+  // day rendered a duplicate React key and a stray day header at the bottom.
+  const groupsByDate = new Map();
   for (const s of sessions) {
-    if (s.date !== currentDate) {
-      currentDate = s.date;
-      groups.push({ date: s.date, label: formatDate(s.date), sessions: [] });
+    if (!groupsByDate.has(s.date)) {
+      groupsByDate.set(s.date, { date: s.date, label: formatDate(s.date), sessions: [] });
     }
-    groups[groups.length - 1].sessions.push(s);
+    groupsByDate.get(s.date).sessions.push(s);
   }
+  const groups = [...groupsByDate.values()];
   for (const g of groups) g.sessions.reverse();
 
   return (
@@ -221,7 +223,11 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                         const memoText = s.voiceMemos?.length > 0
                           ? s.voiceMemos.map(m => m.transcript).filter(Boolean).join(' \u2022 ')
                           : null;
-                        const isSolo = participantIds.length === 1;
+                        // From three riders up the per-rider minutes no longer fit
+                        // beside the totals; avatars overlap and minutes move to the
+                        // avatar's tooltip (the recap shows them in full).
+                        const ridersStacked = participantIds.length >= 3;
+                        const hasTotals = s.totalRings > 0 || s.maxSufferScore > 0;
                         const startTimeStr = formatClock(s.startTime, s.timezone);
                         const endTimestamp = s.endTime || (s.startTime && elapsedMs ? s.startTime + elapsedMs : null);
                         const endTimeStr = formatClock(endTimestamp, s.timezone);
@@ -231,7 +237,45 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
 
                         return (
                           <>
-                            {!memoText && timeStr && (
+                            {(participantIds.length > 0 || hasTotals) && (
+                              <div className="session-row__participants">
+                                {participantIds.length > 0 && (
+                                  <div className={`session-row__riders${ridersStacked ? ' session-row__riders--stacked' : ''}`}>
+                                    {Object.entries(s.participants).map(([id, p]) => {
+                                      const minutes = formatMinutes(p.measuredDurationMs);
+                                      return (
+                                        <span key={id} className="session-row__participant">
+                                          <img
+                                            src={`/api/v1/static/users/${id}`}
+                                            alt={p.displayName}
+                                            title={minutes ? `${p.displayName} · ${minutes}` : p.displayName}
+                                            className="session-avatar"
+                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                          />
+                                          {minutes && !ridersStacked && (
+                                            <span className="session-row__participant-time" title={`${p.displayName} measured time`}>
+                                              {minutes}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {hasTotals && (
+                                  <div className="session-row__totals">
+                                    {s.totalRings > 0 && (
+                                      <span className="session-row__rings"><RingIcon size={14} />{s.totalRings}</span>
+                                    )}
+                                    {s.maxSufferScore > 0 && (
+                                      <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {timeStr && (
                               <div className="session-row__meta">
                                 <Text size="xs" c="dimmed" fw={500}>{timeStr}</Text>
                                 {elapsedLabel && <Text size="xs" c="dimmed">·</Text>}
@@ -239,42 +283,10 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                               </div>
                             )}
 
-                            {participantIds.length > 0 && (
-                              <div className={`session-row__participants${isSolo && memoText ? ' session-row__participants--with-memo' : ''}`}>
-                                {Object.entries(s.participants).map(([id, p]) => (
-                                  <span key={id} className="session-row__participant">
-                                    <img
-                                      src={`/api/v1/static/users/${id}`}
-                                      alt={p.displayName}
-                                      title={p.displayName}
-                                      className="session-avatar"
-                                      onError={(e) => { e.target.style.display = 'none'; }}
-                                    />
-                                    {formatMinutes(p.measuredDurationMs) && (
-                                      <span className="session-row__participant-time" title={`${p.displayName} measured time`}>
-                                        {formatMinutes(p.measuredDurationMs)}
-                                      </span>
-                                    )}
-                                  </span>
-                                ))}
-                                {s.totalRings > 0 && (
-                                  <span className="session-row__rings"><RingIcon size={14} />{s.totalRings}</span>
-                                )}
-                                {s.maxSufferScore > 0 && (
-                                  <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
-                                )}
-                              </div>
-                            )}
-
                             {memoText && (
                               <div className="session-row__memo-line">
-                                {timeStr && (
-                                  <span className="session-row__memo-time">
-                                    {timeStr}{elapsedLabel ? ` · ${elapsedLabel}` : ''}
-                                  </span>
-                                )}
-                                <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
-                                <span className={`session-row__memo-text${isSolo ? ' session-row__memo-text--2line' : ''}`}>{memoText}</span>
+                                <span className="session-row__memo-icon">{'🎙'}</span>
+                                <span className="session-row__memo-text">{memoText}</span>
                               </div>
                             )}
                           </>
