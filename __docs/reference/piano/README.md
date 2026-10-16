@@ -11,7 +11,7 @@ the only input it needs.
 
 This document is the map of the whole stack — the runtime it lives in, the app that
 renders, the MIDI pipeline that feeds it, the sound path, the modes, and the backend it
-talks to. For the physical build and tablet provisioning see [kiosk-setup.md](./kiosk-setup.md);
+talks to. For the physical build and tablet provisioning see `ops:docs/reference/piano/kiosk-setup.md`;
 for the game engines see [piano-games.md](./piano-games.md).
 
 ---
@@ -338,7 +338,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Transport primitives | `frontend/src/modules/Piano/PianoKiosk/transport/` |
 | Kiosk runtime | `frontend/src/lib/fkb.js` · `PianoKiosk/{useInactivityReturn,usePianoScreensaver,useReloadGuard,useRenderWatchdog,useVanishingControls}.js[x]` |
 | Backend | `__backend/src/4_api/v1/routers/piano.mjs` · `__backend/src/4_api/v1/routers/admin/apps.mjs` |
-| Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
+| Hardware + setup | `ops:docs/reference/piano/kiosk-setup.md` |
 | Game engines | [piano-games.md](./piano-games.md) |
 | Game time budget + match gate | [games-budget-gate.md](./games-budget-gate.md) |
 | Game platform (host, chrome kit, families) | [piano-game-platform.md](./piano-game-platform.md) |

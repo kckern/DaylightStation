@@ -433,4 +433,4 @@ hot (no rebuild), widgets are code (rebuild), and the device is a thin PNG clien
 - `_extensions/eink-panel/BUILD.md` — reproducible build, hard-won gotchas, **porting recipe** for new devices
 - `data/household/screens/kitchen-eink.yml` — reference SSOT
 - `frontend/src/screen-framework/` — the browser-screen framework this server framework parallels
-- `__docs/runbooks/kiosk-monitoring.md` — the *browser* kiosk class (different system; for contrast)
+- `ops:docs/runbooks/kiosk-monitoring.md` — the *browser* kiosk class (different system; for contrast)

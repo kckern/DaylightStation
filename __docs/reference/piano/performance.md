@@ -409,4 +409,4 @@ outcomes with score/revision/configuration/run identity; it must never include r
 
 ---
 
-*Subsystem overview: [README.md](./README.md). Hardware and tablet setup: [kiosk-setup.md](./kiosk-setup.md).*
+*Subsystem overview: [README.md](./README.md). Hardware and tablet setup: `ops:docs/reference/piano/kiosk-setup.md`.*
