@@ -97,8 +97,12 @@ if [ ! -f "$PAT_FILE" ]; then
   # A visible warning is worth more than a guard nobody keeps.
   printf '\n\033[1;33mWARNING\033[0m — %s not found; household PII patterns were NOT checked.\n' "$PAT_FILE" >&2
   printf 'Copy it from a machine that has it before pushing from here.\n\n' >&2
-  exit 0
+  PAT_FILE=/dev/null
 fi
+# Instance patterns kept in the content workspace itself, so the list of setup
+# identifiers (paths, hosts, IDs) lives with the setup rather than this checkout.
+INST_FILE="${BASE:+$BASE/.claude/instance-patterns.txt}"
+[ -n "$INST_FILE" ] && [ -f "$INST_FILE" ] || INST_FILE=/dev/null
 
 # Known-safe phrases are removed before matching. "Felix Lullabye" is a Plex
 # media title, not a person; an optional gitignored allowlist can add more.
@@ -118,8 +122,10 @@ while IFS= read -r pat; do
   [ -z "$pat" ] && continue
   case "$pat" in \#*) continue ;; esac
   if printf '%s' "$FILTERED" | grep -qiwE -- "$pat"; then
-    deny "added lines match household PII/secret pattern '$pat' (.claude/secret-patterns.local.txt)."
+    deny "added lines match household PII/instance pattern '$pat' (.claude/secret-patterns.local.txt or \$DAYLIGHT_BASE_PATH/.claude/instance-patterns.txt)."
   fi
-done < "$PAT_FILE"
+done <<EOF
+$(cat "$PAT_FILE" "$INST_FILE")
+EOF
 
 exit 0

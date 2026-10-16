@@ -205,7 +205,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 4. **Archive when obsolete** - Move to `_archive/` in the ops docs when superseded or no longer relevant
 5. **Superpowers specs/plans default location** - `{env.ops_docs}/superpowers/specs/` and `{env.ops_docs}/superpowers/plans/`, not this repo
 6. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
-7. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{env.prod_host}` or reference `.claude/settings.local.json`
+7. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{env.prod_host}` or reference `.claude/settings.local.json`. Identifiers specific to an installation are listed in `$DAYLIGHT_BASE_PATH/.claude/instance-patterns.txt`, which the secret guard and pre-push hook enforce alongside `.claude/secret-patterns.local.txt`.
 
 ---
 

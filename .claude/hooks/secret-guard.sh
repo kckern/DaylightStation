@@ -145,7 +145,8 @@ if [ ! -f "$PAT_FILE" ]; then
   done
 fi
 
-if [ -f "$PAT_FILE" ]; then
+scan_patterns() {
+  [ -f "$1" ] || return 0
   while IFS= read -r pat; do
     pat="${pat%%$'\r'}"
     [ -z "$pat" ] && continue
@@ -153,11 +154,17 @@ if [ -f "$PAT_FILE" ]; then
     HITS=$(grep -iwE -- "$pat" "$FILTERED" 2>/dev/null | head -5 | awk -F'\t' '{ printf "  [%s] %s\n", $1, $2 }')
     if [ -n "$HITS" ]; then
       N=$(grep -icwE -- "$pat" "$FILTERED" 2>/dev/null)
-      deny "BLOCKED: $N line(s) about to be committed/pushed match household PII/secret pattern '$pat' (.claude/secret-patterns.local.txt).
+      deny "BLOCKED: $N line(s) about to be committed/pushed match household PII/instance pattern '$pat' ($1).
 $HITS
-This repo is public — scrub the real names/device IDs (use test-user style placeholders such as 'test-learner') before committing. The scan covers staged, unstaged AND untracked content, so staging later will not clear it."
+This repo is public — scrub real names/device IDs/instance paths (use placeholders such as 'test-learner' or \$DAYLIGHT_BASE_PATH) before committing. Setup-specific notes and data belong in the content workspace at \$DAYLIGHT_BASE_PATH. The scan covers staged, unstaged AND untracked content, so staging later will not clear it."
     fi
-  done < "$PAT_FILE"
-fi
+  done < "$1"
+}
+
+scan_patterns "$PAT_FILE"
+
+# --- 3) Instance patterns kept in the content workspace ($DAYLIGHT_BASE_PATH) ---
+# The list of setup identifiers lives with the setup, not in this checkout.
+[ -n "$BASE_PATH" ] && scan_patterns "$BASE_PATH/.claude/instance-patterns.txt"
 
 exit 0
