@@ -13,7 +13,7 @@ import { encodeSchoolCalcLocalState, SCHOOLCALC_LOCAL_FLAGS } from "./lib/school
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(HERE, '..', 'dist');
 const PACKS = path.join(OUT, 'content-packs');
-const CONTENT = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/catalog';
+const CONTENT = `${process.env.DAYLIGHT_BASE_PATH}/data/content/school/catalog`;
 const DEVICE_ID = 'TI86A';
 const ACCESS = Object.freeze({ learnerKeys: [1, 2, 3, 4], guest: true });
 const codec = new Ti86SchoolCalcCodec();

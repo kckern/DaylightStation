@@ -13,7 +13,7 @@ import { createTi86StringFile } from "./lib/ti86-string-file.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION = path.resolve(HERE, '..');
-const DEFAULT_ROOT = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/catalog';
+const DEFAULT_ROOT = `${process.env.DAYLIGHT_BASE_PATH}/data/content/school/catalog`;
 const rootIndex = process.argv.indexOf('--content-root');
 const contentRoot = path.resolve(rootIndex === -1 ? DEFAULT_ROOT : process.argv[rootIndex + 1] ?? '');
 const outputIndex = process.argv.indexOf('--output');

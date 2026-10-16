@@ -17,10 +17,10 @@ const INDEX =
   // The live index is the one come-follow-me-ot-2026's `reader.page_index`
   // names, under media/; the legacy data/content path is kept as a fallback.
   [
-    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/school/scripture/come-follow-me-ot-2026/bible/nirv-adventure-bible-for-early-readers/mapping/2014-inferred/page-index.yml',
-    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/scripture/nirv-adventure-early-readers/page-index.yml',
+    `${process.env.DAYLIGHT_BASE_PATH}/media/school/scripture/come-follow-me-ot-2026/bible/nirv-adventure-bible-for-early-readers/mapping/2014-inferred/page-index.yml`,
+    `${process.env.DAYLIGHT_BASE_PATH}/data/content/school/scripture/nirv-adventure-early-readers/page-index.yml`,
   ].find((p) => fs.existsSync(p));
-const CORPUS = process.env.NIRV_CORPUS || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/readalong/scripture';
+const CORPUS = process.env.NIRV_CORPUS || `${process.env.DAYLIGHT_BASE_PATH}/data/content/readalong/scripture`;
 const OUT = process.argv[2] || path.join(process.cwd(), 'nirv-adventure-page-index.pdf');
 
 // Trimmed to the book's own page size so the printed sheets bind in flush.

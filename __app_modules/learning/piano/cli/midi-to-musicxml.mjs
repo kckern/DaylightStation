@@ -398,7 +398,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
 function main() {
   // New layout: canonical MusicXML asset folders live at media/midi root; the
   // source packs, the old .mid tree, backups and the ledger live under _workspace.
-  const ROOT = process.env.MIDI_ROOT || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/midi';
+  const ROOT = process.env.MIDI_ROOT || `${process.env.DAYLIGHT_BASE_PATH}/media/midi`;
   const WORKSPACE = path.join(ROOT, '_workspace');
   const LOOPS = process.env.LOOPS_DIR || path.join(WORKSPACE, 'loops-midi');
   const OUT = process.env.OUT_DIR || ROOT; // type folders (chords/, melodies/, …) at root

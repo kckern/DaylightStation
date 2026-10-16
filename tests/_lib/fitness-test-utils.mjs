@@ -30,7 +30,7 @@ function getDataPath() {
     if (match) return match[1].trim();
   }
   // Fallback
-  return '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+  return `${process.env.DAYLIGHT_BASE_PATH}/data`;
 }
 
 /**

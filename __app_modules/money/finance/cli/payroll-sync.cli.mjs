@@ -16,7 +16,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND = path.resolve(__dirname, '../../../../__backend');
-const DATA = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+const DATA = `${process.env.DAYLIGHT_BASE_PATH}/data`;
 
 // Use the backend's module resolution by importing through its src tree.
 // The CLI runs with cwd at the project root, but # aliases need backend.

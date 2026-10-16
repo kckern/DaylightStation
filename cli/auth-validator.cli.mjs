@@ -70,7 +70,7 @@ const projectRoot = path.resolve(__dirname, '..');
 const possibleDataPaths = [
     process.env.DAYLIGHT_DATA_PATH,
     process.env.DATA_PATH,
-    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data',
+    `${process.env.DAYLIGHT_BASE_PATH}/data`,
     path.join(projectRoot, 'data')
 ].filter(Boolean);
 
@@ -129,8 +129,8 @@ const validateSystem = () => {
     // Check multiple possible locations for config.secrets.yml
     const possibleSecretsPaths = [
         path.join(projectRoot, 'config', 'config.secrets.yml'),
-        '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/config.secrets.yml',
-        '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/config.secrets-local.yml',
+        `${process.env.DAYLIGHT_BASE_PATH}/config/config.secrets.yml`,
+        `${process.env.DAYLIGHT_BASE_PATH}/config/config.secrets-local.yml`,
     ];
     
     let secretsPath = null;

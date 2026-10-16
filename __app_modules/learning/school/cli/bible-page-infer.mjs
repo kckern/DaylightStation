@@ -19,7 +19,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 
 const DATA = process.env.DAYLIGHT_DATA_DIR ||
-  '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+  `${process.env.DAYLIGHT_BASE_PATH}/data`;
 const CONTENT = path.join(DATA, 'content');
 const LEGACY_INDEX = path.join(CONTENT, 'school/scripture/nirv-adventure-early-readers/page-index.yml');
 const LEGACY_CACHE = path.join(CONTENT, 'school/scripture/nirv-adventure-early-readers/.pageindex-cache.txt');

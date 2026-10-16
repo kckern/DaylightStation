@@ -38,7 +38,7 @@ import axios from 'axios';
 // Resolve data directory (same search order as backend)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = process.env.DAYLIGHT_DATA_PATH
-    || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+    || `${process.env.DAYLIGHT_BASE_PATH}/data`;
 
 // Docker-compose path for volume mapping (from settings.local.json or env)
 const PLEX_COMPOSE = process.env.PLEX_COMPOSE
