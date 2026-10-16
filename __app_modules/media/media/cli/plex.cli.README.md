@@ -1,9 +1,11 @@
 # plex.cli.mjs
 
-Command-line tool for Plex library inspection: list libraries, search for items,
-fetch metadata, and verify rating keys exist. Reads Plex credentials from
-household auth (`data/household/auth/plex.yml`) via `ConfigService` — no extra
-setup needed when running on a host that has the data volume mounted.
+Command-line tool for Plex library work: list libraries and their items, search,
+fetch metadata, verify rating keys, edit metadata, manage collections, playlists
+and posters, trigger scans, and audit/repair cover art. Many commands write to
+Plex; most writing ones accept `--dry-run`. See `node cli/plex.cli.mjs --help`
+for the full list (this page covers the most-used ones). Credentials setup is
+under [Configuration](#configuration).
 
 ## Running it
 
@@ -127,14 +129,73 @@ missing (NFS flicker). `--dry-run` / `--json` supported.
 node cli/plex.cli.mjs empty-trash --section 19 --dry-run
 ```
 
+### `seasons` / `albums` / `movies` `--section <id>`
+
+Read-only listings of every season (in a show library), album (music library) or
+movie (movie library) with its rating key. Default output is tab-separated, one
+row per item, with a count on stderr; `--json` prints objects.
+
+| Command | Columns |
+|---------|---------|
+| `seasons` | id, season index, show title, season title |
+| `albums` | id, sort title, artist, album title |
+| `movies` | id, year, studio, title |
+
+```bash
+node cli/plex.cli.mjs seasons --section 4
+node cli/plex.cli.mjs albums --section 5 --json
+```
+
+### Cover art: `audit`, `rematch`, `select-thumbs`
+
+All three take a scope: `section <id>`, `collection <id>`, `playlist <id>`,
+`item <id>`, or `all` (every section, no id). `--depth 0|1|all` controls how far
+to descend into children (artist→album→track, show→season→episode). Each item is
+processed independently: a failed request is counted as an error and the run
+continues, so one bad item can't abort a long sweep.
+
+- **`audit <scope> <id>`** (read-only) reports items whose cover renders blank:
+  no poster candidates, or a selected thumb that fails to load. Default depth 0.
+  `--ids-only` prints just the rating keys, `--all-items` lists healthy items
+  too, `--json` prints the report.
+- **`rematch <scope> <id>`** asks the library agent for matches on items with no
+  poster candidates and applies the best one scoring at least `--min-score`
+  (default 85), so the agent fetches art. Lower scores are listed for manual
+  review. `--force` also re-matches items that already have art. Default depth 0.
+- **`select-thumbs <scope> <id>`** selects a poster candidate Plex already has
+  for items with none selected (e.g. episodes whose extracted frames were never
+  picked). It prefers local/embedded art, then agent art, then the middle frame.
+  `--slot N` picks candidate N instead (items with fewer candidates are left
+  alone), `--type episode` limits it to one item type, `--force` re-selects even
+  when a poster is already selected. Default depth `all`.
+
+`rematch` and `select-thumbs` accept `--dry-run`. Both exit non-zero if any item
+errored.
+
+```bash
+node cli/plex.cli.mjs audit section 4 --depth 1 --ids-only
+node cli/plex.cli.mjs rematch section 4 --dry-run
+node cli/plex.cli.mjs select-thumbs item 1234 --type episode --slot 1 --force --dry-run
+```
+
+Requests time out after 30 s; reads are retried on network errors, timeouts,
+5xx and 429.
+
 ## Flags
 
 | Flag | Applies to | Effect |
 |------|-----------|--------|
 | `--json` | all | Print the raw JSON response |
-| `--ids-only` | `search` | Print only matching rating keys, one per line |
+| `--ids-only` | `search`, `audit` | Print only matching rating keys, one per line |
 | `--deep` | `search` | Use hub search (catches episodes/tracks, not just top-level items) |
-| `--section <id>` | `search` | Limit to a single library section (see `libraries`) |
+| `--section <id>` | `search`, `seasons`, `albums`, `movies`, `refresh`, `empty-trash` | Library section (see `libraries`) |
+| `--dry-run` | write commands | Report what would change without calling Plex |
+| `--depth 0\|1\|all` | `audit`, `rematch`, `select-thumbs` | How far to descend into children |
+| `--all-items` | `audit` | Include healthy items in the report |
+| `--min-score <n>` | `rematch` | Lowest agent match score to apply (default 85) |
+| `--slot <n>` | `select-thumbs` | Select candidate n from the item's poster list |
+| `--type <t>` | `select-thumbs` | Only act on items of this type |
+| `--force` | `refresh`, `rematch`, `select-thumbs` | See each command above |
 
 ## Typical workflows
 
@@ -161,43 +222,22 @@ node cli/plex.cli.mjs info 8744 --json | jq '.Media[].Part[].file'
 
 ## Configuration
 
-Auth is resolved by `ConfigService.getHouseholdAuth('plex')`, which reads
-`data/household/auth/plex.yml` (must contain `token:`). The server URL comes
-from either:
+The CLI is self-contained (no app server bootstrap):
 
-1. `auth.server_url` in the same file, or
-2. `process.env.plex.host` / `process.env.plex.port`
+1. **Token:** `PLEX_TOKEN`, else `token:` from `household/auth/plex.yml` in the
+   data tree.
+2. **Host:** `PLEX_HOST` (a base URL), else the `plex:` map in
+   `system/config/services.yml`, keyed by `DAYLIGHT_ENV`, then the machine's
+   hostname, then the fallback entries.
 
-On the prod host, the server is `http://plex:32400` (internal docker network).
+The data tree is `DAYLIGHT_DATA_PATH`, else `$DAYLIGHT_BASE_PATH/data`
+(`DAYLIGHT_BASE_PATH` may come from the repo `.env`). If neither file is found
+locally, the CLI tries reading it from the app container with `docker exec`.
+Setting both `PLEX_TOKEN` and `PLEX_HOST` skips all file lookups.
 
-## What this CLI does *not* do
+## Playlists
 
-**Playlist mutation is not in the CLI yet.** `plex.cli.mjs` is read-only. For
-surgical playlist editing (remove one item, add items, reorder), use the app's
-Plex proxy directly — it passes through every HTTP method to Plex with the
-server's credentials already attached:
-
-```bash
-# List items in a playlist (each item has a `playlistItemID`)
-curl -s "http://localhost:3111/api/v1/proxy/plex/playlists/<playlistId>/items" \
-     -H "Accept: application/json" \
-  | jq '.MediaContainer.Metadata[] | {playlistItemID, ratingKey, title, grandparentTitle}'
-
-# Remove one item (uses playlistItemID, NOT ratingKey)
-curl -s -X DELETE \
-  "http://localhost:3111/api/v1/proxy/plex/playlists/<playlistId>/items/<playlistItemID>"
-
-# Add items (URI format: server://<machineId>/com.plexapp.plugins.library/library/metadata/<ratingKeys>)
-curl -s -X PUT \
-  "http://localhost:3111/api/v1/proxy/plex/playlists/<playlistId>/items?uri=<urlEncodedUri>"
-
-# Move an item (omit `after` to move to top)
-curl -s -X PUT \
-  "http://localhost:3111/api/v1/proxy/plex/playlists/<playlistId>/items/<playlistItemID>/move?after=<targetItemID>"
-```
-
-The gotcha: **removes target `playlistItemID`, not `ratingKey`**. The same
-media item can appear in many playlists; each appearance has its own
-`playlistItemID`. Look it up via the items list above before calling DELETE.
-
-Media files are never touched — these endpoints only modify playlist membership.
+Playlist editing is built in: see the `playlist` subcommands in `--help`
+(`list`, `items`, `create`, `add`, `remove`, `set`, `rename`, `delete`). Removal
+is by rating key; the CLI looks up each item's `playlistItemID` for you.
+Media files are never touched; these commands only change playlist membership.
