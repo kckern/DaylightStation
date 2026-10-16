@@ -14,6 +14,12 @@
  *   search <query>         Search library by title
  *   info <id>              Show metadata for a Plex ID
  *   verify <id> [id2...]   Check if ID(s) exist in Plex
+ *   seasons / albums / movies --section <id>   List IDs in a library
+ *   audit <scope> <id>     Report items whose cover art renders blank
+ *   rematch <scope> <id>   Re-match no-art items via the library agent
+ *   select-thumbs <scope> <id>  Select an existing poster candidate
+ *
+ * See showHelp() / plex.cli.README.md for the full command list.
  *
  * Options:
  *   --json                 Output as JSON
@@ -30,6 +36,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
+
+// Hard request timeout so a stalled connection (e.g. an overloaded Plex that
+// stops responding mid-request) throws instead of hanging the process forever.
+// GETs routed through PlexCLI.request() then retry it as a transient failure.
+axios.defaults.timeout = 30000;
 
 // ============================================================================
 // Config: read auth + host from the local data tree ($DAYLIGHT_BASE_PATH/data,
@@ -156,6 +167,7 @@ const flags = {
     dryRun: args.includes('--dry-run'),
     force: args.includes('--force'),
     all: args.includes('--all'),
+    allItems: args.includes('--all-items'),
     section: null,
     fromYaml: null,
     ids: null,
@@ -168,7 +180,11 @@ const valueFlags = {
     '--path': 'path',
     '--from-yaml': 'fromYaml',
     '--ids': 'ids',
-    '--ids-file': 'idsFile'
+    '--ids-file': 'idsFile',
+    '--depth': 'depth',
+    '--min-score': 'minScore',
+    '--slot': 'slot',
+    '--type': 'type'
 };
 for (const f of SCALAR_FIELDS) valueFlags[`--${f}`] = f;
 for (const k of Object.keys(TAG_FIELDS)) valueFlags[`--${k}`] = k;
@@ -228,6 +244,26 @@ class PlexCLI {
     }
 
     /**
+     * Run an axios call with retries on transient failures (network drops,
+     * timeouts, 5xx, 429). Definite client answers (other 4xx) are not retried.
+     * Keeps long sweeps from dying on one flaky read.
+     */
+    async request(fn, tries = 4) {
+        let lastErr;
+        for (let i = 0; i < tries; i++) {
+            try {
+                return await fn();
+            } catch (e) {
+                const status = e.response?.status;
+                if (status && status < 500 && status !== 429) throw e;
+                lastErr = e;
+                if (i < tries - 1) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+            }
+        }
+        throw lastErr;
+    }
+
+    /**
      * Make authenticated GET request to Plex API
      */
     async fetch(endpoint) {
@@ -236,9 +272,9 @@ class PlexCLI {
         const fullUrl = `${url}${separator}X-Plex-Token=${this.token}`;
 
         try {
-            const response = await axios.get(fullUrl, {
+            const response = await this.request(() => axios.get(fullUrl, {
                 headers: { Accept: 'application/json' }
-            });
+            }));
             return response.data;
         } catch (error) {
             if (error.response?.status === 404) {
@@ -721,6 +757,58 @@ class PlexCLI {
         return touched;
     }
 
+    // ------------------------------------------------------------------
+    // Cover-art audit & remediation
+    // ------------------------------------------------------------------
+
+    /**
+     * Children (one level down) of a container item.
+     * artist→albums, album→tracks, show→seasons, season→episodes, collection→items.
+     */
+    async getChildren(plexId) {
+        const data = await this.fetch(`library/metadata/${plexId}/children`);
+        return data?.MediaContainer?.Metadata || [];
+    }
+
+    /**
+     * Poster candidates for an item. Empty array = no real artwork. This is the
+     * authoritative "missing cover" check: a listing's `thumb` field can be a
+     * stale reference that 404s, but /posters reflects what Plex can serve.
+     */
+    async getPosters(plexId) {
+        const data = await this.fetch(`library/metadata/${plexId}/posters`);
+        return data?.MediaContainer?.Metadata || [];
+    }
+
+    /** Select an existing poster candidate (by its ratingKey) as the active poster. */
+    async selectPoster(plexId, posterRatingKey) {
+        const enc = encodeURIComponent(posterRatingKey);
+        await this.request(() => axios.put(
+            `${this.baseUrl}/library/metadata/${plexId}/poster?url=${enc}&X-Plex-Token=${this.token}`, null));
+    }
+
+    /**
+     * Ask the library agent for online matches for an item, best score first.
+     * The agent's match search can be slow or hang for some items; on any
+     * failure return [] ("no match") so one bad item never aborts a rematch run.
+     */
+    async getMatches(plexId) {
+        try {
+            const data = await this.fetch(`library/metadata/${plexId}/matches`);
+            const results = data?.MediaContainer?.SearchResult || [];
+            return results.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+        } catch {
+            return [];
+        }
+    }
+
+    /** Bind an item to an agent match guid, so the agent fetches its metadata + art. */
+    async applyMatch(plexId, guid, name) {
+        const params = new URLSearchParams({ guid, name: name || '' });
+        await this.request(() => axios.put(
+            `${this.baseUrl}/library/metadata/${plexId}/match?${params.toString()}&X-Plex-Token=${this.token}`, null));
+    }
+
     /**
      * Format search result for display
      */
@@ -736,6 +824,97 @@ class PlexCLI {
             sectionTitle: sectionTitle
         };
     }
+}
+
+// ============================================================================
+// Helpers (cover-art audit & remediation)
+// ============================================================================
+
+/** Run `fn` over `items` with bounded concurrency, preserving order. */
+async function pMap(items, concurrency, fn) {
+    const results = new Array(items.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+        while (next < items.length) {
+            const idx = next++;
+            results[idx] = await fn(items[idx], idx);
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
+
+/** Item types that have children worth descending into during an audit. */
+function hasChildrenType(type) {
+    return ['artist', 'album', 'show', 'season', 'collection'].includes(type);
+}
+
+/** GET a binary endpoint; returns { status, buffer, contentType } (never throws). */
+async function fetchBinary(plex, endpoint) {
+    const url = `${plex.baseUrl}/${endpoint}${endpoint.includes('?') ? '&' : '?'}X-Plex-Token=${plex.token}`;
+    try {
+        const r = await plex.request(() => axios.get(url, { responseType: 'arraybuffer' }));
+        return { status: r.status, buffer: Buffer.from(r.data), contentType: r.headers['content-type'] };
+    } catch (e) {
+        return { status: e.response?.status || 0, buffer: null, contentType: null };
+    }
+}
+
+const SCOPE_TYPES = 'section|collection|playlist|item|all';
+
+/**
+ * Enumerate a scope into a flat list of item metadata.
+ * type ∈ section | collection | playlist | item | all. depth: 0 | 1 | ... | 'all'.
+ */
+async function enumerateScope(plex, type, id, depth) {
+    let roots = [];
+    if (type === 'section') {
+        roots = (await plex.fetch(`library/sections/${id}/all`))?.MediaContainer?.Metadata || [];
+    } else if (type === 'collection') {
+        roots = await plex.getCollectionChildren(id);
+    } else if (type === 'playlist') {
+        roots = await plex.getPlaylistItems(id);
+    } else if (type === 'item') {
+        const m = await plex.getMetadata(id);
+        roots = m ? [m] : [];
+    } else if (type === 'all') {
+        for (const s of await plex.getLibraries()) {
+            roots.push(...((await plex.fetch(`library/sections/${s.key}/all`))?.MediaContainer?.Metadata || []));
+        }
+    } else {
+        throw new Error(`Unknown scope: ${type} (use ${SCOPE_TYPES})`);
+    }
+
+    const maxDepth = depth === 'all' ? Infinity : (Number(depth) || 0);
+    const out = [];
+    async function walk(items, d) {
+        for (const it of items) {
+            out.push(it);
+            if (d < maxDepth && hasChildrenType(it.type)) {
+                await walk(await plex.getChildren(it.ratingKey), d + 1);
+            }
+        }
+    }
+    await walk(roots, 0);
+    return out;
+}
+
+/**
+ * Choose which poster candidate to select for an item that has candidates but
+ * no selection. Prefer the file's own art (local/embedded), then an online-agent
+ * poster (tmdb/tvdb/http), and finally the middle candidate (episode frame
+ * thumbnails — middle avoids black intro/outro frames).
+ */
+function pickPosterCandidate(cands) {
+    const prov = p => (p.provider || '').toLowerCase();
+    return cands.find(p => ['local', 'embedded'].includes(prov(p)))
+        || cands.find(p => /^https?:/.test(p.key || '') || ['tmdb', 'tvdb', 'fanarttv', 'imdb'].includes(prov(p)))
+        || cands[Math.floor(cands.length / 2)];
+}
+
+/** Short human label for a poster candidate — the frame name (thumb2) or its provider. */
+function posterLabel(p) {
+    return (String(p.ratingKey || '').match(/thumb\d+/) || [])[0] || p.provider || '(uploaded)';
 }
 
 // ============================================================================
@@ -877,6 +1056,272 @@ async function cmdVerify(plex, ids) {
     const valid = results.filter(r => r.exists).length;
     console.log(`\nSummary: ${valid} valid, ${missing} missing`);
     console.log();
+}
+
+/** List every season in a show library with its rating key. */
+async function cmdSeasons(plex) {
+    if (!flags.section) {
+        console.error('Usage: plex seasons --section <show-library-id>');
+        process.exit(1);
+    }
+    const roots = (await plex.fetch(`library/sections/${flags.section}/all`))?.MediaContainer?.Metadata || [];
+    const shows = roots.filter(item => item.type === 'show');
+    const seasons = [];
+    for (const show of shows) {
+        for (const season of await plex.getChildren(show.ratingKey)) {
+            if (season.type !== 'season') continue;
+            seasons.push({
+                id: String(season.ratingKey),
+                index: season.index === undefined ? null : String(season.index),
+                title: season.title,
+                show_id: String(show.ratingKey),
+                show_title: show.title,
+                section: String(flags.section),
+            });
+        }
+    }
+    if (flags.json) {
+        console.log(JSON.stringify(seasons, null, 2));
+        return;
+    }
+    for (const season of seasons) {
+        console.log(`${season.id}\t${season.index ?? ''}\t${season.show_title}\t${season.title}`);
+    }
+    console.error(`${seasons.length} season(s) in section ${flags.section}.`);
+}
+
+/** List every album in a music library with its rating key. */
+async function cmdAlbums(plex) {
+    if (!flags.section) {
+        console.error('Usage: plex albums --section <music-library-id>');
+        process.exit(1);
+    }
+    const data = await plex.fetch(`library/sections/${flags.section}/all?type=${PLEX_TYPE_NUM.album}&X-Plex-Container-Size=5000`);
+    const albums = (data?.MediaContainer?.Metadata || [])
+        .filter(item => item.type === 'album')
+        .map(album => ({
+            id: String(album.ratingKey),
+            title: album.title,
+            sort_title: album.titleSort || null,
+            artist: album.parentTitle || null,
+            section: String(flags.section),
+        }));
+    if (flags.json) {
+        console.log(JSON.stringify(albums, null, 2));
+        return;
+    }
+    for (const album of albums) {
+        console.log(`${album.id}\t${album.sort_title ?? ''}\t${album.artist ?? ''}\t${album.title}`);
+    }
+    console.error(`${albums.length} album(s) in section ${flags.section}.`);
+}
+
+/** List every movie in a movie library with its rating key. */
+async function cmdMovies(plex) {
+    if (!flags.section) {
+        console.error('Usage: plex movies --section <movie-library-id>');
+        process.exit(1);
+    }
+    const data = await plex.fetch(`library/sections/${flags.section}/all?type=${PLEX_TYPE_NUM.movie}&X-Plex-Container-Size=5000`);
+    const movies = (data?.MediaContainer?.Metadata || [])
+        .filter(item => item.type === 'movie')
+        .map(movie => ({
+            id: String(movie.ratingKey),
+            title: movie.title,
+            year: movie.year ?? null,
+            studio: movie.studio || null,
+            section: String(flags.section),
+        }));
+    if (flags.json) {
+        console.log(JSON.stringify(movies, null, 2));
+        return;
+    }
+    for (const movie of movies) console.log(`${movie.id}\t${movie.year ?? ''}\t${movie.studio ?? ''}\t${movie.title}`);
+    console.error(`${movies.length} movie(s) in section ${flags.section}.`);
+}
+
+/** Report items in a scope whose cover art renders blank. Read-only. */
+async function cmdAudit(plex, type, id) {
+    if (!type || (type !== 'all' && !id)) {
+        console.error('Usage: plex audit <section|collection|playlist|item> <id>   (or: audit all)');
+        console.error('Options: --depth 0|1|all  --ids-only  --json  --all-items');
+        process.exit(1);
+    }
+
+    const depth = flags.depth ?? 0;
+    process.stderr.write(`Enumerating ${type}${id ? ' ' + id : ''} (depth ${depth})...\n`);
+    const items = await enumerateScope(plex, type, id, depth);
+    process.stderr.write(`Checking ${items.length} item(s) for missing covers...\n`);
+
+    let done = 0;
+    const checked = await pMap(items, 10, async (it) => {
+        // Isolate: a failed check must not abort the audit. An errored check
+        // counts as "has cover" so a flaky server can't mass-report missings.
+        let has = true;
+        try {
+            has = (await plex.getPosters(it.ratingKey)).length > 0;
+            // Candidates existing is not enough: the SELECTED thumb can 404 (stale ref)
+            // and the item still renders blank. Fetch a tiny transcode of the real
+            // thumb; any HTTP error means blank. Status 0 (network/timeout) stays "has".
+            if (has) {
+                const thumb = encodeURIComponent(`/library/metadata/${it.ratingKey}/thumb`);
+                const { status } = await fetchBinary(plex, `photo/:/transcode?width=40&height=60&minSize=1&url=${thumb}`);
+                if (status !== 200 && status !== 0) has = false;
+            }
+        } catch { /* leave has=true on error */ }
+        done++;
+        if (done % 50 === 0) process.stderr.write(`  ${done}/${items.length}\n`);
+        return {
+            id: it.ratingKey,
+            title: it.title,
+            type: it.type,
+            parent: it.parentTitle || it.grandparentTitle || null,
+            section: it.librarySectionTitle || null,
+            hasCover: has
+        };
+    });
+
+    const report = flags.allItems ? checked : checked.filter(c => !c.hasCover);
+
+    if (flags.idsOnly) {
+        report.filter(c => !c.hasCover).forEach(c => console.log(c.id));
+        return;
+    }
+    if (flags.json) {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+    }
+
+    const missing = checked.filter(c => !c.hasCover);
+    console.log(`\nCover audit — ${type}${id ? ' ' + id : ''} (depth ${depth})`);
+    console.log('='.repeat(70));
+    for (const c of report) {
+        const mark = c.hasCover ? '✓' : '✗ MISSING';
+        const ctx = c.parent ? ` — ${c.parent}` : '';
+        console.log(`  ${mark}  [${c.id}] ${c.type}: ${c.title}${ctx}${c.section ? `  (${c.section})` : ''}`);
+    }
+    console.log(`\n${missing.length} missing / ${checked.length} checked`);
+    if (missing.length) {
+        console.log('Remediate with: select-thumbs (existing candidates), rematch (agent art), or poster set (local file).');
+    }
+}
+
+/** For items with no usable art, apply the library agent's best match so it fetches art. */
+async function cmdRematch(plex, type, id) {
+    if (!type || (type !== 'all' && !id)) {
+        console.error(`Usage: plex rematch <${SCOPE_TYPES}> <id> [--depth N] [--min-score N] [--dry-run] [--force]`);
+        console.error('For items with no usable art, ask the library agent for a match and apply the');
+        console.error('best one (score >= --min-score, default 85) so the agent fetches art.');
+        process.exit(1);
+    }
+    const depth = flags.depth ?? 0;
+    const minScore = Number(flags.minScore ?? 85);
+    if (!Number.isFinite(minScore)) throw new Error(`--min-score must be a number (got "${flags.minScore}")`);
+    process.stderr.write(`Enumerating ${type}${id ? ' ' + id : ''} (depth ${depth})...\n`);
+    const items = await enumerateScope(plex, type, id, depth);
+    process.stderr.write(`Checking ${items.length} item(s) for missing art to re-match (min-score ${minScore})...\n`);
+
+    let matched = 0, lowScore = 0, noMatch = 0, hadArt = 0, errored = 0, n = 0;
+    const lows = [];
+    await pMap(items, 4, async (it) => {
+        n++;
+        if (n % 50 === 0) process.stderr.write(`  ...${n}/${items.length}\n`);
+        // Isolate every item: a slow/failed call here must never abort the run.
+        try {
+            if (!flags.force && (await plex.getPosters(it.ratingKey)).length > 0) { hadArt++; return; }
+            const best = (await plex.getMatches(it.ratingKey))[0];
+            if (!best) { noMatch++; return; }
+            const score = best.score || 0;
+            if (score < minScore) { lowScore++; lows.push({ id: it.ratingKey, title: it.title, name: best.name, score }); return; }
+            if (flags.dryRun) {
+                console.log(`  [dry] [${it.ratingKey}] ${it.type}: ${it.title}  →  ${best.name} (score ${score})`);
+                matched++;
+                return;
+            }
+            await plex.applyMatch(it.ratingKey, best.guid, best.name);
+            matched++;
+            console.log(`  ✓ [${it.ratingKey}] ${it.title}  →  ${best.name} (score ${score})`);
+        } catch (e) {
+            errored++;
+            console.error(`  ✗ [${it.ratingKey}] ${it.title}: ${e.message}`);
+        }
+    });
+    console.log(`\n${flags.dryRun ? '[dry-run] ' : ''}matched ${matched} | low-score skipped ${lowScore} | no match ${noMatch} | already had art ${hadArt} | errors ${errored}`);
+    if (lows.length) {
+        console.log(`\nLow-confidence (< ${minScore}) — review manually:`);
+        for (const l of lows.slice(0, 30)) console.log(`  [${l.id}] "${l.title}" → best "${l.name}" (score ${l.score})`);
+        if (lows.length > 30) console.log(`  ...and ${lows.length - 30} more`);
+    }
+    if (errored) process.exitCode = 1;
+}
+
+/** Select a poster candidate Plex already has, for items that render blank. */
+async function cmdSelectThumbs(plex, type, id) {
+    if (!type || (type !== 'all' && !id)) {
+        console.error(`Usage: plex select-thumbs <${SCOPE_TYPES}> <id> [--depth all] [--slot N] [--force] [--type episode] [--dry-run]`);
+        console.error('Selects an existing (unselected) poster candidate for items that render blank —');
+        console.error('e.g. episodes whose Plex-extracted frame thumbnails were never selected.');
+        console.error('  --slot N   Pick candidate #N from the /posters listing instead of auto-choosing.');
+        console.error('             Slot 0 is usually the agent/local-media image; 1+ are extracted video frames.');
+        console.error('  --force    Re-select even when the item already has a selected poster.');
+        console.error('  --type T   Only act on items of this type (episode, season, movie, ...).');
+        process.exit(1);
+    }
+    const depth = flags.depth ?? 'all';
+    const slot = flags.slot === null ? null : Number(flags.slot);
+    if (slot !== null && (!Number.isInteger(slot) || slot < 0)) {
+        console.error(`--slot must be a non-negative integer (got "${flags.slot}")`);
+        process.exit(1);
+    }
+    process.stderr.write(`Enumerating ${type}${id ? ' ' + id : ''} (depth ${depth})...\n`);
+    let items = await enumerateScope(plex, type, id, depth);
+    if (flags.type) items = items.filter(it => it.type === flags.type);
+    process.stderr.write(`Checking ${items.length} item(s)${flags.type ? ` of type ${flags.type}` : ''} for poster candidates`
+        + `${slot === null ? '' : ` (slot ${slot})`}${flags.force ? ', forcing re-selection' : ''}...\n`);
+
+    let selected = 0, already = 0, none = 0, short = 0, n = 0;
+    const errors = [];
+    await pMap(items, 8, async (it) => {
+        n++;
+        if (n % 50 === 0) process.stderr.write(`  ...${n}/${items.length}\n`);
+        // Isolate every item: a slow/failed call must never abort the whole pass.
+        try {
+            const cands = await plex.getPosters(it.ratingKey);
+            if (cands.length === 0) { none++; return; }
+            if (!flags.force && cands.some(p => p.selected)) { already++; return; }
+
+            let pick;
+            if (slot === null) {
+                pick = pickPosterCandidate(cands);
+            } else {
+                // Not enough candidates for the requested slot: leave it alone rather
+                // than stamping some other (possibly worse) image on it.
+                if (slot >= cands.length) {
+                    short++;
+                    if (!flags.json) console.log(`  ↷ [${it.ratingKey}] ${it.title} — only ${cands.length} candidate(s), no slot ${slot}`);
+                    return;
+                }
+                pick = cands[slot];
+            }
+            if (pick.selected) { already++; return; }
+            if (flags.dryRun) {
+                selected++;
+                if (!flags.json) console.log(`  [dry] [${it.ratingKey}] ${it.type}: ${it.title} → ${posterLabel(pick)}`);
+                return;
+            }
+            await plex.selectPoster(it.ratingKey, pick.ratingKey);
+            selected++;
+            if (!flags.json) console.log(`  ✓ [${it.ratingKey}] ${it.type}: ${it.title} → ${posterLabel(pick)}`);
+        } catch (e) {
+            errors.push({ id: it.ratingKey, error: e.message || 'request failed' });
+        }
+    });
+    console.log(`\n${flags.dryRun ? '[dry-run] ' : ''}Selected ${selected} | already had that selection ${already} | no candidates ${none}`
+        + `${slot === null ? '' : ` | too few candidates ${short}`} | errors ${errors.length}`);
+    if (errors.length) {
+        for (const e of errors.slice(0, 20)) console.log(`  ✗ ${e.id}: ${e.error}`);
+        process.exitCode = 1;
+    }
 }
 
 async function cmdRefresh(plex) {
@@ -1494,6 +1939,9 @@ Commands:
   search <query>           Search library by title (shows/movies)
   info <id>                Show metadata for a Plex ID
   verify <id> [...]        Check if ID(s) exist in Plex
+  seasons --section <id>   List season IDs in a show library (tab-separated, or --json)
+  albums --section <id>    List album IDs in a music library (tab-separated, or --json)
+  movies --section <id>    List movie IDs in a movie library (tab-separated, or --json)
   refresh                  Scan a section or folder (--section <id> | --path <folder> | --all) [--force: re-read all tags]
   refresh-metadata <id>... Re-read tags/metadata for item(s) and everything under them (--dry-run)
   empty-trash              Remove unavailable items from a section (--section <id>, --dry-run)
@@ -1528,9 +1976,17 @@ Poster subcommands:
   poster set <id> <file>                  Upload one image and set it as the item's poster
   poster set-from-yaml <file>             Bulk-upload from a manifest ({posters: [{id, file}, ...]})
 
+Cover-art commands (<scope> = section|collection|playlist|item|all; "all" takes no id):
+  audit <scope> <id>                      Report items whose cover renders blank (read-only;
+                                          --depth, --all-items, --ids-only, --json)
+  rematch <scope> <id>                    For no-art items, apply the agent's best match so it
+                                          fetches art (--min-score, --depth, --force, --dry-run)
+  select-thumbs <scope> <id>              Select a poster candidate Plex already has
+                                          (--slot, --type, --depth, --force, --dry-run)
+
 Options:
   --json                   Output as JSON
-  --ids-only               Output only Plex IDs (search command)
+  --ids-only               Output only Plex IDs (search / audit)
   --deep                   Use hub search (finds episodes, tracks, etc.)
   --section <id>           Limit search to specific library section
   --title "..."            (set/collection) New title.value
@@ -1552,6 +2008,15 @@ Options:
   --from-yaml <file>       (alt to positional) Manifest path for set-from-yaml
   --lock                   Also send .locked=1 (prevents agent overwrite — recommended for seasons)
   --dry-run                Show what would be sent without making the request
+  --depth 0|1|all          (audit/rematch/select-thumbs) Recurse into children. Default 0 for
+                           audit/rematch, all for select-thumbs
+  --all-items              (audit) List healthy items too, not just missing ones
+  --min-score <n>          (rematch) Lowest agent match score to apply (default 85)
+  --slot <n>               (select-thumbs) Pick candidate #n from the item's /posters list.
+                           Slot 0 is usually the agent image; 1+ are extracted video frames
+  --type <t>               (select-thumbs) Only act on items of this type (e.g. episode)
+  --force                  (refresh) re-read all tags; (rematch) also re-match items that have
+                           art; (select-thumbs) re-select even if a poster is already selected
 
 Examples:
   node plex.cli.mjs libraries
@@ -1572,6 +2037,10 @@ Examples:
   node plex.cli.mjs collection delete 675687
   node plex.cli.mjs poster set 685550 /path/to/poster.jpg
   node plex.cli.mjs poster set-from-yaml data/_drafts/khan-posters.yml
+  node plex.cli.mjs seasons --section 4 --json
+  node plex.cli.mjs audit section 4 --depth 1 --ids-only
+  node plex.cli.mjs rematch section 4 --dry-run
+  node plex.cli.mjs select-thumbs item 1234 --type episode --slot 1 --force --dry-run
 `);
 }
 
@@ -1624,6 +2093,30 @@ async function main() {
 
             case 'merge':
                 await cmdMerge(plex, commandArgs);
+                break;
+
+            case 'seasons':
+                await cmdSeasons(plex);
+                break;
+
+            case 'albums':
+                await cmdAlbums(plex);
+                break;
+
+            case 'movies':
+                await cmdMovies(plex);
+                break;
+
+            case 'audit':
+                await cmdAudit(plex, commandArgs[0], commandArgs[1]);
+                break;
+
+            case 'rematch':
+                await cmdRematch(plex, commandArgs[0], commandArgs[1]);
+                break;
+
+            case 'select-thumbs':
+                await cmdSelectThumbs(plex, commandArgs[0], commandArgs[1]);
                 break;
 
             case 'leaves':
