@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
 import { useScreenData } from "../../../../../../__capabilities/screen-host/browser/data.mjs";
@@ -68,23 +69,45 @@ function formatClock(timestamp, timezone) {
 
 // ─── Sessions Card ─────────────────────────────────────────
 
+// Mirrors the hydrated card exactly — same wrapper (no title), same Stack gap,
+// the real date-header element and the real row geometry (fixed poster-height
+// rows) — so data replaces placeholders in place with no shift.
+const SKELETON_ROWS = 6;
+
 function SessionsCardSkeleton() {
   return (
-    <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
-      <Stack gap="xs">
-        <div className="skeleton shimmer" style={{ height: 14, width: 100, borderRadius: 4 }} />
-        {[0, 1, 2].map(i => (
-          <div key={i} className="session-row session-row--skeleton">
-            <div className="session-row__top">
-              <div className="session-poster skeleton shimmer" />
-              <div className="session-row__info">
-                <div className="skeleton shimmer" style={{ height: 12, width: '60%', borderRadius: 3 }} />
-                <div className="skeleton shimmer" style={{ height: 10, width: '80%', borderRadius: 3 }} />
-                <div className="skeleton shimmer" style={{ height: 10, width: '40%', borderRadius: 3 }} />
+    <DashboardCard title={null} className="dashboard-card--workouts">
+      <Stack gap={4}>
+        <div>
+          {/* A real line box (nbsp) so the header is exactly as tall as a hydrated one. */}
+          <Text component="div" size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
+            {'\u00a0'}
+            <Skeleton height="0.8em" width={64} radius="xs" style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+          </Text>
+          {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+            <div key={i} className="session-row session-row--skeleton" aria-hidden="true">
+              <div className="session-row__top">
+                <Skeleton className="session-poster" radius="sm" />
+                <div className="session-row__info">
+                  <div className="session-row__title-line">
+                    <div className="session-row__show-line">
+                      <Skeleton height={15} width={30} radius="xs" />
+                      <Skeleton height={10} width="35%" radius="xs" />
+                    </div>
+                    <Skeleton height={16} width={i % 2 ? '55%' : '70%'} radius="xs" />
+                  </div>
+                  <div className="session-row__participants">
+                    <Skeleton circle height={26} width={26} />
+                    <Skeleton height={20} width={56} radius="xs" />
+                  </div>
+                  <div className="session-row__meta">
+                    <Skeleton height={10} width="40%" radius="xs" />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </Stack>
     </DashboardCard>
   );
@@ -103,15 +126,17 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
     );
   }
 
-  const groups = [];
-  let currentDate = null;
+  // Group by date even when a day's sessions are not adjacent in the list (a
+  // skeletal record with no start time sorts last): a second group for the same
+  // day rendered a duplicate React key and a stray day header at the bottom.
+  const groupsByDate = new Map();
   for (const s of sessions) {
-    if (s.date !== currentDate) {
-      currentDate = s.date;
-      groups.push({ date: s.date, label: formatDate(s.date), sessions: [] });
+    if (!groupsByDate.has(s.date)) {
+      groupsByDate.set(s.date, { date: s.date, label: formatDate(s.date), sessions: [] });
     }
-    groups[groups.length - 1].sessions.push(s);
+    groupsByDate.get(s.date).sessions.push(s);
   }
+  const groups = [...groupsByDate.values()];
   for (const g of groups) g.sessions.reverse();
 
   return (
@@ -221,7 +246,11 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                         const memoText = s.voiceMemos?.length > 0
                           ? s.voiceMemos.map(m => m.transcript).filter(Boolean).join(' \u2022 ')
                           : null;
-                        const isSolo = participantIds.length === 1;
+                        // From three riders up the per-rider minutes no longer fit
+                        // beside the totals; avatars overlap and minutes move to the
+                        // avatar's tooltip (the recap shows them in full).
+                        const ridersStacked = participantIds.length >= 3;
+                        const hasTotals = s.totalRings > 0 || s.maxSufferScore > 0;
                         const startTimeStr = formatClock(s.startTime, s.timezone);
                         const endTimestamp = s.endTime || (s.startTime && elapsedMs ? s.startTime + elapsedMs : null);
                         const endTimeStr = formatClock(endTimestamp, s.timezone);
@@ -231,7 +260,45 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
 
                         return (
                           <>
-                            {!memoText && timeStr && (
+                            {(participantIds.length > 0 || hasTotals) && (
+                              <div className="session-row__participants">
+                                {participantIds.length > 0 && (
+                                  <div className={`session-row__riders${ridersStacked ? ' session-row__riders--stacked' : ''}`}>
+                                    {Object.entries(s.participants).map(([id, p]) => {
+                                      const minutes = formatMinutes(p.measuredDurationMs);
+                                      return (
+                                        <span key={id} className="session-row__participant">
+                                          <img
+                                            src={`/api/v1/static/users/${id}`}
+                                            alt={p.displayName}
+                                            title={minutes ? `${p.displayName} · ${minutes}` : p.displayName}
+                                            className="session-avatar"
+                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                          />
+                                          {minutes && !ridersStacked && (
+                                            <span className="session-row__participant-time" title={`${p.displayName} measured time`}>
+                                              {minutes}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {hasTotals && (
+                                  <div className="session-row__totals">
+                                    {s.totalRings > 0 && (
+                                      <span className="session-row__rings"><RingIcon size={14} />{s.totalRings}</span>
+                                    )}
+                                    {s.maxSufferScore > 0 && (
+                                      <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {timeStr && (
                               <div className="session-row__meta">
                                 <Text size="xs" c="dimmed" fw={500}>{timeStr}</Text>
                                 {elapsedLabel && <Text size="xs" c="dimmed">·</Text>}
@@ -239,42 +306,10 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                               </div>
                             )}
 
-                            {participantIds.length > 0 && (
-                              <div className={`session-row__participants${isSolo && memoText ? ' session-row__participants--with-memo' : ''}`}>
-                                {Object.entries(s.participants).map(([id, p]) => (
-                                  <span key={id} className="session-row__participant">
-                                    <img
-                                      src={`/api/v1/static/users/${id}`}
-                                      alt={p.displayName}
-                                      title={p.displayName}
-                                      className="session-avatar"
-                                      onError={(e) => { e.target.style.display = 'none'; }}
-                                    />
-                                    {formatMinutes(p.measuredDurationMs) && (
-                                      <span className="session-row__participant-time" title={`${p.displayName} measured time`}>
-                                        {formatMinutes(p.measuredDurationMs)}
-                                      </span>
-                                    )}
-                                  </span>
-                                ))}
-                                {s.totalRings > 0 && (
-                                  <span className="session-row__rings"><RingIcon size={14} />{s.totalRings}</span>
-                                )}
-                                {s.maxSufferScore > 0 && (
-                                  <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>
-                                )}
-                              </div>
-                            )}
-
                             {memoText && (
                               <div className="session-row__memo-line">
-                                {timeStr && (
-                                  <span className="session-row__memo-time">
-                                    {timeStr}{elapsedLabel ? ` · ${elapsedLabel}` : ''}
-                                  </span>
-                                )}
-                                <span className="session-row__memo-icon">{'\uD83C\uDF99'}</span>
-                                <span className={`session-row__memo-text${isSolo ? ' session-row__memo-text--2line' : ''}`}>{memoText}</span>
+                                <span className="session-row__memo-icon">{'🎙'}</span>
+                                <span className="session-row__memo-text">{memoText}</span>
                               </div>
                             )}
                           </>

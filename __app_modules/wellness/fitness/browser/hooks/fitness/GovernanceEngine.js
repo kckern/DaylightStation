@@ -1006,9 +1006,11 @@ export class GovernanceEngine {
       zoneInfoMap,
       totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length,
       hrInactiveUsers: Array.isArray(payload.hrInactiveUsers) ? [...payload.hrInactiveUsers] : [],
+      // Omitted (a pulse with no session to read from) keeps the last map: an
+      // empty one reads as "no cadence source" and disarms a cadence_floor latch.
       equipmentCadenceMap: payload.equipmentCadenceMap && typeof payload.equipmentCadenceMap === 'object'
         ? { ...payload.equipmentCadenceMap }
-        : {},
+        : (this._latestInputs?.equipmentCadenceMap || {}),
       equipmentRiderMap: payload.equipmentRiderMap && typeof payload.equipmentRiderMap === 'object'
         ? { ...payload.equipmentRiderMap }
         : (this._latestInputs?.equipmentRiderMap || {}),
@@ -2351,6 +2353,11 @@ export class GovernanceEngine {
     if (activityMetricMap === undefined && this.session?.getPressureMatSnapshots) {
       activityMetricMap = this.session.getPressureMatSnapshots(now);
     }
+    // Same for cadence: a pulse that carried none would otherwise judge a
+    // cadence_floor rider on the last snapshot's reading, or on nothing at all.
+    if (equipmentCadenceMap === undefined && this.session?.getEquipmentCadenceMap) {
+      equipmentCadenceMap = this.session.getEquipmentCadenceMap();
+    }
 
     // Use canonical participant state from ParticipantRoster (SSOT).
     // This replaces reading session.roster and re-extracting IDs/zones.
@@ -2480,13 +2487,13 @@ export class GovernanceEngine {
       this._latestInputs.zoneInfoMap = zoneInfoMap;
     }
     // Capture equipmentCadenceMap early so it survives no-media/no-participant early-exit paths.
-    // Only update when the caller provides a map — pulse-timer evaluate() calls do not supply cadence
-    // data, and we must not overwrite the last good snapshot with an empty object.
+    // Only update when a map is in hand — pulse-timer evaluate() calls read it from the session above
+    // when they can, and must never overwrite the last good snapshot with an empty object.
     if (equipmentCadenceMap && typeof equipmentCadenceMap === 'object') {
       this._latestInputs.equipmentCadenceMap = { ...equipmentCadenceMap };
     }
     // Capture equipmentRiderMap early so claim-based rider selection works even when evaluation
-    // exits early (no media, no rules, etc.). Unlike cadence (reset to {} on omission), the
+    // exits early (no media, no rules, etc.). Like cadence, the
     // rider claim PERSISTS across ticks that omit it — a standing selector press stays active.
     if (equipmentRiderMap && typeof equipmentRiderMap === 'object') {
       this._latestInputs.equipmentRiderMap = { ...equipmentRiderMap };
@@ -2654,7 +2661,7 @@ export class GovernanceEngine {
         hrInactiveUsers: Array.isArray(hrInactiveUsers) ? [...hrInactiveUsers] : [],
         equipmentCadenceMap: equipmentCadenceMap && typeof equipmentCadenceMap === 'object'
           ? { ...equipmentCadenceMap }
-          : {},
+          : (this._latestInputs?.equipmentCadenceMap || {}),
         equipmentRiderMap: equipmentRiderMap && typeof equipmentRiderMap === 'object'
           ? { ...equipmentRiderMap }
           : (this._latestInputs?.equipmentRiderMap || {}),

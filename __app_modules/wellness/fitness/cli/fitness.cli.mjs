@@ -30,6 +30,8 @@ import * as reconstruct from "./lib/reconstruct.mjs";
 import * as dropParticipant from "./lib/dropParticipant.mjs";
 import * as repairSessionWindow from "./lib/repairSessionWindow.mjs";
 
+import * as repairOpenChallenges from "./lib/repairOpenChallenges.mjs";
+
 import * as enrichPlex from "./lib/enrichPlex.mjs";
 import * as backfillMediaMemory from "./lib/backfillMediaMemory.mjs";
 import * as backfillPrimaryMedia from "./lib/backfillPrimaryMedia.mjs";
@@ -43,6 +45,7 @@ import * as backfillCalories from "./lib/backfillCalories.mjs";
 import * as backfillEnrichment from "./lib/backfillEnrichment.mjs";
 import * as push from "./lib/push.mjs";
 import * as repairNotes from "./lib/repairNotes.mjs";
+import * as backfillRouteTracks from "./lib/backfillRouteTracks.mjs";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -62,6 +65,7 @@ const GROUPS = {
       reconstruct: cmd(reconstruct),
       'drop-participant': cmd(dropParticipant),
       'repair-window': cmd(repairSessionWindow),
+      'repair-open-challenges': cmd(repairOpenChallenges),
     },
     aliases: new Set(),
   },
@@ -86,6 +90,7 @@ const GROUPS = {
       'backfill-enrichment': cmd(backfillEnrichment),
       push: cmd(push),
       'repair-notes': cmd(repairNotes),
+      'backfill-route-tracks': cmd(backfillRouteTracks),
     },
     aliases: stravaCrud.aliases,
   },

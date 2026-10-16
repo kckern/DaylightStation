@@ -14,8 +14,9 @@ export class ConnectorGenerator {
         // Only generate connectors for avatars moved leftward
         if (e.type !== 'avatar') return false;
         const offsetX = e.offsetX || 0;
-        // Check if avatar was displaced left (by clamping or collision resolution)
-        return offsetX < -5; // Moved left by more than 5px
+        const offsetY = e.offsetY || 0;
+        // Displaced left (horizontal pass / clamping) or up/down (vertical stack)
+        return offsetX < -5 || Math.abs(offsetY) > 5;
       })
       .map(e => {
         // Original position (line anchor point) - where the data line ends
@@ -26,16 +27,19 @@ export class ConnectorGenerator {
         // Avatar's final rendered position
         const avatarCenterX = e.x + (e.offsetX || 0);
         const avatarCenterY = e.y + (e.offsetY || 0);
-        const avatarRightEdge = avatarCenterX + this.avatarRadius;
-        
-        // Line from anchor point to avatar's right edge
-        // Use avatar's final Y for the endpoint (in case of vertical displacement too)
+        const movedLeft = (e.offsetX || 0) < -5;
+        // Moved left: meet the avatar's right edge. Moved only vertically: meet the
+        // edge facing the line end, so the connector never crosses the face.
+        const x2 = movedLeft ? avatarCenterX + this.avatarRadius : avatarCenterX;
+        const y2 = movedLeft
+          ? avatarCenterY
+          : avatarCenterY + (originY > avatarCenterY ? this.avatarRadius : -this.avatarRadius);
         return {
           id: `connector-${e.id}`,
           x1: originX,
           y1: originY,
-          x2: avatarRightEdge,
-          y2: avatarCenterY,
+          x2,
+          y2,
           color: e.color
         };
       });

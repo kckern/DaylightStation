@@ -4,18 +4,15 @@ import PropTypes from 'prop-types';
 /**
  * Right-box panel for a merged "group" (race-block) session detail. Fills the slot that
  * holds a video thumbnail for media sessions — for a stitched race group there's no thumb,
- * so we show who rode and how many blocks were sandwiched together. Carries the same
- * close / delete / add-memo affordances as the other right-box variants.
+ * so we show who rode and how many blocks were sandwiched together. Also used for any
+ * session with riders but no video. The close / delete / add-memo controls come in as
+ * `actions` (DetailActions), shared with the other right-box variants.
  */
 export default function GroupSummaryPanel({
   riders = [],
   segmentCount = 0,
   elapsedMs = 0,
-  sessionId,
-  onClose,
-  onDelete,
-  deleting = false,
-  onAddMemo,
+  actions = null,
 }) {
   const elapsedMinutes = Math.max(0, Math.round(elapsedMs / 60000));
   const elapsedLabel = elapsedMinutes >= 60
@@ -23,16 +20,7 @@ export default function GroupSummaryPanel({
     : (elapsedMinutes ? `${elapsedMinutes}m elapsed` : null);
   return (
     <div className="session-detail__thumb session-detail__thumb--summary">
-      <button className="session-detail__close" onClick={onClose} title="Close">&times;</button>
-      <button className="session-detail__delete" onClick={onDelete} disabled={deleting} title="Delete session">
-        {deleting ? '...' : '✕'}
-      </button>
-      <button
-        className="session-detail__add-memo"
-        onPointerDown={(e) => { e.preventDefault(); onAddMemo?.(); }}
-        title="Add voice memo to this session"
-        aria-label="Add voice memo"
-      >{'🎙'}</button>
+      {actions}
 
       <div className="session-detail__summary">
         {elapsedLabel && <div className="session-detail__summary-elapsed">{elapsedLabel}</div>}
@@ -57,13 +45,6 @@ export default function GroupSummaryPanel({
         )}
       </div>
 
-      {sessionId && (
-        <code
-          className="session-detail__session-id"
-          onClick={() => navigator.clipboard?.writeText(sessionId)}
-          title="Click to copy session ID"
-        >{sessionId}</code>
-      )}
     </div>
   );
 }
@@ -72,9 +53,5 @@ GroupSummaryPanel.propTypes = {
   riders: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, name: PropTypes.string, measuredDurationMs: PropTypes.number })),
   segmentCount: PropTypes.number,
   elapsedMs: PropTypes.number,
-  sessionId: PropTypes.string,
-  onClose: PropTypes.func,
-  onDelete: PropTypes.func,
-  deleting: PropTypes.bool,
-  onAddMemo: PropTypes.func,
+  actions: PropTypes.node,
 };

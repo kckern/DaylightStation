@@ -1,5 +1,26 @@
 # Piano Bridge (APK)
 
+> **2026-10-14: PAYLOAD p28 (`p28-foreground-watch`).** The bridge samples the window
+> list every second through its own accessibility service (`ForegroundWatch`) and logs
+> every change of the app in front to the log store, at once:
+> `kiosk.foreground.left` (warn: who took over, plus the trail of windows that appeared
+> over the kiosk just before), `kiosk.foreground.changed` (warn), `kiosk.foreground.returned`
+> (info: `awayMs`, `path`), `kiosk.window.overlay` (info, capped 20/min) and
+> `kiosk.guard.note` (recalls, auth failures). Query `context.app:piano-bridge AND _msg:kiosk.*`.
+> The foreground guard reads this watcher before FKB, so it no longer depends on
+> `fkbPassword`, and leaving FKB triggers a recall at once (measured: Camera recalled
+> in 2.2 s). Live view: `GET :8770/kiosk/foreground`.
+
+> **2026-10-14: PAYLOAD p26 (`p26-fkb-auth`).** FKB answers a wrong `fkbPassword` with
+> HTTP 200 and `{"status":"Error","statustext":"Please login"}`. Every bridge call used
+> to read that as success or "unknown", so a stale password silently blinded the
+> foreground guard (`UNKNOWN`), the settings guard (`OK`) and the recovery ladder
+> (`loadStartUrl`/`restartApp`/reboot all no-ops). A child spent 40 minutes in the Play
+> Store that way. p26 reports it: guard verdicts `AUTH_FAILED`, `fkbApp.authOk:false`
+> in `/diagnostics`, one durable `KIOSKSET` note per refusal streak, and heartbeat
+> `data.fkbAuthOk:false` / `data.kioskForeground` at `level:warn`. The fix for the
+> condition itself is `pbctl config set fkbPassword <the tablet's FKB password>`.
+
 > **2026-10-09: PAYLOAD p24 (`p24-foreground-launch`) is ON THE TABLET.** It adds the
 > foreground guard: any app but FKB is recalled within ~10 s (Settings gets 3 min
 > for Bluetooth pairing), and no disarm or install hold can last over 1 h. See
@@ -187,7 +208,10 @@ Settings (FKB `startIntent`), and from Settings they reached other apps. The dri
 guard below saw nothing wrong, because nothing in FKB's settings had changed.
 
 So the same guard also asks, every 10 s, **is FKB actually in front?**
-(`KioskSettingsGuard.foregroundTick`, reading FKB `deviceInfo.foregroundApp`):
+(`KioskSettingsGuard.foregroundTick`). Since p28 it reads the answer from the bridge's
+own 1 Hz `ForegroundWatch` first (no FKB password involved) and falls back to FKB
+`deviceInfo.foregroundApp`; the watch also runs a pass the moment FKB loses the screen,
+so a recall lands in ~1–2 s rather than on the next tick:
 
 | In front | Action |
 |---|---|
@@ -212,6 +236,11 @@ for 6.6 s before the page was visible again.
 too, so neither may outlast **1 hour** (`MAX_STAND_DOWN_MS`). `POST
 /kiosk/settings/disarm` clamps to 60 min, and a longer deadline already in config
 (e.g. set with `pbctl config set`) is cut back to now + 1 h on the next tick.
+
+**A refused password is not "unknown".** If FKB rejects `fkbPassword`, both passes
+report `AUTH_FAILED` (not `UNKNOWN` / `OK`) and nothing is recalled or repaired, because
+nothing can be read. The heartbeat goes to `level:warn` with `data.fkbAuthOk:false`, so
+`context.app:piano-bridge AND level:warn` in the log store finds it.
 
 Config: `watchdogKioskForegroundEnabled` (true), `watchdogKioskForegroundIntervalMs`
 (10000), `watchdogKioskForegroundSettingsGraceMs` (180000). Status: `pbctl

@@ -46,6 +46,14 @@
     font-weight: 600;
   }
 
+  &__avatar--tappable {
+    cursor: pointer;
+  }
+
+  &__avatar-placeholder {
+    fill: rgba(255, 255, 255, 0.1);
+  }
+
   &__end-dot {
     fill: rgba(255, 255, 255, 0.85);
     stroke: rgba(0, 0, 0, 0.6);

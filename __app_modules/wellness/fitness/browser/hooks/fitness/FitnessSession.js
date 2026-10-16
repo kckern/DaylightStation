@@ -18,6 +18,7 @@ import { VibrationActivityTracker } from "./VibrationActivityTracker.js";
 import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from "./PressureMatActivityTracker.js";
 import { EndedDeviceHold } from "./EndedDeviceHold.js";
 import { findUnclosedMedia } from "./closeOpenMedia.js";
+import { findOpenChallenges } from "./closeOpenChallenges.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { heapSnapshotFields } from "../../../../../../frontend/src/lib/perf/memoryProbe.js";
 
@@ -1232,6 +1233,19 @@ export class FitnessSession {
     return best || stalled || disconnected;
   }
 
+  /**
+   * Live cadence for every configured equipment, keyed by equipment id. The
+   * governance engine reads this on timer pulses, which carry no sensor data.
+   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number }>}
+   */
+  getEquipmentCadenceMap() {
+    const map = {};
+    this._equipmentById.forEach((entry, equipmentId) => {
+      if (entry && equipmentId) map[equipmentId] = this.getEquipmentCadence(equipmentId);
+    });
+    return map;
+  }
+
   // Read a single cadence device's live reading (rpm + connected + ts), applying the
   // same staleness rule as DeviceManager.pruneStaleDevices so readers see
   // "disconnected" even between prune cycles.
@@ -2278,14 +2292,9 @@ export class FitnessSession {
         });
     }
 
-    // Build equipmentCadenceMap: maps equipmentId -> { rpm, connected }
-    // so the governance engine can read live cadence for cycle challenges.
-    const equipmentCadenceMap = {};
-    this._equipmentById.forEach((entry, equipmentId) => {
-      if (entry && equipmentId) {
-        equipmentCadenceMap[equipmentId] = this.getEquipmentCadence(equipmentId);
-      }
-    });
+    // equipmentId -> { rpm, connected } so the governance engine can read live
+    // cadence for cycle challenges and cadence_floor requirements.
+    const equipmentCadenceMap = this.getEquipmentCadenceMap();
 
     // Build equipmentRiderMap: equipmentId -> claimed userId (or absent if unclaimed)
     const equipmentRiderMap = {};
@@ -2539,6 +2548,10 @@ export class FitnessSession {
 
     this._collectTimelineTick({ timestamp: now });
     this._closeOpenMedia(now);
+    // A challenge still pending at session end (frozen outside 'unlocked', or a
+    // cycle paused by the base requirement) never reached success/failed, and
+    // reset() below drops it silently: close it as unresolved before the save.
+    this._closeOpenChallenges(now);
     // Close every open stint so the saved segments carry real end times.
     for (const stint of this.entityRegistry.getActive()) {
       this.entityRegistry.endEntity(stint.entityId, { status: 'ended', timestamp: now, reason: 'session-end' });
@@ -2614,6 +2627,24 @@ export class FitnessSession {
 
     for (const contentId of findUnclosedMedia(this.timeline.events)) {
       this.logEvent('media_end', { contentId, source: 'session_end' }, now);
+    }
+  }
+
+  _closeOpenChallenges(now) {
+    if (!this.timeline?.events) return;
+    for (const challengeId of findOpenChallenges(this.timeline.events)) {
+      this.logEvent('challenge_end', { challengeId, result: 'abandoned', reason: 'session_end' }, now);
+    }
+    // A resumed session restores already-consolidated records; one left open
+    // across a crash/reload is a `challenge` record, not a start/end pair.
+    for (const evt of this.timeline.events) {
+      const d = evt?.data;
+      if (evt?.type !== 'challenge' || !d) continue;
+      if (d.result != null && d.result !== 'started') continue;
+      if (Number.isFinite(d.end)) continue;
+      d.result = 'abandoned';
+      d.reason = 'session_end';
+      d.end = now;
     }
   }
 

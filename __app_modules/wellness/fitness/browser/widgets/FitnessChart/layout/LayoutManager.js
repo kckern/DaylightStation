@@ -116,9 +116,13 @@ export class LayoutManager {
       });
     }
 
-    // Phase 2: Horizontal-only collision resolution
-    // Higher avatars (lower Y value) stay anchored, lower avatars move left
-    let resolvedAvatars = this._resolveAvatarCollisionsHorizontal(avatars);
+    // Phase 2: collision resolution. 'vertical' (session detail) stacks avatars
+    // whose line ends are too close into a column centred on their true heights;
+    // the default 'horizontal' keeps higher avatars anchored and pushes lower
+    // ones left, capped at maxDisplacement.
+    let resolvedAvatars = this.options.collisionAxis === 'vertical'
+      ? this._resolveAvatarCollisionsVertical(avatars)
+      : this._resolveAvatarCollisionsHorizontal(avatars);
 
     if (this.traceEnabled) {
       const avatarMap = new Map(avatars.map(a => [a.id, a]));
@@ -337,6 +341,50 @@ export class LayoutManager {
    * Higher avatars (lower Y) stay anchored at line endpoints.
    * No vertical displacement - only horizontal.
    */
+  /**
+   * Vertical stacking for line-end avatars. Avatars whose x positions are closer
+   * than one diameter (+ minSpacing) form a cluster; each cluster is spread into
+   * a column at least one diameter apart, in the order of their true heights,
+   * shifted so the column stays centred on the true heights, then kept inside the
+   * plot. Unlike the horizontal pass there is no displacement cap, so nothing is
+   * left overlapping. Displaced avatars get connectors (ConnectorGenerator).
+   */
+  _resolveAvatarCollisionsVertical(avatars) {
+    const r = this.avatarRadius;
+    const gap = r * 2 + (this.options.minSpacing ?? 4);
+    const { height, margin } = this.bounds;
+    const minY = (margin?.top || 0) + r;
+    const maxY = height - (margin?.bottom || 0) - r;
+    const cx = (a) => a.x + (a._clampOffsetX || 0);
+    const cy = (a) => a.y + (a._clampOffsetY || 0);
+
+    // Clusters: chain avatars whose x lie within one gap of a neighbour.
+    const byX = [...avatars].sort((a, b) => cx(a) - cx(b));
+    const clusters = [];
+    for (const a of byX) {
+      const last = clusters[clusters.length - 1];
+      if (last && cx(a) - cx(last[last.length - 1]) < gap) last.push(a);
+      else clusters.push([a]);
+    }
+
+    const out = new Map();
+    for (const cluster of clusters) {
+      const members = [...cluster].sort((a, b) => cy(a) - cy(b));
+      const want = members.map(cy);
+      const ys = [...want];
+      for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + gap);
+      // Re-centre on the true heights, then keep the column inside the plot.
+      const shift = (want.reduce((s, v) => s + v, 0) - ys.reduce((s, v) => s + v, 0)) / ys.length;
+      for (let i = 0; i < ys.length; i++) ys[i] += shift;
+      if (ys[ys.length - 1] > maxY) { const d = ys[ys.length - 1] - maxY; for (let i = 0; i < ys.length; i++) ys[i] -= d; }
+      if (ys[0] < minY) { const d = minY - ys[0]; for (let i = 0; i < ys.length; i++) ys[i] += d; }
+      members.forEach((a, i) => {
+        out.set(a.id, { ...a, offsetX: a._clampOffsetX || 0, offsetY: ys[i] - a.y });
+      });
+    }
+    return avatars.map((a) => out.get(a.id) || a);
+  }
+
   _resolveAvatarCollisionsHorizontal(avatars) {
     if (avatars.length < 2) {
       return avatars.map(a => ({

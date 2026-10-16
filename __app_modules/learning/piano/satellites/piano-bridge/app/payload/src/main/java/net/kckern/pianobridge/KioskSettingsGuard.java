@@ -58,8 +58,10 @@ public final class KioskSettingsGuard {
         INSTALL_HOLD,
         /** fkbPassword unset, so FKB's REST API would just 401. */
         NO_PASSWORD,
-        /** FKB did not answer (or answered with a login page) — state unknown. */
+        /** FKB did not answer — state unknown. */
         UNREACHABLE,
+        /** FKB answered but refused fkbPassword ({"status":"Error"}): the guard is blind. */
+        AUTH_FAILED,
         /** Read succeeded, nothing had drifted. */
         OK,
         /** Drift found and written back. */
@@ -78,6 +80,8 @@ public final class KioskSettingsGuard {
         default String foregroundApp() { return null; }
         /** Bring FKB back to the front (device: a11y HOME, then FKB toForeground). */
         default boolean toForeground() { return false; }
+        /** True when FKB's latest answer was a login refusal (stale fkbPassword). */
+        default boolean authFailing() { return false; }
     }
 
     /** Durable event sink — CrashLog on device, a recorder in tests. */
@@ -142,6 +146,8 @@ public final class KioskSettingsGuard {
     private final Map<String, AtomicInteger> repairsSinceBoot = new ConcurrentHashMap<>();
     /** One-shot latch: a permanently unconfigured device must not log every tick. */
     private volatile boolean noPasswordLogged = false;
+    /** Noted once per refusal streak, cleared when FKB accepts the password again. */
+    private volatile boolean authFailLogged = false;
 
     // --- the two in-memory + persisted deadline pairs ------------------------
     //
@@ -198,6 +204,10 @@ public final class KioskSettingsGuard {
             @Override public boolean setBoolean(String key, String value) { return set("setBooleanSetting", key, value); }
             @Override public boolean setString(String key, String value) { return set("setStringSetting", key, value); }
             @Override public String foregroundApp() {
+                // Our own accessibility service first: it needs no FKB password, so a
+                // stale fkbPassword cannot blind the guard again (2026-10-14).
+                String seen = ForegroundWatch.front();
+                if (seen != null) return seen;
                 JSONObject info = FkbRest.deviceInfo(held[0]);
                 Object fg = info.opt("foreground");
                 return fg == null || fg == JSONObject.NULL ? null : String.valueOf(fg);
@@ -211,6 +221,7 @@ public final class KioskSettingsGuard {
                 int code = FkbRest.command(held[0], "toForeground");
                 return home || launched || (code >= 200 && code < 400);
             }
+            @Override public boolean authFailing() { return FkbRest.authFailing(); }
             private boolean set(String cmd, String key, String value) {
                 Map<String, String> p = new LinkedHashMap<>();
                 p.put("key", key);
@@ -219,7 +230,15 @@ public final class KioskSettingsGuard {
                 return code >= 200 && code < 400;
             }
         };
-        this.notes = CrashLog::note;
+        // Durable on the tablet AND in the log store: a recall or a blind guard is
+        // exactly what has to be findable afterwards without reaching the tablet.
+        this.notes = (kind, msg) -> {
+            CrashLog.note(kind, msg);
+            JSONObject d = new JSONObject();
+            try { d.put("kind", kind).put("note", msg); } catch (Exception ignored) { }
+            // Startup is routine; everything else this guard notes is a recall or a fault.
+            LogEvents.emit(held[0], "kiosk.guard.note", msg.startsWith("guard started") ? "info" : "warn", d);
+        };
         this.clock = System::currentTimeMillis;
         // Persist through the MERGING writeOverride (no sibling key is disturbed), then
         // refresh the cached DeviceConfig so the persisted half of every deadline pair
@@ -300,6 +319,8 @@ public final class KioskSettingsGuard {
         DISABLED, DISARMED, INSTALL_HOLD, NO_PASSWORD,
         /** FKB did not report a foreground app. */
         UNKNOWN,
+        /** FKB refused fkbPassword, so the foreground cannot be read. Nothing is recalled. */
+        AUTH_FAILED,
         /** FKB is in front. */
         HOME,
         /** An allowed app (Settings, the bridge) is in front, within its grace. */
@@ -336,7 +357,14 @@ public final class KioskSettingsGuard {
         if (!p.hasPassword) return fg(ForegroundVerdict.NO_PASSWORD, null);
 
         String app = fkb.foregroundApp();
-        if (app == null || app.isEmpty()) return fg(ForegroundVerdict.UNKNOWN, null);
+        if (app == null || app.isEmpty()) {
+            if (fkb.authFailing()) {
+                noteAuthFailed();
+                return fg(ForegroundVerdict.AUTH_FAILED, null);
+            }
+            return fg(ForegroundVerdict.UNKNOWN, null);
+        }
+        authFailLogged = false;
         if (FKB_PACKAGE.equals(app)) {
             awaySinceMs = 0;
             recallsThisExcursion = 0;
@@ -461,7 +489,14 @@ public final class KioskSettingsGuard {
         }
 
         Map<String, String> live = fkb.listSettings();
-        if (live == null || live.isEmpty()) return refuse(Verdict.UNREACHABLE);
+        if (live == null || live.isEmpty()) {
+            if (fkb.authFailing()) {
+                noteAuthFailed();
+                return refuse(Verdict.AUTH_FAILED);
+            }
+            return refuse(Verdict.UNREACHABLE);
+        }
+        authFailLogged = false;
 
         List<KioskSettings.Drift> drifts = KioskSettings.detect(live);
         if (drifts.isEmpty()) return record(Verdict.OK, emptyList(), emptyList());
@@ -490,6 +525,18 @@ public final class KioskSettingsGuard {
     }
 
     /** A pass that stopped at a gate — no read, no write, nothing found. */
+    /**
+     * Once per refusal streak, not every tick: the durable log is head-truncated, and
+     * a foreground tick every 10 s would evict real history within a day.
+     */
+    private void noteAuthFailed() {
+        if (authFailLogged) return;
+        authFailLogged = true;
+        notes.note("KIOSKSET", "FKB REFUSED fkbPassword — foreground guard, settings guard "
+                + "and the recovery ladder are BLIND. Fix: `pbctl config set fkbPassword …`.");
+        Log.e(TAG, "FKB refused fkbPassword — kiosk guards blind");
+    }
+
     private Pass refuse(Verdict v) { return record(v, emptyList(), emptyList()); }
 
     private Pass record(Verdict v, List<String> drifted, List<String> repaired) {

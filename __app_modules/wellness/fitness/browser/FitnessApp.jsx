@@ -5,6 +5,7 @@ import "./FitnessApp.scss";
 import { DaylightAPI, DaylightMediaPath } from "../../../../frontend/src/lib/api.mjs";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import FitnessMenu from "./nav/FitnessMenu.jsx";
+import FitnessAppLoading from "./nav/FitnessAppLoading.jsx";
 import FitnessNavbar from "./nav/FitnessNavbar.jsx";
 import FitnessShow from "./player/FitnessShow.jsx";
 import FitnessPlayer from "./player/FitnessPlayer.jsx";
@@ -1598,59 +1599,17 @@ const FitnessApp = () => {
           <div className={`fitness-app-container ${kioskUI ? 'kiosk-ui' : ''}`}>
             <div className="fitness-app-viewport" style={{ position: 'relative', height: '100%' }} ref={viewportRef}>
               {loading && (
-                <div style={{display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',position:'absolute',inset:0}}>
-                  <Text size="lg">Loading fitness configuration…</Text>
-                  <Text size="sm" style={{marginTop: '0.5rem', opacity: 0.7}}>
-                    {kioskUI ? 'Firefox detected - optimized for kiosk mode' : 'Preparing application...'}
-                  </Text>
-                  <button 
-                    style={{
-                      marginTop: '1rem',
-                      padding: '0.75rem 1.5rem',
-                      fontSize: '1rem',
-                      backgroundColor: '#228be6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.5rem',
-                      cursor: 'pointer',
-                      fontWeight: 'bold'
-                    }}
-                    onPointerDown={(e) => {
-                      try {
-                        e.preventDefault();
-                        guardedReload({ reason: 'fitness-loading-stuck' });
-                      } catch (err) {
-                        logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.replace(window.location.href);
-                      }
-                    }}
-                    onClick={(e) => {
-                      // Fallback for browsers that don't support pointerdown properly
-                      try {
-                        e.preventDefault();
-                        guardedReload({ reason: 'fitness-loading-stuck' });
-                      } catch (err) {
-                        logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.replace(window.location.href);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      try {
-                        e.preventDefault();
-                        guardedReload({ reason: 'fitness-loading-stuck' });
-                      } catch (err) {
-                        logger.warn('fitness-reload-fallback', { message: err?.message });
-                        window.location.replace(window.location.href);
-                      }
+                <FitnessAppLoading
+                  onReload={() => {
+                    try {
+                      guardedReload({ reason: 'fitness-loading-stuck' });
+                    } catch (err) {
+                      logger.warn('fitness-reload-fallback', { message: err?.message });
+                      window.location.replace(window.location.href);
                     }
                   }}
-                  tabIndex={0}
-                >
-                  Reload App
-                </button>
-              </div>
-            )}
+                />
+              )}
             {fetchError && !loading && (
               <div style={{padding:'2rem',color:'tomato',textAlign:'center'}}>
                 <Text size="lg" style={{marginBottom:'1rem'}}>Failed to load fitness configuration</Text>

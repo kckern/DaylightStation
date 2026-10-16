@@ -211,6 +211,15 @@ public final class Heartbeat {
             String verdict = !"CONNECTED".equals(bleState) ? "DOWN" : (outVerified ? "VERIFIED" : "ZOMBIE");
             o.put("linkVerdict", verdict);
             o.put("fkbReachable", FkbRest.reachable(c));
+            // Reachable is not usable: FKB answers a stale fkbPassword with HTTP 200 and
+            // a login refusal, which blinded both guards and the recovery ladder for an
+            // evening (2026-10-14) while every heartbeat looked fine.
+            o.put("fkbAuthOk", !FkbRest.authFailing());
+            KioskSettingsGuard sg = core.getKioskSettingsGuard();
+            if (sg != null) {
+                JSONObject fg = sg.snapshot().optJSONObject("foreground");
+                if (fg != null) o.put("kioskForeground", fg.optString("verdict", "?"));
+            }
 
             KioskWatchdog wd = core.getKioskWatchdog();
             if (wd != null) {
@@ -250,14 +259,21 @@ public final class Heartbeat {
      * LogsQL filters work ({@code context.app:piano-bridge}, {@code data.ble:CONNECTED}).
      */
     static String toLogStoreLine(JSONObject body) {
+        // A blind guard is a warning, so `level:warn` finds it without knowing the field.
+        String level = body.optBoolean("fkbAuthOk", true) ? "info" : "warn";
+        return toLogStoreLine("bridge.heartbeat", level, body.optString("deviceId", "piano-tablet"), body);
+    }
+
+    /** Any bridge event in the same envelope (see {@link LogEvents}). */
+    static String toLogStoreLine(String msg, String level, String deviceId, JSONObject body) {
         try {
             JSONObject line = new JSONObject();
-            line.put("_msg", "bridge.heartbeat");
+            line.put("_msg", msg);
             line.put("_time", iso(System.currentTimeMillis()));
-            line.put("level", "info");
+            line.put("level", level);
             line.put("context.source", "piano-bridge");
             line.put("context.app", "piano-bridge");
-            line.put("context.device", body.optString("deviceId", "piano-tablet"));
+            line.put("context.device", deviceId == null || deviceId.isEmpty() ? "piano-tablet" : deviceId);
             java.util.Iterator<String> it = body.keys();
             while (it.hasNext()) {
                 String k = it.next();
@@ -272,7 +288,7 @@ public final class Heartbeat {
             }
             return line.toString() + "\n";
         } catch (Exception e) {
-            return "{\"_msg\":\"bridge.heartbeat\",\"level\":\"error\",\"data.buildError\":\"" + e.getMessage() + "\"}\n";
+            return "{\"_msg\":\"" + msg + "\",\"level\":\"error\",\"data.buildError\":\"" + e.getMessage() + "\"}\n";
         }
     }
 

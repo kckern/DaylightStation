@@ -7,16 +7,19 @@ import { useFitnessScreen } from "../../useFitnessScreen.js";
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import FitnessTimeline from "./FitnessTimeline.jsx";
 import MarkerGutter from "./MarkerGutter.jsx";
+import TimelineOverlay from "./TimelineOverlay.jsx";
+import { buildSessionAxis, buildSessionMarks } from "./sessionTimeline.js";
+import { elapsedMsFromX, xFromElapsedMs, videoTimeFromElapsedMs, elapsedMsFromVideoTime } from "./recapTimeMap.js";
+import { positionAtElapsedMs } from "./routeTrack.js";
+import { CHART_MARGIN } from "../../lib/chartConstants.js";
 import GroupSummaryPanel from "./GroupSummaryPanel.jsx";
+import DetailActions from "./DetailActions.jsx";
+import SessionDetailSkeleton, { ChartSkeleton, LanesSkeleton } from "./SessionDetailSkeleton.jsx";
 import SportIcon from "../_shared/SportIcon.jsx";
 import RouteMap from "./RouteMap.jsx";
 import "./FitnessSessionDetailWidget.scss";
-import { formatFitnessDate } from "../../lib/dateFormatter.js";
-import { getActivityDisplay, primaryActivity } from "../../lib/activities/fitnessActivityRegistry.js";
-import { selectPrimaryMedia, buildSelectionConfig } from "../../hooks/fitness/selectPrimaryMedia.js";
-import { mediaDisplayUrl, mediaIdentityKey } from "./sessionDetailUtils.js";
 import { selectVideoMarkerEvents } from "./timelineOverlay.js";
-import { deriveRecap } from "./recapVideo.js";
+import { headerFromDetail, headerFromListRow, mergeHeaders } from "./sessionHeader.js";
 import { useSettledRecapPlay } from "./recapPlayback.js";
 import { useRecapUnlock } from "./useRecapUnlock.js";
 import { useOptionalIdentity } from "../../identity/useIdentity.js";
@@ -28,6 +31,8 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
+const DELETE_ARM_MS = 3000;
+
 function logger() {
   if (!_logger) _logger = getLogger().child({ app: 'fitness', component: 'session-detail' });
   return _logger;
@@ -38,32 +43,6 @@ const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
     <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
   </svg>
 );
-
-function formatTime(startTime, timezone) {
-  if (!startTime) return '--';
-  const opts = { hour: 'numeric', minute: '2-digit' };
-  if (timezone) opts.timeZone = timezone;
-  return new Date(startTime).toLocaleTimeString([], opts).toLowerCase().replace(' ', '');
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  return formatFitnessDate(dateStr + 'T12:00:00');
-}
-
-function formatElapsed(durationMs) {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
-  const minutes = Math.max(1, Math.round(durationMs / 60000));
-  if (minutes < 60) return `${minutes}m elapsed`;
-  const remainder = minutes % 60;
-  return `${Math.floor(minutes / 60)}h${remainder ? ` ${remainder}m` : ''} elapsed`;
-}
-
-function measuredDurationMs(participant = {}) {
-  if (Number.isFinite(participant.measuredDurationMs)) return participant.measuredDurationMs;
-  return Object.values(participant.zone_minutes || participant.zoneMinutes || {})
-    .reduce((total, value) => total + (Number(value) || 0), 0) * 60000;
-}
 
 function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, breakOn, className }) {
   const containerRef = useRef(null);
@@ -151,7 +130,11 @@ function FitText({ children, maxSize = 2.4, minSize = 0.8, wrapBelow = 1.3, brea
 
 export default function FitnessSessionDetailWidget({ sessionId }) {
   const [sessionData, setSessionData] = useState(null);
+  // The session `sessionData` belongs to. While another session loads, the pane
+  // keeps showing this one (dimmed) instead of blanking to a skeleton.
+  const [dataSessionId, setDataSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const [error, setError] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const { restore } = useScreen();
@@ -170,10 +153,15 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   // `background` refreshes keep the current detail on screen: the skeleton is
   // for a first load only. Swapping a rendered detail back to a skeleton to
   // refresh it is what made the pane blank out and redraw during hydration.
+  // Switching sessions keeps the previous detail up too (see `stale` below):
+  // most loads finish in ~100ms, and a skeleton flash on every tap was worse
+  // than a brief dim of the outgoing session.
+  const hasDataRef = useRef(false);
+  hasDataRef.current = sessionData != null;
   const fetchSession = useCallback(({ background = false } = {}) => {
     if (!sessionId) return;
     if (!background) {
-      setLoading(true);
+      if (!hasDataRef.current) setLoading(true);
       setError(null);
     }
     const startedAt = performance.now();
@@ -185,6 +173,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       .then((data) => {
         if (activeSessionIdRef.current !== sessionId) return;
         setSessionData(data.session || data);
+        setDataSessionId(sessionId);
         setError(null);
         setLoading(false);
         logger().info('session-detail.loaded', {
@@ -203,8 +192,23 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       });
   }, [sessionId]);
 
+  // Delete takes two taps: the first arms it ("Delete?") for a few seconds. One
+  // stray touch on a kiosk must never delete a workout.
+  const disarmTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(disarmTimerRef.current), []);
+  useEffect(() => { setDeleteArmed(false); clearTimeout(disarmTimerRef.current); }, [sessionId]);
   const handleDelete = useCallback(async () => {
     if (!sessionId || deleting) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      clearTimeout(disarmTimerRef.current);
+      disarmTimerRef.current = setTimeout(() => setDeleteArmed(false), DELETE_ARM_MS);
+      logger().info('session-detail.delete-armed', { sessionId });
+      return;
+    }
+    clearTimeout(disarmTimerRef.current);
+    setDeleteArmed(false);
+    logger().info('session-detail.delete-confirmed', { sessionId });
     setDeleting(true);
     try {
       const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`, { method: 'DELETE' });
@@ -215,7 +219,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       setDeleting(false);
       setError(`Delete failed: ${err.message}`);
     }
-  }, [sessionId, deleting, restore, refetchScreenData]);
+  }, [sessionId, deleting, deleteArmed, restore, refetchScreenData]);
 
   const handleAddVoiceMemo = useCallback(() => {
     if (!sessionId) return;
@@ -259,97 +263,25 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     fetchSession({ background: true });
   }, [sessionId, listRow, fetchSession]);
 
-  const header = useMemo(() => {
-    if (!sessionData) return null;
-    const summary = sessionData.summary || {};
-    // Re-derive primary rather than trusting the stored `primary` flag — old
-    // sessions carry a stale flag on the wrong item (a music track, or a brief
-    // bleed-over episode from the previous session). selectPrimaryMedia filters
-    // audio and keys on actual played time. Fall back to the flag, then media[0].
-    const mediaList = Array.isArray(summary.media) ? summary.media : null;
-    const pm = mediaList
-      ? (selectPrimaryMedia(mediaList, buildSelectionConfig(fitnessCtx?.plexConfig))
-        || mediaList.find(m => m.primary)
-        || mediaList[0])
-      : null;
-    const session = sessionData.session || {};
-
-    const dateStr = sessionData.date
-      || (sessionData.sessionId
-        ? `${sessionData.sessionId.slice(0, 4)}-${sessionData.sessionId.slice(4, 6)}-${sessionData.sessionId.slice(6, 8)}`
-        : null);
-
-    // Group detail puts start/end/duration at the ROOT; normal sessions nest them under .session.
-    const startMs = session.start ? new Date(session.start).getTime()
-      : (sessionData.start != null ? new Date(sessionData.start).getTime()
-        : (Number.isFinite(sessionData.startTime) ? sessionData.startTime : null));
-    const endMs = Number.isFinite(sessionData.endTime) ? sessionData.endTime
-      : (session.end ? new Date(session.end).getTime()
-        : (sessionData.end ? new Date(sessionData.end).getTime() : null));
-    const durationSec = session.duration_seconds ?? sessionData.duration_seconds ?? 0;
-    const durationMs = durationSec * 1000;
-    const elapsedMs = sessionData.elapsedMs || (startMs && endMs ? Math.max(0, endMs - startMs) : durationMs);
-
-    // Extract max suffer score and first activityId across all participants
-    const participants = sessionData.participants || {};
-    const participantSummaries = summary.participants || {};
-    let sufferScore = null;
-    let stravaActivityId = null;
-    for (const p of Object.values(participants)) {
-      const ss = p.strava?.sufferScore;
-      if (ss != null && (sufferScore === null || ss > sufferScore)) {
-        sufferScore = ss;
-        stravaActivityId = p.strava?.activityId || null;
-      }
-    }
-
-    const stravaBlock = sessionData.strava || null;
-
-    const act = !pm ? primaryActivity(sessionData?.activities) : null;
-    const actDisplay = act ? getActivityDisplay(act.type) : null;
-    // Prefer the show/video over the generic Strava activity name when the
-    // episode title is absent.
-    const title = pm?.title || pm?.showTitle || pm?.grandparentTitle || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
-
-    const recap = deriveRecap(sessionData.timelapse);
-
-    return {
-      title,
-      // Identity of the video the header shows — the overlay layers leave this one
-      // out of the marker gutter, so they must agree on it with the header.
-      primaryMediaKey: pm ? mediaIdentityKey(pm) : null,
-      activityPoster: actDisplay?.Poster || null,
-      activityAccent: actDisplay?.accent || null,
-      showTitle: pm?.showTitle || pm?.grandparentTitle || null,
-      grandparentId: pm?.grandparentId || null,
-      posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
-      thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
-      recapUrl: recap.url,
-      hasRecap: recap.ready,
-      recapProcessing: recap.processing,
-      description: pm?.description || null,
-      date: dateStr ? formatDate(dateStr) : '',
-      time: startMs ? formatTime(startMs, sessionData.timezone) : null,
-      endTime: endMs ? formatTime(endMs, sessionData.timezone) : null,
-      elapsedLabel: formatElapsed(elapsedMs),
-      isGroup: !!sessionData.isGroup,
-      raceCount: act?.count || 0,
-      segmentCount: Array.isArray(sessionData.segments) ? sessionData.segments.length : 0,
-      riders: [...new Set([...Object.keys(participants), ...Object.keys(participantSummaries)])].map((id) => ({
-        id,
-        name: participants[id]?.displayName || participants[id]?.display_name || id,
-        measuredDurationMs: measuredDurationMs(participants[id]) || measuredDurationMs(participantSummaries[id]),
-      })),
-      elapsedMs,
-      totalRings: sessionData.treasureBox?.totalRings || summary.rings?.total || sessionData.totalRings || 0,
-      sufferScore,
-      stravaActivityId,
-      voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
-      stravaNotes: sessionData.strava_notes?.text || sessionData.stravaNotes || null,
-      stravaType: stravaBlock?.type || null,
-      stravaHasMap: !!(stravaBlock?.map?.polyline),
-    };
-  }, [sessionData, fitnessCtx?.plexConfig]);
+  const detailHeader = useMemo(
+    () => (sessionData ? headerFromDetail(sessionData, fitnessCtx?.plexConfig) : null),
+    [sessionData, fitnessCtx?.plexConfig]
+  );
+  // The tapped session's header comes straight from its home-list row; only the
+  // detail-only parts (charts, lanes, recap video, Strava stats) wait for the fetch.
+  const listRowData = useMemo(
+    () => (listRow ? JSON.parse(listRow) : null),
+    [listRow]
+  );
+  const previewHeader = useMemo(() => headerFromListRow(listRowData), [listRowData]);
+  // `current`: the loaded detail is the session on screen. `pending`: it is not
+  // (yet), but the list row lets us show this session's header now.
+  const current = sessionData != null && dataSessionId === sessionId;
+  const pending = !current && previewHeader != null;
+  // No row for it either (a deep link): keep the outgoing session up, dimmed.
+  const stale = !current && !pending && sessionData != null;
+  const header = current ? mergeHeaders(detailHeader, previewHeader) : (previewHeader || detailHeader);
+  const detail = (current || stale) ? sessionData : null;
 
   // The recap shows the episode in picture-in-picture, so a session that played
   // protected replay content (fitness.yml → playback_unlock, session_recaps)
@@ -369,7 +301,35 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     const name = unlockRules?.lock;
     return Boolean(name) && isKioskEnv() && Array.isArray(locks[name]) && locks[name].length > 0;
   }, [fitnessCtx?.fitnessConfiguration, unlockRules]);
-  const sessionMedia = sessionData?.summary?.media || null;
+  // One time axis + one mark list for the chart · gutter · lanes stack.
+  const axis = useMemo(() => buildSessionAxis(detail), [detail]);
+  const rootRef = useRef(null);
+  const chartRef = useRef(null);
+  const timelineRef = useRef(null);
+  // The overlay spans from the chart's plot top to the lanes' bottom.
+  const [stackBox, setStackBox] = useState(null);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const measure = () => {
+      const c = chartRef.current;
+      const tl = timelineRef.current;
+      if (!c || !tl) { setStackBox(null); return; }
+      const top = c.offsetTop + CHART_MARGIN.top;
+      const next = { width: root.clientWidth, top, height: tl.offsetTop + tl.offsetHeight - top };
+      setStackBox((prev) => (prev && prev.width === next.width && prev.top === next.top && prev.height === next.height ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    [root, chartRef.current, timelineRef.current].forEach((el) => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [detail]);
+  const marks = useMemo(
+    () => (detail && axis && stackBox ? buildSessionMarks(detail, axis, stackBox.width, header?.primaryMediaKey) : null),
+    [detail, axis, stackBox, header?.primaryMediaKey]
+  );
+
+  const sessionMedia = detail?.summary?.media || null;
   const fetchRecapInfo = useCallback((plexId) => DaylightAPI(`api/v1/info/plex/${plexId}`), []);
   const recapUnlock = useRecapUnlock({
     sessionId,
@@ -383,6 +343,66 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const recapViewable = !!header?.hasRecap && !recapUnlock.locked;
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: recapViewable, srcKey: header?.recapUrl });
+
+  // Recap ↔ chart time cursor (recapTimeMap.js): a tap on the chart, gutter or lanes
+  // seeks the recap to that moment, and a playhead on the stack follows the recap.
+  // Single sessions only (a merged group has no recap, and its axis is gap-compressed).
+  const recapSpeedup = header?.recapSpeedup;
+  const recapSeekable = recapViewable && current && !header?.isGroup && recapSpeedup > 0;
+  // A route with time on it (strava.map.track): the same cursor places the rider on the map.
+  const routeTrack = current ? (detail?.strava?.map?.track || null) : null;
+  const cursorEnabled = recapSeekable || !!routeTrack;
+  const [playheadMs, setPlayheadMs] = useState(null);
+  // One focused rider for the rings chart and the HR lanes: tapping either
+  // avatar focuses that rider in both (tap again to clear).
+  const [focusedRider, setFocusedRider] = useState(null);
+  useEffect(() => { setPlayheadMs(null); setFocusedRider(null); }, [sessionId]);
+  const toggleRiderFocus = useCallback((id) => {
+    setFocusedRider((prev) => (prev === id ? null : id));
+    logger().info('session-detail.rider-focus', { sessionId, userId: id, source: 'lane' });
+  }, [sessionId]);
+  useEffect(() => {
+    const v = recapVideoRef.current;
+    if (!recapSeekable || !v) return undefined;
+    const onTime = () => setPlayheadMs(elapsedMsFromVideoTime(v.currentTime, recapSpeedup));
+    v.addEventListener('timeupdate', onTime);
+    v.addEventListener('seeked', onTime);
+    onTime();
+    return () => {
+      v.removeEventListener('timeupdate', onTime);
+      v.removeEventListener('seeked', onTime);
+    };
+  }, [recapSeekable, recapSpeedup, header?.recapUrl, recapVideoRef]);
+
+  const handleStackPointer = useCallback((e) => {
+    if (!cursorEnabled || !axis || !stackBox) return;
+    const target = e.target;
+    if (target.closest?.('button, a, .race-chart__focus-filter, .race-chart__avatar-group, .fitness-timeline__avatar, .marker-gutter__chip')) return;
+    // On a map session the chart row is the map, which pans on drag: only the
+    // gutter and lanes set the time there.
+    const zones = header?.stravaHasMap
+      ? '.session-detail__gutter, .session-detail__timeline'
+      : '.session-detail__chart, .session-detail__gutter, .session-detail__timeline';
+    if (!target.closest?.(zones)) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const x = e.clientX - root.getBoundingClientRect().left;
+    const ms = elapsedMsFromX(x, axis, stackBox.width);
+    if (ms == null) return;
+    setPlayheadMs(ms);
+    const v = recapVideoRef.current;
+    let videoTime = null;
+    if (recapSeekable && v) {
+      videoTime = videoTimeFromElapsedMs(ms, recapSpeedup, v.duration);
+      v.currentTime = videoTime;
+    }
+    logger().info('session-detail.time-cursor', {
+      sessionId, elapsedMs: Math.round(ms),
+      videoTime: videoTime == null ? null : Math.round(videoTime * 100) / 100,
+      route: !!routeTrack,
+    });
+  }, [cursorEnabled, axis, stackBox, header?.stravaHasMap, recapSeekable, recapSpeedup, recapVideoRef, routeTrack, sessionId]);
+  const routeCursor = routeTrack && playheadMs != null ? positionAtElapsedMs(routeTrack, playheadMs) : null;
 
   // The recap is a muted, looping timelapse — glanceable, not scrub-worthy. Tap
   // toggles native (edge-to-edge) fullscreen symmetrically: tap the thumb to ENTER,
@@ -401,13 +421,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     }
   }, [recapVideoRef]);
 
-  if (loading) {
-    return (
-      <div className="session-detail" style={{ padding: '2rem', gap: '1rem' }}>
-        <Skeleton height={20} width="40%" />
-        <Skeleton height="100%" style={{ flex: 1 }} />
-      </div>
-    );
+  if (!sessionData && !previewHeader) {
+    return <SessionDetailSkeleton />;
   }
 
   if (error) {
@@ -434,12 +449,28 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   // top of the line chart), so it earns its 66px only when a card will actually render.
   // Same selection the gutter uses, so the band never opens empty. Strava-map sessions
   // never show it.
-  const events = sessionData?.timeline?.events;
-  const hasVideoChanges = !header?.stravaHasMap &&
+  const events = detail?.timeline?.events;
+  const hasVideoChanges = !!detail && !header?.stravaHasMap &&
     selectVideoMarkerEvents(events, header?.primaryMediaKey).length > 0;
 
+  const shownSessionId = stale ? dataSessionId : sessionId;
+  const actions = (
+    <DetailActions
+      onClose={() => restore('right-area')}
+      onDelete={handleDelete}
+      deleting={deleting}
+      deleteArmed={deleteArmed}
+      onAddMemo={handleAddVoiceMemo}
+    />
+  );
+
   return (
-    <div className="session-detail">
+    <div
+      ref={rootRef}
+      onPointerDown={handleStackPointer}
+      className={`session-detail${stale ? ' session-detail--stale' : ''}${pending ? ' session-detail--pending' : ''}${cursorEnabled ? ' session-detail--seekable' : ''}`}
+      aria-busy={(stale || pending) || undefined}
+    >
       {/* Header (25%) */}
       <div className="session-detail__header">
         {header?.posterUrl ? (
@@ -471,7 +502,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder">
             <SportIcon
               type={header?.stravaType}
-              sessionId={sessionId}
+              sessionId={shownSessionId}
               variant="detail"
             />
           </div>
@@ -488,6 +519,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               {(() => {
                 // Build only the present meta items, then interleave separators — no dangling
                 // "·" when time/duration/rings are missing (e.g. merged race-group sessions).
+                // The totals (rings, suffer) are one unbreakable group set off by a gap, not a
+                // dot: when the line is too narrow the group wraps whole, and no separator is
+                // left hanging at a line end.
                 const items = [];
                 if (header?.date) items.push(<span key="date" className="session-detail__meta-item">{header.date}</span>);
                 if (header?.time) items.push(
@@ -497,30 +531,45 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 );
                 if (header?.elapsedLabel) items.push(<span key="dur" className="session-detail__meta-item">{header.elapsedLabel}</span>);
                 if (header?.isGroup && header?.raceCount > 0) items.push(<span key="races" className="session-detail__meta-item">{header.raceCount} races</span>);
-                if (header?.totalRings > 0) items.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
-                if (header?.sufferScore != null) items.push(
+                const totals = [];
+                if (header?.totalRings > 0) totals.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
+                if (header?.sufferScore != null) totals.push(
                   header.stravaActivityId
                     ? <a key="suffer" href={`https://www.strava.com/activities/${header.stravaActivityId}`} target="_blank" rel="noopener noreferrer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</a>
                     : <span key="suffer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</span>
                 );
-                return items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node]);
+                const timing = items.length > 0 && (
+                  <span key="timing" className="session-detail__meta-timing">
+                    {items.flatMap((node, i) => i === 0 ? [node] : [<span key={`sep${i}`} className="session-detail__meta-sep" />, node])}
+                  </span>
+                );
+                return [timing, totals.length > 0 && <span key="totals" className="session-detail__meta-totals">{totals}</span>];
               })()}
             </div>
-            {header?.riders?.some((rider) => rider.measuredDurationMs > 0) && (
-              <div className="session-detail__measured-row">
-                {header.riders.filter((rider) => rider.measuredDurationMs > 0).map((rider) => (
-                  <span key={rider.id}>{rider.name} {Math.max(1, Math.round(rider.measuredDurationMs / 60000))}m measured</span>
-                ))}
-              </div>
-            )}
+            <div className="session-detail__measured-row">
+              {header?.riders?.filter((rider) => rider.measuredDurationMs > 0).map((rider) => (
+                <span key={rider.id}>{rider.name} {Math.max(1, Math.round(rider.measuredDurationMs / 60000))}m measured</span>
+              ))}
+              {shownSessionId && (
+                <code
+                  className="session-detail__session-id"
+                  onClick={() => navigator.clipboard?.writeText(shownSessionId)}
+                  title="Click to copy session ID"
+                >{shownSessionId}</code>
+              )}
+            </div>
             {(header?.voiceMemos?.length > 0 || header?.stravaNotes) && (
               <div className="session-detail__memos">
-                {header.voiceMemos?.map((memo, i) => (
-                  <div key={`memo-${i}`} className="session-detail__memo">
+                {/* One clamped block for all memos (joined like the list row): each memo
+                    clamping on its own let two of them overflow and cut the second mid-line. */}
+                {header.voiceMemos?.length > 0 && (
+                  <div className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83C\uDF99'}</span>
-                    <span className="session-detail__memo-text">{memo.transcript}</span>
+                    <span className="session-detail__memo-text">
+                      {header.voiceMemos.map((memo) => memo.transcript).join(' \u2022 ')}
+                    </span>
                   </div>
-                ))}
+                )}
                 {header.stravaNotes && !header.voiceMemos?.length && (
                   <div className="session-detail__memo">
                     <span className="session-detail__memo-icon">{'\uD83D\uDCDD'}</span>
@@ -532,7 +581,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           </div>
         </div>
 
-        {(header?.thumbUrl || header?.hasRecap) ? (
+        {/* A group keeps its rider summary (who rode, blocks sandwiched) unless it has a recap. */}
+        {(header?.hasRecap || (header?.thumbUrl && !header?.isGroup)) ? (
           <div className="session-detail__thumb">
             {header?.hasRecap && recapUnlock.locked ? (
               <button
@@ -574,108 +624,105 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             {header?.recapProcessing && !header?.hasRecap && (
               <div className="session-detail__recap-processing">Recap rendering…</div>
             )}
-            <button
-              className="session-detail__close"
-              onClick={() => restore('right-area')}
-              title="Close"
-            >&times;</button>
-            <button
-              className="session-detail__delete"
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete session"
-            >{deleting ? '...' : '\u2715'}</button>
-            <button
-              className="session-detail__add-memo"
-              onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }}
-              title="Add voice memo to this session"
-              aria-label="Add voice memo"
-            >{'\uD83C\uDF99'}</button>
-            {sessionId && (
-              <code
-                className="session-detail__session-id"
-                onClick={() => navigator.clipboard?.writeText(sessionId)}
-                title="Click to copy session ID"
-              >{sessionId}</code>
-            )}
+            {actions}
             {header?.description && (
               <div className="session-detail__thumb-desc">
                 <span>{header.description}</span>
               </div>
             )}
           </div>
-        ) : sessionData?.strava ? (
+        ) : header?.pendingStrava && pending ? (
+          // Strava stats need the detail (moving time, max HR, elevation gain).
           <div className="session-detail__thumb session-detail__thumb--strava-stats">
-            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
-            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
-            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
+            {actions}
+            <Skeleton className="session-detail__thumb-pending" radius="sm" />
+          </div>
+        ) : detail?.strava ? (
+          <div className="session-detail__thumb session-detail__thumb--strava-stats">
+            {actions}
             <div className="session-detail__strava-stats">
-              {sessionData.strava.distance > 0 && (
+              {detail.strava.distance > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{(sessionData.strava.distance / 1000).toFixed(1)}</span>
+                  <span className="session-detail__stat-value">{(detail.strava.distance / 1000).toFixed(1)}</span>
                   <span className="session-detail__stat-label">km</span>
                 </div>
               )}
-              {sessionData.strava.movingTime > 0 && (
+              {detail.strava.movingTime > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.movingTime / 60)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.movingTime / 60)}</span>
                   <span className="session-detail__stat-label">min</span>
                 </div>
               )}
-              {sessionData.strava.avgHeartrate && (
+              {detail.strava.avgHeartrate && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.avgHeartrate)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.avgHeartrate)}</span>
                   <span className="session-detail__stat-label">avg HR</span>
                 </div>
               )}
-              {sessionData.strava.maxHeartrate && (
+              {detail.strava.maxHeartrate && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.maxHeartrate)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.maxHeartrate)}</span>
                   <span className="session-detail__stat-label">max HR</span>
                 </div>
               )}
-              {sessionData.strava.totalElevationGain > 0 && (
+              {detail.strava.totalElevationGain > 0 && (
                 <div className="session-detail__stat">
-                  <span className="session-detail__stat-value">{Math.round(sessionData.strava.totalElevationGain)}</span>
+                  <span className="session-detail__stat-value">{Math.round(detail.strava.totalElevationGain)}</span>
                   <span className="session-detail__stat-label">m elev</span>
                 </div>
               )}
             </div>
-            {sessionId && (
-              <code className="session-detail__session-id" onClick={() => navigator.clipboard?.writeText(sessionId)} title="Click to copy session ID">{sessionId}</code>
-            )}
           </div>
-        ) : header?.isGroup ? (
+        ) : (header?.isGroup || header?.riders?.length > 0) ? (
+          // No video to show: who rode fills the box instead of an empty panel.
           <GroupSummaryPanel
             riders={header.riders}
-            segmentCount={header.segmentCount}
+            segmentCount={header.isGroup ? header.segmentCount : 0}
             elapsedMs={header.elapsedMs}
-            sessionId={sessionId}
-            onClose={() => restore('right-area')}
-            onDelete={handleDelete}
-            deleting={deleting}
-            onAddMemo={handleAddVoiceMemo}
+            actions={actions}
           />
         ) : (
           <div className="session-detail__thumb session-detail__thumb--placeholder">
-            <button className="session-detail__close" onClick={() => restore('right-area')} title="Close">&times;</button>
-            <button className="session-detail__delete" onClick={handleDelete} disabled={deleting} title="Delete session">{deleting ? '...' : '\u2715'}</button>
-            <button className="session-detail__add-memo" onPointerDown={(e) => { e.preventDefault(); handleAddVoiceMemo(); }} title="Add voice memo to this session" aria-label="Add voice memo">{'\uD83C\uDF99'}</button>
+            {actions}
           </div>
         )}
       </div>
 
+      {/* Every vertical mark, once, full height behind chart · gutter · lanes */}
+      {detail && stackBox && (
+        <TimelineOverlay
+          marks={marks}
+          width={stackBox.width}
+          top={stackBox.top}
+          height={stackBox.height}
+          playheadX={playheadMs != null ? xFromElapsedMs(playheadMs, axis, stackBox.width) : null}
+        />
+      )}
+
       {/* Chart (40%) */}
-      <div className="session-detail__chart">
-        {header?.stravaHasMap ? (
+      <div ref={chartRef} className="session-detail__chart">
+        {!detail ? (
+          <ChartSkeleton />
+        ) : header?.stravaHasMap ? (
           <RouteMap
-            polyline={sessionData.strava?.map?.polyline}
+            cursor={routeCursor}
+            polyline={detail.strava?.map?.polyline}
             sessionId={sessionId}
-            distance={sessionData.strava?.distance}
-            elevation={sessionData.strava?.totalElevationGain}
+            distance={detail.strava?.distance}
+            elevation={detail.strava?.totalElevationGain}
           />
         ) : ChartComponent ? (
-          <ChartComponent sessionData={sessionData} mode="standalone" primaryMediaKey={header?.primaryMediaKey} />
+          <ChartComponent
+            sessionData={detail}
+            mode="standalone"
+            primaryMediaKey={header?.primaryMediaKey}
+            axisTicks={axis?.effectiveTicks}
+            marks={marks}
+            avatarSizing="fit"
+            showFocusLegend={false}
+            focusUserId={focusedRider}
+            onFocusChange={setFocusedRider}
+          />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
         )}
@@ -684,13 +731,23 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
       {hasVideoChanges && (
         <div className="session-detail__gutter">
-          <MarkerGutter sessionData={sessionData} primaryMediaKey={header?.primaryMediaKey} />
+          <MarkerGutter videoMarkers={marks?.videos || []} />
         </div>
       )}
 
       {/* Timeline (35%) */}
-      <div className="session-detail__timeline">
-        <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
+      <div ref={timelineRef} className="session-detail__timeline">
+        {detail
+          ? (
+            <FitnessTimeline
+              sessionData={detail}
+              maxAvatarSize={posterWidth}
+              effectiveTicks={axis?.effectiveTicks}
+              focusedUserId={focusedRider}
+              onAvatarTap={(detail?.participants && Object.keys(detail.participants).length > 1) || header?.isGroup ? toggleRiderFocus : null}
+            />
+          )
+          : <LanesSkeleton count={Math.max(1, Math.min(header?.riders?.length || 3, 6))} />}
       </div>
 
       <UnlockPrompt

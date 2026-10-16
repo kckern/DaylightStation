@@ -244,9 +244,13 @@ After **10,000 ms** of equipment-specific loss, the cycle is cancelled neutrally
 `status: 'cancelled'`, `cancelReason: 'sensor_offline'`. The engine records one
 history entry (history is capped at 20), emits one `challenge_cancelled` session
 event, clears the cycle, and uses the normal challenge interval/queue path. No
-failure, reward, or rider cooldown is applied. Session summaries count ordinary
-`challenge` results; `challenge_cancelled` events do not increase total or failed
-challenges. Structured logs identify loss, recovery, and cancellation as
+failure, reward, or rider cooldown is applied. Session summaries count only
+`success` and `failed` challenge results (total = succeeded + failed); `abandoned`,
+`started`, `cleared`, `replaced` and `ended` are neutral, and `challenge_cancelled`
+events do not increase total or failed challenges. A challenge still open when a
+session ends is closed with result `abandoned`, reason `session_end`.
+`node cli/fitness.cli.mjs session repair-open-challenges [--days N] [--apply]`
+rewrites already-saved unresolved records the same way. Structured logs identify loss, recovery, and cancellation as
 `governance.cycle.sensor_unavailable`, `.sensor_recovered`, and `.cancelled`, with
 challenge/equipment IDs and loss duration.
 
@@ -955,6 +959,13 @@ A cadence sensor that genuinely dies is indistinguishable from a rider who
 stopped. That is accepted — the rider must be present with a live strap, a
 warning precedes the lock, and a dead sensor on a machine someone is actively
 riding is a fault worth surfacing.
+
+Timer pulses and zone-change debounces call `evaluate()` with no sensor data.
+They read live cadence from `session.getEquipmentCadenceMap()`, and a capture
+that still has no map keeps the previous one. An omitted map must never become
+`{}`: the evaluator reads an empty map as `no_cadence_source` and disarms,
+resetting the rider's evidence on every pulse
+(`GovernanceEngine.cadenceFloorPulse.test.js`).
 
 Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
 `.tripped`.

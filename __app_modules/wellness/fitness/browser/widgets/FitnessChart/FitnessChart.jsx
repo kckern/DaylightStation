@@ -616,7 +616,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
  * that way: passing a freshly-built array/object here silently restores the
  * 12Hz reconcile.
  */
-const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xTicks, yTicks, width, height, focusedUserId, overlay = null }) => (
+const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xTicks, yTicks, width, height, focusedUserId, overlay = null, avatarRadius = AVATAR_RADIUS, onAvatarTap = null }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -639,11 +639,16 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 					return (
 						<g key={`co-chal-${i}`}>
 							{/* whisper fill — the bracket + edge line carry the duration signal */}
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
+							{!overlay.external && (
+								<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
+							)}
 							{/* duration bracket hanging under the badge row: start → end */}
-							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
-							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8) */}
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							{!m.unresolved && (
+								<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
+							)}
+							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8);
+							    with an external overlay the full-height end line is TimelineOverlay's */}
+							{!overlay.external && <line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />}
 						</g>
 					);
 				})}
@@ -666,13 +671,13 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 			{yTicks.map((tick) => (
 				<g key={tick.value} transform={`translate(0, ${tick.y})`}>
 					<line x1="0" x2="8" y1="0" y2="0" />
-					<text x="12" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
+					<text x="16" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
 				</g>
 			))}
 			<text
 				className="race-chart__axis-title"
 				x={-CHART_MARGIN.top}
-				y={14}
+				y={10}
 				transform="rotate(-90)"
 				textAnchor="end"
 				fontSize={12}
@@ -777,21 +782,21 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 					? [...avatars].sort((a, b) => (a.id === focusedUserId ? 1 : 0) - (b.id === focusedUserId ? 1 : 0))
 					: avatars;
 				return sorted.map((avatar, idx) => {
-					const size = AVATAR_RADIUS * 2;
+					const size = avatarRadius * 2;
 					const labelPos = avatar.labelPosition || 'right';
-					let labelX = AVATAR_RADIUS + RING_LABEL_GAP;
+					let labelX = avatarRadius + RING_LABEL_GAP;
 					let labelY = 0;
 					let textAnchor = 'start';
 					if (labelPos === 'left') {
-						labelX = -(AVATAR_RADIUS + RING_LABEL_GAP);
+						labelX = -(avatarRadius + RING_LABEL_GAP);
 						textAnchor = 'end';
 					} else if (labelPos === 'top') {
 						labelX = 0;
-						labelY = -(AVATAR_RADIUS + RING_LABEL_GAP);
+						labelY = -(avatarRadius + RING_LABEL_GAP);
 						textAnchor = 'middle';
 					} else if (labelPos === 'bottom') {
 						labelX = 0;
-						labelY = AVATAR_RADIUS + RING_LABEL_GAP + 12;
+						labelY = avatarRadius + RING_LABEL_GAP + 12;
 						textAnchor = 'middle';
 					}
 					const clipSafeId = slugifyId(avatar.id, 'user');
@@ -803,13 +808,14 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 					return (
 						<g
 							key={clipId}
-							className="race-chart__avatar-group"
+							className={`race-chart__avatar-group${onAvatarTap ? ' race-chart__avatar-group--tappable' : ''}`}
 							transform={`translate(${ax}, ${ay})`}
 							opacity={groupOpacity}
+							onPointerDown={onAvatarTap ? (e) => { e.stopPropagation(); onAvatarTap(avatar.id); } : undefined}
 						>
 							<defs>
 								<clipPath id={clipId}>
-									<circle r={AVATAR_RADIUS} cx={0} cy={0} />
+									<circle r={avatarRadius} cx={0} cy={0} />
 								</clipPath>
 							</defs>
 							{!avatar.labelHidden && (
@@ -819,22 +825,29 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 									className="race-chart__ring-label"
 									textAnchor={textAnchor}
 									dominantBaseline="middle"
-									fontSize={RING_FONT_SIZE}
+									fontSize={Math.round(Math.max(13, Math.min(RING_FONT_SIZE, avatarRadius * 0.75)))}
 									aria-hidden="true"
 								>
 									{formatCompactNumber(avatar.value)}
 								</text>
 							)}
-							<circle className="race-chart__avatar-backdrop" r={AVATAR_RADIUS + 6} />
+							<circle className="race-chart__avatar-backdrop" r={avatarRadius + Math.max(3, avatarRadius * 0.2)} />
+							{/* Identity-tinted disc under the image: what shows while it decodes,
+							    instead of the backdrop's black. */}
+							<circle
+								className="race-chart__avatar-placeholder"
+								r={avatarRadius}
+								fill={avatar.identityColor || avatar.color}
+							/>
 							<circle
 								className="race-chart__avatar-zone"
-								r={AVATAR_RADIUS + 1.5}
+								r={avatarRadius + 1.5}
 								stroke={avatar.identityColor || avatar.color}
 							/>
 							<image
 								href={avatar.avatarUrl}
-								x={-AVATAR_RADIUS}
-								y={-AVATAR_RADIUS}
+								x={-avatarRadius}
+								y={-avatarRadius}
 								width={size}
 								height={size}
 								clipPath={`url(#${clipId})`}
@@ -856,9 +869,13 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 						{m.badgeX != null && Math.abs(m.badgeX - m.xEnd) > 1 && (
 							<line x1={m.xEnd} y1={cy + r} x2={m.badgeX} y2={cy + r} stroke={color} strokeWidth={1} opacity={0.5} />
 						)}
-						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
+						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r}
+							fill={m.unresolved ? 'rgba(0,0,0,0.6)' : color}
+							stroke={m.unresolved ? color : 'rgba(0,0,0,0.7)'}
+							strokeWidth={m.unresolved ? 2 : 1.5}
+							strokeDasharray={m.unresolved ? '3 2' : undefined} />
 						{m.requiredCount != null && (
-							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
+							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill={m.unresolved ? color : '#1a1a1a'}>{m.requiredCount}</text>
 						)}
 					</g>
 				);
@@ -870,7 +887,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
-const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey }) => {
+const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey, axisTicks, marks, avatarSizing = 'fixed', showFocusLegend = true, focusUserId, onFocusChange }) => {
 	useRenderProfiler('FitnessChart');
 	const {
 		participants,
@@ -1067,14 +1084,31 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
 		return Number(src?.timeline?.tick_count) || 0;
 	})();
-	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
+	// Session detail passes the pane's shared axis (`axisTicks`, sessionTimeline.js):
+	// the chart, the HR lanes and the full-height mark overlay must use ONE tick
+	// count, not three that agree only by convention.
+	const ownTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
+	const effectiveTicks = axisTicks > 0 ? axisTicks : ownTicks;
+	useEffect(() => {
+		if (axisTicks > 0 && maxIndex + 1 > axisTicks) {
+			getLogger().warn('fitness_chart.axis_overrun', { axisTicks, seriesTicks: maxIndex + 1 });
+		}
+	}, [axisTicks, maxIndex]);
 	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
 	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : Y_SCALE_BASE * MIN_GRID_LINES;
 	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing
 	const yScaleBase = Y_SCALE_BASE;
 	const [persisted, setPersisted] = useState(null);
 	const [useLogScale, setUseLogScale] = useState(true);
-	const [focusedUserId, setFocusedUserId] = useState(null);
+	// Focus is controlled when the host passes onFocusChange (session detail shares
+	// it with the HR lanes); otherwise the chart keeps its own.
+	const [internalFocus, setInternalFocus] = useState(null);
+	const focusControlled = typeof onFocusChange === 'function';
+	const focusedUserId = focusControlled ? (focusUserId ?? null) : internalFocus;
+	const setFocusedUserId = useCallback((next) => {
+		if (!focusControlled) { setInternalFocus(next); return; }
+		onFocusChange(typeof next === 'function' ? next(focusUserId ?? null) : next);
+	}, [focusControlled, onFocusChange, focusUserId]);
 	// Issue C — History Mode. When the live session ends (sessionId -> null) we
 	// FREEZE the persisted snapshot on screen indefinitely instead of clearing it.
 	const [historyMode, setHistoryMode] = useState(false);
@@ -1211,18 +1245,39 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		return allSegments;
 	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY, identityColors]);
 
+	// 'fit' (session detail): the line-end avatar radius follows the plot height and
+	// rider count — a fixed 60 px disc filled most of a 5-rider plot — and crowded
+	// line ends stack vertically instead of being shoved left and left overlapping.
+	const fitAvatars = avatarSizing === 'fit';
+	const avatarRadius = useMemo(() => {
+		if (!fitAvatars) return AVATAR_RADIUS;
+		const plotHeight = Math.max(0, chartHeight - CHART_MARGIN.top - CHART_MARGIN.bottom);
+		const n = Math.max(1, presentEntries.length);
+		return Math.round(Math.max(12, Math.min(AVATAR_RADIUS, plotHeight / (n * 2.6))));
+	}, [fitAvatars, chartHeight, presentEntries.length]);
+
+	// Challenge badges sit in a row along the plot top (r 11 + bracket at +25):
+	// keep line-end avatars and their labels below it when the detail pane has any.
+	const BADGE_ROW_RESERVE = 30;
+	const reserveBadgeRow = fitAvatars && (marks?.challenges?.length || 0) > 0;
+
 	// Create LayoutManager instance for unified avatar/badge collision resolution
 	const layoutManager = useMemo(() => new LayoutManager({
-		bounds: { width: chartWidth, height: chartHeight, margin: CHART_MARGIN },
-		avatarRadius: AVATAR_RADIUS,
+		bounds: {
+			width: chartWidth,
+			height: chartHeight,
+			margin: reserveBadgeRow ? { ...CHART_MARGIN, top: CHART_MARGIN.top + BADGE_ROW_RESERVE } : CHART_MARGIN,
+		},
+		avatarRadius,
 		badgeRadius: ABSENT_BADGE_RADIUS,
 		options: {
 			enableConnectors: true,
 			minSpacing: 4,
 			maxDisplacement: 100,
-			maxBadgesPerUser: 3
+			maxBadgesPerUser: 3,
+			collisionAxis: fitAvatars ? 'vertical' : 'horizontal',
 		}
-	}), [chartWidth, chartHeight]);
+	}), [chartWidth, chartHeight, avatarRadius, fitAvatars, reserveBadgeRow]);
 
 	// Compute base positions for avatars and badges, then run through LayoutManager
 	const { avatars, badges, connectors } = useMemo(() => {
@@ -1283,10 +1338,10 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		const { elements, connectors: layoutConnectors } = layoutManager.layout([...avatarElements, ...badgeElements]);
 
 		// Separate back into avatars and badges
-		const resolvedAvatars = resolveTieFan(
-			elements.filter(e => e.type === 'avatar'),
-			{ spacing: AVATAR_RADIUS * 2 + 4 }
-		);
+		// The vertical stack already separates ties (each keeps its own label).
+		const resolvedAvatars = fitAvatars
+			? elements.filter(e => e.type === 'avatar')
+			: resolveTieFan(elements.filter(e => e.type === 'avatar'), { spacing: AVATAR_RADIUS * 2 + 4 });
 		const resolvedBadges = elements.filter(e => e.type === 'badge');
 
 		return {
@@ -1294,7 +1349,7 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 			badges: resolvedBadges,
 			connectors: layoutConnectors || []
 		};
-	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, scaleY, layoutManager, identityColors]);
+	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, scaleY, layoutManager, identityColors, fitAvatars]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
@@ -1340,6 +1395,20 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 	// chart below in alignment. Detail-only: live mode has no sessionData.seams/activities.
 	const raceOverlay = useMemo(() => {
 		if (!isHistorical) return null;
+		// Detail pane: marks come pre-built on the shared axis, and TimelineOverlay
+		// draws their fills and lines full-height behind the stack. The chart keeps
+		// only its annotations — challenge badges and their duration brackets.
+		if (marks) {
+			return {
+				external: true,
+				bands: [],
+				seams: [],
+				challengeMarkers: marks.challenges || [],
+				videoMarkers: [],
+				top: CHART_MARGIN.top,
+				bottom: chartHeight - CHART_MARGIN.bottom,
+			};
+		}
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
 		const seams = src?.seams;
 		const activities = src?.activities;
@@ -1378,7 +1447,7 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
-	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries, primaryMediaKey]);
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries, primaryMediaKey, marks]);
 
 	const hasData = allEntries.length > 0 && paths.length > 0;
 
@@ -1418,6 +1487,11 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		enriched.sort(compareLegendEntries);
 		return enriched;
 	}, [allEntries, participantDisplayMap]);
+
+	const handleAvatarTap = useCallback((id) => {
+		setFocusedUserId((prev) => (prev === id ? null : id));
+		getLogger().info('fitness_chart.focus', { userId: id });
+	}, []);
 
 	useEffect(() => {
 		if (allEntries.length <= 1) {
@@ -1459,7 +1533,9 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 					{useLogScale ? 'LOG' : 'LIN'}
 				</button>
 			)}
-			{(hasData || persisted) && filterEntries.length > 0 && (
+			{/* Session detail hides it: the line-end and lane avatars already name every
+			    rider; focus moves onto the line-end avatar (tap to focus, tap to clear). */}
+			{(hasData || persisted) && showFocusLegend && filterEntries.length > 0 && (
 				<div className="race-chart__focus-filter">
 					{filterEntries.map(entry => (
 						<button
@@ -1493,6 +1569,8 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 						height={chartHeight}
 						focusedUserId={focusedUserId}
 						overlay={raceOverlay}
+						avatarRadius={avatarRadius}
+						onAvatarTap={allEntries.length > 1 ? handleAvatarTap : null}
 					/>
 				</div>
 			)}

@@ -526,7 +526,8 @@ const _consolidateEvents = (events) => {
         end: Number(endEvt?.timestamp) || null,
         result: e.result || e.status || (endEvt ? 'ended' : 'started'),
         metUsers: e.metUsers || [],
-        missingUsers: e.missingUsers || []
+        missingUsers: e.missingUsers || [],
+        reason: e.reason ?? s.reason ?? null
       }
     });
   }

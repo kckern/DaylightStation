@@ -662,6 +662,65 @@ public class KioskSettingsGuardTest {
         return new KioskSettingsGuard(() -> p, () -> 0L, fkb, notes, () -> now[0]);
     }
 
+    // --- stale fkbPassword (2026-10-14: 40 min in the Play Store, guard said UNKNOWN) ---
+
+    /** FKB refusing the password: no foreground, no settings, authFailing() true. */
+    private static final class RefusingFkb extends FgFkb {
+        boolean refusing = true;
+        @Override public String foregroundApp() { return refusing ? null : front; }
+        @Override public Map<String, String> listSettings() {
+            reads++;
+            return refusing ? new HashMap<>() : live;
+        }
+        @Override public boolean authFailing() { return refusing; }
+    }
+
+    @Test
+    public void foreground_refusedPassword_isAuthFailed_notUnknown() {
+        RefusingFkb fkb = new RefusingFkb();
+        FakeNotes notes = new FakeNotes();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.AUTH_FAILED, g.foregroundTick());
+        assertEquals("AUTH_FAILED", g.snapshot().optJSONObject("foreground").optString("verdict"));
+        assertEquals(0, fkb.recalls);
+    }
+
+    @Test
+    public void settings_refusedPassword_isAuthFailed_notOk() {
+        RefusingFkb fkb = new RefusingFkb();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
+        assertEquals(KioskSettingsGuard.Verdict.AUTH_FAILED, g.tick());
+        assertTrue(fkb.writes.isEmpty());
+    }
+
+    @Test
+    public void refusedPassword_isNotedOncePerStreak_andAgainAfterRecovery() {
+        RefusingFkb fkb = new RefusingFkb();
+        FakeNotes notes = new FakeNotes();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        for (int i = 0; i < 50; i++) { g.foregroundTick(); now[0] += 10_000L; }
+        g.tick();
+        assertEquals(1, notes.countContaining("REFUSED fkbPassword"));
+
+        fkb.refusing = false;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.HOME, g.foregroundTick());
+        fkb.refusing = true;
+        g.foregroundTick();
+        assertEquals(2, notes.countContaining("REFUSED fkbPassword"));
+    }
+
+    @Test
+    public void unreachableFkb_staysUnknown_whenAuthIsNotTheProblem() {
+        FgFkb fkb = new FgFkb();
+        fkb.front = null;
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.UNKNOWN, g.foregroundTick());
+    }
+
     @Test
     public void foreground_otherApp_isRecalledOnFirstSight() {
         FgFkb fkb = new FgFkb();

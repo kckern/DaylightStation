@@ -33,10 +33,15 @@ function getPortsFromConfig(env) {
  * 2026-09-11 `/favicon.ico` was served a cached 502 **1294 times** and `/sw.js`
  * had been dead long enough that the service worker had never once registered.
  *
- * Vite's own bundles are immune by construction — `index-BRX-JNUg.js` gets a new
- * key every build, so a poisoned one is simply never asked for again. This gives
- * the same immunity to the handful of assets that ship under a stable name. A
- * fixed `?v=1` would NOT do: that key would just be poisoned in its turn.
+ * Vite's content hashes are NOT enough on their own: a chunk whose code did not
+ * change keeps its name across builds (`pianoLearningApi-fDjGfwHr.js`), so a
+ * 502 cached for it during one deploy's gap is served to the NEXT bundle too. On
+ * 2026-10-15 a 13-minute outage poisoned nine such chunks; every kiosk that
+ * needed one rendered a black screen. So every built asset also carries the
+ * build id in its file name (see `build.rollupOptions.output`): a new build asks
+ * only for URLs no one has requested before. Stable-name assets get the same
+ * immunity through `?v=__BUILD_ID__`. A fixed `?v=1` would NOT do: that key
+ * would just be poisoned in its turn.
  *
  * The commit hash when the build has one, otherwise the build timestamp — the
  * Dockerfile's COMMIT_HASH arg is declared after `npm run build`, and moving it
@@ -87,6 +92,17 @@ export default defineConfig(({ mode }) => {
       react(),
       buildIdHtmlPlugin(id),
     ],
+    // Build id in every asset name — see buildId() for why content hashes alone
+    // let a cached 502 outlive the deploy that caused it.
+    build: {
+      rollupOptions: {
+        output: {
+          entryFileNames: `assets/[name]-[hash]-${id}.js`,
+          chunkFileNames: `assets/[name]-[hash]-${id}.js`,
+          assetFileNames: `assets/[name]-[hash]-${id}[extname]`,
+        },
+      },
+    },
     test: {
       environment: 'happy-dom',
       globals: true,

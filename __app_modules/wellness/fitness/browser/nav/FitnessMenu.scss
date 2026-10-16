@@ -13,32 +13,23 @@
     flex: 1 1 auto; // allow growth in flex context
   }
 
-  // Skeleton loader
+  // Skeleton loader — same box as a .show-card; the house Skeleton (a
+  // compositor-only sweep) fills it.
   .skeleton-card {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, rgba(60,60,60,0.4), rgba(40,40,40,0.4));
-    border-color: rgba(255,255,255,0.05);
     pointer-events: none;
-    // Ensure skeleton fills grid cell like actual cards
     width: 100%;
     aspect-ratio: 1 / 1.5;
-    .skeleton-shimmer {
+    border-color: rgba(255, 255, 255, 0.05);
+    background: transparent;
+    overflow: hidden;
+
+    .skeleton-card__fill {
       position: absolute;
       inset: 0;
-      background: linear-gradient(90deg,
-        rgba(255,255,255,0.05) 0%,
-        rgba(255,255,255,0.15) 40%,
-        rgba(255,255,255,0.05) 80%);
-      animation: fitness-skeleton-shimmer 1.2s ease-in-out infinite;
-      background-size: 200% 100%;
+      width: auto;
+      height: auto;
       border-radius: inherit;
     }
-  }
-
-  @keyframes fitness-skeleton-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
   }
 
 .show-card {

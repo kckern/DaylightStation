@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LoadingOverlay, Alert, Text } from '@mantine/core';
+import { Alert, Text } from '@mantine/core';
+import MenuGridSkeleton, { MenuGridSkeletonCards } from './MenuGridSkeleton.jsx';
 import { DaylightAPI, normalizeImageUrl } from '@/lib/api.mjs';
 import FitnessModuleMenu from "./FitnessModuleMenu.jsx";
 import "./FitnessMenu.scss";
@@ -240,11 +241,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   }, [activeCollection, collectionsFromConfig, activeAppMenu]);
 
   if (loading) {
-    return (
-      <div style={{ position: 'relative', height:"100%", width:"100%" }}>
-        <LoadingOverlay visible={true} />
-      </div>
-    );
+    return <MenuGridSkeleton />;
   }
 
   if (error) {
@@ -329,13 +326,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   return (
     <div className="fitness-menu">
       <div className="fitness-grid">
-        {showsLoading && (
-          Array.from({ length: 12 }).map((_, i) => (
-            <div key={`skeleton-${i}`} className="show-card skeleton-card">
-              <div className="skeleton-shimmer" />
-            </div>
-          ))
-        )}
+        {showsLoading && <MenuGridSkeletonCards />}
         {!showsLoading && shows.length > 0 && (
           shows
             .sort((a, b) => {

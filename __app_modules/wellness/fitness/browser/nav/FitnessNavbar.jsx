@@ -1,3 +1,4 @@
+import { NavRailSkeletonItems } from './NavRailSkeleton.jsx';
 import React, { useMemo, useEffect } from 'react';
 import { DaylightImagePath } from '@/lib/api.mjs';
 import SidebarFooter from "./SidebarFooter.jsx";
@@ -62,9 +63,7 @@ const FitnessNavbar = ({
       
       <nav className="navbar-nav">
         {sortedItems.length === 0 ? (
-          <div className="loading-state">
-            <div className="loading-icon">⏳</div>
-          </div>
+          <NavRailSkeletonItems />
         ) : (
           sortedItems.map((item, index) => {
             const isActive = isNavItemActive(item, currentState);
