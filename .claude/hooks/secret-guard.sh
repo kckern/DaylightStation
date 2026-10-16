@@ -14,11 +14,12 @@
 # Scanning only --cached let the two commonest Claude forms through; that is how
 # a learner's real name reached the history on 2026-09-06.
 #
-# No secrets live in this file. Patterns come from two runtime sources:
+# No secrets live in this file. Patterns come from three runtime sources:
 #   1. The FKB password, read from $DAYLIGHT_BASE_PATH/data/household/auth/fullykiosk.yml
 #      (plus its URL-encoded form, since docs embed it in curl URLs)
 #   2. Extra ERE patterns (one per line, # comments allowed) from the gitignored
 #      .claude/secret-patterns.local.txt
+#   3. Setup identifiers (same format) from $DAYLIGHT_BASE_PATH/.claude/instance-patterns.txt
 #
 # Emits a PreToolUse deny decision on match; silent exit 0 otherwise.
 

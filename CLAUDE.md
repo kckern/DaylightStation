@@ -19,14 +19,15 @@ For local infrastructure details (Docker, secrets, networking, cron jobs, data p
   "env": {
     "prod_host": "<prod-host>",
     "docker_container": "<container-name>",
-    "ops_docs": "<path-to-ops-repo>/docs",
-    "ports": {
-      "app": 3111,
-      "backend": 3112
-    }
+    "ops_docs": "<path-to-private-docs>",
+    "ports": "{\"app\":3111,\"backend\":3112}"
   }
 }
 ```
+
+Every `env` value must be a string (Claude Code exports them as environment
+variables), so `ports` is JSON in a string. A nested object gets saved as
+`"[object Object]"`.
 
 ### Key Environment Values
 

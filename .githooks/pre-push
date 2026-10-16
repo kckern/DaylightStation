@@ -8,11 +8,12 @@
 # public remote, and how one such commit was pushed on 2026-09-01. This hook is
 # the copy that runs no matter who pushes.
 #
-# No secrets live in this file. Both pattern sources are read at runtime:
+# No secrets live in this file. All three pattern sources are read at runtime:
 #   1. The FKB password, from $DAYLIGHT_BASE_PATH/data/household/auth/fullykiosk.yml
 #      (plus its URL-encoded form, since docs embed it in curl URLs).
 #   2. Extra ERE patterns, one per line (# comments allowed), from the gitignored
 #      .claude/secret-patterns.local.txt
+#   3. Setup identifiers (same format) from $DAYLIGHT_BASE_PATH/.claude/instance-patterns.txt
 #
 # Scans only ADDED lines (^+) across the commits actually being pushed, so
 # context lines around pre-existing identifiers do not false-positive.
