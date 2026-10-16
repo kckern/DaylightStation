@@ -355,7 +355,7 @@ sets `assetBase` to `library/<domain>`. The real Eroica sidecar in full:
 work: beethoven/symphony-3-eroica     # required — corpus ref, <composer>/<work-slug>
 surround: concert-hall                # required — definition id in _surrounds/
 match:                                # required
-  contentId: plex:663134              # exact-match fast path
+  contentId: plex:10001              # exact-match fast path
   title: "Beethoven: 3. Sinfonie"     # rebind fallback (normalized strong substring)
 performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
 starts: [0, 976, 1925, 2278]          # segment start seconds, positional
@@ -534,7 +534,7 @@ Its rail is global, the timings on it stay in each media item's own clock, and
 The same media id then has two true readings, and **how playback started decides
 which applies**:
 
-- **Play the episode** — `/play/plex:696235` — and it is a whole work. Its own
+- **Play the episode** — `/play/plex:10002` — and it is a whole work. Its own
   sidecar supplies the frame, exactly as it did before containers existed.
 - **Play the season**, or queue it, and that episode is part 1 of a programme.
   It carries the *container's* rail and its own index on it, so the band shows
@@ -677,7 +677,7 @@ listener meant.
 
 ```bash
 node cli/plex.cli.mjs search "Eroica" --deep
-node cli/plex.cli.mjs info 663134 --json
+node cli/plex.cli.mjs info 10001 --json
 ```
 
 The Plex **summary is often authoritative for segment names** — the hr-Sinfonieorchester
@@ -719,8 +719,8 @@ Measured for the two reference pieces:
 
 | Piece | Duration | Segment starts | Lengths | Applause from |
 |---|---|---|---|---|
-| Vivaldi, Spring (`plex:663146`) | 628 s | 0, 225, 385 | 3m45 / 2m40 / 4m03 | ~613 s |
-| Beethoven, Eroica (`plex:663134`) | 3223 s | 0, 976, 1925, 2278 | 15m26 / 15m06 / 5m33 / 11m17 | ~2955 s |
+| Vivaldi, Spring (`plex:10003`) | 628 s | 0, 225, 385 | 3m45 / 2m40 / 4m03 | ~613 s |
+| Beethoven, Eroica (`plex:10001`) | 3223 s | 0, 976, 1925, 2278 | 15m26 / 15m06 / 5m33 / 11m17 | ~2955 s |
 
 Those numbers are a property of the recording, so they go in the **performance
 sidecar** — the segment starts as `starts:` in segment order, the applause point
@@ -746,7 +746,7 @@ The store watches mtimes and rebuilds within ~2 s of an edit, so authoring is
 edit-and-refresh. Check that it took:
 
 ```bash
-curl -s "http://{host}:{backend_port}/api/v1/play/plex:663146" | jq '.surround.id'
+curl -s "http://{host}:{backend_port}/api/v1/play/plex:10003" | jq '.surround.id'
 ```
 
 `null` means no sidecar matched. `surround.index.built` (info) is the other quick
@@ -755,7 +755,7 @@ folder that failed to load shows up as a count that is one too low. Look at the
 warnings before touching code — they name the file and the reason:
 
 ```bash
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=context.app:surround AND _time:1h' -d 'limit=50'
 ```
 

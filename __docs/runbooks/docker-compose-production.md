@@ -1,6 +1,6 @@
 # Production Docker Compose Configuration
 
-## Current Production Setup (homeserver.local)
+## Current Production Setup ({env.prod_host})
 
 The production container must use these mount paths:
 
@@ -15,16 +15,16 @@ services:
     ports:
       - 3111:3111
     volumes:
-      - /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data
-      - /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media
-      - /media/kckern/DockerDrive/daylight-logs:/usr/src/app/logs
+      - /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data
+      - /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media
+      - /media/{user}/DockerDrive/daylight-logs:/usr/src/app/logs
     restart: unless-stopped
 ```
 
 ## Deploy Command
 
 ```bash
-ssh homeserver.local 'docker stop daylight-station && docker rm daylight-station && docker run -d --name daylight-station --restart unless-stopped --network kckern-net -p 3111:3111 -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data -v /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media -v /media/kckern/DockerDrive/daylight-logs:/usr/src/app/logs -v /media/kckern/Media/Archives:/usr/src/app/archives kckern/daylight-station:latest'
+ssh {env.prod_host} 'docker stop daylight-station && docker rm daylight-station && docker run -d --name daylight-station --restart unless-stopped --network kckern-net -p 3111:3111 -v /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data:/usr/src/app/data -v /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/media:/usr/src/app/media -v /media/{user}/DockerDrive/daylight-logs:/usr/src/app/logs -v /media/{user}/Media/Archives:/usr/src/app/archives kckern/daylight-station:latest'
 ```
 
 ## Critical Notes
@@ -32,20 +32,20 @@ ssh homeserver.local 'docker stop daylight-station && docker rm daylight-station
 - **Data mount**: Must point to Dropbox sync location (not Docker/DaylightStation/data)
 - **Port and network**: The production container exposes its combined HTTP/WS service on 3111 and joins `kckern-net`.
 - **Logs mount**: `/usr/src/app/logs` must be bound to `DockerDrive/daylight-logs`; without it the configured general file sink is intentionally disabled. Check the API status's `logging.transportStatus` after deploy for file writability and remote-sink drops.
-- **Config**: System config at `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/`
-- **Secrets**: API keys and auth stored in `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/secrets.yml`
+- **Config**: System config at `/media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data/system/`
+- **Secrets**: API keys and auth stored in `/media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data/system/secrets.yml`
 
 ## Verification
 
 ```bash
 # Check container status
-ssh homeserver.local 'docker ps | grep daylight'
+ssh {env.prod_host} 'docker ps | grep daylight'
 
 # Test endpoint directly
 curl -s http://10.0.0.10:3111/api/v1/info | jq '.logging'
 
 # Check mounts
-ssh homeserver.local 'docker exec daylight-station ls -la /usr/src/app/data/system/'
+ssh {env.prod_host} 'docker exec daylight-station ls -la /usr/src/app/data/system/'
 ```
 
 ## Build Metadata
@@ -54,7 +54,7 @@ Each deployed image contains a `/build.txt` file with build information:
 
 ```bash
 # Check build info
-ssh homeserver.local 'docker exec daylight-station cat /build.txt'
+ssh {env.prod_host} 'docker exec daylight-station cat /build.txt'
 ```
 
 Example output:

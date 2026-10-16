@@ -1,7 +1,7 @@
 # Plex media accessibility safeguards
 
 ## What failed
-- Transcode for `670148` failed because the source file had mode `000` (no read bits), so Plex terminated the session.
+- Transcode for one item failed because the source file had mode `000` (no read bits), so Plex terminated the session.
 - Fixing the permissions to `644` resolved playback immediately.
 
 ## Safeguard plan

@@ -28,17 +28,17 @@
 > cd _extensions/piano-bridge/app
 > ./gradlew :payload:payload -PpayloadVersion=p11-whatever   # -> payload/build/payload/p11-whatever.jar + .sha256
 > #   (payloadVerify gate refuses a jar missing any class — never bypass it)
-> # HOSTING: https://daylightlocal.kckern.net/payloads/* is served by the daylight-station
+> # HOSTING: https://daylightlocal.{env.domain}/payloads/* is served by the daylight-station
 > # container's frontend static dir — /usr/src/app/frontend/dist/payloads/ — NOT nginx, NOT
 > # the Dropbox data tree. That filesystem is EPHEMERAL: every container rebuild/redeploy
 > # WIPES the dir (bit us 2026-08-23 mid-deploy; the dir vanished between two swaps).
 > # After any prod deploy, re-copy the current payload jar before the next swap. Also
 > # beware: a missing jar still returns HTTP 200 (the SPA index fallback) — verify with
 > # Content-Length, and trust the swap's sha256 gate to refuse the imposter.
-> scp payload/build/payload/p11-whatever.jar* homeserver.local:/tmp/ && \
->   ssh homeserver.local 'sudo docker exec daylight-station mkdir -p /usr/src/app/frontend/dist/payloads && \
+> scp payload/build/payload/p11-whatever.jar* {env.prod_host}:/tmp/ && \
+>   ssh {env.prod_host} 'sudo docker exec daylight-station mkdir -p /usr/src/app/frontend/dist/payloads && \
 >     sudo docker cp /tmp/p11-whatever.jar daylight-station:/usr/src/app/frontend/dist/payloads/'
-> pbctl payload https://daylightlocal.kckern.net/payloads/p11-whatever.jar $(cat payload/build/payload/p11-whatever.jar.sha256)
+> pbctl payload https://daylightlocal.{env.domain}/payloads/p11-whatever.jar $(cat payload/build/payload/p11-whatever.jar.sha256)
 > pbctl payload              # active / previous / available      pbctl payload rollback
 > ```
 > Bump `VERSION` in `payload/.../payload/Main.java` AND `BUILT_BY` in `ControlServer.java`
@@ -217,7 +217,7 @@ Config: `watchdogKioskForegroundEnabled` (true), `watchdogKioskForegroundInterva
 (10000), `watchdogKioskForegroundSettingsGraceMs` (180000). Status: `pbctl
 kiosk-settings` (the `foreground:` and `recalls:` lines).
 
-**Building on kckern-server** (no Mac needed): JDK 17 and the Android SDK live under
+**Building on {env.prod_host}** (no Mac needed): JDK 17 and the Android SDK live under
 `~/toolchains/`. Put `sdk.dir=$HOME/toolchains/android-sdk` in `app/local.properties`
 and export `JAVA_HOME=$(ls -d ~/toolchains/jdk-17*)`. Serve the jar to the tablet with
 `python3 -m http.server 8799 --bind <this-host-ip>` from `payload/build/payload/`; the sha256
@@ -467,7 +467,7 @@ PB_HOST=$PB node ../pbctl.mjs status            # want state=CONNECTED on the ne
 #    net: if you forget the kioskMode line, the settings guard repairs it within
 #    ~60s of the install hold expiring (15 min after step 5) and logs a KIOSKSET
 #    line. Doing it here just skips that wait. The url line has no such backstop.
-node ../../../cli/fkb.cli.mjs url https://daylightlocal.kckern.net/piano
+node ../../../cli/fkb.cli.mjs url https://daylightlocal.{env.domain}/piano
 node ../../../cli/fkb.cli.mjs set kioskMode true
 pkill -f "http.server 8799"                     # stop the temp server
 

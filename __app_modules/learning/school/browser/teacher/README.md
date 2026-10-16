@@ -1,6 +1,6 @@
 # Teacher console — code map
 
-**Live URL:** `/school/teacher` (prod: `{prod_host}` → `daylightlocal.kckern.net/school/teacher`)
+**Live URL:** `/school/teacher` (prod: `{prod_host}` → `daylightlocal.{env.domain}/school/teacher`)
 
 This file exists so "where does the thing I'm looking at on screen come from?"
 is a lookup, not an investigation. Start here before grepping.
@@ -54,7 +54,7 @@ counts, never the roster.
 
 ```bash
 # 1. The digest: one row per learner, with RECORDED sessions, scores, artifacts.
-curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/day \
+curl -s https://daylightlocal.{env.domain}/api/v1/school/teacher/day \
   | jq '.[] | select(.learnerId=="learner-1")
         | {effectiveScoreTotals, pendingReview,
            sessions: [.sessions[] | {sessionId, subject, unitId, lessonTitle,
@@ -63,7 +63,7 @@ curl -s https://daylightlocal.kckern.net/api/v1/school/teacher/day \
 
 # 2. The plan: one section per subject — what was OFFERED today.
 #    Fetched lazily per learner (RosterEntry), GET-only and non-recording.
-curl -s "https://daylightlocal.kckern.net/api/v1/school/lifecycle/learners/learner-1/agenda/preview?format=json&studyDay=$(date +%F)" \
+curl -s "https://daylightlocal.{env.domain}/api/v1/school/lifecycle/learners/learner-1/agenda/preview?format=json&studyDay=$(date +%F)" \
   | jq '.sections'
 ```
 
@@ -73,7 +73,7 @@ The Reading tab adds one read of its own, capability-gated and non-recording:
 # One child's shelf, as a grown-up. Needs the console capability cookie; a
 # child's X-School-Book-Grant does NOT open it.
 curl -s --cookie 'daylight_teacher_session=<token>' \
-  https://daylightlocal.kckern.net/api/v1/school/teacher/learners/learner-1/reading \
+  https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading \
   | jq '{obligation, items: [.items[] | {title, progressMode, projection}]}'
 ```
 
@@ -97,7 +97,7 @@ prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /
 ```bash
 # One reading, every entry, and the full revisions list the editor undoes from.
 curl -s --cookie 'daylight_teacher_session=<token>' \
-  https://daylightlocal.kckern.net/api/v1/school/teacher/learners/learner-1/reading/<readingId> \
+  https://daylightlocal.{env.domain}/api/v1/school/teacher/learners/learner-1/reading/<readingId> \
   | jq '{status: .reading.status, entries: (.reading.entries|length), baseRevisionCount: .reading.baseRevisionCount, countedWindow}'
 ```
 
@@ -170,13 +170,13 @@ the homeserver, on a feature branch that is often unpushed.
 
 ```bash
 # Which tree built the running container?
-ssh homeserver.local 'cd /opt/Code/DaylightStation && git worktree list'
-ssh homeserver.local 'docker exec daylight-station md5sum \
+ssh {env.prod_host} 'cd /opt/Code/DaylightStation && git worktree list'
+ssh {env.prod_host} 'docker exec daylight-station md5sum \
   /usr/src/app/frontend/src/modules/School/teacher/panels/RosterStrip.jsx'
 md5 -q frontend/src/modules/School/teacher/panels/RosterStrip.jsx   # compare
 
 # Pull that branch locally so you can read/diff it properly
-git fetch homeserver.local:/opt/Code/DaylightStation \
+git fetch {env.prod_host}:/opt/Code/DaylightStation \
   'refs/heads/<branch>:refs/remotes/deployed/<branch>'
 ```
 

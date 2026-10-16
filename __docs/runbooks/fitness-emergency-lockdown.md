@@ -217,7 +217,7 @@ so a state transition can always be traced to its cause.
 - **Clearing a stuck lock.** The live lock file is `emergency_lock.yml` **inside
   the prod container** (`.../data/household/history/fitness/`), NOT the host
   Dropbox mount — deleting the host path is a no-op. Check truth with
-  `curl -s https://daylightlocal.kckern.net/api/v1/fitness/emergency`. Release via
+  `curl -s https://daylightlocal.{env.domain}/api/v1/fitness/emergency`. Release via
   an admin fingerprint (3s hold on the LOCKED screen → `/emergency/release`, which
   deletes the file AND broadcasts `fitness.emergency.released`); the admin
   `/admin/ws/broadcast` shim can't send that topic. Release does not re-run

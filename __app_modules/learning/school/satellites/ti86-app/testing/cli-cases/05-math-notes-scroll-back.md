@@ -11,7 +11,7 @@
 ### Replay
 
 ```sh
-node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --key ENTER --wait 600 --key ENTER --wait 600 --key ENTER --wait 600 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F2 --wait 600 --screens each --screen hybrid --case-id 05-math-notes-scroll-back --output /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/testing/cli-cases/05-math-notes-scroll-back.md
+node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle {repo}/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --key ENTER --wait 600 --key ENTER --wait 600 --key ENTER --wait 600 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F5 --wait 180 --key F2 --wait 600 --screens each --screen hybrid --case-id 05-math-notes-scroll-back --output {repo}/_extensions/ti86-app/testing/cli-cases/05-math-notes-scroll-back.md
 ```
 
 ## Captured output

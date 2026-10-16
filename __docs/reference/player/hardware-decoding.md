@@ -21,7 +21,7 @@ A transcode is two costs, not one:
 | **Decode** | Turn the source codec (av1/hevc/h264) into raw frames | Only some codecs offloadable (see matrix) |
 | **Encode** | Turn raw frames into the client codec (h264/hevc) | H264 & HEVC offloadable |
 
-The stall on `plex:685089` (AV1, 1080p, **59.94fps**) pinned Plex at **413% CPU**
+The stall on `plex:10001` (AV1, 1080p, **59.94fps**) pinned Plex at **413% CPU**
 doing a full **software** AV1-decode **+** software h264-encode in realtime, which
 it can't sustain → segments arrive >60s late → `proxy.timeout` → DASH `header not
 available` → the resilience ladder spins up *more* doomed sessions.
@@ -36,7 +36,7 @@ only lever that attacks the decode half — *if the GPU supports the source code
 
 ## The hardware on this host
 
-> Values below are for **kckern-server**. Verify with the commands, don't trust the
+> Values below are for **{env.prod_host}**. Verify with the commands, don't trust the
 > table if the box changed.
 
 | Property | Value | How to check |
@@ -115,7 +115,7 @@ the codec is the isolated variable:
 
 | Label | Codec | Example |
 |-------|-------|---------|
-| `SRC_AV1` | av1 | `plex:685089` (Episode 4, FIFA — the known stall) |
+| `SRC_AV1` | av1 | `plex:10001` (Episode 4, FIFA — the known stall) |
 | `SRC_HEVC` | hevc | any 1080p60 hevc item |
 | `SRC_H264` | h264 | any 1080p60 h264 item |
 
@@ -123,7 +123,7 @@ Find codec/fps for a candidate:
 
 ```bash
 TOKEN=$(sudo docker exec daylight-station sh -c 'cat data/household/auth/plex.yml' | awk '/token/{print $2}' | tr -d '"')
-sudo docker exec daylight-station sh -c "curl -s 'http://plex:32400/library/metadata/<RATINGKEY>?X-Plex-Token=$TOKEN'" \
+sudo docker exec daylight-station sh -c "curl -s 'http://plex:10002/library/metadata/<RATINGKEY>?X-Plex-Token=$TOKEN'" \
   | grep -oE '(videoCodec|frameRate|width|height|bitrate)="[^"]*"'
 ```
 
@@ -142,7 +142,7 @@ sudo docker exec daylight-station sh -c "curl -s 'http://plex:32400/library/meta
 Read Plex's live transcode decision + speed + hardware flags:
 
 ```bash
-sudo docker exec daylight-station sh -c "curl -s 'http://plex:32400/status/sessions?X-Plex-Token=$TOKEN'" \
+sudo docker exec daylight-station sh -c "curl -s 'http://plex:10002/status/sessions?X-Plex-Token=$TOKEN'" \
   | grep -oE '(videoDecision|transcodeHwRequested|transcodeHwFullPipeline|speed|videoCodec)="[^"]*"'
 # transcodeHwFullPipeline="1" = both decode+encode on GPU.
 # transcodeHwRequested="1" transcodeHwFullPipeline="0" = HW encode only, SW decode
@@ -219,7 +219,7 @@ The AV1 row is the whole reason for the benchmark. The ffmpeg decode-only test
 
 | Concern | File |
 |---------|------|
-| GPU mapping into Plex | host `docker inspect plex` / compose at `/media/kckern/DockerDrive/Docker/` |
+| GPU mapping into Plex | host `docker inspect plex` / compose at `/media/{user}/DockerDrive/Docker/` |
 | Which codec Plex is asked to produce (h264/hevc advertisement, caps) | `__backend/src/1_adapters/content/media/plex/transcodeProfile.mjs` |
 | Decision request + transcode-URL builder | `__backend/src/1_adapters/content/media/plex/PlexAdapter.mjs` |
 | Client segment/buffer diagnostics used as benchmark metrics | `frontend/src/modules/Player/renderers/VideoPlayer.jsx` |

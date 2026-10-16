@@ -57,7 +57,7 @@ node tools/gen-config.mjs <data>/household/config/barcode-relay.yml <relay-id>  
 ~/.platformio/penv/bin/pio run -t upload --upload-port /dev/cu.usbserial-XXXX
 ```
 `barcode-relay.yml` (private data volume) holds `provisioning.wifi_*`, `backend.host`
-(the stable HOSTNAME `daylightlocal.kckern.net`, never an IP) `+ port + ws_path`, and a
+(the stable HOSTNAME `daylightlocal.{env.domain}`, never an IP) `+ port + ws_path`, and a
 `relays:` registry. Each relay entry sets `route` (`content` or `nutribot`), scanner MAC/name,
 and optional Nutribot target user/conversation. `config.example.yml` and `config.example.h`
 document the shapes. Changing the endpoint/creds is a SSOT edit + regen + reflash — no source change.

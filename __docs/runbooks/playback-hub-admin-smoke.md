@@ -11,9 +11,9 @@ Automated coverage lives in `tests/integration/playback-hub-bootstrap.test.mjs`
 ## Pre-requisites
 
 - DS dev backend running (`npm run dev` — see `__docs/runbooks/dev-server-multi-environment.md`)
-- Real playback hub reachable at `kckern-playback-hub:8080` (SSH alias for `10.0.0.109`)
+- Real playback hub reachable at `{env.playback_hub_host}:8080` (SSH alias for `10.0.0.109`)
 - Browser pointed at the dev frontend
-- `ssh kckern-playback-hub` works without password prompt
+- `ssh {env.playback_hub_host}` works without password prompt
 
 ## Checklist
 
@@ -51,7 +51,7 @@ Adjust the volume slider on an active slot.
 Edit `volume.max` to `30` on a slot that is currently playing above 30. Save.
 
 - [ ] YAML on the hub reflects the new bound (verify after 60 s sync via
-      `ssh kckern-playback-hub 'cat ~/playback-hub/devices.yml'`)
+      `ssh {env.playback_hub_host} 'cat ~/playback-hub/devices.yml'`)
 - [ ] The headset's running mpv volume does **NOT** change (this confirms the
       design's "next start" behavior — see `UpdateDeviceConfig` docstring)
 - [ ] Power-cycle the headset or trigger a reconnect: subsequent `vol+` presses
@@ -71,7 +71,7 @@ Open a second admin tab. In tab A, edit a scheduled fire's time. Save.
 Stop the hub:
 
 ```bash
-ssh kckern-playback-hub 'systemctl --user stop playback-hub.service'
+ssh {env.playback_hub_host} 'systemctl --user stop playback-hub.service'
 ```
 
 - [ ] Admin keeps showing the last-good data (no UI crash)
@@ -85,7 +85,7 @@ ssh kckern-playback-hub 'systemctl --user stop playback-hub.service'
 Restart the hub:
 
 ```bash
-ssh kckern-playback-hub 'systemctl --user start playback-hub.service'
+ssh {env.playback_hub_host} 'systemctl --user start playback-hub.service'
 ```
 
 - [ ] Admin recovers within ~3 s of the next successful broadcaster tick
@@ -98,7 +98,7 @@ If any step fails, file a bug in `ops:docs/_wip/bugs/` with:
 - The card / route / scheduled fire that failed
 - Backend log excerpt (filter on `playback-hub.*`)
 - WS broadcast stream from browser console (`window.DAYLIGHT_LOG_LEVEL = 'debug'`)
-- The `devices.yml` state on the hub (`ssh kckern-playback-hub 'cat ~/playback-hub/devices.yml'`)
+- The `devices.yml` state on the hub (`ssh {env.playback_hub_host} 'cat ~/playback-hub/devices.yml'`)
 
 See `ops:docs/_wip/plans/2026-05-27-playback-hub-admin-impl.md` for the full design
 and bounded-context tour.

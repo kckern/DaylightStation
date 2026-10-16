@@ -38,13 +38,13 @@ DaylightStation uses a hierarchical, file-based configuration system with:
 
 ```bash
 DAYLIGHT_BASE_PATH=/path/to/DaylightStation  # Root directory
-DAYLIGHT_ENV=kckern-server                    # Environment name
+DAYLIGHT_ENV={env.prod_host}                    # Environment name
 ```
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `DAYLIGHT_BASE_PATH` | Root directory | `/media/kckern/.../DaylightStation` |
-| `DAYLIGHT_ENV` | Selects `system-local.{ENV}.yml` | `docker`, `kckern-server`, `kckern-macbook` |
+| `DAYLIGHT_BASE_PATH` | Root directory | `/media/{user}/.../DaylightStation` |
+| `DAYLIGHT_ENV` | Selects `system-local.{ENV}.yml` | `docker`, `{env.prod_host}`, `{env.dev_host}` |
 
 ---
 
@@ -53,8 +53,8 @@ DAYLIGHT_ENV=kckern-server                    # Environment name
 | Env | Machine | App Port | Notes |
 |-----|---------|----------|-------|
 | `docker` | Docker container | 3111 | Production |
-| `kckern-server` | Docker host | 3112 | Dev (3111 taken by prod) |
-| `kckern-macbook` | Laptop | 3111 | Dev (services at 10.0.0.x) |
+| `{env.prod_host}` | Docker host | 3112 | Dev (3111 taken by prod) |
+| `{env.dev_host}` | Laptop | 3111 | Dev (services at 10.0.0.x) |
 
 ---
 
@@ -65,8 +65,8 @@ data/
 ├── system/
 │   ├── system.yml              # Base config (ports, timezone)
 │   ├── system-local.docker.yml # Prod env overrides
-│   ├── system-local.kckern-server.yml
-│   ├── system-local.kckern-macbook.yml
+│   ├── system-local.{env.prod_host}.yml
+│   ├── system-local.{env.dev_host}.yml
 │   ├── services.yml            # Service → host resolution
 │   ├── adapters.yml            # Shared service config
 │   ├── secrets.yml             # System-wide API keys
@@ -151,8 +151,8 @@ persistent location, so the survives-a-restart guarantee is intact:
 | Env | Path |
 |-----|------|
 | `docker` | `/usr/src/app/logs/backend.log` (bind mount → `DockerDrive/daylight-logs`) |
-| `kckern-macbook` | `~/Library/Logs/DaylightStation/backend.log` |
-| `kckern-server` | `DockerDrive/daylight-logs/backend-kckern-server.log` |
+| `{env.dev_host}` | `~/Library/Logs/DaylightStation/backend.log` |
+| `{env.prod_host}` | `DockerDrive/daylight-logs/backend-{env.prod_host}.log` |
 
 The Docker entry needs the `logs` bind mount in the container run configuration;
 without it the path lands in the container's ephemeral layer and dies on
@@ -330,7 +330,7 @@ logging:
     path: /usr/src/app/logs/backend.log
 ```
 
-**Linux Dev (system-local.kckern-server.yml)**
+**Linux Dev (system-local.{env.prod_host}.yml)**
 ```yaml
 app:
   port: 3112              # Different from Docker to avoid conflicts
@@ -340,15 +340,15 @@ webhook:
 
 logging:
   fileSink:
-    path: /media/kckern/DockerDrive/daylight-logs/backend-kckern-server.log
+    path: /media/{user}/DockerDrive/daylight-logs/backend-{env.prod_host}.log
 ```
 
-**Macbook Dev (system-local.kckern-macbook.yml)**
+**Macbook Dev (system-local.{env.dev_host}.yml)**
 ```yaml
 # Uses default ports (3111) - no Docker running
 logging:
   fileSink:
-    path: /Users/kckern/Library/Logs/DaylightStation/backend.log
+    path: ~/Library/Logs/DaylightStation/backend.log
 ```
 
 Note that `app.ports.{env}` and `scheduler.enabled.{env}` in `system.yml` are
@@ -382,35 +382,35 @@ One file maps logical service names to physical hosts per environment:
 # Shared services (all households)
 mqtt:
   docker: mosquitto
-  kckern-server: localhost
-  kckern-macbook: 10.0.0.10
+  {env.prod_host}: localhost
+  {env.dev_host}: 10.0.0.10
 
 printer:
   docker: 10.0.0.50
-  kckern-server: 10.0.0.50
-  kckern-macbook: 10.0.0.50
+  {env.prod_host}: 10.0.0.50
+  {env.dev_host}: 10.0.0.50
 
 # Default household services (base names)
 plex:
   docker: plex
-  kckern-server: localhost
-  kckern-macbook: 10.0.0.10
+  {env.prod_host}: localhost
+  {env.dev_host}: 10.0.0.10
 
 homeassistant:
   docker: homeassistant
-  kckern-server: localhost
-  kckern-macbook: 10.0.0.10
+  {env.prod_host}: localhost
+  {env.dev_host}: 10.0.0.10
 
 # Jones household services (suffixed names)
 plex-jones:
   docker: plex-jones
-  kckern-server: localhost
-  kckern-macbook: 10.0.0.11
+  {env.prod_host}: localhost
+  {env.dev_host}: 10.0.0.11
 
 homeassistant-jones:
   docker: ha-jones
-  kckern-server: localhost
-  kckern-macbook: 10.0.0.11
+  {env.prod_host}: localhost
+  {env.dev_host}: 10.0.0.11
 ```
 
 ### Naming Convention
@@ -430,7 +430,7 @@ household-jones/integrations.yml
     service: plex-jones, port: 32400
     ↓
 system/services.yml
-    plex-jones.{DAYLIGHT_ENV} = localhost (if kckern-server)
+    plex-jones.{DAYLIGHT_ENV} = localhost (if {env.prod_host})
     ↓
 Result: http://localhost:32400
 ```
@@ -442,7 +442,7 @@ Result: http://localhost:32400
 
 ### Resolution Matrix Example
 
-| Household | Service | docker | kckern-server | kckern-macbook |
+| Household | Service | docker | {env.prod_host} | {env.dev_host} |
 |-----------|---------|--------|---------------|----------------|
 | default | plex | `plex:32400` | `localhost:32400` | `10.0.0.10:32400` |
 | default | homeassistant | `homeassistant:8123` | `localhost:8123` | `10.0.0.10:8123` |
@@ -776,7 +776,7 @@ const apiKey = configService.getSecret('OPENAI_API_KEY');
 ```javascript
 // Get resolved service URL for a household
 const plexUrl = configService.resolveServiceUrl('default', 'plex');
-// → "http://localhost:32400" (in kckern-server env)
+// → "http://localhost:32400" (in {env.prod_host} env)
 
 // Get integration config
 const plexConfig = configService.getHouseholdIntegration('default', 'plex');
@@ -829,8 +829,8 @@ Each environment defines ONE port - the public-facing app port:
 | Environment | `app.port` | User hits | Backend listens |
 |-------------|------------|-----------|-----------------|
 | docker (prod) | 3111 | 3111 | 3111 |
-| kckern-server (dev) | 3112 | 3112 (Vite) | 3113 (hidden) |
-| kckern-macbook (dev) | 3111 | 3111 (Vite) | 3112 (hidden) |
+| {env.prod_host} (dev) | 3112 | 3112 (Vite) | 3113 (hidden) |
+| {env.dev_host} (dev) | 3111 | 3111 (Vite) | 3112 (hidden) |
 
 > **Note:** Webhooks are now served on the main app port. The separate webhook port (3119) was deprecated.
 

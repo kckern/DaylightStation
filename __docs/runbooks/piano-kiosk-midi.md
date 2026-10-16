@@ -233,11 +233,11 @@ The APK heartbeat already carries the verdict, once a minute.
 
 ```bash
 # When did OUT last work?
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=context.app:piano-bridge AND "data.linkVerdict":VERIFIED AND _time:7d | sort by (_time desc) | limit 1'
 
 # Chronic or new?
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=context.app:piano-bridge AND _time:7d | stats by ("data.linkVerdict") count() as n'
 ```
 

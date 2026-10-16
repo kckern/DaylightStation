@@ -138,7 +138,7 @@ hardware:
 
 network: { mode: dhcp, mac: "44:1b:f6:..." }
 provisioning: { node_name: kitchen-eink, wifi_ssid: ..., ota_password: ... }  # flash tool only
-backend:  { host: daylightlocal.kckern.net, port: 3111 }                      # firmware target
+backend:  { host: daylightlocal.{env.domain}, port: 3111 }                      # firmware target
 
 buttons:                        # physical button → action string
   green: select                 # GPIO3
@@ -290,15 +290,15 @@ curl -s "http://localhost:3111/api/v1/eink/kitchen-eink/action/next"
 curl -s "http://localhost:3111/api/v1/eink/kitchen-eink/panel" -o /tmp/eink.png
 ```
 
-On a dev machine, swap the port for your backend (`3112` on kckern-macbook, `3113` on
-kckern-server dev). In prod it's `3111`.
+On a dev machine, swap the port for your backend (`3112` on {env.dev_host}, `3113` on
+{env.prod_host} dev). In prod it's `3111`.
 
 ### Edit a view / theme / layout (no rebuild)
 
 Configs are **read fresh on every `/panel` request** — `EinkPanelService.#loadScreen` reads
 the YAML each time. So editing content is a pure data change:
 
-1. Edit `data/household/screens/<panelId>.yml` (on kckern-server, write via
+1. Edit `data/household/screens/<panelId>.yml` (on {env.prod_host}, write via
    `sudo docker exec daylight-station sh -c "cat > data/household/screens/<id>.yml << 'EOF' … EOF"`
    — **never `sed -i`** on YAML; write the whole file).
 2. Re-fetch `/panel` to preview. **No Docker rebuild, no backend restart needed.**
@@ -339,7 +339,7 @@ Widgets are pure draw functions — `(ctx, box, data, theme) => void` — regist
 
 ### Reload / redeploy after **code** changes
 
-Widget or framework changes need a rebuild (config changes do not). On kckern-server:
+Widget or framework changes need a rebuild (config changes do not). On {env.prod_host}:
 
 ```bash
 cd /opt/Code/DaylightStation

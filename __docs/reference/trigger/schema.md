@@ -58,7 +58,7 @@ Universal tag registry. Each top-level key is a tag UID (case-insensitive — th
 
 ```yaml
 8d_6d_2a_07:
-  plex: 620707              # tag-global content (shorthand: plex:620707)
+  plex: 10001              # tag-global content (shorthand: plex:10001)
   shader: default           # tag-global override
   livingroom:               # ← key matches a reader ID → per-reader override block
     shader: blackout        #   (only applies when scanned at livingroom)
@@ -140,7 +140,7 @@ A tag's lifecycle is **derived from its YAML fields**, not stored as a flag. `Nf
 | 0 — never seen | (no entry) | Backend creates placeholder with `scanned_at: "..."`, sends iOS/Android push (if `notify_unknown:` set), broadcasts `registered: false` |
 | 1 — placeholder, no reply yet | `{ scanned_at: "..." }` | Backend re-sends push (if configured); placeholder write is idempotent. Subject to the 3 s debounce window. |
 | 2 — reply received, awaiting promotion | `{ scanned_at: "...", note: "..." }` | Silent — broadcast still fires for observer dashboards; no push, no write |
-| 3 — promoted to a real tag | `{ plex: 12345, ... }` (or `scene:`, `service:`, etc.) | Normal dispatch — never enters this flow |
+| 3 — promoted to a real tag | `{ plex: 10002, ... }` (or `scene:`, `service:`, etc.) | Normal dispatch — never enters this flow |
 
 **Fields:**
 
@@ -211,7 +211,7 @@ kitchen-voice:
     play_jazz:
       description: Play jazz music on the kitchen display   # shown to the decision model
       action: play
-      content: plex:12345
+      content: plex:10002
 ```
 
 - Command ids are normalized (`Play Jazz` → `play_jazz`); two ids that normalize alike, and an id

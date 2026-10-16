@@ -9,8 +9,8 @@ DaylightStation uses hostname-based configuration to run dev servers alongside D
 | Environment | Primary Port | Secondary Port | Config File |
 |-------------|--------------|----------------|-------------|
 | Docker (production) | 3111 | 3119 | `system-local.docker.yml` |
-| kckern-server (dev) | 3112 | 3120 | `system-local.kckern-server.yml` |
-| kckern-macbook | 3111 | 3119 | `system-local.kckern-macbook.yml` |
+| {env.prod_host} (dev) | 3112 | 3120 | `system-local.{env.prod_host}.yml` |
+| {env.dev_host} | 3111 | 3119 | `system-local.{env.dev_host}.yml` |
 
 ## Config Detection Order
 
@@ -25,7 +25,7 @@ Config files location: `data/system/`
 
 ## Starting the Dev Server
 
-### Quick Start (on kckern-server)
+### Quick Start (on {env.prod_host})
 
 ```bash
 # From project root
@@ -41,7 +41,7 @@ npm run backend:dev
 # Check ports
 ss -tlnp | grep -E '311[12]|312[0]'
 
-# Expected output on kckern-server:
+# Expected output on {env.prod_host}:
 # 3111 - docker-proxy (production)
 # 3112 - node (dev primary)
 # 3120 - node (dev secondary)
@@ -76,9 +76,9 @@ kill <PID>
 **Cause**: Dev server trying to use Docker's port (wrong config loaded)
 
 **Fix**:
-1. Check hostname matches config file: `hostname` should return `kckern-server`
-2. Verify config file exists: `ls data/system/system-local.kckern-server.yml`
-3. Check PORT value in config: `grep PORT data/system/system-local.kckern-server.yml`
+1. Check hostname matches config file: `hostname` should return `{env.prod_host}`
+2. Verify config file exists: `ls data/system/system-local.{env.prod_host}.yml`
+3. Check PORT value in config: `grep PORT data/system/system-local.{env.prod_host}.yml`
 
 ### Wrong Config Loaded
 
@@ -101,13 +101,13 @@ Both use the same hostname detection. If issues persist, check `__backend/src/0_
 Machine-specific configs use uppercase keys for ports:
 
 ```yaml
-# system-local.kckern-server.yml
+# system-local.{env.prod_host}.yml
 PORT: 3112
 SECONDARY_PORT: 3120
 
 path:
-  data: /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data
-  media: /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media
+  data: /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data
+  media: /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/media
 
 home_assistant:
   host: http://172.18.0.22:8123
@@ -129,7 +129,7 @@ MQTT is optional and typically only available on production/server environments.
 **Disable on dev machines** by setting `mqtt: null` in your machine-specific config:
 
 ```yaml
-# system-local.kckern-macbook.yml
+# system-local.{env.dev_host}.yml
 mqtt: null  # Mosquitto not available on dev machine
 ```
 

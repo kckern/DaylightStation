@@ -40,13 +40,13 @@ Dropbox keeps source-machine mtimes). One instance is built in
 ## Schema
 
 ```yaml
-match: { contentId: plex:757556, title: FM100 }   # title is for humans
+match: { contentId: plex:10001, title: FM100 }   # title is for humans
 sequence:
   head: 1                 # default 1
   idents:                 # optional; omit for "pinned head, then shuffle"
     every: [3, 5]         # an ID after every 3–5 songs (or a fixed integer)
     pool:
-      - plex:757863
+      - plex:10002
 ```
 
 | Field | Values | Meaning |

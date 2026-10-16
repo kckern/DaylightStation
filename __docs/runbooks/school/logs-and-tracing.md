@@ -18,15 +18,15 @@ Two queries that actually work, against the household's log store
 
 ```bash
 # By module (recommended — module names token-match "school-")
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=context.module:school AND _time:24h' -d 'limit=200'
 
 # By message prefix (catches everything regardless of module tagging)
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=_msg:school AND _time:24h' -d 'limit=200'
 
 # What's actually firing, ranked (do this first on any unfamiliar day)
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=_msg:school AND _time:24h | stats by ("_msg") count() as n | sort by (n desc)'
 ```
 
@@ -138,10 +138,10 @@ Cold-wake diagnosis is an ACK trace, not a stopwatch verdict. Query both the
 School delivery events and Fully Kiosk preparation events:
 
 ```bash
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=(_msg:school.reading.delivery* OR _msg:school.reading.session-open*) AND _time:2h' -d 'limit=100'
 
-curl -s https://logs.kckern.net/select/logsql/query \
+curl -s https://logs.{env.domain}/select/logsql/query \
   -d 'query=_msg:fullykiosk.prepareForContent* AND _time:2h' -d 'limit=100'
 ```
 

@@ -363,7 +363,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import yaml from 'js-yaml';
 
-const DATA_PATH = process.env.DATA_PATH || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata';
+const DATA_PATH = process.env.DATA_PATH || '$DAYLIGHT_BASE_PATHdata';
 
 // User mappings from config
 const USER_MAPPINGS = {
@@ -445,7 +445,7 @@ migrate().catch(console.error);
 node scripts/migrate-nutribot-data.mjs
 
 # Verify
-ls -la /Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata/lifelog/nutrition/{username}/
+ls -la $DAYLIGHT_BASE_PATHdata/lifelog/nutrition/{username}/
 ```
 
 ### Phase 4: Deployment

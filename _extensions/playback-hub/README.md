@@ -1,6 +1,6 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
-**Status:** Running on `kckern-playback-hub` (Ubuntu mini-PC, 10.0.0.109)
+**Status:** Running on `{env.playback_hub_host}` (Ubuntu mini-PC, 10.0.0.109)
 **Last reviewed:** 2026-07-17
 
 ---
@@ -125,7 +125,7 @@ devices:
 ```
 
 Notes:
-- `queue` accepts a bare Plex ratingKey, a `plex:<id>` prefix, or a full URL. The bare form is expanded to `https://daylightlocal.kckern.net/api/v1/queue/plex/<id>`.
+- `queue` accepts a bare Plex ratingKey, a `plex:<id>` prefix, or a full URL. The bare form is expanded to `https://daylightlocal.{env.domain}/api/v1/queue/plex/<id>`.
 - `class: public` gates playback on a separate "public class enabled" toggle and turns on the linked HA entity when audio is firing.
 - A slot can have zero `schedules` (always-on with the fallback `queue`) or any number; the daemon iterates them in order on each refresh and uses the first window currently active.
 
@@ -135,7 +135,7 @@ Web UI: `http://10.0.0.109:8080` → Bluetooth tab → Scan → Pair → Add →
 
 Manually:
 ```bash
-ssh kckern-playback-hub
+ssh {env.playback_hub_host}
 # Pair via bluetoothctl using the right controller (each headset bonds to one)
 echo -e "select <CTRL>\nscan on\npair <MAC>\ntrust <MAC>\nconnect <MAC>\nquit" | bluetoothctl
 # Edit devices.yml in Dropbox; sync_config.sh will pull it to the box
@@ -336,7 +336,7 @@ validated live. Do this in a window when the headsets are free, not during house
 # ACTIVATE (in a maintenance window, headsets available for testing)
 scp contrib/wireplumber/51-bluez-sink-pin.lua \
   kckern@10.0.0.109:/home/kckern/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua
-ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
+ssh {env.playback_hub_host} 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
   systemctl --user restart wireplumber'   # ~2-3s blip on connected headsets
 
 # VALIDATE (all must hold before leaving it enabled)
@@ -348,7 +348,7 @@ ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
 #  d. journal has no Lua errors from wireplumber
 
 # ROLLBACK (if any of a-d fails, or audio misroutes)
-ssh kckern-playback-hub 'rm ~/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua; \
+ssh {env.playback_hub_host} 'rm ~/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua; \
   sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart wireplumber'
 ```
 
@@ -699,7 +699,7 @@ on boot via linger — `loginctl enable-linger kckern`):
 ```bash
 # deploy + reload (run the systemctl as kckern with the user bus)
 scp peak_meter.py playback-hub.sh web.py kckern@10.0.0.109:/home/kckern/playback-hub/
-ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
+ssh {env.playback_hub_host} 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
   systemctl --user restart playback-hub-web.service playback-hub.service'
 ```
 

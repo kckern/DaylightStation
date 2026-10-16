@@ -7,7 +7,7 @@ A content expression describes an intent: do [action] with [contentId] on [scree
 The query object is the gold standard representation:
 
 ```
-{ screen: 'living-room', queue: 'plex:595104', shuffle: '', volume: '50' }
+{ screen: 'living-room', queue: 'plex:10001', shuffle: '', volume: '50' }
 ```
 
 ### Reserved Keys
@@ -38,10 +38,10 @@ Serialized form for QR codes and barcodes:
 ```
 
 Examples:
-- `plex:595104` — bare content reference
-- `queue:plex:595104` — action + content
-- `living-room:queue:plex:595104` — screen + action + content
-- `living-room:queue:plex:595104+shuffle+volume=50` — full expression
+- `plex:10001` — bare content reference
+- `queue:plex:10001` — action + content
+- `living-room:queue:plex:10001` — screen + action + content
+- `living-room:queue:plex:10001+shuffle+volume=50` — full expression
 
 Delimiters `;` and spaces are normalized to `:` on parse.
 
@@ -54,17 +54,17 @@ import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 const expr = ContentExpression.fromQuery(req.query);
 
 // Parse from shortcode string
-const expr = ContentExpression.fromString('living-room:queue:plex:595104+shuffle');
+const expr = ContentExpression.fromString('living-room:queue:plex:10001+shuffle');
 
 // Access
 expr.screen     // 'living-room' | null
 expr.action     // 'queue' | null
-expr.contentId  // 'plex:595104' | null
+expr.contentId  // 'plex:10001' | null
 expr.options    // { shuffle: true, volume: '50' }
 
 // Serialize back
-expr.toString() // 'living-room:queue:plex:595104+shuffle+volume=50'
-expr.toQuery()  // { screen: 'living-room', queue: 'plex:595104', shuffle: '', volume: '50' }
+expr.toString() // 'living-room:queue:plex:10001+shuffle+volume=50'
+expr.toQuery()  // { screen: 'living-room', queue: 'plex:10001', shuffle: '', volume: '50' }
 ```
 
 ## Consumers
@@ -83,8 +83,8 @@ expr.toQuery()  // { screen: 'living-room', queue: 'plex:595104', shuffle: '', v
 /api/v1/catalog/plex/674396?screen=living-room&shuffle&loop
 
 # QR code with play action
-/api/v1/qrcode?play=plex:595104&shuffle&screen=living-room
+/api/v1/qrcode?play=plex:10001&shuffle&screen=living-room
 
 # Queue with shuffle
-/api/v1/queue/plex/595104?shuffle
+/api/v1/queue/plex/10001?shuffle
 ```

@@ -30,7 +30,7 @@ Bot tokens are in `system/auth/telegram.yml`, secret_tokens in `system/bots.yml`
 ### Nutribot
 ```bash
 curl "https://api.telegram.org/bot$(cat system/auth/telegram.yml | grep nutribot | awk '{print $2}')/setWebhook" \
-  -d "url=https://daylightstation.kckern.net/api/v1/nutribot/webhook" \
+  -d "url=https://daylightstation.{env.domain}/api/v1/nutribot/webhook" \
   -d "secret_token=$(cat system/bots.yml | grep -A2 'nutribot:' | grep secret_token | awk '{print $2}')"
 ```
 

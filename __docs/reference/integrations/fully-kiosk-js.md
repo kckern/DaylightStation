@@ -120,7 +120,7 @@ if (typeof fully !== "undefined") {
 ```
 
 **FKB settings:**
-- `startURL` = `https://daylightlocal.kckern.net/tv`
+- `startURL` = `https://daylightlocal.{env.domain}/tv`
 - `showAppLauncherOnStart` = `false`
 
 Result: Daylight loads on boot. After any launched app exits, FKB fires `onResume` and navigates to the Universal Launcher.

@@ -279,10 +279,10 @@ adb -s 10.0.0.11:5555 shell dumpsys activity services net.kckern.audiobridge
 The Docker container also has `adb` installed. Keys must be provisioned from the local machine (which has pre-authorized access to the Shield TV). The entrypoint copies keys from `data/system/adb-keys/` into the container on startup. To provision:
 
 ```bash
-scp ~/.android/adbkey ~/.android/adbkey.pub homeserver.local:/tmp/
-ssh homeserver.local '
-  cp /tmp/adbkey /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey
-  cp /tmp/adbkey.pub /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey.pub
+scp ~/.android/adbkey ~/.android/adbkey.pub {env.prod_host}:/tmp/
+ssh {env.prod_host} '
+  cp /tmp/adbkey /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey
+  cp /tmp/adbkey.pub /media/{user}/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey.pub
   docker cp /tmp/adbkey daylight-station:/home/node/.android/adbkey
   docker cp /tmp/adbkey.pub daylight-station:/home/node/.android/adbkey.pub
   docker exec -u root daylight-station chown node:node /home/node/.android/adbkey /home/node/.android/adbkey.pub

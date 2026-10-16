@@ -42,7 +42,7 @@ Most watchlists use a flat array where each item has `src` + `media_key` to iden
   program: BibleProject
   wait_until: '2025-04-27'
   priority: Medium
-  media_key: '463210'
+  media_key: '10005'
   summary: D&C 42:30-31
   src: plex
   uid: a8543aa3-2900-45c6-8799-4a6085a340f6
@@ -55,13 +55,13 @@ Most watchlists use a flat array where each item has `src` + `media_key` to iden
 title: Family Movies
 strategy: unwatched-first
 items:
-  - contentId: plex:11111
+  - contentId: plex:10001
     priority: 1
-  - contentId: plex:22222
-  - contentId: plex:33333
+  - contentId: plex:10002
+  - contentId: plex:10003
     hold: true
     holdReason: "Too scary for youngest"
-  - contentId: plex:44444
+  - contentId: plex:10004
     waitUntil: "2026-03-01"
 ```
 
@@ -74,7 +74,7 @@ The `listConfigNormalizer.mjs` handles both formats transparently — legacy `sr
 | Field | Type | Purpose |
 |-------|------|---------|
 | `src` | string | Source adapter name (legacy format — `scriptures`, `plex`, etc.) |
-| `media_key` | string | Content path within source (legacy format — `dc/rex/37707`, `463210`) |
+| `media_key` | string | Content path within source (legacy format — `dc/rex/37707`, `10005`) |
 | `label` / `title` | string | Display name. When both exist, `label` is the admin-authored display override and `title` is the underlying/fallback title. |
 | `program` | string | Grouping label for display (e.g., "BibleProject", "Rex Pinnegar") |
 | `priority` | string | Selection priority: `urgent`, `high` (alias: `High`), `medium` (alias: `Medium`), `low` |
@@ -125,7 +125,7 @@ sections:
     items:
       - label: Generosity
         src: plex
-        media_key: '463210'
+        media_key: '10005'
 ```
 
 ### Inheritable Fields
@@ -357,7 +357,7 @@ Watchlist items reference content via compound IDs that pass through the full re
 
 | Pattern | Source | Example |
 |---------|--------|---------|
-| `plex:{ratingKey}` | Plex media | `plex:463210` |
+| `plex:{ratingKey}` | Plex media | `plex:10005` |
 | `scriptures:{volume}/{version}/{verseId}` | Scripture read-along | `scriptures:dc/rex/37707` |
 | `watchlist:{name}` | Nested watchlist (acts as "next up" selector) | `watchlist:comefollowme2025` |
 | `talk:{conference}` | Conference talk collection | `talk:ldsgc` |

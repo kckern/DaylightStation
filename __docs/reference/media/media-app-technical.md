@@ -277,7 +277,7 @@ Incremental search via Server-Sent Events.
 | `complete` | `{ totalMs, warnings? }` | Final event. |
 | `error` | `{ message }` | Fatal stream error. |
 
-An id typed for a source that does not exist (`plex-main:12345`: a `source:id`
+An id typed for a source that does not exist (`plex-main:10001`: a `source:id`
 whose id part is digits or a path, and whose source is no registered source,
 alias or provider) settles at once instead of searching every adapter for the
 literal text: `pending` with no sources, then `complete` with a warning
@@ -333,7 +333,7 @@ Dispatches content to a remote surface.
 | `play` | contentId | Replace-and-play on the target. |
 | `queue` | contentId | Build queue from container. |
 | `shader` | string | Apply shader. |
-| `volume` | int 0–100 | Initial volume. |
+| `volume` | int 0–10002 | Initial volume. |
 | `shuffle` | `1` | Enable shuffle. |
 | `repeat` | `1` | Enable repeat. |
 | `open` | path | Route the target to a specific app surface before dispatching. |
@@ -433,7 +433,7 @@ library's) are merged: newest record's fields, every screen's newest spot.
 
 ```json
 {
-  "contentId": "plex:12345",
+  "contentId": "plex:10001",
   "namespaceId": "plex/6_movies",
   "lastPlayed": "2026-10-02 08:00:00",
   "playhead": 720, "duration": 7200, "percent": 10,
@@ -473,7 +473,7 @@ library's) are merged: newest record's fields, every screen's newest spot.
 { "startedAt": "2026-10-03T04:54:07.081Z", "localTime": "2026-10-02 21:54:07",
   "deviceId": "fleet:livingroom-tv", "contentId": "plex:12",
   "title": "S1E2", "kind": "episode",
-  "parentId": "plex:10", "grandparentId": "plex:100",
+  "parentId": "plex:10", "grandparentId": "plex:10002",
   "origin": { "kind": "routine", "id": "automation:kitchen_button_1", "name": "Kitchen Button 1: Morning Program" } }
 ```
 
@@ -519,7 +519,7 @@ a client may ask again shortly.
   `state: "playing"`, `position: null`). `nowPlayingKnown: false` means no
   source could be read.
 
-#### `GET /household/plays?deviceId=&from=&to=&limit=100`
+#### `GET /household/plays?deviceId=&from=&to=&limit=10002`
 
 The play ledger: starts by screen and/or ISO time window (inclusive),
 newest first, `limit` ≤ 1000, default window the 90-day retention. Basis for
@@ -563,8 +563,8 @@ and `contentId` carries a source the content catalog resolves
 (`UNKNOWN_SOURCE`; nothing is written). **501** when marks are not wired.
 
 ```json
-{ "contentId": "plex:12345", "watched": true, "namespaces": ["plex/6_movies"],
-  "playhead": 7200, "duration": 7200, "percent": 100, "completedAt": "2026-10-02 12:00:00" }
+{ "contentId": "plex:10001", "watched": true, "namespaces": ["plex/6_movies"],
+  "playhead": 7200, "duration": 7200, "percent": 10002, "completedAt": "2026-10-02 12:00:00" }
 ```
 
 See [content-progress.md](../content/content-progress.md) for what a mark
@@ -861,11 +861,11 @@ similar things playing" runs are included. Service:
 
 ```json
 { "deviceId": "fleet:livingroom-tv",
-  "items": [ { "contentId": "plex:59498", "startedAt": "2026-10-02T07:50:00.000Z",
+  "items": [ { "contentId": "plex:10003", "startedAt": "2026-10-02T07:50:00.000Z",
     "localTime": "2026-10-02 00:50:00", "title": "Bike",
-    "thumbnail": "/api/v1/proxy/plex/library/metadata/59498/thumb/17", "type": "episode",
+    "thumbnail": "/api/v1/proxy/plex/library/metadata/10003/thumb/17", "type": "episode",
     "parentTitle": "Season 1", "grandparentTitle": "Bluey (2018)",
-    "parentId": "plex:59494", "grandparentId": "plex:59493",
+    "parentId": "plex:10004", "grandparentId": "plex:10005",
     "playedOn": "fleet:livingroom-tv", "origin": null } ] }
 ```
 
@@ -890,10 +890,10 @@ anything but a screen id `^(fleet|browser|screen):[A-Za-z0-9._-]{1,96}$` is
 ```json
 { "deviceId": "fleet:livingroom-tv", "generatedAt": "2026-10-03T08:29:34.859Z", "empty": false,
   "rows": [
-    { "id": "favourites", "title": "Favourites", "items": [ { "id": "plex:59493", "kind": "collection", "type": "show", "title": "Bluey", "thumbnail": "…", "continue": { "contentId": "plex:59535", "title": "Bingo" } } ] },
-    { "id": "carry-on", "title": "Carry on", "items": [ { "id": "plex:672414", "kind": "item", "type": "movie", "title": "…", "thumbnail": "…", "reason": "unfinished", "percent": 40, "playhead": 720, "duration": 1800, "playedOn": "fleet:livingroom-tv", "parentId": null, "grandparentId": null } ] },
-    { "id": "time-of-day", "title": "Usually here at this time", "items": [ { "id": "plex:59493", "kind": "collection", "type": "show", "title": "Bluey (2018)", "thumbnail": "…", "days": 3, "lastPlayedAt": "2026-10-02 00:50:00", "continue": { "contentId": "plex:59498", "title": "Bike" } } ] },
-    { "id": "new", "title": "New", "items": [ { "id": "plex:707595", "kind": "item", "type": "movie", "title": "The Terminators", "thumbnail": "…", "addedAt": "2026-10-01T…", "latest": null } ] } ] }
+    { "id": "favourites", "title": "Favourites", "items": [ { "id": "plex:10005", "kind": "collection", "type": "show", "title": "Bluey", "thumbnail": "…", "continue": { "contentId": "plex:10006", "title": "Bingo" } } ] },
+    { "id": "carry-on", "title": "Carry on", "items": [ { "id": "plex:10007", "kind": "item", "type": "movie", "title": "…", "thumbnail": "…", "reason": "unfinished", "percent": 40, "playhead": 720, "duration": 1800, "playedOn": "fleet:livingroom-tv", "parentId": null, "grandparentId": null } ] },
+    { "id": "time-of-day", "title": "Usually here at this time", "items": [ { "id": "plex:10005", "kind": "collection", "type": "show", "title": "Bluey (2018)", "thumbnail": "…", "days": 3, "lastPlayedAt": "2026-10-02 00:50:00", "continue": { "contentId": "plex:10003", "title": "Bike" } } ] },
+    { "id": "new", "title": "New", "items": [ { "id": "plex:10008", "kind": "item", "type": "movie", "title": "The Terminators", "thumbnail": "…", "addedAt": "2026-10-01T…", "latest": null } ] } ] }
 ```
 
 Rows, in order, empty rows hidden:
@@ -1082,7 +1082,7 @@ Mutates the remote session's queue.
 | `PUT /api/v1/device/:id/session/shuffle` | `{ enabled: bool, commandId }` |
 | `PUT /api/v1/device/:id/session/repeat` | `{ mode: "off" \| "one" \| "all", commandId }` |
 | `PUT /api/v1/device/:id/session/shader` | `{ shader: string \| null, commandId }` |
-| `PUT /api/v1/device/:id/session/volume` | `{ level: int 0-100, commandId }` |
+| `PUT /api/v1/device/:id/session/volume` | `{ level: int 0-10002, commandId }` |
 
 **Verified by:**
 - `__backend/tests/unit/suite/4_api/v1/routers/device.session-config.test.mjs` — all four PUTs: validation + config envelope shape
@@ -1697,7 +1697,7 @@ Receiver handling of the playback-config and reorder commands (Phase 2b fixes):
 `ScreenActionHandler.jsx` (`handleMediaConfigSet`), which hands a `set-config`
 queue op to the mounted playback owner (`Player.jsx` `handleQueueOp`): repeat
 sets the queue controller's repeat mode, volume sets the session volume
-(snapshot units 0..100, Player units 0..1), and shuffle sets a play-order flag
+(snapshot units 0..10002, Player units 0..1), and shuffle sets a play-order flag
 and rewrites the queue's `executionOrder` only (`__app_modules/Player/lib/shuffleExecutionOrder.js`:
 current item and Up Next band stay in front, the listing is never reordered).
 Bad values and a missing owner raise `command-handler-error`. The other config
@@ -2070,7 +2070,7 @@ Central portable type.
     "shuffle": <bool>,
     "repeat": "off" | "one" | "all",
     "shader": "<string>" | null,
-    "volume": <0..100 int>,
+    "volume": <0..10002 int>,
     "playbackRate": <float, default 1.0>
   },
   "meta": {
@@ -2126,7 +2126,7 @@ to `/play`. They ride `itemAction.item` to a remote Media receiver unchanged.
     "shader": <bool>,
     "compositeVisual": <bool>
   },
-  "defaultVolume": <0..100 int>,
+  "defaultVolume": <0..10002 int>,
   "screens": ["<screenId>", ...]
 }
 ```

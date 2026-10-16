@@ -11,7 +11,7 @@
 ### Replay
 
 ```sh
-node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --wait 1200 --screens each --screen hybrid --case-id 01-cold-picker --output /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/testing/cli-cases/01-cold-picker.md
+node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle {repo}/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --wait 1200 --screens each --screen hybrid --case-id 01-cold-picker --output {repo}/_extensions/ti86-app/testing/cli-cases/01-cold-picker.md
 ```
 
 ## Captured output

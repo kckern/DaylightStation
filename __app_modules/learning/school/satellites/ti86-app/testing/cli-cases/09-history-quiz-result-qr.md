@@ -11,7 +11,7 @@
 ### Replay
 
 ```sh
-node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --key ENTER --wait 600 --keys DOWN,DOWN,ENTER --wait 900 --keys DOWN,DOWN,ENTER --wait 600 --key F2 --wait 300 --key F1 --wait 300 --key F2 --wait 600 --key F1 --wait 300 --key F5 --wait 600 --screens each --screen hybrid --case-id 09-history-quiz-result-qr --output /Users/kckern/Documents/GitHub/DaylightStation/_extensions/ti86-app/testing/cli-cases/09-history-quiz-result-qr.md
+node _extensions/ti86-app/ti86.cli.mjs --mame /opt/homebrew/bin/mame --rom /private/tmp/schoolcalc-ti86a.rom --bundle {repo}/_extensions/ti86-app/dist/install-ti86a-caacecbbb8b6 --load ASCHL --key ENTER --wait 600 --keys DOWN,DOWN,ENTER --wait 900 --keys DOWN,DOWN,ENTER --wait 600 --key F2 --wait 300 --key F1 --wait 300 --key F2 --wait 600 --key F1 --wait 300 --key F5 --wait 600 --screens each --screen hybrid --case-id 09-history-quiz-result-qr --output {repo}/_extensions/ti86-app/testing/cli-cases/09-history-quiz-result-qr.md
 ```
 
 ## Captured output

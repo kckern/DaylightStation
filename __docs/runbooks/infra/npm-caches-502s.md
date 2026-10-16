@@ -1,6 +1,6 @@
 # The reverse proxy caches 502s
 
-**Symptom.** An asset returns 502 through `daylightlocal.kckern.net` while the
+**Symptom.** An asset returns 502 through `daylightlocal.{env.domain}` while the
 same path returns 200 on `localhost:3111`, and keeps doing so for hours. The 502
 carries no upstream headers at all — no `X-Powered-By`, no `X-Served-By` — and
 adding any query string to the URL returns 200.
@@ -14,7 +14,7 @@ everyone afterwards.
 Its own access log is the proof — the first field is `$upstream_cache_status`:
 
 ```
-[11/Sep/2026:21:44:55 +0000] HIT - 502 - GET https daylightlocal.kckern.net "/sw.js" [Length 584]
+[11/Sep/2026:21:44:55 +0000] HIT - 502 - GET https daylightlocal.{env.domain} "/sw.js" [Length 584]
 ```
 
 On 2026-09-11 this served a cached 502 for `/favicon.ico` **1294 times**, for
@@ -62,7 +62,7 @@ Verify — a poisoned key must go from `HIT … 502` to a live 200, and the log'
 first field must stop reading `HIT` for error responses:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://daylightlocal.kckern.net/sw.js
+curl -s -o /dev/null -w '%{http_code}\n' https://daylightlocal.{env.domain}/sw.js
 grep -c 'HIT - 50[0-9]' …/reverse_proxy/logs/proxy-host-17_access.log
 ```
 
