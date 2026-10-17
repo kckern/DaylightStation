@@ -43,7 +43,9 @@ export function HRSimTrigger() {
         color: '#ccc',
         cursor: 'pointer',
         fontSize: '16px',
-        zIndex: 9999,
+        // Below the fullscreen emulator (.fitness-emulator-fullscreen, 2000):
+        // at 9999 this dev button sat on the bezel's ⋯ game menu and ate its taps.
+        zIndex: 1999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center'

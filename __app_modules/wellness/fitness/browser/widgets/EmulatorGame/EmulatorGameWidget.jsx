@@ -282,6 +282,14 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     const owner = game.saveOwner;
     const ownerCard = resolvePersonCard(owner);
     const title = game.title || game.id;
+    // The fingerprint prompt only exists on the garage kiosk (UnlockPrompt is
+    // kiosk-bound). Off-kiosk a scan request would wait invisibly — and a later
+    // garage touch would launch the game in THIS browser — so say where it plays.
+    if (!isKioskEnv()) {
+      logger.info('fitness-emulator.owned-launch.off-kiosk', { game: game.id, owner });
+      setNotice(`${title} is ${ownerCard?.name || owner}'s game — play it at the garage.`);
+      return;
+    }
     setPendingGame(game);
     setView('identify');
     logger.info('fitness-emulator.owned-launch.verify', { game: game.id, owner });

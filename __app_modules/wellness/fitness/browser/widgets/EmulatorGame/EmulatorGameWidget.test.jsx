@@ -397,6 +397,17 @@ describe('EmulatorGameWidget owned save game (save_owner)', () => {
     expect(screen.queryByTestId('console')).toBeNull();
   });
 
+  it('off-kiosk it never asks for a scan (no prompt there) and says where it plays', async () => {
+    kiosk.value = false;
+    ownedApi();
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    expect(await screen.findByText("Example Quest is User_5's game — play it at the garage.")).toBeTruthy();
+    expect(identity.registerIdentify).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('console')).toBeNull();
+  });
+
   it('a cancelled scan returns to the arcade without booting', async () => {
     kiosk.value = true;
     ownedApi();
