@@ -34,7 +34,7 @@ const A_SCOPE = ['.claude/', 'docker/', 'scripts/', '.github/', '.githooks/',
 const TREE = [''];
 
 export const CONTENT_RULES = [
-  { id: 'private-host', re: /\b(homeserver\.local|kckern-server|kckern-macbook)\b/, scope: A_SCOPE, why: 'private hostname' },
+  { id: 'private-host', re: /\b(homeserver\.local|kckern-(?:server|macbook))\b/, scope: TREE, why: 'private hostname' },
   { id: 'host-path', re: /\/(Users|media|home)\/kckern\b/, scope: TREE, why: 'absolute host path' },
   { id: 'personal-domain', re: /\b[\w.-]*kckern\.(net|com|info)\b/, scope: A_SCOPE, why: 'personal domain' },
   // RFC1918 hosts, but not network/example notations (x.x.x.0, /8 CIDR) or RFC5737 doc ranges.

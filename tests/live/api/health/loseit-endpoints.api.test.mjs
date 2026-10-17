@@ -11,7 +11,7 @@
  * Port convention follows the rest of tests/live/api/ (e.g.
  * content/format-field.test.mjs): `process.env.BACKEND_PORT || 3112`, NOT
  * tests/_lib/configHelper.mjs's getAppPort() — that resolves to the prod
- * container port (3111) on this host because system-local.kckern-server.yml
+ * container port (3111) on this host because system-local.{env}.yml
  * has no app.ports block. 3112 is the Vite dev proxy in front of the 3113
  * backend (see CLAUDE.md dev port table).
  *

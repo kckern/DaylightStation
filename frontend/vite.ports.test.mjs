@@ -19,47 +19,47 @@ describe('vite.ports resolvePorts — local-over-base merge (regression: local f
 
   test('no local file present -> base system.yml is used', () => {
     const fs = makeFs(new Map([
-      [BASE_PATH, { app: { ports: { 'kckern-server': 3112 } } }],
+      [BASE_PATH, { app: { ports: { 'prod-server': 3112 } } }],
     ]));
-    const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
+    const result = resolvePorts({ dataPath: '/data', envName: 'prod-server', ...fs });
     expect(result.app).toBe(3112);
     expect(result.backend).toBe(3113);
     expect(result.usedDefault).toBe(false);
   });
 
-  test('local file present but WITHOUT an app key -> base app.ports still wins (the kckern-server bug)', () => {
+  test('local file present but WITHOUT an app key -> base app.ports still wins (the prod-server bug)', () => {
     const fs = makeFs(new Map([
-      [BASE_PATH, { app: { ports: { 'kckern-server': 3112 } } }],
-      [LOCAL_PATH('kckern-server'), { logging: { fileSink: { path: '/var/log/x' } } }],
+      [BASE_PATH, { app: { ports: { 'prod-server': 3112 } } }],
+      [LOCAL_PATH('prod-server'), { logging: { fileSink: { path: '/var/log/x' } } }],
     ]));
-    const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
+    const result = resolvePorts({ dataPath: '/data', envName: 'prod-server', ...fs });
     expect(result.app).toBe(3112);
     expect(result.backend).toBe(3113);
   });
 
   test('local file WITH app.ports.<env> overrides the base value for that env', () => {
     const fs = makeFs(new Map([
-      [BASE_PATH, { app: { ports: { 'kckern-server': 3112 } } }],
-      [LOCAL_PATH('kckern-server'), { app: { ports: { 'kckern-server': 9999 } } }],
+      [BASE_PATH, { app: { ports: { 'prod-server': 3112 } } }],
+      [LOCAL_PATH('prod-server'), { app: { ports: { 'prod-server': 9999 } } }],
     ]));
-    const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
+    const result = resolvePorts({ dataPath: '/data', envName: 'prod-server', ...fs });
     expect(result.app).toBe(9999);
     expect(result.backend).toBe(10000);
   });
 
   test('local file overrides one env only, base value for a different env is untouched', () => {
     const fs = makeFs(new Map([
-      [BASE_PATH, { app: { ports: { 'kckern-server': 3112, 'kckern-macbook': 3111 } } }],
-      [LOCAL_PATH('kckern-server'), { app: { ports: { 'kckern-server': 9999 } } }],
+      [BASE_PATH, { app: { ports: { 'prod-server': 3112, 'dev-laptop': 3111 } } }],
+      [LOCAL_PATH('prod-server'), { app: { ports: { 'prod-server': 9999 } } }],
     ]));
-    const result = resolvePorts({ dataPath: '/data', envName: 'kckern-macbook', ...fs });
+    const result = resolvePorts({ dataPath: '/data', envName: 'dev-laptop', ...fs });
     expect(result.app).toBe(3111);
     expect(result.backend).toBe(3112);
   });
 
   test('neither file exists -> hardcoded default, and usedDefault says so (no false "resolved" reporting)', () => {
     const fs = makeFs(new Map());
-    const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
+    const result = resolvePorts({ dataPath: '/data', envName: 'prod-server', ...fs });
     expect(result.app).toBe(DEFAULT_APP_PORT);
     expect(result.backend).toBe(DEFAULT_APP_PORT + 1);
     expect(result.usedDefault).toBe(true);

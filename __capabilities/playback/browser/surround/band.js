@@ -861,7 +861,7 @@ export const SEGMENT_FLOOR_PX = 72;
  *
  * BOTH READINGS ARE LIVE, and that is why 39 is a ceiling rather than a
  * measurement. `Mar…` reads 38.3px on the machine this was last derived on and
- * 37.00px on kckern-server — same font binary, same rule, same string.
+ * 37.00px on the prod server — same font binary, same rule, same string.
  * Chromium's rasterised advance widths differ between builds and
  * `getBoundingClientRect` reports what was rasterised. 39 is `ceil` of the
  * widest reading, so it satisfies the hard floor everywhere; the test's cushion

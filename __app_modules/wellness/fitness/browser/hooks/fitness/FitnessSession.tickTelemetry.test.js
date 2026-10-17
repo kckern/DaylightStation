@@ -1,7 +1,7 @@
 /**
  * Regression guard for DEFECT 2: `fitness.tick_telemetry` cried wolf every 30s.
  *
- * Evidence: homeserver.local media/logs/fitness/2026-07-21T17-53-37.jsonl — for
+ * Evidence: prod media/logs/fitness/2026-07-21T17-53-37.jsonl — for
  * 100 minutes EVERY window reported `actualTicks: 0`, `actualTickRate: "0.0/sec"`
  * and `avgLoopIterations: "0.00"` against `expectedTickRate: "0.20/sec"`, while
  * `tickCount` in the SAME payload advanced 1,7,14,20,25,32,38,44,50,56,62,68,73

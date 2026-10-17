@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Pull headset-hub/devices.yml from homeserver.local once.
-# Homeserver hosts the canonical Dropbox-synced copy; this script
+# Pull headset-hub/devices.yml from the DaylightStation server once.
+# The server hosts the canonical Dropbox-synced copy; this script
 # mirrors any change made on the Mac (via Dropbox -> homeserver)
 # onto the hub's working file. headset-hub.sh's refresh_loop picks
 # up the new content within REFRESH_INTERVAL.

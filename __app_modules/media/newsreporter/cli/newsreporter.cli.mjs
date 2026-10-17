@@ -24,7 +24,7 @@
  *   # re-print a past day to a test printer
  *   node cli/newsreporter.cli.mjs world-cup-reporter --date 2026-06-19 --printer downstairs
  *   # against prod from inside the container
- *   ssh homeserver.local 'docker exec daylight-station \
+ *   ssh {env.prod_host} 'docker exec daylight-station \
  *     node cli/newsreporter.cli.mjs world-cup-reporter --dry-run'
  */
 

@@ -33,9 +33,9 @@ import { existsSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { hostname } from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
+import { readDotEnv } from './_env.mjs';
 
 // Hard request timeout so a stalled connection (e.g. an overloaded Plex that
 // stops responding mid-request) throws instead of hanging the process forever.
@@ -49,14 +49,6 @@ axios.defaults.timeout = 30000;
 // ============================================================================
 
 const CONTAINER = 'daylight-station';
-const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
-
-function readDotEnv(key) {
-    const envFile = path.join(REPO_ROOT, '.env');
-    if (!existsSync(envFile)) return undefined;
-    const line = readFileSync(envFile, 'utf-8').split('\n').find(l => l.startsWith(`${key}=`));
-    return line?.slice(key.length + 1).trim().replace(/^["']|["']$/g, '') || undefined;
-}
 
 function localDataDir() {
     if (process.env.DAYLIGHT_DATA_PATH) return process.env.DAYLIGHT_DATA_PATH;
@@ -121,11 +113,12 @@ function loadConfig() {
         }
         const plexHosts = (yaml.load(servicesRaw) || {}).plex || {};
         const env = process.env.DAYLIGHT_ENV || readDotEnv('DAYLIGHT_ENV');
-        host = (env && plexHosts[env]) || plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
+        const inDocker = existsSync('/.dockerenv');
+        host = (env && plexHosts[env]) || plexHosts[hostname()] || (inDocker ? plexHosts.docker : undefined);
         if (!host) {
             console.error('Error: no plex host found in services.yml for the current host.');
-            console.error(`Tried DAYLIGHT_ENV=${env}, hostname=${hostname()}, fallback kckern-server, fallback docker.`);
-            console.error('Set PLEX_HOST env var to override.');
+            console.error(`Tried DAYLIGHT_ENV=${env}, hostname=${hostname()}, docker (only inside a container).`);
+            console.error('Set DAYLIGHT_ENV in .env to a services.yml plex key, or set PLEX_HOST.');
             process.exit(1);
         }
     }

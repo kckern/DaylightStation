@@ -499,7 +499,7 @@ export class ConfigService {
    * Resolve browser-accessible URL for a service.
    *
    * If `webUrl` is set in the service config, it's used as a reference to
-   * another environment key (e.g. `webUrl: kckern-server` resolves to that
+   * another environment key (e.g. `webUrl: prod-server` resolves to that
    * env's URL). If `webUrl` looks like a full URL it's used directly.
    * Falls back to resolveServiceUrl() when no webUrl is configured.
    *
@@ -634,7 +634,7 @@ export class ConfigService {
    *     ports:
    *       default: 3111
    *       docker: 3111
-   *       kckern-server: 3112
+   *       prod-server: 3112
    */
   getAppPort() {
     const app = this.#config.system?.app;

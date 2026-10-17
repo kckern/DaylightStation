@@ -23,10 +23,10 @@ describe('AiUsageLedger', () => {
 
   it('names the file per writer when a source is given', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-ledger-'));
-    const ledger = createAiUsageLedger({ dir, source: 'kckern-macbook' });
+    const ledger = createAiUsageLedger({ dir, source: 'dev-laptop' });
     await ledger.record({ provider: 'openai', endpoint: '/chat/completions', status: 'ok' });
     const month = new Date().toISOString().slice(0, 7);
-    await expect(fs.stat(path.join(dir, `${month}.kckern-macbook.jsonl`))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(dir, `${month}.dev-laptop.jsonl`))).resolves.toBeTruthy();
   });
 
   it('creates the directory on first write', async () => {

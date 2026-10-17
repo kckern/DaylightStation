@@ -21,7 +21,7 @@
  *   # locally / inside the container
  *   node cli/regen-timelapse.cli.mjs 20260617193446 20260612180809
  *   # against prod from inside the container
- *   ssh homeserver.local 'docker exec daylight-station \
+ *   ssh {env.prod_host} 'docker exec daylight-station \
  *     node cli/regen-timelapse.cli.mjs 20260617193446'
  *
  * Note: only sessions whose raw screenshots still exist on disk can render — a

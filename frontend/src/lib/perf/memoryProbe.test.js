@@ -6,7 +6,7 @@
  * every sample logged `heapMB: null` and the memory-leak detector never fired,
  * with nothing in the logs to say monitoring was blind.
  *
- * Evidence: homeserver.local media/logs/fitness/2026-07-21T17-53-37.jsonl —
+ * Evidence: prod media/logs/fitness/2026-07-21T17-53-37.jsonl —
  * 100 minutes of `heapMB: null` / `heapGrowthMB: null`.
  *
  * The contract this file locks down:

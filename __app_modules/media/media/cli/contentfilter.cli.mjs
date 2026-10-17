@@ -53,6 +53,7 @@ import {
 } from '../server/domain/content-filter/subtitleWords.mjs';
 import { SubtitleCueReview, carryForwardDecisions } from '../server/application/content-filter/SubtitleCueReview.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
+import { readDotEnv } from './_env.mjs';
 
 const VA_BASE = 'https://api.vidangel.com';
 
@@ -63,17 +64,8 @@ const VA_BASE = 'https://api.vidangel.com';
 /** Resolve the data dir the app uses (DAYLIGHT_BASE_PATH/data). */
 function resolveDataDir() {
   if (process.env.DAYLIGHT_DATA_DIR) return process.env.DAYLIGHT_DATA_DIR;
-  let base = process.env.DAYLIGHT_BASE_PATH;
-  if (!base) {
-    // Fall back to .env in the repo root (cli/ -> repo root)
-    const envPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../../.env");
-    if (existsSync(envPath)) {
-      const line = readFileSync(envPath, 'utf8')
-        .split('\n')
-        .find((l) => l.startsWith('DAYLIGHT_BASE_PATH='));
-      if (line) base = line.slice('DAYLIGHT_BASE_PATH='.length).trim();
-    }
-  }
+  // Fall back to .env in the repo root
+  const base = process.env.DAYLIGHT_BASE_PATH || readDotEnv('DAYLIGHT_BASE_PATH');
   if (!base) {
     console.error('Error: set DAYLIGHT_BASE_PATH (in .env or env) or DAYLIGHT_DATA_DIR.');
     process.exit(1);
@@ -84,17 +76,8 @@ function resolveDataDir() {
 /** Resolve the media dir the app uses (DAYLIGHT_BASE_PATH/media). */
 function resolveMediaDir() {
   if (process.env.DAYLIGHT_MEDIA_DIR) return process.env.DAYLIGHT_MEDIA_DIR;
-  let base = process.env.DAYLIGHT_BASE_PATH;
-  if (!base) {
-    // Fall back to .env in the repo root (cli/ -> repo root)
-    const envPath = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../../.env");
-    if (existsSync(envPath)) {
-      const line = readFileSync(envPath, 'utf8')
-        .split('\n')
-        .find((l) => l.startsWith('DAYLIGHT_BASE_PATH='));
-      if (line) base = line.slice('DAYLIGHT_BASE_PATH='.length).trim();
-    }
-  }
+  // Fall back to .env in the repo root
+  const base = process.env.DAYLIGHT_BASE_PATH || readDotEnv('DAYLIGHT_BASE_PATH');
   if (!base) {
     console.error('Error: set DAYLIGHT_BASE_PATH (in .env or env) or DAYLIGHT_MEDIA_DIR.');
     process.exit(1);
@@ -151,13 +134,20 @@ function loadPlexConfig() {
   if (!token) token = loadYaml(path.join(dataDir, 'system', '..', 'household', 'auth', 'plex.yml'))?.token;
   if (!token) token = loadYaml(path.join(dataDir, 'household', 'auth', 'plex.yml'))?.token;
   let host = envHost;
+  let env;
   if (!host) {
     const services = loadYaml(path.join(dataDir, 'system', 'config', 'services.yml')) || {};
     const plexHosts = services.plex || {};
-    host = plexHosts[hostname()] || plexHosts['kckern-macbook'] || plexHosts['kckern-server'] || plexHosts.docker;
+    env = process.env.DAYLIGHT_ENV || readDotEnv('DAYLIGHT_ENV');
+    const inDocker = existsSync('/.dockerenv');
+    host = (env && plexHosts[env]) || plexHosts[hostname()] || (inDocker ? plexHosts.docker : undefined);
   }
   if (!token || !host) {
     console.error('Error: could not resolve Plex token/host. Set PLEX_TOKEN and PLEX_HOST.');
+    if (!host) {
+      console.error(`Tried DAYLIGHT_ENV=${env}, hostname=${hostname()}, docker (only inside a container).`);
+      console.error('Set DAYLIGHT_ENV in .env to a services.yml plex key, or set PLEX_HOST.');
+    }
     process.exit(1);
   }
   return { token, host: host.replace(/\/$/, '') };

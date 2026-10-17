@@ -55,11 +55,15 @@ describe('auditContent', () => {
   });
 
   it('ignores files outside the rule scope (widened by later sub-projects)', () => {
-    expect(auditContent('__app_modules/x/cli/a.mjs', 'ssh homeserver.local')).toEqual([]);
+    expect(auditContent('__app_modules/x/cli/a.mjs', 'curl http://10.1.2.3/')).toEqual([]);
   });
 
   it('applies host-path to the whole tree', () => {
     expect(CONTENT_RULES.find((r) => r.id === 'host-path').scope).toEqual(['']);
+  });
+
+  it('applies private-host to the whole tree', () => {
+    expect(CONTENT_RULES.find((r) => r.id === 'private-host').scope).toEqual(['']);
   });
 
   it('allows documentation-reserved example ranges', () => {

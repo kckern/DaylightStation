@@ -46,7 +46,7 @@ describe('openai-usage CLI', () => {
       '{not json',
       '',
     ].join('\n'));
-    await fs.writeFile(path.join(dir, '2026-09.kckern-macbook.jsonl'), [
+    await fs.writeFile(path.join(dir, '2026-09.dev-laptop.jsonl'), [
       JSON.stringify({ ts: '2026-09-01T08:00:00.000-07:00', model: 'gpt-4.1', costUsd: 0.3 }),
       JSON.stringify({ ts: '2026-09-02T08:00:00.000-07:00', model: 'gpt-4.1', costUsd: 0.4 }),
     ].join('\n'));
@@ -55,7 +55,7 @@ describe('openai-usage CLI', () => {
     const rows = readLedger(dir, '2026-08-31', '2026-09-02');
     expect(rows.map(r => [r.day, r.writer, r.costUsd])).toEqual([
       ['2026-08-31', 'docker', 0.2],
-      ['2026-09-01', 'kckern-macbook', 0.3],
+      ['2026-09-01', 'dev-laptop', 0.3],
     ]);
     expect(readLedger(dir, null, null)).toHaveLength(4);
     expect(readLedger(path.join(dir, 'missing'), '2026-09-01', null)).toEqual([]);

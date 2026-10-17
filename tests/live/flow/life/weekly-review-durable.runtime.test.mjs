@@ -14,7 +14,7 @@
  *   Add to tests/_infrastructure/config/playwright.config.mjs launchOptions.args if mic prompts block the test.
  * - The test grants microphone permission via browser context, but the MediaRecorder
  *   will silently produce zero-byte chunks without a real (or fake) audio device.
- *   In CI, enable fake device flags; on kckern-server the real mic may not be present.
+ *   In CI, enable fake device flags; on the prod server the real mic may not be present.
  * - Menu position: Weekly Review is index 2 in fhe.yml (0=Opening Hymn, 1=Spotlight,
  *   2=Weekly Review). ArrowRight twice from the initial focused position selects it.
  * - The resume-draft overlay requires that the backend has at least one chunk stored
