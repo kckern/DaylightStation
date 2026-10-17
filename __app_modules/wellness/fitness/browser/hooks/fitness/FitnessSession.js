@@ -313,6 +313,7 @@ export class FitnessSession {
     this._lastKnownGoodDeviceAssignments = null;
     this._isEndingSession = false; // Re-entrancy guard for endSession()
     this._sessionEndedCallbacks = [];
+    this._sessionEndingCallbacks = new Set();
 
     this.snapshot = {
       participantRoster: [],
@@ -2546,6 +2547,12 @@ export class FitnessSession {
       console.error(`🛑 SESSION_END [${this._debugEndCount}/5]: ${this.sessionId} after ${durationMs}ms, reason="${reason}"`, { stack });
     }
 
+    // Observers close their current runs before the immutable final snapshot.
+    for (const callback of this._sessionEndingCallbacks) {
+      try { callback(); } catch (error) {
+        getLogger().warn('fitness.session.observer_close_failed', { message: error?.message || String(error) });
+      }
+    }
     this._collectTimelineTick({ timestamp: now });
     this._closeOpenMedia(now);
     // A challenge still pending at session end (frozen outside 'unlocked', or a
@@ -2683,6 +2690,12 @@ export class FitnessSession {
    * @param {function} callback - Function called with (sessionId, reason)
    * @returns {function} - Unsubscribe function
    */
+  onSessionEnding(callback) {
+    if (typeof callback !== 'function') return () => {};
+    this._sessionEndingCallbacks.add(callback);
+    return () => this._sessionEndingCallbacks.delete(callback);
+  }
+
   onSessionEnded(callback) {
     if (typeof callback !== 'function') return () => {};
     this._sessionEndedCallbacks.push(callback);
@@ -2820,6 +2833,8 @@ export class FitnessSession {
     // Then clear persistent state that reset() intentionally preserves
     this._sessionEndedCallbacks = [];
     
+    this._sessionEndingCallbacks.clear();
+
     // Nullify manager references
     this._deviceRouter = null;
     this._persistenceManager = null;

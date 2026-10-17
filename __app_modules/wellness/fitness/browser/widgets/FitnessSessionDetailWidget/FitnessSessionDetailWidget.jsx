@@ -1,3 +1,4 @@
+import PlaybackStrip from './PlaybackStrip.jsx';
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { Text } from '@mantine/core';
 import { getWidgetRegistry } from "../../../../../../__capabilities/screen-host/browser/public.mjs";
@@ -733,6 +734,10 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         <div className="session-detail__gutter">
           <MarkerGutter videoMarkers={marks?.videos || []} />
         </div>
+      )}
+
+      {detail && marks?.playback?.length > 0 && (
+        <PlaybackStrip key={sessionId} intervals={marks.playback} width={stackBox?.width} />
       )}
 
       {/* Timeline (35%) */}

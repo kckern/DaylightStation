@@ -30,3 +30,12 @@ describe('historical governance evidence', () => {
     expect(h.engine.state.playbackEvidence.reason).not.toBe('challenge_failed');
   });
 });
+
+
+it('attributes a warning to the participant below the requirement instead of the first roster member', () => {
+  const h = harness(); h.engine.config.grace_period_seconds = 30;
+  const evaluate = zone => h.engine.evaluate({ activeParticipants: ['other-child', 'child'], userZoneMap: { 'other-child': 'hot', child: zone }, totalCount: 2, zoneRankMap, zoneInfoMap });
+  evaluate('active'); evaluate('cool');
+  expect(h.engine.phase).toBe('warning');
+  expect(h.engine.state.playbackEvidence.participantId).toBe('child');
+});

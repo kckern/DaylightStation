@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, fireEvent } from '@testing-library/react';
 
 // Stub Mantine components so tests run without MantineProvider
 vi.mock('@mantine/core', () => ({
@@ -200,4 +200,29 @@ describe('FitnessSessionDetailWidget — refresh when its list row changes', () 
     resolveFetch({ ok: true, json: async () => ({ sessionId: NEXT, summary: { voiceMemos: [] }, timeline: {} }) });
     await waitFor(() => expect(container.querySelector('.session-detail--pending')).toBeNull());
   });
+});
+
+
+it('shows saved playback and resets selected evidence when loading another session', async () => {
+  const size = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  const start = Date.parse('2027-01-15T08:00:00Z');
+  const detail = (id, recorded) => ({ session: { sessionId: id, session: { start: '2027-01-15T08:00:00Z', end: '2027-01-15T08:05:00Z' }, summary: {}, timeline: { tick_count: 61, interval_seconds: 5, events: [
+    { type: 'media', data: { contentId: 'video:1', title: 'Episode', start, end: start + 300000 } },
+    ...(recorded ? [
+      { type: 'playback_state', timestamp: start, data: { version: 1, contentId: 'video:1', playbackRunId: id, state: 'waiting', observation: 'begin' } },
+      { type: 'playback_state', timestamp: start + 60000, data: { version: 1, contentId: 'video:1', playbackRunId: id, state: 'playing', observation: 'change', evidence: { zone: 'hot', reason: 'startup_gate', hrBpm: 165 } } },
+      { type: 'playback_state', timestamp: start + 300000, data: { version: 1, contentId: 'video:1', playbackRunId: id, state: 'none', observation: 'end' } },
+    ] : []),
+  ] } } });
+  global.fetch.mockResolvedValueOnce({ ok: true, json: async () => detail(ID, true) });
+  const { container, rerender, unmount } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+  try {
+    await waitFor(() => expect(container.querySelector('.playback-strip')).not.toBeNull());
+    fireEvent.click(container.querySelector('button[aria-label^="Video started"]'));
+    expect(container.querySelector('.playback-strip__detail').textContent).toContain('165 BPM');
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => detail('20270115080500', false) });
+    rerender(<FitnessSessionDetailWidget sessionId="20270115080500" />);
+    await waitFor(() => expect(container.querySelector('button[aria-label^="Playback not recorded"]')).not.toBeNull());
+    expect(container.querySelector('.playback-strip__detail').textContent).not.toContain('165 BPM');
+  } finally { unmount(); size.mockRestore(); }
 });

@@ -8,9 +8,10 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
   const latest = useRef(null);
   latest.current = { governance, pauseDecision, resilience, evidence };
   const observer = useRef(null);
+  const sessionId = session?.sessionId;
 
   useEffect(() => {
-    if (!session?.logEvent || !contentId) return undefined;
+    if (!session?.logEvent || !contentId || ('sessionId' in session && !sessionId)) return undefined;
     const playbackRunId = `${Date.now()}-${++sequence}`;
     let closed = false;
     let observedPlaying = false;
@@ -23,7 +24,7 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
       const gov = context.governance || {};
       const pause = context.pauseDecision || {};
       const health = context.resilience || {};
-      const proof = context.evidence;
+      const proof = gov.isGoverned === false ? null : context.evidence;
       const locked = Boolean(gov.videoLocked);
       const held = pause.holdReason || (pause.reason === 'PAUSED_USER' ? 'manual' : null);
       let state = 'unknown'; let reason = 'unknown';
@@ -53,6 +54,7 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
     const onPause = () => { observedPlaying = false; waiting = false; record(); };
     const onWaiting = () => { observedPlaying = false; waiting = true; record(); };
     const end = () => { if (!closed) { record('end'); closed = true; } };
+    const unsubscribe = session.onSessionEnding?.(end);
     const listeners = { playing: onPlaying, pause: onPause, waiting: onWaiting, ended: end };
     for (const [event, handler] of Object.entries(listeners)) mediaElement?.addEventListener(event, handler);
     observer.current = record;
@@ -61,9 +63,10 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
     return () => {
       for (const [event, handler] of Object.entries(listeners)) mediaElement?.removeEventListener(event, handler);
       end();
+      unsubscribe?.();
       if (observer.current === record) observer.current = null;
     };
-  }, [session, contentId, mediaElement]);
+  }, [session, sessionId, contentId, mediaElement]);
 
   useEffect(() => { observer.current?.(); }, [governance, pauseDecision, resilience, evidence]);
 }

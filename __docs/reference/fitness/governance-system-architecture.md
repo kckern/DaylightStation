@@ -588,3 +588,7 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 - `governance-engine.md` — API reference, configuration, testing patterns
 - `ops:docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` — Test flakiness investigation
 - `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` — Play presses re-paused after unlock by a stale closure
+
+## Saved playback explanations
+
+See [Saved workout playback timeline](saved-playback-timeline.md) for the playback event contract, historical governance evidence and saved chart strip.

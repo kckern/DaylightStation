@@ -1503,7 +1503,9 @@ export class GovernanceEngine {
       // Explanation evidence is a historical snapshot, not a live HR series.
       const challenge = this.challengeState?.activeChallenge;
       const zones = evalContext?.userZoneMap || this._latestInputs?.userZoneMap || {};
-      const participantId = Object.keys(zones)[0] || null;
+      const missing = challenge?.status === 'failed' ? challenge.summary?.missingUsers
+        : this.requirementSummary?.requirements?.find(r => !r.satisfied)?.missingUsers;
+      const participantId = missing?.[0] || Object.keys(zones)[0] || null;
       const startup = newPhase === 'unlocked' && oldPhase === 'pending'
         && this._playbackEvidence?.reason === 'startup_gate' && this._playbackEvidence?.participantId;
       if (!startup) {

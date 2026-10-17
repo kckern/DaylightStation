@@ -58,3 +58,32 @@ describe('saved playback observer', () => {
     expect(states(session).at(-1)).toBe('playing');
   });
 });
+
+it('closes the observation before final persistence and does not queue stale events after reset', async () => {
+  const { FitnessSession } = await import('../hooks/fitness/FitnessSession.js');
+  const session = new FitnessSession();
+  session.ensureStarted({ force: true });
+  const mediaElement = makeMedia();
+  const save = vi.spyOn(session, '_persistSession').mockImplementation(() => true);
+  const { unmount, rerender } = renderHook(() => usePlaybackTimelineRecorder({ session, contentId: 'video:1', mediaElement, governance: { status: 'unlocked' } }));
+  fire(mediaElement, 'playing', false);
+  session.endSession('user_initiated');
+  const saved = save.mock.calls.at(-1)?.[0];
+  expect(saved.timeline.events.filter(e => e.type === 'playback_state').at(-1).data.observation).toBe('end');
+  const queued = session._pendingEvents.length;
+  rerender();
+  fire(mediaElement, 'pause', true); unmount();
+  expect(session._pendingEvents).toHaveLength(queued);
+  session.destroy();
+});
+
+
+it('does not attribute bypassed playback to stale exercise evidence', () => {
+  const session = makeSession(); const mediaElement = makeMedia();
+  const evidence = { participantId: 'child', zone: 'hot', hrBpm: 165, thresholdBpm: 160 };
+  const props = { session, contentId: 'video:1', mediaElement, governance: { status: 'pending', videoLocked: true, isGoverned: true }, evidence };
+  const { rerender } = renderHook(p => usePlaybackTimelineRecorder(p), { initialProps: props });
+  rerender({ ...props, governance: { status: 'unlocked', videoLocked: false, isGoverned: false } });
+  fire(mediaElement, 'playing', false);
+  expect(session.logEvent.mock.calls.at(-1)[1].evidence).toBeNull();
+});
