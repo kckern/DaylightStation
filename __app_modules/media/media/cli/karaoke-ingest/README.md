@@ -4,6 +4,14 @@ Builds the **Karaoke** Plex show (`Slow TV/Karaoke/`) from a curated setlist.
 Seasons = categories, episodes = songs. See the design spec:
 `ops:docs/superpowers/specs/2026-07-10-karaoke-plex-show-ingest-design.md`.
 
+## Library folder
+
+Set `KARAOKE_DIR` to the karaoke library folder on the media host (for example
+`/media/{user}/Media/Slow TV/Karaoke`) in the shell environment; this CLI does
+not read `.env`. The folder holds `setlist.tsv`, `candidates.tsv` and the
+downloaded videos. Every command except `refresh-plex` (and
+`convert-seed --seed <path> --dry-run`) exits with an error when it is unset.
+
 ## Setlist
 
 `setlist.tsv` (on the media mount) is the source of truth:

@@ -98,7 +98,7 @@ describe('HealthArchiveScope', () => {
         '/etc/passwd',
         '/usr/local/bin/secrets',
         '/var/log/system.log',
-        '/Users/kckern/.ssh/id_rsa',
+        '/Users/someone/.ssh/id_rsa',
         abs('data/users/test-user/secrets.yml'),
         abs('data/users/test-user/lifelog/archives/playbook.yml.bak'), // not in whitelist root
         abs('config/database.yml'),

@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 const SELF = 'scripts/audit-public-tree.mjs';
+// Files that document the markers they check for.
+const CONTENT_EXEMPT = new Set([SELF, 'tests/unit/tooling/auditPublicTree.test.mjs']);
 const INTERNAL_DOCS = /^__docs\/(_wip|_archive|superpowers|plans|notes|roadmap|marketing)\//;
 const BUILD_JUNK = /(^|\/)(__pycache__\/|.*\.pyc$|.*\.class$|build\/reports\/)/;
 const SCRATCH = /(^|\/)(_tmp_[^/]*|_proto-[^/]*)$/;
@@ -28,10 +30,12 @@ export const PATH_RULES = [
 // Sub-project A scope: tooling, config and root docs. B and F extend it.
 const A_SCOPE = ['.claude/', 'docker/', 'scripts/', '.github/', '.githooks/',
   'package.json', 'Readme.md', 'CONTRIBUTING.md', 'AGENTS.md', 'CLAUDE.md'];
+// Whole tree: a rule moves here once its area is scrubbed.
+const TREE = [''];
 
 export const CONTENT_RULES = [
   { id: 'private-host', re: /\b(homeserver\.local|kckern-server|kckern-macbook)\b/, scope: A_SCOPE, why: 'private hostname' },
-  { id: 'host-path', re: /\/(Users|media|home)\/kckern\b/, scope: A_SCOPE, why: 'absolute host path' },
+  { id: 'host-path', re: /\/(Users|media|home)\/kckern\b/, scope: TREE, why: 'absolute host path' },
   { id: 'personal-domain', re: /\b[\w.-]*kckern\.(net|com|info)\b/, scope: A_SCOPE, why: 'personal domain' },
   // RFC1918 hosts, but not network/example notations (x.x.x.0, /8 CIDR) or RFC5737 doc ranges.
   { id: 'lan-address', re: /\b(?:10\.\d{1,3}\.\d{1,3}\.(?!0\b)\d{1,3}|192\.168\.\d{1,3}\.(?!0\b)\d{1,3})\b(?!\/)/, scope: A_SCOPE, why: 'LAN address' },
@@ -52,11 +56,10 @@ export function auditPaths(paths) {
   return out;
 }
 
-const inScope = (path, scope) => scope.some((s) => (s.endsWith('/') ? path.startsWith(s) : path === s));
+const inScope = (path, scope) => scope.some((s) => s === '' || (s.endsWith('/') ? path.startsWith(s) : path === s));
 
 export function auditContent(path, text) {
-  // Exempt the audit script itself from content rules (it documents the markers).
-  if (path === SELF) return [];
+  if (CONTENT_EXEMPT.has(path)) return [];
   const out = [];
   const rules = CONTENT_RULES.filter((r) => inScope(path, r.scope));
   if (!rules.length) return out;

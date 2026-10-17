@@ -14,14 +14,18 @@ import { validateExpectations } from './testDataMatchers.mjs';
 // Re-export validateExpectations for convenience
 export { validateExpectations };
 
-// Default data path (can be overridden via environment variable)
-// Accepts DAYLIGHT_DATA_PATH directly, or constructs from DAYLIGHT_BASE_PATH
+// Data path: DAYLIGHT_DATA_PATH directly, or DAYLIGHT_BASE_PATH/data.
+// Null when neither is set; dataPath() throws at the point of use, not at import.
 const DATA_PATH = process.env.DAYLIGHT_DATA_PATH ||
-  (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : null) ||
-  '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
+  (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : null);
+
+function dataPath() {
+  if (!DATA_PATH) throw new Error('testDataService: set DAYLIGHT_BASE_PATH or DAYLIGHT_DATA_PATH');
+  return DATA_PATH;
+}
 
 // Registry file path
-const REGISTRY_PATH = path.join(DATA_PATH, 'system/testdata');
+const registryPath = () => path.join(dataPath(), 'system/testdata');
 
 // Cache storage
 let registryCache = null;
@@ -51,7 +55,7 @@ function loadRegistry() {
     return registryCache;
   }
 
-  registryCache = loadYaml(REGISTRY_PATH);
+  registryCache = loadYaml(registryPath());
   return registryCache;
 }
 
@@ -81,7 +85,7 @@ function buildSample(id, domainConfig, sampleConfig = null) {
  * @returns {Array<{id, expect}>} Discovered samples
  */
 function discoverSamples(discoverPath, count, domainConfig) {
-  const fullPath = path.join(DATA_PATH, discoverPath);
+  const fullPath = path.join(dataPath(), discoverPath);
 
   if (!dirExists(fullPath)) {
     return [];

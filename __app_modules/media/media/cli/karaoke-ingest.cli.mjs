@@ -29,6 +29,13 @@ function parseArgs(argv) {
   return args;
 }
 
+function requireMediaDir() {
+  if (!cfg.MEDIA_DIR) {
+    console.error('Error: set KARAOKE_DIR to the karaoke library folder (export it in the shell).');
+    process.exit(1);
+  }
+}
+
 async function fileExists(p) {
   try { await fs.access(p); return true; } catch { return false; }
 }
@@ -64,6 +71,7 @@ async function loadRows(setlistPath) {
 }
 
 async function cmdIngest(args, { dryRun }) {
+  requireMediaDir(); // downloads land in MEDIA_DIR even with --setlist
   const rows = await loadRows(args.setlist || cfg.SETLIST_PATH);
   const options = {
     dryRun,
@@ -76,6 +84,7 @@ async function cmdIngest(args, { dryRun }) {
 }
 
 async function cmdDiscover(args) {
+  requireMediaDir(); // candidates.tsv is written to MEDIA_DIR
   const rows = await loadRows(args.setlist || cfg.SETLIST_PATH);
   const existingIds = new Set(rows.map((r) => r.videoId).filter(Boolean));
   const seedIds = rows.filter((r) => r.videoId).map((r) => r.videoId);
@@ -115,7 +124,9 @@ async function cmdDiscover(args) {
 }
 
 async function cmdConvertSeed(args) {
-  const src = args.seed || path.join(cfg.MEDIA_DIR, 'ultimate_theatrical_karaoke_setlist.tsv');
+  const seedPath = typeof args.seed === 'string' ? args.seed : null;
+  if (!(seedPath && args['dry-run'])) requireMediaDir();
+  const src = seedPath || path.join(cfg.MEDIA_DIR, 'ultimate_theatrical_karaoke_setlist.tsv');
   const seed = parseSeedTsv(await fs.readFile(src, 'utf8'));
   const { rows, unmatched } = convertSeed(seed, cfg.resolveSeason);
   if (args['dry-run']) {
@@ -145,6 +156,11 @@ Usage:
   karaoke-ingest discover      [--limit N] [--setlist path]     # harvest channel siblings → candidates.tsv
   karaoke-ingest convert-seed  [--seed path] [--dry-run]        # seed TSV → setlist.tsv
   karaoke-ingest refresh-plex  [--host url] [--section id] [--token tkn]
+
+Environment:
+  KARAOKE_DIR   karaoke library folder (setlist.tsv, candidates.tsv, videos).
+                Required by every command except refresh-plex and
+                convert-seed --seed <path> --dry-run.
 `;
 
 async function main() {

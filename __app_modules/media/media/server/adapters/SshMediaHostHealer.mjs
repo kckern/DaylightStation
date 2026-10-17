@@ -10,7 +10,7 @@
  *
  * Plex reports paths as it sees them inside its container
  * (`/data/media/video/fitness/...`); `pathMap` translates them to host paths
- * (`/media/kckern/Media/Fitness/...`). Longest prefix wins.
+ * (`/media/{user}/Media/Fitness/...`). Longest prefix wins.
  */
 
 import { execFile as nodeExecFile } from 'child_process';

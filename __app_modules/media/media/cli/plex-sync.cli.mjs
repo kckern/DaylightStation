@@ -148,7 +148,7 @@ class PlexSync {
 
         // Build volume map from docker-compose: container_path → local_path
         // Docker-compose maps host_path:container_path. Host paths use the server
-        // filesystem prefix (e.g. /media/kckern/Media). We swap that prefix with
+        // filesystem prefix (e.g. /media/{user}/Media). We swap that prefix with
         // PLEX_MOUNT to get the local macOS path.
         this.volumeMap = this._buildVolumeMap();
     }
@@ -159,7 +159,7 @@ class PlexSync {
      * so the most specific prefix matches first.
      *
      * Docker-compose volume format: host_path:container_path[:rw]
-     * Host paths are server-side (e.g. /media/kckern/Media/Fitness).
+     * Host paths are server-side (e.g. /media/{user}/Media/Fitness).
      * We swap the server host prefix with PLEX_MOUNT to get the local path.
      */
     _buildVolumeMap() {
@@ -185,7 +185,7 @@ class PlexSync {
 
         // Auto-detect the host prefix by finding the longest common prefix
         // among host paths that, when swapped with PLEX_MOUNT, yields existing dirs.
-        // Most volumes share /media/kckern/Media as their prefix.
+        // Most volumes share /media/{user}/Media as their prefix.
         const map = [];
         for (const { hostPath, containerPath } of entries) {
             // Walk up the host path to find which prefix, when replaced

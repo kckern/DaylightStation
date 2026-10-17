@@ -42,11 +42,11 @@ with tempfile.TemporaryDirectory() as td:
     pl.write_text(
         "#EXTM3U\n"
         "#EXTINF:-1,Song A\n"
-        "/home/kckern/playback-hub/cache/100.mp3\n"
+        "/home/hub/playback-hub/cache/100.mp3\n"
         "#EXTINF:-1,Song B\n"
-        "/home/kckern/playback-hub/cache/200.mp3\n"
+        "/home/hub/playback-hub/cache/200.mp3\n"
         "#EXTINF:-1,Song C\n"
-        "/home/kckern/playback-hub/cache/300.mp3\n"
+        "/home/hub/playback-hub/cache/300.mp3\n"
     )
     check(web.file_playlist_count(pl) == 3, "file_playlist_count counts 3 cache paths")
     check(web.file_playlist_count(tdp / "missing.m3u") == 0,

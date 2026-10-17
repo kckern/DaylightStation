@@ -7,8 +7,8 @@ const CONFIG = {
   privateKey: 'data/system/ssh/media-heal_ed25519',
   knownHostsPath: 'data/system/ssh/known_hosts',
   pathMap: [
-    { from: '/data/media/video/fitness', to: '/media/kckern/Media/Fitness' },
-    { from: '/data/media/video', to: '/media/kckern/Media/Video' },
+    { from: '/data/media/video/fitness', to: '/srv/media/Fitness' },
+    { from: '/data/media/video', to: '/srv/media/Video' },
   ],
 };
 
@@ -21,9 +21,9 @@ describe('SshMediaHostHealer', () => {
   it('maps Plex paths to host paths by longest prefix, on segment boundaries', () => {
     const { healer } = withExec(() => {});
     expect(healer.toHostPath('/data/media/video/fitness/Max Built/Back 1.mp4'))
-      .toBe('/media/kckern/Media/Fitness/Max Built/Back 1.mp4');
-    expect(healer.toHostPath('/data/media/video/tv/x.mp4')).toBe('/media/kckern/Media/Video/tv/x.mp4');
-    expect(healer.toHostPath('/data/media/video/fitnessX/a.mp4')).toBe('/media/kckern/Media/Video/fitnessX/a.mp4');
+      .toBe('/srv/media/Fitness/Max Built/Back 1.mp4');
+    expect(healer.toHostPath('/data/media/video/tv/x.mp4')).toBe('/srv/media/Video/tv/x.mp4');
+    expect(healer.toHostPath('/data/media/video/fitnessX/a.mp4')).toBe('/srv/media/Video/fitnessX/a.mp4');
     expect(healer.toHostPath('/data/media/audio/a.mp3')).toBeNull();
   });
 
@@ -38,7 +38,7 @@ describe('SshMediaHostHealer', () => {
     expect(args).toContain('UserKnownHostsFile=data/system/ssh/known_hosts');
     const encoded = args[args.length - 1];
     expect(Buffer.from(encoded, 'base64').toString('utf8'))
-      .toBe('/media/kckern/Media/Fitness/Max Built/It\'s "Back" & 1.mp4');
+      .toBe('/srv/media/Fitness/Max Built/It\'s "Back" & 1.mp4');
     expect(encoded).toMatch(/^[A-Za-z0-9+/=]+$/);
   });
 

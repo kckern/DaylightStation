@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR="$HOME/playback-hub"
+BASE_DIR="${PLAYBACK_HUB_DIR:-$HOME/playback-hub}"
 CONFIG_YML="$BASE_DIR/devices.yml"
 CONFIG_JSON_LEGACY="$BASE_DIR/devices.json"
 CONFIG_FILE="$BASE_DIR/.devices.runtime.json"

@@ -16,8 +16,18 @@ set -euo pipefail
 # Path per the household config registry (shared/contracts/householdConfig.mjs):
 # 'playback-hub' -> 'playback-hub/config'. The old household/config/ directory
 # was retired 2026-08, which silently broke this sync until 2026-08-31.
-SRC="user_1@10.0.0.10:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/playback-hub/config.yml"
-DEST="/home/kckern/playback-hub/devices.yml"
+HUB_DIR="${PLAYBACK_HUB_DIR:-$HOME/playback-hub}"
+# SYNC_SRC (the rsync source for the household playback-hub config.yml, as
+# user@host:/path) is setup-specific, so it lives on the hub, not in the repo.
+# shellcheck source=/dev/null
+[[ -f "$HUB_DIR/sync.env" ]] && source "$HUB_DIR/sync.env"
+if [[ -z "${SYNC_SRC:-}" ]]; then
+  logger -t playback-hub-sync "SYNC_SRC unset; create $HUB_DIR/sync.env"
+  echo "SYNC_SRC unset; create $HUB_DIR/sync.env" >&2
+  exit 1
+fi
+SRC="$SYNC_SRC"
+DEST="$HUB_DIR/devices.yml"
 STAGING="${DEST}.staging"
 
 old_md5=""

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import yaml from 'js-yaml';
-import { auditPaths, auditContent, isProbablyBinary } from '../../../scripts/audit-public-tree.mjs';
+import { auditPaths, auditContent, isProbablyBinary, CONTENT_RULES } from '../../../scripts/audit-public-tree.mjs';
 
 describe('auditPaths', () => {
   it('flags internal docs folders, build junk and scratch files', () => {
@@ -56,6 +56,10 @@ describe('auditContent', () => {
 
   it('ignores files outside the rule scope (widened by later sub-projects)', () => {
     expect(auditContent('__app_modules/x/cli/a.mjs', 'ssh homeserver.local')).toEqual([]);
+  });
+
+  it('applies host-path to the whole tree', () => {
+    expect(CONTENT_RULES.find((r) => r.id === 'host-path').scope).toEqual(['']);
   });
 
   it('allows documentation-reserved example ranges', () => {

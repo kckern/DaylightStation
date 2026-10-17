@@ -19,7 +19,7 @@ from urllib.parse import urlparse, parse_qs
 import yaml
 
 PORT = 8080
-BASE = Path("/home/kckern/playback-hub")
+BASE = Path(os.environ.get("PLAYBACK_HUB_DIR") or Path.home() / "playback-hub")
 DEVICES_YAML = BASE / "devices.yml"
 DEVICES_JSON_LEGACY = BASE / "devices.json"
 SLOTS_DIR = BASE / "slots"

@@ -1,10 +1,14 @@
 // tests/isolated/frontend/pose/poseSemantics.integration.test.mjs
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { extractSemanticPosition, createSemanticExtractor } from "../../../../__app_modules/wellness/fitness/browser/lib/pose/poseSemantics.js";
 
-const POSE_LOG_DIR = '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/media/logs/poses/2026-03-04';
+// Real pose log from the workspace; the suite skips when it is not available.
+const BASE = process.env.DAYLIGHT_BASE_PATH;
+const MEDIA = process.env.DAYLIGHT_MEDIA_PATH || (BASE && join(BASE, 'media'));
+const POSE_LOG_DIR = MEDIA && join(MEDIA, 'logs/poses/2026-03-04');
 const POSE_LOG_FILE = '2026-03-04T06-13-30.jsonl';
+const run = POSE_LOG_DIR && existsSync(join(POSE_LOG_DIR, POSE_LOG_FILE)) ? describe : describe.skip;
 
 const loadPoseFrames = () => {
   const lines = readFileSync(join(POSE_LOG_DIR, POSE_LOG_FILE), 'utf-8').trim().split('\n');
@@ -17,7 +21,7 @@ const loadPoseFrames = () => {
     }));
 };
 
-describe('SemanticPosition with real pose data', () => {
+run('SemanticPosition with real pose data', () => {
   let frames;
 
   beforeAll(() => {

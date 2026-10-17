@@ -96,7 +96,7 @@ The central cache (`cache/<plex_id>.mp3`, single-writer via `cache_manager.sh`) 
 
 ## Configuration
 
-Production config lives at `data/household/playback-hub/config.yml` in the DaylightStation Dropbox SSOT — the path the household config registry (`shared/contracts/householdConfig.mjs`) declares for this app. `sync_config.sh` rsyncs it to the box every 60s via a systemd timer. The committed `devices.yml` here is a documentation reference, not a deployment artifact.
+Production config lives at `data/household/playback-hub/config.yml` in the DaylightStation Dropbox SSOT — the path the household config registry (`shared/contracts/householdConfig.mjs`) declares for this app. `sync_config.sh` rsyncs it to the box every 60s via a systemd timer, reading its rsync source from `SYNC_SRC` in `~/playback-hub/sync.env` on the hub. The committed `devices.yml` here is a documentation reference, not a deployment artifact.
 
 ### Device schema (per slot)
 
@@ -335,7 +335,7 @@ validated live. Do this in a window when the headsets are free, not during house
 ```bash
 # ACTIVATE (in a maintenance window, headsets available for testing)
 scp contrib/wireplumber/51-bluez-sink-pin.lua \
-  kckern@10.0.0.109:/home/kckern/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua
+  {user}@{env.playback_hub_host}:~/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua
 ssh {env.playback_hub_host} 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
   systemctl --user restart wireplumber'   # ~2-3s blip on connected headsets
 
@@ -623,10 +623,10 @@ ledger integrity with:
 
 ```bash
 python3 - <<'EOF'
-import json
+import json, os
 for s in (1,2,3,4,5,6):
     bad=0
-    for L in open(f"/home/kckern/playback-hub/slots/{s}/events.jsonl",errors="replace").read().splitlines()[-400:]:
+    for L in open(os.path.expanduser(f"~/playback-hub/slots/{s}/events.jsonl"),errors="replace").read().splitlines()[-400:]:
         if not L.strip(): continue
         try: bad += not isinstance(json.loads(L), dict)
         except Exception: bad += 1
@@ -686,7 +686,7 @@ pipewire wireplumber pipewire-pulse bluez
 ## Deployment
 
 Source of truth is this repo (`_extensions/playback-hub/`). Deploy via `scp`/rsync to
-`kckern@10.0.0.109:/home/kckern/playback-hub/`, then restart the affected service.
+`{user}@{env.playback_hub_host}:~/playback-hub/`, then restart the affected service.
 
 Both processes run as **`systemd --user` units** (owned by `kckern`, `enabled`, auto-start
 on boot via linger — `loginctl enable-linger kckern`):
@@ -698,7 +698,7 @@ on boot via linger — `loginctl enable-linger kckern`):
 
 ```bash
 # deploy + reload (run the systemctl as kckern with the user bus)
-scp peak_meter.py playback-hub.sh web.py kckern@10.0.0.109:/home/kckern/playback-hub/
+scp peak_meter.py playback-hub.sh web.py {user}@{env.playback_hub_host}:~/playback-hub/
 ssh {env.playback_hub_host} 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
   systemctl --user restart playback-hub-web.service playback-hub.service'
 ```

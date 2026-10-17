@@ -1,9 +1,11 @@
 import path from 'node:path';
 
-export const MEDIA_DIR = '/media/kckern/Media/Slow TV/Karaoke';
+// Karaoke library folder on the media host, e.g. /media/{user}/Media/Slow TV/Karaoke.
+// Empty when KARAOKE_DIR is unset; the CLI checks before using it.
+export const MEDIA_DIR = process.env.KARAOKE_DIR || '';
 export const SHOW_NAME = 'Karaoke';
-export const SETLIST_PATH = path.join(MEDIA_DIR, 'setlist.tsv');
-export const CANDIDATES_PATH = path.join(MEDIA_DIR, 'candidates.tsv');
+export const SETLIST_PATH = MEDIA_DIR && path.join(MEDIA_DIR, 'setlist.tsv');
+export const CANDIDATES_PATH = MEDIA_DIR && path.join(MEDIA_DIR, 'candidates.tsv');
 
 // Season table. `seedCategories` are case-insensitive substrings matched
 // (in array order) against the freeform seed "Category / Vibe" column.
