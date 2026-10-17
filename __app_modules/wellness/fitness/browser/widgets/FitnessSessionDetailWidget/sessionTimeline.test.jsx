@@ -61,3 +61,14 @@ describe('session timeline — one axis, one mark list', () => {
     expect(tallRects).toHaveLength(2);
   });
 });
+
+
+it('aligns playback intervals with challenge markers on the existing axis at different widths', () => {
+  const event = (at, state, observation) => ({ type: 'playback_state', timestamp: START + at, data: { version: 1, contentId: 'plex:1', playbackRunId: 'r1', state, observation } });
+  const detail = { ...session, timeline: { ...session.timeline, events: [...session.timeline.events, event(0, 'waiting', 'begin'), event(min(10), 'playing', 'change'), event(min(15), 'none', 'end')] } };
+  for (const width of [400, 845]) {
+    const axis = buildSessionAxis(detail);
+    const marks = buildSessionMarks(detail, axis, width, 'plex:1');
+    expect(marks.playback.find(p => p.state === 'playing').x).toBeCloseTo(marks.challenges[0].x);
+  }
+});

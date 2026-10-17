@@ -1,3 +1,4 @@
+import { buildPlaybackIntervals, projectPlaybackIntervals } from './playbackIntervals.js';
 // One time axis and one list of vertical marks for the whole session-detail
 // stack (rings chart · video gutter · heart-rate lanes).
 //
@@ -77,6 +78,7 @@ export function buildSessionMarks(sessionData, axis, width, primaryMediaKey) {
     seams: computeSeamLines(src?.seams, opts),
     challenges,
     videos: computeVideoMarkers(events, opts),
+    playback: projectPlaybackIntervals(buildPlaybackIntervals(sessionData, axis), opts),
     accent: getActivityDisplay(primaryActivity(src?.activities)?.type)?.accent || DEFAULT_ACCENT,
   };
 }

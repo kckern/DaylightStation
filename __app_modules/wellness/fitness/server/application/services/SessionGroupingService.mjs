@@ -36,7 +36,7 @@ export class SessionGroupingService {
     let merged = members[0].timeline;
     const firstCount = tickCountOf(members[0].timeline);
     let offsetTicks = firstCount;
-    const segments = [{ sessionId: members[0].seg.sessionId, offsetMs: 0, durationMs: members[0].seg.durationMs, gapBeforeMs: 0 }];
+    const segments = [{ sessionId: members[0].seg.sessionId, sourceStartMs: members[0].seg.start, offsetMs: 0, durationMs: members[0].seg.durationMs, gapBeforeMs: 0 }];
     const segBounds = [{ start: members[0].seg.start, end: members[0].seg.end, offsetMs: 0 }];
     // tick ranges per segment on the compressed axis — used to make cumulative series continuous
     const segTicks = [{ startTick: 0, count: firstCount }];
@@ -47,7 +47,7 @@ export class SessionGroupingService {
       const offsetMs = offsetTicks * intervalMs;
       merged = mergeTimelines(merged, timeline, 0);
       const count = tickCountOf(timeline);
-      segments.push({ sessionId: seg.sessionId, offsetMs, durationMs: seg.durationMs, gapBeforeMs: seg.gapBeforeMs });
+      segments.push({ sessionId: seg.sessionId, sourceStartMs: seg.start, offsetMs, durationMs: seg.durationMs, gapBeforeMs: seg.gapBeforeMs });
       segBounds.push({ start: seg.start, end: seg.end, offsetMs });
       segTicks.push({ startTick: offsetTicks, count });
       seams.push({ atMs: offsetMs, gapMs: seg.gapBeforeMs });

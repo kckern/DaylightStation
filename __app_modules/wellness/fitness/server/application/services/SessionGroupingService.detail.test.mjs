@@ -23,6 +23,7 @@ describe('SessionGroupingService.getGroupDetail', () => {
     const svc = new SessionGroupingService({ activityRegistry: registry, sessionService });
     const detail = await svc.getGroupDetail('group:20260605162200', 'household');
     expect(detail.isGroup).toBe(true);
+    expect(detail.segments.map(s => s.sourceStartMs)).toEqual([T0, T0 + 600000]);
     expect(detail.date).toBe('2026-06-05');
     expect(detail.timeline.tick_count).toBe(5);                 // 3 + 0 + 2 (no null filler)
     expect(detail.timeline.series['user_3:heart_rate']).toEqual(['a','a','a','b','b']);
