@@ -6,8 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HOOKS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.githooks');
-// Hermetic git: no user/system config, no FKB password file.
-const ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', SECRET_GUARD_AUTH_FILE: '/nonexistent' };
+// Hermetic git: no inherited GIT_* (e.g. GIT_DIR from a hook), no user/system
+// config, no FKB password file.
+const ENV = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))),
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', SECRET_GUARD_AUTH_FILE: '/nonexistent',
+};
 
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: ENV, encoding: 'utf8' });
 const ok = (cwd, ...args) => {
@@ -21,7 +25,7 @@ const commit = (work, name, body = name) => {
   return git(work, 'commit', '-q', '-m', name);
 };
 
-let root, origin, work;
+let root, origin, work, hooks;
 
 function clone(dir, { hooks } = {}) {
   ok(root, 'clone', '-q', origin, dir);
@@ -33,7 +37,7 @@ function clone(dir, { hooks } = {}) {
 
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), 'autopush-'));
-  const hooks = path.join(root, 'hooks');
+  hooks = path.join(root, 'hooks');
   mkdirSync(hooks);
   for (const f of ['post-commit', 'post-merge', 'pre-push', 'lib']) symlinkSync(path.join(HOOKS, f), path.join(hooks, f));
 
@@ -122,5 +126,46 @@ describe('autopush hook', { timeout: 20000 }, () => {
     expect(r.stderr).toContain('zebrafish');
     expect(remoteMain()).toBe(before);
     expect(readFileSync(log(), 'utf8')).toContain('pre-push');
+  });
+
+  it('stays blocked after a commit that deletes the flagged file', () => {
+    // pre-push scans every added line in origin/main..main, so a scrub commit
+    // on top does not clear it; the fix advice says to amend or rebase.
+    optIn();
+    const before = remoteMain();
+    commit(work, 'a.txt', 'hello zebrafish');
+    ok(work, 'rm', '-q', 'a.txt');
+    const r = git(work, 'commit', '-q', '-m', 'scrub');
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('AUTO-PUSH FAILED');
+    expect(r.stderr).toContain('git rebase -i origin/main');
+    expect(remoteMain()).toBe(before);
+  });
+
+  it('works from a linked worktree with a relative hooksPath', () => {
+    // Server layout: core.hooksPath=.githooks (relative, resolved per worktree),
+    // base checkout on another branch, main checked out in .worktrees/m.
+    ok(work, 'config', 'core.hooksPath', '.githooks');
+    symlinkSync(hooks, path.join(work, '.githooks'));
+    appendFileSync(path.join(work, '.git/info/exclude'), '.githooks\n.worktrees/\n');
+    ok(work, 'checkout', '-q', '-b', 'base');
+    ok(work, 'worktree', 'add', '-q', '.worktrees/m', 'main');
+    const wt = path.join(work, '.worktrees/m');
+    // .githooks is tracked in the real repo; here it is an excluded symlink, so
+    // the worktree needs its own.
+    symlinkSync(hooks, path.join(wt, '.githooks'));
+    optIn();
+
+    expect(commit(wt, 'a.txt').status).toBe(0);
+    expect(remoteMain()).toBe(ok(wt, 'rev-parse', 'HEAD'));
+
+    const other = clone(path.join(root, 'other'));
+    commit(other, 'b.txt');
+    ok(other, 'push', '-q', 'origin', 'main');
+    const r = commit(wt, 'c.txt');
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('AUTO-PUSH FAILED');
+    expect(existsSync(log())).toBe(true);
+    expect(existsSync(path.join(work, '.git/worktrees/m/autopush.log'))).toBe(false);
   });
 });

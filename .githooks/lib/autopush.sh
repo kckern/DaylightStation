@@ -15,7 +15,11 @@
 git rev-parse --verify -q refs/remotes/origin/main >/dev/null || exit 0
 [ -n "$(git rev-list -1 refs/remotes/origin/main..main 2>/dev/null)" ] || exit 0
 
-OUT=$(GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o ConnectTimeout=10 -o BatchMode=yes}" git push origin main 2>&1)
+# Keep any core.sshCommand (deploy key) and add timeouts so a dead network
+# can't hang the commit.
+base=${GIT_SSH_COMMAND:-$(git config --get core.sshCommand || echo ssh)}
+printf 'auto-push: pushing main to origin...\n' >&2
+OUT=$(GIT_SSH_COMMAND="$base -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o BatchMode=yes" GIT_TERMINAL_PROMPT=0 git push origin main 2>&1)
 STATUS=$?
 printf '%s\n' "$OUT" >&2
 [ "$STATUS" -eq 0 ] && exit 0
@@ -23,10 +27,13 @@ printf '%s\n' "$OUT" >&2
 case "$OUT" in
   *"PUSH BLOCKED"*)
     REASON="pre-push scan blocked it"
-    FIX="scrub the hunk in a new commit on main; the next commit retries the push" ;;
+    FIX="remove it from the unpushed commits (git commit --amend if it's the last one, else git rebase -i origin/main), then git push origin main" ;;
+  *"[remote rejected]"*)
+    REASON="GitHub refused the push (branch protection or a server hook)"
+    FIX="see the output above" ;;
   *"[rejected]"*|*non-fast-forward*|*"fetch first"*)
     REASON="rejected: origin/main has commits this checkout lacks"
-    FIX="git pull --no-rebase origin main && git push origin main" ;;
+    FIX="git pull --no-rebase origin main && git push origin main; if you amended or rebased commits that were already pushed, undo that instead of pulling" ;;
   *)
     REASON="push failed (network or auth)"
     FIX="the next commit on main retries, or run: git push origin main" ;;
@@ -34,6 +41,6 @@ esac
 
 printf '\n\033[1;31mAUTO-PUSH FAILED\033[0m (%s). The commit stands; main is not on GitHub yet.\n' "$REASON" >&2
 printf 'Fix: %s\n\n' "$FIX" >&2
-LOG="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/autopush.log"
-printf '%s %s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$(git rev-parse --short main)" "$REASON" >> "$LOG" 2>/dev/null
+GCD=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+  printf '%s %s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$(git rev-parse --short main)" "$REASON" >> "$GCD/autopush.log" 2>/dev/null
 exit 0

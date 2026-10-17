@@ -111,7 +111,7 @@ ALLOW_FILE=$(local_file .claude/secret-allowlist.local.txt)
 FILTERED=$(printf '%s' "$SCAN" | grep -v 'Felix Lullabye')
 if [ -f "$ALLOW_FILE" ]; then
   while IFS= read -r phrase; do
-    phrase="${phrase%%$'\r'}"
+    phrase=$(printf '%s' "$phrase" | tr -d '\r')
     [ -z "$phrase" ] && continue
     case "$phrase" in \#*) continue ;; esac
     FILTERED=$(printf '%s' "$FILTERED" | grep -vF -- "$phrase")
@@ -119,7 +119,7 @@ if [ -f "$ALLOW_FILE" ]; then
 fi
 
 while IFS= read -r pat; do
-  pat="${pat%%$'\r'}"
+  pat=$(printf '%s' "$pat" | tr -d '\r')
   [ -z "$pat" ] && continue
   case "$pat" in \#*) continue ;; esac
   if printf '%s' "$FILTERED" | grep -qiwE -- "$pat"; then
