@@ -7,7 +7,7 @@ function missing() {
   return error;
 }
 
-function harness({ saveMode = 'battery' } = {}) {
+function harness({ saveMode = 'battery', saveOwner = null } = {}) {
   const assetRepository = {
     getEngineResource: vi.fn((assetId) => {
       if (assetId === 'localization/fr-FR.json') throw missing();
@@ -27,7 +27,7 @@ function harness({ saveMode = 'battery' } = {}) {
     assetRepository,
     saveRepository,
     loadConfig: () => config,
-    resolveGameRules: (_config, gameId) => gameId === 'game' ? { saveMode } : null,
+    resolveGameRules: (_config, gameId) => gameId === 'game' ? { saveMode, saveOwner } : null,
   });
   return { service, assetRepository, saveRepository, config };
 }
@@ -47,6 +47,29 @@ describe('EmulatorResourceService', () => {
     const { service, assetRepository } = harness();
     expect(service.getEngineResource('localization/fr-FR.json')).toEqual({ id: 'localization/en.json' });
     expect(assetRepository.getEngineResource).toHaveBeenNthCalledWith(2, 'localization/en.json');
+  });
+
+  test('refuses save and state writes from anyone but the save owner', () => {
+    const { service, saveRepository } = harness({ saveOwner: 'user_5' });
+    const key = { system: 'gbc', gameId: 'game', user: 'user_4' };
+    expect(() => service.storeSaveArtifact(key, {})).toThrow(expect.objectContaining({ code: 'ESAVEOWNER' }));
+    expect(() => service.deleteSave(key)).toThrow(expect.objectContaining({ code: 'ESAVEOWNER' }));
+    expect(() => service.storeStateArtifact({ ...key, slot: 'resume' }, {})).toThrow(expect.objectContaining({ code: 'ESAVEOWNER' }));
+    expect(() => service.deleteState({ ...key, slot: 'resume' })).toThrow(expect.objectContaining({ code: 'ESAVEOWNER' }));
+    expect(saveRepository.storeSaveArtifact).not.toHaveBeenCalled();
+    expect(saveRepository.deleteSave).not.toHaveBeenCalled();
+  });
+
+  test('lets the save owner write, case-insensitively', () => {
+    const { service, saveRepository } = harness({ saveOwner: 'user_5' });
+    service.storeSaveArtifact({ system: 'gbc', gameId: 'game', user: 'User_5' }, {});
+    expect(saveRepository.storeSaveArtifact).toHaveBeenCalled();
+  });
+
+  test('a game without an owner accepts any user', () => {
+    const { service, saveRepository } = harness();
+    service.storeSaveArtifact({ system: 'gbc', gameId: 'game', user: 'user_4' }, {});
+    expect(saveRepository.storeSaveArtifact).toHaveBeenCalled();
   });
 
   test('does not scan save storage for a none-save game', () => {

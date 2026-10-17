@@ -58,12 +58,24 @@ export class EmulatorResourceService {
     return this.#assets.getArtResource({ system, gameId, kind });
   }
 
+  // A game with a save owner is one person's: nobody else may write or erase
+  // its save. The browser already refuses to launch it for anyone else; this
+  // is the backstop, so a stale tab or a hand-made request cannot overwrite it.
+  #assertWriter({ gameId, user }) {
+    const owner = this.#resolveGameRules(this.#loadConfig(), gameId, null)?.saveOwner;
+    if (owner && String(user ?? '').toLowerCase() !== String(owner).toLowerCase()) {
+      const error = new Error(`save for ${gameId} belongs to ${owner}`);
+      error.code = 'ESAVEOWNER';
+      throw error;
+    }
+  }
+
   getSaveResource(key) { return this.#saves.getSaveResource(key); }
-  storeSaveArtifact(key, artifact) { return this.#saves.storeSaveArtifact(key, artifact); }
-  deleteSave(key) { return this.#saves.deleteSave(key); }
+  storeSaveArtifact(key, artifact) { this.#assertWriter(key); return this.#saves.storeSaveArtifact(key, artifact); }
+  deleteSave(key) { this.#assertWriter(key); return this.#saves.deleteSave(key); }
   getStateResource(key) { return this.#saves.getStateResource(key); }
-  storeStateArtifact(key, artifact) { return this.#saves.storeStateArtifact(key, artifact); }
-  deleteState(key) { return this.#saves.deleteState(key); }
+  storeStateArtifact(key, artifact) { this.#assertWriter(key); return this.#saves.storeStateArtifact(key, artifact); }
+  deleteState(key) { this.#assertWriter(key); return this.#saves.deleteState(key); }
 
   listSaveUsers({ system, gameId }) {
     const rules = this.#resolveGameRules(this.#loadConfig(), gameId, null) ?? {};

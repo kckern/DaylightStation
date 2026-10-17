@@ -56,6 +56,7 @@ export function resolveGameRules(cfg, gameId, userId) {
     // Save behavior surfaced to the browser so the launch flow knows whether to
     // fingerprint up front (state/battery) or boot anonymously (none).
     saveMode: game.saveMode ?? 'none',
+    saveOwner: game.saveOwner ?? null,
     // Per-game EJS_core override (null ⇒ use the system core).
     core: game.core ?? null,
     watches: game.watches ?? null,

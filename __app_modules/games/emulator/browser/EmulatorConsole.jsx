@@ -124,6 +124,12 @@ export function EmulatorConsole({
   autosaveSeconds = 15,
   // Now-playing person ({ name, avatarSrc }) for the player overlay.
   nowPlaying = null,
+  // Host-owned top section of the game menu (the bezel ⋯ button) — e.g. the
+  // Fitness widget's whose-save-is-this panel. A node, or a function
+  // ({ closeMenu }) => node so the host can close the sheet before it raises
+  // its own prompt. `menuAttention` puts a dot on the button (e.g. "not saving").
+  menuSection = null,
+  menuAttention = false,
   // Console/system label (e.g. "Game Boy Color") and the pre-computed
   // {text, urgency, stale} clock for the unified session badge.
   systemLabel = null,
@@ -193,13 +199,20 @@ export function EmulatorConsole({
   // Reset ("start over") confirm modal.
   const [resetOpen, setResetOpen] = useState(false);
 
+  // Game menu (host section + volume + LCD shade) — the ⋯ button on the bezel.
+  // The game pauses while it is open.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsOpenRef = useRef(false);
+  settingsOpenRef.current = settingsOpen;
+
   let governancePlaying = status.state === 'playing';
   try {
     governancePlaying = typeof governanceGate?.isPlayable === 'function'
       ? governanceGate.isPlayable()
       : governancePlaying;
   } catch { governancePlaying = false; }
-  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused
+  // The open game menu holds the game paused, so it is paused to the meter too.
+  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused && !settingsOpen
     ? 'playing'
     : 'paused';
   useEffect(() => {
@@ -246,8 +259,6 @@ export function EmulatorConsole({
   const [localPairing, setLocalPairing] = useState(null);
   const pairTimerRef = useRef(null);
 
-  // Settings modal (volume + LCD shade) — the speaker button on the bezel.
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(() => {
     try {
       const saved = Number(window.localStorage?.getItem(VOLUME_STORAGE_KEY));
@@ -559,13 +570,30 @@ export function EmulatorConsole({
     catch (err) { logger.debug('emulator.console.localstorage-failed', { key: VOLUME_STORAGE_KEY, error: err && err.message }); }
     const v = logVolumeFromLevel(level);
     runtimeRef.current?.mixer?.setBusVolume?.('game', v);
-    runtimeRef.current?.engine?.resume?.();
+    // engine.resume() also unpauses the game — not while the menu holds it.
+    if (!settingsOpenRef.current) runtimeRef.current?.engine?.resume?.();
     logger.info('emulator.console.volume-applied', { reason: 'change', level, volume: v, bus: 'game' });
   }, [logger]);
 
   // Re-assert the saved volume on the game bus whenever the settings panel opens.
   // This is the path that historically "made the volume finally take" — now it is
   // explicit and logged, instead of an accidental side effect.
+  // Pause the game while the menu is open; on close, resume — unless the
+  // player had already paused it from the bezel's start-button hotspot.
+  const hotspotPausedRef = useRef(false);
+  hotspotPausedRef.current = !!hotspotState.paused;
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const engine = runtimeRef.current?.engine;
+    if (!hotspotPausedRef.current) engine?.pause?.();
+    logger.info('emulator.console.menu-open', { game: game?.id });
+    return () => {
+      if (!hotspotPausedRef.current) runtimeRef.current?.engine?.resume?.();
+      logger.info('emulator.console.menu-close', { game: game?.id });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen, logger]);
+
   useEffect(() => {
     if (!settingsOpen) return;
     const level = volumeLevelRef.current;
@@ -1113,28 +1141,34 @@ export function EmulatorConsole({
         </div>
       )}
 
-      {/* Volume — round, bottom-left on the bezel. Opens the controls sheet. */}
+      {/* Game menu — one round ⋯ button, bottom-left on the bezel. Opens the
+          sheet: host section (whose save), sound, screen shade. */}
       <button
         type="button"
-        className="emulator-settings-toggle"
-        aria-label="Emulator volume & settings"
+        className={`emulator-settings-toggle${menuAttention ? ' has-attention' : ''}`}
+        aria-label="Game menu"
         aria-expanded={settingsOpen}
-        onClick={() => { applyVolume(volumeLevel); setSettingsOpen((v) => !v); }}
+        onClick={() => setSettingsOpen((v) => !v)}
       >
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none" />
-          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-          <path d="M18.5 6a9 9 0 0 1 0 12" />
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="2.2" />
+          <circle cx="12" cy="12" r="2.2" />
+          <circle cx="19" cy="12" r="2.2" />
         </svg>
       </button>
       {settingsOpen && (
-        <div className="emulator-settings-modal" role="dialog" aria-modal="true" aria-label="Emulator settings">
+        <div className="emulator-settings-modal" role="dialog" aria-modal="true" aria-label="Game menu">
           <div className="emulator-settings-modal__backdrop" onPointerDown={() => setSettingsOpen(false)} />
           <div className="emulator-settings-modal__sheet">
             <div className="emulator-settings-modal__header">
+              <span>{game?.title || 'Game'} · Paused</span>
+              <button type="button" aria-label="Close menu" onClick={() => setSettingsOpen(false)}>✕</button>
+            </div>
+            {typeof menuSection === 'function'
+              ? menuSection({ closeMenu: () => setSettingsOpen(false) })
+              : menuSection}
+            <div className="emulator-settings-modal__row emulator-settings-modal__row--label">
               <span id="emulator-volume-label">Sound · {volumeLevel}%</span>
-              <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>✕</button>
             </div>
             <TouchVolumeButtons
               controlId="emulator-volume"

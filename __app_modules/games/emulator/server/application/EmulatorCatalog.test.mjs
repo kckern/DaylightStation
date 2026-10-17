@@ -98,6 +98,19 @@ describe('buildCatalog', () => {
     expect(out.games.find((g) => g.id === 'a').saveMode).toBe('none');
     expect(out.games.find((g) => g.id === 'b').saveMode).toBe('battery');
   });
+
+  it('surfaces saveOwner (default null)', () => {
+    const cfg = {
+      ...baseCfg,
+      games: [
+        { id: 'a', system: 'gbc', rom: 'a.gbc', title: 'A' },
+        { id: 'b', system: 'gbc', rom: 'b.gbc', title: 'B', saveMode: 'battery', saveOwner: 'user_5' },
+      ],
+    };
+    const out = buildCatalog(cfg);
+    expect(out.games.find((g) => g.id === 'a').saveOwner).toBeNull();
+    expect(out.games.find((g) => g.id === 'b').saveOwner).toBe('user_5');
+  });
 });
 
 describe('resolveConsoles', () => {

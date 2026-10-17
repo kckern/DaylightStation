@@ -163,6 +163,10 @@ export function loadEmulatorConfig({
         // save-state snapshot as the resume point) | 'battery' (.srm battery save).
         // Drives the fingerprint-up-front launch flow; absent ⇒ 'none'.
         saveMode: game.save_mode ?? game.saveMode ?? 'none',
+        // One person's game: the save belongs to this user alone. The launch
+        // flow loads it after verifying them, and the save API refuses writes
+        // from anyone else. Absent ⇒ shared (per-user saves, anyone may claim).
+        saveOwner: game.save_owner ?? game.saveOwner ?? null,
         // Per-game EJS_core override (e.g. a GBA game living in the gb category so
         // it shares the bezel/shader, but boots with the mGBA core). Absent ⇒ use
         // the system's core. EmulatorJS treats this as a system id and resolves

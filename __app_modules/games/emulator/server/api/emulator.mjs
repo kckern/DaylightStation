@@ -272,6 +272,10 @@ export function createEmulatorRouter({
       await storeArtifact({ system, gameId, slot, user }, artifact);
       res.json({ ok: true, bytes: artifact.size });
     } catch (err) {
+      if (err.code === 'ESAVEOWNER') {
+        logger.warn('emulator.blob.write_refused', { system, gameId, slot, user, reason: err.message });
+        return res.status(403).json({ error: 'save belongs to another player' });
+      }
       logger.error('emulator.blob.write_error', { system, gameId, slot, error: err.message });
       sendInternalError(res, { error: 'internal error' });
     }
@@ -294,6 +298,10 @@ export function createEmulatorRouter({
       await deleteResource({ system, gameId, slot, user });
       res.json({ ok: true });
     } catch (err) {
+      if (err.code === 'ESAVEOWNER') {
+        logger.warn('emulator.blob.delete_refused', { system, gameId, slot, user, reason: err.message });
+        return res.status(403).json({ error: 'save belongs to another player' });
+      }
       logger.error('emulator.blob.delete_error', { system, gameId, slot, error: err.message });
       sendInternalError(res, { error: 'internal error' });
     }

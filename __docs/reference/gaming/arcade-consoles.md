@@ -61,6 +61,35 @@ box art is not square. Cover tiles are square by default because Game Boy
 cartridge labels are; a Genesis box is a tall rectangle and a square tile crops
 half of it away.
 
+## Saves: shared games and one person's games
+
+A game keeps progress only when its manifest entry sets `save_mode: battery`
+(the cartridge's `.srm`) or `save_mode: state`. Saves are per person, at
+`{system}/saves/{user}/{game}.srm` (states under `{system}/states/{user}/{game}/`).
+
+**Shared (the default).** The game boots fresh and anonymous. The bezel's single
+⋯ **game menu** button (bottom-left; the game pauses while it is open) carries a
+small amber dot while nothing is being saved. Its Player section offers
+*Continue as* for everyone with a save (fingerprint-verified, then the console
+remounts on their save) and *Save as me*, which claims the running game — asking
+first if that person already has a save it would replace.
+
+**One person's game: `save_owner: <user>`.** For a save that must only ever be
+one child's (a long RPG one child is playing through):
+
+```yaml
+  - id: pokemon-crystal
+    save_mode: battery
+    save_owner: <user>
+```
+
+Launching it asks for that person's fingerprint and boots straight into their
+save — no picker. Anyone else, or a cancelled scan, goes back to the arcade with
+a notice and nothing loaded or written. The menu shows "<Name>'s game · saving"
+and offers no claim. The save API is the backstop: `PUT`/`DELETE` of an owned
+game's save or state from any other user is refused with **403**
+(`emulator.blob.write_refused` / `delete_refused`).
+
 ## Sizing the picture inside the cutout
 
 `presentation.screen` is the cutout; `presentation.screen_scaling` says how the

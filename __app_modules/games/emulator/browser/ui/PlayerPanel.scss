@@ -1,0 +1,97 @@
+// The Player section at the top of the console's game menu sheet. It inherits
+// the sheet's dark-olive palette (EmulatorConsole.scss .emulator-settings-modal)
+// and lays out as plain rows — it is never positioned on the bezel itself.
+.emu-player-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-bottom: 0.9rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+
+  &__label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+
+  &__current {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+
+  &__status {
+    font-size: 0.85rem;
+    font-weight: 400;
+    opacity: 0.75;
+    white-space: nowrap;
+  }
+
+  &__person {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  &__avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #333;
+    flex: 0 0 auto;
+  }
+
+  &__message { color: #ffd27a; font-size: 0.9rem; }
+
+  &__hint { font-size: 0.85rem; opacity: 0.75; width: 100%; }
+
+  &__savers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 48px;          // touch target on the kiosk
+    padding: 0.35rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.18); }
+
+    &--primary {
+      background: linear-gradient(180deg, #b6d94a, #6f9a1e);
+      border-color: rgba(255, 255, 255, 0.5);
+      color: #10200a;
+      &:hover, &:focus-visible { background: linear-gradient(180deg, #c4e65a, #7caa24); }
+    }
+
+    &--danger {
+      background: rgba(185, 43, 58, 0.9);
+      border-color: rgba(220, 53, 69, 0.6);
+      &:hover, &:focus-visible { background: rgba(220, 53, 69, 0.95); }
+    }
+  }
+
+  &__saver { padding-left: 0.4rem; }
+
+  &__conflict p { margin: 0 0 0.6rem; }
+
+  &__actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+}

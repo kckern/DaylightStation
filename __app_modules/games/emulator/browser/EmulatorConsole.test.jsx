@@ -293,6 +293,39 @@ describe('EmulatorConsole', () => {
     expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
   });
 
+  describe('game menu (⋯)', () => {
+    it('one bezel button opens the menu with the host section; the game pauses, then resumes on close', async () => {
+      const onArcadeGameSessionStateChange = vi.fn();
+      const { getByLabelText, queryByRole, getByText, engine } = renderConsole({
+        props: {
+          onArcadeGameSessionStateChange,
+          menuSection: ({ closeMenu }) => <button type="button" onClick={closeMenu}>host-section</button>,
+        },
+      });
+      await act(async () => {});
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+      engine.resume.mockClear();
+
+      act(() => { getByLabelText('Game menu').click(); });
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeTruthy();
+      expect(getByText('host-section')).toBeTruthy();
+      expect(engine.pause).toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('paused');
+
+      // The host closes it (e.g. before raising the fingerprint prompt).
+      act(() => { getByText('host-section').click(); });
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+      expect(engine.resume).toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
+    });
+
+    it('marks the button when the host asks for attention', async () => {
+      const { getByLabelText } = renderConsole({ props: { menuAttention: true } });
+      await act(async () => {});
+      expect(getByLabelText('Game menu').className).toContain('has-attention');
+    });
+  });
+
   it('the merged animation handler adds a transient class that clears', async () => {
     const { container, captured } = renderConsole();
     await act(async () => {});

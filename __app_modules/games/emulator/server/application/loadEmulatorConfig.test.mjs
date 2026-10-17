@@ -138,6 +138,15 @@ describe('loadEmulatorConfig', () => {
     expect(cfg.games.find((g) => g.id === 'example-quest').saveMode).toBe('battery');
   });
 
+  it('carries save_owner through as saveOwner (null when absent)', () => {
+    const m = JSON.parse(JSON.stringify(gameboyManifest));
+    m.games[0].save_owner = 'user_5';
+    const cfg = makeLoader([{ system: 'gb', manifest: m }]);
+    expect(cfg.games.find((g) => g.id === 'example-quest').saveOwner).toBe('user_5');
+    const plain = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
+    expect(plain.games.find((g) => g.id === 'example-quest').saveOwner).toBeNull();
+  });
+
   it('defaults the bezel to the shared system asset when a game omits it', () => {
     const m = JSON.parse(JSON.stringify(gameboyManifest));
     delete m.games[0].bezel; // game without its own bezel

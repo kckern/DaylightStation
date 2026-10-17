@@ -32,7 +32,15 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
         data-system-label={props.systemLabel || ''}
         data-timer={props.sessionTimer?.text || ''}
         data-overlay-anchor={props.sessionOverlayConfig?.anchor || ''}
+        data-menu-attention={props.menuAttention ? '1' : '0'}
       />
+      {props.menuSection && (
+        <div data-testid="menu">
+          {typeof props.menuSection === 'function'
+            ? props.menuSection({ closeMenu: () => {} })
+            : props.menuSection}
+        </div>
+      )}
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
       <button data-testid="play-signal" onClick={() => props.onArcadeGameSessionStateChange?.('playing')}>playing</button>
       <button data-testid="pause-signal" onClick={() => props.onArcadeGameSessionStateChange?.('paused')}>paused</button>
@@ -60,17 +68,6 @@ vi.mock("../../player/overlays/UnlockPrompt.jsx", () => ({ default: ({ open }) =
 const saveClient = { loadResume: vi.fn(), persistResume: vi.fn(), clearResume: vi.fn() };
 vi.mock("../../../../../games/emulator/browser/core/saveClient.js", () => ({ createSaveClient: () => saveClient }));
 
-vi.mock("../../../../../games/emulator/browser/ui/PlayerSelect.jsx", () => ({
-  PlayerSelect: ({ visible, savers, onLoad, onClaim }) => (visible ? (
-    <div data-testid="player-select">
-      {savers.map((s) => (
-        <button key={s.userId} data-testid={`saver-${s.userId}`} onClick={() => onLoad(s.userId)}>{s.name}</button>
-      ))}
-      <button data-testid="claim" onClick={onClaim}>Save my game</button>
-    </div>
-  ) : null),
-}));
-
 import EmulatorGameWidget from "./EmulatorGameWidget.jsx";
 import { fullscreenClass } from "./emulatorGameWidgetLayout.js";
 
@@ -80,11 +77,11 @@ const fitnessContext = {
   userCollections: { all: [{ id: 'user_5', name: 'User_5' }] },
 };
 
-function libraryWith(saveMode) {
+function libraryWith(saveMode, extra = {}) {
   return {
     systems: { gb: { core: 'gb' } },
     consoles: [{ system: 'gb', label: 'Game Boy', placeholder: false }, { system: null, label: null, placeholder: true }],
-    games: [{ id: 'example-quest', system: 'gb', title: 'Example Quest', coverUrl: '/cover', saveMode }],
+    games: [{ id: 'example-quest', system: 'gb', title: 'Example Quest', coverUrl: '/cover', saveMode, ...extra }],
     input: { keyboard: { up: 'ArrowUp', start: 'Enter', a: 'x', b: 'z' } },
   };
 }
@@ -280,7 +277,7 @@ describe('fullscreenClass', () => {
 });
 
 describe('EmulatorGameWidget save flow', () => {
-  it('save-enabled kiosk launch: admin gate first, then boots fresh + opens PlayerSelect', async () => {
+  it('save-enabled kiosk launch: admin gate first, then boots fresh with savers in the game menu', async () => {
     kiosk.value = true;
     devHost.value = false;
     api.mockImplementation((p) => {
@@ -295,8 +292,9 @@ describe('EmulatorGameWidget save flow', () => {
     await waitFor(() => expect(identity.registerAdmin).toHaveBeenCalled());
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0'); // fresh + anonymous
-    await screen.findByTestId('player-select');
-    expect(screen.getByTestId('saver-user_5')).toBeTruthy();
+    expect(el.getAttribute('data-menu-attention')).toBe('1'); // "not saving" dot
+    expect(await screen.findByLabelText('Continue as User_5')).toBeTruthy();
+    expect(screen.getByText('Not saving')).toBeTruthy();
   });
 
   it('second launch in the same session skips the admin gate', async () => {
@@ -328,8 +326,7 @@ describe('EmulatorGameWidget save flow', () => {
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
-    await screen.findByTestId('player-select');
-    fireEvent.click(screen.getByTestId('saver-user_5'));
+    fireEvent.click(await screen.findByLabelText('Continue as User_5'));
     await waitFor(() => {
       const el = screen.getByTestId('console');
       expect(el.getAttribute('data-persist')).toBe('1');
@@ -348,9 +345,9 @@ describe('EmulatorGameWidget save flow', () => {
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
-    await screen.findByTestId('player-select');
+    await screen.findByLabelText('Continue as User_5');
     // Claim the running fresh game; the scanner (user_5) already has a save → conflict warning.
-    fireEvent.click(screen.getByTestId('claim'));
+    fireEvent.click(screen.getByText('Save as me'));
     const overwrite = await screen.findByText('Overwrite');
     // Still anonymous until the user confirms the overwrite.
     expect(screen.getByTestId('console').getAttribute('data-persist')).toBe('0');
@@ -360,6 +357,56 @@ describe('EmulatorGameWidget save flow', () => {
       expect(el.getAttribute('data-persist')).toBe('1');
       expect(el.getAttribute('data-user')).toBe('user_5');
     });
+  });
+});
+
+describe('EmulatorGameWidget owned save game (save_owner)', () => {
+  function ownedApi() {
+    api.mockImplementation((p) => {
+      if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery', { saveOwner: 'user_5' }));
+      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['user_5'] });
+      return Promise.resolve({});
+    });
+  }
+
+  it("the owner's scan boots straight into their save, locked in the menu", async () => {
+    kiosk.value = true;
+    ownedApi();
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'User_5' });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await waitFor(() => expect(identity.registerIdentify).toHaveBeenCalled());
+    const el = await screen.findByTestId('console');
+    expect(el.getAttribute('data-persist')).toBe('1');
+    expect(el.getAttribute('data-user')).toBe('user_5');
+    expect(el.getAttribute('data-menu-attention')).toBe('0');
+    expect(screen.getByText("User_5's game · saving")).toBeTruthy();
+    expect(screen.queryByText('Save as me')).toBeNull();
+    expect(screen.queryByLabelText('Continue as User_5')).toBeNull();
+  });
+
+  it('anyone else is turned back to the arcade with nothing mounted', async () => {
+    kiosk.value = true;
+    ownedApi();
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_4' });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    expect(await screen.findByText("Example Quest is User_5's game.")).toBeTruthy();
+    expect(screen.queryByTestId('console')).toBeNull();
+  });
+
+  it('a cancelled scan returns to the arcade without booting', async () => {
+    kiosk.value = true;
+    ownedApi();
+    identity.registerIdentify.mockResolvedValue(null);
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await waitFor(() => expect(identity.registerIdentify).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    expect(screen.queryByTestId('console')).toBeNull();
   });
 });
 

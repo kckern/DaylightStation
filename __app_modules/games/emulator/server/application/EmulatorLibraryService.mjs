@@ -14,7 +14,7 @@ export class EmulatorLibraryService {
       const rules = this.resolveGameRules(config, game.id, user) ?? {};
       return {
         id: game.id, system: game.system, title: game.title,
-        saveMode: rules.saveMode ?? 'none', core: rules.core ?? null,
+        saveMode: rules.saveMode ?? 'none', saveOwner: rules.saveOwner ?? null, core: rules.core ?? null,
         governance: rules.governance ?? null, shader: rules.shader ?? null,
         chrome: rules.chrome ?? null, native: rules.native ?? null,
         presentation: rules.presentation ?? null,

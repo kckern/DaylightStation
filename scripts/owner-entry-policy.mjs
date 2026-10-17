@@ -169,7 +169,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/domain/playback-hub/value-objects/SlotStatus.mjs': 'domain',
   '__app_modules/games/emulator/browser/EmulatorConsole.jsx': null,
   '__app_modules/games/emulator/browser/ui/ArcadeShell.jsx': null,
-  '__app_modules/games/emulator/browser/ui/PlayerSelect.jsx': null,
+  '__app_modules/games/emulator/browser/ui/PlayerPanel.jsx': null,
   '__app_modules/games/emulator/browser/ui/EmulatorToasts.jsx': null,
   '__app_modules/games/emulator/browser/input/buildEjsControls.js': null,
   '__app_modules/games/emulator/browser/core/saveClient.js': null,

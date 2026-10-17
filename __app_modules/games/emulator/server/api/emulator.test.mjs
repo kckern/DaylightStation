@@ -368,6 +368,18 @@ describe('createEmulatorRouter', () => {
       const res = await request(app).delete('/api/v1/emulator/save/gb/example-quest');
       expect(res.status).toBe(400);
     });
+
+    it("PUT/DELETE of another player's owned save → 403", async () => {
+      const refuse = () => { const e = new Error('belongs to user_5'); e.code = 'ESAVEOWNER'; throw e; };
+      const { app } = makeApp({ emulatorResources: { storeSaveArtifact: vi.fn(refuse), deleteSave: vi.fn(refuse) } });
+      const put = await request(app)
+        .put('/api/v1/emulator/save/gb/example-quest?user=user_4')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from([1]));
+      expect(put.status).toBe(403);
+      const del = await request(app).delete('/api/v1/emulator/save/gb/example-quest?user=user_4');
+      expect(del.status).toBe(403);
+    });
   });
 
   describe('states', () => {
