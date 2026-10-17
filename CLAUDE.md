@@ -132,6 +132,8 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 2. **Merge directly into main** - No pull requests; merge when work is complete and tested
 3. **Delete branches after merge** - Don't let merged branches linger
 
+- Checkouts with `git config daylight.autoPush true` (the server) push `main` after every commit or merge on it (`.githooks/lib/autopush.sh`). Don't hold merges back to batch them; if a push fails, the commit output says why and how to fix it.
+
 ### Deleting Stale Branches
 
 Before deleting any branch, document it for potential restoration:
