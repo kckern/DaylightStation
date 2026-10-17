@@ -1,3 +1,4 @@
+import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -806,6 +807,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     () => resolveContentId(enhancedCurrentItem || currentItem),
     [enhancedCurrentItem, currentItem]
   );
+
+  usePlaybackTimelineRecorder({
+    session: fitnessSessionInstance,
+    contentId: currentMediaIdentity,
+    mediaElement,
+    governance: effectiveGovernanceState,
+    pauseDecision: {
+      ...pauseDecision,
+      holdReason: voiceMemoOverlayState?.open ? 'voice_memo'
+        : emergencyPhase && emergencyPhase !== 'normal' ? 'emergency' : null,
+    },
+    resilience: resilienceState,
+    evidence: effectiveGovernanceState?.playbackEvidence,
+  });
 
   const fitnessLogContext = useMemo(() => ({
     contentId: resolveContentId(currentItem),

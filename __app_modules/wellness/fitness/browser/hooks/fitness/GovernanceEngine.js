@@ -1438,6 +1438,7 @@ export class GovernanceEngine {
   setMedia(media) {
     const previousMediaId = this.media?.id ?? null;
     this.media = media;
+    if (previousMediaId !== (media?.id ?? null)) this._playbackEvidence = null;
     const nextMediaId = media?.id ?? null;
     if (previousMediaId !== nextMediaId) {
       this._unattendedPolicyState = {
@@ -1499,6 +1500,21 @@ export class GovernanceEngine {
       const oldPhase = this.phase;
       const now = this._now();
       this.phase = newPhase;
+      // Explanation evidence is a historical snapshot, not a live HR series.
+      const challenge = this.challengeState?.activeChallenge;
+      const zones = evalContext?.userZoneMap || this._latestInputs?.userZoneMap || {};
+      const participantId = Object.keys(zones)[0] || null;
+      const startup = newPhase === 'unlocked' && oldPhase === 'pending'
+        && this._playbackEvidence?.reason === 'startup_gate' && this._playbackEvidence?.participantId;
+      if (!startup) {
+        this._playbackEvidence = this._capturePlaybackEvidence(
+          participantId, zones[participantId] || null,
+          newPhase === 'pending' ? 'startup_gate'
+            : newPhase === 'locked' && challenge?.status === 'failed' ? 'challenge_failed'
+            : newPhase === 'locked' || newPhase === 'warning' ? 'requirements_not_met' : null,
+          challenge?.id || null
+        );
+      }
       this._invalidateStateCache(); // Invalidate cache on phase change
 
       // Track warning/lock timing for production correlation
@@ -1663,6 +1679,17 @@ export class GovernanceEngine {
   /**
    * Get participant states for lock logging
    */
+  _capturePlaybackEvidence(participantId, zone, reason, challengeId = null) {
+    const entry = this.session?.roster?.find(e => (e.id || e.profileId) === participantId);
+    const profile = this.session?.zoneProfileStore?.getProfile(participantId);
+    const threshold = profile?.zoneConfig?.find(z => z.id === zone)?.min;
+    return Object.freeze({
+      participantId, zone, reason, challengeId,
+      hrBpm: Number.isFinite(entry?.heartRate) ? entry.heartRate : null,
+      thresholdBpm: Number.isFinite(threshold) ? threshold : null,
+    });
+  }
+
   _getParticipantStates(evalContext = null) {
     const userZoneMap = evalContext?.userZoneMap || this._latestInputs.userZoneMap || {};
         const states = [];
@@ -2281,6 +2308,7 @@ export class GovernanceEngine {
     return {
       isGoverned: this._mediaIsGoverned(),
       status: this.phase || 'idle',
+      playbackEvidence: this._playbackEvidence || null,
       labels: Array.isArray(this.media && this.media.labels) ? [...this.media.labels] : [],
       requirements: summary.requirements || [],
       lockRows,
@@ -2933,6 +2961,7 @@ export class GovernanceEngine {
       });
       if (achiever) {
         state.startupSatisfied = true;
+        this._playbackEvidence = this._capturePlaybackEvidence(achiever, startupZone, 'startup_gate');
         getLogger().info('governance.unattended.startup_satisfied', {
           contentId: state.mediaId,
           participantId: achiever,
