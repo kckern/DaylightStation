@@ -25,7 +25,7 @@ describe('historical governance evidence', () => {
   it('records challenge failure and replaces the failure evidence on recovery', () => {
     const h = harness(); h.evaluate('hot'); h.advance(180000); h.evaluate('active');
     h.advance(91000); h.evaluate('active');
-    expect(h.engine.state.playbackEvidence).toMatchObject({ reason: 'challenge_failed', challengeId: expect.any(String) });
+    expect(h.engine.state.playbackEvidence).toMatchObject({ reason: 'challenge_failed', challengeId: expect.any(String), requiredZone: 'warm', requiredThresholdBpm: 140 });
     h.roster[0].heartRate = 145; h.evaluate('warm'); h.advance(100); h.evaluate('warm');
     expect(h.engine.state.playbackEvidence.reason).not.toBe('challenge_failed');
   });
@@ -37,5 +37,5 @@ it('attributes a warning to the participant below the requirement instead of the
   const evaluate = zone => h.engine.evaluate({ activeParticipants: ['other-child', 'child'], userZoneMap: { 'other-child': 'hot', child: zone }, totalCount: 2, zoneRankMap, zoneInfoMap });
   evaluate('active'); evaluate('cool');
   expect(h.engine.phase).toBe('warning');
-  expect(h.engine.state.playbackEvidence.participantId).toBe('child');
+  expect(h.engine.state.playbackEvidence).toMatchObject({ participantId: 'child', requiredZone: 'active', requiredThresholdBpm: 120 });
 });

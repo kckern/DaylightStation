@@ -87,3 +87,47 @@ it('does not attribute bypassed playback to stale exercise evidence', () => {
   fire(mediaElement, 'playing', false);
   expect(session.logEvent.mock.calls.at(-1)[1].evidence).toBeNull();
 });
+
+it('keeps initial waiting until actual playback starts after governance unlocks', () => {
+  const session = makeSession(); const mediaElement = makeMedia();
+  const props = { session, contentId: 'video:1', mediaElement, governance: { status: 'pending', videoLocked: true } };
+  const { rerender } = renderHook(p => usePlaybackTimelineRecorder(p), { initialProps: props });
+  rerender({ ...props, governance: { status: 'unlocked', videoLocked: false } });
+  expect(states(session).at(-1)).toBe('waiting');
+  fire(mediaElement, 'playing', false);
+  expect(states(session).at(-1)).toBe('playing');
+});
+
+it('starts a new observation run for replay on the same media element after ended', () => {
+  const session = makeSession(); const mediaElement = makeMedia();
+  renderHook(() => usePlaybackTimelineRecorder({ session, contentId: 'video:1', mediaElement }));
+  fire(mediaElement, 'playing', false); fire(mediaElement, 'ended', true);
+  fire(mediaElement, 'playing', false); fire(mediaElement, 'pause', true);
+  const events = session.logEvent.mock.calls.map(([,d])=>d);
+  expect(events.filter(e => e.observation === 'begin')).toHaveLength(2);
+  expect(events.at(-1).state).toBe('paused');
+});
+
+it('recovers a late attachment from actual advancing media time without treating a seek as playing', () => {
+  const session = makeSession(); const mediaElement = Object.assign(makeMedia(), { paused: false, currentTime: 20, readyState: 4, playbackRate: 1 });
+  renderHook(() => usePlaybackTimelineRecorder({ session, contentId: 'video:1', mediaElement }));
+  expect(states(session).at(-1)).toBe('unknown');
+  mediaElement.currentTime = 100; fire(mediaElement, 'timeupdate');
+  expect(states(session).at(-1)).toBe('unknown');
+  mediaElement.currentTime = 100.2; fire(mediaElement, 'timeupdate');
+  expect(states(session).at(-1)).toBe('playing');
+});
+
+it('does not attribute the old element to a new content ID during the player polling gap', () => {
+  const session = makeSession();
+  const oldMedia = Object.assign(makeMedia(), { paused: false, currentTime: 20, readyState: 4, playbackRate: 1 });
+  const newMedia = Object.assign(makeMedia(), { paused: false, currentTime: 5, readyState: 4, playbackRate: 1 });
+  const { rerender } = renderHook(p => usePlaybackTimelineRecorder(p), { initialProps: { session, contentId: 'video:1', mediaElement: oldMedia } });
+  fire(oldMedia, 'playing', false);
+  rerender({ session, contentId: 'video:2', mediaElement: oldMedia });
+  oldMedia.currentTime = 20.2; fire(oldMedia, 'timeupdate'); fire(oldMedia, 'playing', false);
+  expect(session.logEvent.mock.calls.filter(([,d]) => d.contentId === 'video:2' && d.state === 'playing')).toHaveLength(0);
+  rerender({ session, contentId: 'video:2', mediaElement: newMedia });
+  newMedia.currentTime = 5.2; fire(newMedia, 'timeupdate');
+  expect(session.logEvent.mock.calls.at(-1)[1]).toMatchObject({ contentId: 'video:2', state: 'playing' });
+});

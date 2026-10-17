@@ -11,20 +11,23 @@ const REASONS = {
 };
 const clock = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 const keyFor = s => `${s.playbackRunId}:${s.startMs}:${s.state}:${s.contentId}`;
-const labelFor = s => s.firstPlaying ? 'Video started' : LABELS[s.state] || LABELS.unknown;
+const labelFor = s => s.firstPlaying ? 'Video started' : s.observedStart ? 'Playing observed' : LABELS[s.state] || LABELS.unknown;
 
 /** Saved detail only: the SVG retains true duration, independent of button hit areas. */
 export default function PlaybackStrip({ intervals = [], width }) {
   const [selection, setSelection] = useState(null);
+  const [showTransitions, setShowTransitions] = useState(false);
   const id = useId();
   const selected = intervals.find(s => keyFor(s) === selection);
   if (!intervals.length || !(width > 0)) return null;
   const evidence = selected?.evidence;
+  const capitalized = value => value ? `${String(value)[0].toUpperCase()}${String(value).slice(1)}` : null;
+  const observedProof = evidence ? [evidence.participantName || evidence.participantId, evidence.zone ? `Zone: ${capitalized(evidence.zone)}` : null, Number.isFinite(evidence.hrBpm) ? `${evidence.hrBpm} BPM` : null, evidence.requiredZone ? `Required: ${capitalized(evidence.requiredZone)}${Number.isFinite(evidence.requiredThresholdBpm) ? ` · ${evidence.requiredThresholdBpm} BPM` : ''}` : Number.isFinite(evidence.thresholdBpm) ? `${capitalized(evidence.zone) || 'Zone'} threshold: ${evidence.thresholdBpm} BPM` : null].filter(Boolean).join(' · ') : null;
   const proof = evidence?.zone && evidence.reason === 'startup_gate' && selected?.firstPlaying
     ? `${evidence.participantName || evidence.participantId ? `${evidence.participantName || evidence.participantId} · ` : ''}${evidence.zone[0].toUpperCase()}${evidence.zone.slice(1)} reached${Number.isFinite(evidence.hrBpm) ? ` · ${evidence.hrBpm} BPM` : ''}${Number.isFinite(evidence.thresholdBpm) ? ` (threshold ${evidence.thresholdBpm} BPM)` : ''}` : null;
   return (
     <section className="playback-strip" aria-label="Video playback timeline" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
-      <div className="playback-strip__heading"><span>VIDEO PLAYBACK</span><span>Tap a section for details</span></div>
+      <div className="playback-strip__heading"><span>VIDEO PLAYBACK</span><button type="button" className="playback-strip__all" aria-expanded={showTransitions} aria-controls={`${id}-transitions`} onClick={() => setShowTransitions(value => !value)}>All transitions</button></div>
       <div className="playback-strip__track">
         <svg width={width} height="28" aria-hidden="true">
           <defs><pattern id={`${id}-unknown`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="currentColor" opacity="0.18" /><line x1="0" y1="0" x2="0" y2="6" stroke="currentColor" strokeWidth="2" opacity="0.5" /></pattern></defs>
@@ -43,12 +46,17 @@ export default function PlaybackStrip({ intervals = [], width }) {
             onClick={() => setSelection(keyFor(s))} onFocus={() => setSelection(keyFor(s))} />
         ))}
       </div>
+      {showTransitions && <div id={`${id}-transitions`} className="playback-strip__transitions" role="group" aria-label="All playback transitions">
+        {intervals.map(s => <button type="button" key={keyFor(s)} className={`playback-strip__transition playback-strip__segment--${s.state}`} onClick={() => { setSelection(keyFor(s)); setShowTransitions(false); }}>
+          {clock(s.startMs)}–{clock(s.endMs)} · {labelFor(s)}
+        </button>)}
+      </div>}
       <div className="playback-strip__legend">
         {[...new Set(intervals.map(s => s.state))].map(state => <span key={state} className={`playback-strip__legend-item playback-strip__segment--${state}`}><i />{LABELS[state] || LABELS.unknown}</span>)}
       </div>
       <div className="playback-strip__detail" id={`${id}-detail`} role="status">
-        {selected ? [clock(selected.startMs), selected.title || selected.contentId || 'Video', labelFor(selected), proof,
-          !selected.firstPlaying && REASONS[selected.reason]].filter(Boolean).join(' · ') : 'Select a section to see playback timing and reasons.'}
+        {selected ? [clock(selected.startMs), selected.title || selected.contentId || 'Video', labelFor(selected), proof || observedProof,
+          REASONS[selected.reason]].filter(Boolean).join(' · ') : 'Select a section to see playback timing and reasons.'}
       </div>
     </section>
   );

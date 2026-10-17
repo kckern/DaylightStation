@@ -37,3 +37,13 @@ describe('saved playback intervals', () => {
     expect(xs.find(x => x.state === 'playing').firstPlaying).toBe(false);
   });
 });
+
+it('does not extend observed playback beyond an authoritative selected-video end', () => {
+  const xs = buildPlaybackIntervals(session([media(10000,60000),ev(0,'waiting','begin'),ev(20000,'playing'),ev(120000,'none','end')]), axis);
+  expect(shape(xs)).toEqual([[0,20000,'waiting'],[20000,60000,'playing']]);
+});
+
+it('retains closing observations beyond the last chart tick and clips their geometry', () => {
+  const xs = buildPlaybackIntervals(session([media(0,1001000), ev(0,'waiting','begin'), ev(1000,'playing'), ev(1001000,'none','end')]), axis);
+  expect(shape(xs)).toEqual([[0,1000,'waiting'],[1000,1000000,'playing']]);
+});

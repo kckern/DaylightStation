@@ -48,3 +48,41 @@
     overflow-wrap: anywhere;
   }
 }
+
+.playback-strip {
+  &__all {
+    padding: 0 4px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  &__transitions {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    max-width: calc(100% - 60px);
+    max-height: 30vh;
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--ds-border, #777);
+    background: var(--ds-surface, #242424);
+    box-shadow: 0 3px 12px #0008;
+  }
+  &__transition {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 4px 10px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    &:focus-visible, &:hover { outline: 1px solid currentColor; outline-offset: -2px; }
+  }
+}

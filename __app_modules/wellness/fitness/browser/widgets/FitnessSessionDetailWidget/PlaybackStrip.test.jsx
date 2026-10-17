@@ -46,3 +46,21 @@ it('does not explain a first play with unrelated warning evidence', () => {
   fireEvent.click(screen.getByRole('button', { name: /Video started/ }));
   expect(screen.getByRole('status').textContent).not.toContain('Cool reached');
 });
+
+it('makes clustered short pauses independently selectable through the transition list', () => {
+  const tiny = intervals[2];
+  render(<PlaybackStrip intervals={[tiny, { ...tiny, startMs: 723000, endMs: 724000, state: 'paused', x: 319.2, width: 0.4 }]} width={400} />);
+  fireEvent.click(screen.getByRole('button', { name: 'All transitions' }));
+  const list = screen.getByRole('group', { name: 'All playback transitions' });
+  const lock = [...list.querySelectorAll('button')].find(b => b.textContent.includes('exercise required'));
+  expect(lock).toBeTruthy(); fireEvent.click(lock);
+  expect(screen.queryByRole('group', { name: 'All playback transitions' })).toBeNull();
+  expect(screen.getByRole('status').textContent).toContain('Challenge missed');
+});
+
+it('explains a later pause with the recorded participant, observed effort and required threshold', () => {
+  const paused = { ...intervals[2], evidence: { participantId: 'child', zone: 'active', hrBpm: 132, thresholdBpm: 120, requiredZone: 'warm', requiredThresholdBpm: 140 } };
+  render(<PlaybackStrip intervals={[paused]} width={400} />);
+  fireEvent.click(screen.getByRole('button', { name: /Paused · exercise required/ }));
+  expect(screen.getByRole('status').textContent).toMatch(/child.*Active.*132 BPM.*Warm.*140 BPM/);
+});

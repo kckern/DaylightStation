@@ -1503,8 +1503,8 @@ export class GovernanceEngine {
       // Explanation evidence is a historical snapshot, not a live HR series.
       const challenge = this.challengeState?.activeChallenge;
       const zones = evalContext?.userZoneMap || this._latestInputs?.userZoneMap || {};
-      const missing = challenge?.status === 'failed' ? challenge.summary?.missingUsers
-        : this.requirementSummary?.requirements?.find(r => !r.satisfied)?.missingUsers;
+      const unmet = this.requirementSummary?.requirements?.find(r => !r.satisfied);
+      const missing = challenge?.status === 'failed' ? challenge.summary?.missingUsers : unmet?.missingUsers;
       const participantId = missing?.[0] || Object.keys(zones)[0] || null;
       const startup = newPhase === 'unlocked' && oldPhase === 'pending'
         && this._playbackEvidence?.reason === 'startup_gate' && this._playbackEvidence?.participantId;
@@ -1514,7 +1514,10 @@ export class GovernanceEngine {
           newPhase === 'pending' ? 'startup_gate'
             : newPhase === 'locked' && challenge?.status === 'failed' ? 'challenge_failed'
             : newPhase === 'locked' || newPhase === 'warning' ? 'requirements_not_met' : null,
-          challenge?.id || null
+          challenge?.id || null,
+          challenge?.status === 'failed' ? (challenge.zone || null)
+            : newPhase === 'locked' || newPhase === 'warning' ? (unmet?.zone || null)
+            : zones[participantId] || null
         );
       }
       this._invalidateStateCache(); // Invalidate cache on phase change
@@ -1681,12 +1684,14 @@ export class GovernanceEngine {
   /**
    * Get participant states for lock logging
    */
-  _capturePlaybackEvidence(participantId, zone, reason, challengeId = null) {
+  _capturePlaybackEvidence(participantId, zone, reason, challengeId = null, requiredZone = zone) {
     const entry = this.session?.roster?.find(e => (e.id || e.profileId) === participantId);
     const profile = this.session?.zoneProfileStore?.getProfile(participantId);
     const threshold = profile?.zoneConfig?.find(z => z.id === zone)?.min;
+    const requiredThreshold = profile?.zoneConfig?.find(z => z.id === requiredZone)?.min;
     return Object.freeze({
-      participantId, zone, reason, challengeId,
+      participantId, participantName: entry?.name || entry?.displayName || participantId, zone, reason, challengeId,
+      requiredZone, requiredThresholdBpm: Number.isFinite(requiredThreshold) ? requiredThreshold : null,
       hrBpm: Number.isFinite(entry?.heartRate) ? entry.heartRate : null,
       thresholdBpm: Number.isFinite(threshold) ? threshold : null,
     });
