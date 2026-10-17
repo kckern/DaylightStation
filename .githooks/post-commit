@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pushes main when `git config daylight.autoPush true` is set. See lib/autopush.sh.
+exec sh "$(dirname "$0")/lib/autopush.sh"

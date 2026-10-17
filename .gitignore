@@ -48,6 +48,7 @@ node_modules/*
 !_extensions/document-processor/src/post-consume.sh
 !_extensions/playback-hub/*.sh
 !_extensions/playback-hub/tests/*.sh
+!.githooks/lib/*.sh
 __pycache__/
 *.pyc
 docker.local.sh
