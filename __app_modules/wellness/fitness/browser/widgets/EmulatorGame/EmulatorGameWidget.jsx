@@ -541,7 +541,11 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         open={view === 'admin' || view === 'identify'}
         state={unlockState}
         lockLabel={pendingGame
-          ? (view === 'admin' ? `Admin unlock — ${pendingGame.title || pendingGame.id}` : `Verify — ${pendingGame.title || pendingGame.id}`)
+          ? (view === 'admin'
+            ? `Admin unlock — ${pendingGame.title || pendingGame.id}`
+            : pendingGame.saveOwner && !launch
+              ? `${pendingGame.title || pendingGame.id} — ${resolvePersonCard(pendingGame.saveOwner)?.name || pendingGame.saveOwner}'s game`
+              : `Verify — ${pendingGame.title || pendingGame.id}`)
           : null}
         unlockedUser={unlockedUser}
         onCancel={cancelGate}
