@@ -241,7 +241,36 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     return image;
   }
 
-  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds };
+  // Resolve explicit reviewed IDs without calling the empty-collection widening
+  // path. IDs include scope so identical work names in other folders cannot win.
+  async function resolveArtworks(ids) {
+    const groups = new Map();
+    for (const id of ids) {
+      if (typeof id !== 'string') continue;
+      const parts = id.split('/');
+      if (parts.length < 2 || parts.length > 3 || parts.some((part) => !part || part === '.' || part === '..' || part.includes('\\') || part.includes('\0'))) continue;
+      const [folder] = parts;
+      if (!groups.has(folder)) groups.set(folder, new Set());
+      groups.get(folder).add(id);
+    }
+    const source = await getArtSource();
+    const found = {};
+    for (const [folder, wanted] of groups) {
+      const candidates = await source.resolveCandidates({ folder }, 'ambiance');
+      for (const candidate of candidates) {
+        const id = `${folder}/${candidate.id}`;
+        if (wanted.has(id)) found[id] = { ...candidate, id };
+      }
+    }
+    return found;
+  }
+
+  async function presentArtwork(candidate) {
+    const analysis = await analyze(candidate);
+    return { mode: 'single', matte: matteFromAvgs([analysis.avg]), panels: [panelOut(candidate, analysis)] };
+  }
+
+  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds, resolveArtworks, presentArtwork };
 }
 
 export default createArtAdapter;

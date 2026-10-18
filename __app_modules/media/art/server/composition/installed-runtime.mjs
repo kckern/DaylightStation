@@ -43,7 +43,16 @@ export async function createArtContentRuntime({ configService, immichConfig, axi
   }
   const { ArtPresetService } = await import("../application/ArtPresetService.mjs");
   const { FilesystemArtPresetCatalog } = await import("../adapters/FilesystemArtPresetCatalog.mjs");
+  const { FilesystemAmbianceCatalog } = await import('../adapters/FilesystemAmbianceCatalog.mjs');
+  const { AmbianceService } = await import('../application/AmbianceService.mjs');
   const artRouter = createArtRouter({
+    ambianceService: new AmbianceService({
+      catalog: new FilesystemAmbianceCatalog({
+        householdDir: configService.getHouseholdPath(''),
+        logger: rootLogger.child({ module: 'ambiance-catalog' }),
+      }),
+      artworkSource: artAdapter,
+    }),
     artService: new ArtPresetService({
       catalog: new FilesystemArtPresetCatalog({
         householdDir: configService.getHouseholdPath(''),

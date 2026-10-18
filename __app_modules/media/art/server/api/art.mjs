@@ -18,12 +18,37 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createArtRouter(config = {}) {
   const {
     artService,
+    ambianceService,
     logger = console,
   } = config;
   if (!artService?.selectFeatured || !artService?.getPreset) {
     throw new TypeError('createArtRouter requires artService with selectFeatured and getPreset');
   }
   const router = express.Router();
+
+  const ambianceRequest = (method) => asyncHandler(async (req, res) => {
+    if (!ambianceService) return res.status(503).json({ error: 'Ambiance unavailable' });
+    const profile = req.params.profile;
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(profile)) return res.status(400).json({ error: 'Invalid ambiance profile' });
+    if (method === 'match') {
+      const { trackId, recentIds = [] } = req.body || {};
+      if (typeof trackId !== 'string' || !trackId || trackId.length > 512 || !Array.isArray(recentIds) ||
+          recentIds.length > 50 || recentIds.some((id) => typeof id !== 'string' || id.length > 1024)) {
+        return res.status(400).json({ error: 'Invalid ambiance match request' });
+      }
+    }
+    try {
+      const result = method === 'tracks'
+        ? await ambianceService.getTracks(profile)
+        : await ambianceService.match({ profile, trackId: req.body.trackId, recentIds: req.body.recentIds || [] });
+      return res.json(result);
+    } catch (err) {
+      logger.warn?.('art.ambiance.unavailable', { profile, error: err.message });
+      return res.status(err.status === 404 ? 404 : 503).json({ error: 'Ambiance unavailable' });
+    }
+  });
+  router.get('/ambiance/:profile/tracks', ambianceRequest('tracks'));
+  router.post('/ambiance/:profile/match', ambianceRequest('match'));
 
   /**
    * GET /featured
