@@ -734,16 +734,11 @@ public class KioskSettingsGuardTest {
     }
 
     @Test
-    public void foreground_settingsGetsGrace_countedFromFirstLeavingFkb() {
+    public void foreground_settingsIsRecalledImmediately_withoutBluetoothGrace() {
         FgFkb fkb = new FgFkb();
-        FakeNotes notes = new FakeNotes();
         long[] now = { 1_000_000L };
-        KioskSettingsGuard g = fgGuard(fkb, notes, params(true, true, 0, 0), now);
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
         fkb.front = KioskSettingsGuard.SETTINGS_PACKAGE;
-        assertEquals(KioskSettingsGuard.ForegroundVerdict.GRACE, g.foregroundTick());
-        now[0] += 170_000L;
-        assertEquals(KioskSettingsGuard.ForegroundVerdict.GRACE, g.foregroundTick());
-        now[0] += 20_000L;  // 190s away > 180s grace
         assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
         assertEquals(1, fkb.recalls);
     }

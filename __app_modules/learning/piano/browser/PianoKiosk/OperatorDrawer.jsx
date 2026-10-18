@@ -6,8 +6,8 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
 import { screenOffFailureMessage } from './useScreenControl.js';
 import { useArmedAction } from '../../../../../frontend/src/lib/identity/useArmedAction.js';
-import { launchAndroidTarget } from '../../../../../frontend/src/lib/fkb.js';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import BluetoothPanel from './BluetoothPanel.jsx';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import ClickCalibration from './ClickCalibration.jsx';
 import TransportSheet from './transport/TransportSheet.jsx';
@@ -35,6 +35,7 @@ export default function OperatorDrawer({ open, onClose }) {
   const { config, pianoId } = usePianoKioskConfig();
   const turnOffPianoScreen = usePianoScreenOff();
   const logger = useMemo(() => getLogger().child({ component: 'piano-maintenance', pianoId }), [pianoId]);
+  const [bluetoothOpen, setBluetoothOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [action, setAction] = useState({ state: 'idle', message: null, name: null });
@@ -90,6 +91,7 @@ export default function OperatorDrawer({ open, onClose }) {
   useEffect(() => {
     if (open) return;
     disarmScreen(); disarmReload(); disarmReboot();
+    setBluetoothOpen(false);
     setDiagnostics(false);
     setCalibrating(false);
     setFeedbackOpen(false);
@@ -103,7 +105,7 @@ export default function OperatorDrawer({ open, onClose }) {
   const repairing = repair.state === 'working';
 
   return <TransportSheet open={open} title="Piano maintenance" onClose={onClose} size="canvas" className="piano-maintenance-sheet">
-    <div className="piano-settings__maint">
+    {open && bluetoothOpen ? <BluetoothPanel onBack={() => setBluetoothOpen(false)} /> : <div className="piano-settings__maint">
       <div className="piano-settings__status" role="group" aria-label="Connection">
         <strong>{health.copy ? `Piano ${health.copy}` : 'Piano'}</strong>
         <StatusRow label="Keys" tone={inputUp ? 'on' : 'off'} text={inputUp ? (health.input.name || 'connected') : 'not connected'} />
@@ -112,7 +114,7 @@ export default function OperatorDrawer({ open, onClose }) {
       </div>
 
       <div className="piano-settings__big">
-        {config?.bluetooth && <SettingsTile icon="bluetooth-active" label="Bluetooth pairing" emphasis={ready ? 'default' : 'primary'} onPress={() => { logger.info('piano.maintenance.bluetooth', {}); launchAndroidTarget(config.bluetooth); }} />}
+        <SettingsTile icon="bluetooth-active" label="Bluetooth pairing" emphasis={ready ? 'default' : 'primary'} onPress={() => { logger.info('piano.maintenance.bluetooth', {}); setBluetoothOpen(true); }} />
         <SettingsTile icon="connection" label="Repair connection" emphasis={ready ? 'default' : 'primary'} disabled={repairing} onPress={repairConnection} message={repairing ? 'Repairing…' : repair.message} tone={repairing ? 'working' : repair.state === 'failed' ? 'failed' : repair.state === 'success' ? 'success' : 'idle'} />
       </div>
 
@@ -134,7 +136,7 @@ export default function OperatorDrawer({ open, onClose }) {
           {deviceId && <SettingsTile icon="system-shutdown" label={rebootArmed ? 'Tap again to reboot tablet' : 'Reboot tablet'} emphasis="danger" on={rebootArmed} onPress={reboot} message={messageFor('reboot-tablet')} tone={toneFor('reboot-tablet')} />}
         </div>
       </>}
-    </div>
+    </div>}
     <FeedbackOverlay open={feedbackOpen} app="piano" context={{ pianoId, surface: 'piano-maintenance' }} onClose={() => setFeedbackOpen(false)} />
   </TransportSheet>;
 }

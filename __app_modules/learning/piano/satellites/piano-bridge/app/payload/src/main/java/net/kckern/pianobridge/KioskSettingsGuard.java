@@ -109,12 +109,12 @@ public final class KioskSettingsGuard {
         public final boolean hasPassword;
         public final boolean foregroundEnabled;
         public final long foregroundIntervalMs;
-        /** How long Android Settings may stay in front (Bluetooth pairing) before recall. */
+        /** Optional operator override; Bluetooth controls no longer require Settings grace. */
         public final long settingsGraceMs;
         public Params(boolean enabled, long intervalMs, long installHoldMs,
                       long installHoldUntilMs, long disarmUntilMs, boolean hasPassword) {
             this(enabled, intervalMs, installHoldMs, installHoldUntilMs, disarmUntilMs, hasPassword,
-                    true, 10_000L, 180_000L);
+                    true, 10_000L, 0L);
         }
         public Params(boolean enabled, long intervalMs, long installHoldMs,
                       long installHoldUntilMs, long disarmUntilMs, boolean hasPassword,

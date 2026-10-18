@@ -1,5 +1,34 @@
 # Piano Bridge (APK)
 
+> **Payload p29 (`p29-bluetooth-controls`).** Bluetooth controls now run inside the
+> maintenance drawer through native APIs. The drawer does not launch Android Settings.
+> Remove `com.android.settings` from Fully's app whitelist and set
+> `watchdogKioskForegroundSettingsGraceMs: 0` on upgraded installations.
+
+### Bluetooth controls
+
+`GET /bluetooth` returns adapter state, bonded/discovered devices, connected audio/MIDI
+profiles, pending pairing and supported capabilities. Command acceptance is asynchronous:
+read state again to confirm a completed change. All mutations require JSON `POST`:
+
+| Route | Body |
+|---|---|
+| `/bluetooth/scan` | `{ "durationMs": 12000 }` (1000–30000) |
+| `/bluetooth/scan/stop` | `{}` |
+| `/bluetooth/pair`, `/bluetooth/unpair` | `{ "address": "AA:BB:CC:DD:EE:FF" }` |
+| `/bluetooth/connect`, `/bluetooth/disconnect` | `{ "address": "AA:BB:CC:DD:EE:FF", "profile": "audio" }` (`audio` or `midi`) |
+| `/bluetooth/power` | `{ "enabled": true }` |
+| `/bluetooth/pairing` | `{ "address": "AA:BB:CC:DD:EE:FF", "accept": true, "pin": "optional" }` |
+
+Pairing replies apply only to the explicitly requested device for 60 seconds. PINs
+are never logged. Android may restrict numeric comparison/consent to privileged apps;
+`capabilities.confirm` reports that permission and the panel disables unsupported
+confirmation. No Settings fallback is launched. Discovery requires Location on Android 10.
+Disconnect and Forget persist role disable flags so reconnect watchdogs respect them;
+Connect re-enables the selected audio or MIDI target. `pbctl bluetooth` exposes the same
+commands; see `cli/README.md` for syntax.
+
+
 > **2026-10-14: PAYLOAD p28 (`p28-foreground-watch`).** The bridge samples the window
 > list every second through its own accessibility service (`ForegroundWatch`) and logs
 > every change of the app in front to the log store, at once:
@@ -203,7 +232,7 @@ piano's own idle screensaver (FKB `screenOff`, 3-min) — exactly the dark-table
 ### Foreground guard (payload p24, 2026-10-09)
 
 **Why it exists.** On 2026-10-09 the kids got out of the kiosk while `kioskMode` stayed
-`true` the whole time. The operator drawer's **Bluetooth pairing** tile opens Android
+`true` the whole time. The former **Bluetooth pairing** tile opened Android
 Settings (FKB `startIntent`), and from Settings they reached other apps. The drift
 guard below saw nothing wrong, because nothing in FKB's settings had changed.
 
@@ -216,11 +245,11 @@ so a recall lands in ~1–2 s rather than on the next tick:
 | In front | Action |
 |---|---|
 | `de.ozerov.fully` | nothing; the away clock resets |
-| `com.android.settings` | allowed for `watchdogKioskForegroundSettingsGraceMs` (default 3 min) for Bluetooth pairing, then recalled |
+| `com.android.settings` | recalled immediately by default (`watchdogKioskForegroundSettingsGraceMs: 0`) |
 | `net.kckern.pianobridge` | allowed 2 min (the bounce-the-process launch) |
 | anything else | recalled on the tick it is seen |
 
-The grace counts from **first leaving FKB**, so hopping Settings → app → Settings does
+Any explicitly configured grace counts from **first leaving FKB**, so hopping Settings → app → Settings does
 not restart it. A recall that does not take is retried every tick (noted once, then
 every 30th retry).
 
@@ -243,7 +272,7 @@ nothing can be read. The heartbeat goes to `level:warn` with `data.fkbAuthOk:fal
 `context.app:piano-bridge AND level:warn` in the log store finds it.
 
 Config: `watchdogKioskForegroundEnabled` (true), `watchdogKioskForegroundIntervalMs`
-(10000), `watchdogKioskForegroundSettingsGraceMs` (180000). Status: `pbctl
+(10000), `watchdogKioskForegroundSettingsGraceMs` (0). Status: `pbctl
 kiosk-settings` (the `foreground:` and `recalls:` lines).
 
 **Building on {env.prod_host}** (no Mac needed): JDK 17 and the Android SDK live under

@@ -168,6 +168,10 @@ public class DeviceConfig {
     public String speakerMac() { return norm(values.get("speakerMac")); }
     public String speakerName() { return values.getOrDefault("speakerName", "Speaker"); }
 
+    /** Explicit user disconnects survive watchdog ticks, config reloads and payload swaps. */
+    public boolean bluetoothMidiEnabled() { return boolOr("bluetoothMidiEnabled", true); }
+    public boolean bluetoothAudioEnabled() { return boolOr("bluetoothAudioEnabled", true); }
+
     // --- FKB screen-wake (ScreenWaker): poke Fully Kiosk screenOn on a note so a
     //     played piano wakes a dark tablet. Set fkbPassword via `pbctl config set`.
     public boolean fkbWakeEnabled() { return boolOr("fkbWakeEnabled", true); }
@@ -255,11 +259,11 @@ public class DeviceConfig {
     // Foreground guard (2026-10-09): kioskMode stayed TRUE while kids roamed the tablet —
     // the operator drawer's Bluetooth tile opened Android Settings, and from Settings they
     // reached other apps. So "is FKB configured as a kiosk" is not enough; this pass asks
-    // "is FKB actually in front" and calls it back. Settings keeps a short grace so
-    // Bluetooth pairing still works; the grace counts from first leaving FKB.
+    // "is FKB actually in front" and calls it back. Bluetooth controls live in the
+    // kiosk now; Settings has no grace by default.
     public boolean watchdogKioskForegroundEnabled() { return boolOr("watchdogKioskForegroundEnabled", true); }
     public long watchdogKioskForegroundIntervalMs() { return longOr("watchdogKioskForegroundIntervalMs", 10000L); }
-    public long watchdogKioskForegroundSettingsGraceMs() { return longOr("watchdogKioskForegroundSettingsGraceMs", 180000L); }
+    public long watchdogKioskForegroundSettingsGraceMs() { return longOr("watchdogKioskForegroundSettingsGraceMs", 0L); }
 
     // The install hold's DEADLINE, persisted because the APK install it guards against
     // STOPS this service — deploy step 7 then relaunches it (and says to repeat until

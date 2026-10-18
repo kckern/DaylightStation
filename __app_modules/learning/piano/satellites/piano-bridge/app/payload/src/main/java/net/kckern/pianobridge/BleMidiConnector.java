@@ -15,6 +15,7 @@ import android.media.midi.MidiDeviceInfo;
 import android.media.midi.MidiManager;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -28,6 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * BleMidiConnector — owns the BLE-MIDI link the kiosk depends on.
@@ -68,6 +71,7 @@ public class BleMidiConnector {
 
     private final HandlerThread thread;
     private final Handler handler;
+    private final Handler callbackHandler = new Handler(Looper.getMainLooper());
 
     private MidiManager midiManager;
     private BluetoothAdapter adapter;
@@ -82,7 +86,12 @@ public class BleMidiConnector {
     private volatile int reconnects = 0;
 
     private MidiDevice openDevice;
-    private boolean running = false;
+    private volatile boolean running = false;
+    private volatile boolean stopped = false;
+    private boolean suspended = false;
+    private boolean pairingPaused = false;
+    private long connectGeneration;
+    private long openRequest;
     private ScanCallback activeScan;
 
     public BleMidiConnector(Context ctx, DeviceConfig cfg, Listener listener) {
@@ -97,6 +106,7 @@ public class BleMidiConnector {
     /** Begin: acquire adapter, register the removal watcher, kick off a connect. */
     public void start() {
         handler.post(() -> {
+            if (stopped) return;
             running = true;
             midiManager = (MidiManager) ctx.getSystemService(Context.MIDI_SERVICE);
             BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -109,36 +119,74 @@ public class BleMidiConnector {
     }
 
     /** Force a fresh scan+connect (pbctl POST /connect). */
-    public void connectNow() { handler.post(this::connectInternal); }
+    public void connectNow() { handler.post(() -> { suspended = false; connectInternal(); }); }
+
+    /** Stop our reconnect scans before createBond; preserve an already-open MIDI link. */
+    public boolean pauseDiscoveryForPairing() {
+        CountDownLatch done = new CountDownLatch(1);
+        Runnable pause = () -> {
+            pairingPaused = true;
+            handler.removeCallbacks(retryRunnable);
+            stopScan();
+            if (state != State.CONNECTED) {
+                connectGeneration++;
+                setState(State.IDLE, null);
+            }
+            done.countDown();
+        };
+        if (Looper.myLooper() == handler.getLooper()) { pause.run(); return true; }
+        if (!handler.post(pause)) return false;
+        try { return done.await(1500, TimeUnit.MILLISECONDS); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+    }
+
+    public void resumeDiscoveryAfterPairing() {
+        handler.post(() -> {
+            pairingPaused = false;
+            if (state != State.CONNECTED) connectInternal();
+        });
+    }
 
     /** Close the current connection and stop trying (pbctl POST /forget). */
     public void forget() {
         handler.post(() -> {
+            suspended = true;
+            connectGeneration++;
+            handler.removeCallbacksAndMessages(null);
             stopScan();
             closeDevice();
+            listener.onMidiDeviceClosed();
             setState(State.IDLE, "forgotten");
         });
     }
 
     public void stop() {
+        stopped = true;
+        running = false;
         handler.post(() -> {
-            running = false;
+            connectGeneration++;
+            handler.removeCallbacksAndMessages(null);
             stopScan();
             closeDevice();
             if (midiManager != null) midiManager.unregisterDeviceCallback(deviceWatcher);
         });
+        thread.quitSafely();
     }
 
     // --- connect flow ----------------------------------------------------
 
     private void connectInternal() {
-        if (!running) return;
+        if (!running || stopped || suspended || pairingPaused || !cfg.bluetoothMidiEnabled()) return;
+        final long generation = ++connectGeneration;
         // Cancel any queued retry + in-flight scan so overlapping connect cycles
         // can't pile up (a /connect racing a pending retry used to spawn parallel
         // scans and burn the Android 5-scans/30s throttle).
         handler.removeCallbacks(retryRunnable);
         stopScan();
         closeDevice();
+        listener.onMidiDeviceClosed();
+
+        if (midiManager == null) { setState(State.FAILED, "MIDI service unavailable"); return; }
 
         if (adapter == null || !adapter.isEnabled()) {
             setState(State.NO_BLUETOOTH, "Bluetooth is off");
@@ -191,7 +239,7 @@ public class BleMidiConnector {
             Diag.log(TAG, "direct connect attempt → " + targetMac);
             openTarget(direct, /*scanOnFail=*/true);
             handler.postDelayed(() -> {
-                if (running && state == State.CONNECTING) {
+                if (running && !suspended && generation == connectGeneration && state == State.CONNECTING) {
                     Diag.log(TAG, "direct connect still pending — falling back to scan");
                     startScan(targetMac);
                 }
@@ -203,7 +251,7 @@ public class BleMidiConnector {
 
     /** Radio-filtered scan for the target MAC; opens it on first sighting. */
     private void startScan(final String targetMac) {
-        if (!running || scanner == null) return;
+        if (!running || stopped || suspended || pairingPaused || scanner == null) return;
         stopScan();
         setState(State.SCANNING, null);
         // Filter at the radio layer to ONLY the target MAC — blocklist is moot.
@@ -214,6 +262,8 @@ public class BleMidiConnector {
 
         activeScan = new ScanCallback() {
             @Override public void onScanResult(int type, ScanResult result) {
+                handler.post(() -> {
+                if (!running || stopped || suspended || activeScan != this) return;
                 BluetoothDevice dev = result.getDevice();
                 if (dev == null) return;
                 String mac = norm(dev.getAddress());
@@ -221,12 +271,18 @@ public class BleMidiConnector {
                 if (!mac.equals(targetMac)) return;
                 stopScan();
                 openTarget(dev, /*scanOnFail=*/false);
+                });
             }
             @Override public void onScanFailed(int errorCode) {
+                handler.post(() -> {
+                if (!running || stopped || suspended || activeScan != this) return;
+                stopScan();
                 setState(State.FAILED, "scan failed (" + errorCode + ")");
                 scheduleRetry();
+                });
             }
         };
+        final ScanCallback scan = activeScan;
         try {
             scanner.startScan(filters, settings, activeScan);
         } catch (SecurityException e) {
@@ -235,7 +291,7 @@ public class BleMidiConnector {
         }
         // Timeout → retry.
         handler.postDelayed(() -> {
-            if (state == State.SCANNING) {
+            if (state == State.SCANNING && activeScan == scan) {
                 stopScan();
                 setState(State.FAILED, "target not found in scan window");
                 scheduleRetry();
@@ -250,13 +306,15 @@ public class BleMidiConnector {
      * we can still find and open it with no MAC on file. Learns the MAC on connect.
      */
     private void startNameScan(final String targetName) {
-        if (!running || scanner == null) { scheduleRetry(); return; }
+        if (!running || stopped || suspended || pairingPaused || scanner == null) { scheduleRetry(); return; }
         stopScan();
         setState(State.SCANNING, "name-scan:" + targetName);
         ScanSettings settings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
         activeScan = new ScanCallback() {
             @Override public void onScanResult(int type, ScanResult result) {
+                handler.post(() -> {
+                if (!running || stopped || suspended || activeScan != this) return;
                 BluetoothDevice dev = result.getDevice();
                 if (dev == null) return;
                 String mac = norm(dev.getAddress());
@@ -265,12 +323,18 @@ public class BleMidiConnector {
                 if (name == null || !name.equalsIgnoreCase(targetName)) return;
                 stopScan();
                 openTarget(dev, /*scanOnFail=*/false);
+                });
             }
             @Override public void onScanFailed(int errorCode) {
+                handler.post(() -> {
+                if (!running || stopped || suspended || activeScan != this) return;
+                stopScan();
                 setState(State.FAILED, "name-scan failed (" + errorCode + ")");
                 scheduleRetry();
+                });
             }
         };
+        final ScanCallback scan = activeScan;
         try {
             scanner.startScan(Collections.<ScanFilter>emptyList(), settings, activeScan);
         } catch (SecurityException e) {
@@ -279,7 +343,7 @@ public class BleMidiConnector {
             return;
         }
         handler.postDelayed(() -> {
-            if (state == State.SCANNING) {
+            if (state == State.SCANNING && activeScan == scan) {
                 stopScan();
                 setState(State.FAILED, "target name not found in scan window");
                 scheduleRetry();
@@ -288,11 +352,22 @@ public class BleMidiConnector {
     }
 
     private void openTarget(BluetoothDevice dev, final boolean scanOnFail) {
+        if (!running || stopped || suspended || pairingPaused || !cfg.bluetoothMidiEnabled()) return;
+        final long generation = connectGeneration;
+        final long request = ++openRequest;
         setState(State.CONNECTING, null);
         final String mac = norm(dev.getAddress());
         final String name = dev.getName() != null ? dev.getName() : cfg.targetName();
         try {
             midiManager.openBluetoothDevice(dev, device -> {
+                // Deliver through the main looper so an open that finishes AFTER stop()/
+                // quitSafely() can still close its MidiDevice instead of leaking a GATT link.
+                if (stopped || !handler.post(() -> {
+                if (!running || stopped || suspended || generation != connectGeneration
+                        || request != openRequest || !cfg.bluetoothMidiEnabled()) {
+                    closeLateDevice(device);
+                    return;
+                }
                 if (device == null) {
                     if (scanOnFail) {
                         Diag.log(TAG, "direct open returned null — scanning");
@@ -303,6 +378,8 @@ public class BleMidiConnector {
                     }
                     return;
                 }
+                stopScan();
+                closeDevice();
                 openDevice = device;
                 connectedName = name;
                 connectedMac = mac;
@@ -310,16 +387,22 @@ public class BleMidiConnector {
                 setState(State.CONNECTED, null);
                 Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ")");
                 listener.onMidiDeviceOpened(device, name, mac);
-            }, handler);
+                })) closeLateDevice(device);
+            }, callbackHandler);
         } catch (SecurityException e) {
             setState(State.FAILED, "connect permission denied");
             scheduleRetry();
         }
     }
 
+    private static void closeLateDevice(MidiDevice device) {
+        if (device != null) try { device.close(); } catch (Exception ignored) { }
+    }
+
     /** Watches MidiManager for our device disappearing → reconnect. */
     private final MidiManager.DeviceCallback deviceWatcher = new MidiManager.DeviceCallback() {
         @Override public void onDeviceRemoved(MidiDeviceInfo info) {
+            if (!running || stopped || suspended || !cfg.bluetoothMidiEnabled()) return;
             String mac = bluetoothMac(info);
             if (mac != null && mac.equals(connectedMac)) {
                 Log.w(TAG, "target removed from MidiManager — reconnecting");
@@ -337,11 +420,11 @@ public class BleMidiConnector {
     };
 
     private final Runnable retryRunnable = new Runnable() {
-        @Override public void run() { if (running && state != State.CONNECTED) connectInternal(); }
+        @Override public void run() { if (running && !suspended && state != State.CONNECTED) connectInternal(); }
     };
 
     private void scheduleRetry() {
-        if (!running) return;
+        if (!running || stopped || suspended || pairingPaused || !cfg.bluetoothMidiEnabled()) return;
         handler.removeCallbacks(retryRunnable); // collapse duplicate retries into one
         handler.postDelayed(retryRunnable, cfg.reconnectDelayMs());
     }

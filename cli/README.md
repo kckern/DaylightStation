@@ -393,3 +393,47 @@ Commands live in `cli/lib/fitness/`, one module per operation, each exporting
    calling `process.exit()`.
 4. Keep module import **side-effect free** — the dispatcher imports every module just to
    build help text, so all work belongs inside `run()`.
+
+## Piano Bridge Bluetooth controls
+
+The standalone bridge CLI runs through `node cli/pianobridge.cli.mjs`. It shares
+its implementation with the application's CLI entry and satellite `pbctl.mjs`,
+including diagnostic, payload, kiosk, audio, and MIDI commands. Set `PB_HOST` to
+the target bridge's `host:port` before using it.
+
+```bash
+node cli/pianobridge.cli.mjs bluetooth          # actual adapter/device state
+node cli/pianobridge.cli.mjs bluetooth list     # alias for status
+node cli/pianobridge.cli.mjs bluetooth scan     # discovery for 12000 ms
+node cli/pianobridge.cli.mjs bluetooth scan 5000
+node cli/pianobridge.cli.mjs bluetooth stop
+node cli/pianobridge.cli.mjs bluetooth pair "$ADDRESS"
+node cli/pianobridge.cli.mjs bluetooth unpair "$ADDRESS"
+node cli/pianobridge.cli.mjs bluetooth connect "$ADDRESS" audio
+node cli/pianobridge.cli.mjs bluetooth disconnect "$ADDRESS" midi
+node cli/pianobridge.cli.mjs bluetooth power on
+node cli/pianobridge.cli.mjs bluetooth power off
+node cli/pianobridge.cli.mjs bluetooth confirm "$ADDRESS" yes
+node cli/pianobridge.cli.mjs bluetooth confirm "$ADDRESS" no
+node cli/pianobridge.cli.mjs bluetooth pin "$ADDRESS" "$PAIRING_PIN"
+node cli/pianobridge.cli.mjs bluetooth cancel "$ADDRESS"
+```
+
+`ADDRESS` is the device's six-byte colon-separated Bluetooth address. Both
+`connect` and `disconnect` accept `audio` or `midi`. Scan durations must be whole
+milliseconds from 1000 through 30000. PINs must contain 1–16 UTF-8 bytes without
+control characters; CLI output redacts submitted PINs and PIN/passkey fields.
+Capabilities in `bluetooth status` describe which actions the running bridge
+supports; unsupported operations return an error.
+
+Actions send JSON to `/bluetooth/*`. An accepted request reports acceptance;
+poll `bluetooth status` for observed bonding and connection state. A successful
+POST alone does not establish a connection. Invalid arguments, HTTP failures,
+bridge errors, malformed responses, and transport failures exit nonzero.
+Bluetooth controls use the bridge API directly without opening Android Settings.
+
+Run the CLI contract tests without contacting a device:
+
+```bash
+node --test __app_modules/learning/piano/cli/bluetooth-control.test.mjs
+```

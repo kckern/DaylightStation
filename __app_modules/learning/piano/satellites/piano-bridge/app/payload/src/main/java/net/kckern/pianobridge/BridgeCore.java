@@ -99,9 +99,10 @@ public class BridgeCore {
     private static final int MIDI_PORT_MAX_ATTEMPTS = 8;
     private static final long MIDI_PORT_RETRY_MS = 700L;
 
-    private DeviceConfig config;
+    private volatile DeviceConfig config;
     private BleMidiConnector bleConnector;
     private A2dpConnector a2dpConnector;
+    private BluetoothControls bluetoothControls;
     private ScreenWaker screenWaker;
     private TouchPulser touchPulser;
     private KioskWatchdog kioskWatchdog;
@@ -194,6 +195,9 @@ public class BridgeCore {
 
         startBleMidi();
 
+        bluetoothControls = new BluetoothControls(this);
+        bluetoothControls.start();
+
         // Out-of-process WebView watchdog: created once (survives config reloads via
         // updateConfig so it never loses beat state). startBleMidi() has just loaded
         // `config`, so it's non-null here.
@@ -237,6 +241,7 @@ public class BridgeCore {
     /** Tear down cleanly (before a payload swap or shell shutdown). */
     public void stop() {
         Log.i(TAG, "BridgeCore stopping");
+        if (bluetoothControls != null) { bluetoothControls.close(); bluetoothControls = null; }
         if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
         if (foregroundWatch != null) { foregroundWatch.stop(); foregroundWatch = null; }
         if (kioskSettingsGuard != null) { kioskSettingsGuard.stop(); kioskSettingsGuard = null; }
@@ -748,6 +753,8 @@ public class BridgeCore {
     // --- accessors / control used by ControlServer ---
 
     public BleMidiConnector getBleConnector() { return bleConnector; }
+
+    public BluetoothControls getBluetoothControls() { return bluetoothControls; }
 
     public DeviceConfig getConfig() { return config; }
 

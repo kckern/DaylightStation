@@ -47,6 +47,7 @@ public class A2dpConnector {
     private BluetoothAdapter adapter;
     private volatile BluetoothA2dp proxy;
     private volatile boolean running = false;
+    private volatile boolean stopped = false;
     private volatile String lastError = null;
     private volatile int reconnects = 0;
     private volatile long lastConnectAttempt = 0L;
@@ -62,20 +63,22 @@ public class A2dpConnector {
 
     public void start() {
         handler.post(() -> {
+            if (stopped) return;
             running = true;
             adapter = BluetoothAdapter.getDefaultAdapter();
-            if (adapter == null || !adapter.isEnabled()) { setError("bluetooth off"); scheduleSweep(); return; }
-            if (cfg.speakerMac().isEmpty()) { setError("no speakerMac configured"); return; }
-            adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP);
             ctx.registerReceiver(stateReceiver,
                     new IntentFilter(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED), null, handler);
+            if (adapter != null && adapter.isEnabled())
+                adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP);
             scheduleSweep();
         });
     }
 
     public void stop() {
+        stopped = true;
+        running = false;
         handler.post(() -> {
-            running = false;
+            handler.removeCallbacksAndMessages(null);
             try { ctx.unregisterReceiver(stateReceiver); } catch (Exception ignored) { }
             if (proxy != null && adapter != null) {
                 try { adapter.closeProfileProxy(BluetoothProfile.A2DP, proxy); } catch (Exception ignored) { }
@@ -133,6 +136,10 @@ public class A2dpConnector {
     private final BluetoothProfile.ServiceListener profileListener = new BluetoothProfile.ServiceListener() {
         @Override public void onServiceConnected(int profile, BluetoothProfile p) {
             if (profile != BluetoothProfile.A2DP) return;
+            if (stopped) {
+                if (adapter != null) adapter.closeProfileProxy(profile, p);
+                return;
+            }
             proxy = (BluetoothA2dp) p;
             Diag.log(TAG, "A2DP proxy ready");
             handler.post(A2dpConnector.this::ensureConnected);
@@ -148,6 +155,7 @@ public class A2dpConnector {
             if (dev == null || !norm(dev.getAddress()).equals(cfg.speakerMac())) return;
             int state = intent.getIntExtra(BluetoothA2dp.EXTRA_STATE, -1);
             if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                if (!running || !cfg.bluetoothAudioEnabled()) { fireStateChanged(); return; }
                 reconnects++;
                 Diag.log(TAG, "speaker disconnected — reconnecting (#" + reconnects + ")");
                 handler.postDelayed(A2dpConnector.this::ensureConnected, RECONNECT_DELAY_MS);
@@ -172,7 +180,7 @@ public class A2dpConnector {
 
     /** If the target speaker is bonded but not connected, force-connect it. */
     private void ensureConnected() {
-        if (!running) return;
+        if (!running || !cfg.bluetoothAudioEnabled()) return;
         if (adapter == null || !adapter.isEnabled()) { setError("bluetooth off"); return; }
         if (proxy == null) { adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP); return; }
         final String mac = cfg.speakerMac();
@@ -183,7 +191,7 @@ public class A2dpConnector {
         catch (IllegalArgumentException e) { setError("bad speakerMac: " + mac); return; }
 
         if (target.getBondState() != BluetoothDevice.BOND_BONDED) {
-            setError("speaker not bonded (pair it once in Settings)");
+            setError("speaker not bonded (pair it in Bluetooth controls)");
             return;
         }
         if (isConnected(target)) return; // already good — nothing to do

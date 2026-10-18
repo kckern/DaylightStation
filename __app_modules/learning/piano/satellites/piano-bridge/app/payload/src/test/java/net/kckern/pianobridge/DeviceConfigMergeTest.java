@@ -55,6 +55,22 @@ public class DeviceConfigMergeTest {
         assertEquals("AA:BB", merged.get("targetMac"));
     }
 
+    @Test public void bluetoothSelectionAndDisconnectPreserveOtherRoleAndWatchdogConfig() throws IOException {
+        String cfg = "targetMac: 12:34:56:78:9A:BC\ntargetName: Keyboard\n"
+                + "speakerMac: 22:34:56:78:9A:BC\nspeakerName: Speaker\n"
+                + "watchdogEnabled: false\nbluetoothMidiEnabled: false\n";
+        cfg = DeviceConfig.mergeOverride(cfg, "speakerMac: 32:34:56:78:9A:BC\nspeakerName: New speaker\nbluetoothAudioEnabled: true\n");
+        cfg = DeviceConfig.mergeOverride(cfg, "bluetoothAudioEnabled: false\n");
+        Map<String, String> merged = parse(cfg);
+        assertEquals("12:34:56:78:9A:BC", merged.get("targetMac"));
+        assertEquals("Keyboard", merged.get("targetName"));
+        assertEquals("false", merged.get("bluetoothMidiEnabled"));
+        assertEquals("32:34:56:78:9A:BC", merged.get("speakerMac"));
+        assertEquals("New speaker", merged.get("speakerName"));
+        assertEquals("false", merged.get("bluetoothAudioEnabled"));
+        assertEquals("false", merged.get("watchdogEnabled"));
+    }
+
     @Test public void repeatedPartialWrites_neverErodeConfig() throws IOException {
         String cfg = "targetMac: 10:65:36:36:62:66\ntargetName: jam-7e6\n";
         // Simulate many wake-suppress relays back to back.

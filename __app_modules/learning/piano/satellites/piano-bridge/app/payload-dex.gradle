@@ -88,6 +88,7 @@ project(':payload') {
         task payloadSha(dependsOn: payloadVerify) {
             group = 'payload'
             def jar = new File(outDir, jarName)
+            inputs.file jar
             outputs.file new File(outDir, jarName + '.sha256')
             doLast {
                 def md = java.security.MessageDigest.getInstance('SHA-256')

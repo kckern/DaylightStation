@@ -9,6 +9,7 @@ const connection = vi.hoisted(() => ({
 const midi = vi.hoisted(() => ({ sendNote: vi.fn(() => true), sendPanic: vi.fn(() => true) }));
 const screenOff = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const launchAndroidTarget = vi.hoisted(() => vi.fn());
+const bluetoothState = vi.hoisted(() => ({ ok: true, adapter: { supported: true, enabled: true, discovering: false, name: 'Tablet' }, devices: [], pairing: null, lastError: null, capabilities: { scan: true, pair: true, unpair: true, audio: true, midi: true, pin: true, confirm: false } }));
 const daylightAPI = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
 vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
@@ -28,11 +29,12 @@ const renderDrawer = (props = {}) => render(<><button type="button">opener</butt
 
 describe('Piano maintenance', () => {
   beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => bluetoothState })));
     vi.useFakeTimers(); repairConnection.mockClear(); screenOff.mockClear(); launchAndroidTarget.mockClear(); daylightAPI.mockClear(); midi.sendNote.mockReset().mockReturnValue(true); midi.sendPanic.mockReset().mockReturnValue(true);
     Object.assign(connection.health, { state: 'offline', copy: 'not connected', input: { state: 'down', name: null }, output: { state: 'down', name: null }, bridge: { state: 'unavailable', unavailable: true } });
     Object.assign(connection.repair, { state: 'idle', message: null });
   });
-  afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+  afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it('uses a named dialog, a single repair action, and no raw MIDI controls', () => {
     renderDrawer();
@@ -79,7 +81,9 @@ describe('Piano maintenance', () => {
     const bluetooth = screen.getByRole('button', { name: 'Bluetooth pairing' });
     expect(bluetooth).toHaveClass('piano-tbtn--primary');
     fireEvent.click(bluetooth);
-    expect(launchAndroidTarget).toHaveBeenCalledWith('pkg/.Bluetooth');
+    expect(screen.getByRole('region', { name: 'Bluetooth devices' })).toBeTruthy();
+    expect(launchAndroidTarget).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to maintenance' }));
     Object.assign(connection.health, { state: 'ready', copy: 'connected', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'connected', unavailable: false } });
     rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
     expect(screen.getByRole('button', { name: 'Bluetooth pairing' })).not.toHaveClass('piano-tbtn--primary');
@@ -89,6 +93,16 @@ describe('Piano maintenance', () => {
     expect(card.querySelectorAll('.is-on')).toHaveLength(3);
     expect(card.querySelectorAll('.is-off')).toHaveLength(0);
     expect(card.querySelectorAll('.is-warn')).toHaveLength(0);
+  });
+
+  it('closes Bluetooth and reopens on maintenance without launching Settings', async () => {
+    const { rerender } = renderDrawer();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Bluetooth pairing' })); });
+    expect(screen.getByRole('region', { name: 'Bluetooth devices' })).toBeTruthy();
+    rerender(<OperatorDrawer open={false} onClose={vi.fn()} />);
+    rerender(<OperatorDrawer open onClose={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Bluetooth devices' })).toBeNull();
+    expect(launchAndroidTarget).not.toHaveBeenCalled();
   });
 
   it('repairs centrally and shows the repair message under the tile', () => {

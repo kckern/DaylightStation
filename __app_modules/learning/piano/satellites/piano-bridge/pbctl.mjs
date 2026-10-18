@@ -30,6 +30,8 @@
 //   node pbctl.mjs kiosk-disarm [m]  # pause drift repair + foreground recall while fiddling (default = max = 60 min)
 //   node pbctl.mjs kiosk-rearm       # resume drift repair now
 
+import { bluetoothUsage, runBluetoothCommand } from '../../cli/bluetooth-control.mjs';
+
 const HOST = process.env.PB_HOST || '10.0.0.245:8770';
 const BASE = `http://${HOST}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,6 +69,9 @@ function fmtDur(ms) {
 }
 
 const cmds = {
+  async bluetooth(args) {
+    process.exitCode = await runBluetoothCommand(args, { base: BASE });
+  },
   async status() {
     const s = await req('GET', '/status');
     const b = s.ble || {};
@@ -432,6 +437,7 @@ const [, , name, ...args] = process.argv;
 if (!name || !cmds[name]) {
   console.log(`pbctl — Piano Bridge control (${BASE})\n`);
   console.log('  status | connect | forget | scan [ms] | config [set k v|push f] | log | panic');
+  console.log(`  ${bluetoothUsage}`);
   console.log('  audio: speaker | bootstrap | override [ms]   (A2DP+guard status / spend clamp window / time-boxed synth-gate reopen)');
   console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
   console.log('  health: diag | kiosk | crashlog        (full snapshot / WebView watchdog / durable death log)');

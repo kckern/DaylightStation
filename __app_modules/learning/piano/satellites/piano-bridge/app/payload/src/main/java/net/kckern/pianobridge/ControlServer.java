@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p28-foreground-watch";
+    public static final String BUILT_BY = "p29-bluetooth-controls";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -140,6 +140,24 @@ public class ControlServer extends NanoWSD {
         String uri = session.getUri();
         NanoHTTPD.Method method = session.getMethod();
         try {
+            if ("/bluetooth".equals(uri) || uri.startsWith("/bluetooth/")) {
+                if (method == NanoHTTPD.Method.OPTIONS) return json(ok());
+                BluetoothControls controls = service.getBluetoothControls();
+                if (controls == null) return json(BluetoothController.error("unavailable", "Bluetooth controls are starting"));
+                if ("/bluetooth".equals(uri)) {
+                    return json(controls.controller().request(method.name(), "", null));
+                }
+                String action = uri.substring("/bluetooth/".length());
+                if (method != NanoHTTPD.Method.POST) return json(controls.controller().request(method.name(), action, null));
+                try {
+                    int length = Integer.parseInt(session.getHeaders().getOrDefault("content-length", "0"));
+                    if (length < 1 || length > 8192)
+                        return json(BluetoothController.error("invalid_request", "JSON body must contain 1–8192 bytes"));
+                    return json(controls.controller().request(method.name(), action, readBody(session)));
+                } catch (Exception e) {
+                    return json(BluetoothController.error("invalid_request", "A valid JSON object is required"));
+                }
+            }
             BleMidiConnector ble = service.getBleConnector();
             // "/" is the self-reported diagnosis page for a human (phone/laptop browser);
             // curl/pbctl (no text/html Accept) still get the JSON route list.
@@ -157,6 +175,8 @@ public class ControlServer extends NanoWSD {
                     return json(ok().put("routes", new JSONArray()
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
+                            .put("GET /bluetooth              (adapter, paired/nearby devices, profiles, pairing, capabilities)")
+                            .put("POST /bluetooth/{scan,scan/stop,pair,unpair,connect,disconnect,pairing,power} (JSON body)")
                             .put("GET /                      (HTML status page for a browser; JSON here for curl)")
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
@@ -670,6 +690,8 @@ public class ControlServer extends NanoWSD {
     private NanoHTTPD.Response json(NanoHTTPD.Response.Status status, JSONObject o) {
         NanoHTTPD.Response r = NanoHTTPD.newFixedLengthResponse(status, "application/json", o.toString());
         r.addHeader("Access-Control-Allow-Origin", "*");
+        r.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        r.addHeader("Access-Control-Allow-Headers", "Content-Type");
         return r;
     }
 
