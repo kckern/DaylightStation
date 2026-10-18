@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -28,6 +28,29 @@ async function fixture(meta = {}) {
 }
 
 describe('reviewed asset freshness', () => {
+  it('reads only the selected image while binding every displayed match to its current bytes', async () => {
+    const bytes = await new Jimp({ width: 20, height: 30, color: 0x668866ff }).getBuffer('image/png');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const readers = Array.from({ length: 40 }, () => vi.fn(async () => bytes));
+    const record = { themes: ['peace'], seasons: [], energy: 0, intensity: 1, mediumKind: 'painting', review: {
+      status: 'approved', profiles: ['quiet'], reviewer: 'curator', reviewedAt: '2026-01-01', reason: 'Viewed exact image',
+      evidence: [{ kind: 'visual', path: 'fixture.png', sha256 }],
+    } };
+    const artworks = Object.fromEntries(readers.map((_, i) => [`sacred/Work${i}`, record]));
+    const adapter = createArtAdapter({ imgBasePath: '/unused', recencyStore: null, logger: { info() {}, warn() {} },
+      artSource: { resolveCandidates: async () => readers.map((readBytes, i) => ({ id: `Work${i}`, kind: 'portrait',
+        image: `/media/img/art/sacred/Work${i}.png`, meta: { title: `Work${i}` }, readBytes })) } });
+    const service = new AmbianceService({ catalog: { load: async () => ({ profiles: { quiet: { maxEnergy: 1, maxIntensity: 2 } },
+      tracks: { 'plex:101': record }, artworks }) }, artworkSource: adapter, random: () => 0 });
+    expect(await service.match({ profile: 'quiet', trackId: 'plex:101' })).toMatchObject({ mode: 'single', match: { artId: 'sacred/Work0' } });
+    expect(readers[0]).toHaveBeenCalledTimes(1);
+    for (const readBytes of readers.slice(1)) expect(readBytes).not.toHaveBeenCalled();
+    readers[1].mockResolvedValue(Buffer.from('replaced since review'));
+    expect(await service.match({ profile: 'quiet', trackId: 'plex:101' })).toMatchObject({ mode: 'single', match: { artId: 'sacred/Work2' } });
+    expect(readers[1]).toHaveBeenCalledTimes(1);
+    expect(readers[2]).toHaveBeenCalledTimes(1);
+    for (const readBytes of readers.slice(3)) expect(readBytes).not.toHaveBeenCalled();
+  });
   it('rejects an artwork whose bytes do not match the visual review, including fallback', async () => {
     const { catalog, service } = await fixture();
     catalog.artworks['sacred/Work'].review.evidence[0].sha256 = '0'.repeat(64);

@@ -16,7 +16,8 @@ const candidate = (id, kind = 'portrait') => ({ id, kind, image: `/media/img/art
 const makeService = (catalog = doc(), ids = ['religious/comfort', 'religious/neutral']) => new AmbianceService({
   catalog: { load: async () => catalog },
   artworkSource: {
-    resolveReviewedArtworks: async () => Object.fromEntries(ids.map((id) => [id, candidate(id)])),
+    resolveArtworks: async () => Object.fromEntries(ids.map((id) => [id, candidate(id)])),
+    verifyArtwork: async (item) => item,
     presentArtwork: async (item) => ({ mode: 'single', panels: [{ image: item.image, meta: item.meta }], matte: null }),
   }, random: () => 0,
 });

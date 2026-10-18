@@ -275,26 +275,33 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     return { mode: 'single', matte: matteFromAvgs([analysis.avg]), panels: [panelOut(candidate, analysis)] };
   }
 
+  async function verifyArtwork(candidate, record) {
+    const id = candidate.id;
+    const fingerprints = (record?.review?.evidence || [])
+      .filter((item) => item.kind === 'visual' && /^[a-f0-9]{64}$/i.test(item.sha256 || ''))
+      .map((item) => item.sha256.toLowerCase());
+    if (!fingerprints.length || !candidate.readBytes) return null;
+    try {
+      // Read immediately before presentation: source/color caches do not prove freshness.
+      const bytes = await candidate.readBytes();
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      if (!fingerprints.includes(sha256)) { logger.warn?.('art.review.stale', { id }); return null; }
+      return { ...candidate, analysisKey: `${id}:${sha256}`, loadImage: () => Jimp.read(bytes) };
+    } catch (err) { logger.warn?.('art.review.unavailable', { id, error: err.message }); }
+    return null;
+  }
+
   async function resolveReviewedArtworks(records) {
     const candidates = await resolveArtworks(Object.keys(records));
     const verified = {};
     for (const [id, candidate] of Object.entries(candidates)) {
-      const fingerprints = (records[id]?.review?.evidence || [])
-        .filter((item) => item.kind === 'visual' && /^[a-f0-9]{64}$/i.test(item.sha256 || ''))
-        .map((item) => item.sha256.toLowerCase());
-      if (!fingerprints.length || !candidate.readBytes) continue;
-      try {
-        // Read on every match: directory and color caches do not prove freshness.
-        const bytes = await candidate.readBytes();
-        const sha256 = createHash('sha256').update(bytes).digest('hex');
-        if (!fingerprints.includes(sha256)) { logger.warn?.('art.review.stale', { id }); continue; }
-        verified[id] = { ...candidate, analysisKey: `${id}:${sha256}`, loadImage: () => Jimp.read(bytes) };
-      } catch (err) { logger.warn?.('art.review.unavailable', { id, error: err.message }); }
+      const current = await verifyArtwork(candidate, records[id]);
+      if (current) verified[id] = current;
     }
     return verified;
   }
 
-  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds, resolveArtworks, resolveReviewedArtworks, presentArtwork };
+  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds, resolveArtworks, verifyArtwork, resolveReviewedArtworks, presentArtwork };
 }
 
 export default createArtAdapter;

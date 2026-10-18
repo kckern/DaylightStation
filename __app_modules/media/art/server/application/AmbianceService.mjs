@@ -29,7 +29,7 @@ export class AmbianceService {
     const track = Object.hasOwn(catalog.tracks, trackId) ? { ...catalog.tracks[trackId], id: trackId } : null;
     if (!isEligible(track, profile, policy)) return neutral();
     const reviewed = Object.fromEntries(Object.entries(catalog.artworks).filter(([, art]) => isEligible(art, profile, policy, 'artwork')));
-    const available = await this.artworkSource.resolveReviewedArtworks(reviewed);
+    const available = await this.artworkSource.resolveArtworks(Object.keys(reviewed));
     const artworks = Object.fromEntries(Object.entries(catalog.artworks).filter(([id]) => Object.hasOwn(available, id)));
     while (Object.keys(artworks).length) {
       const selection = selectAmbianceArtwork({
@@ -39,7 +39,9 @@ export class AmbianceService {
       });
       if (!selection) break;
       try {
-        const presented = await this.artworkSource.presentArtwork(available[selection.artId]);
+        const verified = await this.artworkSource.verifyArtwork(available[selection.artId], reviewed[selection.artId]);
+        if (!verified) { delete artworks[selection.artId]; continue; }
+        const presented = await this.artworkSource.presentArtwork(verified);
         this.history.set(profile, [...(this.history.get(profile) || []), selection.artId].slice(-20));
         return { ...presented, match: selection };
       } catch {
