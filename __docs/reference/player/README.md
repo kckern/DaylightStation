@@ -75,6 +75,11 @@ diagrams, and `README.media-resilience.md` for the resilience change log.
 
 #### Scrolling text: placement and the manual nudge
 
+The shared scroller repeats the original paper texture from
+`media/img/player/paper.jpg`, served at `/api/v1/static/img/player/paper.jpg`.
+The image lives on the media volume rather than in the source tree or bundle.
+It scrolls with the text; an unavailable image leaves a plain warm paper color.
+
 `ContentScroller` derives its scroll position from the clock alone — media time
 becomes a progress fraction, which becomes `translateY`. Two singalong-specific
 behaviours sit on top of that:

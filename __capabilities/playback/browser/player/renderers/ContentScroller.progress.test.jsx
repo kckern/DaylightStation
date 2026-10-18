@@ -7,7 +7,10 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, act } from '@testing-library/react';
 import ContentScroller from './ContentScroller.jsx';
 
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve({})) }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', async (importOriginal) => ({
+  ...await importOriginal(),
+  DaylightAPI: vi.fn(() => Promise.resolve({}))
+}));
 
 beforeAll(() => {
   // jsdom media elements implement neither play nor pause.

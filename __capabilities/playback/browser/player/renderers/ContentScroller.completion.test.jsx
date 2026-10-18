@@ -9,7 +9,10 @@ import { render, act } from '@testing-library/react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve({})) }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', async (importOriginal) => ({
+  ...await importOriginal(),
+  DaylightAPI: vi.fn(() => Promise.resolve({}))
+}));
 
 beforeAll(() => {
   Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, writable: true, value: vi.fn(() => Promise.resolve()) });
