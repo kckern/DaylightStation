@@ -33,6 +33,19 @@ describe('matched ArtMode', () => {
     expect(screen.getAllByTestId('artmode-image')).toHaveLength(1);
   });
 
+  it('keeps a ready match when response processing outlasts the curtain safety timer', async () => {
+    DaylightAPI.mockImplementation(async (_url, data) => {
+      await Promise.resolve();
+      const until = performance.now() + 90;
+      while (performance.now() < until) { /* Simulate a busy display thread. */ }
+      return artwork(data.trackId);
+    });
+    currentTrack = track('plex:101');
+    render(scene());
+    await shown('Picture plex:101');
+    expect(DaylightAPI).toHaveBeenCalledTimes(1);
+  });
+
   it('matches distinct recordings even when titles and artists are identical', async () => {
     currentTrack = track('plex:101'); const view = render(scene()); await shown('Picture plex:101');
     currentTrack = track('plex:102', 2); view.rerender(scene()); await shown('Picture plex:102');

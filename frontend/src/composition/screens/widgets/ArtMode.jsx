@@ -200,14 +200,16 @@ function ArtMode({
     return () => ro.disconnect();
   }, []);
 
-  const clearCurtainTimers = useCallback(() => {
+  const clearCurtainTimers = useCallback(({ preserveCommit = false } = {}) => {
     if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
     if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
-    if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
+    if (!preserveCommit && commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
   }, []);
 
   const openCurtain = useCallback(() => {
-    clearCurtainTimers();
+    // The safety rail may become due while a response is being processed.
+    // Keep its pending swap; commitPending will re-close before applying it.
+    clearCurtainTimers({ preserveCommit: true });
     if (mountedRef.current) setCurtain(true);
   }, [clearCurtainTimers, setCurtain]);
 
