@@ -338,3 +338,18 @@ describe('FitnessPlayer fleet reporting', () => {
     expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null });
   });
 });
+
+describe('unattended playback budget gate', () => {
+  it('holds an exhausted allowance even when HOT is satisfied and after queue advance', async () => {
+    fixture.context.governanceState = UNLOCKED;
+    fixture.context.playbackBudget = { blocked: true, status: 'exhausted', remainingMs: 0 };
+    renderPlayer([KIDS_ITEM, NEXT_ITEM]);
+    await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false'));
+    expect(screen.getByText('Unattended playback limit reached')).toBeInTheDocument();
+    expect(screen.getByText('An adult can join to continue.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Advance playback'));
+    await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-content-id', NEXT_ITEM.contentId));
+    expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false');
+    expect(screen.getByText('Unattended playback limit reached')).toBeInTheDocument();
+  });
+});

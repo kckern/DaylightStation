@@ -17,6 +17,7 @@
 
 export const GATE_ID = Object.freeze({
   GOVERNANCE: 'governance',
+  PLAYBACK_BUDGET: 'playback_budget',
   CHECKPOINT: 'checkpoint',
   /**
    * A REQUIRED lesson companion (`ReadalongPlaylistPlayer`). Unlike the two

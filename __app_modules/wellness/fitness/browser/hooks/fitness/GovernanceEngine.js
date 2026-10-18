@@ -7,6 +7,7 @@ import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { CadenceFilter } from "./CadenceFilter.js";
 import { resolveCycleAudioCue } from "./challengeAudioCues.js";
 import { hasGovernedLabel } from "./governedContent.js";
+import { classifySupervision } from "../../../shared/supervision.mjs";
 import { GovernanceTypeRegistry } from "./GovernanceTypeRegistry.js";
 
 const normalizeLabelList = (labels) => {
@@ -2907,7 +2908,7 @@ export class GovernanceEngine {
     const settings = this.config?.unattended_policy || {};
     const superusers = new Set((this.config?.superusers || []).map(normalizeName));
     const enabled = settings.enabled !== false && superusers.size > 0;
-    const adminPresent = activeParticipants.some((id) => superusers.has(normalizeName(id)));
+    const adminPresent = classifySupervision({ participantIds: activeParticipants, supervisorIds: [...superusers] }).supervised;
     const shouldApply = enabled && !adminPresent;
     const state = this._unattendedPolicyState || {
       mediaId: this.media?.id ?? null,

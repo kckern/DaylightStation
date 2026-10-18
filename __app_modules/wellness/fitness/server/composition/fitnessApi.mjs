@@ -1,3 +1,7 @@
+import moment from 'moment-timezone';
+import { PlaybackBudgetService } from '../application/PlaybackBudgetService.mjs';
+import { YamlPlaybackBudgetStore } from '../adapters/persistence/YamlPlaybackBudgetStore.mjs';
+import { createFitnessPlaybackBudgetsRouter } from '../api/fitnessPlaybackBudgets.mjs';
 // __backend/src/5_composition/modules/fitnessApi.mjs
 // Composition wiring for Fitness API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
@@ -437,6 +441,19 @@ export function createFitnessApiRouter(config) {
   });
 
   // Expose the sweeps so app.mjs can register them on the agents Scheduler.
+  const playbackBudgetService = new PlaybackBudgetService({
+    store: new YamlPlaybackBudgetStore({ configService }),
+    policyConfig: id => fitnessConfigService.getNormalizedConfig(id),
+    contentCatalog: fitnessContentCatalog,
+    deviceDirectory: id => configService.getHouseholdDevices(id)?.devices ?? {},
+    clock: { now: () => Date.now() },
+    calendar: (now, id) => {
+      const day = moment.tz(now, configService.getHouseholdTimezone(id));
+      return { localDate: day.format('YYYY-MM-DD'), nextResetAt: day.clone().add(1, 'day').startOf('day').valueOf() };
+    },
+    logger,
+  });
+  fitnessRouter.use('/playback-budgets', createFitnessPlaybackBudgetsRouter({ service: playbackBudgetService, householdId }));
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
   fitnessRouter.voiceMemoRetryWorker = voiceMemoRetryWorker;
