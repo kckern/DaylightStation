@@ -2,6 +2,9 @@ package net.kckern.pianobridge;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.bluetooth.BluetoothDevice;
+import android.content.ComponentName;
+import android.content.Intent;
 import android.graphics.Path;
 import android.util.Log;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -42,6 +45,80 @@ public final class A11y {
 
     /** True once the system has bound the service (so gestures can dispatch). */
     public static boolean isConnected() { return svc != null; }
+
+    /** Delegate only the system's final Pair button; this method never clicks or confirms it. */
+    static boolean openBluetoothPairingDialog(BluetoothDevice device, int variant, int passkey) {
+        AccessibilityService service = svc;
+        if (service == null || device == null) return false;
+        try {
+            Intent intent = new Intent(BluetoothDevice.ACTION_PAIRING_REQUEST)
+                    .setComponent(new ComponentName("com.android.settings",
+                            "com.android.settings.bluetooth.BluetoothPairingDialog"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                    .putExtra(BluetoothDevice.EXTRA_DEVICE, device)
+                    .putExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, variant);
+            if (passkey >= 0) intent.putExtra(BluetoothDevice.EXTRA_PAIRING_KEY, passkey);
+            service.startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not open the system Bluetooth pairing dialog");
+            return false;
+        }
+    }
+
+    /** Evidence from the ACTIVE root only; Settings screens behind/alongside it grant no exemption. */
+    static boolean isMatchingBluetoothPairingDialog(String expectedName, String expectedAddress) {
+        AccessibilityService service = svc;
+        if (service == null) return false;
+        AccessibilityNodeInfo root = null;
+        try {
+            root = service.getRootInActiveWindow();
+            if (root == null) return false;
+            String packageName = String.valueOf(root.getPackageName());
+            if (!"com.android.settings".equals(packageName)) return false;
+            PairingEvidence evidence = new PairingEvidence();
+            collectPairingEvidence(root, evidence, 0, true);
+            android.view.accessibility.AccessibilityWindowInfo window = root.getWindow();
+            if (window != null) {
+                try {
+                    if (window.isActive() && window.getTitle() != null)
+                        evidence.title.append('\n').append(window.getTitle());
+                } finally { window.recycle(); }
+            }
+            return SystemPairingPolicy.matchesDialog(packageName, evidence.title.toString(),
+                    evidence.text.toString(), expectedName, expectedAddress, evidence.positiveLabel);
+        } catch (Exception e) { return false; }
+        finally { if (root != null) root.recycle(); }
+    }
+
+    private static final class PairingEvidence {
+        final StringBuilder title = new StringBuilder();
+        final StringBuilder text = new StringBuilder();
+        String positiveLabel;
+        int nodes;
+    }
+
+    private static void collectPairingEvidence(AccessibilityNodeInfo node, PairingEvidence out, int depth, boolean identityContainer) {
+        if (node == null || !node.isVisibleToUser() || depth > 32 || out.nodes++ > 400) return;
+        CharSequence text = node.getText();
+        String id = node.getViewIdResourceName();
+        boolean identityNode = identityContainer && SystemPairingPolicy.isIdentityText(id, node.isHeading(),
+                node.getClassName() == null ? null : node.getClassName().toString());
+        if (text != null) {
+            if (identityNode) out.text.append('\n').append(text);
+            if (node.isHeading() || id != null && (id.endsWith("/alertTitle") || id.endsWith("/title")))
+                out.title.append('\n').append(text);
+        }
+        if (("android:id/button1".equals(id) || "com.android.settings:id/button1".equals(id))
+                && node.isEnabled() && node.isClickable() && text != null) out.positiveLabel = text.toString();
+        for (int index = 0; index < node.getChildCount(); index++) {
+            AccessibilityNodeInfo child = node.getChild(index);
+            if (child == null) continue;
+            try { collectPairingEvidence(child, out, depth + 1, identityNode); }
+            finally { child.recycle(); }
+        }
+    }
 
     /**
      * Dispatch a tiny vertical swipe from (x,y) down by {@code len} px over

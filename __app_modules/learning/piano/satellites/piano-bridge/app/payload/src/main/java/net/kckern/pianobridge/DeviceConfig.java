@@ -171,6 +171,8 @@ public class DeviceConfig {
     /** Explicit user disconnects survive watchdog ticks, config reloads and payload swaps. */
     public boolean bluetoothMidiEnabled() { return boolOr("bluetoothMidiEnabled", true); }
     public boolean bluetoothAudioEnabled() { return boolOr("bluetoothAudioEnabled", true); }
+    /** Opt in only after the kiosk permits the exact BluetoothPairingDialog component. */
+    public boolean bluetoothSystemPairingDialogEnabled() { return boolOr("bluetoothSystemPairingDialogEnabled", false); }
 
     // --- FKB screen-wake (ScreenWaker): poke Fully Kiosk screenOn on a note so a
     //     played piano wakes a dark tablet. Set fkbPassword via `pbctl config set`.

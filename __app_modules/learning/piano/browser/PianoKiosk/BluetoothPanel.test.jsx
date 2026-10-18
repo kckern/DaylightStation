@@ -123,6 +123,18 @@ describe('Bluetooth in the piano kiosk', () => {
     expect(sent('pairing')[0].body).toEqual({ address, accept: false });
   });
 
+  it('continues consent through the native pairing dialog with explicit final approval copy', async () => {
+    current.capabilities.confirm = true;
+    current.capabilities.confirmationMode = 'system-dialog';
+    current.pairing = { address, name: 'Keyboard', variant: 'consent', passkey: null, expiresAtMs: Date.now() + 30000, error: null };
+    await mount();
+    expect(screen.getByText('Android will ask for final pairing approval.')).toBeTruthy();
+    expect(screen.queryByText(/cannot confirm.*Android/i)).toBeNull();
+    await press('Continue pairing');
+    expect(sent('pairing')[0].body).toEqual({ address, accept: true });
+    expect(screen.getByRole('group', { name: 'Pairing request' })).toBeTruthy();
+  });
+
   it('handles supported confirmation, display codes and expired pairing', async () => {
     current.capabilities.confirm = true;
     current.pairing = { address, name: 'Keyboard', variant: 'confirm', passkey: 888888, expiresAtMs: Date.now() + 30000, error: null };

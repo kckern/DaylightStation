@@ -744,6 +744,38 @@ public class KioskSettingsGuardTest {
     }
 
     @Test
+    public void foreground_onlyMatchingLiveDelegatedPairingDialogGetsTransientException() {
+        FgFkb fkb = new FgFkb();
+        long[] now = { 1_000_000L };
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), params(true, true, 0, 0), now);
+        boolean[] matchingDialog = { true };
+        g.setSystemPairingDialogAllowed(() -> matchingDialog[0]);
+        fkb.front = KioskSettingsGuard.SETTINGS_PACKAGE;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.GRACE, g.foregroundTick());
+        assertEquals(0, fkb.recalls);
+        // Back to a Settings root, expiry, cancellation or another device revokes the exception immediately.
+        matchingDialog[0] = false;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+        assertEquals(1, fkb.recalls);
+        matchingDialog[0] = true;
+        fkb.front = "com.android.chrome";
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+        assertEquals(2, fkb.recalls);
+    }
+
+    @Test
+    public void foreground_dialogEvidenceFailureAndLegacyBroadSettingsGraceGrantNoException() {
+        FgFkb fkb = new FgFkb();
+        long[] now = { 1_000_000L };
+        Params legacy = new Params(true, 60_000L, HOLD_MS, 0L, 0L, true, true, 10000L, 180000L);
+        KioskSettingsGuard g = fgGuard(fkb, new FakeNotes(), legacy, now);
+        g.setSystemPairingDialogAllowed(() -> { throw new IllegalStateException("missing active root"); });
+        fkb.front = KioskSettingsGuard.SETTINGS_PACKAGE;
+        assertEquals(KioskSettingsGuard.ForegroundVerdict.RECALLED, g.foregroundTick());
+        assertEquals(1, fkb.recalls);
+    }
+
+    @Test
     public void foreground_hoppingAppsCannotRestartTheGrace() {
         FgFkb fkb = new FgFkb();
         long[] now = { 1_000_000L };

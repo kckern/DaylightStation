@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -177,10 +178,11 @@ public final class KioskSettingsGuard {
 
     /** Fully Kiosk's own package — the only app that belongs in front. */
     static final String FKB_PACKAGE = "de.ozerov.fully";
-    /** Android Settings: reachable on purpose (Bluetooth pairing tile), so it gets a grace. */
+    /** Settings is recalled immediately, except for a verified explicitly delegated pairing dialog. */
     static final String SETTINGS_PACKAGE = "com.android.settings";
     /** The bridge's own activity (`fkb launch net.kckern.pianobridge` bounces the process). */
     static final String BRIDGE_PACKAGE = "net.kckern.pianobridge";
+    private volatile BooleanSupplier systemPairingDialogAllowed = () -> false;
 
     /** Device wiring: config from {@link DeviceConfig}, FKB over REST, log to CrashLog. */
     public KioskSettingsGuard(BridgeCore service, DeviceConfig cfg) {
@@ -199,6 +201,10 @@ public final class KioskSettingsGuard {
                     c.watchdogKioskForegroundSettingsGraceMs());
         };
         this.lastUpdateRequestAtMs = service::lastUpdateRequestAtMs;
+        this.systemPairingDialogAllowed = () -> {
+            BluetoothControls controls = service.getBluetoothControls();
+            return controls != null && controls.isSystemPairingDialogAllowed();
+        };
         this.fkb = new Fkb() {
             @Override public Map<String, String> listSettings() { return FkbRest.listSettings(held[0]); }
             @Override public boolean setBoolean(String key, String value) { return set("setBooleanSetting", key, value); }
@@ -339,6 +345,11 @@ public final class KioskSettingsGuard {
     private final AtomicInteger recallsSinceBoot = new AtomicInteger();
     private volatile int recallsThisExcursion = 0;
 
+    /** Pure test wiring for the transient dialog exception; production uses BluetoothControls. */
+    void setSystemPairingDialogAllowed(BooleanSupplier predicate) {
+        systemPairingDialogAllowed = predicate == null ? () -> false : predicate;
+    }
+
     /**
      * One foreground check: if anything but FKB is in front, call FKB back.
      *
@@ -371,6 +382,11 @@ public final class KioskSettingsGuard {
             return fg(ForegroundVerdict.HOME, app);
         }
         if (awaySinceMs == 0) awaySinceMs = now;
+        if (SETTINGS_PACKAGE.equals(app)) {
+            try {
+                if (systemPairingDialogAllowed.getAsBoolean()) return fg(ForegroundVerdict.GRACE, app);
+            } catch (Exception ignored) { /* Evidence failure grants no Settings exception. */ }
+        }
         long away = now - awaySinceMs;
         long grace = graceFor(app, p);
         if (away < grace) return fg(ForegroundVerdict.GRACE, app);
@@ -392,7 +408,7 @@ public final class KioskSettingsGuard {
     }
 
     private static long graceFor(String app, Params p) {
-        if (SETTINGS_PACKAGE.equals(app)) return p.settingsGraceMs;
+        if (SETTINGS_PACKAGE.equals(app)) return 0L;
         if (BRIDGE_PACKAGE.equals(app)) return 120_000L;
         return 0L;
     }

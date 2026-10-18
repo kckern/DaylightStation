@@ -33,6 +33,8 @@ final class ForegroundWatch {
     private final ForegroundTrail trail = new ForegroundTrail();
     private volatile DeviceConfig cfg;
     private Timer timer;
+    private final java.util.concurrent.atomic.AtomicBoolean recallInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     ForegroundWatch(BridgeCore core, DeviceConfig cfg) {
         this.core = core;
@@ -89,12 +91,15 @@ final class ForegroundWatch {
             }
             if ("kiosk.foreground.left".equals(e.msg) || "kiosk.foreground.changed".equals(e.msg)) away = true;
         }
-        if (away) {
+        // Recheck Settings even when only the activity/dialog changed within its package.
+        // A pairing exception expires or ends as soon as the active dialog no longer matches.
+        if (away || KioskSettingsGuard.SETTINGS_PACKAGE.equals(front)) {
             KioskSettingsGuard g = core.getKioskSettingsGuard();
-            if (g != null) {
+            if (g != null && recallInFlight.compareAndSet(false, true)) {
                 // Off the sampling thread: a recall can take a second.
                 new Thread(() -> {
                     try { g.foregroundTick(); } catch (Throwable t) { Log.w(TAG, "immediate recall failed", t); }
+                    finally { recallInFlight.set(false); }
                 }, "PianoBridge-fg-recall").start();
             }
         }

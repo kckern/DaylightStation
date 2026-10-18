@@ -187,8 +187,9 @@ export default function BluetoothPanel({ onBack }) {
               {pairing.passkey != null && <output className="piano-bluetooth__passkey">{String(pairing.passkey).padStart(6, '0')}</output>}
               {variant === 'display' ? <p>Enter this code on {pairing.name || 'the device'}.</p> : <>
                 <p>{variant === 'confirm' ? 'Do the codes match on both devices?' : 'Allow this device to pair?'}</p>
+                {capabilities.confirmationMode === 'system-dialog' && capabilities.confirm && <p>Android will ask for final pairing approval.</p>}
                 {!capabilities.confirm && <p className="piano-bluetooth__error">This tablet cannot confirm pairing through Android. Confirmation capability is unavailable.</p>}
-                <TransportButton label="Confirm pairing" disabled={disabled || !capabilities.confirm} onPress={() => command('pairing', { address: pairing.address, accept: true })} />
+                <TransportButton label={capabilities.confirmationMode === 'system-dialog' ? 'Continue pairing' : 'Confirm pairing'} disabled={disabled || !capabilities.confirm} onPress={() => command('pairing', { address: pairing.address, accept: true })} />
               </>}
             </> : <p>Pairing… Waiting for the device.</p>}
             <TransportButton label="Reject pairing" disabled={busy || !fresh} onPress={() => command('pairing', { address: pairing.address, accept: false })} />

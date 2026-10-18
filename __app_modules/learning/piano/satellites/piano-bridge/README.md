@@ -1,9 +1,10 @@
 # Piano Bridge (APK)
 
-> **Payload p29 (`p29-bluetooth-controls`).** Bluetooth controls now run inside the
+> **Payload p30 (`p30-system-pairing`).** Bluetooth controls now run inside the
 > maintenance drawer through native APIs. The drawer does not launch Android Settings.
-> Remove `com.android.settings` from Fully's app whitelist and set
-> `watchdogKioskForegroundSettingsGraceMs: 0` on upgraded installations.
+> Remove package-wide `com.android.settings` access from Fully. The optional protected
+> pairing dialog uses a single activity exemption, described below; other Settings
+> screens are recalled on every foreground sample.
 
 ### Bluetooth controls
 
@@ -21,9 +22,22 @@ read state again to confirm a completed change. All mutations require JSON `POST
 | `/bluetooth/pairing` | `{ "address": "AA:BB:CC:DD:EE:FF", "accept": true, "pin": "optional" }` |
 
 Pairing replies apply only to the explicitly requested device for 60 seconds. PINs
-are never logged. Android may restrict numeric comparison/consent to privileged apps;
-`capabilities.confirm` reports that permission and the panel disables unsupported
-confirmation. No Settings fallback is launched. Discovery requires Location on Android 10.
+are never logged. Android may restrict numeric comparison/consent to privileged apps. With
+`bluetoothSystemPairingDialogEnabled: true` and the accessibility helper bound,
+`capabilities.confirmationMode` is `system-dialog`: Continue pairing opens only
+Android's final pairing dialog for the requested device. The person must press Pair;
+the bridge never clicks it. Without that opt-in/helper or direct privilege, confirmation
+is disabled. Discovery requires Location on Android 10.
+
+For Fully installations using delegated consent, keep `disableOtherApps: true`,
+whitelist only `com.android.settings/.bluetooth.BluetoothPairingDialog`, and blacklist
+`com.android.settings/.Settings*` to block general Settings aliases. Do not whitelist
+the Settings package. A package-wide Settings blacklist also blocks the isolated
+dialog because blacklists take precedence. The bridge independently permits only a
+visible matching pairing dialog during its explicit, unexpired delegation; every
+other Settings view is recalled on the next one-second sample. The dialog starts
+in a fresh task, so Back returns to the kiosk. Installation policy is an operator
+configuration; the Bluetooth panel does not change it.
 Disconnect and Forget persist role disable flags so reconnect watchdogs respect them;
 Connect re-enables the selected audio or MIDI target. `pbctl bluetooth` exposes the same
 commands; see `cli/README.md` for syntax.
