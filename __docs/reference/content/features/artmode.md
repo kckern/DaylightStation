@@ -110,15 +110,112 @@ The surface owns its own input: left/right shuffle the artwork (and advance the 
 
 ---
 
+## Reviewed music matching
+
+A preset with `matching: { profile: quiet }` uses a separate, reviewed catalog at
+`data/household/art/ambiance.yml`. This mode holds exactly one artwork for each
+recording, including the first song. Portraits remain single panels. Track changes
+use curtains; timers and crossfades do not repick the artwork. Pause, seeking and
+brightness changes hold the current selection. Late responses from a previous
+recording cannot replace the current match.
+
+```yaml
+presets:
+  quiet-evening:
+    matching: { profile: quiet }
+    advance: track
+    music: { queue: 'plex:12345', shuffle: true, volume: 0.2 }
+```
+
+The profile automatically supplies `music.eligibilityProfile`. Before starting
+audio, the client intersects the playlist with approved recording IDs. An absent
+or unavailable eligibility response holds playback. Recording identity, rather
+than song title, distinguishes arrangements; each repeat play has a new occurrence.
+
+Catalog version 1 contains `profiles`, `tracks`, `artworks` and optional `pairings`
+maps. Track keys are canonical content IDs; artwork keys are scope-relative paths
+such as `sacred/peace/Artist - Date - Title`. The catalog is reread for each request;
+missing or malformed data never opens the ordinary random-art pool.
+
+```yaml
+version: 1
+profiles:
+  quiet:
+    maxEnergy: 1
+    maxIntensity: 2
+    excludedSeasons: [christmas, nativity]
+    allowedMedia: [painting, drawing, watercolor, digital-painting]
+    minScore: 3
+    fallbackArtIds: [sacred/peace/Artist - Date - Title]
+tracks: {}
+artworks: {}
+pairings: {} # recording ID -> array of explicitly paired artwork IDs
+```
+
+Both recordings and artworks carry extensible arrays `subjects`, `narratives`,
+`themes`, `symbols`, `moods`, and `seasons`, plus integer `energy` and `intensity`
+levels 0–3. Artworks also carry `mediumKind`. A review contains `status`,
+`profiles`, `reviewer`, `reviewedAt`, `reason`, and an `evidence` array. Each piece
+of evidence has a `kind` and a `path`, `url` or `details`; visual or recording
+assessments should retain exact asset checksums and their method. Acquisition
+status alone is not a review.
+
+Eligibility gates apply before matching, overrides and fallbacks. Matching favors
+shared narratives, themes, subjects, symbols and moods; energy/intensity limits
+and incompatible moods filter the choices first. Variety and recent-pick avoidance
+operate among strong matches. Explicit pairings may express intentional emotional
+contrast but cannot bypass eligibility. A missing match uses only an eligible,
+compatible configured fallback; otherwise the surface is neutral with no panels.
+
+The additive API is `GET /api/v1/art/ambiance/:profile/tracks` and
+`POST /api/v1/art/ambiance/:profile/match` with `{trackId, recentIds?}`. The first
+returns `{trackIds}`; the second returns the normal artwork presentation plus
+`match`, or `{mode:'neutral', panels:[], matte:null, match:{kind:'neutral'}}`.
+
+### Audit and acquisition CLI
+
+Run `node cli/art-ambiance.cli.mjs help` for flags. Audit concrete playlist contents
+against the catalog and actual artwork files before publication:
+
+```bash
+node cli/art-ambiance.cli.mjs audit --catalog "$CATALOG" --profile quiet \
+  --playlist "$PLAYLIST_JSON" --art-root "$ART_ROOT" --output "$REPORT"
+```
+
+Playlist JSON is `{ "trackIds": ["plex:123"] }`. The report detects unapproved
+playlist additions, missing approved recordings, missing image files, ineligible
+approvals and per-recording semantic/override/fallback/neutral coverage. Violations
+return a nonzero exit code. The caller must export actual playlist contents rather
+than substituting its intended ID list.
+
+The harvest commands accept a saved collection HTML page and complete paginated
+Shopify product JSON inventories. `harvest-plan` rejects an incomplete inventory,
+selects unframed print/rolled-canvas source images, removes CDN resize parameters,
+and deduplicates artist/title across the existing library and inventory. Artist
+comes from the product's artist tag, not its publisher or URL slug. Inspect the
+manifest for media exclusions and ambiguous sources before importing.
+
+`harvest-download --manifest "$MANIFEST" --cache "$CACHE" --allow-write` validates
+actual image bytes, retries transient failures and resumes matching cached URLs.
+`harvest-import --manifest "$MANIFEST" --cache "$CACHE" --existing "$LIBRARY" \
+--destination "$DESTINATION" --allow-write` deduplicates by identity and actual
+SHA-256, never overwrites existing assets, and writes image/metadata folders
+atomically. Both operate only on manifest entries with `status: download`.
+Imported sidecars preserve source/product/collection URLs, tags, artist, pixel
+dimensions and checksum, and start with `curation_status: unreviewed`. Published
+CDN resolution is preserved without upscaling; it may be smaller than the original
+studio file. Framed mockups or unavailable clean sources remain held.
+
 ## Source map
 
 | Concern | Directory |
 |---------|-----------|
-| Art adapter, collection resolution, sources, recency store, content source | `__backend/src/1_adapters/content/art/` |
-| Recency window and mat derivation (pure domain) | `__backend/src/2_domains/art/` |
+| Art adapter, collection resolution, sources, recency store, content source | `__app_modules/media/art/server/adapters/` |
+| Eligibility, matching, recency and mat derivation (pure domain) | `__app_modules/media/art/server/domain/` |
 | Shared Immich photo-label helpers | `__backend/src/1_adapters/content/gallery/immich/` |
-| Art API (featured, preset) | `__backend/src/4_api/v1/routers/` |
-| ArtMode widget, layout, view modes, advance resolution | `frontend/src/screen-framework/widgets/` |
-| Background-music playlist (shuffle wrap-seam) | `frontend/src/lib/Player/` |
-| Catalogs (collections, presets/frames) | `data/household/config/` |
-| Persistent recency log | `data/household/history/media_memory/` |
+| Art API (featured, preset, ambiance) | `__app_modules/media/art/server/api/` |
+| ArtMode widget, layout, view modes, advance resolution | `frontend/src/composition/screens/widgets/` |
+| Background-music playlist (shuffle wrap-seam) | `__capabilities/playback/browser/playlist.js` |
+| Catalogs (collections, presets/frames, ambiance) | `data/household/art/` |
+| Persistent recency log | `data/household/media/memory/art.yml` |
+| Audit and acquisition tooling | `__app_modules/media/art/cli/`, `cli/art-ambiance.cli.mjs` |
