@@ -112,20 +112,22 @@ function ArtMode({
   fillSingles = true, fillCropTopBottom = 13, fillCropSides = 25, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
-  music = null, collection = null,
+  music = null, collection = null, matching = null,
   advance = 'hold', transition = 'curtains', intervalSec = null, crossfadeMs = CROSSFADE_MS,
   rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS, cycleDedupeMs = CYCLE_DEDUPE_MS,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
+  const matchingProfile = matching?.profile || null;
+  const requestSequenceRef = useRef(0);
 
   // Concrete advance trigger + transition style. `effectiveAdvance` collapses the
   // (advance, music, interval) config — including the 'auto' fallback chain — into
   // one of 'hold' | 'track' | 'timer' (resolveAdvance.js). `isCrossfade` swaps the
   // velvet curtain for a stacked cross-dissolve (ArtLayer planes).
   const intervalMs = Number(intervalSec) > 0 ? Number(intervalSec) * 1000 : 0;
-  const effectiveAdvance = resolveAdvance({ advance, hasMusic: !!music, intervalMs });
-  const isCrossfade = transition === 'crossfade';
+  const effectiveAdvance = matchingProfile ? 'track' : resolveAdvance({ advance, hasMusic: !!music, intervalMs });
+  const isCrossfade = !matchingProfile && transition === 'crossfade';
 
   // Crossfade planes: each is a fully self-contained matted picture (ArtLayer) that
   // dissolves in over the one beneath. A plane is revealed (opacity → 1) only once
@@ -223,7 +225,9 @@ function ArtMode({
   }, [curtainMinMs, openCurtain]);
 
   const musicRef = useRef(null);
-  const { track: musicTrack, next: musicNext, prev: musicPrev, toggle: musicToggle, seek: musicSeek } = useBackgroundMusic(musicRef, music);
+  const playbackMusic = useMemo(() => matchingProfile && music
+    ? { ...music, eligibilityProfile: matchingProfile } : music, [music, matchingProfile]);
+  const { track: musicTrack, next: musicNext, prev: musicPrev, toggle: musicToggle, seek: musicSeek } = useBackgroundMusic(musicRef, playbackMusic);
 
   // The music plaque renders from `displayTrack`, a gated mirror of the live
   // `musicTrack`. In hold mode it follows the live track; during a track-driven
@@ -262,11 +266,17 @@ function ArtMode({
       plaqueGateRef.current = false;
     }
     logger.info('artmode.loaded', { mode: data?.mode ?? null, count: data?.panels?.length ?? 0 });
-  }, [logger, setCurtain, openCurtain, curtainCloseMs, curtainMaxMs]);
+    if (!data.panels?.length) scheduleReveal();
+  }, [logger, setCurtain, openCurtain, curtainCloseMs, curtainMaxMs, scheduleReveal]);
 
   const featuredUrl = collection
     ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
     : 'api/v1/art/featured';
+  // Read the track through the ref so changing recordings does not recreate the
+  // loader and accidentally trigger both a mount load and a track-change load.
+  const fetchArtwork = useCallback(() => matchingProfile
+    ? DaylightAPI(`api/v1/art/ambiance/${encodeURIComponent(matchingProfile)}/match`, { trackId: musicTrackRef.current?.id }, 'POST')
+    : DaylightAPI(featuredUrl), [matchingProfile, featuredUrl]);
 
   // Reveal a freshly-painted plane, then prune everything beneath it a crossfade
   // later (by which point the dissolve has fully covered them).
@@ -296,6 +306,7 @@ function ArtMode({
   }, [featuredUrl, logger]);
 
   const loadCurtain = useCallback(() => {
+    const request = ++requestSequenceRef.current;
     // Drop the curtain (covers the swap); it parts after the MIN dwell once the
     // art loads, or by MAX at the latest (a rail so it can never stick down).
     loadedRef.current = 0;
@@ -314,20 +325,25 @@ function ArtMode({
       ? now + curtainCloseMs
       : Math.max(closeCompleteAtRef.current, now);
     maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
-    DaylightAPI(featuredUrl)
+    fetchArtwork()
       .then((data) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || request !== requestSequenceRef.current) return;
         pendingArtRef.current = data;
         const remaining = Math.max(0, closeCompleteAtRef.current - nowMs());
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
         commitTimerRef.current = setTimeout(commitPending, remaining);
       })
       .catch((err) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || request !== requestSequenceRef.current) return;
+        if (matchingProfile) {
+          setArt({ mode: 'neutral', panels: [] });
+          setDisplayTrack(musicTrackRef.current);
+          plaqueGateRef.current = false;
+        }
         setFailed(true);
         logger.error('artmode.load-failed', { error: err.message });
       });
-  }, [logger, clearCurtainTimers, openCurtain, setCurtain, commitPending, curtainMaxMs, curtainCloseMs, featuredUrl]);
+  }, [logger, clearCurtainTimers, openCurtain, setCurtain, commitPending, curtainMaxMs, curtainCloseMs, fetchArtwork, matchingProfile]);
 
   // Single entry point both the mount load and every advance go through; it picks
   // the active transition (cross-dissolve planes vs. the velvet curtain swap).
@@ -339,7 +355,10 @@ function ArtMode({
   // If the fetch fails there are no images to wait on — part the curtain (still
   // honoring the minimum dwell so the effect never flashes by).
   useEffect(() => { if (failed) scheduleReveal(); }, [failed, scheduleReveal]);
-  useEffect(() => { logger.info('artmode.mount', { placard }); load(); }, [logger, load, placard]);
+  useEffect(() => {
+    logger.info('artmode.mount', { placard });
+    if (!matchingProfile) load();
+  }, [logger, load, placard, matchingProfile]);
 
   // Image-advance mode + music-plaque gating, in one effect so ordering is fixed.
   // `advance: 'hold'` (default) keeps one artwork up until remount/refresh and the
@@ -351,14 +370,17 @@ function ArtMode({
   useEffect(() => {
     if (!musicTrack) return;
     if (effectiveAdvance !== 'track') { setDisplayTrack(musicTrack); return; }
-    if (firstTrackRef.current) { firstTrackRef.current = false; setDisplayTrack(musicTrack); return; }
+    if (firstTrackRef.current) {
+      firstTrackRef.current = false;
+      if (!matchingProfile) { setDisplayTrack(musicTrack); return; }
+    }
     // Curtain swaps pin the plaque so it changes WITH the art behind the drape; a
     // crossfade has no closed cover, so the plaque just follows the song live.
     if (isCrossfade) setDisplayTrack(musicTrack);
     else plaqueGateRef.current = true;
     logger.info('artmode.advance', { trigger: 'track', title: musicTrack.title });
     load();
-  }, [musicTrack, effectiveAdvance, isCrossfade, load, logger]);
+  }, [musicTrack, effectiveAdvance, isCrossfade, load, logger, matchingProfile]);
 
   // Timer advance: step the artwork every intervalMs (advance 'timer', or 'auto'
   // with no music). Music-independent; works with either transition.
