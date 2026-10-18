@@ -32,6 +32,12 @@ describe('ambiance eligibility', () => {
 });
 
 describe('ambiance matching', () => {
+  it.each(['photograph', 'unknown', undefined])('rejects %s when a profile permits only painted or drawn art', (mediumKind) => {
+    expect(select({ policy: { ...policy, allowedMedia: ['painting', 'drawing', 'watercolor', 'digital-painting'] }, artworks: { photo: record({ mediumKind }) } })).toBeNull();
+  });
+  it('allows a reviewed painting while the media rule leaves music eligibility intact', () => {
+    expect(select({ policy: { ...policy, allowedMedia: ['painting'] }, artworks: { painted: record({ mediumKind: 'painting' }) } })).toMatchObject({ artId: 'painted' });
+  });
   it('selects shared spiritual themes with a reason', () => {
     expect(select()).toMatchObject({ artId: 'good', kind: 'matched' });
     expect(select().reasons).toContain('themes:comfort');

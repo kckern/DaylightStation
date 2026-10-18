@@ -23,6 +23,7 @@ export function useBackgroundMusic(audioRef, music) {
   const [track, setTrack] = useState(null);
   const queue = music?.queue || null;
   const shuffle = !!music?.shuffle;
+  const eligibilityProfile = music?.eligibilityProfile || null;
   const volume = music?.volume;
 
   // Effective output = preset local volume × the screen's software master (so the
@@ -51,6 +52,7 @@ export function useBackgroundMusic(audioRef, music) {
 
     let cancelled = false;
     let tracks = [];
+    let occurrence = 0;
     let order = [];
     let pos = 0;
     let gestureHandler = null;
@@ -84,7 +86,7 @@ export function useBackgroundMusic(audioRef, music) {
       if (!e || !tracks.length) return;
       const t = tracks[order[p]];
       e.src = t.mediaUrl;
-      setTrack({ title: t.title, artist: t.artist });
+      setTrack({ title: t.title, artist: t.artist, id: t.id ?? null, occurrence: ++occurrence });
       logger().debug?.('artmode.music.track', { title: t.title, artist: t.artist });
       safePlay(e);
     };
@@ -133,14 +135,24 @@ export function useBackgroundMusic(audioRef, music) {
 
     (async () => {
       let resp;
+      let allowedIds = null;
       try {
-        resp = await DaylightAPI(`api/v1/queue/${encodeURIComponent(queue)}${shuffle ? '?shuffle=1' : ''}`);
+        const queueUrl = `api/v1/queue/${encodeURIComponent(queue)}${shuffle ? '?shuffle=1' : ''}`;
+        if (eligibilityProfile) {
+          const [items, eligibility] = await Promise.all([
+            DaylightAPI(queueUrl),
+            DaylightAPI(`api/v1/art/ambiance/${encodeURIComponent(eligibilityProfile)}/tracks`),
+          ]);
+          resp = items;
+          allowedIds = new Set(Array.isArray(eligibility?.trackIds) ? eligibility.trackIds : []);
+        } else resp = await DaylightAPI(queueUrl);
       } catch (err) {
         if (!cancelled) { logger().warn?.('artmode.music.error', { error: err?.message }); setTrack(null); }
         return;
       }
       if (cancelled) return;
       tracks = toTracks(resp);
+      if (allowedIds) tracks = tracks.filter((item) => item.id && allowedIds.has(item.id));
       if (!tracks.length) { logger().info?.('artmode.music.empty'); setTrack(null); return; }
       order = shuffle ? shuffleOrder(tracks.length) : tracks.map((_, i) => i);
       pos = 0;
@@ -169,7 +181,7 @@ export function useBackgroundMusic(audioRef, music) {
   // Volume is intentionally omitted: it's applied live via effVolRef + the
   // effectiveVolume effect above, so changing it must not reload the playlist.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue, shuffle]);
+  }, [queue, shuffle, eligibilityProfile]);
 
   return { track, next, prev, toggle, seek };
 }

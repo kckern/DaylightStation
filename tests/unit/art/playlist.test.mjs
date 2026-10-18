@@ -3,6 +3,14 @@ import { toTracks, advanceIndex, shuffleOrder, shuffleOrderAvoiding }
   from "../../../__capabilities/playback/browser/playlist.js";
 
 describe('toTracks', () => {
+  it('keeps canonical recording identity when hymn titles are identical', () => {
+    const out = toTracks({ items: [
+      { id: 'plex:101', title: 'Same hymn', mediaUrl: 'quiet.mp3' },
+      { contentId: 'plex:102', title: 'Same hymn', mediaUrl: 'anthem.mp3' },
+      { ratingKey: '103', source: 'plex', mediaUrl: 'third.mp3' },
+    ] });
+    expect(out.map((track) => track.id)).toEqual(['plex:101', 'plex:102', 'plex:103']);
+  });
   it('maps items to {mediaUrl,title,artist}', () => {
     expect(toTracks({ items: [
       { mediaUrl: 'a.mp3', title: 'A', artist: 'X' },

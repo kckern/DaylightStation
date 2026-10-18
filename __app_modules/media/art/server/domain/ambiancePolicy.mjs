@@ -5,7 +5,7 @@ const labels = (values) => new Set(Array.isArray(values)
 const level = (value) => Number.isInteger(value) && value >= 0 && value <= 3;
 
 /** Eligibility is a hard gate, including for pinned pairings and fallbacks. */
-export function isEligible(record, profileKey, policy) {
+export function isEligible(record, profileKey, policy, mediaType = null) {
   const review = record?.review;
   if (!policy || !review || review.status !== 'approved' || !review.profiles?.includes(profileKey)) return false;
   if (!review.reviewer || !review.reviewedAt || !review.reason || !Array.isArray(review.evidence) ||
@@ -13,6 +13,7 @@ export function isEligible(record, profileKey, policy) {
   if (!Array.isArray(record.seasons) || !level(record.energy) || !level(record.intensity)) return false;
   if (!level(policy.maxEnergy) || !level(policy.maxIntensity)) return false;
   if (record.energy > policy.maxEnergy || record.intensity > policy.maxIntensity) return false;
+  if (mediaType === 'artwork' && policy.allowedMedia && !labels(policy.allowedMedia).has(record.mediumKind)) return false;
   const excluded = labels(policy.excludedSeasons);
   return ![...labels(record.seasons)].some((season) => excluded.has(season));
 }
@@ -54,7 +55,7 @@ function choose(pool, recentIds, random) {
 /** Select exactly one reviewed image; null explicitly means neutral output. */
 export function selectAmbianceArtwork({ track, artworks = {}, profileKey, policy, recentIds = [], overrides = {}, random = Math.random }) {
   if (!isEligible(track, profileKey, policy)) return null;
-  const eligible = Object.entries(artworks).filter(([, art]) => isEligible(art, profileKey, policy));
+  const eligible = Object.entries(artworks).filter(([, art]) => isEligible(art, profileKey, policy, 'artwork'));
   const pinned = new Set(Array.isArray(overrides[track.id]) ? overrides[track.id] : []);
   const explicit = eligible.filter(([id]) => pinned.has(id)).map(([artId]) => ({ artId, kind: 'override', reasons: ['curated-pairing'] }));
   if (explicit.length) return choose(explicit, recentIds, random);

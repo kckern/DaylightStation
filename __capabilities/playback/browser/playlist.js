@@ -6,11 +6,16 @@ export function toTracks(queueResponse) {
   if (!Array.isArray(items)) return [];
   return items
     .filter((it) => it && it.mediaUrl)
-    .map((it) => ({
+    .map((it) => {
+      const raw = it.contentId ?? it.id ?? it.ratingKey;
+      const id = raw == null ? null : String(raw).includes(':') ? String(raw) : `${it.source || 'plex'}:${raw}`;
+      return ({
       mediaUrl: it.mediaUrl,
       title: it.title || '',
       artist: it.artist || it.grandparentTitle || '',
-    }));
+      ...(id ? { id } : {}),
+      });
+    });
 }
 
 // Next position in a wrapping playlist; 0 when the list is empty.

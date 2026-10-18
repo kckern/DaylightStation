@@ -30,6 +30,47 @@ function makeFakeEl() {
 describe('useBackgroundMusic', () => {
   beforeEach(() => { DaylightAPI.mockReset(); });
 
+  it('filters source drift to reviewed recording IDs before audio starts', async () => {
+    DaylightAPI.mockImplementation(async (url) => String(url).includes('/tracks')
+      ? { trackIds: ['plex:101'] }
+      : { items: [
+        { id: 'plex:999', title: 'Unreviewed seasonal anthem', mediaUrl: 'unsafe.mp3' },
+        { id: 'plex:101', title: 'Same hymn', mediaUrl: 'gentle.mp3' },
+        { id: 'plex:102', title: 'Same hymn', mediaUrl: 'bouncy.mp3' },
+      ] });
+    const el = makeFakeEl();
+    const { result } = renderHook(() => useBackgroundMusic({ current: el }, { queue: 'q', eligibilityProfile: 'quiet' }));
+    await waitFor(() => expect(result.current.track?.id).toBe('plex:101'));
+    expect(el.src).toBe('gentle.mp3');
+    act(() => el.fire('ended'));
+    expect(el.src).toBe('gentle.mp3');
+    expect(result.current.track.occurrence).toBe(2);
+  });
+
+  it('keeps audio silent when eligibility cannot be verified', async () => {
+    DaylightAPI.mockImplementation(async (url) => {
+      if (String(url).includes('/tracks')) throw new Error('catalog unavailable');
+      return { items: [{ id: 'plex:101', title: 'Unknown arrangement', mediaUrl: 'a.mp3' }] };
+    });
+    const el = makeFakeEl();
+    const { result } = renderHook(() => useBackgroundMusic({ current: el }, { queue: 'q', eligibilityProfile: 'quiet' }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(el.src).toBe(''); expect(el.paused).toBe(true); expect(result.current.track).toBeNull();
+  });
+
+  it('distinguishes recording changes even when the labels are identical', async () => {
+    DaylightAPI.mockResolvedValue({ items: [
+      { id: 'plex:101', title: 'Same hymn', artist: 'Choir', mediaUrl: 'one.mp3' },
+      { id: 'plex:102', title: 'Same hymn', artist: 'Choir', mediaUrl: 'two.mp3' },
+    ] });
+    const el = makeFakeEl();
+    const { result } = renderHook(() => useBackgroundMusic({ current: el }, { queue: 'q' }));
+    await waitFor(() => expect(result.current.track?.id).toBe('plex:101'));
+    act(() => result.current.next());
+    expect(result.current.track).toMatchObject({ id: 'plex:102', occurrence: 2 });
+    expect(el.src).toBe('two.mp3');
+  });
+
   it('loads the queue, sets volume, and exposes the first track', async () => {
     DaylightAPI.mockResolvedValue({ items: [
       { mediaUrl: 'a.mp3', title: 'A', artist: 'X' },
