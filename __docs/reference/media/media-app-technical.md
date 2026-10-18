@@ -306,6 +306,13 @@ Returns media-app configuration including `searchScopes`.
 
 ### 2.3 Device / remote surface
 
+Fitness playback binds its local imperative Player handle to the shared session
+registry at the `FitnessPlayer` mount. Its app-level `DeviceStatePublisher` only
+reads that registry. The fitness context also stores raw media elements for
+governance and overlays; those are not Player handles and must not feed the
+fleet session bridge. Unmounting the Player removes its registration so the
+next device heartbeat reports idle rather than the previous title.
+
 #### `GET /api/v1/device/config`
 Returns the fleet.
 
