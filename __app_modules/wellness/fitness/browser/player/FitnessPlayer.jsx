@@ -1,3 +1,4 @@
+import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
@@ -205,6 +206,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   } = useFitness() || {};
   const refetchScreenData = useScreenDataRefetch();
   const playerRef = useRef(null); // imperative Player API
+  // Fleet reporting needs the Player handle, not the raw video stored in fitness context.
+  usePlayerSessionBinding(() => playerRef.current);
 
   // Realtime player-frame capture for the session time-lapse (role:'player').
   // Mirrors the webcam capture; reuses the same save_screenshot pipeline.

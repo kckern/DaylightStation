@@ -24,7 +24,6 @@ import useDayOfWeek from "../../../../frontend/src/hooks/useDayOfWeek.js";
 import VoiceMemoOverlay from "./player/overlays/VoiceMemoOverlay.jsx";
 import FitnessToast from "./player/overlays/FitnessToast.jsx";
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
-import { usePlayerSessionBinding } from "../../../../__capabilities/playback/browser/sessions.mjs";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
 import { useFitnessContext } from "./context/FitnessContext.jsx";
@@ -1821,8 +1820,8 @@ const FitnessApp = () => {
 // ?device=garage-tv, set in start-browser-kiosk.sh), publish live
 // device-state so the /media Devices view shows what's playing here. The id
 // must be explicit — a laptop opening /fitness must not impersonate the
-// garage display. The binding reads the FitnessPlayer's registered Player
-// ref via context; when no player is mounted the published state is idle.
+// garage display. FitnessPlayer binds its own imperative Player handle into
+// the session registry; when no player is mounted the published state is idle.
 // Device identity is captured at MODULE LOAD and persisted: the router
 // immediately rewrites the URL to /fitness/home, dropping ?device=…, and
 // every subsequent same-tab reload starts from the rewritten URL — reading
@@ -1845,9 +1844,6 @@ const FLEET_DEVICE_ID = (() => {
 })();
 
 const FitnessFleetPublisher = () => {
-  const fitnessCtx = useFitnessContext();
-  const playerRefObj = fitnessCtx?.videoPlayerRef ?? null;
-  usePlayerSessionBinding(() => playerRefObj?.current ?? null);
   return <DeviceStatePublisher deviceId={FLEET_DEVICE_ID} />;
 };
 

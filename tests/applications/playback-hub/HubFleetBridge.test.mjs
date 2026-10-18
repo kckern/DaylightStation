@@ -111,9 +111,16 @@ describe('mapLaneToSnapshot', () => {
       title: 'Clair de Lune',
     });
     expect(snapshot.position).toBe(0);
-    expect(snapshot.queue.currentIndex).toBe(3);
+    expect(snapshot.queue.currentIndex).toBe(-1);
     expect(snapshot.config.volume).toBe(42);
     expect(snapshot.meta).toEqual({ ownerId: 'speaker-red', updatedAt: nowIso });
+    expect(validateSessionSnapshot(snapshot)).toEqual({ valid: true, errors: [] });
+  });
+
+  it.each([0, 3, 19])('keeps the unenumerated native playlist at index -1 when its native cursor is %i', (playlist_pos) => {
+    const { snapshot } = mapLaneToSnapshot(playingLane('red', { playlist_pos }), nowIso);
+    expect(snapshot.queue).toEqual({ items: [], currentIndex: -1, upNextCount: 0 });
+    expect(snapshot.currentItem).toMatchObject({ contentId: 'plex:675465', title: 'Clair de Lune' });
     expect(validateSessionSnapshot(snapshot)).toEqual({ valid: true, errors: [] });
   });
 

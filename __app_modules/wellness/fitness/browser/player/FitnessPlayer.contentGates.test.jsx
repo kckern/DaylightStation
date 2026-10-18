@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
-const fixture = vi.hoisted(() => ({ context: null, identity: null, duck: 1, cueAudio: null, videoVolume: null }));
+const fixture = vi.hoisted(() => ({ context: null, identity: null, duck: 1, cueAudio: null, videoVolume: null, playerHandle: null }));
 vi.mock('../context/FitnessContext.jsx', () => ({ useFitness: () => fixture.context, useFitnessContext: () => fixture.context }));
 vi.mock('../identity/useIdentity.js', () => ({ useIdentity: () => fixture.identity }));
 vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
@@ -20,12 +20,15 @@ vi.mock('@/lib/logging/Logger.js', () => {
 // Playback is the external boundary: expose the actual player's autoplay decision
 // without loading streaming media, and use its advance callback for item changes.
 vi.mock('../../../../media/media/browser/playback.mjs', () => ({
-  Player: React.forwardRef(({ play, advance, onProgress }, ref) => (
+  Player: React.forwardRef(({ play, advance, onProgress }, ref) => {
+    React.useImperativeHandle(ref, () => fixture.playerHandle, [fixture.playerHandle]);
+    return (
     <div data-testid="playback" data-autoplay={String(play.autoplay)} data-content-id={play.contentId}>
       <button onClick={advance}>Advance playback</button>
       <button onClick={() => onProgress({ currentTime: 1, duration: 600, paused: false })}>Playback progress</button>
     </div>
-  )),
+  );
+  }),
 }));
 vi.mock('../../../../../__capabilities/playback/browser/controller.mjs', () => ({
   usePlayerController: () => ({ seek: vi.fn(), getCurrentTime: () => 0, getDuration: () => 600, pause: vi.fn(), play: vi.fn() }),
@@ -57,6 +60,7 @@ vi.mock('./hooks/audioCuePlayer.js', () => ({
 }));
 
 import FitnessPlayer from './FitnessPlayer.jsx';
+import { createRegistrySessionSource, getPlayerSessionRegistry } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { createCycleAudioEngine } from '../../../../../tests/_fixtures/fitness/cycleAudioEngine.mjs';
 import { useRecapUnlock } from '../widgets/FitnessSessionDetailWidget/useRecapUnlock.js';
 
@@ -84,6 +88,7 @@ function renderPlayer(items = [KIDS_ITEM]) {
 }
 
 beforeEach(() => {
+  fixture.playerHandle = null;
   fixture.duck = 1;
   fixture.cueAudio = new EventTarget();
   fixture.cueAudio.play = vi.fn(async () => {});
@@ -297,5 +302,39 @@ describe('FitnessPlayer real-engine recovery audio', () => {
     expect(fixture.duck).toBe(1);
     expect(view.container.querySelector('.governance-overlay')).not.toBeNull();
     expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
+  });
+});
+
+
+describe('FitnessPlayer fleet reporting', () => {
+  it('reports the mounted player through play, pause, item changes and unmount even when fitness stores the raw video', async () => {
+    let state = 'playing';
+    let currentItem = { contentId: 'plex:673797', title: 'Kids episode', duration: 600 };
+    let position = 42;
+    const media = document.createElement('video');
+    fixture.playerHandle = {
+      getMediaElement: () => media,
+      getOwnerState: () => state,
+      getCurrentTime: () => position,
+      getDuration: () => 600,
+      getNowPlaying: () => ({ item: currentItem }),
+    };
+    fixture.context.registerVideoPlayer = (ref) => {
+      fixture.context.videoPlayerRef = { current: ref?.current ?? ref };
+    };
+    const source = createRegistrySessionSource({ registry: getPlayerSessionRegistry(), ownerId: 'garage-tv' });
+    const view = renderPlayer();
+    await waitFor(() => expect(source.getSnapshot()).toMatchObject({
+      state: 'playing', position: 42, currentItem: { contentId: 'plex:673797', title: 'Kids episode' },
+    }));
+    await waitFor(() => expect(fixture.context.videoPlayerRef.current).toBe(media));
+    state = 'paused';
+    expect(source.getSnapshot()).toMatchObject({ state: 'paused', position: 42 });
+    currentItem = { contentId: 'plex:673798', title: 'Next episode', duration: 600 };
+    position = 5;
+    state = 'playing';
+    expect(source.getSnapshot()).toMatchObject({ state: 'playing', position: 5, currentItem: { contentId: 'plex:673798', title: 'Next episode' } });
+    view.unmount();
+    expect(source.getSnapshot()).toMatchObject({ state: 'idle', currentItem: null });
   });
 });
