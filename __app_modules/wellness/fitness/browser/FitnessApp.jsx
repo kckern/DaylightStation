@@ -1563,6 +1563,7 @@ const FitnessApp = () => {
     <MantineProvider theme={{ colorScheme: 'dark' }}>
       <VolumeProvider>
         <FitnessProvider
+          deviceId={FLEET_DEVICE_ID}
           fitnessConfiguration={fitnessConfiguration}
           fitnessPlayQueue={fitnessPlayQueue}
           setFitnessPlayQueue={setFitnessPlayQueue}

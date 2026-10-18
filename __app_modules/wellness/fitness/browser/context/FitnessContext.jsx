@@ -1,3 +1,4 @@
+import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   FitnessSession,
@@ -170,7 +171,7 @@ export const useFitnessPlaylist = () => {
 export const useFitness = useFitnessContext;
 
 // Provider component
-export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false }) => {
+export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false, deviceId = null }) => {
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [, setMusicAutoEnabledState] = useState(false);
@@ -2803,7 +2804,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return session?.governanceEngine?.triggerChallenge(payload);
   }, [session]);
 
+  const playbackBudget = usePlaybackBudget({
+    deviceId, policies: governanceConfig?.playback_budgets,
+    supervisorIds: governanceConfig?.superusers, participantRoster,
+    currentMedia, governanceState, mediaRef: videoPlayerRef,
+    externalHold: Boolean(voiceMemoOverlayState?.open),
+  });
   const value = {
+    playbackBudget,
     fitnessConfiguration,
     contentSource,
     contentConfig,

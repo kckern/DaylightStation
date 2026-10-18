@@ -202,7 +202,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     setCaptureDisabled,
     trackRecentlyPlayed,
     emitAppEvent,
-    fitnessConfiguration
+    fitnessConfiguration,
+    playbackBudget,
   } = useFitness() || {};
   const refetchScreenData = useScreenDataRefetch();
   const playerRef = useRef(null); // imperative Player API
@@ -411,7 +412,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   // Live content starts through exercise governance. Fingerprint content
   // authorization is reserved for Fitness Home session replays.
-  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked);
+  const budgetBlocked = Boolean(playbackBudget?.blocked);
+  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || budgetBlocked;
 
   const [showChart, setShowChart] = useState(true);
 
@@ -440,17 +442,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   const pauseDecision = useMemo(() => resolvePause({
     seeking: { active: isSeeking },
-    // Fitness contributes exactly one gate. Naming it keeps the telemetry id
-    // (GATE_ID.GOVERNANCE) stable now that the arbiter composes N gates. The id
-    // is shared with the consumer below via gateIds.js — two bare literals that
-    // must match, in code that nothing type-checks across, is drift waiting.
-    gates: [{ blocked: videoHeld, id: GATE_ID.GOVERNANCE, seekCeiling: null }],
+    // Exercise and allowance are independent gates with stable telemetry ids.
+    gates: [
+      { blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null },
+      { blocked: budgetBlocked, id: GATE_ID.PLAYBACK_BUDGET, seekCeiling: null },
+    ],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, videoHeld, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, videoHeld, budgetBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
   // Live governance verdict for callbacks. Handlers handed to <Player> can
@@ -460,7 +462,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     enforce: enforceGovernance,
     isLocked: isGovernanceLocked,
   } = useGovernanceProgressEnforcer({
-    governancePaused,
+    governancePaused: governancePaused || budgetBlocked,
     pausePlayback,
     setVideoPlayerPaused,
     logger,
@@ -678,7 +680,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       elementPaused: Boolean(mediaElement?.paused),
       wePausedIt: wasPlayingBeforeVoiceMemoRef.current,
       // If governance is locked, the governance unlock effect will handle resume.
-      governanceLocked: governancePaused,
+      governanceLocked: governancePaused || budgetBlocked,
     });
 
     if (action === 'pause') {
@@ -703,7 +705,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         // Ignore play errors (e.g. user gesture requirements which should already be met)
       });
     }
-  }, [videoPlayerPaused, mediaElement, governancePaused]);
+  }, [videoPlayerPaused, mediaElement, governancePaused, budgetBlocked]);
 
   const TimeDisplay = useMemo(() => React.memo(function TimeDisplay({ ct, dur }) {
     return <>{formatTime(ct)} / {formatTime(dur)}</>;
@@ -818,7 +820,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     governance: effectiveGovernanceState,
     pauseDecision: {
       ...pauseDecision,
-      holdReason: voiceMemoOverlayState?.open ? 'voice_memo'
+      holdReason: budgetBlocked ? GATE_ID.PLAYBACK_BUDGET : voiceMemoOverlayState?.open ? 'voice_memo'
         : emergencyPhase && emergencyPhase !== 'normal' ? 'emergency' : null,
     },
     resilience: resilienceState,
@@ -2078,6 +2080,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const videoContent = (
     <div className="fitness-video-shell">
       <div className="player-controls-blocker"></div>
+      {budgetBlocked && <div className="playback-budget-overlay" role="status" data-testid="playback-budget-overlay">
+        <strong>{playbackBudget?.status === 'exhausted' ? 'Unattended playback limit reached'
+          : playbackBudget?.status === 'unavailable' ? 'Playback allowance unavailable' : 'Checking playback allowance…'}</strong>
+        <p>{playbackBudget?.status === 'exhausted' ? 'An adult can join to continue.' : 'Waiting for playback allowance.'}</p>
+      </div>}
+      {playbackBudget?.status === 'ready' && <span className="playback-budget-remaining" aria-label="Unattended playback remaining">
+        {Math.ceil(playbackBudget.remainingMs / 60000)} min remaining
+      </span>}
       <FitnessPlayerOverlay
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
