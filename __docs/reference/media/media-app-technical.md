@@ -313,6 +313,11 @@ governance and overlays; those are not Player handles and must not feed the
 fleet session bridge. Unmounting the Player removes its registration so the
 next device heartbeat reports idle rather than the previous title.
 
+Playback-hub speaker lanes publish their known current track and playback
+state. Their native playlist cursor does not index the fleet queue: until the
+hub supplies queue entries, that queue stays empty with `currentIndex: -1`,
+so both playing and paused publications satisfy the session contract.
+
 #### `GET /api/v1/device/config`
 Returns the fleet.
 

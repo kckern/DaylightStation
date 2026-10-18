@@ -19,13 +19,10 @@
  * Publish discipline:
  *   - Publish ONLY when the mapped snapshot materially changes
  *     (reason 'initial' on first sight of a lane, 'change' after).
- *   - While a lane has an active session (playing/paused), re-publish a
- *     `heartbeat` every ~10s (driven by the incoming 3s status ticks — no
+ *   - Re-publish a `heartbeat` for every lane every ~10s (driven by the incoming 3s status ticks — no
  *     extra timer) so DeviceLivenessService keeps the device online.
- *   - Idle lanes get no heartbeats: after ~15s of silence the liveness
- *     service flips them offline, which is the desired Fleet rendering for
- *     a disconnected/quiet speaker. If the hub itself goes dark, ticks stop
- *     and every lane ages out the same way.
+ *   - Idle lanes remain visible as idle while the hub reports them. If the
+ *     hub itself goes dark, ticks stop and every lane ages out as offline.
  *
  * Defensive: malformed status payloads / lane entries are skipped (debug
  * log), and the subscription handler never throws.
@@ -92,10 +89,10 @@ export function mapLaneToSnapshot(lane, nowIso) {
     ? lane.time_pos
     : 0;
 
+  // The hub reports a native playlist cursor, but not its queue items.
+  // That cursor cannot index the fleet's empty queue; currentItem above
+  // carries the known track without inventing entries for the native list.
   const queueSnapshot = createEmptyQueueSnapshot();
-  if (Number.isInteger(lane.playlist_pos) && lane.playlist_pos >= 0) {
-    queueSnapshot.currentIndex = lane.playlist_pos;
-  }
 
   const rawVolume = lane.volume;
   const volume = (typeof rawVolume === 'number' && Number.isFinite(rawVolume))
