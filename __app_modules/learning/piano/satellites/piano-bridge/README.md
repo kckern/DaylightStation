@@ -1,6 +1,6 @@
 # Piano Bridge (APK)
 
-> **Payload p30 (`p30-system-pairing`).** Bluetooth controls now run inside the
+> **Payload p31 (`p31-system-consent`).** Bluetooth controls now run inside the
 > maintenance drawer through native APIs. The drawer does not launch Android Settings.
 > Remove package-wide `com.android.settings` access from Fully. The optional protected
 > pairing dialog uses a single activity exemption, described below; other Settings
@@ -24,10 +24,11 @@ read state again to confirm a completed change. All mutations require JSON `POST
 Pairing replies apply only to the explicitly requested device for 60 seconds. PINs
 are never logged. Android may restrict numeric comparison/consent to privileged apps. With
 `bluetoothSystemPairingDialogEnabled: true` and the accessibility helper bound,
-`capabilities.confirmationMode` is `system-dialog`: Continue pairing opens only
-Android's final pairing dialog for the requested device. The person must press Pair;
-the bridge never clicks it. Without that opt-in/helper or direct privilege, confirmation
-is disabled. Discovery requires Location on Android 10.
+`capabilities.confirmationMode` is `system-dialog`: Android's privileged receiver
+shows the final pairing request for the device chosen in the panel. The person must
+approve in Android; the bridge never clicks its approval button. `capabilities.confirm` reports direct API
+privilege only. A system-dialog installation cannot confirm by API. Without the
+opt-in/helper or direct privilege, confirmation is unavailable. Discovery requires Location on Android 10.
 
 For Fully installations using delegated consent, keep `disableOtherApps: true`,
 whitelist only `com.android.settings/.bluetooth.BluetoothPairingDialog`, and blacklist
@@ -35,8 +36,7 @@ whitelist only `com.android.settings/.bluetooth.BluetoothPairingDialog`, and bla
 the Settings package. A package-wide Settings blacklist also blocks the isolated
 dialog because blacklists take precedence. The bridge independently permits only a
 visible matching pairing dialog during its explicit, unexpired delegation; every
-other Settings view is recalled on the next one-second sample. The dialog starts
-in a fresh task, so Back returns to the kiosk. Installation policy is an operator
+other Settings view is recalled on the next one-second sample. Android's pairing dialog has its own task affinity, so Back returns to the kiosk. Installation policy is an operator
 configuration; the Bluetooth panel does not change it.
 Disconnect and Forget persist role disable flags so reconnect watchdogs respect them;
 Connect re-enables the selected audio or MIDI target. `pbctl bluetooth` exposes the same

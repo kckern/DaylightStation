@@ -23,6 +23,16 @@ public class SystemPairingPolicyTest {
         assertFalse(SystemPairingPolicy.ownsDelegatedRequest(MAC, 2000L, MAC, 3000L, 1000L));
     }
 
+    @Test public void onlyOwnedSystemConsentVariantsPassToThePrivilegedSystemReceiver() {
+        for (int variant = 0; variant <= 7; variant++) {
+            assertEquals("untouched", SystemPairingPolicy.pairingRoute(false, variant, "system-dialog"));
+            assertEquals("app", SystemPairingPolicy.pairingRoute(true, variant, "native"));
+            assertEquals("app", SystemPairingPolicy.pairingRoute(true, variant, "unsupported"));
+            assertEquals(variant == 2 || variant == 3 || variant == 6 ? "system-dialog" : "app",
+                    SystemPairingPolicy.pairingRoute(true, variant, "system-dialog"));
+        }
+    }
+
     @Test public void activeRootMustProvePairingDialogPackageTitleDeviceAndPositiveButton() {
         assertTrue(matches("com.android.settings", "Bluetooth pairing request", "Pair with Studio Speaker?", true));
         assertFalse(matches("com.android.settings", "Settings", "Studio Speaker", true));
@@ -46,7 +56,7 @@ public class SystemPairingPolicyTest {
         assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "Pair with J20?", "J2", MAC, "Pair"));
         assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "A new device is ready", "a", MAC, "Pair"));
         assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "J2", "J2", MAC, "Unpair"));
-        assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "J2", "J2", MAC, "OK"));
+        assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "J2", "J2", MAC, "Yes"));
         assertTrue(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "J2", "J2", MAC, "Pair"));
         assertTrue(SystemPairingPolicy.matchesDialog("com.android.settings", "Pair with J2?", "Confirm connection", "J2", MAC, "Pair"));
     }
@@ -74,5 +84,14 @@ public class SystemPairingPolicyTest {
                 "Pair", MAC, "Pair"));
         assertTrue(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request", "Pair",
                 "Pair", MAC, "Pair"));
+    }
+
+    @Test public void observedSamsungConsentDialogAcceptsOkWithExactTitleAndBidiWrappedDevice() {
+        assertTrue(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request",
+                "Pair with \u202aDesk Speaker\u202c?", "Desk Speaker", MAC, "OK"));
+        assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Unpair device?",
+                "Pair with \u202aDesk Speaker\u202c?", "Desk Speaker", MAC, "OK"));
+        assertFalse(SystemPairingPolicy.matchesDialog("com.android.settings", "Bluetooth pairing request",
+                "Pair with \u202aDesk Speaker 2\u202c?", "Desk Speaker", MAC, "OK"));
     }
 }

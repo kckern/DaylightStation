@@ -47,8 +47,6 @@ public final class BluetoothControls implements BluetoothController.Port {
     private long requestedPairUntil;
     private BleMidiConnector pairingPausedConnector;
     private JSONObject pairing;
-    private int pairingVariant = -1;
-    private int pairingKey = -1;
     private String delegatedPairAddress;
     private long delegatedPairUntil;
     private String lastError;
@@ -167,7 +165,7 @@ public final class BluetoothControls implements BluetoothController.Port {
                         .put("audio", adapter != null && hasAudioMethod("connect"))
                         .put("midi", ctx.getSystemService(Context.MIDI_SERVICE) != null)
                         .put("pin", adapter != null && hasAdmin() && hasDeviceMethod("setPin", byte[].class))
-                        .put("confirm", !"unsupported".equals(confirmationMode()))
+                        .put("confirm", canConfirm())
                         .put("confirmationMode", confirmationMode()));
     }
 
@@ -252,8 +250,6 @@ public final class BluetoothControls implements BluetoothController.Port {
         requestedPairAddress = address;
         requestedPairUntil = System.currentTimeMillis() + PAIRING_WINDOW_MS;
         pairing = null;
-        pairingVariant = -1;
-        pairingKey = -1;
         delegatedPairAddress = null;
         delegatedPairUntil = 0;
         lastError = null;
@@ -359,18 +355,11 @@ public final class BluetoothControls implements BluetoothController.Port {
                 accepted = Boolean.TRUE.equals(BluetoothDevice.class.getMethod("setPairingConfirmation", boolean.class)
                         .invoke(device, true));
             } else {
-                if (!"system-dialog".equals(confirmationMode()))
-                    return pairingError("System pairing approval is not configured or the accessibility helper is unavailable");
-                delegatedPairAddress = address;
-                delegatedPairUntil = requestedPairUntil;
-                accepted = A11y.openBluetoothPairingDialog(device, pairingVariant, pairingKey);
-                if (!accepted) {
-                    delegatedPairAddress = null;
-                    delegatedPairUntil = 0;
-                    return pairingError("The system pairing dialog could not open");
-                }
-                pairing.put("error", JSONObject.NULL);
-                // Launch acceptance is not bond acceptance. The user still presses Pair in Android.
+                // OEM dialogs may themselves require BLUETOOTH_PRIVILEGED to launch.
+                // Their original system receiver opens them; this app cannot confirm for the user.
+                return pairingError("system-dialog".equals(confirmationMode())
+                        ? "Approve using the Android Bluetooth pairing dialog"
+                        : "System pairing approval is not configured or the accessibility helper is unavailable");
             }
         } else {
             return pairingError("Complete the displayed code on the Bluetooth device");
@@ -397,22 +386,24 @@ public final class BluetoothControls implements BluetoothController.Port {
                         if (!BluetoothController.ownsPairingRequest(requestedPairAddress, requestedPairUntil,
                                 device.getAddress(), System.currentTimeMillis())) return;
                         int variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1);
-                        pairingVariant = variant;
                         // Android 10: 0 PIN, 1 passkey input, 2 confirmation, 3 consent,
                         // 4 display passkey, 5 display PIN, 6 out-of-band consent, 7 16-digit PIN.
                         String kind = variant == 0 || variant == 7 ? "pin"
                                 : variant == 2 ? "confirm" : variant == 3 || variant == 6 ? "consent" : "display";
                         int passkey = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_KEY, -1);
-                        pairingKey = passkey;
                         pairing = new JSONObject().put("address", device.getAddress()).put("name", nullable(device.getName()))
                                 .put("variant", kind).put("passkey", passkey < 0 ? JSONObject.NULL : passkey)
                                 .put("expiresAtMs", requestedPairUntil).put("error", JSONObject.NULL);
                         if (("confirm".equals(kind) || "consent".equals(kind)) && "unsupported".equals(confirmationMode()))
                             pairingError("System pairing approval is not configured or the accessibility helper is unavailable");
                         else if (variant == 1) pairingError("Passkey entry is not supported by this Android API");
-                        // Our UX owns display codes and unsupported confirmation too: keep the
-                        // error/cancel surface here instead of opening Android Settings behind it.
-                        if (isOrderedBroadcast()) abortBroadcast();
+                        if ("system-dialog".equals(SystemPairingPolicy.pairingRoute(true, variant, confirmationMode()))) {
+                            // Pair/createBond was explicit consent to start this scoped flow. Let
+                            // Settings' privileged receiver open its protected pairing-only dialog;
+                            // the user, not accessibility or this app, presses Android's Pair button.
+                            delegatedPairAddress = requestedPairAddress;
+                            delegatedPairUntil = requestedPairUntil;
+                        } else if (isOrderedBroadcast()) abortBroadcast();
                     } else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action) && device != null) {
                         remember(device, null);
                         if (device.getAddress().equals(requestedPairAddress)) {
@@ -448,8 +439,6 @@ public final class BluetoothControls implements BluetoothController.Port {
         requestedPairAddress = null;
         requestedPairUntil = 0;
         pairing = null;
-        pairingVariant = -1;
-        pairingKey = -1;
         delegatedPairAddress = null;
         delegatedPairUntil = 0;
         if (pairingPausedConnector != null) {

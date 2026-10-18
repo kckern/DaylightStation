@@ -2,9 +2,6 @@ package net.kckern.pianobridge;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
-import android.bluetooth.BluetoothDevice;
-import android.content.ComponentName;
-import android.content.Intent;
 import android.graphics.Path;
 import android.util.Log;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -45,27 +42,6 @@ public final class A11y {
 
     /** True once the system has bound the service (so gestures can dispatch). */
     public static boolean isConnected() { return svc != null; }
-
-    /** Delegate only the system's final Pair button; this method never clicks or confirms it. */
-    static boolean openBluetoothPairingDialog(BluetoothDevice device, int variant, int passkey) {
-        AccessibilityService service = svc;
-        if (service == null || device == null) return false;
-        try {
-            Intent intent = new Intent(BluetoothDevice.ACTION_PAIRING_REQUEST)
-                    .setComponent(new ComponentName("com.android.settings",
-                            "com.android.settings.bluetooth.BluetoothPairingDialog"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-                    .putExtra(BluetoothDevice.EXTRA_DEVICE, device)
-                    .putExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, variant);
-            if (passkey >= 0) intent.putExtra(BluetoothDevice.EXTRA_PAIRING_KEY, passkey);
-            service.startActivity(intent);
-            return true;
-        } catch (Exception e) {
-            Log.w(TAG, "Could not open the system Bluetooth pairing dialog");
-            return false;
-        }
-    }
 
     /** Evidence from the ACTIVE root only; Settings screens behind/alongside it grant no exemption. */
     static boolean isMatchingBluetoothPairingDialog(String expectedName, String expectedAddress) {

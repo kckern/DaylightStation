@@ -3,12 +3,19 @@ package net.kckern.pianobridge;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Pure, fail-closed policy for the one system dialog delegated from an explicit pairing reply. */
+/** Pure, fail-closed policy for the one system dialog delegated from an explicitly requested pairing flow. */
 final class SystemPairingPolicy {
     private SystemPairingPolicy() { }
 
     static String confirmationMode(boolean privileged, boolean enabled, boolean accessibilityBound) {
         return privileged ? "native" : enabled && accessibilityBound ? "system-dialog" : "unsupported";
+    }
+
+    /** The original system broadcast must launch protected OEM dialogs under Settings' own identity. */
+    static String pairingRoute(boolean owned, int variant, String mode) {
+        if (!owned) return "untouched";
+        return "system-dialog".equals(mode) && (variant == 2 || variant == 3 || variant == 6)
+                ? "system-dialog" : "app";
     }
 
     static boolean ownsDelegatedRequest(String requestedAddress, long requestExpiry,
@@ -19,7 +26,8 @@ final class SystemPairingPolicy {
 
     static boolean matchesDialog(String packageName, String titles, String visibleTexts,
                                  String expectedName, String expectedAddress, String positiveLabel) {
-        if (!"com.android.settings".equals(packageName) || !"pair".equals(normalize(positiveLabel))
+        String positive = normalize(positiveLabel);
+        if (!"com.android.settings".equals(packageName) || !("pair".equals(positive) || "ok".equals(positive))
                 || titles == null || visibleTexts == null) return false;
         String name = unquote(normalize(expectedName));
         String address = normalize(expectedAddress);

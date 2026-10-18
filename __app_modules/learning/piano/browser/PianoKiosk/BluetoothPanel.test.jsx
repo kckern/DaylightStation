@@ -123,16 +123,17 @@ describe('Bluetooth in the piano kiosk', () => {
     expect(sent('pairing')[0].body).toEqual({ address, accept: false });
   });
 
-  it('continues consent through the native pairing dialog with explicit final approval copy', async () => {
-    current.capabilities.confirm = true;
+  it.each([false, true])('shows the Android approval instruction without an API confirmation button in system-dialog mode (confirm=%s)', async (confirm) => {
+    current.capabilities.confirm = confirm;
     current.capabilities.confirmationMode = 'system-dialog';
     current.pairing = { address, name: 'Keyboard', variant: 'consent', passkey: null, expiresAtMs: Date.now() + 30000, error: null };
     await mount();
-    expect(screen.getByText('Android will ask for final pairing approval.')).toBeTruthy();
+    expect(screen.getByText('Approve pairing in Android’s pairing request. If it closes, cancel and pair again.')).toBeTruthy();
     expect(screen.queryByText(/cannot confirm.*Android/i)).toBeNull();
-    await press('Continue pairing');
-    expect(sent('pairing')[0].body).toEqual({ address, accept: true });
-    expect(screen.getByRole('group', { name: 'Pairing request' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Continue pairing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm pairing' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reject pairing' })).toBeEnabled();
+    expect(sent('pairing')).toHaveLength(0);
   });
 
   it('handles supported confirmation, display codes and expired pairing', async () => {
