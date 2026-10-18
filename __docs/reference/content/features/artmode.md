@@ -113,8 +113,12 @@ The surface owns its own input: left/right shuffle the artwork (and advance the 
 ## Reviewed music matching
 
 A preset with `matching: { profile: quiet }` uses a separate, reviewed catalog at
-`data/household/art/ambiance.yml`. This mode holds exactly one artwork for each
-recording, including the first song. Portraits remain single panels. Track changes
+`data/household/art/ambiance.yml`. This mode holds one composition for each
+recording, including the first song. With `portraitPairing: true` in the profile,
+a portrait can pair with a second reviewed portrait that matches the song and is
+emotionally compatible with the primary. Landscapes remain single; a portrait
+without a safe companion also stays single. Both panels retain their own title,
+artist and available creation date. Track changes
 use curtains; timers and crossfades do not repick the artwork. Pause, seeking and
 brightness changes hold the current selection. Late responses from a previous
 recording cannot replace the current match.
@@ -146,11 +150,20 @@ profiles:
     excludedSeasons: [christmas, nativity]
     allowedMedia: [painting, drawing, watercolor, digital-painting]
     minScore: 3
+    portraitPairing: true # optional; defaults to false
+    repeatWindow: 50 # distinct recently displayed works; defaults to 50
     fallbackArtIds: [sacred/peace/Artist - Date - Title]
 tracks: {}
 artworks: {}
 pairings: {} # recording ID -> array of explicitly paired artwork IDs
 ```
+
+Matching excludes recent works before narrowing by relevance, while preserving
+the minimum score and all review gates. If every suitable choice is recent,
+the least recently shown choice can return. Both panels count toward recency.
+Per-profile history persists in `data/household/media/memory/ambiance.yml` across
+scene and server restarts. Overlapping requests for a profile share that history
+in request order. `art.ambiance.selected` logs the recording and both artwork IDs.
 
 Both recordings and artworks carry extensible arrays `subjects`, `narratives`,
 `themes`, `symbols`, `moods`, and `seasons`, plus integer `energy` and `intensity`
