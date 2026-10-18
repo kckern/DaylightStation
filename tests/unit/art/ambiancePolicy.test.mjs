@@ -56,6 +56,17 @@ describe('ambiance matching', () => {
     expect(select({ artworks: { good: record() }, recentIds: ['good'] }).artId).toBe('good');
   });
   it('uses random variation among good matches', () => expect(select({ artworks: { a: record(), b: record() }, random: () => 0.99 }).artId).toBe('b'));
+  it('uses a fresh relevant match when the sole highest-scoring work was just shown', () => {
+    expect(select({
+      track: record({ id: 'plex:101', narratives: ['prayer'] }),
+      artworks: { enos: record({ narratives: ['prayer'] }), fresh: record(), unrelated: record({ themes: ['creation'], moods: [] }) },
+      recentIds: ['enos'],
+    })).toMatchObject({ artId: 'fresh', kind: 'matched' });
+  });
+  it('reuses the least recently shown suitable work when every candidate is recent', () => {
+    expect(select({ artworks: { a: record(), b: record(), c: record() }, recentIds: ['a', 'b', 'c', 'a'] }))
+      .toMatchObject({ artId: 'b' });
+  });
   it('does not manufacture emotional contrast from theme overlap', () => {
     expect(select({ track: record({ intensity: 0 }), artworks: { heavy: record({ intensity: 2 }) } })).toBeNull();
   });

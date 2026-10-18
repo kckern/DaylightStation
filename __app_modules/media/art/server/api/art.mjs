@@ -41,6 +41,10 @@ export function createArtRouter(config = {}) {
       const result = method === 'tracks'
         ? await ambianceService.getTracks(profile)
         : await ambianceService.match({ profile, trackId: req.body.trackId, recentIds: req.body.recentIds || [] });
+      if (method === 'match') logger.info?.('art.ambiance.selected', {
+        profile, trackId: req.body.trackId, mode: result.mode,
+        artIds: [result.match?.artId, result.match?.companion?.artId].filter(Boolean),
+      });
       return res.json(result);
     } catch (err) {
       logger.warn?.('art.ambiance.unavailable', { profile, error: err.message });

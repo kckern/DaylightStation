@@ -268,11 +268,18 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     return found;
   }
 
-  async function presentArtwork(candidate) {
-    // An unreadable match is unavailable even when its old color is cached.
-    const image = await candidate.loadImage();
-    const analysis = await analyze(candidate, image);
-    return { mode: 'single', matte: matteFromAvgs([analysis.avg]), panels: [panelOut(candidate, analysis)] };
+  async function presentArtwork(candidate, companion = null) {
+    const candidates = companion ? [candidate, companion] : [candidate];
+    const analyses = [];
+    for (const item of candidates) {
+      // An unreadable match is unavailable even when its old color is cached.
+      analyses.push(await analyze(item, await item.loadImage()));
+    }
+    return {
+      mode: companion ? 'diptych' : 'single',
+      matte: matteFromAvgs(analyses.map((item) => item.avg)),
+      panels: candidates.map((item, i) => panelOut(item, analyses[i])),
+    };
   }
 
   async function verifyArtwork(candidate, record) {

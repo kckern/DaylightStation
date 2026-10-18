@@ -18,7 +18,7 @@ export function isEligible(record, profileKey, policy, mediaType = null) {
   return ![...labels(record.seasons)].some((season) => excluded.has(season));
 }
 
-function compatible(track, art, policy) {
+export function areAmbianceCompatible(track, art, policy) {
   if (Math.abs(track.intensity - art.intensity) > 1) return false;
   const trackMoods = labels(track.moods);
   const artMoods = labels(art.moods);
@@ -42,17 +42,25 @@ function relevance(track, art) {
   return { score, reasons };
 }
 
+function rested(pool, recentIds) {
+  const last = new Map(recentIds.map((id, index) => [id, index]));
+  const fresh = pool.filter((item) => !last.has(item.artId));
+  if (fresh.length || !pool.length) return fresh;
+  // A small thematic pool can run out. Reuse its oldest work, never redraw
+  // uniformly from the entire exhausted pool and accidentally repeat the last.
+  const oldest = Math.min(...pool.map((item) => last.get(item.artId)));
+  return pool.filter((item) => last.get(item.artId) === oldest);
+}
+
 function choose(pool, recentIds, random) {
-  const recent = new Set(recentIds);
-  const fresh = pool.filter((item) => !recent.has(item.artId));
-  const choices = fresh.length ? fresh : pool;
+  const choices = rested(pool, recentIds);
   if (!choices.length) return null;
   const draw = Number(random());
   const index = Math.max(0, Math.min(choices.length - 1, Math.floor((Number.isFinite(draw) ? draw : 0) * choices.length)));
   return choices[index];
 }
 
-/** Select exactly one reviewed image; null explicitly means neutral output. */
+/** Select a reviewed image; portrait companions use the same hard gates. */
 export function selectAmbianceArtwork({ track, artworks = {}, profileKey, policy, recentIds = [], overrides = {}, random = Math.random }) {
   if (!isEligible(track, profileKey, policy)) return null;
   const eligible = Object.entries(artworks).filter(([, art]) => isEligible(art, profileKey, policy, 'artwork'));
@@ -60,16 +68,19 @@ export function selectAmbianceArtwork({ track, artworks = {}, profileKey, policy
   const explicit = eligible.filter(([id]) => pinned.has(id)).map(([artId]) => ({ artId, kind: 'override', reasons: ['curated-pairing'] }));
   if (explicit.length) return choose(explicit, recentIds, random);
 
-  const scored = eligible.filter(([, art]) => compatible(track, art, policy)).map(([artId, art]) => ({
+  const scored = eligible.filter(([, art]) => areAmbianceCompatible(track, art, policy)).map(([artId, art]) => ({
     artId, kind: 'matched', ...relevance(track, art),
   })).filter((item) => item.score >= (policy.minScore ?? 3));
   if (scored.length) {
-    const best = Math.max(...scored.map((item) => item.score));
-    return choose(scored.filter((item) => item.score >= best * 0.75), recentIds, random);
+    // Apply recency across ALL suitable matches before narrowing by relevance.
+    // Otherwise a lone top-scoring work bypasses history on every request.
+    const pool = rested(scored, recentIds);
+    const best = Math.max(...pool.map((item) => item.score));
+    return choose(pool.filter((item) => item.score >= best * 0.75), [], random);
   }
 
   const fallbackIds = new Set(policy.fallbackArtIds || []);
-  const fallback = eligible.filter(([id, art]) => fallbackIds.has(id) && compatible(track, art, policy))
+  const fallback = eligible.filter(([id, art]) => fallbackIds.has(id) && areAmbianceCompatible(track, art, policy))
     .map(([artId]) => ({ artId, kind: 'fallback', reasons: ['reviewed-fallback'] }));
   return choose(fallback, recentIds, random);
 }

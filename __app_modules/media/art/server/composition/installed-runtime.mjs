@@ -1,5 +1,7 @@
 import { createArtAdapter } from '../adapters/ArtAdapter.mjs';
 import { createArtRouter } from '../api/art.mjs';
+import path from 'node:path';
+import { createArtRecencyStore } from '../adapters/artRecencyStore.mjs';
 
 export async function createArtContentRuntime({ configService, immichConfig, axios, imgBasePath, rootLogger, contentRegistry }) {
   // Art collections + optional Immich source for ArtMode.
@@ -52,6 +54,11 @@ export async function createArtContentRuntime({ configService, immichConfig, axi
         logger: rootLogger.child({ module: 'ambiance-catalog' }),
       }),
       artworkSource: artAdapter,
+      recencyStore: createArtRecencyStore({
+        filePath: path.join(configService.getHouseholdPath(''), 'media', 'memory', 'ambiance.yml'),
+        logger: rootLogger.child({ module: 'ambiance-history' }),
+      }),
+      logger: rootLogger.child({ module: 'ambiance' }),
     }),
     artService: new ArtPresetService({
       catalog: new FilesystemArtPresetCatalog({
