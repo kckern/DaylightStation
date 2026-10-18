@@ -28,16 +28,25 @@ export class AmbianceService {
     const { catalog, policy } = await this.context(profile);
     const track = Object.hasOwn(catalog.tracks, trackId) ? { ...catalog.tracks[trackId], id: trackId } : null;
     if (!isEligible(track, profile, policy)) return neutral();
-    const available = await this.artworkSource.resolveArtworks(Object.keys(catalog.artworks));
+    const reviewed = Object.fromEntries(Object.entries(catalog.artworks).filter(([, art]) => isEligible(art, profile, policy, 'artwork')));
+    const available = await this.artworkSource.resolveReviewedArtworks(reviewed);
     const artworks = Object.fromEntries(Object.entries(catalog.artworks).filter(([id]) => Object.hasOwn(available, id)));
-    const selection = selectAmbianceArtwork({
-      track, artworks, profileKey: profile, policy,
-      recentIds: [...(this.history.get(profile) || []), ...recentIds],
-      overrides: catalog.pairings, random: this.random,
-    });
-    if (!selection) return neutral();
-    const presented = await this.artworkSource.presentArtwork(available[selection.artId]);
-    this.history.set(profile, [...(this.history.get(profile) || []), selection.artId].slice(-20));
-    return { ...presented, match: selection };
+    while (Object.keys(artworks).length) {
+      const selection = selectAmbianceArtwork({
+        track, artworks, profileKey: profile, policy,
+        recentIds: [...(this.history.get(profile) || []), ...recentIds],
+        overrides: catalog.pairings, random: this.random,
+      });
+      if (!selection) break;
+      try {
+        const presented = await this.artworkSource.presentArtwork(available[selection.artId]);
+        this.history.set(profile, [...(this.history.get(profile) || []), selection.artId].slice(-20));
+        return { ...presented, match: selection };
+      } catch {
+        // Invalid image bytes must not strand a song on a broken panel.
+        delete artworks[selection.artId];
+      }
+    }
+    return neutral();
   }
 }

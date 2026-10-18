@@ -65,4 +65,11 @@ describe('matched ArtMode', () => {
     expect(screen.getByAltText('Picture selection-1')).toBeInTheDocument();
     expect(count).toBe(1);
   });
+
+  it('returns to neutral if the current matched image fails in the browser', async () => {
+    currentTrack = track('plex:101'); render(scene()); await shown('Picture plex:101');
+    fireEvent.error(screen.getByAltText('Picture plex:101'));
+    await waitFor(() => expect(screen.queryByTestId('artmode-image')).not.toBeInTheDocument());
+    expect(DaylightAPI).toHaveBeenCalledTimes(1);
+  });
 });

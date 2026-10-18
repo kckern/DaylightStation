@@ -1,4 +1,22 @@
 import { isEligible, selectAmbianceArtwork } from '../server/domain/ambiancePolicy.mjs';
+import path from 'node:path';
+import { createArtAdapter } from '../server/adapters/ArtAdapter.mjs';
+
+/** Publication availability uses the runtime source, fingerprint and decoder. */
+export async function auditAmbianceLibrary({ catalog, profile, trackIds, artRoot }) {
+  const policy = catalog?.profiles?.[profile];
+  // Validate the document and playlist before doing filesystem work.
+  auditAmbiance({ catalog, profile, trackIds, artIds: [] });
+  const adapter = createArtAdapter({ imgBasePath: path.dirname(path.resolve(artRoot)),
+    recencyStore: null, logger: { info() {}, warn() {} } });
+  const records = Object.fromEntries(Object.entries(catalog.artworks).filter(([, art]) => isEligible(art, profile, policy, 'artwork')));
+  const resolved = await adapter.resolveReviewedArtworks(records);
+  const artIds = [];
+  for (const [id, candidate] of Object.entries(resolved)) {
+    try { await adapter.presentArtwork(candidate); artIds.push(id); } catch { /* Runtime also excludes undecodable images. */ }
+  }
+  return auditAmbiance({ catalog, profile, trackIds, artIds });
+}
 
 /** Compare a concrete playlist and available files with the publication policy. */
 export function auditAmbiance({ catalog, profile, trackIds, artIds }) {

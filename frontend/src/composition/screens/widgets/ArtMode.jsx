@@ -328,7 +328,7 @@ function ArtMode({
     fetchArtwork()
       .then((data) => {
         if (!mountedRef.current || request !== requestSequenceRef.current) return;
-        pendingArtRef.current = data;
+        pendingArtRef.current = { ...data, requestSequence: request };
         const remaining = Math.max(0, closeCompleteAtRef.current - nowMs());
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
         commitTimerRef.current = setTimeout(commitPending, remaining);
@@ -537,8 +537,17 @@ function ArtMode({
   const testid = (base, i) => (i === 0 ? base : `${base}-${i}`);
 
   const onLoaded = () => {
+    if (matchingProfile && art?.requestSequence !== requestSequenceRef.current) return;
     loadedRef.current += 1;
     if (loadedRef.current >= panels.length) scheduleReveal();
+  };
+
+  const onImageError = () => {
+    if (!matchingProfile) { onLoaded(); return; }
+    if (art?.requestSequence !== requestSequenceRef.current) return;
+    logger.warn('artmode.match-image-failed', { artId: art?.match?.artId });
+    setArt({ mode: 'neutral', panels: [], requestSequence: requestSequenceRef.current });
+    scheduleReveal();
   };
 
   // Crossfade placards live in a shared overlay (ArtPlacards) so they choreograph
@@ -652,7 +661,7 @@ function ArtMode({
                     <img className="artmode__image" data-testid={testid('artmode-image', i)}
                          src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
                          style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
-                         onLoad={onLoaded} onError={onLoaded} />
+                         onLoad={onLoaded} onError={onImageError} />
                     <span className="artmode__cut" aria-hidden="true" />
                   </div>
                 ))}
@@ -671,7 +680,7 @@ function ArtMode({
                        style={band
                          ? { transform: band.transform, transformOrigin: band.transformOrigin }
                          : { objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
-                       onLoad={onLoaded} onError={onLoaded} />
+                       onLoad={onLoaded} onError={onImageError} />
                 </div>
               );
             })}

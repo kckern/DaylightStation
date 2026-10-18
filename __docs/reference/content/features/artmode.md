@@ -160,6 +160,12 @@ of evidence has a `kind` and a `path`, `url` or `details`; visual or recording
 assessments should retain exact asset checksums and their method. Acquisition
 status alone is not a review.
 
+Artwork visual evidence must include its exact `sha256`. Matching rereads the
+actual image bytes and compares that fingerprint on every request, independently
+of source/color caches. Changed, deleted or undecodable files are excluded from
+matches, overrides and fallbacks. A browser image failure clears the current
+matched image to neutral; stale image events cannot clear a newer recording.
+
 Eligibility gates apply before matching, overrides and fallbacks. Matching favors
 shared narratives, themes, subjects, symbols and moods; energy/intensity limits
 and incompatible moods filter the choices first. Variety and recent-pick avoidance
@@ -187,6 +193,8 @@ playlist additions, missing approved recordings, missing image files, ineligible
 approvals and per-recording semantic/override/fallback/neutral coverage. Violations
 return a nonzero exit code. The caller must export actual playlist contents rather
 than substituting its intended ID list.
+Availability uses the same runtime source filters, fingerprint checks and image
+decoder, including hidden/flagged/excluded works and unsupported dimensions/depth.
 
 The harvest commands accept a saved collection HTML page and complete paginated
 Shopify product JSON inventories. `harvest-plan` rejects an incomplete inventory,

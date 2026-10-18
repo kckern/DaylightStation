@@ -12,6 +12,8 @@
  */
 import path from 'path';
 import yaml from 'js-yaml';
+import { createHash } from 'node:crypto';
+import { Jimp } from 'jimp';
 import { deriveMatte, rgbToHsv } from "../domain/deriveMatte.mjs";
 import { eligibleByRecency } from "../domain/recencyWindow.mjs";
 import { readTextFromPathAsync } from '#system/utils/FileIO.mjs';
@@ -59,12 +61,13 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     return getArtSource();
   }
 
-  async function analyze(candidate) {
-    const hit = colorCache.get(candidate.id);
+  async function analyze(candidate, loadedImage = null) {
+    const cacheKey = candidate.analysisKey || candidate.id;
+    const hit = colorCache.get(cacheKey);
     if (hit) return hit;
     let result = { avg: null, color: null };
     try {
-      const img = await candidate.loadImage();
+      const img = loadedImage || await candidate.loadImage();
       img.resize({ w: 32, h: 32 });
       const d = img.bitmap.data;
       let r = 0, g = 0, b = 0;
@@ -84,7 +87,7 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
     } catch (err) {
       logger.warn?.('art.color.failed', { id: candidate.id, error: err.message });
     }
-    colorCache.set(candidate.id, result);
+    colorCache.set(cacheKey, result);
     return result;
   }
 
@@ -266,11 +269,32 @@ export function createArtAdapter({ imgBasePath, householdDir = null, logger = co
   }
 
   async function presentArtwork(candidate) {
-    const analysis = await analyze(candidate);
+    // An unreadable match is unavailable even when its old color is cached.
+    const image = await candidate.loadImage();
+    const analysis = await analyze(candidate, image);
     return { mode: 'single', matte: matteFromAvgs([analysis.avg]), panels: [panelOut(candidate, analysis)] };
   }
 
-  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds, resolveArtworks, presentArtwork };
+  async function resolveReviewedArtworks(records) {
+    const candidates = await resolveArtworks(Object.keys(records));
+    const verified = {};
+    for (const [id, candidate] of Object.entries(candidates)) {
+      const fingerprints = (records[id]?.review?.evidence || [])
+        .filter((item) => item.kind === 'visual' && /^[a-f0-9]{64}$/i.test(item.sha256 || ''))
+        .map((item) => item.sha256.toLowerCase());
+      if (!fingerprints.length || !candidate.readBytes) continue;
+      try {
+        // Read on every match: directory and color caches do not prove freshness.
+        const bytes = await candidate.readBytes();
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        if (!fingerprints.includes(sha256)) { logger.warn?.('art.review.stale', { id }); continue; }
+        verified[id] = { ...candidate, analysisKey: `${id}:${sha256}`, loadImage: () => Jimp.read(bytes) };
+      } catch (err) { logger.warn?.('art.review.unavailable', { id, error: err.message }); }
+    }
+    return verified;
+  }
+
+  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds, resolveArtworks, resolveReviewedArtworks, presentArtwork };
 }
 
 export default createArtAdapter;

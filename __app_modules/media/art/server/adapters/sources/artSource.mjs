@@ -5,7 +5,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { Jimp } from 'jimp';
 import { isMember } from "../collections.mjs";
-import { getFileStatsAsync, readDirectoryAsync, readTextFromPathAsync } from '#system/utils/FileIO.mjs';
+import { getFileStatsAsync, readDirectoryAsync, readTextFromPathAsync, readBinaryFromPathAsync } from '#system/utils/FileIO.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 
@@ -187,6 +187,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
         id: e.folder, image: e.image,
         width: e.meta.width, height: e.meta.height, kind: e.kind,
         meta: projectMeta(e.meta),
+        readBytes: () => readBinaryFromPathAsync(e.localPath),
         loadImage: () => Jimp.read(e.localPath),
       });
     }

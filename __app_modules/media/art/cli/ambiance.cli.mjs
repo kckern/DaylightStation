@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import yaml from 'js-yaml';
-import { auditAmbiance } from './ambianceAudit.mjs';
+import { auditAmbianceLibrary } from './ambianceAudit.mjs';
 import { extractCollection, buildHarvestItems } from './collectionHarvest.mjs';
 import { scanLibrary, importHarvest, downloadHarvest } from './harvestFiles.mjs';
 
@@ -49,11 +49,9 @@ async function main() {
       existingRoot: values.existing, destination: path.resolve(values.destination), allowWrite: values['allow-write'] === true });
   } else if (command === 'audit') {
     if (!values.catalog || !values.profile || !values.playlist || !values['art-root']) throw new Error('audit requires --catalog, --profile, --playlist and --art-root');
-    const root = path.resolve(values['art-root']);
-    const works = await scanLibrary(root);
-    result = auditAmbiance({ catalog: yaml.load(await readFile(values.catalog, 'utf8')), profile: values.profile,
+    result = await auditAmbianceLibrary({ catalog: yaml.load(await readFile(values.catalog, 'utf8')), profile: values.profile,
       trackIds: JSON.parse(await readFile(values.playlist, 'utf8')).trackIds,
-      artIds: works.filter((work) => work.images.length).map((work) => path.relative(root, work.directory).split(path.sep).join('/')) });
+      artRoot: values['art-root'] });
   } else throw new Error('Unknown command; use art-ambiance help');
   const text = JSON.stringify(result, null, 2) + '\n';
   if (values.output) await writeFile(values.output, text);

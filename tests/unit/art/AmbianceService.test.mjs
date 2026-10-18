@@ -16,7 +16,7 @@ const candidate = (id, kind = 'portrait') => ({ id, kind, image: `/media/img/art
 const makeService = (catalog = doc(), ids = ['religious/comfort', 'religious/neutral']) => new AmbianceService({
   catalog: { load: async () => catalog },
   artworkSource: {
-    resolveArtworks: async () => Object.fromEntries(ids.map((id) => [id, candidate(id)])),
+    resolveReviewedArtworks: async () => Object.fromEntries(ids.map((id) => [id, candidate(id)])),
     presentArtwork: async (item) => ({ mode: 'single', panels: [{ image: item.image, meta: item.meta }], matte: null }),
   }, random: () => 0,
 });
@@ -65,7 +65,7 @@ describe('ambiance catalog', () => {
 
 describe('single-art presentation', () => {
   it('resolves only requested art IDs and never pairs a portrait', async () => {
-    const portrait = candidate('christ/gentle'); const other = candidate('christ/other');
+    const portrait = { ...candidate('christ/gentle'), loadImage: async () => ({ resize() {}, bitmap: { data: new Uint8Array([50, 70, 90, 255]) } }) }; const other = candidate('christ/other');
     const adapter = createArtAdapter({ imgBasePath: '/unused', recencyStore: null, logger: { warn() {}, info() {} }, artSource: { resolveCandidates: async () => [portrait, other] } });
     const found = await adapter.resolveArtworks(['religious/christ/gentle', '../escape']);
     expect(Object.keys(found)).toEqual(['religious/christ/gentle']);
