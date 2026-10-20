@@ -1111,7 +1111,7 @@ export async function createSchoolLifecycle({
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
     grader: schoolService, bankReader, worksheetInstances,
-    grownUps, teacherGate, passOverrides, clock, earningsQuote, logger,
+    grownUps, teacherGate, passOverrides, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     practiceAssessments,

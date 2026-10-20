@@ -919,6 +919,9 @@ export function agendaDocument({
  *   [args.companionGate] set ONLY when the finish-code row — not the score —
  *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
  *   `companionGateLines` for why this earns two lines of its own.
+ * @param {{lines: {label: string, silver: number, gems: number}[], weekSilver: number}|null} [args.earned]
+ *   the week's silver (a preview): what this grade added, rule by rule, then
+ *   the running total (`earnedLines`). Null prints nothing.
  * @returns {object}
  */
 export function resultDocument({
@@ -929,7 +932,7 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false, companionGate = null,
+  dayComplete = false, companionGate = null, earned = null,
 } = {}) {
   const passed = result === 'passed';
   const blocks = [{
@@ -983,6 +986,17 @@ export function resultDocument({
   // payout waits on a grown-up says so where the coins line would be.
   if (passed && rewardSkipReason === 'awaiting_signoff') {
     blocks.push(text('Coins: waiting for a grown-up\'s OK.'));
+  }
+  // THE WEEK'S SILVER (a preview): what this grade added, rule by rule, then
+  // the running total. A fail adds nothing, so it shows only the total.
+  if (earned && Number.isFinite(earned.weekSilver)) {
+    if (passed) {
+      (earned.lines ?? []).forEach((l) => {
+        const gems = l.gems > 0 ? ` · +${l.gems} ${l.gems === 1 ? 'gem' : 'gems'}` : '';
+        blocks.push(text(`+${l.silver} silver${gems} · ${l.label}`));
+      });
+    }
+    blocks.push(text(`${earned.weekSilver} silver this week`));
   }
   (Array.isArray(actions) ? actions : []).forEach((action) => {
     if (!action || !isNonEmptyString(action.label)) return;

@@ -44,6 +44,7 @@ import {
 } from "../../domain/sessions/outcome.mjs";
 import { mintToken } from "../../domain/sessions/tokens.mjs";
 import { mintAccessCode } from "../../domain/sessions/accessCode.mjs";
+import { earnedLines } from "../../domain/documents/earnedLines.mjs";
 import { resultDocument, noticeDocument, reviewNoteLines } from "../../domain/documents/receipts.mjs";
 import { chooseForwardAction } from "../../domain/documents/forwardAction.mjs";
 import { resolveDayCompletion } from "../../domain/completion.mjs";
@@ -358,6 +359,9 @@ export class CloseSessionOutcome {
    */
   async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, expectedSeq = null, printReceipt = true }) {
     const outcomeId = outcomeIdFor(sessionId);
+    // The week's price BEFORE this grade lands, so the receipt can show the
+    // difference. Never throws (EarningsQuoteClient); null when unwired/slow.
+    const weekBefore = this.#earningsQuote ? await this.#earningsQuote.quote(state.learnerId) : null;
     const { errors, event } = createEvent({
       type: 'outcome_recorded', at: nowIso, sessionId, outcomeId, result, reason,
     });
@@ -373,10 +377,10 @@ export class CloseSessionOutcome {
     // resettle reads the same field back off `state.outcome` (`sessionEvents`'
     // `outcome_recorded` reducer), so both paths reach `#settle` alike.
     const outcome = { outcomeId, result, reason, at: nowIso };
-    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt });
+    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, weekBefore });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, weekBefore = null }) {
     // Unconditional on pass/fail and on resettling: a fail settle changes no
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
@@ -552,6 +556,9 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
+    // After the outcome and reward are persisted. A re-settle has no `weekBefore`,
+    // so it prints only the running total.
+    const weekAfter = this.#earningsQuote ? await this.#earningsQuote.quote(state.learnerId) : null;
     const document = !printReceipt || ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
       sessionId,
       dayComplete,
@@ -589,6 +596,7 @@ export class CloseSessionOutcome {
       rewardSkipReason: reward?.skipReason ?? null,
       unlockedTitle: unlocked?.title ?? null,
       notes,
+      earned: earnedLines(weekBefore ?? null, weekAfter),
     });
 
     let receiptArtifact = null;

@@ -24,7 +24,7 @@ const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
   passOverrides = null, teacherGate = null, realtime = null,
   receiptCapture = null, receiptArtifactPrinter = null,
-  assignments: assignmentsOverride = null,
+  assignments: assignmentsOverride = null, earningsQuote = null,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -48,7 +48,7 @@ const build = ({
     teacherGate,
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
-    realtime,
+    realtime, earningsQuote,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -515,6 +515,45 @@ describe('the result receipt reaches paper', () => {
     expect(thermal.jobs).toHaveLength(1);
     expect(thermal.lastTranscript()).toContain('Score: 90%');
     expect(thermal.lastTranscript()).toMatch(/passing is \d+%/); // the bar is on the paper (M7/A4)
+  });
+
+  describe('the week\'s silver on the receipt', () => {
+    const wk = (silver, korean) => ({ totals: { silver, gems: 0 }, lines: [{ ruleId: 'korean', label: 'Korean (each day done)', amount: { silver: korean, gems: 0 } }] });
+    const seq = (...answers) => { const q = vi.fn(async () => (answers.length > 1 ? answers.shift() : answers[0])); return { quote: q }; };
+
+    it('prints what the grade added and the total; quotes BEFORE outcome_recorded exists', async () => {
+      let sawOutcomeOnFirst = null;
+      const answers = [wk(18, 0), wk(25, 2)];
+      const earningsQuote = { quote: vi.fn(async () => {
+        if (sawOutcomeOnFirst === null) sawOutcomeOnFirst = sessions.derive(SID).outcome != null;
+        return answers.shift();
+      }) };
+      build({ earningsQuote });
+      await graded();
+      await close.execute({ sessionId: SID });
+      expect(sawOutcomeOnFirst).toBe(false);
+      const t = thermal.lastTranscript();
+      expect(t).toContain('+2 silver · Korean (each day done)');
+      expect(t).toContain('25 silver this week');
+    });
+
+    it('a null second quote prints no coin lines', async () => {
+      build({ earningsQuote: seq(wk(18, 0), null) });
+      await graded();
+      await close.execute({ sessionId: SID });
+      expect(thermal.lastTranscript()).not.toContain('silver');
+    });
+
+    it('a re-settle prints only the running total', async () => {
+      build({ earningsQuote: seq(wk(18, 0), wk(25, 2), wk(25, 2)) });
+      await graded();
+      await close.execute({ sessionId: SID });
+      const again = await close.execute({ sessionId: SID });
+      expect(again.status).toBe('already_settled');
+      const t = thermal.lastTranscript();
+      expect(t).toContain('25 silver this week');
+      expect(t).not.toContain('+2 silver');
+    });
   });
 
   it('PUTS THE RETRY TICKET ON PAPER after a fail, scannably', async () => {

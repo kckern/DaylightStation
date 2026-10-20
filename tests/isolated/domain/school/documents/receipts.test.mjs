@@ -447,6 +447,32 @@ describe('resultDocument', () => {
     expect(doc.id).toBe('result-ses-a');
   });
 
+  describe('earned (the week\'s silver)', () => {
+    const earned = { lines: [{ label: 'Korean (each day done)', silver: 2, gems: 0 }], weekSilver: 25 };
+    it('prints what the grade added, then the running total', () => {
+      const t = textOf(valid(resultDocument({ ...pass, earned })));
+      expect(t).toContain('+2 silver · Korean (each day done)');
+      expect(t.indexOf('+2 silver')).toBeLessThan(t.indexOf('25 silver this week'));
+    });
+    it('names gems when a line has them', () => {
+      const e = { lines: [{ label: 'Korean (each day done)', silver: 2, gems: 1 }], weekSilver: 25 };
+      expect(textOf(resultDocument({ ...pass, earned: e }))).toContain('+2 silver · +1 gem · Korean (each day done)');
+    });
+    it('prints only the total when no lines', () => {
+      const t = textOf(resultDocument({ ...pass, earned: { lines: [], weekSilver: 25 } }));
+      expect(t).toContain('25 silver this week');
+      expect(t).not.toContain('+');
+    });
+    it('prints neither when null', () => {
+      expect(textOf(resultDocument({ ...pass, earned: null }))).not.toContain('silver');
+    });
+    it('a fail prints only the total', () => {
+      const t = textOf(resultDocument({ ...pass, result: 'failed', earned }));
+      expect(t).toContain('25 silver this week');
+      expect(t).not.toContain('+2 silver');
+    });
+  });
+
   it('makes the learner the receipt title while retaining the generic fallback', () => {
     expect(resultDocument({ ...pass, learnerName: 'Learner-Four' }).title).toBe('Learner-Four’s Result');
     expect(resultDocument(pass).title).toBe('Worksheet Result');
