@@ -88,6 +88,10 @@ export const teacherWorkspaceApi = {
     `/learners/${encodeURIComponent(learnerId)}/reading`,
     { method: 'POST', body, ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}) },
   ),
+  // One book, every enrolled learner: logged today, the open reading a
+  // check-in or finish must land on, and the mode a new reading defaults to.
+  // The quick-log sheet's read; the console works none of this out itself.
+  bookReaders: (isbn) => request(`/books/${encodeURIComponent(isbn)}/readers`),
   undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
