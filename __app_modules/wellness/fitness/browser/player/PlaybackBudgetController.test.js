@@ -17,7 +17,8 @@ describe('native playback budget controller',()=>{
  it('acquires before play and spends wall time, not seek distance or playback rate',async()=>{
  const h=harness();h.controller.update(h.input);await h.flush();expect(h.state.blocked).toBe(false);
  await h.media.play();h.advance(2000);h.media.currentTime=600;h.media.playbackRate=2;h.advance(1000);
- h.media.pause();await h.flush();expect(h.calls.at(-1)).toMatchObject({playedMs:3000,requestGrant:false});expect(h.spent()).toBe(3000);
+ h.media.pause();await h.flush();expect(h.calls.at(-1)).toMatchObject({requestGrant:false});
+ expect(h.calls.reduce((n,c)=>n+(c.playedMs||0),0)).toBe(3000);expect(h.spent()).toBe(3000);
  });
  it('does not charge paused, seeking or buffering intervals',async()=>{
  const h=harness();h.controller.update(h.input);await h.flush();await h.media.play();h.advance(1000);
@@ -51,4 +52,37 @@ it('does not mistake queued native pause events during renewal for manual pause'
  await new Promise(resolve=>setTimeout(resolve,10));await h.flush();
  expect(h.controller.manualPause).toBe(false);expect(h.media.paused).toBe(false);
  h.advance(2000);expect(h.controller.used).toBe(2000);
+});
+
+it('renews ahead of the grant: continuous play never pauses and every millisecond is metered', async () => {
+ const h=harness();let pauses=0;h.media.addEventListener('pause',()=>{pauses+=1;});
+ h.controller.update(h.input);await h.flush();await h.media.play();
+ for(let i=0;i<600;i+=1){h.advance(50);await h.flush();}
+ expect(h.media.paused).toBe(false);expect(pauses).toBe(0);
+ h.media.pause();await h.flush();
+ expect(h.spent()).toBe(30000);
+});
+it('a slow renewal keeps playing on the current grant and charges the in-flight time to the next one', async () => {
+ const h=harness();h.controller.update(h.input);await h.flush();await h.media.play();
+ const observe=h.controller.observe;let release;h.controller.observe=body=>new Promise(r=>{release=()=>r(observe(body));});
+ h.advance(3000); // 2000 left -> renewal starts, stays in flight
+ await Promise.resolve();
+ h.advance(1500); // still on the old grant
+ expect(h.media.paused).toBe(false);
+ release();await h.flush();h.controller.observe=observe;
+ expect(h.controller.used).toBe(1500);
+ h.media.pause();await h.flush();expect(h.spent()).toBe(4500);
+});
+it('holds when the old grant runs out before a slow renewal answers', async () => {
+ const h=harness();h.controller.update(h.input);await h.flush();await h.media.play();
+ const observe=h.controller.observe;let release;h.controller.observe=body=>new Promise(r=>{release=()=>r(observe(body));});
+ h.advance(3000);await Promise.resolve();h.advance(2500);
+ expect(h.media.paused).toBe(true);
+ release();await h.flush();await new Promise(r=>setTimeout(r,0));h.controller.observe=observe;
+ expect(h.media.paused).toBe(false);
+});
+it('polls the server once a minute when there is nothing to meter', async () => {
+ const h=harness();h.controller.update({...h.input,media:null,contentId:null,matching:false});await h.flush();
+ const before=h.calls.length;for(let i=0;i<59;i+=1)h.advance(1000);await h.flush();
+ expect(h.calls.length).toBe(before);h.advance(1000);await h.flush();expect(h.calls.length).toBe(before+1);
 });

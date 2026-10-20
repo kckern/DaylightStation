@@ -1,3 +1,12 @@
+// Renew this long before the current grant runs out, so the next grant is in
+// hand before the old one ends. Without the lead the meter paused the video
+// on every 5s grant and resumed it when the server answered (2026-10-18..20:
+// a child's video was paused ~2.2s of every 5s).
+const RENEW_LEAD_MS = 2000;
+// Nothing to meter: poll only to keep the view (remaining time) fresh. Every
+// observation is a durable write server-side; policy changes still observe at once.
+const IDLE_POLL_MS = 60000;
+
 /** Native-media meter. Durable grants are the only source of unattended time. */
 export class PlaybackBudgetController {
   constructor({ deviceId, streamId, now, observe, publish, logger, queueResume = work => work() }) {
@@ -77,14 +86,28 @@ export class PlaybackBudgetController {
     if (changed || policyChanged) this.request();
     this.emit();
   }
-  request(allowGrant = true) {
+  remainingGrantMs() {
+    if (!this.grants.length) return 0;
+    const now = this.now();
+    return Math.min(...this.grants.map(g => Math.min(g.ms - this.used, g.deadline - now)));
+  }
+  // Settle and re-grant without pausing: playback keeps spending the current
+  // grant while the request is in flight, and whatever it spends after the
+  // settlement snapshot is carried onto the new grant, so no played time goes
+  // unmetered. If the old grant runs out first, tick() holds as usual.
+  renew() {
+    if (this.disposed || this.busy) return;
+    return this.request(true, { renew: true });
+  }
+  request(allowGrant = true, { renew = false } = {}) {
     if (this.disposed && allowGrant) return;
     if (this.busy) { this.dirty = true; return; }
     this.busy = true;
     this.account();
     const wasPlaying = this.playing || this.input.media?.paused === false;
-    if (this.grants.length || this.eligible()) this.hold();
-    this.resume = this.resume || wasPlaying;
+    if (!renew && (this.grants.length || this.eligible())) this.hold();
+    if (!renew) this.resume = this.resume || wasPlaying;
+    const usedAtRequest = this.used;
     const settlements = this.grants.map(g => ({ id: g.id, localDate: g.localDate, playedMs: Math.min(g.ms, Math.round(this.used)) }));
     const body = this.retry ?? {
       deviceId: this.deviceId, streamId: this.streamId, sequence: ++this.sequence,
@@ -95,17 +118,32 @@ export class PlaybackBudgetController {
       // Kept for older API consumers and diagnostics; the server settles once.
       previousGrantId: settlements[0]?.id, previousGrantDate: settlements[0]?.localDate, playedMs: settlements[0]?.playedMs,
     };
-    this.grants = []; this.used = 0; this.emit();
+    if (!renew) { this.grants = []; this.used = 0; this.emit(); }
     const started = this.now();
     this.pending = Promise.resolve().then(() => this.observe(body)).then(view => {
+      this.account();
+      const carried = renew ? Math.max(0, this.used - usedAtRequest) : 0;
       this.retry = null; this.view = view; this.requiredGrants = view.policies.length;
       this.grants = view.policies.filter(p => p.grant).map(p => ({ ...p.grant,
         deadline: started + Math.max(0, p.grant.expiresAt - view.serverNow),
       }));
-      this.last = this.now(); this.nextPoll = this.now() + 5000;
+      this.used = this.grants.length ? Math.min(carried, ...this.grants.map(g => g.ms)) : 0;
+      if (renew && !this.valid() && this.eligible()) {
+        if (this.input.media?.paused === false) this.resume = true;
+        this.hold();
+      }
+      this.last = this.now();
+      this.nextPoll = this.now() + (this.eligible() || this.grants.length ? 5000 : IDLE_POLL_MS);
       this.emit();
       this.queueResume(() => this.tryResume());
     }).catch(error => {
+      if (renew) {
+        // The current grant is untouched and still spendable; try again soon.
+        this.nextPoll = this.now() + 2000;
+        this.logger?.warn?.('fitness.playback_budget.unavailable', { message: error.message, renew: true });
+        this.emit();
+        return;
+      }
       this.retry = body; this.nextPoll = this.now() + 2000;
       this.logger?.warn?.('fitness.playback_budget.unavailable', { message: error.message });
       this.emit();
@@ -128,7 +166,10 @@ export class PlaybackBudgetController {
       if (this.input.media?.paused === false) this.resume = true;
       this.hold();
     }
-    if (!this.busy && ((this.grants.length && !this.valid()) || this.now() >= this.nextPoll)) this.request();
+    if (!this.busy) {
+      if (this.valid() && !this.retry && (this.remainingGrantMs() <= RENEW_LEAD_MS || this.now() >= this.nextPoll)) this.renew();
+      else if ((this.grants.length && !this.valid()) || this.now() >= this.nextPoll) this.request();
+    }
     this.emit();
   }
   async dispose() {
