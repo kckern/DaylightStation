@@ -7,6 +7,7 @@
  *   locked   — the game belongs to one person (save_owner); no actions.
  *   current  — the person whose save is loaded, or null (not saving).
  *   conflict — a person whose existing save a claim would replace; asks first.
+ *   canIdentify — false off the garage kiosk: no fingerprint, so no Continue/Save.
  */
 import React from 'react';
 import "./PlayerPanel.scss";
@@ -32,6 +33,10 @@ export function PlayerPanel({
   onClaim = () => {},
   onConfirmOverwrite = () => {},
   onCancelOverwrite = () => {},
+  onJustPlay = null,
+  // False off the garage kiosk: the fingerprint prompt does not exist there,
+  // so Continue as / Save as me would wait for a scan nobody can give.
+  canIdentify = true,
 }) {
   return (
     <section className="emu-player-panel" aria-label="Player">
@@ -66,25 +71,41 @@ export function PlayerPanel({
 
       {!current && !locked && !conflict && (
         <>
-          {savers.length > 0 && (
-            <div className="emu-player-panel__savers">
-              <span className="emu-player-panel__hint">Continue as</span>
-              {savers.map((s) => (
-                <button
-                  key={s.userId}
-                  type="button"
-                  className="emu-player-panel__btn emu-player-panel__saver"
-                  aria-label={`Continue as ${s.name}`}
-                  onClick={() => onLoad(s.userId)}
-                >
-                  <Person person={s} />
+          {canIdentify ? (
+            <>
+              {savers.length > 0 && (
+                <div className="emu-player-panel__savers">
+                  <span className="emu-player-panel__hint">Continue as</span>
+                  {savers.map((s) => (
+                    <button
+                      key={s.userId}
+                      type="button"
+                      className="emu-player-panel__btn emu-player-panel__saver"
+                      aria-label={`Continue as ${s.name}`}
+                      onClick={() => onLoad(s.userId)}
+                    >
+                      <Person person={s} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="emu-player-panel__choice">
+                <button type="button" className="emu-player-panel__btn emu-player-panel__btn--primary" onClick={onClaim}>
+                  Save as me
                 </button>
-              ))}
+                {onJustPlay && (
+                  <button type="button" className="emu-player-panel__btn" onClick={onJustPlay}>Just play</button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="emu-player-panel__choice">
+              <span className="emu-player-panel__offkiosk">Saving works at the garage</span>
+              {onJustPlay && (
+                <button type="button" className="emu-player-panel__btn" onClick={onJustPlay}>Just play</button>
+              )}
             </div>
           )}
-          <button type="button" className="emu-player-panel__btn emu-player-panel__btn--primary" onClick={onClaim}>
-            Save as me
-          </button>
         </>
       )}
     </section>

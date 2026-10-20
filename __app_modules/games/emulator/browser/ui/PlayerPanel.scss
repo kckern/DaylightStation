@@ -91,6 +91,16 @@
 
   &__saver { padding-left: 0.4rem; }
 
+  // Save as me (primary, grows) beside Just play (secondary).
+  &__choice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    > .emu-player-panel__btn--primary { flex: 1 1 auto; }
+  }
+
+  &__offkiosk { flex: 1 1 auto; font-size: 0.9rem; opacity: 0.75; }
+
   &__conflict p { margin: 0 0 0.6rem; }
 
   &__actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
