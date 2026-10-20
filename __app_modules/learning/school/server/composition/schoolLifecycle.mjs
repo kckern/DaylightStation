@@ -1277,8 +1277,9 @@ export async function createSchoolLifecycle({
     // child's finished work hostage to an out-of-band actor.
     gradeSubmission, closeSessionOutcome,
   });
-  // Stale-sweep roster (admin advocacy A5): the same students: list the rest
-  // of the lifecycle serves — enough identity for listStale, no directory dep.
+  // Stale-sweep roster (admin advocacy A5): the School learner directory the
+  // runtime injects. Null here means listStale sees nobody and the nightly
+  // sweep closes nothing — `lifecycle-runtime.mjs` must pass it.
   const markSessionAbandoned = new MarkSessionAbandoned({
     sessions: stores.sessions, teacherGate, learnerDirectory, clock, logger,
   });

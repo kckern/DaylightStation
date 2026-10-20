@@ -83,6 +83,10 @@ try {
       fitnessPlayableService,
       fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
       learningEvidenceRepository: schoolLearningEvidence,
+      // The stale sweep's roster. Without it `MarkSessionAbandoned.listStale`
+      // sees no learners, and the nightly `school-stale-sweep` job reports
+      // `swept: 0` while issued-and-never-graded work reprints forever.
+      learnerDirectory: schoolLearnerDirectory,
       // Same adapter class the grading hook uses, pointed at its own
       // `school.yml` block. Guarded on the HA gateway exactly as the grading
       // hook is: no Home Assistant means the Portal banner still fires and

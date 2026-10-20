@@ -317,6 +317,35 @@ scan rows themselves are on record in
 `records/assessments/omr/<reader>/<date>.yml`; a row missing there is a
 bubble missing on paper, not a grading fault.
 
+## Maintenance: the nightly stale sweep
+
+The `school-stale-sweep` job (`data/system/config/jobs.yml`, 02:20,
+`olderThanDays: 14`) runs `SchoolMaintenanceExecutor` →
+`MarkSessionAbandoned.sweepUntouched`. It abandons work that was issued and
+never came back (pre-submission states, no attempt ids) and leaves anything
+a child handed in for a person. Events it writes say
+`decidedBy: system:stale-sweep`.
+
+The sweep walks the **School learner directory** — the same roster the panel
+and book scans use. `createSchoolLifecycleRuntime` passes it to
+`createSchoolLifecycle` as `learnerDirectory`; without it, `listStale` sees
+no learners and the job closes nothing while an untouched sheet keeps
+reprinting. That happened from the DDD remediation until 2026-10-19.
+
+To check it, read the nightly summary in the log store:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.session.sweep-complete" AND _time:7d' -d 'limit=10'
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.session.swept" AND _time:7d' -d 'limit=50'
+```
+
+`swept` and `skipped` both at 0 every night while a known-stale session
+exists means the roster is empty: check that `school.yml` lists the learner
+(or that their profile's birthyear makes them a child) before suspecting the
+sweep itself.
+
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing
