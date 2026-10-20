@@ -7,7 +7,7 @@ import { createOAuthRouter } from './oauth.mjs';
 const REDIRECT = 'https://example.test/api/v1/admin/oauth/withings/callback';
 const TOKENS = { userid: '42', access_token: 'a', refresh_token: 'r', scope: 'user.metrics', token_type: 'Bearer', expires_at: '2026-10-20T22:00:00.000Z' };
 
-function build({ exchangeCode = vi.fn().mockResolvedValue(TOKENS), harvest = vi.fn().mockResolvedValue({ status: 'ok' }), save = vi.fn().mockResolvedValue(undefined), now } = {}) {
+function build({ redirectUri = () => REDIRECT, isKnownUser = (u) => ['alice', 'head'].includes(u), exchangeCode = vi.fn().mockResolvedValue(TOKENS), harvest = vi.fn().mockResolvedValue({ status: 'ok' }), save = vi.fn().mockResolvedValue(undefined), now } = {}) {
   const withingsOAuth = {
     authorizeUrl: vi.fn(({ redirectUri, state }) => `https://auth.example.test/authorize?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`),
     exchangeCode,
@@ -20,7 +20,7 @@ function build({ exchangeCode = vi.fn().mockResolvedValue(TOKENS), harvest = vi.
   app.use('/oauth', createOAuthRouter({
     withingsOAuth, authStore, harvesterService, logger,
     resolveUsername: () => 'head',
-    redirectUri: () => REDIRECT,
+    redirectUri, isKnownUser,
     newState: randomUUID,
     ...(now ? { now } : {}),
   }));
@@ -71,6 +71,66 @@ describe('admin OAuth router: Withings', () => {
       await request(app).get(`/oauth/withings/callback?code=c&state=${state}`);
     }
     expect(authStore.save.mock.calls.map((c) => c[0])).toEqual(['head', 'head']);
+  });
+
+  it('rejects a path-like user without creating a state', async () => {
+    const { app, withingsOAuth } = build({ isKnownUser: () => true });
+    for (const user of ['../../tmp/x', 'a/b', 'a\\b', 'a.b']) {
+      const res = await request(app).get(`/oauth/withings/connect?user=${encodeURIComponent(user)}`);
+      expect(res.status).toBe(400);
+      expect(res.type).toBe('text/html');
+    }
+    expect(withingsOAuth.authorizeUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown user, HTML-escaped', async () => {
+    const { app, withingsOAuth } = build();
+    const res = await request(app).get('/oauth/withings/connect?user=' + encodeURIComponent('<i>mallory</i>'));
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('&lt;i&gt;mallory&lt;/i&gt;');
+    expect(res.text).not.toContain('<i>mallory');
+    expect(withingsOAuth.authorizeUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects the head-of-household fallback when it is not a known user', async () => {
+    const { app, withingsOAuth } = build({ isKnownUser: (u) => u === 'alice' });
+    const res = await request(app).get('/oauth/withings/connect');
+    expect(res.status).toBe(400);
+    expect(withingsOAuth.authorizeUrl).not.toHaveBeenCalled();
+  });
+
+  it('accepts a known user', async () => {
+    const { app } = build();
+    const { res } = await connect(app, '?user=alice');
+    expect(res.status).toBe(302);
+  });
+
+  it('reuses the redirect URI chosen at /connect in the callback', async () => {
+    let host = 'first.example.test';
+    const { app, withingsOAuth } = build({ redirectUri: () => `https://${host}/cb` });
+    const { state } = await connect(app);
+    host = 'second.example.test';
+    await request(app).get(`/oauth/withings/callback?code=c&state=${state}`);
+    expect(withingsOAuth.exchangeCode).toHaveBeenCalledWith({ code: 'c', redirectUri: 'https://first.example.test/cb' });
+  });
+
+  it('on ?error, consumes the state and shows the escaped error_description', async () => {
+    const { app, withingsOAuth } = build();
+    const { state } = await connect(app);
+    const res = await request(app).get(`/oauth/withings/callback?error=access_denied&error_description=${encodeURIComponent('User <b>said</b> no')}&state=${state}`);
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('access_denied');
+    expect(res.text).toContain('User &lt;b&gt;said&lt;/b&gt; no');
+    const again = await request(app).get(`/oauth/withings/callback?code=c&state=${state}`);
+    expect(again.status).toBe(400);
+    expect(withingsOAuth.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('ignores a non-string error_description', async () => {
+    const { app } = build();
+    const res = await request(app).get('/oauth/withings/callback?error=access_denied&error_description=a&error_description=b');
+    expect(res.status).toBe(400);
+    expect(res.text).not.toContain('a,b');
   });
 
   it('rejects an unknown state without exchanging', async () => {

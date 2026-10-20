@@ -3956,6 +3956,10 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       authStore: harvesterServices.authStore,
       harvesterService: harvesterServices.harvesterService,
       resolveUsername: () => configService.getHeadOfHousehold(),
+      // Only household members (same roster normalization as the /life switcher).
+      isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+        .includes(username),
       redirectUri: (req) => configService.getSystemAuth?.('withings', 'connect_redirect_uri')
         || `${(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim()}://${req.get('host')}${req.baseUrl}/withings/callback`,
       newState: () => crypto.randomUUID(),
