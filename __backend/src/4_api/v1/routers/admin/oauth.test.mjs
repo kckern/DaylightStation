@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
