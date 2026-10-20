@@ -59,6 +59,7 @@ import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLe
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
+import TermModal from "./TermModal.jsx";
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
@@ -344,6 +345,18 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
+  // Whose term popup is open (a learner id), or null.
+  const [termFor, setTermFor] = useState(null);
+  const openTerm = useCallback((kidId) => {
+    schoolLog.selfService('status-board.term-open', { learnerId: kidId });
+    setTermFor(kidId);
+  }, []);
+  const closeTerm = useCallback(() => {
+    setTermFor((current) => {
+      if (current) schoolLog.selfService('status-board.term-close', { learnerId: current });
+      return null;
+    });
+  }, []);
   // The term read, per learner — the board draws only last week and this week
   // from it: `undefined` while in flight, `null` when the read failed (the
   // card then simply has no squares), else the term read model.
@@ -735,7 +748,20 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 zero would be a claim we cannot support yet. The count stands
                 alone until a weekly goal is authored (`ringProgressByLearner`). */}
             <div className="school-status-board__days" data-testid="board-days">
-              <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
+              {terms[kid.id]?.today ? (
+                // THE ONE DOOR ON A PANEL BOARD: it opens the read-only term
+                // popup and starts no work, so it is safe on the Portal.
+                <button
+                  type="button"
+                  className="school-status-board__days-door"
+                  aria-label={`Show ${kid.name}'s term`}
+                  onClick={() => openTerm(kid.id)}
+                >
+                  <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
+                </button>
+              ) : (
+                <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
+              )}
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
                   <RingIcon size="1.4em" label={`${rings[kid.id].current} rings this week`} />
@@ -749,6 +775,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           </li>
         ))}
       </ul>
+      {termFor && terms[termFor]?.from && (
+        <TermModal
+          kid={visible.find((row) => row.kid.id === termFor)?.kid ?? { id: termFor, name: termFor }}
+          term={terms[termFor]}
+          onClose={closeTerm}
+        />
+      )}
     </div>
   );
 }

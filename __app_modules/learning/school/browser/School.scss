@@ -3327,6 +3327,13 @@
   // At 100% the count gives way to `__check` (above): one mark, no words. The
   // row is already green end to end, so a caption would say it a third time.
 
+  // The days cell as a door to the term popup: no button chrome, the squares
+  // ARE the control.
+  &__days-door {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit;
+    cursor: pointer; border-radius: 6px;
+  }
+
   // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
   &__two-weeks {
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -3697,3 +3704,41 @@
     width: clamp(6rem, 22vh, 10rem); height: clamp(6rem, 22vh, 10rem); flex: 0 0 clamp(6rem, 22vh, 10rem);
   }
 }
+
+// THE TERM POPUP — one learner's whole term over the board. Read-only; a tap
+// anywhere closes it (TermModal.jsx). Cells are sized for a full screen, not
+// the card's 11px.
+.school-term-modal {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, #000 72%, transparent);
+  &__sheet {
+    display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.5vh, 1.6rem);
+    padding: clamp(1rem, 3vh, 2rem) clamp(1.2rem, 3vw, 2.4rem);
+    border: 1px solid var(--school-border); border-radius: 20px;
+    background: var(--school-surface);
+    max-width: 94vw; max-height: 92vh;
+  }
+  &__header { position: relative; display: flex; align-items: center; gap: 1rem; align-self: stretch; }
+  &__title { margin: 0; font-size: clamp(1.4rem, 4vh, 2.2rem); font-weight: 800; }
+  &__close {
+    margin-left: auto; width: 48px; height: 48px; border-radius: 50%;
+    display: grid; place-items: center; border: 1px solid var(--school-border);
+    background: transparent; color: inherit; cursor: pointer;
+    svg { width: 22px; height: 22px; }
+  }
+  &__plot {
+    --grid-cell: clamp(14px, min(4.4vh, 3vw), 34px);
+    --grid-gap: 3px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  &__axis {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
+    font-size: clamp(0.7rem, 1.8vh, 0.95rem); font-weight: 700; line-height: 1.2;
+    color: var(--school-muted); font-variant-numeric: tabular-nums;
+    li { overflow: visible; white-space: nowrap; }
+  }
+  &__grid { --grid-cell: inherit; --grid-gap: inherit; --grid-radius: 4px; }
+}
+

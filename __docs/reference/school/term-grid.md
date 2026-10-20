@@ -1,10 +1,14 @@
 # The term grid — one verdict per school day
 
 The term read (`GET` via `schoolApi.learnerTerm`) judges every study day of a
-learner's term. **No surface currently draws the full term.** The status board
-draws only two rows of it — last week above this week, seven squares each,
-today outlined — from the same read. The sixteen-week grid that used to sit on
-the board was removed on 2026-10-20 (recoverable from commit `cd695d5ccf`).
+learner's term. The status board's card draws two rows of it — last week
+above this week, seven squares each, today outlined. **Tapping those two rows
+opens the full term** in a popup (`status/TermModal.jsx`): weeks as columns,
+week numbers above, months below, today ringed, the week-level row when a week
+carries weekly work. The popup is read-only, so it opens on the Portal too (the
+one tappable thing on a panel board); a tap anywhere, its close button, or 30
+seconds closes it. It draws from the term the card already holds — no extra
+read — and a card whose term failed to load has no door.
 
 `DayGrid` (`School/shared/dayGrid`) can still lay the whole term out as a
 GitHub-style grid: seven rows (Monday at the top, Sunday at the bottom), one

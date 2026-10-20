@@ -1014,7 +1014,66 @@ describe('the four partitions', () => {
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
     await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
-    expect(screen.getByTestId('agenda-status-board').querySelectorAll('button, a')).toHaveLength(0);
+    // The ONE tappable thing on a panel board is the days cell, which opens
+    // the read-only term popup; it starts no work.
+    await screen.findByRole('button', { name: "Show Learner One's term" });
+    const doors = [...screen.getByTestId('agenda-status-board').querySelectorAll('button, a')]
+      .filter((el) => !/^Show .*'s term$/.test(el.getAttribute('aria-label') ?? ''));
+    expect(doors).toHaveLength(0);
+  });
+
+  it('tapping the two weeks opens that learner\'s full term in a popup', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    const dialog = screen.getByRole('dialog', { name: "Learner One's term" });
+    const grid = within(dialog).getByTestId('term-modal-grid');
+    expect(grid.classList.contains('school-daygrid--weeks-as-columns')).toBe(true);
+    expect(grid.style.getPropertyValue('--grid-cols')).toBe('2');
+    expect(within(dialog).getByTestId('term-modal-today')).toHaveAttribute('data-day', '2026-09-09');
+    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
+  });
+
+  it('the popup adds the weekly-work row only when a week carries weekly work', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(weekly);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    expect(within(screen.getByRole('dialog')).getByTestId('term-modal-grid').querySelectorAll('.school-daygrid__cell--week')).toHaveLength(2);
+  });
+
+  it('the popup closes on a tap anywhere, on its close button, and by itself after 30 seconds', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const open = async () => fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    await open();
+    fireEvent.click(screen.getByRole('dialog'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The button is already on screen: open synchronously, because an async
+    // query would wait on timers that are now fake.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole('button', { name: "Show Learner One's term" }));
+      act(() => { vi.advanceTimersByTime(29_000); });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(1_500); });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('without a term the days are not a button', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /'s term$/ })).toBeNull();
   });
 
   it('given a door, each disc is a button that hands back its learner and subject', async () => {

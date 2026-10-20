@@ -207,8 +207,9 @@ it. A wallet or roster read that comes back not-ok is logged
 
 **Days.** Last week (dimmer) above this week, seven squares each, today
 outlined, weekday letters above. The ring count with its ring icon sits
-beneath. Both rows come from the term read; the full term is not drawn here,
-and no surface currently draws it (`__docs/reference/school/term-grid.md`).
+beneath. Both rows come from the term read. Tapping them opens the learner's
+full term in a read-only popup — the one tappable thing on a panel board
+(`__docs/reference/school/term-grid.md`).
 A pinned `day` anchors the two rows on that day, not on the term read's own
 `today`.
 
