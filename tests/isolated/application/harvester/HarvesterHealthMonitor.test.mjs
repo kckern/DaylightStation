@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { HarvesterHealthMonitor } from '#apps/harvester/HarvesterHealthMonitor.mjs';
 
 const memStore = () => { let s = null; return { load: () => s, save: (v) => { s = structuredClone(v); } }; };
+const asyncStore = () => { let s = null; const tick = () => new Promise((r) => setTimeout(r, 1));
+  return { load: async () => { await tick(); return s && structuredClone(s); }, save: async (v) => { await tick(); s = structuredClone(v); } }; };
 const fail = { serviceId: 'withings', result: { status: 'error', reason: 'auth_failed', error: 'invalid refresh_token' }, error: null };
 const ok = (latestDate = '2026-10-20') => ({ serviceId: 'withings', result: { status: 'success', count: 1, latestDate }, error: null });
 
@@ -34,7 +36,7 @@ describe('HarvesterHealthMonitor', () => {
     for (let i = 0; i < 3; i++) await m.record(fail);
     expect(await m.record(ok())).toBe('recovered');
     expect(sendPush).toHaveBeenCalledTimes(2);
-    expect(m.report().withings).toMatchObject({ status: 'healthy', failures: 0 });
+    expect((await m.report()).withings).toMatchObject({ status: 'healthy', failures: 0 });
   });
   it('ignores skipped results and skipped services', async () => {
     const { m, sendPush } = monitor();
@@ -42,8 +44,8 @@ describe('HarvesterHealthMonitor', () => {
     for (let i = 0; i < 5; i++) await m.record({ serviceId: 'withings', result: { skipped: true } });
     for (let i = 0; i < 5; i++) await m.record({ ...fail, serviceId: 'strava' });
     expect(sendPush).not.toHaveBeenCalled();
-    expect(m.report().strava).toBeUndefined();
-    expect(m.report().withings).toBeUndefined();
+    expect((await m.report()).strava).toBeUndefined();
+    expect((await m.report()).withings).toBeUndefined();
   });
   it('flags stale data and recovers when fresh data arrives', async () => {
     const { m } = monitor();
@@ -55,7 +57,7 @@ describe('HarvesterHealthMonitor', () => {
     const { m, sendPush } = monitor();
     for (let i = 0; i < 3; i++) await m.record(fail);
     expect(await m.record(ok('2026-10-01'))).toBe('stale');
-    expect(m.report().withings).toMatchObject({ status: 'stale', failures: 0 });
+    expect((await m.report()).withings).toMatchObject({ status: 'stale', failures: 0 });
     expect(await m.record(ok('2026-10-19'))).toBe('recovered');
     expect(sendPush).toHaveBeenCalledTimes(3);
   });
@@ -80,5 +82,34 @@ describe('HarvesterHealthMonitor', () => {
     await expect(m.record(fail)).resolves.toBe(null);
     expect(logger.warn).toHaveBeenCalledWith('harvester.health.store_failed', expect.anything());
     expect(sendPush).not.toHaveBeenCalled();
+  });
+  it('serializes concurrent records against an async store', async () => {
+    const { m, sendPush } = monitor({ store: asyncStore() });
+    const failA = fail;
+    const failB = { ...fail, serviceId: 'fitsync' };
+    for (let i = 0; i < 3; i++) await Promise.all([m.record(failA), m.record(failB)]);
+    const r = await m.report();
+    expect(r.withings).toMatchObject({ status: 'failing', failures: 3 });
+    expect(r.fitsync).toMatchObject({ status: 'failing', failures: 3 });
+    expect(sendPush).toHaveBeenCalledTimes(2);
+  });
+  it('stale counts whole local calendar days', async () => {
+    const at = (iso) => monitor({ now: () => new Date(iso) }).m;
+    expect(await at('2026-10-20T06:00:00Z').record(ok('2026-10-13'))).toBe(null); // Oct 19 local: 6 days
+    expect(await at('2026-10-21T08:00:00Z').record(ok('2026-10-13'))).toBe('stale'); // Oct 21 local: 8 days
+  });
+  it('accepts a timestamp latestDate by its date and ignores unparseable ones', async () => {
+    expect(await monitor().m.record(ok('2026-10-01T23:59:00Z'))).toBe('stale');
+    expect(await monitor().m.record(ok('last week'))).toBe(null);
+  });
+  it('a service without staleAfterDays never goes stale', async () => {
+    const { m } = monitor();
+    expect(await m.record({ serviceId: 'fitsync', result: { status: 'success', latestDate: '2020-01-01' } })).toBe(null);
+    expect((await m.report()).fitsync).toMatchObject({ status: 'healthy' });
+  });
+  it('report() returns {} when the store cannot load', async () => {
+    const { m, logger } = monitor({ store: { load: () => { throw new Error('disk gone'); }, save: () => {} } });
+    expect(await m.report()).toEqual({});
+    expect(logger.warn).toHaveBeenCalledWith('harvester.health.store_failed', expect.anything());
   });
 });

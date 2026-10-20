@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composeHarvesterHealthPush } from '#domains/notification/push/harvesterHealthPush.mjs';
+import { composeHarvesterHealthPush, plainHarvestError, localDay } from '#domains/notification/push/harvesterHealthPush.mjs';
 import { findPushTextDefects } from '#domains/notification/push/pushText.mjs';
 
 const now = '2026-10-20T19:00:00.000Z';
@@ -41,6 +41,35 @@ describe('composeHarvesterHealthPush', () => {
     const p = composeHarvesterHealthPush({ serviceId: 'new_source', status: 'failing', error: null, now, timezone: tz });
     expect(p.title).toBe('⚠️ New Source stopped syncing');
     clean(p);
+  });
+  it('without a known last success it says syncing failed', () => {
+    const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'failing', error: 'auth_failed', now, timezone: tz });
+    expect(p.message).toMatch(/^Syncing failed: sign-in expired\./);
+    clean(p);
+  });
+  it('a network error wrapped in an auth reason reads as unreachable, with no Admin hint', () => {
+    expect(plainHarvestError('auth_failed: connect ETIMEDOUT')).toBe('service could not be reached');
+    const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'failing', error: 'auth_failed: connect ETIMEDOUT', now, timezone: tz });
+    expect(p.message).not.toMatch(/Admin/);
+    clean(p);
+  });
+  it('missing client credentials are not a sign-in problem', () => {
+    expect(plainHarvestError('auth_failed: client id or secret missing')).toBe('an unexpected error');
+    const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'failing', error: 'auth_failed: client id or secret missing', now, timezone: tz });
+    expect(p.message).not.toMatch(/Admin/);
+    clean(p);
+  });
+  it('status codes match only as whole numbers', () => {
+    expect(plainHarvestError('HTTP 401')).toBe('sign-in expired');
+    expect(plainHarvestError('HTTP 429')).toBe('rate limit reached');
+    expect(plainHarvestError('rate limit hit on token endpoint')).toBe('rate limit reached');
+    expect(plainHarvestError('record 14012 malformed')).toBe('an unexpected error');
+  });
+  it('localDay gives the household calendar day', () => {
+    expect(localDay('2026-10-20T06:00:00Z', tz)).toBe('2026-10-19');
+    expect(localDay('2026-10-21T08:00:00Z', tz)).toBe('2026-10-21');
+    expect(localDay('nope', tz)).toBe(null);
+    expect(localDay('2026-10-20T06:00:00Z', 'America/LosAngeles')).toBe(null);
   });
   it('stale names the newest entry', () => {
     const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'stale', latestDate: '2026-10-01', now, timezone: tz });

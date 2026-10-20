@@ -18,18 +18,23 @@ const RECONNECTABLE = new Set(['withings']);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Raw provider errors are for logs; the phone gets a plain reason.
+// Raw provider errors are for logs; the phone gets a plain reason. Network and
+// rate-limit causes win over an 'auth_failed' prefix that only says which call failed.
 export function plainHarvestError(error) {
   const raw = String(error ?? '').trim();
   if (!raw) return 'an unexpected error';
-  if (/auth|refresh|token|401|403|sign-in|unauthori[sz]ed/i.test(raw)) return 'sign-in expired';
-  if (/429|rate limit/i.test(raw)) return 'rate limit reached';
-  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network|timeout/i.test(raw)) return 'service could not be reached';
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network|timeout/i.test(raw)) return 'service could not be reached';
+  if (/\b429\b|rate limit/i.test(raw)) return 'rate limit reached';
+  if (/client id|secret missing/i.test(raw)) return 'an unexpected error';
+  if (/auth|refresh|token|\b401\b|\b403\b|sign-in|unauthori[sz]ed/i.test(raw)) return 'sign-in expired';
   return 'an unexpected error';
 }
 
-/** '2026-10-01T19:00:00Z' → '2026-10-01' as the household's calendar reads it. */
-function localDay(iso, timezone) {
+/**
+ * '2026-10-20T06:00:00Z' → '2026-10-19' as the household's calendar reads it.
+ * A bad instant or misconfigured zone returns null.
+ */
+export function localDay(iso, timezone) {
   const ms = Date.parse(iso ?? '');
   if (!Number.isFinite(ms)) return null;
   try {
@@ -75,7 +80,7 @@ export function composeHarvesterHealthPush({ serviceId, status, error = null, la
   if (status === 'recovered') return { title: `✅ ${name} syncing again`, message: `New ${name} data is coming in.`, data };
 
   if (status === 'stale') {
-    const day = latestDate ? formatStudyDay(latestDate) : null;
+    const day = latestDate ? formatStudyDay(String(latestDate).slice(0, 10)) : null;
     return { title: `⚠️ No new ${name} data`, message: day ? `The newest entry is from ${day}.` : `${name} has sent nothing new.`, data };
   }
 
@@ -83,5 +88,7 @@ export function composeHarvesterHealthPush({ serviceId, status, error = null, la
   const fix = reason === 'sign-in expired' && RECONNECTABLE.has(serviceId)
     ? ` Reconnect it in Admin, Integrations, ${name}.`
     : '';
-  return { title: `⚠️ ${name} stopped syncing`, message: `No sync${sinceClause(lastSuccessAt, now, timezone)}: ${reason}.${fix}`, data };
+  const since = sinceClause(lastSuccessAt, now, timezone);
+  const lead = since ? `No sync${since}` : 'Syncing failed';
+  return { title: `⚠️ ${name} stopped syncing`, message: `${lead}: ${reason}.${fix}`, data };
 }

@@ -3,24 +3,35 @@
  * or comes back. A failure is a thrown error or a result with status 'error';
  * skipped results (cooldown, dev, token writer disabled) don't count either way.
  *
- * State is keyed by service id (one household). record() never rejects: a push
- * or store failure is logged and the harvest carries on.
+ * Keep `failureThreshold` at or below the harvesters' circuit-breaker
+ * `maxFailures` (3): once the breaker opens, harvests return skipped results
+ * that this monitor ignores, so a higher threshold would never be reached.
+ *
+ * State is keyed by service id (one household). Records are applied one at a
+ * time, so concurrent harvests can't overwrite each other's state; the store may
+ * be sync or async. record() never rejects: a push or store failure is logged and
+ * the harvest carries on.
  */
 import { isFailedHarvest, describeHarvestFailure } from './ports/IHarvester.mjs';
-import { composeHarvesterHealthPush } from '#domains/notification/push/harvesterHealthPush.mjs';
+import { composeHarvesterHealthPush, localDay } from '#domains/notification/push/harvesterHealthPush.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}/;
+
+// Whole days between two 'YYYY-MM-DD' keys.
+const daysBetween = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 
 export class HarvesterHealthMonitor {
   #store; #sendPush; #now; #timezone; #failureThreshold; #staleAfterDays; #skip; #logger;
+  #chain = Promise.resolve();
 
   /**
    * @param {Object} deps
-   * @param {{load: () => Object|null, save: (state: Object) => void}} deps.store
+   * @param {{load: () => (Object|null|Promise<Object|null>), save: (state: Object) => (void|Promise<void>)}} deps.store
    * @param {(push: {title: string, message: string, data: Object}) => Promise<void>} deps.sendPush
    * @param {() => Date} [deps.now]
-   * @param {string} [deps.timezone] - household zone for local times in the copy
-   * @param {number} [deps.failureThreshold] - consecutive failures before 'failing'
+   * @param {string} [deps.timezone] - household zone for local days and times
+   * @param {number} [deps.failureThreshold] - consecutive failures before 'failing'; keep ≤ breaker maxFailures
    * @param {Object<string, number>} [deps.staleAfterDays] - per service; unset means never stale
    * @param {string[]} [deps.skip] - services watched elsewhere (e.g. Strava)
    * @param {Object} [deps.logger]
@@ -33,16 +44,36 @@ export class HarvesterHealthMonitor {
   }
 
   /** @returns {Promise<'failing'|'stale'|'recovered'|null>} the transition, if any */
-  async record({ serviceId, result, error } = {}) {
+  record(event = {}) {
+    const run = this.#chain.then(() => this.#apply(event)).catch((err) => {
+      this.#logger.warn?.('harvester.health.record_failed', { serviceId: event?.serviceId, error: err?.message });
+      return null;
+    });
+    this.#chain = run;
+    return run;
+  }
+
+  /** Current state per service id. */
+  async report() {
+    try {
+      return (await this.#store.load()) || {};
+    } catch (err) {
+      this.#logger.warn?.('harvester.health.store_failed', { error: err?.message });
+      return {};
+    }
+  }
+
+  async #apply({ serviceId, result, error }) {
     if (!serviceId || this.#skip.has(serviceId)) return null;
     const failed = Boolean(error) || isFailedHarvest(result);
     if (!failed && result?.status !== 'success') return null;
 
-    const nowIso = this.#now().toISOString();
+    const now = this.#now();
+    const nowIso = now.toISOString();
     let s;
     let transition = null;
     try {
-      const state = this.#store.load() || {};
+      const state = (await this.#store.load()) || {};
       s = state[serviceId] || { status: 'healthy', failures: 0, lastSuccessAt: null, lastError: null, latestDate: null };
 
       if (failed) {
@@ -52,14 +83,14 @@ export class HarvesterHealthMonitor {
       } else {
         s.failures = 0; s.lastError = null; s.lastSuccessAt = nowIso;
         if (result.latestDate) s.latestDate = result.latestDate;
-        const stale = this.#isStale(serviceId, s.latestDate);
+        const stale = this.#isStale(serviceId, s.latestDate, nowIso);
         if (stale && s.status !== 'stale') { s.status = 'stale'; transition = 'stale'; }
         else if (!stale && s.status !== 'healthy') { s.status = 'healthy'; transition = 'recovered'; }
       }
 
       s.updatedAt = nowIso;
       state[serviceId] = s;
-      this.#store.save(state);
+      await this.#store.save(state);
     } catch (err) {
       // Unsaved state would re-announce the same transition on every harvest; stay quiet instead.
       this.#logger.warn?.('harvester.health.store_failed', { serviceId, error: err?.message });
@@ -70,22 +101,14 @@ export class HarvesterHealthMonitor {
     return transition;
   }
 
-  /** Current state per service id. */
-  report() {
-    try {
-      return this.#store.load() || {};
-    } catch (err) {
-      this.#logger.warn?.('harvester.health.store_failed', { error: err?.message });
-      return {};
-    }
-  }
-
-  #isStale(serviceId, latestDate) {
+  // Stale when the newest entry is more than N household calendar days old.
+  #isStale(serviceId, latestDate, nowIso) {
     const days = this.#staleAfterDays[serviceId];
-    if (!days || !latestDate) return false;
-    const day = Date.parse(`${latestDate}T00:00:00Z`);
-    if (!Number.isFinite(day)) return false;
-    return (this.#now().getTime() - day) / DAY_MS > days;
+    if (!days || !DAY_KEY.test(String(latestDate ?? ''))) return false;
+    const today = localDay(nowIso, this.#timezone);
+    if (!today) return false;
+    const age = daysBetween(String(latestDate).slice(0, 10), today);
+    return Number.isFinite(age) && age > days;
   }
 
   async #push(serviceId, status, s, now) {
