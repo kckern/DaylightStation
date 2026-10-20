@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createHarvestRouter } from './harvest.mjs';
+import { HarvesterService } from '#apps/harvester/HarvesterService.mjs';
 
 function build({ has = true, harvest = async () => ({ count: 2 }) } = {}) {
   const harvesterService = {
@@ -10,6 +11,7 @@ function build({ has = true, harvest = async () => ({ count: 2 }) } = {}) {
     getAllStatuses: vi.fn(() => [{ serviceId: 'sample', running: false }]),
     getStatus: vi.fn(() => ({ serviceId: 'sample', running: false })),
     harvest: vi.fn(harvest),
+    describeFailure: result => HarvesterService.prototype.describeFailure(result),
   };
   const app = express();
   app.use(express.json());
@@ -40,6 +42,17 @@ describe('harvester HTTP characterization', () => {
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
       ok: false, error: 'Unknown harvester: missing', available: ['sample'], requestId: 'abcdef123456',
+    });
+  });
+
+  it('answers 502 with the reason when the harvest reports an error', async () => {
+    const result = { count: 0, status: 'error', reason: 'auth_failed', error: 'invalid refresh_token' };
+    const { app } = build({ harvest: async () => result });
+    const response = await request(app).get('/harvest/withings?user=u');
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      ok: false, harvester: 'withings', message: 'auth_failed: invalid refresh_token',
+      data: result, requestId: 'abcdef123456',
     });
   });
 

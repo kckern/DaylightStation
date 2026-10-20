@@ -13,8 +13,8 @@ function sanitizeError(error, serviceId) {
 /** HTTP parsing and presentation for semantic harvester operations. */
 export function createHarvestRouter({ harvesterService, principalResolver, requestIds, deadline,
   timeoutPolicy, logger = console }) {
-  if (!harvesterService || !principalResolver?.resolve || !requestIds?.next || !deadline?.run || typeof timeoutPolicy !== 'function') {
-    throw new TypeError('createHarvestRouter requires harvesterService, principalResolver, requestIds, deadline and timeoutPolicy');
+  if (typeof harvesterService?.describeFailure !== 'function' || !principalResolver?.resolve || !requestIds?.next || !deadline?.run || typeof timeoutPolicy !== 'function') {
+    throw new TypeError('createHarvestRouter requires harvesterService (with describeFailure), principalResolver, requestIds, deadline and timeoutPolicy');
   }
   const router = express.Router();
   const username = (req) => req.query.user || req.body?.user || principalResolver.resolve();
@@ -46,6 +46,11 @@ export function createHarvestRouter({ harvesterService, principalResolver, reque
       const result = await deadline.run(harvesterService.harvest(serviceId, username(req), options), {
         timeoutMs, message: `Timeout: ${serviceId} exceeded ${timeoutMs}ms limit`,
       });
+      const message = harvesterService.describeFailure(result);
+      if (message) {
+        logger.warn?.('harvest.failed', { serviceId, requestId, message });
+        return res.status(502).json({ ok: false, harvester: serviceId, message, data: result, requestId });
+      }
       logger.info?.('harvest.response', { serviceId, requestId, result });
       return res.status(200).json({ ok: true, harvester: serviceId, data: result, requestId });
     } catch (error) {
