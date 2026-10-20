@@ -101,6 +101,20 @@ describe('YamlIssuedArtifactStore', () => {
     expect((await store.get('art_1')).bytes).toBeNull();
   });
 
+  it('lets a caller replace a generated recipe whose card never reached paper', async () => {
+    const base = { artifactId: 'math/course/ws-ses_2', bytes: Buffer.from('one'), issuedAt: '2026-10-06T10:00:00.000Z',
+      sessionId: 'ses_2', sourceDocument: { schema: 'school.document/v2', id: 'doc', rev: 'one', blocks: [] },
+      renderContext: { learnerId: 'kid' }, allocation: { cardId: '1111111', recordId: 'r1', rowRange: { start: 1, end: 4 } } };
+    const first = await store.put(base);
+    const retry = { ...base, issuedAt: '2026-10-10T10:00:00.000Z',
+      allocation: { cardId: '2222222', recordId: 'r2', rowRange: { start: 1, end: 4 } } };
+    await expect(store.put(retry)).rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
+    const replaced = await store.put({ ...retry, supersedeUndelivered: true });
+    expect(replaced.manifest).toMatchObject({ allocation: { cardId: '2222222' },
+      supersededRenderInputSha256: first.manifest.renderInputSha256 });
+    expect((await store.get(base.artifactId)).manifest.allocation.cardId).toBe('2222222');
+  });
+
   it('detects a modified generated-PDF recipe by its input digest', async () => {
     const artifactId = 'math/course/ws-tampered';
     await store.put({ artifactId, bytes: Buffer.from('%PDF disposable'),

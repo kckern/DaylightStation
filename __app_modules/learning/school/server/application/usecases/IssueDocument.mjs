@@ -889,6 +889,10 @@ export class IssueDocument {
       document: publishedDocument,
       renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
       captureKind: replacementArtifactId ? 'replacement' : 'original',
+      // The id is derived from the session, so a recipe retained by an attempt
+      // whose print failed (its card released, no instance bound) is still
+      // sitting under it. Only a delivered binding makes the recipe final.
+      supersedeUndelivered: mustPersistOmrBinding,
     });
     let printResult;
     try {
@@ -1400,13 +1404,13 @@ export class IssueDocument {
   /** Persist the semantic render recipe before dispatch; keep PDF bytes in memory only. */
   async #retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state,
     worksheetInstanceId = null, allocation = null, document = null,
-    renderContext = null, captureKind = 'original' }) {
+    renderContext = null, captureKind = 'original', supersedeUndelivered = false }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
     await this.#issuedArtifacts.put({
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
-      captureKind, worksheetInstanceId, allocation,
+      captureKind, worksheetInstanceId, allocation, supersedeUndelivered,
       kind: 'worksheet', document, sourceDocument: document,
       renderContext: renderContext ?? {
         learnerId: state.learnerId ?? null, sessionId,
