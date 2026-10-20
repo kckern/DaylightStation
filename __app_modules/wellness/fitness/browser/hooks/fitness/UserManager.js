@@ -389,7 +389,7 @@ export class UserManager {
       if (Array.isArray(hrDeviceIds)) {
         for (const id of hrDeviceIds) user.hrDeviceIds.add(String(id));
       }
-      getLogger().warn('usermanager.user_created', {
+      getLogger().debug('usermanager.user_created', {
         configName: config.name,
         userId: user.id,
         userName: user.name,
