@@ -187,98 +187,37 @@ function Pins({ segments, onOpen = null }) {
   );
 }
 
-/**
- * The term as a grid, weeks as columns. `undefined` is in flight (a skeleton
- * of the right width), `null` is a failed read (nothing — a grid that lied
- * about a term would be worse than no grid), a term is drawn. The eighth row
- * appears only when a week carries week-level work.
- */
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/**
- * The two axes around the term grid, on the SAME column template as the
- * cells so they line up by construction: week numbers above (every fourth
- * week — a digit per 8px column is not legible from a doorway), months
- * below at the column in which each month begins.
- */
-function termAxes(weeks) {
-  const weekNumbers = weeks.map((w, i) => (i % 4 === 0 ? String(i + 1) : ''));
-  let lastMonth = null;
-  const months = weeks.map((w) => {
-    // The month a week belongs to is the month most of it is in: Thursday's.
-    const thursday = new Date(Date.parse(`${w.weekId}T00:00:00Z`) + 3 * 86_400_000);
-    const month = thursday.getUTCMonth();
-    if (month === lastMonth) return '';
-    lastMonth = month;
-    return MONTH_SHORT[month];
-  });
-  return { weekNumbers, months };
-}
-
-function TermGrid({ term }) {
-  if (term === null) return null;
-  if (term === undefined || !term.from || !term.to) {
-    return <div className="school-status-board__grid school-status-board__grid--skeleton" aria-hidden="true" />;
-  }
-  const weeks = Array.isArray(term.weeks) ? term.weeks : [];
-  const hasWeeklyWork = weeks.some((w) => (w.asked ?? 0) > 0);
-  const { weekNumbers, months } = termAxes(weeks);
-  const axisStyle = { '--grid-cols': weeks.length };
-  return (
-    <div className="school-status-board__term-plot">
-      <ol className="school-status-board__term-axis school-status-board__term-axis--weeks" style={axisStyle} aria-hidden="true">
-        {weekNumbers.map((n, i) => <li key={weeks[i].weekId}>{n}</li>)}
-      </ol>
-      <DayGrid
-        days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
-        orientation="weeks-as-columns"
-        from={term.from}
-        to={term.to}
-        studyDay={term.today ?? null}
-        highlightCurrentWeek
-        extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
-        className="school-status-board__grid"
-        testId="board-term-grid"
-        todayTestId="board-term-today"
-        ariaLabel={`${term.label ?? 'This term'}: ${(term.days ?? []).filter((d) => d.state === 'met').length} days met`}
-      />
-      <ol className="school-status-board__term-axis school-status-board__term-axis--months" style={axisStyle} aria-hidden="true">
-        {months.map((m, i) => <li key={weeks[i].weekId}>{m}</li>)}
-      </ol>
-    </div>
-  );
-}
-
 const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /**
- * THIS WEEK as seven squares: the term grid's current column turned on its
- * side, drawn from the SAME rows so the two cannot disagree, with the
- * weekday letters under it. Days after today are outlines, not verdicts.
- * Nothing while the term is in flight; nothing at all without one.
+ * LAST WEEK AND THIS WEEK, a row each, from the same term rows as ever: on a
+ * Monday morning this week is blank, and last week is what tells the story.
+ * Today is outlined; days after it are outlines, not verdicts. Nothing while
+ * the term is in flight; nothing at all without one.
  */
-function WeekStrip({ term }) {
+function TwoWeeks({ term }) {
   if (!term?.today) return null;
-  const from = weekStart(term.today);
-  const to = addDays(from, 6);
+  const thisWeek = weekStart(term.today);
+  const from = addDays(thisWeek, -7);
+  const to = addDays(thisWeek, 6);
   const days = (term.days ?? []).filter((d) => d.studyDay >= from && d.studyDay <= to)
     .map((d) => ({ studyDay: d.studyDay, state: d.state }));
   return (
-    <div className="school-status-board__week-strip" data-testid="board-week-strip">
+    <div className="school-status-board__two-weeks">
+      <ol className="school-status-board__week-letters" aria-hidden="true">
+        {WEEKDAY_LETTERS.map((letter, i) => <li key={i}>{letter}</li>)}
+      </ol>
       <DayGrid
         days={days.length ? days : [{ studyDay: term.today, state: 'unknown' }]}
         orientation="weeks-as-rows"
         from={from}
         to={to}
         studyDay={term.today}
-        className="school-status-board__grid school-status-board__grid--week"
-        testId="board-week-grid"
-        todayTestId="board-week-today"
-        ariaLabel={`This week: ${days.filter((d) => d.state === 'met').length} days met`}
+        className="school-status-board__grid school-status-board__grid--weeks"
+        testId="board-days-grid"
+        todayTestId="board-days-today"
+        ariaLabel={`Last two weeks: ${days.filter((d) => d.state === 'met').length} days met`}
       />
-      <ol className="school-status-board__week-letters" aria-hidden="true">
-        {WEEKDAY_LETTERS.map((letter, i) => <li key={i}>{letter}</li>)}
-      </ol>
     </div>
   );
 }
@@ -772,30 +711,21 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
             <div className="school-status-board__coins" data-testid="board-coins">
               <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
             </div>
-            {/* THIS WEEK: the fitness rings. Rendered only once the number has
-                arrived — a placeholder zero would be a claim we cannot support
-                yet, and "0" and "not loaded" are different facts. The count
-                stands alone until a weekly goal is authored (see
-                `ringProgressByLearner`). */}
-            <div className="school-status-board__week" data-testid="board-week">
-              <h3 className="school-status-board__part-title">This week</h3>
-              <WeekStrip term={terms[kid.id]} />
+            {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.
+                Rings render only once the number has arrived — a placeholder
+                zero would be a claim we cannot support yet. The count stands
+                alone until a weekly goal is authored (`ringProgressByLearner`). */}
+            <div className="school-status-board__days" data-testid="board-days">
+              <TwoWeeks term={terms[kid.id]} />
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
-                  <RingIcon size="1.6em" label={`${rings[kid.id].current} rings this week`} />
+                  <RingIcon size="1.4em" label={`${rings[kid.id].current} rings this week`} />
                   <span className="school-status-board__rings-count">
                     {rings[kid.id].current}
                     {Number.isFinite(rings[kid.id].target) ? ` of ${rings[kid.id].target}` : ''}
                   </span>
                 </span>
               )}
-            </div>
-            {/* THE TERM: every day since September, one square each, weeks as
-                columns. Blank-but-present while loading, so the card is the
-                width it is going to be from the first paint. */}
-            <div className="school-status-board__term" data-testid="board-term">
-              <h3 className="school-status-board__part-title">This term</h3>
-              <TermGrid term={terms[kid.id]} />
             </div>
           </li>
         ))}

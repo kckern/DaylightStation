@@ -3065,7 +3065,7 @@
     // Not quite even quarters: the face needs less than a fourth, the pins
     // and the sixteen-week grid need more, and the week strip is seven
     // squares and a number.
-    grid-template-columns: 0.8fr minmax(max-content, 1.25fr) clamp(6.5rem, 13vw, 10rem) 1fr;
+    grid-template-columns: 0.8fr minmax(max-content, 1.25fr) clamp(6.5rem, 13vw, 10rem) minmax(max-content, 0.9fr);
     align-items: stretch; column-gap: 0;
     padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
     --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
@@ -3101,41 +3101,26 @@
       font-size: clamp(1.3rem, 4.3vh, 2.2rem);
     }
   }
-  // FOUR PARTITIONS, time widening left to right: who · today · this week ·
-  // the term. Each is a column with its own number INSIDE it. The old card
+  // FOUR PARTITIONS, time widening left to right: who · today · coins ·
+  // the days. Each is a column with its own number INSIDE it. The old card
   // stacked a count, the rings and a strip of discs in one right-hand block,
   // so the count sat away from the discs it counted and a busy day made the
   // strip longer, not taller.
   // Every partition after the first wears the divider on its left edge.
-  &__day, &__week, &__term {
+  &__day, &__days {
     min-width: 0; min-height: 0;
     border-left: 1px solid var(--school-border);
     padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
     display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
     gap: clamp(0.25rem, 0.8vh, 0.5rem);
-    // The title sits on ONE LINE across the row — at the top of every
-    // partition — and the content centres in what is left beneath it.
-    > :nth-child(2) { margin-top: auto; }
-    > :last-child { margin-bottom: auto; }
-  }
-  // A quiet title on each timed partition; the face needs none.
-  &__part-title {
-    margin: 0; flex: none; line-height: 1;
-    font-size: clamp(0.65rem, 1.5vh, 0.85rem); font-weight: 700;
-    color: var(--school-muted); letter-spacing: 0.02em;
   }
   &__day {
     // The pins size themselves from THIS box's height (container units
     // below), so it has to be a size container.
     container-type: size;
-    // This partition has NO title, unlike its two neighbours, so the shared
-    // "title on the top line, content centred beneath it" rule above has
-    // nothing to skip past and would centre the BAR instead of the pins.
-    // Here the pins are the content and they get the whole box.
     justify-content: center;
-    > :nth-child(2) { margin-top: 0; }
-    > :last-child { margin-bottom: 0; }
   }
+  &__days { justify-content: center; }
   // Anchored to the rail's padded box, then pulled down by half its own height
   // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
   // does both the centring and the straddle, so the overlap stays half however
@@ -3322,15 +3307,14 @@
   // column: a second, independent fact (how much the child MOVED) beside the
   // school-work count, not a competitor to it. Quieter than the status line on
   // purpose — the discs and their count are still what this board is for.
-  // THIS WEEK as seven squares — the term's current column on its side, the
-  // same cell size, the weekday letters under it. The ring and its count sit
-  // beneath both.
-  &__week-strip {
-    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-    --grid-cell: clamp(7px, 1.35vh, 12px);
-    --grid-gap: 2px;
+  &__two-weeks {
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    --grid-cell: clamp(10px, 2.2vh, 18px); --grid-gap: 3px;
   }
-  &__grid--week { --grid-cell: inherit; --grid-gap: inherit; }
+  &__grid--weeks { --grid-cell: inherit; --grid-gap: inherit; }
+  // Last week reads as background to this week (weeks-as-rows is row-major,
+  // Monday first, so the first seven cells are last week).
+  &__grid--weeks .school-daygrid__cell:nth-child(-n + 7) { opacity: 0.65; }
   &__week-letters {
     list-style: none; margin: 0; padding: 0;
     display: grid; grid-template-columns: repeat(7, var(--grid-cell)); gap: var(--grid-gap);
@@ -3371,28 +3355,6 @@
   // Hangs off the end of its number, so it never moves the column.
   &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.25em; font-size: 0.5em; opacity: 0.45; }
 
-  // THE TERM GRID. Seven rows × one column per week, ~11px cells on the
-  // 1280x800 Portal: eighteen weeks fit in ~230px beside the pins. The grid's
-  // own palette is the household's (green/amber/grey) plus blue for a day
-  // the house took off; the count is never shown here — the card is read from
-  // across a room, and a number in an 11px square is noise.
-  // The grid and its two axes share one column template, declared once on
-  // the plot and read by all three, so a month label can only ever sit over
-  // its own week.
-  &__term-plot {
-    --grid-cell: clamp(6px, 1.3vh, 12px);
-    --grid-gap: 1px;
-    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  }
-  &__term-axis {
-    list-style: none; margin: 0; padding: 0;
-    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
-    height: 0.7em;
-    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
-    color: var(--school-muted); font-variant-numeric: tabular-nums;
-    li { overflow: visible; white-space: nowrap; }
-    &--months { margin-top: 2px; }
-  }
   &__grid {
     // The day grid declares its own defaults on its root; the plot's values
     // have to be pulled through explicitly or a 1rem cell comes back.

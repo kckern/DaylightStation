@@ -934,48 +934,51 @@ describe('the four partitions', () => {
     expect(screen.queryByTestId('board-day-done')).toBeNull();
   });
 
-  it('drops the "Today" heading but keeps the partition named for a screen reader', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(3));
-    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const day = await screen.findByTestId('board-day');
-    expect(day.querySelector('.school-status-board__part-title')).toBeNull();
-    expect(day).toHaveAttribute('aria-label', 'Today');
-    // Its two neighbours keep theirs; the day is named by sitting between them.
-    expect(screen.getByText('This week')).toBeTruthy();
-    expect(screen.getByText('This term')).toBeTruthy();
-  });
-
-  it('draws the term as weeks-as-columns with today ringed, and the eighth row only for weekly work', async () => {
+  it('shows last week above this week, seven squares each, today outlined, no part titles', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const grid = await screen.findByTestId('board-term-grid');
-    expect(grid.classList.contains('school-daygrid--weeks-as-columns')).toBe(true);
-    expect(grid.style.getPropertyValue('--grid-cols')).toBe('2');
-    expect(grid.style.getPropertyValue('--grid-rows')).toBe('7');
-    expect(screen.getByTestId('board-term-today')).toHaveAttribute('data-state', 'partial');
-    expect(grid.querySelector('[data-day="2026-09-08"]')).toHaveAttribute('data-state', 'exempt');
-    // A day in the span with no verdict yet is hollow, not a miss.
-    expect(grid.querySelector('[data-day="2026-09-01"]')).toHaveAttribute('data-state', 'unknown');
-    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
+    const grid = await screen.findByTestId('board-days-grid');
+    expect(grid.classList.contains('school-daygrid--weeks-as-rows')).toBe(true);
+    const cells = [...grid.querySelectorAll('.school-daygrid__cell')];
+    expect(cells).toHaveLength(14);
+    // Row 1 is the week of 2026-08-31; row 2 is 2026-09-07 (today's week).
+    expect(cells[0]).toHaveAttribute('data-day', '2026-08-31');
+    expect(cells[7]).toHaveAttribute('data-day', '2026-09-07');
+    expect(cells[7]).toHaveAttribute('data-state', 'met');
+    expect(screen.getByTestId('board-days-today')).toHaveAttribute('data-day', '2026-09-09');
+    expect(screen.getByTestId('board-days').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
+    expect(screen.queryByText('This week')).toBeNull();
+    expect(screen.queryByText('This term')).toBeNull();
+    expect(screen.queryByTestId('board-term')).toBeNull();
   });
 
-  it('this week is the term\'s current column on its side, lettered, with days after today as outlines', async () => {
+  it('last week before the term starts draws as blank squares, not a missing row', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    const fresh = { ...term, data: { ...term.data, from: '2026-09-07', days: [{ studyDay: '2026-09-07', state: 'met' }] } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(fresh);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const strip = await screen.findByTestId('board-week-grid');
-    const cells = strip.querySelectorAll('.school-daygrid__cell');
-    expect(cells).toHaveLength(7);
-    expect([...cells].map((c) => c.getAttribute('data-state'))).toEqual(['met', 'exempt', 'partial', 'future', 'future', 'future', 'future']);
-    expect(screen.getByTestId('board-week-today')).toHaveAttribute('data-day', '2026-09-09');
-    expect(screen.getByTestId('board-week').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
-    // …and the term marks that same week as ONE band behind its column.
-    const termGrid = screen.getByTestId('board-term-grid');
-    expect(termGrid).toHaveClass('school-daygrid--has-current');
-    expect(termGrid.style.getPropertyValue('--current-col')).toBe('1');
-    expect(termGrid.querySelectorAll('.school-daygrid__cell--current-week')).toHaveLength(0);
+    const grid = await screen.findByTestId('board-days-grid');
+    expect(grid.querySelectorAll('.school-daygrid__cell')).toHaveLength(14);
+  });
+
+  it('a pinned past day shows that day\'s week and the one before', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    const past = { ...term, data: { ...term.data, today: '2026-09-02' } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(past);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-02" />);
+    const grid = await screen.findByTestId('board-days-grid');
+    expect(grid.querySelector('.school-daygrid__cell')).toHaveAttribute('data-day', '2026-08-24');
+  });
+
+  it('the rings sit under the days with their icon, and a failed term read costs only the squares', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
+    schoolApi.stateGates.mockResolvedValue({ ok: true, status: 200, data: { items: [ringGate('learner1', 42)] } });
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByLabelText('42 rings this week')).toBeTruthy());
+    expect(screen.getAllByTestId('board-days')[0].contains(screen.getByLabelText('42 rings this week'))).toBe(true);
+    expect(screen.queryByTestId('board-days-grid')).toBeNull();
   });
 
   it('discs are inert marks by default — the Portal never gets a door', async () => {
@@ -998,32 +1001,6 @@ describe('the four partitions', () => {
     expect(onOpenSegment).toHaveBeenCalledWith('learner1', expect.objectContaining({ subject: 'math' }));
   });
 
-  it('adds the eighth row when a week carries week-level work', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };
-    schoolApi.learnerTerm = vi.fn().mockResolvedValue(weekly);
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const grid = await screen.findByTestId('board-term-grid');
-    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(2);
-    expect(grid.style.getPropertyValue('--grid-rows')).toBe('8');
-  });
-
-  it('a failed term read costs the grid, never the card', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(2));
-    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
-    // The partition keeps its title; only the grid is absent.
-    await waitFor(() => expect(screen.getByTestId('board-term').querySelector('.school-daygrid, .school-status-board__grid--skeleton')).toBeNull());
-  });
-
-  it('shows the skeleton grid while the term is in flight', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    schoolApi.learnerTerm = vi.fn(() => new Promise(() => {}));
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
-    expect(screen.getByTestId('board-term').querySelector('.school-status-board__grid--skeleton')).toBeTruthy();
-  });
 });
 
 // 2026-09-25, from the wall: the board "keeps on spinning and shimmering". Every
