@@ -183,6 +183,24 @@ all, reports `status: unavailable` with `hasActivity: null`, so an outage
 cannot be mistaken for a child who did not exercise. The v1 teacher-today
 response remains unchanged.
 
+## Silver on the status board
+
+The card's **This week** partition shows, beside the rings, the learner's
+silver so far this week from the roster earnings preview
+(`GET /api/v1/earnings/preview`; see `__docs/reference/economy/economy.md`).
+It is a preview: nothing is paid until payday. Gems show as a second figure
+only once one is earned, and a smaller line ("+5 silver · +1 gem") shows what
+the week could still pay while anything is pending.
+
+One roster read prices every card. It runs beside the plans, never blocking
+them, on the board's refresh timer, on visibility, and after every school,
+scan, or ring event, since that work is what moves the figure. Nothing shows
+until the read lands ("0" and "not loaded" are different facts), a failed
+re-read keeps the figures already shown, and a learner the preview cannot
+price (every line "can't tell") shows no figure. The snapshot cache keeps the
+figures with the week they price, so last week's total is never painted as
+this week's. Cards stay in roster order; the economy never ranks.
+
 ## Physical education on the status board
 
 Available `fitnessActivity` with `hasActivity: true` adds one supplemental

@@ -22,7 +22,7 @@
 
 const KEY = 'daylight.school.status-board.v1';
 
-/** @returns {{studyDay: string|null, learners: Object<string, {summary?: object|null, term?: object|null}>, rings: object}|null} */
+/** @returns {{studyDay: string|null, learners: Object<string, {summary?: object|null, term?: object|null}>, rings: object, earnings: object}|null} */
 export function readBoardCache(storage = safeStorage()) {
   try {
     const raw = storage?.getItem(KEY);
@@ -33,6 +33,7 @@ export function readBoardCache(storage = safeStorage()) {
       studyDay: typeof parsed.studyDay === 'string' ? parsed.studyDay : null,
       learners: parsed.learners ?? {},
       rings: parsed.rings && typeof parsed.rings === 'object' ? parsed.rings : {},
+      earnings: parsed.earnings && typeof parsed.earnings === 'object' ? parsed.earnings : {},
     };
   } catch {
     return null;
@@ -44,7 +45,7 @@ export function readBoardCache(storage = safeStorage()) {
  * from `learners` keeps its stored entry; a field left `undefined` (still in
  * flight) keeps its stored value.
  */
-export function writeBoardCache({ studyDay, learners = {}, rings } = {}, storage = safeStorage()) {
+export function writeBoardCache({ studyDay, learners = {}, rings, earnings } = {}, storage = safeStorage()) {
   if (!studyDay) return;
   try {
     const previous = readBoardCache(storage);
@@ -63,6 +64,7 @@ export function writeBoardCache({ studyDay, learners = {}, rings } = {}, storage
       studyDay,
       learners: merged,
       rings: rings ?? previous?.rings ?? {},
+      earnings: earnings ?? previous?.earnings ?? {},
       savedAt: new Date().toISOString(),
     }));
   } catch {
