@@ -243,15 +243,20 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   // Commit a launch. `remountKey` forces a fresh console mount (the load path).
   const startGame = useCallback((game, decision, { remountKey } = {}) => {
     const ctx = buildLaunchContext(game, decision);
+    // Ask "continue / save as me / just play" before any progress exists:
+    // only where a fingerprint can answer (kiosk), only for a shared save
+    // game, only when nobody's save is loaded. Never for owned games.
+    const askAtLaunch = isKioskEnv() && supportsSave(game.saveMode) && !game.saveOwner && !decision.userId;
     setLaunch({
       ...ctx,
       userId: decision.userId,
       person: resolvePersonCard(decision.userId),
       startedAt: Date.now(),
+      askAtLaunch,
       key: remountKey ?? `${game.id}:${decision.userId || 'anon'}:${Date.now()}`,
     });
     setView('playing');
-    logger.info('fitness-emulator.launch', { game: game.id, action: decision.action, persist: decision.persist, user: decision.userId || null });
+    logger.info('fitness-emulator.launch', { game: game.id, action: decision.action, persist: decision.persist, user: decision.userId || null, askAtLaunch });
   }, [buildLaunchContext, resolvePersonCard, logger]);
 
   // Fetch who already has a save for this game — the menu's "Continue as" row
@@ -507,6 +512,8 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         onClaim={() => { closeMenu(); handleClaim(); }}
         onConfirmOverwrite={(uid) => activateSave(uid)}
         onCancelOverwrite={() => setClaimConflict(null)}
+        canIdentify={isKioskEnv()}
+        onJustPlay={() => { logger.info('fitness-emulator.just-play', { game: launch.game.id }); closeMenu(); }}
       />
     )
     : null;
@@ -572,6 +579,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             onExit={handleExitGame}
             menuSection={menuSection}
             menuAttention={saveGame && !launch.userId}
+            menuInitiallyOpen={!!launch.askAtLaunch}
           />
         </div>,
         document.body,

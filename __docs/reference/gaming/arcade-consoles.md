@@ -67,12 +67,16 @@ A game keeps progress only when its manifest entry sets `save_mode: battery`
 (the cartridge's `.srm`) or `save_mode: state`. Saves are per person, at
 `{system}/saves/{user}/{game}.srm` (states under `{system}/states/{user}/{game}/`).
 
-**Shared (the default).** The game boots fresh and anonymous. The bezel's single
-⋯ **game menu** button (bottom-left; the game pauses while it is open) carries a
-small amber dot while nothing is being saved. Its Player section offers
-*Continue as* for everyone with a save (fingerprint-verified, then the console
-remounts on their save) and *Save as me*, which claims the running game — asking
-first if that person already has a save it would replace.
+**Shared (the default).** The game boots fresh and anonymous. At the garage
+kiosk the ⋯ **game menu** opens by itself at launch, with the game held paused
+from its first frame, so the choice is made before there is progress to lose:
+*Continue as* (everyone with a save; fingerprint-verified, then the console
+remounts on their save), *Save as me* (claims the running game — asking first
+if that person already has a save it would replace) or *Just play*. After
+that the menu stays on the bezel's single ⋯ button (bottom-left; the game
+pauses while it is open), which carries a small amber dot while nothing is
+being saved. Off the kiosk there is no fingerprint reader, so the menu does not
+open at launch and its Player section reads "Saving works at the garage".
 
 **One person's game: `save_owner: <user>`.** For a save that must only ever be
 one child's (a long RPG one child is playing through):

@@ -33,6 +33,7 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
         data-timer={props.sessionTimer?.text || ''}
         data-overlay-anchor={props.sessionOverlayConfig?.anchor || ''}
         data-menu-attention={props.menuAttention ? '1' : '0'}
+        data-menu-open-at-launch={props.menuInitiallyOpen ? '1' : '0'}
       />
       {props.menuSection && (
         <div data-testid="menu">
@@ -360,6 +361,57 @@ describe('EmulatorGameWidget save flow', () => {
   });
 });
 
+describe('EmulatorGameWidget save choice at launch', () => {
+  function sharedApi(users = ['user_5']) {
+    api.mockImplementation((p) => {
+      if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
+      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users });
+      return Promise.resolve({});
+    });
+  }
+  async function launch() {
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    return screen.findByTestId('console');
+  }
+
+  it('kiosk + shared save game + nobody saving: menu opens at launch with Just play', async () => {
+    kiosk.value = true;
+    sharedApi([]); // a brand-new kid: no savers yet
+    const el = await launch();
+    expect(el.getAttribute('data-menu-open-at-launch')).toBe('1');
+    expect(screen.getByText('Save as me')).toBeTruthy();
+    expect(screen.getByText('Just play')).toBeTruthy();
+  });
+
+  it('a game without saves starts straight into play', async () => {
+    kiosk.value = true;
+    api.mockImplementation((p) => Promise.resolve(p === 'api/v1/emulator/library' ? libraryWith('none') : {}));
+    const el = await launch();
+    expect(el.getAttribute('data-menu-open-at-launch')).toBe('0');
+  });
+
+  it('off the kiosk: closed at launch, and the panel says where saving works', async () => {
+    kiosk.value = false;
+    sharedApi();
+    const el = await launch();
+    expect(el.getAttribute('data-menu-open-at-launch')).toBe('0');
+    expect(screen.getByText('Saving works at the garage')).toBeTruthy();
+    expect(screen.queryByText('Save as me')).toBeNull();
+  });
+
+  it('loading a saver boots closed (no second ask)', async () => {
+    kiosk.value = true;
+    sharedApi();
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
+    await launch();
+    fireEvent.click(await screen.findByLabelText('Continue as User_5'));
+    await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-user')).toBe('user_5'));
+    expect(screen.getByTestId('console').getAttribute('data-menu-open-at-launch')).toBe('0');
+  });
+});
+
 describe('EmulatorGameWidget owned save game (save_owner)', () => {
   function ownedApi() {
     api.mockImplementation((p) => {
@@ -381,6 +433,7 @@ describe('EmulatorGameWidget owned save game (save_owner)', () => {
     expect(el.getAttribute('data-persist')).toBe('1');
     expect(el.getAttribute('data-user')).toBe('user_5');
     expect(el.getAttribute('data-menu-attention')).toBe('0');
+    expect(el.getAttribute('data-menu-open-at-launch')).toBe('0');
     expect(screen.getByText("User_5's game · saving")).toBeTruthy();
     expect(screen.queryByText('Save as me')).toBeNull();
     expect(screen.queryByLabelText('Continue as User_5')).toBeNull();
