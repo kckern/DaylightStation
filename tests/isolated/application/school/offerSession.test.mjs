@@ -98,3 +98,50 @@ describe('nextMove: a new bank lesson uses declarative delivery', () => {
     expect(nextMove({ subject: 'civilization', bank: 'civilization/quiz', delivery: 'screen' }, state).kind).toBe('screen');
   });
 });
+
+/** A real reduced session settled `needs_remediation`, optionally a retry of `remediationOf`. */
+function failedState({ sessionId = 'ses_f', unitId = 'math.01', remediationOf } = {}) {
+  const raw = [
+    { type: 'created', at: '2026-09-26T09:00:00.000Z', sessionId, learnerId: 'kid1', unitId,
+      ...(remediationOf ? { remediationOf } : {}) },
+    { type: 'launch_dispatched', at: '2026-09-26T09:01:00.000Z', sessionId, surface: 'portal' },
+    { type: 'outcome_recorded', at: '2026-09-26T09:30:00.000Z', sessionId, outcomeId: `out_${sessionId}`, result: 'needs_remediation' },
+  ];
+  const events = raw.map((event, index) => {
+    const built = createEvent(event);
+    expect(built.errors).toEqual([]);
+    return { ...built.event, seq: index + 1 };
+  });
+  const state = reduceSession(events);
+  expect(state.errors).toEqual([]);
+  expect(state.outcome?.result).toBe('needs_remediation');
+  return state;
+}
+
+describe('nextMove: two remediation rounds, then a grown-up', () => {
+  const unit = { unitId: 'math.01', subject: 'math', document: 'math/01' };
+
+  it('offers a retry at depth 0 (the original sheet failed)', () => {
+    expect(nextMove(unit, failedState(), { remediationDepth: 0, maxRounds: 2 }))
+      .toMatchObject({ kind: 'retry', tokenClass: 'remediation' });
+  });
+
+  it('offers a retry at depth 1 (the first retry failed)', () => {
+    expect(nextMove(unit, failedState({ remediationOf: 'ses_0' }), { remediationDepth: 1, maxRounds: 2 }))
+      .toMatchObject({ kind: 'retry', tokenClass: 'remediation' });
+  });
+
+  it('hands it to a grown-up at depth 2 — no third sheet', () => {
+    const move = nextMove(unit, failedState({ remediationOf: 'ses_1' }), { remediationDepth: 2, maxRounds: 2 });
+    expect(move).toEqual({ kind: 'teacher', tokenClass: null, label: 'a grown-up will help with this one' });
+  });
+
+  it('defaults the cap to two rounds when the caller names none', () => {
+    expect(nextMove(unit, failedState({ remediationOf: 'ses_1' }), { remediationDepth: 2 }).kind).toBe('teacher');
+    expect(nextMove(unit, failedState()).kind).toBe('retry');
+  });
+
+  it('honours a configured cap', () => {
+    expect(nextMove(unit, failedState({ remediationOf: 'ses_1' }), { remediationDepth: 2, maxRounds: 3 }).kind).toBe('retry');
+  });
+});

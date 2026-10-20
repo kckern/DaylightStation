@@ -8,6 +8,9 @@ import {
   studyDayForInstant, studyDayWindow, studyDayWindowForDate, withinStudyWindow,
 } from "../../domain/studyDay.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
+import {
+  isPastRemediationCap, remediationMaxRounds, walkRemediationLineage,
+} from "../../domain/sessions/remediationLineage.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { projectReadingActivity } from "../../domain/readingActivity.mjs";
 import { projectFitnessActivity } from "../../domain/fitnessActivity.mjs";
@@ -90,14 +93,48 @@ function uniqueAttempts(attempts) {
   });
 }
 
+/**
+ * Units a child can no longer move on alone: the open failure sits at or past
+ * the remediation cap (two fresh sheets did not land), so the agenda has
+ * stopped offering it and excused the day from it. Nothing else surfaces that
+ * — the child's paper just says a grown-up will help — so it is named here,
+ * on the screen the grown-up actually reads. Walked over the states this use
+ * case already reduced: no extra reads.
+ */
+function remediationCapItems(states, { learnerId, unitsById, maxRounds }) {
+  const byId = new Map(states.map((state) => [state.sessionId, state]));
+  return states
+    .filter((state) => !state.terminal)
+    .map((state) => ({
+      state,
+      depth: walkRemediationLineage(state.remediationOf, (id) => byId.get(id)?.remediationOf ?? null),
+    }))
+    .filter(({ state, depth }) => isPastRemediationCap(state, depth, maxRounds))
+    .map(({ state, depth }) => ({
+      kind: 'remediation-cap',
+      learnerId,
+      sessionId: state.sessionId,
+      unitId: state.unitId,
+      unitTitle: unitsById.get(state.unitId)?.title ?? state.unitId,
+      depth,
+      maxRounds,
+      lastScore: state.gradedPercent == null ? null : {
+        percent: state.gradedPercent, correctCount: state.gradedCorrectCount, totalCount: state.gradedTotalCount,
+      },
+      since: state.outcome?.at ?? null,
+    }));
+}
+
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger;
+  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger; #remediationMaxRounds;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
     curriculum = null, bookLog = null, fitnessSessions = null,
     timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
+    // `school.yml → lifecycle.remediation.maxRounds`; the same cap the agenda holds at.
+    remediationMaxRounds: maxRounds = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -113,6 +150,7 @@ export class GetTeacherToday {
     this.#fitnessSessions = fitnessSessions;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
+    this.#remediationMaxRounds = remediationMaxRounds(maxRounds);
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -168,12 +206,14 @@ export class GetTeacherToday {
         .filter((attempt) => withinStudyWindow(attempt.processedAt ?? attempt.at, window)));
       const sessions = [];
       const processedToday = [];
+      const reduced = [];
 
       for (const row of indexRows) {
         // eslint-disable-next-line no-await-in-loop
         const events = await this.#sessions.readEvents(row.sessionId);
         if (!events.length) continue;
         const state = reduceSession(events);
+        reduced.push(state);
         const createdAt = events.find((event) => event.type === 'created')?.at ?? null;
         const originalAt = state.firstIssuedAt ?? createdAt ?? row.updatedAt ?? null;
         const originalStudyDay = state.studyDay ?? studyDayForInstant(Date.parse(originalAt), {
@@ -290,6 +330,11 @@ export class GetTeacherToday {
         learnerName: learner.name ?? learner.id,
         sessions,
         processedToday,
+        // A standing list, not a day's: a hold stays here until a grown-up
+        // opens another round or the work is settled some other way.
+        attention: remediationCapItems(reduced, {
+          learnerId: learner.id, unitsById, maxRounds: this.#remediationMaxRounds,
+        }),
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,

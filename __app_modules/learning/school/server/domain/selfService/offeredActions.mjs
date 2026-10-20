@@ -171,6 +171,14 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       // up by kind and routes it to `OpenRemediation`. Only the wording
       // follows the composition — and paper keeps "a fresh sheet", which is
       // the thing that distinguishes a remediation from an ordinary reprint.
+      //
+      // PAST THE REMEDIATION CAP there is nothing to offer at all. This is the
+      // one place the card reads `move.kind`: whether a failure is past the
+      // cap depends on how many retries sit behind it, which only `nextMove`'s
+      // caller knows (the planner walked the lineage). Re-deriving it here
+      // from session state alone would offer a third sheet the scan path
+      // refuses. `waitingSentence` names the grown-up instead.
+      if (resolution.move?.kind === 'teacher') return null;
       if (resolution.state?.outcome?.result === 'needs_remediation') {
         const fresh = atCreated(unit, { mediaSurface, bankPrintable });
         if (!fresh) return action('retry', 'Try again');
@@ -299,6 +307,9 @@ function resumedSentence(resolution, now) {
 
 /** Why this card has no button — reached only when `workAction` found nothing. */
 function waitingSentence(resolution) {
+  // A teacher hold (two remediation rounds did not land): the child has
+  // nothing to do here until a grown-up sits down with them.
+  if (resolution.move?.kind === 'teacher') return 'Waiting for a grown-up.';
   switch (resolution.state?.state) {
     case 'media_dispatched':
       // `nextMove` says "finish watching, then scan your card" — paper words.

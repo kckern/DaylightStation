@@ -164,6 +164,7 @@ import { GetLearnerTerm } from "../application/usecases/GetLearnerTerm.mjs";
 import { RebuildLearnerTerm } from "../application/usecases/RebuildLearnerTerm.mjs";
 import { studentDisplayName } from "./studentNames.mjs";
 import { vendorFontDirFor, setDefaultVendorFontDir } from "../rendering/documents/vendorFonts.mjs";
+import { remediationMaxRounds } from "../domain/sessions/remediationLineage.mjs";
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -298,6 +299,10 @@ export async function createSchoolLifecycle({
   const realtimeSubscriptionsAvailable = realtime != null || typeof eventBus?.subscribe === 'function';
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
+  // Failure policy: how many fresh sheets a child may be handed for one unit
+  // before it becomes a teacher hold. Read once, here; every surface that
+  // decides (planner, scan, panel, receipt, teacher dashboard) gets this value.
+  const remediationRounds = remediationMaxRounds(lifecycleCfg.remediation?.maxRounds ?? 2);
   const dataDir = configService.getDataDir();
 
   const inert = (reason) => {
@@ -859,6 +864,7 @@ export async function createSchoolLifecycle({
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
     declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore, practiceAssessments,
+    remediationMaxRounds: remediationRounds,
   });
 
   practiceAssessments?.configureProjection?.(planProjection);
@@ -917,7 +923,7 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, householdSchedule, dayBypasses: programDayBypassStore,
-    practiceAssessments,
+    practiceAssessments, remediationMaxRounds: remediationRounds,
     planErrorEvent: 'school.agenda.plan-errors',
     launcherFailedEvent: 'school.agenda.launcher-failed',
     logger: logger.child ? logger.child({ preview: true }) : logger,
@@ -1138,6 +1144,7 @@ export async function createSchoolLifecycle({
     // below — optional, so an install with no eventBus settles exactly as
     // it did before that feature existed.
     realtime: schoolRealtime,
+    remediationMaxRounds: remediationRounds,
     clock, rng: draw, logger,
   });
   const closeLanguageDay = languageStudyService && schoolRealtime
@@ -1147,7 +1154,7 @@ export async function createSchoolLifecycle({
     })
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, practiceAssessments,
-    curriculumExceptions: curriculumExceptionStore, clock, logger });
+    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, clock, logger });
   practiceAssessments?.configurePrinting({ issueDocument, openRemediation, printDocuments });
   const replaceRemediation = new ReplaceRemediation({
     curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
@@ -1579,6 +1586,9 @@ export async function createSchoolLifecycle({
 
   return {
     wired: true,
+    // The remediation cap, for consumers composed outside this module (the
+    // teacher day digest in `lifecycle-runtime.mjs`).
+    remediationMaxRounds: remediationRounds,
     // The thermal notice printer, for the scan consumer's per-feed slips
     // (`app.mjs` wires that consumer against this module's own stores).
     receipts,

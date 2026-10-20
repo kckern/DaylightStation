@@ -228,6 +228,12 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
           // on Tuesday and annotated on Thursday was still passed on Tuesday.
           resultAt: state.outcome?.at ?? null,
           gradedPercent: state.gradedPercent ?? null, updatedAt: last?.at ?? null,
+          // The session this one retries, from its own `created` event. The
+          // row is reduced from the log on every read (there is no stored
+          // index to go stale), so every row carries it: null on an original,
+          // never absent. The remediation cap walks these links back to the
+          // first sheet without reading a single event.
+          remediationOf: state.remediationOf ?? null,
         } });
       }
     }
@@ -264,6 +270,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         day,
         studyDay: row.studyDay ?? null,
         updatedAt: row.updatedAt ?? null,
+        remediationOf: row.remediationOf ?? null,
       });
     }
     return facts;

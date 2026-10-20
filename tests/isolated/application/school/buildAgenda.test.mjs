@@ -936,3 +936,35 @@ describe('the featured book on the agenda card', () => {
     );
   });
 });
+
+describe('remediation cap: two rounds, then a grown-up', () => {
+  /** A settled failure on MEDIA_UNIT, optionally a retry of `remediationOf`, optionally already retried. */
+  const fail = async (sessionId, remediationOf = null, next = null) => {
+    await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), learnerId: 'kid1', unitId: MEDIA_UNIT,
+      ...(remediationOf ? { remediationOf } : {}) });
+    await sessions.appendEvent(sessionId, { type: 'launch_dispatched', at: clock.iso(), surface: 'portal' });
+    await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: clock.iso(), outcomeId: `out_${sessionId}`, result: 'needs_remediation' });
+    if (next) await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: clock.iso(), newSessionId: next, variant: 1 });
+  };
+
+  it('still offers a fresh sheet after one retry', async () => {
+    await fail('ses_a', null, 'ses_b');
+    await fail('ses_b', 'ses_a');
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'math').label).toContain('try again with a fresh sheet');
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('after two retries names a grown-up, prints nothing to retry, and excuses the subject', async () => {
+    await fail('ses_a', null, 'ses_b');
+    await fail('ses_b', 'ses_a', 'ses_c');
+    await fail('ses_c', 'ses_b');
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const offer = offerFor(result, 'math');
+    expect(offer.label).toContain('a grown-up will help with this one');
+    expect(offer.label).not.toMatch(/try again/i);
+    expect(offer.printable).toBe(false);
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(tokens.ofClass('remediation')).toEqual([]);
+  });
+});

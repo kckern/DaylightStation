@@ -569,3 +569,26 @@ it.each(['issued', 'reprinted'])('keeps an immutable %s sheet reprintable despit
   expect(kinds(actions)).toEqual(['print', 'exit']);
   expect(actions[0].label).toBe('Print it again');
 });
+
+describe('teacher hold (remediation cap): nothing printable, a grown-up named', () => {
+  const held = (unit) => ({
+    ...needsRemediation(unit),
+    move: { kind: 'teacher', tokenClass: null, label: 'a grown-up will help with this one' },
+  });
+
+  it.each([
+    ['paper', { unitId: 'u1', document: DOCUMENT }],
+    ['media', { unitId: 'u1', media: MEDIA }],
+    ['bank', { unitId: 'u1', bank: BANK }],
+  ])('a %s unit past the cap offers no retry — only the way out', (_label, unit) => {
+    expect(kinds(offeredActions(held(unit), opts({ bankPrintable: true })))).toEqual(['exit']);
+  });
+
+  it('says it is waiting for a grown-up', () => {
+    expect(cardSentence(held({ unitId: 'u1', document: DOCUMENT }), OPTS)).toBe('Waiting for a grown-up.');
+  });
+
+  it('below the cap the retry is still offered', () => {
+    expect(kinds(offeredActions(needsRemediation({ unitId: 'u1', document: DOCUMENT }), OPTS))).toContain('retry');
+  });
+});

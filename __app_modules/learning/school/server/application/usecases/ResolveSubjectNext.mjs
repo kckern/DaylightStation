@@ -32,7 +32,7 @@
  */
 import { programStatusFor } from "../../domain/agenda.mjs";
 import { PlanProjection } from "../PlanProjection.mjs";
-import { ensureSession, nextMove } from "./offerSession.mjs";
+import { ensureSession, nextMove, remediationOptionsFor } from "./offerSession.mjs";
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { projectProgramEntry } from "../assignedProgramPlan.mjs";
 import { findContinuationEntry, findReopenableProgramEntry } from "./continuationEntry.mjs";
@@ -184,7 +184,7 @@ export class ResolveSubjectNext {
       entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
       timezone: this.#timezone,
     });
-    const move = nextMove(unit ?? {}, state);
+    const move = nextMove(unit ?? {}, state, remediationOptionsFor(entry));
     return {
       kind: 'move', move, sessionId, state, unit, entry,
     };

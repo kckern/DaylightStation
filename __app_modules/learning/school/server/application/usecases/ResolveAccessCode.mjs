@@ -58,7 +58,7 @@ import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { resolveTokenState, isAccessCodeSpent } from "../../domain/sessions/tokens.mjs";
 import { studyDayForInstant } from "../../domain/studyDay.mjs";
-import { nextMove } from "./offerSession.mjs";
+import { nextMove, remediationOptionsFor } from "./offerSession.mjs";
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { projectProgramEntry, bookLogShelfEntry } from "../assignedProgramPlan.mjs";
 import { BOOK_LOG_PROGRAM_ID, bookLogContext } from "../../domain/bookLog.mjs";
@@ -767,7 +767,7 @@ export class ResolveAccessCode {
       // eslint-disable-next-line no-await-in-loop
       const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
       const unit = unitMap.get(entry.unitId) ?? {};
-      const move = nextMove(unit, state);
+      const move = nextMove(unit, state, remediationOptionsFor(entry));
       const actions = offeredActions(
         { kind: 'move', move, sessionId, state, unit, entry },
         { mediaSurface: this.#mediaSurface, ...this.#bankOptions(unit) },
@@ -935,7 +935,7 @@ export class ResolveAccessCode {
     if (paused) return withProjection({ kind: 'locked', remedy: `Content paused: ${paused.reason}` });
 
     const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
-    return withProjection({ kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry });
+    return withProjection({ kind: 'move', move: nextMove(unit ?? {}, state, remediationOptionsFor(entry)), sessionId, state, unit, entry });
   }
 
   /**

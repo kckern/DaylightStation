@@ -359,6 +359,7 @@ try {
             .listSessionsInRange(from, to, householdId),
         },
         timezone: configService.getTimezone?.() || null,
+        remediationMaxRounds: dependencies.schoolLifecycle.remediationMaxRounds ?? null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
     } catch (err) {

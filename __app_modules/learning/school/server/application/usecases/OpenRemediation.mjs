@@ -12,6 +12,14 @@
  * back. It cycles within the unit's declared `retry.variants`, so a unit with
  * three forms gives three genuinely different sheets before it repeats.
  *
+ * TWO ROUNDS, THEN A GROWN-UP. A child may open at most `maxRounds` retries
+ * (`school.yml → lifecycle.remediation.maxRounds`, default 2) counted back to
+ * the original sheet; past that the scan is refused and the unit is a teacher
+ * hold (`remediationLineage.mjs`). The refusal is the backstop for a retry
+ * ticket already printed: the agenda and the panel stop offering the retry on
+ * their own. A grown-up opening one through the teacher gate (`openedBy`) is
+ * never capped — the hold exists to bring a person in.
+ *
  * This is its own use case rather than a branch inside `CloseSessionOutcome`
  * because it is a different business operation happening at a different moment:
  * settling a result is what the grader does, and starting the retry is what the
@@ -21,9 +29,12 @@ import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.
 import { noticeDocument } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
+import { remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
+import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class OpenRemediation {
   #practiceAssessments; #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
+  #maxRounds;
 
   /**
    * @param {object} deps
@@ -31,9 +42,10 @@ export class OpenRemediation {
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {() => Date} [deps.clock]
    * @param {() => string} [deps.newSessionId]
+   * @param {number|null} [deps.remediationMaxRounds] - retries a child may open
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
+  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, remediationMaxRounds: maxRounds = null, logger = console } = {}) {
     if (!curriculum || !sessions) throw new Error('OpenRemediation requires curriculum and sessions');
     this.#practiceAssessments = practiceAssessments;
     this.#curriculum = curriculum;
@@ -42,12 +54,16 @@ export class OpenRemediation {
     this.#newSessionId = newSessionId;
     this.#logger = logger;
     this.#curriculumExceptions = curriculumExceptions;
+    this.#maxRounds = remediationMaxRounds(maxRounds);
   }
 
   /**
    * @param {object} args
    * @param {string} args.sessionId - the FAILED session the retry hangs off
+   * @param {string|null} [args.openedBy] - a grown-up, already through the
+   *   teacher gate; never capped
    * @returns {Promise<{ status: 'opened'|'already_opened'|'unavailable',
+   *                     reason?: 'remediation_capped',
    *                     sessionId: string|null, newSessionId: string|null,
    *                     variant: number|null, document: object|null, message: string }>}
    */
@@ -70,6 +86,18 @@ export class OpenRemediation {
     }
     if (state.state !== 'outcome_recorded' || state.outcome?.result !== 'needs_remediation') {
       return this.#unavailable(sessionId, 'There is nothing to try again right now.');
+    }
+
+    if (!openedBy) {
+      const depth = await remediationDepthOf(state.remediationOf, this.#sessions);
+      if (depth >= this.#maxRounds) {
+        this.#logger.info?.('school.remediation.capped', {
+          learnerId: state.learnerId, unitId: state.unitId, depth, sessionId, maxRounds: this.#maxRounds,
+        });
+        return this.#unavailable(sessionId, 'Two fresh sheets did not do it. A grown-up will help with this one.', {
+          headline: 'A grown-up will help', reason: 'remediation_capped',
+        });
+      }
     }
 
     const paused = pausedExceptionFor(await this.#curriculumExceptions?.active?.() ?? [], state.unitId);
@@ -117,16 +145,17 @@ export class OpenRemediation {
     };
   }
 
-  #unavailable(sessionId, line) {
+  #unavailable(sessionId, line, { headline = 'Nothing to try again', reason = null } = {}) {
     return {
       status: 'unavailable',
+      ...(reason ? { reason } : {}),
       sessionId: sessionId ?? null,
       newSessionId: null,
       variant: null,
       message: line,
       document: noticeDocument({
         id: `retry-${sessionId ?? 'none'}`,
-        headline: 'Nothing to try again',
+        headline,
         lines: [line, 'Scan your card to see what is next.'],
       }),
     };

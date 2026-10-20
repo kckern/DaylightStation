@@ -468,3 +468,54 @@ describe('the school-day calendar', () => {
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 });
+
+describe('teacher hold (remediation cap)', () => {
+  const held = (over = {}) => entry({
+    unitId: 'u1', status: 'in_progress', sessionId: 's1', state: 'outcome_recorded',
+    remediation: { depth: 2, maxRounds: 2, held: true }, ...over,
+  });
+  const failedRow = { sessionId: 's1', unitId: 'u1', state: 'outcome_recorded', terminal: false,
+    outcome: { result: 'needs_remediation', at: '2026-07-28T15:00:00Z' }, gradedPercent: 16.67, updatedAt: '2026-07-28T15:00:00Z' };
+
+  it('a section whose only open item is a teacher hold is excused, and still names the held item', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([held(), entry({ unitId: 'u2', sequence: 2, status: 'locked', lockReason: 'Finish “Unit One” first',
+        remedy: { unitId: 'u1', title: 'Unit One', action: 'resume' } })]),
+      sessions: [failedRow],
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(sections[0].next.unitId).toBe('u1');
+    expect(sections[0].servedToday).toBe(false);
+  });
+
+  it('other work in the subject is offered ahead of the hold and still owed', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([held(), entry({ unitId: 'u9', courseId: null, sequence: null, status: 'available' })]),
+      sessions: [failedRow],
+    }));
+    expect(sections[0].next.unitId).toBe('u9');
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('a held depth below the cap is ordinary in-progress work', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([held({ remediation: { depth: 1, maxRounds: 2, held: false } })]),
+      sessions: [failedRow],
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('the day completes when the hold is the only thing left', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        held(),
+        entry({ unitId: 'r1', subject: 'language', courseId: 'r', status: 'completed' }),
+      ]),
+      sessions: [failedRow, { sessionId: 's2', unitId: 'r1', state: 'rewarded', terminal: true,
+        outcome: { result: 'passed', at: '2026-07-29T15:30:00Z' }, gradedPercent: 100, updatedAt: '2026-07-29T15:30:00Z' }],
+    }));
+    const verdict = resolveDayCompletion({ sections });
+    expect(verdict.state).toBe('complete');
+    expect(verdict.excused).toEqual([{ subject: 'math', reason: 'teacher_hold' }]);
+  });
+});

@@ -41,6 +41,7 @@ function build({
   curriculumExceptions = null,
   launchers = new Map(),
   logger = silentLogger,
+  remediationMaxRounds = null,
 } = {}) {
   const clock = fakeClock();
   const catalog = new FakeCatalog({
@@ -55,7 +56,7 @@ function build({
   const sessions = new FakeSessionRepository();
   const projection = new PlanProjection({
     curriculum, assignments, sessions, attestations, curriculumExceptions,
-    launchers, clock: clock.now, logger,
+    launchers, clock: clock.now, logger, remediationMaxRounds,
   });
   return { projection, clock, curriculum, catalog, sessions, assignments };
 }
@@ -214,4 +215,44 @@ it('finishes the current linked daily goal without requiring future lessons toda
   });
   const result = await projection.project({ learnerId: 'test-learner' });
   expect(result.sections.find((s) => s.subject === 'language').obligation).toEqual({ state: 'served', reason: null });
+});
+
+describe('PlanProjection — remediation cap', () => {
+  /**
+   * Three failed sheets on one unit: the original and two retries, the newest
+   * still open. Written through the shared fake, whose `listForLearner` rows do
+   * NOT carry `remediationOf` — the store shape the lineage fallback exists for.
+   */
+  async function failThreeTimes(sessions) {
+    const fail = async (sessionId, remediationOf, { link = null } = {}) => {
+      const at = (minute) => `2026-07-2${sessionId.at(-1)}T09:0${minute}:00.000Z`;
+      await sessions.appendEvent(sessionId, { type: 'created', at: at(0), learnerId: LEARNER, unitId: MEDIA_UNIT,
+        ...(remediationOf ? { remediationOf } : {}) });
+      await sessions.appendEvent(sessionId, { type: 'launch_dispatched', at: at(1), surface: 'portal' });
+      await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: at(2), outcomeId: `out_${sessionId}`, result: 'needs_remediation' });
+      if (link) await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: at(3), newSessionId: link, variant: 1 });
+    };
+    await fail('ses_4', null, { link: 'ses_5' });
+    await fail('ses_5', 'ses_4', { link: 'ses_6' });
+    await fail('ses_6', 'ses_5');
+  }
+
+  it('reads lineage the store left out from events, and holds the unit past two rounds', async () => {
+    const { projection, sessions } = build({ attestations: null });
+    await failThreeTimes(sessions);
+    expect((await sessions.listForLearner(LEARNER))[0]).not.toHaveProperty('remediationOf');
+    const { plan, sections } = await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT)).toMatchObject({
+      status: 'in_progress', sessionId: 'ses_6', remediation: { depth: 2, maxRounds: 2, held: true },
+    });
+    expect(sections.find((section) => section.subject === 'math').obligation)
+      .toEqual({ state: 'excused', reason: 'teacher_hold' });
+  });
+
+  it('honours a configured cap', async () => {
+    const { projection, sessions } = build({ attestations: null, remediationMaxRounds: 3 });
+    await failThreeTimes(sessions);
+    const { plan } = await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT).remediation).toEqual({ depth: 2, maxRounds: 3, held: false });
+  });
 });

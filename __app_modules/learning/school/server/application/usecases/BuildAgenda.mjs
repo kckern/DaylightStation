@@ -35,7 +35,7 @@ import { mintAccessCode } from "../../domain/sessions/accessCode.mjs";
 import { agendaDocument, noticeDocument, reviewNoteLines } from "../../domain/documents/receipts.mjs";
 import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from "../../domain/studyDay.mjs";
 import { shortId } from '#system/utils/id.mjs';
-import { ensureSession, nextMove } from "./offerSession.mjs";
+import { ensureSession, nextMove, remediationOptionsFor } from "./offerSession.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { lessonProgressRowsFromPlan } from "../../domain/lessonProgress.mjs";
@@ -969,7 +969,7 @@ export class BuildAgenda {
       entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
       timezone: this.#timezone,
     });
-    const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
+    const move = nextMove(unitsById.get(entry.unitId) ?? {}, state, remediationOptionsFor(entry));
     return { sessionId, suffix: move.label, created, moveKind: move.kind };
   }
 }

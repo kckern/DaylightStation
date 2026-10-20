@@ -919,6 +919,9 @@ export function agendaDocument({
  *   [args.companionGate] set ONLY when the finish-code row — not the score —
  *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
  *   `companionGateLines` for why this earns two lines of its own.
+ * @param {boolean} [args.teacherHold] a failure past the remediation cap (two
+ *   fresh sheets did not land). No retry is coming, so the sheet must not say
+ *   TRY AGAIN or "before you retry": it says a grown-up will help instead.
  * @returns {object}
  */
 export function resultDocument({
@@ -929,12 +932,14 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false, companionGate = null,
+  dayComplete = false, companionGate = null, teacherHold = false,
 } = {}) {
   const passed = result === 'passed';
+  const held = !passed && teacherHold === true;
+  const retryHeading = held ? 'GO OVER THESE WITH A GROWN-UP' : 'REVIEW BEFORE YOU RETRY';
   const blocks = [{
     type: 'result_summary',
-    headline: passed ? 'PASSED' : 'TRY AGAIN',
+    headline: passed ? 'PASSED' : held ? 'A GROWN-UP WILL HELP' : 'TRY AGAIN',
     title: unitTitle || 'Your work',
     ...(typeof percent === 'number' && Number.isFinite(percent) ? { percent } : {}),
     ...(typeof passingPercent === 'number' && Number.isFinite(passingPercent) ? { passingPercent } : {}),
@@ -960,7 +965,7 @@ export function resultDocument({
         reviewHints: hints.filter(isNonEmptyString),
         // A pass is not a retry. "Before you retry" would be a false
         // instruction on a sheet whose next action is the NEXT lesson.
-        reviewHeading: passed ? 'WORTH A SECOND LOOK' : 'REVIEW BEFORE YOU RETRY',
+        reviewHeading: passed ? 'WORTH A SECOND LOOK' : retryHeading,
       }
       : {}),
   }];
@@ -970,9 +975,10 @@ export function resultDocument({
   // questions this child did not get wrong. Nothing prints for an ungated
   // sheet, or for one that failed on its score.
   if (!passed) companionGateLines(companionGate).forEach((line) => blocks.push(text(line)));
+  if (held) blocks.push(text('Two fresh sheets did not do it. A grown-up will sit down with you on this one.'));
   if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
       && Array.isArray(objectives) && objectives.length) {
-    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
+    blocks.push(text(`## ${retryHeading}`));
     objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
   }
   appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));

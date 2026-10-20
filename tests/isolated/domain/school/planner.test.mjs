@@ -467,3 +467,49 @@ describe('the enrollment school-day calendar', () => {
     expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
   });
 });
+
+describe('remediation cap: two rounds, then a grown-up', () => {
+  // The 2026-09-26 shape: the original sheet failed, two fresh sheets failed,
+  // and the newest failure is still sitting open at `outcome_recorded`.
+  const failed = (sessionId, remediationOf, { open = false, updatedAt } = {}) => session({
+    sessionId, remediationOf: remediationOf ?? null,
+    state: open ? 'outcome_recorded' : 'remediation_opened', terminal: !open,
+    outcome: { result: 'needs_remediation', at: updatedAt }, gradedPercent: 16.67, updatedAt,
+  });
+  const chain = (rounds) => {
+    const rows = [failed('ses_0', null, { open: rounds === 0, updatedAt: '2026-09-26T09:00:00.000Z' })];
+    for (let r = 1; r <= rounds; r += 1) {
+      rows.push(failed(`ses_${r}`, `ses_${r - 1}`, { open: r === rounds, updatedAt: `2026-09-2${6 + r}T09:00:00.000Z` }));
+    }
+    return rows;
+  };
+
+  it.each([[0, false], [1, false], [2, true]])('depth %i → held %s', (rounds, held) => {
+    const entry = byId(plan({ sessions: chain(rounds), remediationMaxRounds: 2 }), 'math-fractions.01');
+    expect(entry.status).toBe('in_progress');
+    expect(entry.remediation).toEqual({ depth: rounds, maxRounds: 2, held });
+  });
+
+  it('defaults the cap to two when none is configured', () => {
+    expect(byId(plan({ sessions: chain(2) }), 'math-fractions.01').remediation.held).toBe(true);
+  });
+
+  it('carries no remediation block for work that is not a settled failure', () => {
+    expect(byId(plan({ sessions: [session({ state: 'issued' })] }), 'math-fractions.01').remediation).toBeNull();
+  });
+
+  it('a retry whose parent row is missing still counts the link it holds', () => {
+    const rows = chain(2).filter((row) => row.sessionId !== 'ses_0');
+    expect(byId(plan({ sessions: rows }), 'math-fractions.01').remediation.depth).toBe(2);
+  });
+
+  it('the held unit excuses its section and the day can still complete', () => {
+    const result = plan({ sessions: chain(2) });
+    const { sections } = planDailyAgenda({
+      plan: result, sessions: chain(2), now: '2026-09-29T16:00:00.000Z', timezone: 'America/Los_Angeles',
+    });
+    const math = sections.find((s) => s.subject === 'math');
+    expect(math.obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(resolveDayCompletion({ sections }).state).not.toBe('incomplete');
+  });
+});

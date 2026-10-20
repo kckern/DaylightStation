@@ -333,7 +333,7 @@
 // The day's paper, one tap from the roster — a real link, so it can be
 // middle-clicked or long-pressed like any other.
 .teacher-roster__agenda-link { grid-column: 3; grid-row: 1; align-self: center; text-decoration: none; }
-.teacher-roster__plan-link, .teacher-roster__reflections, .teacher-roster__details { grid-column: 1 / -1; }
+.teacher-roster__plan-link, .teacher-roster__reflections, .teacher-roster__attention, .teacher-roster__details { grid-column: 1 / -1; }
 .teacher-roster__plan-link { justify-self: start; margin: 2px 0 4px 58px; }
 .teacher-roster__chevron { width: 14px; height: 14px; display: block; transition: transform 140ms ease;
   &--open { transform: rotate(90deg); }
@@ -1410,6 +1410,8 @@
 .teacher-roster__reflection { display: flex; gap: 0.5rem; align-items: baseline; }
 .teacher-roster__reflection-mood { font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b5d33; }
 .teacher-roster__reflection-note { color: #4a4436; font-style: italic; }
+.teacher-roster__attention { list-style: none; margin: 0.35rem 0 0; padding: 0 0.5rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.teacher-roster__attention-item a { font-weight: 700; color: #8a4b12; }
 
 .teacher-reportcard__drift { padding: 0.6rem 0.8rem; border: 1px solid #d9a53a; border-radius: 10px; background: #faf1da;
   ul { list-style: none; margin: 0.3rem 0 0; padding: 0; }

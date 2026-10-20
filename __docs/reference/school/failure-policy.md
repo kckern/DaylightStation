@@ -69,3 +69,50 @@ content lazily — on first use, in a constructor, behind a function call — or
 inject it from a caller that already did the same. Either shape keeps the
 failure inside whatever error boundary the composition root actually builds
 for that subsystem, instead of skipping it entirely.
+
+## A child's failed work: two rounds, then a grown-up
+
+The sections above are about the system failing. A child failing a sheet is a
+different thing, and it has its own rule: a failed result offers a fresh sheet
+at most `lifecycle.remediation.maxRounds` times (default 2, in
+`school.yml`), counted back to the original attempt. After that the unit is a
+**teacher hold**.
+
+Rounds are counted by lineage, not by date. Every remediation session carries
+`remediationOf` on its `created` event, naming the session it retries; the
+original carries none. Depth is the number of links back to the original — 0
+for the first sheet, 1 for the first retry, 2 for the second. Session rows
+(`IWorkSessionRepository.listForLearner`) carry `remediationOf`, so the planner
+counts without reading events. A store whose rows omit the field is read from
+events by `PlanProjection` before planning (`application/remediationDepth.mjs`):
+an absent link means "unknown", never "original", because treating it as an
+original would under-count and print the third TRY AGAIN the cap exists to stop.
+
+Why there is a cap at all: before it, a failed result offered "try again"
+forever. After a 16.67% on a mastery quiz on 2026-09-26, one learner's agenda
+printed TRY AGAIN every school day from 9/29 to 10/02 and he stopped. The open
+item sat at the top of the subject, the day could never complete, and his
+games stayed locked behind work he could not clear alone.
+
+What a teacher hold does, everywhere at once:
+
+| Surface | Below the cap | At the cap |
+| --- | --- | --- |
+| Planner entry | `remediation: {depth, maxRounds, held: false}` | `held: true`; status stays `in_progress`, so successors stay locked |
+| `nextMove` (scan, paper) | `retry` — "try again with a fresh sheet" | `teacher` — "a grown-up will help with this one", no token class, not printable |
+| Self-service panel | Retry button | No button; "Waiting for a grown-up." |
+| Agenda obligation | `obligated` | `excused · teacher_hold` when it is the only open item in the subject |
+| Result receipt | Retry ticket, TRY AGAIN | No ticket; headed A GROWN-UP WILL HELP |
+| `OpenRemediation` | Opens the next round | Refuses a child (`status: unavailable`, `reason: remediation_capped`) and logs `school.remediation.capped {learnerId, unitId, depth}` |
+| Teacher dashboard | — | `attention: [{kind: 'remediation-cap', unitTitle, depth, lastScore, …}]` on the learner's row, linked to the failed session |
+
+A grown-up is never capped. "Offer another try" on the session page opens the
+next round through the teacher gate (`openedBy`); if that round fails too, the
+unit goes straight back to a hold, so the grown-up stays in the loop until the
+work is passed or settled another way.
+
+The hold is excused rather than faulted on purpose: nothing about the system
+is broken, and a fault would leave the day `indeterminate` and the games
+locked — the very outcome the cap exists to end. The subject does not vanish:
+the paper still names the held lesson, the teacher dashboard counts it among
+the subjects that need a grown-up, and it stays listed until someone acts.

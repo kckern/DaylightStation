@@ -691,13 +691,15 @@ describe('OpenRemediation', () => {
   it('cycles within the variants the unit actually authored', async () => {
     await failed();
     await remediate.execute({ sessionId: SID });
-    // Fail the retry too, and the third form comes out — then it wraps.
-    for (const [from, expected] of [['ses_r1', 2], ['ses_r2', 0]]) {
+    // Fail the retry too, and the third form comes out — then it wraps. The
+    // wrap is a third round, past the child's cap of two, so a grown-up opens
+    // it (`openedBy`); the cap itself is covered in OpenRemediation.test.mjs.
+    for (const [from, expected, openedBy] of [['ses_r1', 2, null], ['ses_r2', 0, 'parent1']]) {
       await sessions.appendEvent(from, { type: 'issued', at: clock.iso(), sessionId: from, artifactId: `art_${from}` });
       await sessions.appendEvent(from, { type: 'submitted', at: clock.iso(), sessionId: from, transport: 'paper' });
       await sessions.appendEvent(from, { type: 'graded', at: clock.iso(), sessionId: from, attemptIds: ['att_z'], percent: 10 });
       await close.execute({ sessionId: from });
-      expect(await remediate.execute({ sessionId: from })).toMatchObject({ variant: expected });
+      expect(await remediate.execute({ sessionId: from, openedBy })).toMatchObject({ variant: expected });
     }
   });
 
@@ -818,5 +820,42 @@ describe('TeacherGate on the coin sign-off lane (readiness punch 2)', () => {
     expect(result.result).toBe('passed');
     expect(result.reward).toMatchObject({ skipReason: 'awaiting_signoff' });
     expect(teacherGate.assert).not.toHaveBeenCalled();
+  });
+});
+
+describe('remediation cap: no retry ticket past two rounds', () => {
+  /** A failed round already behind `SID`: created → issued → … → needs_remediation → retry opened. */
+  const priorFailure = async (sessionId, remediationOf, next) => {
+    await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), sessionId, learnerId: 'kid1', unitId: WORKSHEET_UNIT,
+      ...(remediationOf ? { remediationOf } : {}) });
+    await sessions.appendEvent(sessionId, { type: 'issued', at: clock.iso(), sessionId, artifactId: `art_${sessionId}` });
+    await sessions.appendEvent(sessionId, { type: 'submitted', at: clock.iso(), sessionId, transport: 'paper' });
+    await sessions.appendEvent(sessionId, { type: 'graded', at: clock.iso(), sessionId, attemptIds: [`att_${sessionId}`], percent: 17 });
+    await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: clock.iso(), sessionId, outcomeId: `out:${sessionId}`, result: 'needs_remediation' });
+    await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: clock.iso(), sessionId, newSessionId: next, variant: 1 });
+  };
+  const failRetry = async (remediationOf) => {
+    await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT, remediationOf });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 17 });
+  };
+
+  it('the second retry failing prints no retry ticket', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'settled', result: 'needs_remediation', retryToken: null });
+    expect(thermal.lastTranscript()).not.toMatch(/Try again|before you retry/i);
+    expect(thermal.lastTranscript()).toContain('A GROWN-UP WILL HELP');
+    expect(thermal.lastTranscript()).toContain('A grown-up will sit down with you on this one.');
+  });
+
+  it('the first retry failing still prints one', async () => {
+    await priorFailure('ses_a', null, SID);
+    await failRetry('ses_a');
+    const result = await close.execute({ sessionId: SID });
+    expect(result.retryToken).toEqual(expect.any(String));
   });
 });

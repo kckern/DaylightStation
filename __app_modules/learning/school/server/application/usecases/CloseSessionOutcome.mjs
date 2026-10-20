@@ -52,12 +52,14 @@ import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
+import { remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
+import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
   #courseRecovery = new Map();
-  #selfService; #realtime; #planProjection; #practiceAssessments;
+  #selfService; #realtime; #planProjection; #practiceAssessments; #remediationMaxRounds;
 
   /**
    * @param {object} deps
@@ -110,6 +112,9 @@ export class CloseSessionOutcome {
     // The shared assembler. This use case asks it for a DELIBERATELY narrower
     // projection than the agenda does — see `#projectPlan`.
     planProjection = null, practiceAssessments = null,
+    // Retries a child may open (`school.yml → lifecycle.remediation.maxRounds`).
+    // Past it the failed receipt carries no retry ticket — see `#settle`.
+    remediationMaxRounds: maxRounds = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -117,6 +122,7 @@ export class CloseSessionOutcome {
     }
     if (!grownUps) throw new Error('CloseSessionOutcome requires grownUps (a GrownUpGate)');
     this.#practiceAssessments = practiceAssessments;
+    this.#remediationMaxRounds = remediationMaxRounds(maxRounds);
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#tokens = tokens;
@@ -402,7 +408,14 @@ export class CloseSessionOutcome {
     // forward, and the retry ticket IS that way forward.
     const companionVeto = companionVetoStatus(outcome.reason ?? null);
     const repairableOnThisSheet = companionVeto === 'blank' || companionVeto === 'wrong';
-    const retryToken = (passed || repairableOnThisSheet)
+    // TWO ROUNDS, THEN A GROWN-UP. A failure already two retries deep gets no
+    // ticket: `OpenRemediation` would refuse it, so it could only be a "try
+    // again" card that leads nowhere. The receipt still reports the score and
+    // says a grown-up will help; the agenda excuses the hold and the teacher
+    // dashboard surfaces it.
+    const teacherHold = !passed && !repairableOnThisSheet
+      && await remediationDepthOf(state.remediationOf, this.#sessions) >= this.#remediationMaxRounds;
+    const retryToken = (passed || repairableOnThisSheet || teacherHold)
       ? null
       : await this.#mintRetryToken({ sessionId, state, nowIso });
     // ONE projection for both of the receipt's forward-looking lines. They used
@@ -564,6 +577,7 @@ export class CloseSessionOutcome {
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.
       // "Read Along") and the reading names the actual thing to go and play.
+      teacherHold,
       companionGate: companionVeto
         ? {
           status: companionVeto,

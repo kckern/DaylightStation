@@ -117,20 +117,25 @@ const SELF_LABEL = {
 // ---------------------------------------------------------------------------
 
 /**
- * The four obligation reasons that dead-end without an adult (task 7's
+ * The obligation reasons that dead-end without an adult (task 7's
  * `needsGrownUp` — read from the join, never re-derived here). The two FAULT
  * reasons (`program_unavailable`, `blocked_unreachable`) are OUR fault, not
  * the child's: the 2026-08-25 unlock incident is why that pair gets its own
  * card treatment (`faulted` styling, 3.2) instead of reading as a quiet
  * unstarted lesson. `caught_up` and `awaiting_grown_up` are excuses — the day
  * still completes — but still need a person, so they get the same link
- * without the fault styling (3.3).
+ * without the fault styling (3.3). `teacher_hold` is the same kind of excuse:
+ * the remediation cap took the unit off the child's paper, and nothing moves
+ * it until a person sits down with them.
  */
 const GROWN_UP_ACTION = {
   program_unavailable: { headline: 'This program can’t start', linkTo: 'operations', linkLabel: 'School → Operations' },
   blocked_unreachable: { headline: 'Locked behind work nothing can reach', linkTo: 'operations', linkLabel: 'School → Operations' },
   caught_up: { headline: 'This course has no more lessons', linkTo: 'courses', linkLabel: 'Open Courses' },
   awaiting_grown_up: { headline: 'Ask a grown-up to continue or reschedule this work.', linkTo: 'operations', linkLabel: 'School → Operations' },
+  // The remediation cap: two fresh sheets did not land. History is where the
+  // failed session is, and its page is where "Offer another try" lives.
+  teacher_hold: { headline: 'Two fresh sheets didn’t land — this one needs you.', linkTo: 'history', linkLabel: 'Open History' },
 };
 
 /**
@@ -155,7 +160,8 @@ function needsAdult(obligation) {
  * property of one learner's enrollment.
  */
 function grownUpHref(linkTo, learnerId, base) {
-  return linkTo === 'courses' ? teacherLearnerPath(learnerId, 'courses', null, base) : teacherSectionPath('operations', base);
+  if (linkTo === 'courses' || linkTo === 'history') return teacherLearnerPath(learnerId, linkTo, null, base);
+  return teacherSectionPath('operations', base);
 }
 
 /**
@@ -442,7 +448,7 @@ function LessonCard({ row, learnerId, base, onOpen, showObligation = true }) {
           )}
           {/* THE OBLIGATION IS A SEPARATE FACT FROM THE CHIP ABOVE, never
               merged into it (plan 3.2/3.3): a `planned` chip can sit right
-              beside "This program can't start". Only the four reasons that
+              beside "This program can't start". Only the reasons that
               dead-end without an adult earn a link; the rest of this slot is
               the quiet muted sentence it always was. */}
           {grownUp ? (
@@ -597,6 +603,13 @@ function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, age
       </a>
     </>
   );
+}
+
+/** One `remediation-cap` item in words: "Place Value — 2 tries, last 17% →". */
+function attentionLabel(item) {
+  const tries = `${item.depth} ${item.depth === 1 ? 'try' : 'tries'}`;
+  const score = item.lastScore?.percent != null ? `, last ${Math.round(item.lastScore.percent)}%` : '';
+  return `${item.unitTitle ?? item.unitId} — ${tries}${score} →`;
 }
 
 /**
@@ -759,6 +772,21 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
           href={teacherDayPath(learnerId, studyDay, base)}>
           See today’s plan →
         </a>
+      )}
+      {/* WORK ONLY A GROWN-UP CAN MOVE (`GetTeacherToday`'s `attention`): a
+          unit two fresh sheets deep that the child is no longer offered. It
+          stays listed every day until someone acts, and links straight to the
+          failed session, where "Offer another try" lives. */}
+      {(row.attention ?? []).length > 0 && (
+        <ul className="teacher-roster__attention" data-testid="attention">
+          {row.attention.map((item) => (
+            <li key={item.sessionId} className="teacher-roster__attention-item">
+              <a href={teacherSessionPath(learnerId, item.sessionId, base, { from: 'today' })}>
+                {attentionLabel(item)}
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
       {/* The kid's own words about today's work (advocacy wave 7):
           reflections used to be written and read by nobody. */}

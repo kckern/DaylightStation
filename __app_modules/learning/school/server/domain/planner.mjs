@@ -25,6 +25,9 @@
  */
 
 import { evaluateDatedModule, evaluateTiming, studyDate, TIMING_PRIORITY } from "./timing.mjs";
+import {
+  isPastRemediationCap, remediationMaxRounds, walkRemediationLineage,
+} from "./sessions/remediationLineage.mjs";
 
 /** Closed set — a status a caller cannot render is a status that cannot exist. */
 export const PLAN_STATUSES = Object.freeze(['completed', 'in_progress', 'locked', 'available', 'upcoming', 'dormant']);
@@ -73,13 +76,19 @@ function bySequence(a, b) {
  * @param {Array}   args.sessions    derived session facts for THIS learner:
  *   `{ sessionId, unitId, state, terminal, outcome, updatedAt }`
  * @param {string}  args.now         ISO time; stamped as `generatedAt`, never read for policy
+ * @param {number}  [args.remediationMaxRounds] retries before a failure becomes a
+ *   teacher hold (`school.yml → lifecycle.remediation.maxRounds`, default 2)
  * @returns {{
  *   learnerId: string|null, generatedAt: string|null, entries: object[],
  *   assigned: object[], available: object[], locked: object[],
  *   inProgress: object[], completed: object[], errors: string[],
  * }}
  */
-export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null, timezone = null, coursePolicies = {} } = {}) {
+export function planLearnerWork({
+  learnerId = null, assignment = null, units = [], sessions = [], now = null, timezone = null, coursePolicies = {},
+  remediationMaxRounds: rawMaxRounds = null,
+} = {}) {
+  const maxRounds = remediationMaxRounds(rawMaxRounds);
   const errors = [];
   const catalog = (Array.isArray(units) ? units : []).filter((u) => isPlainObject(u) && isNonEmptyString(u.unitId));
   const byUnitId = new Map(catalog.map((u) => [u.unitId, u]));
@@ -155,6 +164,20 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       const held = openByUnit.get(s.unitId);
       if (!held || String(s.updatedAt ?? '') >= String(held.updatedAt ?? '')) openByUnit.set(s.unitId, s);
     });
+
+  // How deep in retries the open failure on a unit sits (failure policy: two
+  // rounds, then a grown-up). Walked over these same rows: each one carries
+  // its own `remediationOf`, so this costs no event read. A row without the
+  // field ends the walk there — `PlanProjection` fills those in from events
+  // before calling, so only a caller that skipped it can under-count.
+  const remediationOfBySession = new Map(history
+    .filter((s) => isNonEmptyString(s.sessionId))
+    .map((s) => [s.sessionId, s.remediationOf]));
+  const remediationFor = (open) => {
+    if (!open || open.state !== 'outcome_recorded' || open.outcome?.result !== 'needs_remediation') return null;
+    const depth = walkRemediationLineage(open.remediationOf, (id) => remediationOfBySession.get(id) ?? null);
+    return { depth, maxRounds, held: isPastRemediationCap(open, depth, maxRounds) };
+  };
 
   // --- gating --------------------------------------------------------------
   // Computed over the whole COURSE, not over what was assigned: a sequence is a
@@ -383,6 +406,11 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       status,
       sessionId: open?.sessionId ?? null,
       state: open?.state ?? null,
+      // `{depth, maxRounds, held}` for an open settled failure, else null.
+      // `held` is a TEACHER HOLD: the status stays `in_progress` (it is still
+      // the work in hand, and still blocks its successors), but the agenda
+      // stops owing it and `nextMove` stops offering a fresh sheet.
+      remediation: isNonEmptyString(unit.program) ? null : remediationFor(open),
       lockReason,
       remedy,
       unlocks: unlockedBy(unit),

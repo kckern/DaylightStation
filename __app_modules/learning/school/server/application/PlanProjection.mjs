@@ -61,6 +61,7 @@ import { reduceSession } from "../domain/sessions/sessionEvents.mjs";
 import { pausedExceptionFor, withCurriculumExceptions } from "./curriculumExceptionProjection.mjs";
 import { appendAssignedProgramEntries, projectProgramEntry } from "./assignedProgramPlan.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
+import { withRemediationLineage } from "./remediationDepth.mjs";
 
 /**
  * Attestation gate-unlock (spec D2): an attested unit enters the planner's
@@ -104,7 +105,7 @@ export class PlanProjection {
   #practiceAssessments;
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
-  #declaredEntryActions; #householdSchedule; #dayBypasses;
+  #declaredEntryActions; #householdSchedule; #dayBypasses; #remediationMaxRounds;
   #inflight = new Map();
 
   /**
@@ -124,6 +125,9 @@ export class PlanProjection {
    *   errors. Injectable so a migrating call site keeps the event name its
    *   dashboards and runbooks already know instead of gaining a second line.
    * @param {string} [deps.launcherFailedEvent] - same, for a launcher that threw.
+   * @param {number|null} [deps.remediationMaxRounds] - retries before a failed
+   *   unit becomes a teacher hold (`school.yml → lifecycle.remediation.maxRounds`;
+   *   null takes the planner's default of two).
    * @param {object} [deps.logger]
    */
   constructor({
@@ -146,6 +150,7 @@ export class PlanProjection {
     // bypass on file settles that program's study day for EVERY launcher, not
     // only piano's. Null: bypasses are not consulted here.
     dayBypasses = null, practiceAssessments = null,
+    remediationMaxRounds = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
@@ -165,6 +170,7 @@ export class PlanProjection {
     this.#planErrorEvent = planErrorEvent;
     this.#launcherFailedEvent = launcherFailedEvent;
     this.#declaredEntryActions = declaredEntryActions;
+    this.#remediationMaxRounds = remediationMaxRounds;
     this.#logger = logger;
   }
 
@@ -292,12 +298,16 @@ export class PlanProjection {
     // BuildAgenda's read set, in BuildAgenda's shape: one parallel fan-out, and
     // `listWorks` tolerated as absent because a catalog adapter predating work
     // configs simply has none.
-    const [assignment, units, works, fullHistory] = await Promise.all([
+    const [assignment, units, works, listedHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
+    // The remediation cap counts rounds over these rows' `remediationOf`; a
+    // row that left it out is read from events here rather than counted as an
+    // original (see `remediationDepth.mjs`). A no-op for the YAML store.
+    const fullHistory = await withRemediationLineage(listedHistory, this.#sessions);
     const practiceIds = new Set(units.filter((u) => u.practice).map((u) => u.unitId));
     const scopedHistory = await Promise.all(fullHistory.map(async (row) => {
       if (!practiceIds.has(row.unitId) || !this.#sessions.readEvents) return row;
@@ -336,7 +346,7 @@ export class PlanProjection {
       .map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({
       learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
-      timezone: this.#timezone, coursePolicies,
+      timezone: this.#timezone, coursePolicies, remediationMaxRounds: this.#remediationMaxRounds,
     });
     for (const [unitId, assessment] of assessmentByUnit) {
       const entry = plan.entries.find((e) => e.unitId === unitId);

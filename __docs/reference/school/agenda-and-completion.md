@@ -55,6 +55,18 @@ lifecycle validates once and hands to every surface that asks whether anyone was
 asked to work that day — the agenda, the term grid, and the reading streak
 wall — so none of them can judge Christmas differently.
 
+**Teacher hold.** A unit whose open failure is past the remediation cap (two
+fresh sheets did not land; see the [failure policy](./failure-policy.md#a-childs-failed-work-two-rounds-then-a-grown-up))
+is never owed. It is still the work in hand, so it keeps blocking its successors,
+but it is offered only when nothing else in its subject is, and then only as a
+named line ("a grown-up will help with this one") with nothing printable behind
+it. A section whose only open item is a hold is `excused · teacher_hold`; the
+reason is checked ahead of the lock reasons because the successors are locked
+*because of* the hold. Other open or available work in the same subject is
+still offered first and still obligates. Completion and the term grid read the
+excuse like any other, so a held subject cannot keep the day — or Piano Games —
+shut.
+
 `not_a_school_day` is applied as an override after the ladder, so it never
 downgrades a section that was already `served`, and the diagnostics below it
 keep firing on a day that is off. The section still offers a `next`: the

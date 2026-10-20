@@ -219,3 +219,55 @@ describe('GetTeacherToday reviewStatus', () => {
     expect(result.learners[0].sessions[0].reviewStatus).toBe('complete');
   });
 });
+
+describe('GetTeacherToday — remediation cap', () => {
+  /** One failed round on `math.01`: issued, graded at `percent`, settled needs_remediation. */
+  const round = (sessionId, { remediationOf = null, percent, next = null, day }) => [
+    { type: 'created', at: `${day}T15:00:00.000Z`, sessionId, seq: 1, learnerId: 'learner4', unitId: 'lesson-1',
+      ...(remediationOf ? { remediationOf } : {}) },
+    { type: 'issued', at: `${day}T15:01:00.000Z`, sessionId, seq: 2, artifactId: `art_${sessionId}` },
+    { type: 'submitted', at: `${day}T16:00:00.000Z`, sessionId, seq: 3, transport: 'paper' },
+    { type: 'graded', at: `${day}T16:01:00.000Z`, sessionId, seq: 4,
+      attemptIds: [`att_${sessionId}`], percent, passingPercent: 80, correctCount: 1, totalCount: 6 },
+    { type: 'outcome_recorded', at: `${day}T16:02:00.000Z`, sessionId, seq: 5, outcomeId: `out_${sessionId}`, result: 'needs_remediation' },
+    ...(next ? [{ type: 'remediation_opened', at: `${day}T16:03:00.000Z`, sessionId, seq: 6, newSessionId: next, variant: 1 }] : []),
+  ];
+  const logs = (rounds) => ({
+    ses_0: round('ses_0', { percent: 16.67, next: rounds >= 1 ? 'ses_1' : null, day: '2026-09-26' }),
+    ...(rounds >= 1 ? { ses_1: round('ses_1', { remediationOf: 'ses_0', percent: 16.67, next: rounds >= 2 ? 'ses_2' : null, day: '2026-09-29' }) } : {}),
+    ...(rounds >= 2 ? { ses_2: round('ses_2', { remediationOf: 'ses_1', percent: 16.67, day: '2026-09-30' }) } : {}),
+  });
+  const withRounds = (rounds, extra = {}) => {
+    const byId = logs(rounds);
+    return useCase({
+      sessions: {
+        listForLearner: async () => Object.keys(byId).map((sessionId) => ({ sessionId, updatedAt: byId[sessionId].at(-1).at })),
+        readEvents: async (sessionId) => byId[sessionId] ?? [],
+      },
+      clock: () => new Date('2026-10-02T18:00:00.000Z'),
+      ...extra,
+    });
+  };
+
+  it('surfaces a unit two rounds deep as a remediation-cap item for the grown-up', async () => {
+    const digest = await withRounds(2).execute({ version: 'v2' });
+    expect(digest.learners[0].attention).toEqual([{
+      kind: 'remediation-cap', learnerId: 'learner4', sessionId: 'ses_2',
+      unitId: 'lesson-1', unitTitle: 'Lesson One', depth: 2, maxRounds: 2,
+      lastScore: { percent: 16.67, correctCount: 1, totalCount: 6 },
+      since: '2026-09-30T16:02:00.000Z',
+    }]);
+  });
+
+  it('says nothing while the child still has a retry coming', async () => {
+    expect((await withRounds(1).execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('honours a configured cap', async () => {
+    expect((await withRounds(2, { remediationMaxRounds: 3 }).execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('rides on the v1 rows too', async () => {
+    expect((await withRounds(2).execute())[0].attention).toHaveLength(1);
+  });
+});
