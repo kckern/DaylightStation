@@ -300,7 +300,7 @@ export class StoryTimeProgramLauncher {
       }));
       return suggestStories({
         corpus: Array.isArray(corpus) ? corpus : null,
-        reads: [...windowReads, ...olderReads.flat()], today, noRepeatDays, exclude: contentId,
+        reads: [...windowReads, ...olderReads.flat()], today, noRepeatDays, learnerId: userId, exclude: contentId,
       });
     } catch (err) {
       this.#logger.warn?.('school.story-time.suggestions-failed', { userId, contentId, error: err?.message ?? String(err) });

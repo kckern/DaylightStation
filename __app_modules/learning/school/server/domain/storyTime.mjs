@@ -76,14 +76,27 @@ export const STORY_SUGGESTION_LIMIT = 3;
  * `reads` are credited reads `{studyDay|day, contentId, title}`, as far back as
  * the caller looked; a book with no read in them counts as never read.
  *
- * Order: never read first, then least recently read, then title, then id — so
- * the same shelf gives the same three on every refusal. The reading log's title
+ * Order: never read first, then least recently read; WITHIN a tier (all the
+ * never-read books, or books last read the same day) by a stable hash of
+ * `(today, learnerId, contentId)`, then id. Same day, same child: the same
+ * three on every refusal. Next day: a different slice of the shelf — ordering
+ * the never-read tier by title offered the same three books forever. The reading log's title
  * beats the corpus label: the log holds the book's real title, the tag only a
  * hand-typed note. Pure: no I/O, no clock.
  *
  * @returns {Array<{contentId: string, title: string|null, lastReadOn: string|null}>}
  */
-export function suggestStories({ corpus, reads, today, noRepeatDays, exclude = null, limit = STORY_SUGGESTION_LIMIT } = {}) {
+/** FNV-1a, 32-bit: a stable, dependency-free hash for the daily rotation. */
+function rotationKey(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+export function suggestStories({ corpus, reads, today, noRepeatDays, learnerId = null, exclude = null, limit = STORY_SUGGESTION_LIMIT } = {}) {
   const history = Array.isArray(reads) ? reads : [];
   const window = new Set(noRepeatWindowDays(today, noRepeatDays));
   const lastRead = new Map();
@@ -109,11 +122,11 @@ export function suggestStories({ corpus, reads, today, noRepeatDays, exclude = n
     if (id === exclude || window.has(lastRead.get(id))) continue;
     candidates.push({ contentId: id, title: loggedTitle.get(id) ?? (b.title || null), lastReadOn: lastRead.get(id) ?? null });
   }
-  const text = (s) => (s.title ?? '').toLowerCase();
+  const rank = new Map(candidates.map((c) => [c.contentId, rotationKey(`${today ?? ''}\u0000${learnerId ?? ''}\u0000${c.contentId}`)]));
   candidates.sort((a, b) => {
     if ((a.lastReadOn === null) !== (b.lastReadOn === null)) return a.lastReadOn === null ? -1 : 1;
     if (a.lastReadOn !== b.lastReadOn) return a.lastReadOn < b.lastReadOn ? -1 : 1;
-    if (text(a) !== text(b)) return text(a) < text(b) ? -1 : 1;
+    if (rank.get(a.contentId) !== rank.get(b.contentId)) return rank.get(a.contentId) - rank.get(b.contentId);
     return a.contentId < b.contentId ? -1 : (a.contentId > b.contentId ? 1 : 0);
   });
   return candidates.slice(0, Math.max(0, limit));

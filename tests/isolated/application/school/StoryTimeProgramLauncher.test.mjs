@@ -287,7 +287,9 @@ describe('StoryTimeProgramLauncher.repeatCheck', () => {
       };
       const r = await ask(make({ byDay, storyCorpus: () => corpus }));
       expect(r.refuse).toBe(true);
-      expect(ids(r)).toEqual(['plex:d', 'plex:e', 'plex:c']);
+      // never-read d and e (in the day's rotation), then c, the oldest read
+      expect(ids(r).slice(0, 2).sort()).toEqual(['plex:d', 'plex:e']);
+      expect(ids(r)[2]).toBe('plex:c');
       const many = await ask(make({ byDay: { '2026-10-08': [{ contentId: BOOK }] }, storyCorpus: () => corpus }));
       expect(many.suggestions).toHaveLength(3);
     });

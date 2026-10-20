@@ -76,10 +76,39 @@ describe('suggestStories', () => {
     expect(suggest({ corpus, reads, exclude: 'c' }).map((s) => s.contentId)).toEqual(['d']);
   });
 
-  it('never-read first, then least-recently read, ties by title then id', () => {
+  it('never-read first, then least-recently read; within a tier by the daily rotation', () => {
     const corpus = [book('old', 'Zebra'), book('older', 'Apple'), book('n2', 'Moon'), book('n1', 'Moon'), book('n0', 'Ant')];
     const reads = [row('2026-10-03', 'old'), row('2026-09-20', 'older'), row('2026-10-01', 'older')];
-    expect(suggest({ corpus, reads, limit: 5 }).map((s) => s.contentId)).toEqual(['n0', 'n1', 'n2', 'older', 'old']);
+    const got = suggest({ corpus, reads, learnerId: 'kid', limit: 5 }).map((s) => s.contentId);
+    expect(got.slice(0, 3).sort()).toEqual(['n0', 'n1', 'n2']);
+    expect(got.slice(3)).toEqual(['older', 'old']);
+  });
+
+  describe('daily rotation', () => {
+    const shelf = Array.from({ length: 20 }, (_, i) => book(`plex:${i}`, `Book ${String(i).padStart(2, '0')}`));
+    const on = (today, learnerId = 'kid') => suggestStories({ corpus: shelf, reads: [], today, noRepeatDays: 4, learnerId })
+      .map((s) => s.contentId);
+
+    it('the same day and child give the same three, every time', () => {
+      expect(on('2026-10-08')).toEqual(on('2026-10-08'));
+      expect(on('2026-10-08')).toHaveLength(3);
+    });
+
+    it('the next day gives a different order', () => {
+      expect(on('2026-10-09')).not.toEqual(on('2026-10-08'));
+    });
+
+    it('is not the alphabetical first three', () => {
+      const days = ['2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11'];
+      const seen = new Set(days.flatMap((d) => on(d)));
+      expect(seen.size).toBeGreaterThan(3);
+    });
+
+    it('ties among books last read the same day rotate too, after older reads', () => {
+      const reads = [row('2026-09-01', 'plex:0'), ...shelf.slice(1).map((b) => row('2026-09-10', b.contentId))];
+      const got = suggestStories({ corpus: shelf, reads, today: '2026-10-08', noRepeatDays: 4, learnerId: 'kid' });
+      expect(got[0].contentId).toBe('plex:0');
+    });
   });
 
   it('gives at most three', () => {
