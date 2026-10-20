@@ -121,7 +121,8 @@ export class MarkSessionAbandoned {
    *   - the state machine must permit `abandoned` from its state. This is the
    *     load-bearing guard and it is structural, not a list maintained here:
    *     `TRANSITIONS` allows `abandoned` from `created`, `issued`, `reprinted`,
-   *     `media_dispatched`, `media_stalled` and `launch_dispatched` — every one
+   *     `media_dispatched`, `media_stalled`, `launch_dispatched`,
+   *     `program_dispatched` and `external_activity_dispatched` — every one
    *     of them pre-submission. Anything `submitted` or later cannot be swept
    *     even if this method tried.
    *   - and it must carry no attempt ids. Belt to that brace: a session that

@@ -11,6 +11,9 @@ const PASS_TTL = 30 * 60_000;
 // in ~5s fired seven wakes, every one failed).
 const WAKE_COOLDOWN = 10_000;
 const WAKE_FAILED = 'The screen could not wake. Open the Portal or rescan.';
+// Shown for a scan that lands inside the cooldown: a rescan right now would
+// not wake anything, so the child is told to give it a moment instead.
+const WAKE_WAITING = 'The screen is waking up — wait a moment, then scan again.';
 // A wake result can carry adapter error strings; keep them short and strip
 // anything that looks like a credential before they reach the log store.
 const safeError = (value) => (value == null ? null : String(value)
@@ -94,7 +97,7 @@ export class PrepareBookScan {
     const cooldownUntil = this.#wakeCooldowns.get(target.screenId) ?? 0;
     if (!this.#wakes.has(target.screenId) && cooldownUntil > clock()) {
       logger.info?.('school.book-scan.wake-skipped', { screenId: target.screenId, reason: 'cooldown' });
-      this.#wakeFailedFor(record);
+      this.#wakeFailedFor(record, WAKE_WAITING);
       return;
     }
     void this.#wakeScreen(target).then(ok => {
@@ -102,9 +105,9 @@ export class PrepareBookScan {
       this.#wakeFailedFor(record);
     });
   }
-  #wakeFailedFor(record) {
+  #wakeFailedFor(record, message = WAKE_FAILED) {
     if (!this.#live(record)) return;
-    record.wakeFailed = true; record.error ??= WAKE_FAILED; this.#notify(record);
+    record.wakeFailed = true; record.wakeMessage = message; record.error ??= message; this.#notify(record);
   }
   /** One wake per screen at a time; resolves true/false and never rejects. */
   #wakeScreen(target) {
@@ -137,7 +140,7 @@ export class PrepareBookScan {
     return attempt;
   }
   #resolve(record) {
-    record.status = 'loading'; record.error = record.wakeFailed ? WAKE_FAILED : null;
+    record.status = 'loading'; record.error = record.wakeFailed ? record.wakeMessage ?? WAKE_FAILED : null;
     this.#notify(record);
     void Promise.resolve().then(() => this.#deps.resolveBook.execute(record.isbn13)).then(result => {
       if (!this.#live(record)) return;

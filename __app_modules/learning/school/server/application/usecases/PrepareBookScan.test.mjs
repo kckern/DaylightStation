@@ -170,7 +170,18 @@ describe('book-scan wakes', () => {
     expect(wake).toHaveBeenCalledTimes(1);
     expect(log.warn.mock.calls.filter(([name]) => name === 'school.book-scan.wake-failed')).toHaveLength(1);
     expect(log.info).toHaveBeenCalledWith('school.book-scan.wake-skipped', { screenId: 'portal', reason: 'cooldown' });
-    expect(f.service.pending('portal').error).toMatch(/could not wake/);
+    expect(f.service.pending('portal').error).toBe('The screen is waking up — wait a moment, then scan again.');
+  });
+
+  it('a rescan of the same book inside the cooldown asks the child to wait, without a new wake', async () => {
+    const wake = vi.fn(async () => refused);
+    const f = fixture({ wake, logger: logger() });
+    await receive(f, ISBN, 'first'); await settle();
+    const first = f.service.pending('portal');
+    expect(first.error).toBe('The screen could not wake. Open the Portal or rescan.');
+    f.advance(3000); await receive(f, ISBN, 'rescan'); await settle();
+    expect(f.service.pending('portal')).toMatchObject({ id: first.id, error: 'The screen is waking up — wait a moment, then scan again.' });
+    expect(wake).toHaveBeenCalledTimes(1);
   });
 
   it('a thrown wake logs its message as the error', async () => {

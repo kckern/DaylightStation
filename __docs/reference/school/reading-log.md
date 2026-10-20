@@ -243,8 +243,9 @@ it needs a config reload or restart, not a rebuild.
 (`wakeScreenForBroadcast`: power on, then Fully Kiosk to the foreground).
 `PrepareBookScan` runs one wake per screen at a time: scans that arrive while a
 wake is in flight share it. After a failed wake, scans for that screen within
-10 seconds do not wake again; they get the same "The screen could not wake"
-message and log `school.book-scan.wake-skipped {screenId, reason: cooldown}`.
+10 seconds do not wake again; the panel tells the child "The screen is waking
+up — wait a moment, then scan again." (distinct from the "could not wake"
+message the failed scan itself shows) and the scan logs `school.book-scan.wake-skipped {screenId, reason: cooldown}`.
 The failure itself is logged once per wake as `school.book-scan.wake-failed`
 with `step` (`screenOn`/`toForeground` from the kiosk adapter, or `power`,
 `foreground`, `wake-threw`), `power` and `foreground` (each `{ok, step?,

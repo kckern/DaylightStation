@@ -326,6 +326,14 @@ never came back (pre-submission states, no attempt ids) and leaves anything
 a child handed in for a person. Events it writes say
 `decidedBy: system:stale-sweep`.
 
+"Untouched" means **no event of any kind for 14 days**, measured from the
+session's `updatedAt`. Every reprint appends an event and resets that clock,
+so a sheet that keeps reprinting is never swept. A stuck item like that needs
+a grown-up to retire it: `school ops abandon <session> --learner ID --reason
+TEXT --teacher ID --apply` to close it, or `school ops completion-credit
+<learner> --unit ID --reason TEXT --teacher ID --apply` when the work was in
+fact done.
+
 The sweep walks the **School learner directory** — the same roster the panel
 and book scans use. `createSchoolLifecycleRuntime` passes it to
 `createSchoolLifecycle` as `learnerDirectory`; without it, `listStale` sees
