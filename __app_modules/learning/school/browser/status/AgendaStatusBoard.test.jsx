@@ -418,9 +418,9 @@ describe('AgendaStatusBoard render', () => {
       return el;
     });
     expect(row.dataset.complete).toBe('true');
-    // Nothing is printed under the pins at 100%: the row is green end to end
-    // — nameplate, card, every disc — and a chip saying "DONE" underneath was a
-    // third statement of the same fact, charging the discs the height.
+    // At 100% the count gives way to one check mark (no words): the row is
+    // green end to end — nameplate, card, every disc — and a "DONE" chip would
+    // be a third statement of the same fact.
     expect(screen.getByTestId('board-day-done')).toBeTruthy();
     expect(screen.queryByText(/^Done$/i)).toBeNull();
   });
@@ -895,6 +895,8 @@ describe('the four partitions', () => {
     const rows = day.querySelectorAll('.school-status-board__pills');
     expect([...rows].map((row) => row.querySelectorAll('.school-status-board__pill').length)).toEqual([3, 4]);
     expect(day.contains(count)).toBe(true);
+    expect(count.parentElement.firstElementChild).toBe(count);
+    expect(count.nextElementSibling).toBe(day.querySelector('.school-status-board__pins'));
     expect(count.textContent).toBe('7');
     expect(count).toHaveAttribute('role', 'progressbar');
     expect(count).toHaveAttribute('aria-label', '0 of 7 done');

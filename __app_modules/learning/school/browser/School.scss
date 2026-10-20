@@ -3301,7 +3301,7 @@
   &__left { font-size: clamp(2rem, 7vh, 3.4rem); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
   &__check {
     width: clamp(2.2rem, 7vh, 3.4rem); aspect-ratio: 1; border-radius: 50%;
-    display: grid; place-items: center; background: var(--school-ok, #3f8f37); color: #fff;
+    display: grid; place-items: center; background: var(--school-board-done); color: #fff;
     svg { width: 62%; height: 62%; }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }

@@ -729,7 +729,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               <ProfileAvatar id={kid.id} name={kid.name} size={192} />
             </div>
             {/* THE DAY: the assignments as a bowling-pin triangle, with the
-                count under the pins. Time widens left to right across the
+                count beside them. Time widens left to right across the
                 card — who, today, this week, the term — and each partition
                 is one thing with its own number inside it, not a count
                 floating away from the thing it counts. */}
@@ -740,22 +740,22 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 anyone reading the page rather than looking at it. */}
             <div className="school-status-board__day" data-testid="board-day" role="group" aria-label="Today">
               <div className="school-status-board__today">
-              {loading ? (
-                // SKELETON PINS while the plan is in flight — a three-disc
-                // pyramid, the row's height fixed by the disc size rather than
-                // by how many there turn out to be. They shimmer so the panel
-                // reads as working rather than as broken.
-                <div className="school-status-board__pins" aria-hidden="true">
-                  {[[0], [1, 2]].map((row, r) => (
-                    <ul key={r} className="school-status-board__pills">
-                      {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
-                    </ul>
-                  ))}
-                </div>
-              ) : summary && summary.segments.length > 0 ? (
-                <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
-              ) : null}
-              {loading ? null : <DayCount summary={summary} />}
+                {loading ? null : <DayCount summary={summary} />}
+                {loading ? (
+                  // SKELETON PINS while the plan is in flight — a three-disc
+                  // pyramid, the row's height fixed by the disc size rather than
+                  // by how many there turn out to be. They shimmer so the panel
+                  // reads as working rather than as broken.
+                  <div className="school-status-board__pins" aria-hidden="true">
+                    {[[0], [1, 2]].map((row, r) => (
+                      <ul key={r} className="school-status-board__pills">
+                        {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
+                      </ul>
+                    ))}
+                  </div>
+                ) : summary && summary.segments.length > 0 ? (
+                  <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
+                ) : null}
               </div>
               {loading ? null : summary && summary.total > 0 ? null : summary?.restDay ? (
                 // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
