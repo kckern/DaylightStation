@@ -112,7 +112,8 @@ it.each(['lookup', 'wake'])('new-event rescan retries a failed %s without extend
   const wake = vi.fn().mockResolvedValueOnce({ ok: failure !== 'wake' }).mockResolvedValue({ ok: true });
   const f = fixture({ resolveBook, wake }); await receive(f); await settle();
   const first = f.service.pending('portal');
-  f.advance(1000); await receive(f, ISBN, 'rescan'); await settle();
+  // Past the 10s wake cooldown, so a failed wake is allowed to try again.
+  f.advance(11_000); await receive(f, ISBN, 'rescan'); await settle();
   expect(f.service.pending('portal')).toMatchObject({ id: first.id, expiresAt: first.expiresAt, status: 'ready', error: null });
   expect(failure === 'lookup' ? resolveBook.execute : wake).toHaveBeenCalledTimes(2);
 });
@@ -133,4 +134,59 @@ it('leaves a pass for the claiming learner and that book only, which expires', a
   expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(true);
   f.advance(2 * 60_000);
   expect(f.service.hasScanned({ learnerId: 'child', isbn13: ISBN })).toBe(false);
+});
+
+// 2026-10-18: seven barcode scans in ~5s each fired their own wake, every one
+// failed, and the log said only `wake-failed {screenId}`. One wake per screen
+// at a time, a cooldown after a failure, and a log line that says why.
+describe('book-scan wakes', () => {
+  // Valid ISBN-13s, so a wake outcome is never masked by an invalid-barcode error.
+  const isbn = (i) => {
+    const body = `978000000${String(i).padStart(3, '0')}`;
+    const sum = [...body].reduce((acc, d, k) => acc + Number(d) * (k % 2 ? 3 : 1), 0);
+    return body + ((10 - (sum % 10)) % 10);
+  };
+  const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
+  const refused = { ok: false, power: { ok: true }, foreground: { ok: false, step: 'toForeground', error: 'connect ECONNREFUSED' } };
+
+  it('seven scans inside five seconds share one wake', async () => {
+    let finish; const wake = vi.fn(() => new Promise(r => { finish = r; }));
+    const f = fixture({ wake, logger: logger() });
+    for (let i = 0; i < 7; i++) { await receive(f, isbn(i), `e${i}`); await settle(); f.advance(700); }
+    expect(wake).toHaveBeenCalledTimes(1);
+    finish({ ok: true }); await settle();
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed wake logs the step and error, then scans in the cooldown skip it', async () => {
+    const wake = vi.fn(async () => refused); const log = logger();
+    const f = fixture({ wake, logger: log });
+    await receive(f, isbn(0), 'e0'); await settle();
+    expect(log.warn).toHaveBeenCalledWith('school.book-scan.wake-failed', expect.objectContaining({
+      screenId: 'portal', step: 'toForeground', error: 'connect ECONNREFUSED',
+      power: expect.objectContaining({ ok: true }), foreground: expect.objectContaining({ ok: false, step: 'toForeground' }),
+    }));
+    for (let i = 1; i < 7; i++) { f.advance(700); await receive(f, isbn(i), `e${i}`); await settle(); }
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(log.warn.mock.calls.filter(([name]) => name === 'school.book-scan.wake-failed')).toHaveLength(1);
+    expect(log.info).toHaveBeenCalledWith('school.book-scan.wake-skipped', { screenId: 'portal', reason: 'cooldown' });
+    expect(f.service.pending('portal').error).toMatch(/could not wake/);
+  });
+
+  it('a thrown wake logs its message as the error', async () => {
+    const log = logger();
+    const f = fixture({ wake: async () => { throw new Error('socket hang up'); }, logger: log });
+    await receive(f); await settle();
+    expect(log.warn).toHaveBeenCalledWith('school.book-scan.wake-failed', expect.objectContaining({ screenId: 'portal', error: 'socket hang up' }));
+  });
+
+  it('after the cooldown a new scan wakes again', async () => {
+    const wake = vi.fn().mockResolvedValueOnce(refused).mockResolvedValue({ ok: true });
+    const f = fixture({ wake, logger: logger() });
+    await receive(f, isbn(0), 'e0'); await settle();
+    f.advance(10_001);
+    await receive(f, isbn(1), 'e1'); await settle();
+    expect(wake).toHaveBeenCalledTimes(2);
+    expect(f.service.pending('portal')).toMatchObject({ error: null });
+  });
 });

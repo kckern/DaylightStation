@@ -239,6 +239,19 @@ The shelf read carries `entry: {manual}` so the panel and the server read the
 same flag. The flag is read per request from the in-memory config, so flipping
 it needs a config reload or restart, not a rebuild.
 
+**Waking the Portal for a scan.** Every scan asks the Portal to wake
+(`wakeScreenForBroadcast`: power on, then Fully Kiosk to the foreground).
+`PrepareBookScan` runs one wake per screen at a time: scans that arrive while a
+wake is in flight share it. After a failed wake, scans for that screen within
+10 seconds do not wake again; they get the same "The screen could not wake"
+message and log `school.book-scan.wake-skipped {screenId, reason: cooldown}`.
+The failure itself is logged once per wake as `school.book-scan.wake-failed`
+with `step` (`screenOn`/`toForeground` from the kiosk adapter, or `power`,
+`foreground`, `wake-threw`), `power` and `foreground` (each `{ok, step?,
+error?}`), and `error`, credential-shaped text redacted. Before 2026-10-19 the
+line carried only `screenId`, and on 10/18 seven scans in about five seconds
+fired seven wakes that all failed with no recorded cause.
+
 ### What the shelf looks like
 
 **One grid, and the cover is the card.** Everything the child has read is a
