@@ -130,6 +130,9 @@ export function EmulatorConsole({
   // its own prompt. `menuAttention` puts a dot on the button (e.g. "not saving").
   menuSection = null,
   menuAttention = false,
+  // Mount with the game menu already open (the host's "decide before you
+  // play" moment). Read once at mount; hosts remount the console per launch.
+  menuInitiallyOpen = false,
   // Console/system label (e.g. "Game Boy Color") and the pre-computed
   // {text, urgency, stale} clock for the unified session badge.
   systemLabel = null,
@@ -201,7 +204,7 @@ export function EmulatorConsole({
 
   // Game menu (host section + volume + LCD shade) — the ⋯ button on the bezel.
   // The game pauses while it is open.
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => !!menuInitiallyOpen);
   const settingsOpenRef = useRef(false);
   settingsOpenRef.current = settingsOpen;
 
@@ -593,6 +596,16 @@ export function EmulatorConsole({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen, logger]);
+
+  // The menu can be open before the core is ready (menuInitiallyOpen) — the
+  // effect above then paused nothing, since engine.pause() is a no-op until
+  // boot. Hold the game the moment it becomes playable instead.
+  useEffect(() => {
+    if (!playReady || !settingsOpenRef.current || hotspotPausedRef.current) return;
+    runtimeRef.current?.engine?.pause?.();
+    logger.info('emulator.console.menu-hold-at-boot', { game: game?.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playReady]);
 
   useEffect(() => {
     if (!settingsOpen) return;

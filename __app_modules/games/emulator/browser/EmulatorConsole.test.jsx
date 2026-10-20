@@ -319,6 +319,43 @@ describe('EmulatorConsole', () => {
       expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
     });
 
+    it('mounts open when menuInitiallyOpen, and pauses at first frame', async () => {
+      const onArcadeGameSessionStateChange = vi.fn();
+      const { queryByRole, engine } = renderConsole({
+        props: { menuInitiallyOpen: true, onArcadeGameSessionStateChange, menuSection: <div>host-section</div> },
+      });
+      // Open before boot finishes …
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeTruthy();
+      await act(async () => {});
+      // … and once the first frame lands the game is held paused, never 'playing'.
+      expect(engine.pause).toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).not.toHaveBeenCalledWith('playing');
+    });
+
+    it('closing a menu that mounted open resumes play', async () => {
+      const onArcadeGameSessionStateChange = vi.fn();
+      const { getByLabelText, engine } = renderConsole({
+        props: { menuInitiallyOpen: true, onArcadeGameSessionStateChange },
+      });
+      await act(async () => {});
+      engine.resume.mockClear();
+      act(() => { getByLabelText('Close menu').click(); });
+      expect(engine.resume).toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
+    });
+
+    it('defaults to closed', async () => {
+      const { queryByRole } = renderConsole();
+      await act(async () => {});
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+    });
+
+    it('unmount with the menu open does not throw', async () => {
+      const { unmount } = renderConsole({ props: { menuInitiallyOpen: true } });
+      await act(async () => {});
+      expect(() => unmount()).not.toThrow();
+    });
+
     it('marks the button when the host asks for attention', async () => {
       const { getByLabelText } = renderConsole({ props: { menuAttention: true } });
       await act(async () => {});
