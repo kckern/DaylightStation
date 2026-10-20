@@ -494,35 +494,6 @@ export default function Keypad({
         {reject ? 'That code did not work. Type it again.' : ''}
       </p>
 
-      {/* Reserved height, always rendered: this row is the only thing between
-          the slots and the pad, so it may never change the pad's position by
-          appearing.
-
-          WORDS ONLY FOR AN OUTAGE. A wrong code says what it has to say in the
-          slots above; printing "Try again." underneath as well would be the
-          same refusal twice, and the sentence a bad code carries is the one
-          thing here a child cannot act on differently. `degraded` is the whole
-          gate — the hook still sets `message` for a refusal, and the day it
-          starts sending something a child CAN act on, this is the line to
-          revisit. */}
-      <div className="school-selfservice__status">
-        {message && degraded && (
-          <p className="school-selfservice__message is-degraded">
-            {message}
-          </p>
-        )}
-        {degraded && onRetry && (
-          <button
-            type="button"
-            className="school-selfservice__retry"
-            disabled={busy}
-            {...tap(onRetry)}
-          >
-            Try again
-          </button>
-        )}
-      </div>
-
       <div className="school-selfservice__pad">
         {DIGITS.map((digit) => (
           <button
@@ -561,6 +532,37 @@ export default function Keypad({
         >
           ⌫
         </button>
+      </div>
+
+      {/* Reserved height, always rendered: this row is the only thing between
+          the slots and the pad, so it may never change the pad's position by
+          appearing.
+
+          WORDS ONLY FOR AN OUTAGE. A wrong code says what it has to say in the
+          slots above; printing "Try again." underneath as well would be the
+          same refusal twice, and the sentence a bad code carries is the one
+          thing here a child cannot act on differently. `degraded` is the whole
+          gate — the hook still sets `message` for a refusal, and the day it
+          starts sending something a child CAN act on, this is the line to
+          revisit.
+
+          Under the keys, so nothing above the pad ever changes height. */}
+      <div className="school-selfservice__status">
+        {message && degraded && (
+          <p className="school-selfservice__message is-degraded">
+            {message}
+          </p>
+        )}
+        {degraded && onRetry && (
+          <button
+            type="button"
+            className="school-selfservice__retry"
+            disabled={busy}
+            {...tap(onRetry)}
+          >
+            Try again
+          </button>
+        )}
       </div>
 
       <button

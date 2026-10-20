@@ -1858,14 +1858,11 @@
   overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 
-// FIXED height, not min-height. This row sits between the slots and the pad, so
-// anything that appears in it (the outage sentence, its retry button) must not
-// shove the keys down the screen mid-tap. It reserves room for BOTH controls:
-// the old 3.5–4.5rem row was shorter than the 52px button by itself, so a
-// wrapped outage sentence made the retry button overflow into the keypad.
+// This band sits UNDER the keys, so an outage sentence and its retry button can
+// grow it without moving the code boxes or the keys above.
 .school-selfservice__status {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0.45rem; width: 100%; height: clamp(7.25rem, 15vh, 8rem);
+  gap: 0.45rem; width: 100%; min-height: 0;
 }
 .school-selfservice__message {
   max-width: calc(100% - 1rem); margin: 0; font-size: clamp(1rem, 2.5vw, 1.25rem); font-weight: 700;

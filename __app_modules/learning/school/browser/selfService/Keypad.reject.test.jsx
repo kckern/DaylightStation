@@ -87,16 +87,15 @@ describe('School keypad refusal animation (NONONO)', () => {
 });
 
 describe('School keypad outage layout', () => {
-  it('reserves the whole message-and-retry band above the keys', () => {
-    const status = styleRule('.school-selfservice__status');
-    const message = styleRule('.school-selfservice__message');
-    const retry = styleRule('.school-selfservice__retry');
-
-    // 52px retry + its 0.45rem gap + one text line needs more than the old
-    // 3.5rem band. Keeping it fixed prevents a failed request from painting a
-    // button on top of the first keypad row.
-    expect(status).toContain('height: clamp(7.25rem, 15vh, 8rem)');
-    expect(message).toContain('white-space: nowrap');
-    expect(retry).toContain('flex: 0 0 52px');
+  it('keeps the outage band under the keys, so the code boxes sit on the pad', () => {
+    const { container } = render(<Keypad onSubmit={vi.fn()} message="Server is down" degraded onRetry={vi.fn()} />);
+    const root = container.querySelector('.school-selfservice');
+    const order = [...root.children].map((el) => el.className.split(' ')[0]);
+    expect(order.indexOf('school-selfservice__entry')).toBeLessThan(order.indexOf('school-selfservice__pad'));
+    expect(order.indexOf('school-selfservice__pad')).toBeLessThan(order.indexOf('school-selfservice__status'));
+    // Nothing above the keys changes height, so a fixed band is no longer needed.
+    expect(styleRule('.school-selfservice__status')).not.toContain('height: clamp(7.25rem, 15vh, 8rem)');
+    expect(styleRule('.school-selfservice__message')).toContain('white-space: nowrap');
+    expect(styleRule('.school-selfservice__retry')).toContain('flex: 0 0 52px');
   });
 });
