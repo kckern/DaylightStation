@@ -4,39 +4,57 @@ import { SchedulerOrchestrator } from './SchedulerOrchestrator.mjs';
 const job = { id: 'withings', timeout: 1000, options: {} };
 const START = '2026-10-20T12:00:00.000Z';
 
-function orchestrator(result, end = '2026-10-20T12:00:05.000Z') {
+/**
+ * Clock that reads START until the work has run, then START + elapsedMs.
+ * Proves the end stamp is taken after the work, not before it.
+ */
+function clockAfterWork(elapsedMs) {
+  const state = { ran: false };
+  const clock = () => new Date(Date.parse(START) + (state.ran ? elapsedMs : 0));
+  return { state, clock };
+}
+
+function orchestrator({ execute, withDeadline = (work) => work, elapsedMs = 5000 }) {
+  const { state, clock } = clockAfterWork(elapsedMs);
   return new SchedulerOrchestrator({
     schedulerService: {}, timestampCodec: { format: (d) => d.toISOString() },
-    newExecutionId: () => 'x', scheduler: { withDeadline: (work) => work },
+    newExecutionId: () => 'x', scheduler: { withDeadline: (work, opts) => { state.ran = true; return withDeadline(work, opts); } },
     jobStore: {}, stateStore: {},
-    harvesterExecutor: { canHandle: () => true, execute: async () => result },
-    clock: () => new Date(end),
+    harvesterExecutor: {
+      canHandle: () => true,
+      execute: async (...args) => { state.ran = true; return execute(...args); },
+    },
+    clock,
   });
 }
 
-describe('SchedulerOrchestrator harvest results', () => {
-  it('marks a harvest that returns status error as failed', async () => {
-    const ex = await orchestrator({ count: 0, status: 'error', reason: 'auth_failed', error: 'invalid refresh_token' })
+describe('SchedulerOrchestrator execution timing', () => {
+  it('records a successful run with its real duration', async () => {
+    const ex = await orchestrator({ execute: async () => ({ count: 3, status: 'success' }) })
       .executeJob(job, 'x', false, START);
+    expect(ex.status).toBe('success');
+    expect(ex.startTime).toBe(START);
+    expect(ex.endTime).toBe('2026-10-20T12:00:05.000Z');
+    expect(ex.durationMs).toBe(5000);
+  });
+
+  it('records a thrown failure, timed from start to end', async () => {
+    const ex = await orchestrator({
+      execute: async () => { throw new Error('auth_failed: invalid refresh_token'); },
+      elapsedMs: 2000,
+    }).executeJob(job, 'x', false, START);
     expect(ex.status).toBe('failed');
     expect(ex.error).toBe('auth_failed: invalid refresh_token');
-  });
-  it('keeps success and skipped harvests as success, with real duration', async () => {
-    const ok = await orchestrator({ count: 3, status: 'success' }).executeJob(job, 'x', false, START);
-    expect(ok.status).toBe('success');
-    expect(ok.durationMs).toBe(5000);
-    const skipped = await orchestrator({ count: 0, status: 'skipped', reason: 'cooldown' }).executeJob(job, 'x', false, START);
-    expect(skipped.status).toBe('success');
-  });
-  it('times a thrown failure from start to end', async () => {
-    const o = new SchedulerOrchestrator({
-      schedulerService: {}, timestampCodec: { format: (d) => d.toISOString() },
-      newExecutionId: () => 'x', scheduler: { withDeadline: (work) => work }, jobStore: {}, stateStore: {},
-      harvesterExecutor: { canHandle: () => true, execute: async () => { throw new Error('boom'); } },
-      clock: () => new Date('2026-10-20T12:00:02.000Z'),
-    });
-    const ex = await o.executeJob(job, 'x', false, START);
-    expect(ex.status).toBe('failed');
     expect(ex.durationMs).toBe(2000);
+  });
+
+  it('records a deadline overrun as a timeout, timed from start to end', async () => {
+    const ex = await orchestrator({
+      execute: async () => ({ count: 0, status: 'success' }),
+      withDeadline: () => Promise.reject(new Error('Job timeout after 1000ms')),
+      elapsedMs: 1000,
+    }).executeJob(job, 'x', false, START);
+    expect(ex.status).toBe('timeout');
+    expect(ex.durationMs).toBe(1000);
   });
 });

@@ -13,6 +13,8 @@
  * @module 3_applications/harvester/HarvesterJobExecutor
  */
 
+import { isFailedHarvest, describeHarvestFailure } from './ports/IHarvester.mjs';
+
 export class HarvesterJobExecutor {
   /** @type {import('./HarvesterService.mjs').HarvesterService} */
   #harvesterService;
@@ -46,6 +48,7 @@ export class HarvesterJobExecutor {
    * @param {Object} [context.logger] - Scoped logger for this execution
    * @param {string} [context.executionId] - Unique execution identifier
    * @returns {Promise<Object>} Result from the harvester
+   * @throws {Error} When the harvest throws, or returns status 'error'
    */
   async execute(serviceId, options = {}, context = {}) {
     const { logger: scopedLogger, executionId } = context;
@@ -59,17 +62,9 @@ export class HarvesterJobExecutor {
       username: username || '(default)',
     });
 
+    let result;
     try {
-      const result = await this.#harvesterService.harvest(serviceId, username, options);
-
-      log.info?.('harvester.executor.complete', {
-        serviceId,
-        executionId,
-        status: result?.status,
-        count: result?.count,
-      });
-
-      return result;
+      result = await this.#harvesterService.harvest(serviceId, username, options);
     } catch (error) {
       log.error?.('harvester.executor.error', {
         serviceId,
@@ -78,6 +73,24 @@ export class HarvesterJobExecutor {
       });
       throw error;
     }
+
+    // A harvester that can't do its job (e.g. expired auth) returns status
+    // 'error' instead of throwing. Throw here so the scheduler records a
+    // failed run rather than a success.
+    if (isFailedHarvest(result)) {
+      const reason = describeHarvestFailure(result);
+      log.error?.('harvester.executor.failed', { serviceId, executionId, reason });
+      throw new Error(reason);
+    }
+
+    log.info?.('harvester.executor.complete', {
+      serviceId,
+      executionId,
+      status: result?.status,
+      count: result?.count,
+    });
+
+    return result;
   }
 
   /**

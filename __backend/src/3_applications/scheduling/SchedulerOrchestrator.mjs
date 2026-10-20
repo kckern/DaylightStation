@@ -14,7 +14,6 @@
 import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { JobExecution } from '#domains/scheduling/entities/JobExecution.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { isFailedHarvest, describeHarvestFailure } from '#apps/harvester/ports/IHarvester.mjs';
 
 export class SchedulerOrchestrator {
   #clock;
@@ -171,8 +170,7 @@ export class SchedulerOrchestrator {
 
   /**
    * Hand a job to the executor that owns it (or the legacy module import) and
-   * mark the execution succeeded (or failed, for a harvest that returns status
-   * 'error'). Thrown errors propagate to executeJob.
+   * mark the execution succeeded. Errors propagate to executeJob.
    */
   async #dispatch(job, executionId, execution) {
     // Check newsreporter executor FIRST. Reporter jobs have no `module`, so if
@@ -183,15 +181,9 @@ export class SchedulerOrchestrator {
 
       execution.succeed(this.#stamp());
     } else if (this.harvesterExecutor?.canHandle(job.id)) {
-      const result = await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
+      await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      // A harvester that can't do its job (e.g. expired auth) returns status
-      // 'error' rather than throwing; that is still a failed run.
-      if (isFailedHarvest(result)) {
-        execution.fail(new Error(describeHarvestFailure(result)), this.#stamp());
-      } else {
-        execution.succeed(this.#stamp());
-      }
+      execution.succeed(this.#stamp());
     } else if (this.applicationExecutor?.canHandle(job.id)) {
       await this.#runWithinDeadline(this.applicationExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
@@ -234,7 +226,10 @@ export class SchedulerOrchestrator {
     }
   }
 
-  /** Current time in the codec's format, so end timestamps reflect when the work finished. */
+  /**
+   * Current time in the codec's format, so end timestamps reflect when the work
+   * finished. The codec has one-second resolution, so durationMs is whole seconds.
+   */
   #stamp() {
     return this.timestampCodec.format(this.#clock());
   }
