@@ -662,6 +662,14 @@ no participant is within 20 BPM of the target the challenge is skipped
 In a `cyclic` selection the skip still advances the cursor, so the next attempt
 is the next selection rather than the same infeasible one.
 
+If some participants are close but not enough, the target drops one zone (hot →
+warm), but never onto or below the policy's baseline zone (`base_requirement` /
+zone `requirements`). The baseline already holds everyone there to keep the
+video playing, so a challenge at that zone is won the instant it starts. A
+challenge that cannot drop is skipped like an infeasible one, and any configured
+or unattended selection at or below the baseline is skipped at start
+(`governance.challenge.skipped_baseline_zone`).
+
 ## Configuration
 
 ### Governance Policies

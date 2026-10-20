@@ -482,6 +482,36 @@ export class GovernanceEngine {
   }
 
   /**
+   * True when `zone` ranks strictly above every zone the active policy's
+   * baseline requires. A challenge at or below the baseline is no challenge.
+   * With no active policy (or no zone baseline) every zone qualifies.
+   */
+  _isAboveBaselineZone(zone) {
+    const policy = this._activePolicy || this._chooseActivePolicy?.(0) || null;
+    if (!policy) return true;
+    const baselineZones = new Set(Object.keys(policy.baseRequirement || {}).map(normalizeZoneId));
+    (policy.requirements || []).forEach((req) => {
+      if (req && req.type === 'zone' && req.zone) baselineZones.add(normalizeZoneId(req.zone));
+    });
+    const rankMap = this._latestInputs?.zoneRankMap || {};
+    const fallbackOrder = ['cool', 'active', 'warm', 'hot', 'fire'];
+    const rankOf = (z) => {
+      const id = normalizeZoneId(z);
+      if (Number.isFinite(rankMap[id])) return rankMap[id];
+      const idx = fallbackOrder.indexOf(id);
+      return idx >= 0 ? idx : null;
+    };
+    const candidateRank = rankOf(zone);
+    if (candidateRank == null) return true;
+    let floor = -Infinity;
+    baselineZones.forEach((z) => {
+      const r = rankOf(z);
+      if (r != null && r > floor) floor = r;
+    });
+    return candidateRank > floor;
+  }
+
+  /**
    * Check if a challenge zone is achievable given current participant HR.
    * Used to prevent starting structurally impossible challenges.
    * @param {string} targetZone - Zone the challenge requires
@@ -545,6 +575,13 @@ export class GovernanceEngine {
       const targetIdx = zoneDowngrades.indexOf(normalizeZoneId(targetZone));
       if (targetIdx >= 0 && targetIdx < zoneDowngrades.length - 1) {
         const downgrade = zoneDowngrades[targetIdx + 1];
+        // Never downgrade onto (or below) the policy's baseline zone. The
+        // baseline already holds everyone there to keep the video playing, so
+        // a "warm → active" downgrade completed in ~100ms and was recorded as
+        // a won challenge (2026-10-09 Game Cycling and 15 sessions before it).
+        if (!this._isAboveBaselineZone(downgrade)) {
+          return { feasible: false, reason: `Only ${achievableCount}/${requiredCount} within ${FEASIBILITY_MARGIN_BPM} BPM of ${targetZone}; ${downgrade} is the baseline` };
+        }
         const downResult = this._checkChallengeFeasibility(downgrade, rule, activeParticipants);
         if (downResult.feasible) {
           return { feasible: false, suggestedZone: downgrade, reason: `${targetZone} not achievable, downgraded to ${downgrade}` };
@@ -4760,6 +4797,21 @@ export class GovernanceEngine {
         // Short pulse so next tick progresses cycle state (init timeout etc.).
         this._schedulePulse(250);
         return true;
+      }
+
+      // A zone challenge at or below the baseline is satisfied the moment it
+      // starts; skip it the same way an infeasible one is skipped.
+      if (!forced && preview.type === 'zone' && !this._isAboveBaselineZone(preview.zone)) {
+        getLogger().warn('governance.challenge.skipped_baseline_zone', {
+          zone: preview.zone, selectionLabel: preview.selectionLabel || null
+        });
+        if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
+          this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
+        }
+        this.challengeState.nextChallenge = null;
+        queueNextChallenge(this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000);
+        this._schedulePulse(50);
+        return false;
       }
 
       // Feasibility check: don't start challenges participants can't reach

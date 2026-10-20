@@ -72,3 +72,23 @@ describe('usePersistentVolume — duck multiplier', () => {
     expect(applied.at(-1).level).toBeCloseTo(0.8, 5);
   });
 });
+
+describe('usePersistentVolume — reapplyKey', () => {
+  it('re-applies the stored level when reapplyKey changes, without changing the storage key', () => {
+    applied = [];
+    const seenIds = [];
+    const getVolume = store.getVolume;
+    store.getVolume = (ids) => { seenIds.push(ids.trackId); return getVolume(ids); };
+    const playerRef = { current: { getMediaElement: () => ({ volume: 1 }) } };
+    const { rerender } = renderHook(
+      ({ track }) => usePersistentVolume({ grandparentId: 'fitness-music', parentId: '672596', trackId: 'playlist', reapplyKey: track, playerRef }),
+      { initialProps: { track: 'plex:140580' } },
+    );
+    const appliedBefore = applied.length;
+    rerender({ track: 'plex:140579' });
+    store.getVolume = getVolume;
+    expect(applied.length).toBe(appliedBefore + 1);
+    expect(applied.at(-1).level).toBeCloseTo(0.8, 5);
+    expect(new Set(seenIds)).toEqual(new Set(['playlist']));
+  });
+});

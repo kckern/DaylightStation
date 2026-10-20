@@ -61,7 +61,7 @@ function choose(pool, recentIds, random) {
 }
 
 /** Select a reviewed image; portrait companions use the same hard gates. */
-export function selectAmbianceArtwork({ track, artworks = {}, profileKey, policy, recentIds = [], overrides = {}, random = Math.random }) {
+export function selectAmbianceArtwork({ track, artworks = {}, profileKey, policy, recentIds = [], overrides = {}, random }) {
   if (!isEligible(track, profileKey, policy)) return null;
   const eligible = Object.entries(artworks).filter(([, art]) => isEligible(art, profileKey, policy, 'artwork'));
   const pinned = new Set(Array.isArray(overrides[track.id]) ? overrides[track.id] : []);

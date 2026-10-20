@@ -202,10 +202,15 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       || null;
   }, [currentTrack]);
 
+  // One level per playlist. Keying by track let any song adjusted weeks ago
+  // come back at its old level when shuffle reached it (2026-10-20: a 0.0631
+  // track from Oct 5 played at 4x the session's 0.0158). The track only
+  // re-applies the playlist level to each new audio element.
   const musicVolumeState = usePersistentVolume({
     grandparentId: 'fitness-music',
     parentId: selectedPlaylistId || 'global',
-    trackId: currentTrackIdentity || 'music',
+    trackId: 'playlist',
+    reapplyKey: currentTrackIdentity,
     playerRef: audioPlayerRef
   });
 
@@ -435,6 +440,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
 
   const handleMusicLevelSelect = (level) => {
     musicVolumeState.setVolume(logVolumeFromLevel(level));
+    getLogger().info('fitness.music.volume_select', {
+      level, volume: logVolumeFromLevel(level), playlistId: selectedPlaylistId || null,
+    });
   };
 
   const toggleControls = (e = null) => {
