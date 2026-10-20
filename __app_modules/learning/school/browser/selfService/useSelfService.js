@@ -702,6 +702,17 @@ export function useSelfService({
   }, [view, toLock]);
 
   /**
+   * The first digit of the next code. A refusal's sentence captions the code
+   * it refused, so it goes for good here — backspacing back to an empty pad is
+   * still the next attempt, and must not bring the old words back. An outage
+   * message stays: its retry button is the way out, and typing is not.
+   */
+  const startEntry = useCallback(() => {
+    if (degraded) return;
+    setMessage(null);
+  }, [degraded]);
+
+  /**
    * THE TOUCH EQUIVALENT OF THAT ESCAPE KEY.
    *
    * The note above is about a keyboard the wall panel does not have: FKB shows
@@ -713,17 +724,6 @@ export function useSelfService({
    * a child anything (there is nothing typed to lose, and a reload lands back
    * on this same keypad), and it needs no code, no gesture and no grown-up.
    */
-  /**
-   * The first digit of the next code. A refusal's sentence captions the code
-   * it refused, so it goes for good here — backspacing back to an empty pad is
-   * still the next attempt, and must not bring the old words back. An outage
-   * message stays: its retry button is the way out, and typing is not.
-   */
-  const startEntry = useCallback(() => {
-    if (degraded) return;
-    setMessage(null);
-  }, [degraded]);
-
   const reload = useCallback(() => {
     schoolLog.selfService('keypad.reload', {});
     window.location.reload();

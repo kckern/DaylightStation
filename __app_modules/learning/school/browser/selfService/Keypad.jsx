@@ -302,7 +302,8 @@ export default function Keypad({
   // activation that arrives before anyone could have read the answer is the
   // previous gesture finishing, not a new one starting, and it is dropped
   // outright rather than allowed to cancel the refusal it caused.
-  // Through a ref so a caller's inline callback does not re-create `press`.
+  // Read through a ref so a caller's callback identity stays out of `press`'s
+  // deps; `press` still changes per digit, because it reads `entry.length`.
   const onEntryStartRef = useRef(onEntryStart);
   onEntryStartRef.current = onEntryStart;
 
