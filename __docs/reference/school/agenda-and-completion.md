@@ -183,21 +183,36 @@ all, reports `status: unavailable` with `hasActivity: null`, so an outage
 cannot be mistaken for a child who did not exercise. The v1 teacher-today
 response remains unchanged.
 
-## Silver on the status board
+## The status board card
 
-The card's **This week** partition shows, beside the rings, the learner's
-silver so far this week from the roster earnings preview
-(`GET /api/v1/earnings/preview`; see `__docs/reference/economy/economy.md`).
-It is a preview: nothing is paid until payday. Gems show as a second figure
-only once one is earned, and a smaller line ("+5 silver · +1 gem") shows what
-the week could still pay while anything is pending.
+Each learner's card is four cells, left to right: who, today, coins, days.
+
+**Today.** A big number of how many assignments are left, set before the
+subject pins. A finished day shows one green check mark in its place. There is
+no segmented bar; the number is the progressbar for screen readers ("N of M
+done"). A rest day keeps "No school today".
+
+**Coins.** A fixed-width column so the figures line up down every card. Silver
+is the big figure: the learner's earnings so far this week from the roster
+earnings preview (`GET /api/v1/earnings/preview`; see
+`__docs/reference/economy/economy.md`). It is a preview; nothing is paid until
+payday. Gold is smaller beneath it: the economy wallet balance
+(`GET /api/v1/economy/users/:id/wallet`), which reads 0 until payouts exist.
+Gems are a third line only once earned or pending. A faded `+N` hangs after a
+number for what is still possible. There are no captions; icons carry the
+meaning and aria-labels keep the names.
+
+**Days.** Last week (dimmer) above this week, seven squares each, today
+outlined, weekday letters above. The ring count with its ring icon sits
+beneath. The term grid is not drawn here; the teacher console shows the term
+(`__docs/reference/school/term-grid.md`).
 
 One roster read prices every card. It runs beside the plans, never blocking
 them, on the board's refresh timer, on visibility, and after every school,
-scan, or ring event, since that work is what moves the figure. Nothing shows
-until the read lands ("0" and "not loaded" are different facts), a failed
-re-read keeps the figures already shown, and a learner the preview cannot
-price (every line "can't tell") shows no figure. The snapshot cache keeps the
+scan, or ring event, since that work is what moves the figures. Each figure
+appears when its own read lands ("0" and "not loaded" are different facts), a
+failed re-read keeps what is shown, and a learner the preview cannot price
+(every line "can't tell") shows no silver figure. The snapshot cache keeps the
 figures with the week they price, so last week's total is never painted as
 this week's. Cards stay in roster order; the economy never ranks.
 

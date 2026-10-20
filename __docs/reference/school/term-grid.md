@@ -1,6 +1,7 @@
 # The term grid — one verdict per school day
 
-The status board draws each learner's term as a GitHub-style grid: seven rows
+The teacher console draws each learner's term as a GitHub-style grid (the
+status board shows only last week and this week): seven rows
 (Monday at the top, Sunday at the bottom), one column per week, one square per
 study day, coloured by how the day went. An eighth row, drawn only when a
 learner carries week-level work, holds one square per week.

@@ -20,8 +20,8 @@
  * reaching for the next digit. The refusal now happens IN the slots: the row
  * shakes, then the six digits turn over one by one into REJECT_WORD, hold, and
  * wipe back to empty. Nothing moves, the whole thing is over in under two
- * seconds, and the status row below keeps a reserved height so the one message
- * that still uses words (a backend outage, plus its retry button) does not
+ * seconds, and the status band sits under the keys, so the one message that
+ * still uses words (a backend outage, plus its retry button) does not
  * shift the pad either.
  *
  * THE INTERACTION OUTLASTS THE ENTRY. Auto-submit made the sixth DIGIT the
@@ -119,7 +119,7 @@ const ABANDONED_ENTRY_MS = 60_000;
  * @param {boolean} [props.busy] - a resolve is in flight.
  * @param {string|null} [props.message] - the degraded sentence. A wrong code no
  *   longer arrives here (see the header); if one does, it is shown in the
- *   reserved status row and displaces nothing.
+ *   status band under the keys and displaces nothing above it.
  * @param {boolean} [props.degraded] - the message is a backend fault, so offer
  *   a retry rather than making the child re-type a code that was never wrong.
  * @param {() => void} [props.onRetry]
@@ -534,9 +534,10 @@ export default function Keypad({
         </button>
       </div>
 
-      {/* Reserved height, always rendered: this row is the only thing between
-          the slots and the pad, so it may never change the pad's position by
-          appearing.
+      {/* The outage band sits UNDER the keys and is sized to its content, so
+          the code boxes sit directly on the pad. It is the last thing in the
+          column: when it appears it grows downward and nothing above the pad
+          changes height or position.
 
           WORDS ONLY FOR AN OUTAGE. A wrong code says what it has to say in the
           slots above; printing "Try again." underneath as well would be the
