@@ -77,10 +77,16 @@ export function PlayerPanel({
                   arriving after the menu opens does not shift the buttons.
                   savers === null means the list is still loading. */}
               <div className="emu-player-panel__savers" aria-busy={savers === null ? 'true' : undefined}>
-                {savers?.length === 0 && (
-                  <span className="emu-player-panel__hint">No saved games yet</span>
+                <span className="emu-player-panel__hint">
+                  {savers === null ? '\u00a0' : savers.length === 0 ? 'No saved games yet' : 'Continue as'}
+                </span>
+                {!savers?.length && (
+                  // An invisible avatar button: the row is exactly as tall as a full one.
+                  <span className="emu-player-panel__btn emu-player-panel__saver emu-player-panel__placeholder" aria-hidden="true">
+                    <span className="emu-player-panel__avatar" />
+                    <span>{'\u00a0'}</span>
+                  </span>
                 )}
-                {savers?.length > 0 && <span className="emu-player-panel__hint">Continue as</span>}
                 {savers?.length > 0 && savers.map((s) => (
                   <button
                     key={s.userId}

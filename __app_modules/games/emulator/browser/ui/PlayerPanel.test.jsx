@@ -67,4 +67,17 @@ describe('PlayerPanel', () => {
     expect(screen.getByText('No saved games yet')).toBeTruthy();
     expect(screen.queryByText('Continue as')).toBeNull();
   });
+
+  it('loading and empty rows reserve a full avatar button (hidden), a full row does not', () => {
+    const placeholder = (c) => c.querySelector('.emu-player-panel__savers .emu-player-panel__placeholder.emu-player-panel__saver');
+    const a = render(<PlayerPanel savers={null} />);
+    expect(placeholder(a.container)?.querySelector('.emu-player-panel__avatar')).toBeTruthy();
+    expect(placeholder(a.container).getAttribute('aria-hidden')).toBe('true');
+    a.unmount();
+    const b = render(<PlayerPanel savers={[]} />);
+    expect(placeholder(b.container)).toBeTruthy();
+    b.unmount();
+    const c = render(<PlayerPanel savers={[saver]} />);
+    expect(placeholder(c.container)).toBeNull();
+  });
 });
