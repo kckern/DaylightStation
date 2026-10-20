@@ -421,7 +421,7 @@ describe('AgendaStatusBoard render', () => {
     // Nothing is printed under the pins at 100%: the row is green end to end
     // — nameplate, card, every disc — and a chip saying "DONE" underneath was a
     // third statement of the same fact, charging the discs the height.
-    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    expect(screen.getByTestId('board-day-done')).toBeTruthy();
     expect(screen.queryByText(/^Done$/i)).toBeNull();
   });
 
@@ -886,27 +886,22 @@ describe('the four partitions', () => {
     schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   });
 
-  it('packs seven assignments as pins in two rows of 3 and 4, bar under the pins', async () => {
+  it('packs seven assignments as pins in rows of 3 and 4, with how many are left beside them', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(7));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const meter = await screen.findByTestId('board-day-meter');
+    const count = await screen.findByTestId('board-day-count');
     const day = screen.getByTestId('board-day');
     const rows = day.querySelectorAll('.school-status-board__pills');
     expect([...rows].map((row) => row.querySelectorAll('.school-status-board__pill').length)).toEqual([3, 4]);
-    // The bar lives INSIDE the day partition, under the pins — one segment per
-    // assignment, and no printed count: the segments ARE the count, and the
-    // words underneath were costing the pins the height they need to be read
-    // from a doorway.
-    expect(day.contains(meter)).toBe(true);
-    expect(meter.querySelectorAll('.school-status-board__segment')).toHaveLength(7);
-    expect(day.querySelector('.school-status-board__status')).toBeNull();
-    expect(screen.queryByText('0 of 7')).toBeNull();
-    // Still announced, for anyone who cannot see the bar.
-    expect(meter.querySelector('[role="progressbar"]')).toHaveAttribute('aria-label', '0 of 7 done');
+    expect(day.contains(count)).toBe(true);
+    expect(count.textContent).toBe('7');
+    expect(count).toHaveAttribute('role', 'progressbar');
+    expect(count).toHaveAttribute('aria-label', '0 of 7 done');
+    expect(day.querySelector('.school-status-board__segment')).toBeNull();
   });
 
-  it('shows no meter and no DONE chip once the day is finished — the row is green', async () => {
+  it('a finished day shows one check mark instead of a count, and no DONE text', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(2));
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
@@ -916,13 +911,25 @@ describe('the four partitions', () => {
     ] } });
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const day = await screen.findByTestId('board-day');
-    await waitFor(() => expect(
-      day.querySelectorAll('.school-status-board__pill[data-state="passed"]'),
-    ).toHaveLength(2));
-    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    const done = await screen.findByTestId('board-day-done');
+    expect(done).toHaveAttribute('aria-label', 'Done for the day');
+    expect(done.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByTestId('board-day-count')).toBeNull();
     expect(screen.queryByText(/^Done$/i)).toBeNull();
-    expect(day.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
+    expect(done.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
+  });
+
+  it('a rest day keeps its copy, with no count and no check mark', async () => {
+    const off = (subject) => ({
+      subject, next: { unitId: `${subject}.next` }, obligation: { state: 'excused', reason: 'not_a_school_day' },
+    });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math'), off('language')], entries: [] } });
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, data: { studyDay: '2026-09-26', learners: [{ learnerId: 'learner1', sessions: [] }] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByTestId('board-day-count')).toBeNull();
+    expect(screen.queryByTestId('board-day-done')).toBeNull();
   });
 
   it('drops the "Today" heading but keeps the partition named for a screen reader', async () => {

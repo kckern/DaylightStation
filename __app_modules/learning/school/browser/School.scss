@@ -3297,22 +3297,12 @@
     opacity: 0.75; letter-spacing: 0.03em;
     font-variant-numeric: tabular-nums;
   }
-  // THE METER: one segment per assignment, filled as each is done. Green
-  // segments are the day's done discs restated as a bar a doorway can read; the
-  // hollow ones are what is left. No words under it — the segments are the
-  // count, and the count is on the progressbar's aria-label for anyone who
-  // needs it read out.
-  &__meter {
-    flex: none; width: min(100%, 11rem);
-    display: flex; flex-direction: column; align-items: center;
-  }
-  &__bar {
-    width: 100%; height: clamp(0.4rem, 1.1vh, 0.6rem);
-    display: grid; grid-template-columns: repeat(var(--segments, 1), 1fr); gap: 2px;
-  }
-  &__segment {
-    border-radius: 999px; background: var(--school-board-pending);
-    &.is-done { background: var(--school-board-done); }
+  &__today { display: flex; align-items: center; justify-content: center; gap: clamp(0.6rem, 1.6vw, 1.2rem); }
+  &__left { font-size: clamp(2rem, 7vh, 3.4rem); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  &__check {
+    width: clamp(2.2rem, 7vh, 3.4rem); aspect-ratio: 1; border-radius: 50%;
+    display: grid; place-items: center; background: var(--school-ok, #3f8f37); color: #fff;
+    svg { width: 62%; height: 62%; }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
   // A DAY OFF reads as an answer, not a gap, so it is not dimmed like

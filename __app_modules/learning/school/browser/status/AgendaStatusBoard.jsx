@@ -284,39 +284,31 @@ function WeekStrip({ term }) {
 }
 
 /**
- * The day's count as a SEGMENTED BAR — one segment per assignment, filled as
- * each is done.
- *
- * THE BAR ALONE. It used to carry "2 of 7" underneath and a "Done" chip at
- * 100%, and both were saying a second time what the reader could already see:
- * the filled segments ARE the count, and a finished row turns green end to end.
- * Two lines of redundant type were costing the pins the vertical space they
- * need to be read from across a room, which is the one job this panel has.
- *
- * The count survives for anyone who cannot see the bar — it is the
- * progressbar's `aria-label`, where it was all along.
+ * HOW MANY ARE LEFT, as one big number beside the pins — or, once the day is
+ * finished, one big check mark. The number is the progress bar for a screen
+ * reader ("2 of 7 done"); to the eye it is the across-the-room fact.
  */
-function DayMeter({ summary }) {
+function DayCount({ summary }) {
   if (!summary || summary.total <= 0) return null;
-  // Finished: the row's own green says it. Rendering nothing here is what lets
-  // the pins keep the height instead of handing it to a chip.
-  if (summary.done >= summary.total) return null;
+  if (summary.done >= summary.total) {
+    return (
+      <span className="school-status-board__check" data-testid="board-day-done" role="img" aria-label="Done for the day">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </span>
+    );
+  }
   return (
-    <div className="school-status-board__meter" data-testid="board-day-meter">
-      <div
-        className="school-status-board__bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={summary.total}
-        aria-valuenow={summary.done}
-        aria-label={`${summary.done} of ${summary.total} done`}
-        style={{ '--segments': summary.total }}
-      >
-        {Array.from({ length: summary.total }, (_, i) => (
-          <span key={i} className={`school-status-board__segment${i < summary.done ? ' is-done' : ''}`} />
-        ))}
-      </div>
-    </div>
+    <span
+      className="school-status-board__left"
+      data-testid="board-day-count"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={summary.total}
+      aria-valuenow={summary.done}
+      aria-label={`${summary.done} of ${summary.total} done`}
+    >
+      {summary.total - summary.done}
+    </span>
   );
 }
 
@@ -747,6 +739,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 sentence is already named by its position. The label is kept for
                 anyone reading the page rather than looking at it. */}
             <div className="school-status-board__day" data-testid="board-day" role="group" aria-label="Today">
+              <div className="school-status-board__today">
               {loading ? (
                 // SKELETON PINS while the plan is in flight — a three-disc
                 // pyramid, the row's height fixed by the disc size rather than
@@ -762,11 +755,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               ) : summary && summary.segments.length > 0 ? (
                 <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
               ) : null}
-              {/* THE METER, under the pins: a segmented bar, and nothing once
-                  the day is finished. */}
-              {loading ? null : summary && summary.total > 0 ? (
-                <DayMeter summary={summary} />
-              ) : summary?.restDay ? (
+              {loading ? null : <DayCount summary={summary} />}
+              </div>
+              {loading ? null : summary && summary.total > 0 ? null : summary?.restDay ? (
                 // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
                 // is excused as not a school day, and the optional work is
                 // still on the agenda a card scan prints. "No plan to show"
