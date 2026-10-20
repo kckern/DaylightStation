@@ -176,6 +176,14 @@ describe('WithingsHarvester', () => {
 
       expect(result.status).toBe('error');
       expect(result.reason).toBe('auth_failed');
+      expect(result.error).toBe('no refresh token saved');
+    });
+
+    it('reports the Withings error when the refresh token is rejected', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: { status: 503, body: {}, error: 'Invalid Params: invalid refresh_token' } });
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'Invalid Params: invalid refresh_token' });
     });
 
     test('respects yearsBack option', async () => {

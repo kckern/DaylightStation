@@ -47,6 +47,7 @@ export class WithingsHarvester extends IHarvester {
   #logger;
   #tokenCache;
   #weightProcessor;
+  #lastAuthError = null;
 
   /**
    * @param {Object} config
@@ -166,7 +167,7 @@ export class WithingsHarvester extends IHarvester {
       // 1. Refresh access token
       const accessToken = await this.#refreshAccessToken(username);
       if (!accessToken) {
-        return { count: 0, status: 'error', reason: 'auth_failed' };
+        return { count: 0, status: 'error', reason: 'auth_failed', error: this.#lastAuthError };
       }
 
       // 2. Fetch measurements
@@ -246,6 +247,7 @@ export class WithingsHarvester extends IHarvester {
       return this.#tokenCache.token;
     }
 
+    this.#lastAuthError = null;
     try {
       // Read from disk (authStore) to get latest refresh token,
       // NOT configService which caches at boot and never reloads.
@@ -256,6 +258,7 @@ export class WithingsHarvester extends IHarvester {
 
       if (!refresh) {
         this.#logger.error?.('withings.auth.noRefreshToken', { username });
+        this.#lastAuthError = 'no refresh token saved';
         return null;
       }
 
@@ -266,6 +269,7 @@ export class WithingsHarvester extends IHarvester {
 
       if (!clientId || !clientSecret) {
         this.#logger.error?.('withings.auth.credentials_missing', { message: 'WITHINGS_CLIENT_ID/SECRET missing' });
+        this.#lastAuthError = 'client id or secret missing';
         return null;
       }
 
@@ -283,6 +287,7 @@ export class WithingsHarvester extends IHarvester {
 
       if (!body.access_token) {
         this.#logger.error?.('withings.auth.no_access_token', { response: response?.data });
+        this.#lastAuthError = response?.data?.error || `Withings status ${response?.data?.status}`;
         return null;
       }
 
@@ -322,6 +327,7 @@ export class WithingsHarvester extends IHarvester {
       });
       this.#tokenCache.token = null;
       this.#tokenCache.expiresAt = null;
+      this.#lastAuthError = this.#cleanErrorMessage(error);
       return null;
     }
   }
