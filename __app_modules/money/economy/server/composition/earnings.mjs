@@ -30,9 +30,10 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       timezone: measuresTimezone,
       logger: rootLogger.child({ module: 'economy-earnings' }),
     });
-    return createEarningsRouter({
+    const router = createEarningsRouter({
       earningsPreview,
       earnRules: economyApi.earnRulesService,
       logger: rootLogger.child({ module: 'economy-earnings-api' }),
     });
+    return { router, earningsPreview };
 }

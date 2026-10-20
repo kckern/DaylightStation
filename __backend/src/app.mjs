@@ -2856,7 +2856,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  v1Routers.earnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  const earningsRuntime = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  v1Routers.earnings = earningsRuntime.router;
+  const earningsPreview = earningsRuntime.earningsPreview;
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({

@@ -137,3 +137,54 @@ describe('EarningsPreviewService.roster', () => {
     expect(out.windows.school).toEqual({ from: '2026-09-21', to: '2026-09-27' });
   });
 });
+
+describe('EarningsPreviewService.ifDone / quote', () => {
+  const RULES_DAY = validateRuleset({
+    revision: 3,
+    rules: [
+      { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },
+      { id: 'green-day', kind: 'day-met', reward: 5 },
+    ],
+  });
+  function buildDay({ sectionState = 'obligated', today = '2026-10-20' } = {}) {
+    const service = new EarningsPreviewService({
+      rules: { get: async () => RULES_DAY },
+      schoolEvidence: { async schoolWeek() {
+        return {
+          sectionDays: [{ day: today, subject: 'language', state: sectionState, reason: null, timeliness: 'on-time' }],
+          days: [{ day: today, state: 'none', reason: null, timeliness: 'on-time' }], week: null, units: [], coverage: 'ok',
+        };
+      } },
+      ringEvidence: { async standings() { return []; } },
+      learners: async () => [{ id: 'learner-a', name: 'Learner A' }],
+      clock: () => new Date('2026-10-20T17:00:00.000Z'), // Tuesday 10:00 PDT
+      timezone: TZ, logger: silent,
+    });
+    return service;
+  }
+
+  it('prices the subject alone, and the day bonus separately', async () => {
+    const out = await buildDay().ifDone({ learnerId: 'learner-a', subject: 'language', finishesDay: true });
+    expect(out.silver).toBe(2);
+    expect(out.gems).toBe(0);
+    expect(out.dayBonus).toEqual({ silver: 5, gems: 0 });
+    expect(out.lines.map((l) => [l.ruleId, l.silver])).toEqual([['korean', 2], ['green-day', 5]]);
+  });
+
+  it('is worth nothing when the subject is already served today', async () => {
+    const out = await buildDay({ sectionState: 'served' }).ifDone({ learnerId: 'learner-a', subject: 'language' });
+    expect(out.silver).toBe(0);
+    expect(out.dayBonus).toEqual({ silver: 0, gems: 0 });
+  });
+
+  it('returns null when School evidence is unavailable', async () => {
+    const { service } = build({ school: { async schoolWeek() { throw new Error('down'); } } });
+    expect(await service.ifDone({ learnerId: 'learner-a', subject: 'language' })).toBeNull();
+  });
+
+  it('quote is the current week for one learner', async () => {
+    const out = await buildDay({ sectionState: 'served' }).quote({ learnerId: 'learner-a' });
+    expect(out.totals).toEqual({ silver: 2, gems: 0 });
+    expect(out.lines.find((l) => l.ruleId === 'korean').amount).toEqual({ silver: 2, gems: 0 });
+  });
+});
