@@ -1067,6 +1067,9 @@ export async function createSchoolLifecycle({
     printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
     bankReader, clock, rng: draw, timezone, logger,
     curriculumExceptions: curriculumExceptionStore,
+    // A bank worksheet's header prints what it is worth ("Worth 2 silver"),
+    // priced at print time; the plan says whether it would finish the day.
+    earningsQuote, planProjection,
   });
   const issueComposedWorksheet = new IssueComposedWorksheet({
     curriculum, sessions: stores.sessions, assignments: stores.assignments,

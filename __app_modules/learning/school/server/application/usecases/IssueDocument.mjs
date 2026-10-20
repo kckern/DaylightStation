@@ -48,6 +48,7 @@ import { slugify } from "../../domain/documents/receipts.mjs";
 import { DEFAULT_PRINT_POLICY } from "../../domain/index.mjs";
 import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { worksheetPresentation } from "../../domain/curriculum/worksheetPresentation.mjs";
+import { worthLine } from "../../domain/documents/worthLine.mjs";
 // The publish-time gate's own list (D12), read here rather than re-stated: the
 // handlers that can actually release a finish code. See its doc comment.
 import { COMPANION_COMPLETION_HANDLERS } from "../../domain/curriculum/unitValidation.mjs";
@@ -263,7 +264,7 @@ export class IssueDocument {
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
-  #clock; #rng; #newArtifactId; #timezone; #logger; #earningsQuote;
+  #clock; #rng; #newArtifactId; #timezone; #logger; #earningsQuote; #planProjection;
 
   /**
    * @param {object} deps
@@ -305,7 +306,12 @@ export class IssueDocument {
    *   (default `DEFAULT_PRINT_POLICY.printCooldownMinutes`, 10). See the
    *   debounce check near the top of `execute()` for the deliberate silence
    *   this implements.
-   * @param {{quote: Function, ifDone: Function}|null} [deps.earningsQuote]
+   * @param {{quote: Function, ifDone: Function}|null} [deps.earningsQuote] - prices a
+   *   bank worksheet at print time ("Worth N silver" in its header). Absent, no
+   *   worth line prints.
+   * @param {{project: Function}|null} [deps.planProjection] - today's plan, read only
+   *   to tell whether this sheet is the learner's last obligated section (the
+   *   day-bonus half of the worth line). Absent, the bonus is never claimed.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -320,7 +326,7 @@ export class IssueDocument {
     // board only learned of it on its five-minute poll.
     realtime = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
-    newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, logger = console,
+    newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, planProjection = null, logger = console,
   } = {}) {
     this.#practiceAssessments = practiceAssessments;
     this.#realtime = realtime;
@@ -355,6 +361,7 @@ export class IssueDocument {
     this.#timezone = timezone;
     this.#logger = logger;
     this.#earningsQuote = earningsQuote;
+    this.#planProjection = planProjection;
   }
 
   /** A schema fault must be shown on the Portal, not mistaken for screen-only work. */
@@ -724,6 +731,39 @@ export class IssueDocument {
     };
   }
 
+  /**
+   * The worth line for a bank worksheet, or null. A replacement for an artifact
+   * that was already retained reuses the price that artifact was printed with;
+   * otherwise the economy is asked once. `ifDone` never throws (its client has
+   * its own time limit), so a slow or absent economy prints no worth line and
+   * never holds up the paper.
+   */
+  async #worthFor({ state, unit, course, replacementArtifactId }) {
+    if (!this.#earningsQuote) return null;
+    if (replacementArtifactId) {
+      let prior = null;
+      try { prior = await this.#issuedArtifacts?.get?.(replacementArtifactId) ?? null; } catch { prior = null; }
+      const stored = prior?.manifest?.renderContext;
+      if (stored && Object.hasOwn(stored, 'worth')) return stored.worth ?? null;
+    }
+    const finishesDay = await this.#isLastUnfinished(state.learnerId, unit.unitId);
+    const price = await this.#earningsQuote.ifDone({
+      learnerId: state.learnerId, subject: unit.subject ?? null, unitId: unit.unitId ?? null,
+      courseId: unit.courseId ?? course?.courseId ?? null, finishesDay,
+    });
+    return worthLine(price);
+  }
+
+  /** True when this unit is the learner's ONLY section still obligated today. */
+  async #isLastUnfinished(learnerId, unitId) {
+    if (!this.#planProjection?.project) return false;
+    try {
+      const { sections = [] } = await this.#planProjection.project({ learnerId });
+      const open = sections.filter((s) => s?.obligation?.state === 'obligated');
+      return open.length === 1 && open[0]?.next?.unitId === unitId;
+    } catch { return false; }
+  }
+
   async #issueWorksheetInstance({
     sessionId, nowIso, state, unit, replacementArtifactId = null,
   }) {
@@ -826,10 +866,16 @@ export class IssueDocument {
     // `passing` authored for this unit) prints the question count alone —
     // see `RenderPrintDocument`'s `buildManifestText`.
     const passPercent = unit.passing?.percent ?? null;
+    // THE PRICE, priced at print time and frozen into the render context, so a
+    // reprint shows what this sheet was printed as worth (spec: before/after).
+    // An exact reprint replays the retained context (`RenderIssuedWorksheetArtifact`)
+    // and never reaches here; a REGENERATION under the same artifact id (a
+    // cancelled allocation) keeps the price the original was printed with.
+    const worth = await this.#worthFor({ state, unit, course, replacementArtifactId });
     const renderContext = existingInstance && instance.omr?.cardId && !existingAllocationCancelled
       ? {
         cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start,
-        learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
+        learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent, worth,
       }
       : {
         automaticCard: true,
@@ -839,6 +885,7 @@ export class IssueDocument {
         date: issueDate,
         sessionId,
         passPercent,
+        worth,
       };
     let rendered;
     try {

@@ -8,6 +8,8 @@ import { PublishPrintDocument } from "../../../../__app_modules/learning/school/
 import { RenderPrintDocument } from "../../../../__app_modules/learning/school/server/application/documents/RenderPrintDocument.mjs";
 import { createPrintDocumentRendering } from "../../../../__app_modules/learning/school/server/rendering/documents/PrintDocumentRendering.mjs";
 import { YamlAllocationStore } from "../../../../__app_modules/learning/school/server/adapters/documents/YamlAllocationStore.mjs";
+import { createSubjectIconResolver } from "../../../../__app_modules/learning/school/server/adapters/documents/FilesystemSchoolAssetResolver.mjs";
+import { RenderIssuedWorksheetArtifact } from "../../../../__app_modules/learning/school/server/application/documents/RenderIssuedWorksheetArtifact.mjs";
 import { pdfText, requirePdftotext } from '#testlib/school/pdfText.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore,
@@ -834,5 +836,147 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     expect(result).toMatchObject({ status: 'issued', artifactId: 'art_real_1' });
     expect(result.allocation).toMatchObject({ status: 'live' });
     expect(printPrinter.jobs).toHaveLength(1);
+  });
+});
+
+/**
+ * "Worth N silver" in a bank worksheet's header (path A, `#issueWorksheetInstance`).
+ *
+ * The price is asked for ONCE, at print time, and frozen into the retained
+ * render context. A reprint replays that context through
+ * `RenderIssuedWorksheetArtifact` and never asks again, so the paper says what
+ * the sheet was worth when it was printed.
+ */
+describe('the worksheet header prints what the sheet is worth', () => {
+  const LEARNER = 'kid1';
+  const UNIT = {
+    unitId: 'math-w1-d1-fractions', title: 'Fractions', subject: 'math', courseId: 'math-course',
+    bank: 'bank-fractions', passing: { percent: 80 },
+  };
+  const bank = {
+    schema: 'school.question-bank/v2', id: 'bank-fractions', title: 'Fractions',
+    items: Array.from({ length: 8 }, (_, index) => ({
+      id: `fq${index + 1}`, type: 'multiple_choice', prompt: `Question ${index + 1}?`,
+      answer: 'Correct', decoys: ['One', 'Two', 'Three', 'Four', 'Five'], levels: ['lower', 'upper'],
+    })),
+  };
+
+  function memoryRepository() {
+    const published = new Map(); const banks = new Map(); const latest = new Map();
+    return {
+      async writePublished({ document, bank: derived, rev }) {
+        published.set(`${document.id}@${rev}`, document); latest.set(document.id, rev);
+        if (derived) banks.set(`${document.id}@${rev}`, derived);
+        return { document: { written: true, alreadyPublished: false }, bank: derived ? { written: true, alreadyPublished: false } : null };
+      },
+      async getPublished(id, rev) { return published.get(`${id}@${rev ?? latest.get(id)}`) ?? null; },
+      async getDerivedBank(id, rev) { return banks.get(`${id}@${rev}`) ?? null; },
+    };
+  }
+
+  function harness({ price = { silver: 2, gems: 0, dayBonus: { silver: 0, gems: 0 }, lines: [] }, sections = null } = {}) {
+    const clock = fakeClock();
+    const sessions = new FakeSessionRepository();
+    const printer = new FakeLaserPrinter();
+    const repository = memoryRepository();
+    const map = new Map();
+    const allocationStore = new YamlAllocationStore({
+      directory: '/docs', now: () => '2026-08-04T00:00:00.000Z', rng: Math.random,
+      io: {
+        load: (p) => (map.has(p) ? structuredClone(map.get(p)) : null),
+        save: (p, content) => { map.set(p, structuredClone(content)); },
+      },
+    });
+    // The lesson card draws the subject icon, so the real School SVGs resolve it.
+    const renderPrintDocument = new RenderPrintDocument({
+      repository, allocationStore,
+      rendering: createPrintDocumentRendering({ resolveAsset: createSubjectIconResolver({ logger: silentLogger }) }),
+    });
+    const retained = new Map();
+    const issuedArtifacts = {
+      get: async (id) => retained.get(id) ?? null,
+      put: async ({ bytes, ...manifest }) => {
+        const record = { manifest: structuredClone(manifest), bytes: Buffer.from(bytes) };
+        retained.set(manifest.artifactId, record);
+        return record;
+      },
+    };
+    const instances = new Map();
+    const earningsQuote = { ifDone: vi.fn(async () => price) };
+    const planProjection = sections
+      ? { project: vi.fn(async () => ({ plan: { entries: [] }, sections })) }
+      : null;
+    const useCase = new IssueDocument({
+      curriculum: {
+        async getUnit(id) { return id === UNIT.unitId ? UNIT : null; },
+        async getDocument() { return null; },
+        async listWorks() { return []; },
+      },
+      sessions, tokens: new FakeTokenRegistry(), formMaps: new FakeFormMapStore(), printer,
+      renderer: { async render() { throw new Error('the legacy renderer must not be reached'); } },
+      bankReader: { getBank: (id) => (id === bank.id ? bank : null) },
+      assignments: {
+        async get() {
+          return { courses: [{ courseId: UNIT.courseId, profile: 'lower', enrollment: { enrollmentId: 'enr-1' } }] };
+        },
+      },
+      worksheetInstances: {
+        async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
+        async put(instance) { instances.set(instance.id, instance); return instance; },
+      },
+      printDocuments: repository,
+      publishPrintDocument: new PublishPrintDocument({ repository }),
+      renderPrintDocument, allocationStore, issuedArtifacts,
+      renderIssuedArtifact: new RenderIssuedWorksheetArtifact({ issuedArtifacts, renderPrintDocument, printDocuments: repository }),
+      earningsQuote, ...(planProjection ? { planProjection } : {}),
+      clock: clock.now, rng: seededRng(11), logger: silentLogger,
+    });
+    const open = async (sessionId = 'ses_worth') => {
+      await sessions.appendEvent(sessionId, {
+        type: 'created', at: clock.iso(), sessionId, learnerId: LEARNER, unitId: UNIT.unitId,
+      });
+      return sessionId;
+    };
+    return { useCase, printer, earningsQuote, planProjection, clock, open };
+  }
+
+  it('prices the sheet at print time, and a reprint shows the same price without asking again', async () => {
+    requirePdftotext();
+    const { useCase, printer, earningsQuote, clock, open } = harness();
+    const sid = await open();
+    const first = await useCase.execute({ sessionId: sid });
+    expect(first).toMatchObject({ status: 'issued' });
+    expect(pdfText(printer.jobs[0].pdf)).toContain('Worth 2 silver');
+    expect(earningsQuote.ifDone).toHaveBeenCalledTimes(1);
+    expect(earningsQuote.ifDone).toHaveBeenCalledWith({
+      learnerId: LEARNER, subject: 'math', unitId: UNIT.unitId, courseId: 'math-course', finishesDay: false,
+    });
+
+    clock.advanceMs(11 * 60_000); // past the print debounce — a REAL reprint
+    const second = await useCase.execute({ sessionId: sid });
+    expect(second.status).toBe('reprinted');
+    expect(earningsQuote.ifDone).toHaveBeenCalledTimes(1);
+    expect(printer.jobs).toHaveLength(2);
+    expect(pdfText(printer.jobs[1].pdf)).toContain('Worth 2 silver');
+  });
+
+  it('prints no worth line when there is no price', async () => {
+    requirePdftotext();
+    const { useCase, printer, open } = harness({ price: null });
+    await useCase.execute({ sessionId: await open() });
+    expect(printer.jobs).toHaveLength(1);
+    expect(pdfText(printer.jobs[0].pdf)).not.toContain('Worth');
+  });
+
+  it('says the sheet finishes the day when it is the only obligated section left', async () => {
+    const { useCase, earningsQuote, planProjection, open } = harness({
+      sections: [
+        { subject: 'math', obligation: { state: 'obligated' }, next: { unitId: UNIT.unitId } },
+        { subject: 'reading', obligation: { state: 'served' }, next: null },
+      ],
+    });
+    await useCase.execute({ sessionId: await open() });
+    expect(planProjection.project).toHaveBeenCalledWith({ learnerId: LEARNER });
+    expect(earningsQuote.ifDone).toHaveBeenCalledWith(expect.objectContaining({ finishesDay: true }));
   });
 });
