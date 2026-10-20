@@ -42,7 +42,7 @@ existed, and one testing a deleted module.
 | Live | `npm run test:live` | Live APIs and real backend (`tests/live/`) |
 | Runtime | `npm run test:browser --` | Real backend |
 
-Live harvester tests skip outside the container unless `DAYLIGHT_TOKEN_WRITER=true`. Set it only when no other copy (the server) is refreshing the same account: each refresh invalidates the previous token. Withings, Strava and FitnessSyncer rotate refresh tokens this way, so a test that refreshes one must save the new token, never discard it.
+Live harvester tests for providers that rotate refresh tokens (Withings, Strava; any FitnessSyncer live test should use the same guard) are skipped outside the container unless `DAYLIGHT_TOKEN_WRITER=true`. Set it only when no other copy (the server) is refreshing the same account: each refresh invalidates the previous token. Wrap such suites in `describeIfTokenWriter` from `tests/live/adapter/harvesters/_test-helper.mjs`. A test that refreshes one of these tokens must save the new token, never discard it.
 
 ## Running Tests
 

@@ -317,7 +317,15 @@ export class WithingsHarvester extends IHarvester {
         delete newAuthData.refresh;
         // Remove legacy 'expires_in' - use absolute expires_at instead
         delete newAuthData.expires_in;
-        await this.#authStore.save(username, 'withings', newAuthData);
+        try {
+          await this.#authStore.save(username, 'withings', newAuthData);
+        } catch (error) {
+          this.#logger.error?.('withings.auth.token_persist_failed', {
+            username,
+            error: this.#cleanErrorMessage(error),
+          });
+          throw error;
+        }
         this.#logger.info?.('withings.auth.refresh_token_saved', { username });
       }
 

@@ -32,6 +32,12 @@ export class StravaActivityAccessGateway {
       this.logger.info?.('strava.client.token_writer_disabled', { username });
       throw new Error(`Activity access unavailable for user: ${username} (token refresh disabled in this process)`);
     }
+    // Strava rotates the refresh token; refreshing without a place to keep the
+    // new one would strand the stored token.
+    if (!this.authStore?.save) {
+      this.logger.warn?.('strava.client.no_token_store', { username });
+      throw new Error(`Activity access unavailable for user: ${username} (no token store)`);
+    }
     // Read the store first: configService caches auth at boot and never reloads.
     const auth = (await this.authStore?.load?.(username, 'strava'))
       || this.configService.getUserAuth('strava', username)
@@ -39,13 +45,18 @@ export class StravaActivityAccessGateway {
     if (!auth.refresh) throw new Error(`Activity access unavailable for user: ${username}`);
 
     const tokenData = await this.client.refreshToken(auth.refresh);
-    if (tokenData && this.authStore?.save) {
-      await this.authStore.save(username, 'strava', {
-        ...auth,
-        refresh: tokenData.refresh_token || auth.refresh,
-        access_token: tokenData.access_token,
-        expires_at: tokenData.expires_at,
-      });
+    if (tokenData) {
+      try {
+        await this.authStore.save(username, 'strava', {
+          ...auth,
+          refresh: tokenData.refresh_token || auth.refresh,
+          access_token: tokenData.access_token,
+          expires_at: tokenData.expires_at,
+        });
+      } catch (error) {
+        this.logger.error?.('strava.auth.token_persist_failed', { username, error: error?.message });
+        throw error;
+      }
     }
   }
 }

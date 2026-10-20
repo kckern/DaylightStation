@@ -33,6 +33,11 @@ export class YamlAuthDatastore {
     this.#logger = logger;
   }
 
+  /** Saves reach disk, so a rotated refresh token survives. */
+  get writable() {
+    return true;
+  }
+
   /**
    * Load auth data for a service
    *

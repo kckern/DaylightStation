@@ -201,6 +201,21 @@ describe('WithingsHarvester', () => {
       expect(result.error).toBe('no refresh token saved');
     });
 
+    it('logs token_persist_failed (without token values) when the rotated token cannot be saved', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'stored-refresh' });
+      mockAuthStore.save.mockRejectedValue(new Error('disk full'));
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+
+      const result = await harvester.harvest('alice');
+
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed' });
+      const call = mockLogger.error.mock.calls.find(([event]) => event === 'withings.auth.token_persist_failed');
+      expect(call).toBeTruthy();
+      expect(call[1]).toMatchObject({ username: 'alice', error: 'disk full' });
+      expect(JSON.stringify(call[1])).not.toContain('new-refresh-token');
+      expect(JSON.stringify(call[1])).not.toContain('test-access-token');
+    });
+
     it('reports the Withings error when the refresh token is rejected', async () => {
       mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
       mockHttpClient.post.mockResolvedValue({ data: { status: 503, body: {}, error: 'Invalid Params: invalid refresh_token' } });

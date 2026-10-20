@@ -1,7 +1,8 @@
 // tests/live/adapter/harvesters/strava.live.test.mjs
-import { runHarvest, daysAgo, ACCEPTABLE_STATUSES } from './_test-helper.mjs';
+import { runHarvest, daysAgo, ACCEPTABLE_STATUSES, describeIfTokenWriter } from './_test-helper.mjs';
 
-describe('Strava Harvester Live', () => {
+// Each refresh rotates the Strava token; see describeIfTokenWriter.
+describeIfTokenWriter('Strava Harvester Live', () => {
   it('harvests recent activities', async () => {
     const result = await runHarvest('strava');
     expect(result.status).not.toBe('auth_error');
@@ -13,7 +14,7 @@ describe('Strava Harvester Live', () => {
     const result = await runHarvest('strava', { since: daysAgo(30) });
     expect(result.status).not.toBe('auth_error');
     expect(result.status).not.toBe('error');
-    expect([...ACCEPTABLE_STATUSES, 'skipped']).toContain(result.status);
+    expect(ACCEPTABLE_STATUSES).toContain(result.status);
   }, 120000);
 
   it('deep backfills archives to Jan 2024', async () => {
@@ -27,6 +28,6 @@ describe('Strava Harvester Live', () => {
     });
     expect(result.status).not.toBe('auth_error');
     expect(result.status).not.toBe('error');
-    expect([...ACCEPTABLE_STATUSES, 'skipped']).toContain(result.status);
+    expect(ACCEPTABLE_STATUSES).toContain(result.status);
   }, 2700000);  // Jest timeout: 45 minutes
 });

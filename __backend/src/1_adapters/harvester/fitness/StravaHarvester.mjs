@@ -289,15 +289,6 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
-   * Public wrapper for token refresh
-   * @param {string} username - Target user
-   * @returns {Promise<boolean>} True if token refresh succeeded
-   */
-  async refreshAccessToken(username) {
-    return this.#refreshAccessToken(username);
-  }
-
-  /**
    * Public wrapper for fetching raw activities
    * @param {string} username - Target user
    * @param {number} [daysBack=90] - Days of history to fetch
@@ -357,7 +348,15 @@ export class StravaHarvester extends IHarvester {
           access_token: tokenData.access_token,
           expires_at: tokenData.expires_at,
         };
-        await this.#authStore.save(username, 'strava', newAuthData);
+        try {
+          await this.#authStore.save(username, 'strava', newAuthData);
+        } catch (error) {
+          this.#logger.error?.('strava.auth.token_persist_failed', {
+            username,
+            error: this.#cleanErrorMessage(error),
+          });
+          throw error;
+        }
       }
 
       return true;

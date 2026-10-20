@@ -7,6 +7,9 @@ export const isContainerRuntime = () => fileExists('/.dockerenv');
  * keeps the result (the container) may refresh, unless a process opts in with
  * DAYLIGHT_TOKEN_WRITER=true.
  *
+ * This decides which process may refresh. Callers must also have somewhere to
+ * save the rotated token (bootstrap's canRefreshTokens checks the auth store).
+ *
  * @param {Object} [opts]
  * @param {Object} [opts.env=process.env]
  * @param {boolean} [opts.isContainer] - defaults to isContainerRuntime()

@@ -1712,6 +1712,10 @@ export function createHarvesterServices(config) {
     ? new YamlAuthDatastore({ io, logger })
     : new ReadOnlyConfigAuthStore({ configService, logger }));
 
+  // Refresh tokens rotate, so only refresh where the new token is kept: in the
+  // token-writer process, through a store that persists it.
+  const canRefreshTokens = () => canRotateOAuthTokens() && authStore?.writable !== false;
+
   // Create or use provided sharedStore (for weather data)
   // Note: YamlWeatherDatastore requires DataService (with .household.write), not UserDataService
   const sharedStore = sharedStoreParam || (dataService ? new YamlWeatherDatastore({
@@ -1976,7 +1980,7 @@ export function createHarvesterServices(config) {
       timezone: harvesterTimezone,
       fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
       logger,
-      canRefreshTokens: () => canRotateOAuthTokens(),
+      canRefreshTokens,
     }));
   }
 
@@ -1997,7 +2001,7 @@ export function createHarvesterServices(config) {
       }),
       timezone: harvesterTimezone,
       logger,
-      canRefreshTokens: () => canRotateOAuthTokens(),
+      canRefreshTokens,
     }));
   }
 
@@ -2010,7 +2014,7 @@ export function createHarvesterServices(config) {
       configService,
       timezone: configService?.getTimezone?.() || 'America/New_York',
       logger,
-      canRefreshTokens: () => canRotateOAuthTokens(),
+      canRefreshTokens,
     }));
   }
 
@@ -2083,8 +2087,9 @@ export function createHarvesterServices(config) {
     harvesterService,
     jobExecutor,
     lifelogStore,
-    // OAuth token persistence; shared with code outside the harvesters that
-    // refreshes the same tokens (e.g. Strava activity access).
+    // OAuth token persistence and the refresh policy; shared with code outside
+    // the harvesters that refreshes the same tokens (e.g. Strava activity access).
     authStore,
+    canRefreshTokens,
   };
 }
