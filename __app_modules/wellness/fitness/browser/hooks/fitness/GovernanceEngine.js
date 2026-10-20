@@ -2205,12 +2205,17 @@ export class GovernanceEngine {
     }
 
     const emit = (cue, token, extra = {}) => {
-      getLogger().sampled('governance.audio_cue.fired', {
-        cueId: cue.id,
-        trigger: cue.trigger,
-        token,
-        ...extra
-      }, { maxPerMinute: 12, aggregate: true });
+      // The cue is recomputed on every state compose (~4/s) with the same
+      // token; the consumer dedupes by token and plays it once, so log it once.
+      if (token !== this._lastLoggedCueToken) {
+        this._lastLoggedCueToken = token;
+        getLogger().info('governance.audio_cue.fired', {
+          cueId: cue.id,
+          trigger: cue.trigger,
+          token,
+          ...extra
+        });
+      }
       return { cueId: cue.id, trigger: cue.trigger, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
