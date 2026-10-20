@@ -1597,7 +1597,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     skip: ['strava'], // StravaSyncHealth already pushes for Strava
     logger: harvesterHealthLogger,
   });
-  harvesterServices.harvesterService.onResult((event) => { harvesterHealth.record(event); });
+  // Record (and push) only in the copy that owns the data; elsewhere GET /harvest
+  // still reads the shared state.
+  const { canRotateOAuthTokens } = await import("#system/runtime/runtimeEnvironment.mjs");
+  harvesterHealth.watch(harvesterServices.harvesterService, { enabled: canRotateOAuthTokens() });
 
   // Create harvest router using HarvesterService
   const { DefaultPrincipalResolver } = await import("./3_applications/common/context/DefaultPrincipalResolver.mjs");

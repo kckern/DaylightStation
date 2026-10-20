@@ -61,6 +61,23 @@ export class HarvesterHealthMonitor {
     });
   }
 
+  /**
+   * Subscribe to harvest results, but only in the copy that owns the data (the
+   * container, or a token writer). A dev checkout reading the same files would
+   * otherwise record its own skipped or failed harvests and push about them.
+   * @param {{onResult: Function}} harvesterService
+   * @param {{enabled: boolean}} opts
+   * @returns {boolean} whether it subscribed
+   */
+  watch(harvesterService, { enabled }) {
+    if (!enabled) {
+      this.#logger.info?.('harvester.health.disabled_non_production', { reason: 'not the container or a token writer' });
+      return false;
+    }
+    harvesterService.onResult((event) => { this.record(event); });
+    return true;
+  }
+
   /** Current state per service id. */
   async report() {
     try {

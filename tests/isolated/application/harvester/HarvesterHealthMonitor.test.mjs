@@ -129,4 +129,23 @@ describe('HarvesterHealthMonitor', () => {
     expect(await m.record(ok('2026-10-13'))).toBe(null);
     expect((await m.report()).withings).toMatchObject({ status: 'healthy' });
   });
+  describe('watch', () => {
+    const service = () => { const listeners = []; return { listeners, onResult: vi.fn((l) => { listeners.push(l); return () => {}; }) }; };
+    it('subscribes to harvest results when this copy owns the data', async () => {
+      const { m, sendPush } = monitor();
+      const harvesterService = service();
+      expect(m.watch(harvesterService, { enabled: true })).toBe(true);
+      for (let i = 0; i < 3; i++) harvesterService.listeners[0](fail);
+      await vi.waitFor(() => expect(sendPush).toHaveBeenCalledTimes(1));
+    });
+    it('stays off elsewhere and logs once', () => {
+      const { m, logger } = monitor();
+      const harvesterService = service();
+      expect(m.watch(harvesterService, { enabled: false })).toBe(false);
+      expect(harvesterService.onResult).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('harvester.health.disabled_non_production', expect.anything());
+      expect(logger.info).toHaveBeenCalledTimes(1);
+    });
+  });
 });
+

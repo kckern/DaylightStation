@@ -40,6 +40,9 @@ service in `data/household/harvester-health.yml` (`status`, `failures`,
   tagged `harvester-health-<serviceId>` so each new state replaces the last card.
   With no Home Assistant adapter or no notify service, the push is skipped and
   `harvester.health.no_push_target` is logged.
+- The monitor records and pushes only in the copy that owns the data: the
+  container, or a process with `DAYLIGHT_TOKEN_WRITER=true`. Elsewhere it logs
+  `harvester.health.disabled_non_production` once, and `GET /api/v1/harvest` still reads the state.
 - Strava is skipped: `StravaSyncHealth` already watches it
   (`__docs/reference/fitness/webhook-enrichment.md`).
 - The threshold (3) must stay at or below the harvesters' circuit-breaker
@@ -108,7 +111,7 @@ Setup:
 
 - `harvester.health.pushed` (info), `harvester.health.push_failed`,
   `harvester.health.store_failed`, `harvester.health.record_failed`,
-  `harvester.health.no_push_target` (warn)
+  `harvester.health.no_push_target` (warn), `harvester.health.disabled_non_production` (info)
 - `harvest.failed` (warn): an API-triggered harvest answered 502
 - `oauth.withings.connected` (info), `oauth.withings.exchange_failed`,
   `oauth.withings.save_failed` (error), `oauth.withings.first_harvest_failed` (warn)

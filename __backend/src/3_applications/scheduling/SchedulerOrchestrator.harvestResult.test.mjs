@@ -57,4 +57,21 @@ describe('SchedulerOrchestrator execution timing', () => {
     expect(ex.status).toBe('timeout');
     expect(ex.durationMs).toBe(1000);
   });
+
+  it('a provider error that mentions timeout is a failure, not a scheduler timeout', async () => {
+    const ex = await orchestrator({
+      execute: async () => { throw new Error('auth_failed: timeout of 10000ms exceeded'); },
+    }).executeJob(job, 'x', false, START);
+    expect(ex.status).toBe('failed');
+    expect(ex.error).toBe('auth_failed: timeout of 10000ms exceeded');
+  });
+
+  it('the scheduler deadline error is a timeout', async () => {
+    const ex = await orchestrator({
+      execute: async () => ({ count: 0, status: 'success' }),
+      withDeadline: (_work, { errorFactory }) => Promise.reject(errorFactory()),
+    }).executeJob(job, 'x', false, START);
+    expect(ex.status).toBe('timeout');
+  });
 });
+

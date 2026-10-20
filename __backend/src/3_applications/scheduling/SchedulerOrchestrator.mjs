@@ -15,6 +15,8 @@ import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { JobExecution } from '#domains/scheduling/entities/JobExecution.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
+const JOB_TIMEOUT_PREFIX = 'Job timeout after';
+
 export class SchedulerOrchestrator {
   #clock;
 
@@ -156,7 +158,9 @@ export class SchedulerOrchestrator {
     try {
       await this.runInJobContext(job.id, () => this.#dispatch(job, executionId, execution));
     } catch (err) {
-      if (err.message?.includes('timeout')) {
+      // Only the scheduler's own deadline (#runWithinDeadline) is a timeout; a
+      // provider error that mentions 'timeout' is an ordinary failure.
+      if (err?.message?.startsWith(JOB_TIMEOUT_PREFIX)) {
         execution.timeout(this.#stamp());
       } else {
         execution.fail(err, this.#stamp());
@@ -237,7 +241,7 @@ export class SchedulerOrchestrator {
   #runWithinDeadline(work, job) {
     return this.scheduler.withDeadline(work, {
       milliseconds: job.timeout,
-      errorFactory: () => new Error(`Job timeout after ${job.timeout}ms`),
+      errorFactory: () => new Error(`${JOB_TIMEOUT_PREFIX} ${job.timeout}ms`),
     });
   }
 
