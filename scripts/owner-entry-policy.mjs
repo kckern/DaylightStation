@@ -84,6 +84,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/art/server/adapters/artmodeConfig.mjs': 'adapters',
   '__app_modules/media/art/server/api/canvas.mjs': 'api',
   '__app_modules/media/art/server/api/art.mjs': 'api',
+  '__app_modules/media/art/cli/ambiance.cli.mjs': null,
   '__app_modules/learning/school/server/composition/learner-directory.mjs': 'composition',
   '__app_modules/learning/piano/server/game-rivalry.mjs': 'application',
   '__app_modules/media/feed/server/composition.mjs': 'composition',
