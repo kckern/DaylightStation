@@ -64,9 +64,14 @@ export async function ensureSession({ entry, learnerId, nowIso, sessions, newSes
  * @param {number} [remediation.remediationDepth] - how many retries this
  *   session already sits behind (`remediationLineage.mjs`); 0 for an original
  * @param {number} [remediation.maxRounds] - the configured cap
+ * @param {boolean} [remediation.teacherHold] - the planner already judged this
+ *   failure a teacher hold (`entry.remediation.held`), for either reason — the
+ *   idle-days rule needs a calendar this function never sees
  * @returns {{kind: string, tokenClass: string|null, label: string}}
  */
-export function nextMove(unit, state, { remediationDepth = 0, maxRounds = DEFAULT_REMEDIATION_MAX_ROUNDS } = {}) {
+export function nextMove(unit, state, {
+  remediationDepth = 0, maxRounds = DEFAULT_REMEDIATION_MAX_ROUNDS, teacherHold = false,
+} = {}) {
   const nextAction = state.nextAction;
   const reducerTokenClass = nextAction?.tokenClass ?? null;
   const reducerLabel = nextAction?.label;
@@ -175,8 +180,11 @@ export function nextMove(unit, state, { remediationDepth = 0, maxRounds = DEFAUL
       // is minted for it, and the agenda excuses the section it sits in
       // (`agenda.mjs`, `teacher_hold`). `OpenRemediation` refuses the same
       // depth, so a retry ticket already in a child's hand cannot get round it.
+      // A STALE hold (unretried for days, judged by the planner) reads the
+      // same here but is softer downstream: `OpenRemediation` still honours a
+      // retry ticket the child comes back with.
       if (state.outcome?.result === 'needs_remediation') {
-        if (remediationDepth >= maxRounds) {
+        if (teacherHold || remediationDepth >= maxRounds) {
           return { kind: 'teacher', tokenClass: null, label: 'a grown-up will help with this one' };
         }
         return { kind: 'retry', tokenClass: 'remediation', label: 'try again with a fresh sheet' };
@@ -212,6 +220,6 @@ export function agendaLabel(unit, state, fallback, remediation) {
 export function remediationOptionsFor(entry) {
   const remediation = entry?.remediation ?? null;
   return remediation
-    ? { remediationDepth: remediation.depth, maxRounds: remediation.maxRounds }
+    ? { remediationDepth: remediation.depth, maxRounds: remediation.maxRounds, teacherHold: remediation.held === true }
     : {};
 }

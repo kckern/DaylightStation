@@ -18,7 +18,10 @@
  * hold (`remediationLineage.mjs`). The refusal is the backstop for a retry
  * ticket already printed: the agenda and the panel stop offering the retry on
  * their own. A grown-up opening one through the teacher gate (`openedBy`) is
- * never capped — the hold exists to bring a person in.
+ * never capped — the hold exists to bring a person in. A STALE hold (a failure
+ * left unretried for days; see `remediationLineage.mjs`) is not checked here
+ * at all: it stops the work being owed, but a child who comes back with the
+ * retry ticket may still use it.
  *
  * This is its own use case rather than a branch inside `CloseSessionOutcome`
  * because it is a different business operation happening at a different moment:
@@ -29,7 +32,7 @@ import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.
 import { noticeDocument } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
-import { remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
+import { remediationMaxRounds, retriesPhrase } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class OpenRemediation {
@@ -89,12 +92,12 @@ export class OpenRemediation {
     }
 
     if (!openedBy) {
-      const depth = await remediationDepthOf(state.remediationOf, this.#sessions);
+      const depth = await remediationDepthOf(state.remediationOf, this.#sessions, { limit: this.#maxRounds });
       if (depth >= this.#maxRounds) {
         this.#logger.info?.('school.remediation.capped', {
           learnerId: state.learnerId, unitId: state.unitId, depth, sessionId, maxRounds: this.#maxRounds,
         });
-        return this.#unavailable(sessionId, 'Two fresh sheets did not do it. A grown-up will help with this one.', {
+        return this.#unavailable(sessionId, `After ${retriesPhrase(depth)}, a grown-up will help with this one.`, {
           headline: 'A grown-up will help', reason: 'remediation_capped',
         });
       }

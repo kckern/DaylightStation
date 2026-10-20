@@ -106,6 +106,9 @@ export class PlanProjection {
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
   #declaredEntryActions; #householdSchedule; #dayBypasses; #remediationMaxRounds;
+  #remediationHoldAfterStudyDays; #logHolds;
+  /** `${studyDay}|${sessionId}` of every stale hold already logged today. */
+  #loggedHolds = { day: null, keys: new Set() };
   #inflight = new Map();
 
   /**
@@ -128,6 +131,12 @@ export class PlanProjection {
    * @param {number|null} [deps.remediationMaxRounds] - retries before a failed
    *   unit becomes a teacher hold (`school.yml → lifecycle.remediation.maxRounds`;
    *   null takes the planner's default of two).
+   * @param {number|null} [deps.remediationHoldAfterStudyDays] - school days an
+   *   open failure may sit unretried before it becomes a teacher hold
+   *   (`lifecycle.remediation.holdAfterStudyDays`; null takes the default of three).
+   * @param {boolean} [deps.logHolds=true] - log `school.remediation.held` when a
+   *   stale hold is first seen. Off for the dry-run preview projection, so one
+   *   hold is not reported twice by two instances.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -150,7 +159,7 @@ export class PlanProjection {
     // bypass on file settles that program's study day for EVERY launcher, not
     // only piano's. Null: bypasses are not consulted here.
     dayBypasses = null, practiceAssessments = null,
-    remediationMaxRounds = null,
+    remediationMaxRounds = null, remediationHoldAfterStudyDays = null, logHolds = true,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
@@ -171,7 +180,34 @@ export class PlanProjection {
     this.#launcherFailedEvent = launcherFailedEvent;
     this.#declaredEntryActions = declaredEntryActions;
     this.#remediationMaxRounds = remediationMaxRounds;
+    this.#remediationHoldAfterStudyDays = remediationHoldAfterStudyDays;
+    this.#logHolds = logHolds;
     this.#logger = logger;
+  }
+
+  /**
+   * A STALE hold has no moment of its own: it forms when a day passes with the
+   * failure still unretried, which nothing in the system observes. The first
+   * projection to see it is the first anyone knows, so it is logged here —
+   * once per session per study day, however many surfaces project in between.
+   * The memory is per process: a restart may log a hold again that day, which
+   * is the honest cost of not persisting a log de-dupe. A cap hold is logged
+   * where it really forms, at settle (`CloseSessionOutcome`).
+   */
+  #logStaleHolds(plan, learnerId, studyDay) {
+    if (!this.#logHolds) return;
+    if (this.#loggedHolds.day !== studyDay) this.#loggedHolds = { day: studyDay, keys: new Set() };
+    for (const entry of plan.entries) {
+      const hold = entry.remediation;
+      if (!hold?.held || hold.reason !== 'stale') continue;
+      const key = `${studyDay}|${entry.sessionId}`;
+      if (this.#loggedHolds.keys.has(key)) continue;
+      this.#loggedHolds.keys.add(key);
+      this.#logger.info?.('school.remediation.held', {
+        learnerId, unitId: entry.unitId, sessionId: entry.sessionId, depth: hold.depth,
+        reason: 'stale', idleStudyDays: hold.idleStudyDays,
+      });
+    }
   }
 
   /**
@@ -347,7 +383,10 @@ export class PlanProjection {
     const plan = planLearnerWork({
       learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
       timezone: this.#timezone, coursePolicies, remediationMaxRounds: this.#remediationMaxRounds,
+      remediationHoldAfterStudyDays: this.#remediationHoldAfterStudyDays,
+      householdSchedule: this.#householdSchedule,
     });
+    if (untilMs == null) this.#logStaleHolds(plan, learnerId, studyDayForInstant(at.getTime(), { timezone: this.#timezone }));
     for (const [unitId, assessment] of assessmentByUnit) {
       const entry = plan.entries.find((e) => e.unitId === unitId);
       const paused = pausedExceptionFor(activeExceptions, unitId);

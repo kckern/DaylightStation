@@ -41,7 +41,7 @@ function build({
   curriculumExceptions = null,
   launchers = new Map(),
   logger = silentLogger,
-  remediationMaxRounds = null,
+  remediationMaxRounds = null, logHolds = undefined,
 } = {}) {
   const clock = fakeClock();
   const catalog = new FakeCatalog({
@@ -57,6 +57,7 @@ function build({
   const projection = new PlanProjection({
     curriculum, assignments, sessions, attestations, curriculumExceptions,
     launchers, clock: clock.now, logger, remediationMaxRounds,
+    ...(logHolds === undefined ? {} : { logHolds }),
   });
   return { projection, clock, curriculum, catalog, sessions, assignments };
 }
@@ -253,6 +254,46 @@ describe('PlanProjection — remediation cap', () => {
     const { projection, sessions } = build({ attestations: null, remediationMaxRounds: 3 });
     await failThreeTimes(sessions);
     const { plan } = await projection.project({ learnerId: LEARNER });
-    expect(entryFor(plan, MEDIA_UNIT).remediation).toEqual({ depth: 2, maxRounds: 3, held: false });
+    expect(entryFor(plan, MEDIA_UNIT).remediation).toMatchObject({ depth: 2, maxRounds: 3, held: false, reason: null });
+  });
+});
+
+describe('PlanProjection — stale remediation holds are logged as they form', () => {
+  /** One failure a week before the fake clock (2026-07-27), never retried. */
+  async function failLongAgo(sessions) {
+    await sessions.appendEvent('ses_old', { type: 'created', at: '2026-07-20T16:00:00.000Z', learnerId: LEARNER, unitId: MEDIA_UNIT });
+    await sessions.appendEvent('ses_old', { type: 'launch_dispatched', at: '2026-07-20T16:01:00.000Z', surface: 'portal' });
+    await sessions.appendEvent('ses_old', { type: 'outcome_recorded', at: '2026-07-20T16:02:00.000Z', outcomeId: 'out_old', result: 'needs_remediation' });
+  }
+  const spyLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
+  const heldCalls = (logger) => logger.info.mock.calls.filter(([event]) => event === 'school.remediation.held');
+
+  it('holds the unit as stale, and logs it once per session per study day however often it is projected', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger });
+    await failLongAgo(sessions);
+    const { plan, sections } = await projection.project({ learnerId: LEARNER });
+    await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT).remediation).toMatchObject({ depth: 0, held: true, reason: 'stale' });
+    expect(sections.find((section) => section.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(heldCalls(logger)).toEqual([['school.remediation.held', {
+      learnerId: LEARNER, unitId: MEDIA_UNIT, sessionId: 'ses_old', depth: 0, reason: 'stale', idleStudyDays: 6,
+    }]]);
+  });
+
+  it('a replay of a past day never logs', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger });
+    await failLongAgo(sessions);
+    await projection.project({ learnerId: LEARNER, historyUntil: '2026-07-26T11:00:00.000Z', now: '2026-07-25T19:00:00.000Z' });
+    expect(heldCalls(logger)).toEqual([]);
+  });
+
+  it('a projection built not to log (the dry-run preview) does not', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger, logHolds: false });
+    await failLongAgo(sessions);
+    await projection.project({ learnerId: LEARNER });
+    expect(heldCalls(logger)).toEqual([]);
   });
 });

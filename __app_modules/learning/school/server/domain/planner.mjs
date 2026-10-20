@@ -26,8 +26,10 @@
 
 import { evaluateDatedModule, evaluateTiming, studyDate, TIMING_PRIORITY } from "./timing.mjs";
 import {
-  isPastRemediationCap, remediationMaxRounds, walkRemediationLineage,
+  idleSchoolDays, isOpenFailure, remediationHoldAfterStudyDays, remediationHoldReason,
+  remediationMaxRounds, walkRemediationLineage,
 } from "./sessions/remediationLineage.mjs";
+import { scheduleVerdict } from "./schoolCalendar.mjs";
 
 /** Closed set — a status a caller cannot render is a status that cannot exist. */
 export const PLAN_STATUSES = Object.freeze(['completed', 'in_progress', 'locked', 'available', 'upcoming', 'dormant']);
@@ -78,6 +80,11 @@ function bySequence(a, b) {
  * @param {string}  args.now         ISO time; stamped as `generatedAt`, never read for policy
  * @param {number}  [args.remediationMaxRounds] retries before a failure becomes a
  *   teacher hold (`school.yml → lifecycle.remediation.maxRounds`, default 2)
+ * @param {number}  [args.remediationHoldAfterStudyDays] school days an open failure
+ *   may sit unretried before it becomes a teacher hold
+ *   (`lifecycle.remediation.holdAfterStudyDays`, default 3)
+ * @param {object|null} [args.householdSchedule] the household calendar; its days
+ *   off are not school days for the idle count above
  * @returns {{
  *   learnerId: string|null, generatedAt: string|null, entries: object[],
  *   assigned: object[], available: object[], locked: object[],
@@ -86,9 +93,11 @@ function bySequence(a, b) {
  */
 export function planLearnerWork({
   learnerId = null, assignment = null, units = [], sessions = [], now = null, timezone = null, coursePolicies = {},
-  remediationMaxRounds: rawMaxRounds = null,
+  remediationMaxRounds: rawMaxRounds = null, remediationHoldAfterStudyDays: rawHoldAfter = null,
+  householdSchedule = null,
 } = {}) {
   const maxRounds = remediationMaxRounds(rawMaxRounds);
+  const holdAfterStudyDays = remediationHoldAfterStudyDays(rawHoldAfter);
   const errors = [];
   const catalog = (Array.isArray(units) ? units : []).filter((u) => isPlainObject(u) && isNonEmptyString(u.unitId));
   const byUnitId = new Map(catalog.map((u) => [u.unitId, u]));
@@ -165,18 +174,37 @@ export function planLearnerWork({
       if (!held || String(s.updatedAt ?? '') >= String(held.updatedAt ?? '')) openByUnit.set(s.unitId, s);
     });
 
-  // How deep in retries the open failure on a unit sits (failure policy: two
-  // rounds, then a grown-up). Walked over these same rows: each one carries
-  // its own `remediationOf`, so this costs no event read. A row without the
-  // field ends the walk there — `PlanProjection` fills those in from events
-  // before calling, so only a caller that skipped it can under-count.
+  // Is the open failure on a unit a TEACHER HOLD (failure policy: two
+  // rounds, or three idle school days, then a grown-up)? Depth is walked over
+  // these same rows: each carries its own `remediationOf`, so it costs no
+  // event read. A row without the field ends the walk there — `PlanProjection`
+  // fills those in from events before calling, so only a caller that skipped
+  // it can under-count.
+  //
+  // Idle days are SCHOOL days by the learner's own calendar — the course
+  // enrollment's schedule and the household's — counted from the study day the
+  // failure was recorded, today excluded. A Friday failure is not stale on
+  // Monday morning just because a weekend went by. A standalone unit has no
+  // enrollment schedule, so only the household calendar thins its days.
+  //
+  // `held` needs `in_progress`: a unit that is `completed` (passed on another
+  // session) is not waiting for anybody, whatever an old failure says.
   const remediationOfBySession = new Map(history
     .filter((s) => isNonEmptyString(s.sessionId))
     .map((s) => [s.sessionId, s.remediationOf]));
-  const remediationFor = (open) => {
-    if (!open || open.state !== 'outcome_recorded' || open.outcome?.result !== 'needs_remediation') return null;
+  const isSchoolDayFor = (schedule) => (day) => scheduleVerdict(day, schedule).schoolDay
+    && (householdSchedule == null || scheduleVerdict(day, householdSchedule).schoolDay);
+  const remediationFor = (open, { status, schedule }) => {
+    if (!isOpenFailure(open)) return null;
     const depth = walkRemediationLineage(open.remediationOf, (id) => remediationOfBySession.get(id) ?? null);
-    return { depth, maxRounds, held: isPastRemediationCap(open, depth, maxRounds) };
+    const idleStudyDays = idleSchoolDays({
+      fromDay: studyDate(open.outcome?.at ?? open.updatedAt ?? '', timezone),
+      today, isSchoolDay: isSchoolDayFor(schedule),
+    });
+    const reason = status === 'in_progress'
+      ? remediationHoldReason({ session: open, depth, idleStudyDays, maxRounds, holdAfterStudyDays })
+      : null;
+    return { depth, maxRounds, idleStudyDays, held: reason != null, reason };
   };
 
   // --- gating --------------------------------------------------------------
@@ -406,11 +434,14 @@ export function planLearnerWork({
       status,
       sessionId: open?.sessionId ?? null,
       state: open?.state ?? null,
-      // `{depth, maxRounds, held}` for an open settled failure, else null.
+      // `{depth, maxRounds, idleStudyDays, held, reason}` for an open settled
+      // failure, else null; `reason` is `cap`, `stale` or null.
       // `held` is a TEACHER HOLD: the status stays `in_progress` (it is still
       // the work in hand, and still blocks its successors), but the agenda
       // stops owing it and `nextMove` stops offering a fresh sheet.
-      remediation: isNonEmptyString(unit.program) ? null : remediationFor(open),
+      remediation: isNonEmptyString(unit.program) ? null : remediationFor(open, {
+        status, schedule: enrollmentByCourse.get(unit.courseId)?.enrollment?.schedule ?? null,
+      }),
       lockReason,
       remedy,
       unlocks: unlockedBy(unit),

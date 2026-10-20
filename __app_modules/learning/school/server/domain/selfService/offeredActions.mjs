@@ -172,12 +172,12 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       // follows the composition — and paper keeps "a fresh sheet", which is
       // the thing that distinguishes a remediation from an ordinary reprint.
       //
-      // PAST THE REMEDIATION CAP there is nothing to offer at all. This is the
-      // one place the card reads `move.kind`: whether a failure is past the
-      // cap depends on how many retries sit behind it, which only `nextMove`'s
-      // caller knows (the planner walked the lineage). Re-deriving it here
-      // from session state alone would offer a third sheet the scan path
-      // refuses. `waitingSentence` names the grown-up instead.
+      // A TEACHER HOLD has nothing to offer at all. This is the one place the
+      // card reads `move.kind`: whether a failure is held depends on how many
+      // retries sit behind it and how long it has sat unretried, which only
+      // the planner knows (it walked the lineage and the calendar). Re-deriving
+      // it here from session state alone would offer a sheet the agenda has
+      // stopped offering. `waitingSentence` names the grown-up instead.
       if (resolution.move?.kind === 'teacher') return null;
       if (resolution.state?.outcome?.result === 'needs_remediation') {
         const fresh = atCreated(unit, { mediaSurface, bankPrintable });

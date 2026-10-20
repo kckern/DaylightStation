@@ -413,8 +413,18 @@ export class CloseSessionOutcome {
     // again" card that leads nowhere. The receipt still reports the score and
     // says a grown-up will help; the agenda excuses the hold and the teacher
     // dashboard surfaces it.
-    const teacherHold = !passed && !repairableOnThisSheet
-      && await remediationDepthOf(state.remediationOf, this.#sessions) >= this.#remediationMaxRounds;
+    const depth = passed || repairableOnThisSheet ? 0
+      : await remediationDepthOf(state.remediationOf, this.#sessions, { limit: this.#remediationMaxRounds });
+    const teacherHold = !passed && !repairableOnThisSheet && depth >= this.#remediationMaxRounds;
+    // The hold forms HERE, at the moment this result settles — the one place
+    // the cap reason is ever first known — so this is where it is logged.
+    // A plain re-settle (the reprint path) does not log again; a superseding
+    // gate verdict on the same sheet is a new settle and may.
+    if (teacherHold && !resettling) {
+      this.#logger.info?.('school.remediation.held', {
+        learnerId: state.learnerId, unitId: state.unitId, sessionId, depth, reason: 'cap',
+      });
+    }
     const retryToken = (passed || repairableOnThisSheet || teacherHold)
       ? null
       : await this.#mintRetryToken({ sessionId, state, nowIso });
@@ -577,7 +587,7 @@ export class CloseSessionOutcome {
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.
       // "Read Along") and the reading names the actual thing to go and play.
-      teacherHold,
+      teacherHold: teacherHold ? { retries: depth } : null,
       companionGate: companionVeto
         ? {
           status: companionVeto,

@@ -277,7 +277,7 @@ describe('RosterStrip — teacher hold (remediation cap)', () => {
     const grid = await mountExpanded(section({ state: 'excused', reason: 'teacher_hold' }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).not.toMatch(/--faulted/);
-    expect(grid.getByText('Two fresh sheets didn’t land — this one needs you.')).toBeInTheDocument();
+    expect(grid.getByText('Stuck on a failed lesson — this one needs you.')).toBeInTheDocument();
     expect(grid.getByRole('link', { name: 'Open History' }))
       .toHaveAttribute('href', '/school/teacher/students/user_4/history');
     expect(grid.queryByText('teacher_hold')).toBeNull();
@@ -292,8 +292,24 @@ describe('RosterStrip — teacher hold (remediation cap)', () => {
     render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-10-02" />);
     const list = await screen.findByTestId('attention');
     const link = within(list).getByRole('link', { name: /Place Value/ });
-    expect(link).toHaveTextContent('Place Value — 2 tries, last 17% →');
+    expect(link).toHaveTextContent('Place Value — 2 retries, last 17% →');
     expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/history/sessions/ses_2?from=today');
+  });
+
+  it('words a stale hold by the school days it has sat unretried', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    const row = { ...ROW, attention: [{
+      kind: 'remediation-stale', learnerId: 'user_4', sessionId: 'ses_0', unitId: 'math.03', unitTitle: 'Mastery Quiz',
+      depth: 0, maxRounds: 2, idleStudyDays: 4, lastScore: { percent: 16.67, correctCount: 1, totalCount: 6 }, since: null,
+    }, {
+      kind: 'remediation-cap', learnerId: 'user_4', sessionId: 'ses_9', unitId: 'math.04', unitTitle: 'Fractions',
+      depth: 1, maxRounds: 1, idleStudyDays: 0, lastScore: null, since: null,
+    }] };
+    render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-10-02" />);
+    const list = await screen.findByTestId('attention');
+    expect(within(list).getByRole('link', { name: /Mastery Quiz/ }))
+      .toHaveTextContent('Mastery Quiz — not retried in 4 school days, last 17% →');
+    expect(within(list).getByRole('link', { name: /Fractions/ })).toHaveTextContent('Fractions — 1 retry →');
   });
 
   it('renders no attention list when there is nothing waiting', async () => {

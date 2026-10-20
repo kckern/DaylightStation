@@ -50,7 +50,7 @@ describe('OpenRemediation — remediation cap', () => {
     await fail(sessions, 'ses_2', 'ses_1');
     const result = await useCase.execute({ sessionId: 'ses_2' });
     expect(result).toMatchObject({ status: 'unavailable', reason: 'remediation_capped', newSessionId: null });
-    expect(result.message).toMatch(/grown-up/);
+    expect(result.message).toBe('After 2 retries, a grown-up will help with this one.');
     expect(await sessions.readEvents('ses_new1')).toEqual([]);
     expect((await sessions.readEvents('ses_2')).map((e) => e.type)).not.toContain('remediation_opened');
     expect(logger.info).toHaveBeenCalledWith('school.remediation.capped', { learnerId: LEARNER, unitId: UNIT, depth: 2, sessionId: 'ses_2', maxRounds: 2 });
@@ -70,5 +70,39 @@ describe('OpenRemediation — remediation cap', () => {
     await fail(sessions, 'ses_1', 'ses_0');
     await fail(sessions, 'ses_2', 'ses_1');
     expect((await useCase.execute({ sessionId: 'ses_2' })).status).toBe('opened');
+  });
+
+  it('a STALE failure (unretried for weeks, depth 0) still opens for the child who brings the ticket back', async () => {
+    const { sessions } = build();
+    await fail(sessions, 'ses_0');
+    // `build` runs the clock on 2026-09-29; the failure is from 9/26 and the
+    // planner would call it stale after three school days. The retry is the
+    // child coming back — the stale hold only stops it being owed.
+    const later = new OpenRemediation({
+      curriculum: { getUnit: async () => ({ unitId: UNIT, retry: { variants: 3 } }) },
+      sessions, logger: { info() {} }, newSessionId: () => 'ses_late',
+      clock: () => new Date('2026-10-20T16:00:00.000Z'),
+    });
+    expect((await later.execute({ sessionId: 'ses_0' })).status).toBe('opened');
+  });
+
+  it('stops reading the lineage at the cap', async () => {
+    const { sessions, useCase } = build();
+    await fail(sessions, 'ses_0');
+    await fail(sessions, 'ses_1', 'ses_0');
+    await fail(sessions, 'ses_2', 'ses_1');
+    await fail(sessions, 'ses_3', 'ses_2');
+    const reads = vi.spyOn(sessions, 'readEvents');
+    expect((await useCase.execute({ sessionId: 'ses_3' })).status).toBe('unavailable');
+    // ses_3 itself, then its two nearest ancestors — never ses_0.
+    expect(reads.mock.calls.map(([id]) => id)).not.toContain('ses_0');
+  });
+
+  it('a lineage that loops back on itself ends instead of hanging', async () => {
+    const { sessions, useCase } = build({ maxRounds: 9 });
+    await fail(sessions, 'ses_a', 'ses_c');
+    await fail(sessions, 'ses_b', 'ses_a');
+    await fail(sessions, 'ses_c', 'ses_b');
+    expect((await useCase.execute({ sessionId: 'ses_c' })).status).toBe('opened');
   });
 });

@@ -22,7 +22,7 @@
  * `created`/`media_completed`, unchanged and untouched here.
  */
 import { describe, it, expect } from 'vitest';
-import { nextMove } from "../../../../__app_modules/learning/school/server/application/usecases/offerSession.mjs";
+import { nextMove, remediationOptionsFor } from "../../../../__app_modules/learning/school/server/application/usecases/offerSession.mjs";
 import { reduceSession, createEvent } from "../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 /** A real `reduceSession` result for a session that has issued (and optionally reprinted) once. */
@@ -143,5 +143,19 @@ describe('nextMove: two remediation rounds, then a grown-up', () => {
 
   it('honours a configured cap', () => {
     expect(nextMove(unit, failedState({ remediationOf: 'ses_1' }), { remediationDepth: 2, maxRounds: 3 }).kind).toBe('retry');
+  });
+});
+
+describe('nextMove: a stale failure (unretried for days) is a teacher hold too', () => {
+  const unit = { unitId: 'math.01', subject: 'math', document: 'math/01' };
+
+  it('hands a depth-0 failure the planner held as stale to a grown-up', () => {
+    expect(nextMove(unit, failedState(), { remediationDepth: 0, maxRounds: 2, teacherHold: true }).kind).toBe('teacher');
+  });
+
+  it('remediationOptionsFor carries the planner\'s verdict through', () => {
+    expect(remediationOptionsFor({ remediation: { depth: 0, maxRounds: 2, held: true, reason: 'stale' } }))
+      .toEqual({ remediationDepth: 0, maxRounds: 2, teacherHold: true });
+    expect(remediationOptionsFor({ remediation: null })).toEqual({});
   });
 });

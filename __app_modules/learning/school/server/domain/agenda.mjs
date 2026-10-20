@@ -147,8 +147,9 @@ const FAULT_REASONS = new Set(['program_unavailable', 'blocked_unreachable']);
  * a date that will never exist.
  */
 /**
- * Past the remediation cap (`planner.mjs` → `entry.remediation.held`): two
- * fresh sheets did not land and the work now waits for a grown-up. Still the
+ * A teacher hold (`planner.mjs` → `entry.remediation.held`): the open failure
+ * is past the retry cap, or has sat unretried for days, and the work now waits
+ * for a grown-up. Still the
  * work in hand, so it keeps its place and its successors stay locked behind
  * it, but it is offered only when nothing else in the subject is, and it is
  * never owed — a child cannot clear it alone, and an item nobody can clear

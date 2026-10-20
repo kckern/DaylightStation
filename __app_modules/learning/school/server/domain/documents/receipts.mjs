@@ -919,9 +919,10 @@ export function agendaDocument({
  *   [args.companionGate] set ONLY when the finish-code row — not the score —
  *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
  *   `companionGateLines` for why this earns two lines of its own.
- * @param {boolean} [args.teacherHold] a failure past the remediation cap (two
- *   fresh sheets did not land). No retry is coming, so the sheet must not say
- *   TRY AGAIN or "before you retry": it says a grown-up will help instead.
+ * @param {{retries: number}|null} [args.teacherHold] a failure past the
+ *   remediation cap, with how many retries are already behind it. No retry is
+ *   coming, so the sheet must not say TRY AGAIN or "before you retry": it says
+ *   a grown-up will help instead.
  * @returns {object}
  */
 export function resultDocument({
@@ -932,10 +933,10 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false, companionGate = null, teacherHold = false,
+  dayComplete = false, companionGate = null, teacherHold = null,
 } = {}) {
   const passed = result === 'passed';
-  const held = !passed && teacherHold === true;
+  const held = !passed && Boolean(teacherHold);
   const retryHeading = held ? 'GO OVER THESE WITH A GROWN-UP' : 'REVIEW BEFORE YOU RETRY';
   const blocks = [{
     type: 'result_summary',
@@ -975,7 +976,12 @@ export function resultDocument({
   // questions this child did not get wrong. Nothing prints for an ungated
   // sheet, or for one that failed on its score.
   if (!passed) companionGateLines(companionGate).forEach((line) => blocks.push(text(line)));
-  if (held) blocks.push(text('Two fresh sheets did not do it. A grown-up will sit down with you on this one.'));
+  if (held) {
+    const retries = Number.isInteger(teacherHold.retries) ? teacherHold.retries : null;
+    blocks.push(text(retries
+      ? `After ${retries} ${retries === 1 ? 'retry' : 'retries'}, a grown-up will sit down with you on this one.`
+      : 'A grown-up will sit down with you on this one.'));
+  }
   if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
       && Array.isArray(objectives) && objectives.length) {
     blocks.push(text(`## ${retryHeading}`));

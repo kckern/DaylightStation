@@ -31,15 +31,20 @@ async function linkFromEvents(sessions, sessionId) {
  * Rounds behind a session, from its own `remediationOf`: 0 for an original.
  * Each link followed counts, whether or not the parent can still be read.
  *
+ * Stops at `limit`: a caller asking "is this at the cap" passes the cap and
+ * never reads further back than it needs to.
+ *
  * @param {string|null|undefined} remediationOf
  * @param {{readEvents: Function}} sessions
+ * @param {{limit?: number}} [options]
  * @returns {Promise<number>}
  */
-export async function remediationDepthOf(remediationOf, sessions) {
+export async function remediationDepthOf(remediationOf, sessions, { limit = MAX_WALK } = {}) {
+  const ceiling = Math.min(limit, MAX_WALK);
   let depth = 0;
   let cursor = remediationOf;
   const seen = new Set();
-  while (isNonEmptyString(cursor) && !seen.has(cursor) && depth < MAX_WALK) {
+  while (isNonEmptyString(cursor) && !seen.has(cursor) && depth < ceiling) {
     seen.add(cursor);
     depth += 1;
     // eslint-disable-next-line no-await-in-loop

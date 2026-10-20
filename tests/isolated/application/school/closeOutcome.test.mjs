@@ -24,7 +24,7 @@ const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
   passOverrides = null, teacherGate = null, realtime = null,
   receiptCapture = null, receiptArtifactPrinter = null,
-  assignments: assignmentsOverride = null,
+  assignments: assignmentsOverride = null, logger = silentLogger,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -49,7 +49,7 @@ const build = ({
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
     realtime,
-    clock: clock.now, rng: seededRng(5), logger: silentLogger,
+    clock: clock.now, rng: seededRng(5), logger,
   });
   remediate = new OpenRemediation({
     curriculum, sessions, clock: clock.now, newSessionId: sequentialIds('ses_r'), logger: silentLogger,
@@ -849,7 +849,19 @@ describe('remediation cap: no retry ticket past two rounds', () => {
     expect(result).toMatchObject({ status: 'settled', result: 'needs_remediation', retryToken: null });
     expect(thermal.lastTranscript()).not.toMatch(/Try again|before you retry/i);
     expect(thermal.lastTranscript()).toContain('A GROWN-UP WILL HELP');
-    expect(thermal.lastTranscript()).toContain('A grown-up will sit down with you on this one.');
+    expect(thermal.lastTranscript()).toContain('After 2 retries, a grown-up will sit down with you on this one.');
+  });
+
+  it('logs the hold as it forms, once, at settle', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    build({ logger });
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    await close.execute({ sessionId: SID });
+    expect(logger.info).toHaveBeenCalledWith('school.remediation.held', {
+      learnerId: 'kid1', unitId: WORKSHEET_UNIT, sessionId: SID, depth: 2, reason: 'cap',
+    });
   });
 
   it('the first retry failing still prints one', async () => {

@@ -468,48 +468,109 @@ describe('the enrollment school-day calendar', () => {
   });
 });
 
-describe('remediation cap: two rounds, then a grown-up', () => {
-  // The 2026-09-26 shape: the original sheet failed, two fresh sheets failed,
-  // and the newest failure is still sitting open at `outcome_recorded`.
-  const failed = (sessionId, remediationOf, { open = false, updatedAt } = {}) => session({
+describe('remediation holds: two rounds, or three idle school days, then a grown-up', () => {
+  // A chain of failed sheets on one unit: the original and `rounds` retries,
+  // the newest still open at `outcome_recorded`. Every failure is dated the
+  // same Monday so only depth separates them; the idle rule has its own block.
+  const failed = (sessionId, remediationOf, { open = false, at = '2026-09-28T16:00:00.000Z' } = {}) => session({
     sessionId, remediationOf: remediationOf ?? null,
     state: open ? 'outcome_recorded' : 'remediation_opened', terminal: !open,
-    outcome: { result: 'needs_remediation', at: updatedAt }, gradedPercent: 16.67, updatedAt,
+    outcome: { result: 'needs_remediation', at }, gradedPercent: 16.67, updatedAt: at,
   });
   const chain = (rounds) => {
-    const rows = [failed('ses_0', null, { open: rounds === 0, updatedAt: '2026-09-26T09:00:00.000Z' })];
-    for (let r = 1; r <= rounds; r += 1) {
-      rows.push(failed(`ses_${r}`, `ses_${r - 1}`, { open: r === rounds, updatedAt: `2026-09-2${6 + r}T09:00:00.000Z` }));
-    }
+    const rows = [failed('ses_0', null, { open: rounds === 0 })];
+    for (let r = 1; r <= rounds; r += 1) rows.push(failed(`ses_${r}`, `ses_${r - 1}`, { open: r === rounds }));
     return rows;
   };
+  const MONDAY_NOON = '2026-09-28T19:00:00.000Z';
+  const planAt = (over) => plan({ now: MONDAY_NOON, timezone: 'America/Los_Angeles', ...over });
 
-  it.each([[0, false], [1, false], [2, true]])('depth %i → held %s', (rounds, held) => {
-    const entry = byId(plan({ sessions: chain(rounds), remediationMaxRounds: 2 }), 'math-fractions.01');
+  it.each([[0, null], [1, null], [2, 'cap']])('depth %i → hold reason %s', (rounds, reason) => {
+    const entry = byId(planAt({ sessions: chain(rounds), remediationMaxRounds: 2 }), 'math-fractions.01');
     expect(entry.status).toBe('in_progress');
-    expect(entry.remediation).toEqual({ depth: rounds, maxRounds: 2, held });
+    expect(entry.remediation).toEqual({ depth: rounds, maxRounds: 2, idleStudyDays: 0, held: reason != null, reason });
   });
 
   it('defaults the cap to two when none is configured', () => {
-    expect(byId(plan({ sessions: chain(2) }), 'math-fractions.01').remediation.held).toBe(true);
+    expect(byId(planAt({ sessions: chain(2) }), 'math-fractions.01').remediation.reason).toBe('cap');
   });
 
   it('carries no remediation block for work that is not a settled failure', () => {
-    expect(byId(plan({ sessions: [session({ state: 'issued' })] }), 'math-fractions.01').remediation).toBeNull();
+    expect(byId(planAt({ sessions: [session({ state: 'issued' })] }), 'math-fractions.01').remediation).toBeNull();
   });
 
   it('a retry whose parent row is missing still counts the link it holds', () => {
     const rows = chain(2).filter((row) => row.sessionId !== 'ses_0');
-    expect(byId(plan({ sessions: rows }), 'math-fractions.01').remediation.depth).toBe(2);
+    expect(byId(planAt({ sessions: rows }), 'math-fractions.01').remediation.depth).toBe(2);
   });
 
-  it('the held unit excuses its section and the day can still complete', () => {
-    const result = plan({ sessions: chain(2) });
-    const { sections } = planDailyAgenda({
-      plan: result, sessions: chain(2), now: '2026-09-29T16:00:00.000Z', timezone: 'America/Los_Angeles',
+  it('a lineage that loops back on itself ends the walk instead of hanging', () => {
+    const rows = [failed('ses_a', 'ses_b'), failed('ses_b', 'ses_c'), failed('ses_c', 'ses_a', { open: true })];
+    expect(byId(planAt({ sessions: rows, remediationMaxRounds: 9 }), 'math-fractions.01').remediation.depth).toBe(3);
+  });
+
+  it('a unit passed on another session is never held, whatever an old failure says', () => {
+    const rows = [...chain(2), passed('math-fractions.01', 'ses_pass')];
+    const entry = byId(planAt({ sessions: rows }), 'math-fractions.01');
+    expect(entry.status).toBe('completed');
+    expect(entry.remediation.held).toBe(false);
+  });
+
+  it('judges only the newest open session on a unit', () => {
+    const rows = [
+      failed('ses_old', 'ses_x', { open: true, at: '2026-09-01T16:00:00.000Z' }),
+      failed('ses_x', 'ses_y'),
+      failed('ses_new', null, { open: true }),
+    ];
+    const entry = byId(planAt({ sessions: rows }), 'math-fractions.01');
+    expect(entry.sessionId).toBe('ses_new');
+    expect(entry.remediation).toMatchObject({ depth: 0, held: false });
+  });
+
+  it('the held unit excuses its section and the day completes on the rest', () => {
+    const result = planAt({
+      assignment: { courses: ['math-fractions'], units: ['lang.01'] },
+      units: [...course(), unit({ unitId: 'lang.01', subject: 'language', courseId: undefined, sequence: undefined })],
+      sessions: [...chain(2), passed('lang.01', 'ses_lang')].map((row) => (row.sessionId === 'ses_lang'
+        ? { ...row, outcome: { ...row.outcome, at: MONDAY_NOON }, updatedAt: MONDAY_NOON } : row)),
     });
-    const math = sections.find((s) => s.subject === 'math');
-    expect(math.obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
-    expect(resolveDayCompletion({ sections }).state).not.toBe('incomplete');
+    const { sections } = planDailyAgenda({
+      plan: result, sessions: [...chain(2), { ...passed('lang.01', 'ses_lang'), outcome: { result: 'passed', at: MONDAY_NOON }, updatedAt: MONDAY_NOON }],
+      now: MONDAY_NOON, timezone: 'America/Los_Angeles',
+    });
+    expect(sections.find((s) => s.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(resolveDayCompletion({ sections }).state).toBe('complete');
+  });
+
+  describe('stale: an unretried failure', () => {
+    // The 2026-09-26 incident's shape: a failure at depth 0 (that day was a
+    // Saturday) which the child never retried, while the agenda offered the
+    // retry 9/29–10/02. Weekdays-only enrollment, Pacific household.
+    const FAILED_AT = '2026-09-26T16:00:00.000Z';
+    const weekdays = { courses: [{ courseId: 'math-fractions', enrollment: { schedule: { daysOfWeek: [1, 2, 3, 4, 5] } } }] };
+    const at = (iso, over = {}) => byId(plan({
+      assignment: weekdays, sessions: [failed('ses_0', null, { open: true, at: FAILED_AT })],
+      now: iso, timezone: 'America/Los_Angeles', ...over,
+    }), 'math-fractions.01').remediation;
+
+    it('the weekend does not count, nor does today', () => {
+      expect(at('2026-09-29T19:00:00.000Z')).toMatchObject({ idleStudyDays: 1, held: false }); // Tue: Mon passed
+      expect(at('2026-10-01T19:00:00.000Z')).toMatchObject({ idleStudyDays: 3, held: true, reason: 'stale' }); // Thu
+    });
+
+    it('honours a configured window', () => {
+      expect(at('2026-10-01T19:00:00.000Z', { remediationHoldAfterStudyDays: 4 })).toMatchObject({ held: false });
+    });
+
+    it('a household day off is not a school day either', () => {
+      const householdSchedule = { except: [{ from: '2026-09-29', to: '2026-09-29', label: 'Field day' }] };
+      expect(at('2026-10-01T19:00:00.000Z', { householdSchedule })).toMatchObject({ idleStudyDays: 2, held: false });
+    });
+
+    it('cap wins when both apply', () => {
+      const rows = [failed('ses_a', null, { at: FAILED_AT }), failed('ses_b', 'ses_a', { at: FAILED_AT }),
+        failed('ses_c', 'ses_b', { open: true, at: FAILED_AT })];
+      expect(at('2026-10-02T19:00:00.000Z', { sessions: rows }).reason).toBe('cap');
+    });
   });
 });

@@ -136,8 +136,8 @@ const NEEDS_GROWN_UP = new Set([
   'faulted:blocked_unreachable',
   'excused:caught_up',
   'excused:awaiting_grown_up',
-  // Two fresh sheets did not land (the remediation cap): the child is no
-  // longer offered the unit, so only a grown-up can move it.
+  // A remediation hold (past the retry cap, or unretried for days): the
+  // unit is no longer owed, so only a grown-up can move it.
   'excused:teacher_hold',
 ]);
 

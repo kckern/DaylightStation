@@ -8,9 +8,6 @@ import {
   studyDayForInstant, studyDayWindow, studyDayWindowForDate, withinStudyWindow,
 } from "../../domain/studyDay.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
-import {
-  isPastRemediationCap, remediationMaxRounds, walkRemediationLineage,
-} from "../../domain/sessions/remediationLineage.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { projectReadingActivity } from "../../domain/readingActivity.mjs";
 import { projectFitnessActivity } from "../../domain/fitnessActivity.mjs";
@@ -94,47 +91,51 @@ function uniqueAttempts(attempts) {
 }
 
 /**
- * Units a child can no longer move on alone: the open failure sits at or past
- * the remediation cap (two fresh sheets did not land), so the agenda has
- * stopped offering it and excused the day from it. Nothing else surfaces that
- * — the child's paper just says a grown-up will help — so it is named here,
- * on the screen the grown-up actually reads. Walked over the states this use
- * case already reduced: no extra reads.
+ * Units a child can no longer move on alone — a TEACHER HOLD, either because
+ * the open failure is past the remediation cap (`remediation-cap`) or because
+ * it has sat unretried for days (`remediation-stale`). The agenda has stopped
+ * owing it; nothing else puts it in front of a grown-up, so it is named here,
+ * on the screen the grown-up actually reads.
+ *
+ * Read off the PLAN, not re-derived: the planner already keeps only the
+ * newest open session per unit, never holds a unit that is `completed`, and
+ * counts idle days by the learner's own school calendar. Asking it is the one
+ * way this list cannot disagree with the paper the child is holding.
  */
-function remediationCapItems(states, { learnerId, unitsById, maxRounds }) {
-  const byId = new Map(states.map((state) => [state.sessionId, state]));
-  return states
-    .filter((state) => !state.terminal)
-    .map((state) => ({
-      state,
-      depth: walkRemediationLineage(state.remediationOf, (id) => byId.get(id)?.remediationOf ?? null),
-    }))
-    .filter(({ state, depth }) => isPastRemediationCap(state, depth, maxRounds))
-    .map(({ state, depth }) => ({
-      kind: 'remediation-cap',
-      learnerId,
-      sessionId: state.sessionId,
-      unitId: state.unitId,
-      unitTitle: unitsById.get(state.unitId)?.title ?? state.unitId,
-      depth,
-      maxRounds,
-      lastScore: state.gradedPercent == null ? null : {
-        percent: state.gradedPercent, correctCount: state.gradedCorrectCount, totalCount: state.gradedTotalCount,
-      },
-      since: state.outcome?.at ?? null,
-    }));
+function remediationHoldItems(entries, { learnerId, statesById }) {
+  return (entries ?? [])
+    .filter((entry) => entry?.remediation?.held === true)
+    .map((entry) => {
+      const hold = entry.remediation;
+      const state = statesById.get(entry.sessionId) ?? null;
+      return {
+        kind: hold.reason === 'cap' ? 'remediation-cap' : 'remediation-stale',
+        learnerId,
+        sessionId: entry.sessionId,
+        unitId: entry.unitId,
+        unitTitle: entry.title ?? entry.unitId,
+        depth: hold.depth,
+        maxRounds: hold.maxRounds,
+        idleStudyDays: hold.idleStudyDays ?? null,
+        lastScore: state?.gradedPercent == null ? null : {
+          percent: state.gradedPercent, correctCount: state.gradedCorrectCount, totalCount: state.gradedTotalCount,
+        },
+        since: state?.outcome?.at ?? null,
+      };
+    });
 }
 
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger; #remediationMaxRounds;
+  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger; #planProjection;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
     curriculum = null, bookLog = null, fitnessSessions = null,
     timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
-    // `school.yml → lifecycle.remediation.maxRounds`; the same cap the agenda holds at.
-    remediationMaxRounds: maxRounds = null,
+    // The agenda's own `PlanProjection`, asked for teacher holds. Null: the
+    // digest carries an empty `attention` list.
+    planProjection = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -150,7 +151,7 @@ export class GetTeacherToday {
     this.#fitnessSessions = fitnessSessions;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
-    this.#remediationMaxRounds = remediationMaxRounds(maxRounds);
+    this.#planProjection = planProjection;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -325,6 +326,22 @@ export class GetTeacherToday {
           }),
         };
       }
+      let attention = [];
+      if (this.#planProjection) {
+        try {
+          // Curriculum only, no launchers: holds live on curriculum units, and
+          // a teacher screen must not fan out to every program's status.
+          // eslint-disable-next-line no-await-in-loop
+          const { plan } = await this.#planProjection.project({
+            learnerId: learner.id, assignedPrograms: false, programStatuses: {},
+          });
+          attention = remediationHoldItems(plan?.entries, {
+            learnerId: learner.id, statesById: new Map(reduced.map((state) => [state.sessionId, state])),
+          });
+        } catch (error) {
+          this.#logger.warn?.('school.teacher-day.holds-failed', { learnerId: learner.id, error: error?.message });
+        }
+      }
       rows.push({
         learnerId: learner.id,
         learnerName: learner.name ?? learner.id,
@@ -332,9 +349,7 @@ export class GetTeacherToday {
         processedToday,
         // A standing list, not a day's: a hold stays here until a grown-up
         // opens another round or the work is settled some other way.
-        attention: remediationCapItems(reduced, {
-          learnerId: learner.id, unitsById, maxRounds: this.#remediationMaxRounds,
-        }),
+        attention,
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,

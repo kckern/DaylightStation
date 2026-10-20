@@ -967,4 +967,19 @@ describe('remediation cap: two rounds, then a grown-up', () => {
     expect(sectionFor(result, 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
     expect(tokens.ofClass('remediation')).toEqual([]);
   });
+
+  it('a failure left unretried for three school days is held the same way, at depth 0', async () => {
+    await fail('ses_a');
+    clock.advanceDays(5); // fake clock starts Mon 7/27; Tue–Fri have passed by Sat 8/1
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'math').label).toContain('a grown-up will help with this one');
+    expect(offerFor(result, 'math').printable).toBe(false);
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+  });
+
+  it('a failure two school days old is still the child\'s to retry', async () => {
+    await fail('ses_a');
+    clock.advanceDays(3);
+    expect(offerFor(await useCase.execute({ learnerId: 'kid1' }), 'math').label).toContain('try again with a fresh sheet');
+  });
 });
