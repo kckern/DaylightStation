@@ -12,10 +12,10 @@ export class StravaActivityAccessGateway {
    * @param {Object} deps.client - Strava client { hasAccessToken, refreshToken }
    * @param {Object} deps.configService - Fallback source of user auth (cached at boot)
    * @param {Object} [deps.authStore] - Auth store { load(username, service), save(username, service, data) }
-   * @param {() => boolean} [deps.canRefreshTokens] - Whether this process may rotate the refresh token
+   * @param {() => boolean} [deps.canRefreshTokens] - Whether this process may rotate the refresh token (default: no)
    * @param {Object} [deps.logger]
    */
-  constructor({ client, configService, authStore = null, canRefreshTokens = () => true, logger = console } = {}) {
+  constructor({ client, configService, authStore = null, canRefreshTokens = () => false, logger = console } = {}) {
     if (!client?.hasAccessToken || !client?.refreshToken || !configService?.getUserAuth) {
       throw new Error('StravaActivityAccessGateway requires client and configService');
     }

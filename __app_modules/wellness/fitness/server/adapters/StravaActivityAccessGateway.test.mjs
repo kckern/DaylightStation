@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { StravaActivityAccessGateway } from './StravaActivityAccessGateway.mjs';
 
-const makeDeps = ({ stored = { refresh: 'old-refresh', athlete_id: 42 }, canRefreshTokens, withStore = true } = {}) => {
+const makeDeps = ({ stored = { refresh: 'old-refresh', athlete_id: 42 }, canRefreshTokens = () => true, withStore = true } = {}) => {
   const client = {
     hasAccessToken: vi.fn().mockReturnValue(false),
     refreshToken: vi.fn().mockResolvedValue({
@@ -52,6 +52,13 @@ describe('StravaActivityAccessGateway', () => {
     expect(client.refreshToken).not.toHaveBeenCalled();
     expect(authStore.save).not.toHaveBeenCalled();
     expect(logger.info).toHaveBeenCalledWith('strava.client.token_writer_disabled', { username: 'alice' });
+  });
+
+  it('refuses to refresh unless a token policy is given (fails closed)', async () => {
+    const { client, authStore, configService } = makeDeps();
+    const gateway = new StravaActivityAccessGateway({ client, configService, authStore, logger: { info() {}, warn() {}, error() {} } });
+    await expect(gateway.ensure('alice')).rejects.toThrow(/Activity access unavailable/);
+    expect(client.refreshToken).not.toHaveBeenCalled();
   });
 
   it('refuses to refresh without a writable token store', async () => {

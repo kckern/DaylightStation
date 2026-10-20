@@ -36,6 +36,13 @@ describe('createHarvesterServices token writer', () => {
     expect(services.canRefreshTokens()).toBe(false);
   });
 
+  it('refuses refresh through an injected store that does not declare itself writable', () => {
+    const services = createHarvesterServices({
+      io: baseIo, configService, logger, authStore: { load: vi.fn(), save: vi.fn() },
+    });
+    expect(services.canRefreshTokens()).toBe(false);
+  });
+
   it('refuses refresh outside the container without the opt-in', () => {
     delete process.env.DAYLIGHT_TOKEN_WRITER;
     const services = createHarvesterServices({
