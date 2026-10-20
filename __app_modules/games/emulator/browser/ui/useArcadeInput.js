@@ -24,8 +24,11 @@ const KEY_INTENT = {
  * @param {(intent: string) => void} opts.onIntent
  * @param {boolean} [opts.enabled=true]
  * @param {() => (Array|null)} [opts.getGamepads]  injectable for tests
+ * @param {boolean} [opts.primeOnStart=false]  treat whatever a pad is already
+ *   pressing when polling starts as "held", not as a new press — so the A press
+ *   that opened a surface does not also activate its first button.
  */
-export function useArcadeInput({ onIntent, enabled = true, getGamepads } = {}) {
+export function useArcadeInput({ onIntent, enabled = true, getGamepads, primeOnStart = false } = {}) {
   const onIntentRef = useRef(onIntent);
   onIntentRef.current = onIntent;
 
@@ -52,6 +55,7 @@ export function useArcadeInput({ onIntent, enabled = true, getGamepads } = {}) {
 
     let raf = null;
     const prev = new Map(); // key → boolean (was-active last frame)
+    const primed = new Set(); // pad indexes whose held state has been recorded
 
     const edge = (key, active) => {
       const was = prev.get(key) || false;
@@ -74,6 +78,11 @@ export function useArcadeInput({ onIntent, enabled = true, getGamepads } = {}) {
           select: pressed(BTN.A) || pressed(BTN.START),
           back: pressed(BTN.B),
         };
+        if (primeOnStart && !primed.has(gp.index)) {
+          primed.add(gp.index);
+          for (const [intent, active] of Object.entries(intents)) prev.set(`${gp.index}:${intent}`, active);
+          continue;
+        }
         for (const [intent, active] of Object.entries(intents)) {
           if (edge(`${gp.index}:${intent}`, active)) onIntentRef.current?.(intent);
         }
@@ -82,7 +91,7 @@ export function useArcadeInput({ onIntent, enabled = true, getGamepads } = {}) {
     };
     raf = requestAnimationFrame(poll);
     return () => { if (raf) cancelAnimationFrame(raf); };
-  }, [enabled, getGamepads]);
+  }, [enabled, getGamepads, primeOnStart]);
 }
 
 export default useArcadeInput;

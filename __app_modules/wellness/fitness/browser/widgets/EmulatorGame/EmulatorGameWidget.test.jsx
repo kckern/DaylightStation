@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 
 const api = vi.fn();
 vi.mock("../../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => api(...a), DaylightMediaPath: (p) => p }));
@@ -34,6 +34,8 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
         data-overlay-anchor={props.sessionOverlayConfig?.anchor || ''}
         data-menu-attention={props.menuAttention ? '1' : '0'}
         data-menu-open-at-launch={props.menuInitiallyOpen ? '1' : '0'}
+        data-hold-paused={props.holdPaused ? '1' : '0'}
+        data-menu-open-request={String(props.menuOpenRequest ?? 0)}
       />
       {props.menuSection && (
         <div data-testid="menu">
@@ -409,6 +411,72 @@ describe('EmulatorGameWidget save choice at launch', () => {
     fireEvent.click(await screen.findByLabelText('Continue as User_5'));
     await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-user')).toBe('user_5'));
     expect(screen.getByTestId('console').getAttribute('data-menu-open-at-launch')).toBe('0');
+  });
+});
+
+describe('EmulatorGameWidget fingerprint step keeps the choice', () => {
+  function sharedApi(users = ['user_5']) {
+    api.mockImplementation((p) => {
+      if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
+      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users });
+      return Promise.resolve({});
+    });
+  }
+  async function launch() {
+    kiosk.value = true;
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await screen.findByTestId('console');
+    await screen.findByLabelText('Continue as User_5');
+  }
+  const consoleEl = () => screen.getByTestId('console');
+
+  it('holds the game while the prompt is up; a cancelled scan reopens the menu', async () => {
+    sharedApi();
+    let resolve;
+    identity.registerIdentify.mockImplementation(() => new Promise((r) => { resolve = r; }));
+    await launch();
+    expect(consoleEl().getAttribute('data-hold-paused')).toBe('0');
+    fireEvent.click(screen.getByText('Save as me'));
+    await waitFor(() => expect(consoleEl().getAttribute('data-hold-paused')).toBe('1'));
+    await act(async () => { resolve(null); });
+    await waitFor(() => expect(consoleEl().getAttribute('data-hold-paused')).toBe('0'));
+    expect(consoleEl().getAttribute('data-menu-open-request')).not.toBe('0');
+    expect(consoleEl().getAttribute('data-persist')).toBe('0');
+  });
+
+  it('a claim that conflicts reopens the menu on the Overwrite question', async () => {
+    sharedApi();
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
+    await launch();
+    fireEvent.click(screen.getByText('Save as me'));
+    expect(await screen.findByText('Overwrite')).toBeTruthy();
+    expect(consoleEl().getAttribute('data-menu-open-request')).not.toBe('0');
+    expect(consoleEl().getAttribute('data-hold-paused')).toBe('0');
+  });
+
+  it("a 'Continue as' scan by someone else reopens the menu with the message", async () => {
+    sharedApi();
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_4' });
+    await launch();
+    fireEvent.click(screen.getByLabelText('Continue as User_5'));
+    expect(await screen.findByText("That's not User_5.")).toBeTruthy();
+    expect(consoleEl().getAttribute('data-menu-open-request')).not.toBe('0');
+  });
+
+  it('a successful claim plays on: no hold, no reopen', async () => {
+    sharedApi([]);
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_4' });
+    kiosk.value = true;
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    await screen.findByTestId('console');
+    fireEvent.click(screen.getByText('Save as me'));
+    await waitFor(() => expect(consoleEl().getAttribute('data-persist')).toBe('1'));
+    expect(consoleEl().getAttribute('data-hold-paused')).toBe('0');
+    expect(consoleEl().getAttribute('data-menu-open-request')).toBe('0');
   });
 });
 

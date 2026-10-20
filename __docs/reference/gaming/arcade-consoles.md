@@ -75,7 +75,12 @@ remounts on their save), *Save as me* (claims the running game — asking first
 if that person already has a save it would replace) or *Just play*. After
 that the menu stays on the bezel's single ⋯ button (bottom-left; the game
 pauses while it is open), which carries a small amber dot while nothing is
-being saved. Off the kiosk there is no fingerprint reader, so the menu does not
+being saved. The menu works from a gamepad too: the d-pad moves between its
+buttons, A activates, B closes (*Just play* has focus when it opens at launch,
+and the button still held from launching the game is ignored). While a
+fingerprint prompt from the menu is up the game stays paused; a cancelled scan,
+a "that's not you", or an overwrite question reopens the menu rather than
+dropping the kid into an unsaved game. Off the kiosk there is no fingerprint reader, so the menu does not
 open at launch and its Player section reads "Saving works at the garage".
 
 **One person's game: `save_owner: <user>`.** For a save that must only ever be

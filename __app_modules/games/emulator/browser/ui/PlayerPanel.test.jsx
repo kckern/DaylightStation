@@ -17,6 +17,14 @@ describe('PlayerPanel', () => {
     expect(onJustPlay).toHaveBeenCalled();
   });
 
+  it('Just play is the gamepad default (autofocus) on and off the kiosk', () => {
+    const { unmount } = render(<PlayerPanel savers={[saver]} onJustPlay={() => {}} />);
+    expect(screen.getByText('Just play').hasAttribute('data-autofocus')).toBe(true);
+    unmount();
+    render(<PlayerPanel canIdentify={false} onJustPlay={() => {}} />);
+    expect(screen.getByText('Just play').hasAttribute('data-autofocus')).toBe(true);
+  });
+
   it('no Just play button when the host gives no handler', () => {
     render(<PlayerPanel savers={[]} />);
     expect(screen.queryByText('Just play')).toBeNull();

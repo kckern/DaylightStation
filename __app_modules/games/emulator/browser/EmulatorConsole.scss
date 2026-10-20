@@ -420,6 +420,9 @@
       font-weight: 700;
       button { background: none; border: none; color: #fff; font-size: 1rem; cursor: pointer; padding: 0.25rem 0.5rem; }
     }
+    // Gamepad focus has to be visible on a touch kiosk, where :focus-visible
+    // often stays off after programmatic focus.
+    &__sheet button:focus { outline: 3px solid #b6d94a; outline-offset: 2px; }
     &__row--label { margin-top: 0; margin-bottom: 0.5rem; }
     &__row {
       display: flex;

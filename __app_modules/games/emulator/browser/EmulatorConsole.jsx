@@ -29,6 +29,7 @@ import { computeScreenBox } from "./screenBoxGeometry.js";
 import { resolveOverlayValue, formatOverlayValue } from "./core/resolveOverlayValue.js";
 import { HotspotLayer } from "./ui/HotspotLayer.jsx";
 import { OverlayLayer } from "./ui/OverlayLayer.jsx";
+import { useArcadeInput } from "./ui/useArcadeInput.js";
 import "./EmulatorConsole.scss";
 
 const STATUS_POLL_MS = 500;
@@ -133,6 +134,12 @@ export function EmulatorConsole({
   // Mount with the game menu already open (the host's "decide before you
   // play" moment). Read once at mount; hosts remount the console per launch.
   menuInitiallyOpen = false,
+  // Host holds the game paused regardless of the menu — e.g. while its
+  // fingerprint prompt is up, so a scan that ends in a question (overwrite?
+  // not you? cancelled?) lands before any unsaved progress exists.
+  holdPaused = false,
+  // Host asks for the menu to (re)open: each new non-zero value opens it.
+  menuOpenRequest = 0,
   // Console/system label (e.g. "Game Boy Color") and the pre-computed
   // {text, urgency, stale} clock for the unified session badge.
   systemLabel = null,
@@ -207,6 +214,8 @@ export function EmulatorConsole({
   const [settingsOpen, setSettingsOpen] = useState(() => !!menuInitiallyOpen);
   const settingsOpenRef = useRef(false);
   settingsOpenRef.current = settingsOpen;
+  const holdPausedRef = useRef(false);
+  holdPausedRef.current = !!holdPaused;
 
   let governancePlaying = status.state === 'playing';
   try {
@@ -215,7 +224,7 @@ export function EmulatorConsole({
       : governancePlaying;
   } catch { governancePlaying = false; }
   // The open game menu holds the game paused, so it is paused to the meter too.
-  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused && !settingsOpen
+  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused && !settingsOpen && !holdPaused
     ? 'playing'
     : 'paused';
   useEffect(() => {
@@ -573,8 +582,8 @@ export function EmulatorConsole({
     catch (err) { logger.debug('emulator.console.localstorage-failed', { key: VOLUME_STORAGE_KEY, error: err && err.message }); }
     const v = logVolumeFromLevel(level);
     runtimeRef.current?.mixer?.setBusVolume?.('game', v);
-    // engine.resume() also unpauses the game — not while the menu holds it.
-    if (!settingsOpenRef.current) runtimeRef.current?.engine?.resume?.();
+    // engine.resume() also unpauses the game — not while the menu or host holds it.
+    if (!settingsOpenRef.current && !holdPausedRef.current) runtimeRef.current?.engine?.resume?.();
     logger.info('emulator.console.volume-applied', { reason: 'change', level, volume: v, bus: 'game' });
   }, [logger]);
 
@@ -591,7 +600,7 @@ export function EmulatorConsole({
     if (!hotspotPausedRef.current) engine?.pause?.();
     logger.info('emulator.console.menu-open', { game: game?.id });
     return () => {
-      if (!hotspotPausedRef.current) runtimeRef.current?.engine?.resume?.();
+      if (!hotspotPausedRef.current && !holdPausedRef.current) runtimeRef.current?.engine?.resume?.();
       logger.info('emulator.console.menu-close', { game: game?.id });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -601,11 +610,66 @@ export function EmulatorConsole({
   // effect above then paused nothing, since engine.pause() is a no-op until
   // boot. Hold the game the moment it becomes playable instead.
   useEffect(() => {
-    if (!playReady || !settingsOpenRef.current || hotspotPausedRef.current) return;
+    if (!playReady || hotspotPausedRef.current) return;
+    if (!settingsOpenRef.current && !holdPausedRef.current) return;
     runtimeRef.current?.engine?.pause?.();
-    logger.info('emulator.console.menu-hold-at-boot', { game: game?.id });
+    logger.info('emulator.console.menu-hold-at-boot', { game: game?.id, menu: settingsOpenRef.current, host: holdPausedRef.current });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playReady]);
+
+  // Host hold toggles: pause on, resume off (unless the menu or the bezel's
+  // start-button pause still holds it). Before boot the engine ignores both;
+  // the playReady effect above covers that case.
+  const holdMountedRef = useRef(false);
+  useEffect(() => {
+    if (!holdMountedRef.current) { holdMountedRef.current = true; return; }
+    const engine = runtimeRef.current?.engine;
+    if (holdPaused) {
+      if (!hotspotPausedRef.current) engine?.pause?.();
+      logger.info('emulator.console.host-hold', { game: game?.id, held: true });
+    } else {
+      if (!hotspotPausedRef.current && !settingsOpenRef.current) engine?.resume?.();
+      logger.info('emulator.console.host-hold', { game: game?.id, held: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdPaused]);
+
+  // Host-requested (re)open: any new non-zero nonce after mount.
+  const menuRequestSeenRef = useRef(menuOpenRequest);
+  useEffect(() => {
+    if (menuOpenRequest === menuRequestSeenRef.current) return;
+    menuRequestSeenRef.current = menuOpenRequest;
+    if (menuOpenRequest) setSettingsOpen(true);
+  }, [menuOpenRequest]);
+
+  // Gamepad / keyboard inside the open menu — the arcade's own input is off
+  // while a game is up, and a kid on the bike has only the pad. D-pad moves
+  // focus across the sheet's buttons, A/Start/Enter activates, B/Esc closes.
+  // primeOnStart: the A press that launched the game is still held when the
+  // menu mounts open, and must not also pick its first button.
+  const sheetRef = useRef(null);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const sheet = sheetRef.current;
+    const target = sheet?.querySelector('[data-autofocus]') || sheet?.querySelector('button');
+    target?.focus?.();
+  }, [settingsOpen]);
+  const onMenuIntent = useCallback((intent) => {
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    if (intent === 'back') { setSettingsOpen(false); return; }
+    const buttons = [...sheet.querySelectorAll('button:not([disabled])')];
+    if (!buttons.length) return;
+    const at = buttons.indexOf(document.activeElement);
+    if (intent === 'select') {
+      (at >= 0 ? buttons[at] : buttons[0]).click();
+      return;
+    }
+    const step = intent === 'up' || intent === 'left' ? -1 : 1;
+    const next = at < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, at + step));
+    buttons[next].focus();
+  }, []);
+  useArcadeInput({ onIntent: onMenuIntent, enabled: settingsOpen, getGamepads, primeOnStart: true });
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -1172,7 +1236,7 @@ export function EmulatorConsole({
       {settingsOpen && (
         <div className="emulator-settings-modal" role="dialog" aria-modal="true" aria-label="Game menu">
           <div className="emulator-settings-modal__backdrop" onPointerDown={() => setSettingsOpen(false)} />
-          <div className="emulator-settings-modal__sheet">
+          <div className="emulator-settings-modal__sheet" ref={sheetRef}>
             <div className="emulator-settings-modal__header">
               <span>{game?.title || 'Game'} · Paused</span>
               <button type="button" aria-label="Close menu" onClick={() => setSettingsOpen(false)}>✕</button>

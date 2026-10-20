@@ -356,6 +356,101 @@ describe('EmulatorConsole', () => {
       expect(() => unmount()).not.toThrow();
     });
 
+    // A standard-mapping pad whose buttons the test flips between frames.
+    function makePad() {
+      const buttons = Array.from({ length: 17 }, () => ({ pressed: false, value: 0 }));
+      const pad = { index: 0, id: 'test-pad', buttons, axes: [0, 0, 0, 0] };
+      return { pad, set: (i, on) => { buttons[i] = { pressed: on, value: on ? 1 : 0 }; } };
+    }
+    const frames = async (n = 3) => { for (let i = 0; i < n; i += 1) await act(async () => { vi.advanceTimersByTime(20); }); };
+
+    it('gamepad: A on the focused (autofocus) button activates it; a held launch press does not', async () => {
+      const onJustPlay = vi.fn();
+      const { pad, set } = makePad();
+      set(0, true); // A still held from the press that launched the game
+      renderConsole({
+        props: {
+          menuInitiallyOpen: true,
+          getGamepads: () => [pad],
+          menuSection: <button type="button" data-autofocus onClick={onJustPlay}>Just play</button>,
+        },
+      });
+      await frames();
+      expect(onJustPlay).not.toHaveBeenCalled();
+      set(0, false); await frames();
+      set(0, true); await frames();
+      expect(onJustPlay).toHaveBeenCalledTimes(1);
+    });
+
+    it('gamepad: B closes the menu and the game resumes', async () => {
+      const { pad, set } = makePad();
+      const { queryByRole, engine } = renderConsole({ props: { menuInitiallyOpen: true, getGamepads: () => [pad] } });
+      await frames();
+      engine.resume.mockClear();
+      set(1, true); await frames();
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+      expect(engine.resume).toHaveBeenCalled();
+    });
+
+    it('gamepad: d-pad moves focus between the sheet buttons', async () => {
+      const first = vi.fn(); const second = vi.fn();
+      const { pad, set } = makePad();
+      renderConsole({
+        props: {
+          menuInitiallyOpen: true,
+          getGamepads: () => [pad],
+          menuSection: (
+            <>
+              <button type="button" data-autofocus onClick={first}>one</button>
+              <button type="button" onClick={second}>two</button>
+            </>
+          ),
+        },
+      });
+      await frames();
+      set(13, true); await frames(); set(13, false); await frames(); // down
+      set(0, true); await frames();
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(first).not.toHaveBeenCalled();
+    });
+
+    it('holdPaused: closing the menu does not resume; releasing the hold does', async () => {
+      const { factories, engine } = makeFactories();
+      const onArcadeGameSessionStateChange = vi.fn();
+      const base = {
+        game: baseGame, engineConfig: baseEngineConfig, governanceGate: makeGate(),
+        identity: {}, factories, onArcadeGameSessionStateChange, menuInitiallyOpen: true,
+      };
+      const { rerender, getByLabelText } = render(<EmulatorConsole {...base} />);
+      await act(async () => {});
+      // Host raises the fingerprint prompt: holds the game, then closes the sheet.
+      rerender(<EmulatorConsole {...base} holdPaused />);
+      engine.resume.mockClear();
+      act(() => { getByLabelText('Close menu').click(); });
+      expect(engine.resume).not.toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('paused');
+      // Scan done: hold released → play.
+      rerender(<EmulatorConsole {...base} holdPaused={false} />);
+      expect(engine.resume).toHaveBeenCalled();
+      expect(onArcadeGameSessionStateChange).toHaveBeenLastCalledWith('playing');
+    });
+
+    it('holdPaused at first frame pauses the game even with the menu closed', async () => {
+      const { engine } = renderConsole({ props: { holdPaused: true } });
+      await act(async () => {});
+      expect(engine.pause).toHaveBeenCalled();
+    });
+
+    it('menuOpenRequest: a new nonce opens the menu', async () => {
+      const { factories } = makeFactories();
+      const base = { game: baseGame, engineConfig: baseEngineConfig, governanceGate: makeGate(), identity: {}, factories };
+      const { rerender, queryByRole } = render(<EmulatorConsole {...base} menuOpenRequest={0} />);
+      await act(async () => {});
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+      rerender(<EmulatorConsole {...base} menuOpenRequest={1} />);
+      expect(queryByRole('dialog', { name: 'Game menu' })).toBeTruthy();
+    });
+
     it('marks the button when the host asks for attention', async () => {
       const { getByLabelText } = renderConsole({ props: { menuAttention: true } });
       await act(async () => {});

@@ -94,7 +94,7 @@ export function PlayerPanel({
                   Save as me
                 </button>
                 {onJustPlay && (
-                  <button type="button" className="emu-player-panel__btn" onClick={onJustPlay}>Just play</button>
+                  <button type="button" className="emu-player-panel__btn" data-autofocus onClick={onJustPlay}>Just play</button>
                 )}
               </div>
             </>
@@ -102,7 +102,7 @@ export function PlayerPanel({
             <div className="emu-player-panel__choice">
               <span className="emu-player-panel__offkiosk">Saving works at the garage</span>
               {onJustPlay && (
-                <button type="button" className="emu-player-panel__btn" onClick={onJustPlay}>Just play</button>
+                <button type="button" className="emu-player-panel__btn" data-autofocus onClick={onJustPlay}>Just play</button>
               )}
             </div>
           )}

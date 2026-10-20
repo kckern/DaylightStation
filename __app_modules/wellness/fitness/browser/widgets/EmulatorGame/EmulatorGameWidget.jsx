@@ -64,6 +64,10 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const [savers, setSavers] = useState([]);
   const [selectMessage, setSelectMessage] = useState(null);
   const [claimConflict, setClaimConflict] = useState(null);
+  // Bumped to (re)open the game menu after a fingerprint step that ends in a
+  // question or a cancel, so the choice is never left hidden behind play.
+  const [menuOpenNonce, setMenuOpenNonce] = useState(0);
+  const reopenMenu = useCallback(() => setMenuOpenNonce((n) => n + 1), []);
   // Arcade-level notice (e.g. "<Game> is <owner>'s game"), auto-clears.
   const [notice, setNotice] = useState(null);
 
@@ -407,11 +411,13 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       if (verdict?.matched && String(verdict.userId).toLowerCase() === String(userId).toLowerCase()) {
         setSelectMessage(null);
         startGame(game, loadLaunch(userId), { remountKey: `${game.id}:${userId}:${Date.now()}` });
-      } else if (verdict?.matched) {
-        setSelectMessage(`That's not ${name}.`);
+        return;
       }
+      if (verdict?.matched) setSelectMessage(`That's not ${name}.`);
+      logger.info('fitness-emulator.load-saver.reask', { game: game.id, user: userId, matched: !!verdict?.matched });
+      reopenMenu();
     });
-  }, [launch, registerIdentify, resolvePersonCard, startGame]);
+  }, [launch, registerIdentify, resolvePersonCard, startGame, reopenMenu, logger]);
 
   // "Save my game": identify whoever scans → claim (warn if they already have a save).
   const handleClaim = useCallback(() => {
@@ -422,15 +428,21 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     registerIdentify('Save my game').then((verdict) => {
       setPendingGame(null);
       setView('playing');
-      if (!verdict?.matched) return;
+      if (!verdict?.matched) {
+        logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'no-match' });
+        reopenMenu();
+        return;
+      }
       const uid = verdict.userId;
       if (savers.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
         setClaimConflict(resolvePersonCard(uid));
+        logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'conflict', user: uid });
+        reopenMenu();
       } else {
         activateSave(uid);
       }
     });
-  }, [launch, registerIdentify, savers, resolvePersonCard, activateSave]);
+  }, [launch, registerIdentify, savers, resolvePersonCard, activateSave, reopenMenu, logger]);
 
   const handleExitGame = useCallback(() => {
     setLaunch(null);
@@ -580,6 +592,8 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             menuSection={menuSection}
             menuAttention={saveGame && !launch.userId}
             menuInitiallyOpen={!!launch.askAtLaunch}
+            menuOpenRequest={menuOpenNonce}
+            holdPaused={view === 'identify'}
           />
         </div>,
         document.body,
