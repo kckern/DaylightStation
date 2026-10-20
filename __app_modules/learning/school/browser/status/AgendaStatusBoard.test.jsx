@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
 
@@ -1207,6 +1207,7 @@ describe('AgendaStatusBoard silver this week', () => {
   const DAY = '2026-10-20';
   beforeEach(() => {
     vi.clearAllMocks();
+    schoolApi.wallet.mockResolvedValue({ ok: false, status: 0, data: null });
     schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
@@ -1227,17 +1228,34 @@ describe('AgendaStatusBoard silver this week', () => {
     expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
   });
 
-  it('shows what is still possible only while something is pending, and gems only when earned', async () => {
+  it('pending is a faded +N after the number, gems a third line only when earned or pending', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(
       priced('learner1', 23, { pending: { silver: 5, gems: 1 } }),
       priced('learner2', 10, { gems: 2 }),
     ));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     await waitFor(() => expect(silverOf('23')).toBeTruthy());
-    expect(screen.getByText('+5 silver · +1 gem')).toBeTruthy();
-    expect(screen.getAllByText(/^\+\d+ silver/).length).toBe(1);
-    expect(screen.getByLabelText('2 gems this week')).toBeTruthy();
-    expect(screen.queryByLabelText(/^0 gems/)).toBeNull();
+    const [one, two] = screen.getAllByTestId('board-coins');
+    expect(within(one).getByLabelText('5 more possible').textContent).toBe('+5');
+    expect(within(one).getByLabelText('0 gems this week')).toBeTruthy();
+    expect(within(one).getByLabelText('1 more possible').textContent).toBe('+1');
+    expect(within(two).getByLabelText('2 gems this week')).toBeTruthy();
+    expect(within(two).queryByLabelText(/more possible$/)).toBeNull();
+    // No visible captions anywhere in the cell.
+    expect(one.textContent).not.toMatch(/silver|gold|gem/i);
+  });
+
+  it('the coins sit in one cell per card, silver then gold, as a two-column grid', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0 } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    const cell = screen.getAllByTestId('board-coins')[0];
+    const grid = cell.querySelector('.school-status-board__coin-grid');
+    const names = [...grid.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label'));
+    expect(names.slice(0, 2)).toEqual(['21 silver this week', '0 gold']);
+    // Each figure is an icon cell followed by a number cell: the grid aligns them.
+    expect(grid.children.length % 2).toBe(0);
   });
 
   it('a failed re-read keeps the figure already on the card', async () => {

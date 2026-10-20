@@ -3065,7 +3065,7 @@
     // Not quite even quarters: the face needs less than a fourth, the pins
     // and the sixteen-week grid need more, and the week strip is seven
     // squares and a number.
-    grid-template-columns: 0.8fr minmax(max-content, 1.2fr) 0.75fr 1.35fr;
+    grid-template-columns: 0.8fr minmax(max-content, 1.25fr) clamp(6.5rem, 13vw, 10rem) 1fr;
     align-items: stretch; column-gap: 0;
     padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
     --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
@@ -3355,21 +3355,27 @@
     line-height: 1;
   }
   &__rings-count { font-variant-numeric: tabular-nums; }
-  // This week's silver, in the rings' type: a figure per currency, and the
-  // still-possible line under them, smaller.
-  &__silver {
-    flex: 0 0 auto;
-    display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-    gap: 0.2em 0.6em;
-    font-size: clamp(1rem, 2.6vh, 1.4rem); font-weight: 800;
-    color: var(--school-muted);
-    line-height: 1;
+  // THE COINS, a fixed column so they line up down all four cards: icon cell
+  // then number cell; silver big, gold and gems smaller under it.
+  &__coins {
+    min-width: 0; border-left: 1px solid var(--school-border);
+    padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
+    display: flex; align-items: center; justify-content: flex-start;
   }
-  &__coin { display: inline-flex; align-items: center; gap: 0.35em; }
-  &__pending {
-    flex-basis: 100%; text-align: center;
-    font-size: 0.6em; font-weight: 700;
+  &__coin-grid {
+    display: grid; grid-template-columns: clamp(1.6rem, 4.6vh, 2.4rem) auto;
+    align-items: center; column-gap: 0.45em; row-gap: 0.3em;
+    color: var(--school-text); font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
+  &__coin-icon { justify-self: center; width: 100%; height: auto; }
+  &__coin-icon--gold, &__coin-icon--gem { width: 58%; }
+  &__figure { position: relative; }
+  &__figure--silver { font-size: clamp(1.6rem, 5vh, 2.6rem); }
+  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #e2c15a; }
+  &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
+  // Hangs off the end of its number, so it never moves the column.
+  &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.25em; font-size: 0.5em; opacity: 0.45; }
 
   // THE TERM GRID. Seven rows × one column per week, ~11px cells on the
   // 1280x800 Portal: eighteen weeks fit in ~230px beside the pins. The grid's

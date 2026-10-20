@@ -345,40 +345,45 @@ function RestDayStatus({ restDay, pinned }) {
  *   flag this component could be handed by mistake.
  */
 /**
- * THIS WEEK'S SILVER, beside the rings: what the week's work is worth so far
- * under the household earn rules (a preview; nothing is paid until payday).
- * Nothing until the read lands, and nothing for a cached figure from another
- * week. "+N if done" appears only while some of the week could still pay.
+ * THE COINS: silver (this week, big), gold (lasting, smaller) and gems (only
+ * when earned or pending), as a two-column grid - icon cell, number cell - so
+ * the coins centre on one line and the numbers start at one edge, down every
+ * card. A faded +N hangs after a number without moving it. No captions: the
+ * icon is the label; the words are for a screen reader. Nothing until a read
+ * lands, and nothing for a cached silver figure from another week.
  */
-function WeekSilver({ figure, studyDay, gold }) {
-  const silverOk = Boolean(figure) && Number.isFinite(figure.silver)
+function Coins({ figure, gold, studyDay }) {
+  const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
-  if (!silverOk && !Number.isFinite(gold)) return null;
-  const pending = [];
-  if (silverOk && figure.pendingSilver > 0) pending.push(`+${figure.pendingSilver} silver`);
-  if (silverOk && figure.pendingGems > 0) pending.push(`+${figure.pendingGems} gem${figure.pendingGems === 1 ? '' : 's'}`);
+  const hasGold = Number.isFinite(gold);
+  if (!inWeek && !hasGold) return null;
+  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-label={`${n} more possible`}>+{n}</span> : null);
+  const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
   return (
-    <span className="school-status-board__silver">
-      {Number.isFinite(gold) && (
-        <span className="school-status-board__coin" aria-label={`${gold} gold`}>
-          <CoinIcon size="1.1em" />
-          <span className="school-status-board__rings-count">{gold}</span>
-        </span>
+    <div className="school-status-board__coin-grid">
+      {inWeek && (
+        <>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color="#c0c0c0" />
+          <span className="school-status-board__figure school-status-board__figure--silver" aria-label={`${figure.silver} silver this week`}>
+            {figure.silver}{more(figure.pendingSilver)}
+          </span>
+        </>
       )}
-      {silverOk && (
-        <span className="school-status-board__coin" aria-label={`${figure.silver} silver this week`}>
-          <CoinIcon size="1.6em" color="#c0c0c0" />
-          <span className="school-status-board__rings-count">{figure.silver}</span>
-        </span>
+      {hasGold && (
+        <>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
+          <span className="school-status-board__figure school-status-board__figure--gold" aria-label={`${gold} gold`}>{gold}</span>
+        </>
       )}
-      {silverOk && figure.gems > 0 && (
-        <span className="school-status-board__coin" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
-          <GemIcon size="1.4em" />
-          <span className="school-status-board__rings-count">{figure.gems}</span>
-        </span>
+      {showGems && (
+        <>
+          <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
+          <span className="school-status-board__figure school-status-board__figure--gem" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
+            {figure.gems}{more(figure.pendingGems)}
+          </span>
+        </>
       )}
-      {silverOk && pending.length > 0 && <span className="school-status-board__pending">{pending.join(' · ')}</span>}
-    </span>
+    </div>
   );
 }
 
@@ -773,6 +778,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
             </div>
+            <div className="school-status-board__coins" data-testid="board-coins">
+              <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+            </div>
             {/* THIS WEEK: the fitness rings. Rendered only once the number has
                 arrived — a placeholder zero would be a claim we cannot support
                 yet, and "0" and "not loaded" are different facts. The count
@@ -790,7 +798,6 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   </span>
                 </span>
               )}
-              <WeekSilver figure={earnings[kid.id]} studyDay={studyDay} gold={gold[kid.id]} />
             </div>
             {/* THE TERM: every day since September, one square each, weeks as
                 columns. Blank-but-present while loading, so the card is the
