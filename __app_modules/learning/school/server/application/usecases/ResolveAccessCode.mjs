@@ -57,6 +57,7 @@ import { decodeLaunchPreviewLink } from "../services/launchPreviewLink.mjs";
 import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { resolveTokenState, isAccessCodeSpent } from "../../domain/sessions/tokens.mjs";
+import { studyDayForInstant } from "../../domain/studyDay.mjs";
 import { nextMove } from "./offerSession.mjs";
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { projectProgramEntry, bookLogShelfEntry } from "../assignedProgramPlan.mjs";
@@ -87,10 +88,14 @@ export const SYNTHETIC_SESSION_ID = 'synthetic:unopened';
  * for a child reclassifies an outage as a wrong code and removes the
  * retry button — the same dead end, reintroduced by a typo.
  *
- * FOR WHOEVER ADDS A THIRD VALUE (`expired`, `revoked`, …): a consumer must
- * treat an UNRECOGNISED `reason` as a FAULT, never as a bad code. The failure
- * modes are not symmetric — a spurious retry button is a wasted tap, while a
- * missing one strands a child in front of a keypad that cannot help them.
+ * FOR WHOEVER ADDS ANOTHER VALUE: a consumer must treat an UNRECOGNISED
+ * `reason` as a FAULT, never as a bad code. The failure modes are not
+ * symmetric — a spurious retry button is a wasted tap, while a missing one
+ * strands a child in front of a keypad that cannot help them. So every new
+ * value lands in `useSelfService`'s `CHILD_FIXABLE_REASONS` in the same change.
+ *
+ * The values today: `unknown_code`, `expired`, `used_up`, `slow_down` (all
+ * child-fixable) and `not_answering` (a fault).
  */
 
 /** Wrong code, dead code, revoked code, junk. The keypad stays alive. */
@@ -98,6 +103,47 @@ const TRY_AGAIN = Object.freeze({
   ok: false, reason: 'unknown_code', learner: null, subject: null, title: null,
   sentence: 'Try again.', actions: Object.freeze([]),
 });
+
+/**
+ * The code was real, and its study day is over.
+ *
+ * A code dies at the 4am rollover on purpose (design D5: it re-plans live per
+ * subject, so yesterday's code would open whatever is next today, not what the
+ * paper says). That rule stays. What changed is the refusal: 49 old-sheet codes
+ * in one week got "Try again.", and retyping the same digits is the one thing
+ * that cannot help. Naming the sheet's day tells the child their paper is old,
+ * and the card beside the panel is how they get today's.
+ *
+ * Built per call, not frozen, because the day is in the sentence.
+ */
+function expiredCard(weekday) {
+  return {
+    ok: false, reason: 'expired', learner: null, subject: null, title: null,
+    sentence: weekday
+      ? `That sheet is from ${weekday}. Tap your card for today's.`
+      : "That sheet is from another day. Tap your card for today's.",
+    actions: [],
+  };
+}
+
+const WEEKDAYS = Object.freeze(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']);
+
+/**
+ * The weekday of the study day a code belonged to, in the household timezone.
+ *
+ * Read from `accessCodeExpiresAt` rather than `issuedAt`: the expiry IS the
+ * rollover that ended the code's day, so the instant before it is inside that
+ * day by construction, whenever the sheet was printed. `issuedAt` is the
+ * fallback for a record without one.
+ */
+function sheetWeekday(record, timezone) {
+  const expires = Date.parse(record?.accessCodeExpiresAt ?? '');
+  const issued = Date.parse(record?.issuedAt ?? '');
+  const instant = Number.isFinite(expires) ? expires - 1 : issued;
+  const day = studyDayForInstant(instant, { timezone, boundaryHour: 4 });
+  if (!day) return null;
+  return WEEKDAYS[new Date(`${day}T12:00:00.000Z`).getUTCDay()] ?? null;
+}
 
 /**
  * The code was real, and it is finished.
@@ -221,7 +267,7 @@ export class ResolveAccessCode {
   /**
    * @param {object} args
    * @param {string} args.code - the six digits, as typed
-   * @returns {Promise<{ok: boolean, reason?: 'unknown_code'|'not_answering',
+   * @returns {Promise<{ok: boolean, reason?: 'unknown_code'|'expired'|'used_up'|'slow_down'|'not_answering',
    *                    schema?: 'school.self-service-card/v2',
    *                    learner: string|null, subject: string|null,
    *                    title: string|null, sentence: string|null,
@@ -310,6 +356,26 @@ export class ResolveAccessCode {
       return { card: USED_UP, resolution: null };
     }
 
+    // Not live — but was it ever? An old sheet gets its day named and costs
+    // no throttle allowance: the child is reading paper, not guessing.
+    if (!record) {
+      const expired = await this.#expiredRecord(code);
+      if (expired) {
+        const issuedAt = expired.issuedAt ?? null;
+        const issuedMs = Date.parse(issuedAt ?? '');
+        this.#logger.info?.('school.selfservice.code.rejected', {
+          reason: 'expired',
+          learnerId: expired.subject?.learnerId ?? null,
+          issuedAt,
+          ageHours: Number.isFinite(issuedMs)
+            ? Math.round((this.#clock().getTime() - issuedMs) / 360_000) / 10
+            : null,
+        });
+        this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
+        return { card: expiredCard(sheetWeekday(expired, this.#timezone)), resolution: null };
+      }
+    }
+
     const learnerId = record?.subject?.learnerId ?? null;
     const subject = record?.subject?.subject ?? null;
     if (!record || !learnerId || !subject) {
@@ -324,6 +390,7 @@ export class ResolveAccessCode {
       const overBudget = this.#strikeAttempt(deviceId);
       this.#logger.info?.('school.selfservice.code.rejected', {
         reason: record ? 'unscoped-record' : 'no-live-record',
+        learnerId,
         ...(overBudget ? { throttled: true } : {}),
       });
       // Unconditional, not gated behind `overBudget` — `#strikeAttempt`
@@ -860,6 +927,28 @@ export class ResolveAccessCode {
 
     const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
     return withProjection({ kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry });
+  }
+
+  /**
+   * The record behind a code that expired at its study-day rollover, or null.
+   *
+   * Only ever explains a refusal — the record it returns opens nothing. A
+   * registry without `lookupAccessCode`, or one that throws, answers null and
+   * the child gets the plain "Try again.", which is where this path started.
+   */
+  async #expiredRecord(code) {
+    if (typeof this.#tokens?.lookupAccessCode !== 'function') return null;
+    try {
+      const { record, live } = await this.#tokens.lookupAccessCode(code, {
+        now: this.#clock().toISOString(),
+      }) ?? {};
+      return record && live === false ? record : null;
+    } catch (error) {
+      this.#logger.warn?.('school.selfservice.code.lookup-failed', {
+        error: error?.message ?? String(error),
+      });
+      return null;
+    }
   }
 
   /**

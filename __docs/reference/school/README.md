@@ -1478,6 +1478,28 @@ be handed to another child while its paper is still in a hand.
 
 **The reading code is uncapped**, deliberately — see "The reading log" below.
 
+**An old sheet says which day it is from.** A code still dies at the 4am
+rollover — it re-plans live per subject, so yesterday's digits would open
+today's next thing rather than what the paper says. What it no longer does is
+die as a typo. The registry keeps a code's index entry until its token is
+pruned, a week later, and `lookupAccessCode(code, {now})` hands back
+`{record, live}` instead of applying the verdict: an expired, unrevoked record
+comes back with `live: false`, while a revoked, unknown or malformed code comes
+back with no record. `ResolveAccessCode` turns the expired case into
+`reason: 'expired'` with the sentence *"That sheet is from Sunday. Tap your card
+for today's."*, the weekday being the study day the code belonged to (the instant
+before its `accessCodeExpiresAt`, in the household timezone). The panel keeps the
+NONONO animation and prints that sentence under the slots until the next digit;
+a plain wrong code still gets the animation alone. An expired code spends **no**
+throttle allowance — the child is reading paper, not guessing — though it still
+counts as kiosk friction. `getByAccessCode` is unchanged and is still the only
+lookup that opens anything.
+
+Every refusal logs `school.selfservice.code.rejected` with a `reason`
+(`expired`, `no-live-record`, `unscoped-record`, `used_up`) and `learnerId` when
+the record names one; an expired code also carries `issuedAt` and `ageHours`.
+The digits themselves are never logged.
+
 **Wrong codes are throttled, per device.** Only a *rejected* code spends
 allowance, so a child working through several of their own codes is never
 slowed; a device producing nothing but misses is asked to pause, and a `warn` is

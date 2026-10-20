@@ -167,8 +167,8 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * beside a keypad with no way forward.
  *
  * `reason` is the machine-readable discriminator and the ONLY thing consulted:
- * `unknown_code` | `used_up` | `not_answering`, always present on a refusal
- * card. An earlier draft matched the user-facing sentence instead, which meant
+ * `unknown_code` | `expired` | `used_up` | `slow_down` | `not_answering`,
+ * always present on a refusal card. An earlier draft matched the user-facing sentence instead, which meant
  * rewording the backend's copy for a child would silently remove this panel's
  * retry button — a dead end introduced by a typo.
  *
@@ -182,9 +182,23 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  * out of this set it would have been classified as an outage, so a child whose
  * code was simply finished would read "the school computer isn't answering"
  * beside a Retry button that could never work.
+ *
+ * `expired` JOINED ON 2026-10-19, with the backend refusal that names the day
+ * an old agenda sheet is from. Same trap: left out, yesterday's paper would
+ * have read as an outage.
  */
-const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'used_up', 'slow_down']);
+const CHILD_FIXABLE_REASONS = new Set(['unknown_code', 'expired', 'used_up', 'slow_down']);
 const isBackendFault = (payload) => !CHILD_FIXABLE_REASONS.has(payload?.reason);
+
+/**
+ * Whether a child-fixable refusal has words worth printing under the slots.
+ *
+ * `unknown_code` does not: the NONONO animation already said "wrong code", and
+ * "Try again." underneath is the same news twice. The others name something
+ * the child can DO (fetch today's card, ask a grown-up, wait), which the
+ * animation cannot say.
+ */
+const refusalHasWords = (payload) => payload?.reason !== 'unknown_code';
 
 /**
  * What `onLaunch` (SchoolApp's `onPortalLaunch`) needs in order to route into a
@@ -466,7 +480,9 @@ export function useSelfService({
     if (res.data.ok === false) {
       const faulted = isBackendFault(res.data);
       setDegraded(faulted);
-      setMessage(res.data.sentence || TRY_AGAIN_SENTENCE);
+      // The keypad prints whatever lands in `message`, so a plain wrong code
+      // leaves it empty — the slots have already said it.
+      setMessage(faulted || refusalHasWords(res.data) ? (res.data.sentence || TRY_AGAIN_SENTENCE) : null);
       if (faulted) {
         schoolLog.selfServiceError('resolve.failed', {
           status: res.status, inBody: true, reason: res.data.reason ?? null,

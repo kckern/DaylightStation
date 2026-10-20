@@ -20,7 +20,7 @@ import { IReviewQueue } from "../../../__app_modules/learning/school/server/appl
 import { IDocumentRenderer, IReceiptRenderer } from "../../../__app_modules/learning/school/server/application/ports/IDocumentRenderer.mjs";
 import { GrownUpGate } from "../../../__app_modules/learning/school/server/application/GrownUpGate.mjs";
 import { reduceSession } from "../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
-import { TOKEN_PREFIX, isAccessCodeLive } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
+import { TOKEN_PREFIX, isAccessCodeLive, isAccessCodeExpired } from "../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 
 export const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -202,6 +202,18 @@ export class FakeTokenRegistry extends ITokenRegistry {
       .filter((record) => record.accessCode === code && isAccessCodeLive(record, { now }))
       .sort((a, b) => Date.parse(a.issuedAt ?? '') - Date.parse(b.issuedAt ?? ''));
     return live.at(-1) ?? null;
+  }
+
+  /** Mirrors YamlTokenRegistry: expired keeps its record, revoked does not. */
+  async lookupAccessCode(code, { now = this.#now() } = {}) {
+    if (typeof code !== 'string') return { record: null, live: false };
+    const newest = (keep) => this.all()
+      .filter((record) => record.accessCode === code && keep(record))
+      .sort((a, b) => Date.parse(a.issuedAt ?? '') - Date.parse(b.issuedAt ?? ''))
+      .at(-1) ?? null;
+    const live = newest((record) => isAccessCodeLive(record, { now }));
+    if (live) return { record: live, live: true };
+    return { record: newest((record) => isAccessCodeExpired(record, { now })), live: false };
   }
 
   async liveAccessCodes() {

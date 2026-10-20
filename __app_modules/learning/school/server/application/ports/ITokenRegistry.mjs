@@ -68,6 +68,26 @@ export class ITokenRegistry {
   }
 
   /**
+   * The same lookup, with the liveness verdict handed back instead of applied.
+   *
+   * A child typing yesterday's agenda and a child mistyping are both refused,
+   * but only one of them can be told why. An EXPIRED code (its study day has
+   * ended; not revoked) comes back with its record and `live: false`, so the
+   * panel can name the day the sheet is from. A revoked, unknown or malformed
+   * code comes back with no record — a cancelled ticket is not an old sheet.
+   *
+   * Use {@link getByAccessCode} to resolve a code; this exists to explain a
+   * refusal, and must never be used to open anything.
+   *
+   * @param {string} code - the six digits typed at the panel
+   * @param {{ now?: string }} [opts] - ISO "now"; defaults to the registry's clock
+   * @returns {Promise<{record: object|null, live: boolean}>}
+   */
+  async lookupAccessCode(code, opts) {
+    throw new Error('ITokenRegistry.lookupAccessCode must be implemented');
+  }
+
+  /**
    * Every panel code currently live, as one Set — the collision surface a mint
    * needs. `mintAccessCode` tests `taken(code)` SYNCHRONOUSLY, so a caller
    * awaits this once and then draws against the Set:

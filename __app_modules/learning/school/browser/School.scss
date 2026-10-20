@@ -1872,6 +1872,9 @@
   color: var(--school-warn); text-align: center;
   line-height: 1.2; white-space: nowrap;
   &.is-degraded { color: var(--school-danger); }
+  // An old sheet or a spent code is a whole sentence with an instruction in
+  // it, and never shares the band with a retry button — two lines fit.
+  &.is-refusal { white-space: normal; }
 }
 .school-selfservice__retry {
   flex: 0 0 52px; min-height: 52px; padding: 0 1.6rem; border: 1px solid var(--school-border);
