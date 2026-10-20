@@ -413,6 +413,28 @@ describe('AddReadingForLearner', () => {
     expect(notes).not.toHaveBeenCalled();
   });
 
+  // "Finished today" is the common case, and "today" is the HOUSEHOLD's study
+  // day (the 4am rule), which a phone's calendar does not know. So the
+  // console sends no day and the server supplies it.
+  it('the finished door with no day finishes on the household study day', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: fakeLauncher({ studyDay: '2026-09-05' }) })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+    expect(reading.entries).toHaveLength(1);
+    expect(reading.entries[0]).toMatchObject({ on: '2026-09-05', source: 'teacher' });
+    expect(reading.revisions[0].after).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+  });
+
+  it('falls back to the clock\u2019s day where no launcher is wired', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: null })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-06' });
+  });
+
   it('a retried open does not log the day twice', async () => {
     const use = new AddReadingForLearner(deps());
     const args = {
@@ -428,7 +450,7 @@ describe('AddReadingForLearner', () => {
     expect(shelf[1].revisions).toHaveLength(1);
   });
 
-  it('refuses a door it does not have, a page without one, and a finish with no day', async () => {
+  it('refuses a door it does not have, a page without one, and a finish on no real day', async () => {
     const add = (args) => new AddReadingForLearner(deps()).execute({
       learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1', ...args,
     });
@@ -436,7 +458,6 @@ describe('AddReadingForLearner', () => {
     await expect(add({ where: 'starting', page: 84 })).rejects.toThrow(/page/i);
     await expect(add({ where: 'partway' })).rejects.toThrow(/page/i);
     await expect(add({ where: 'partway', page: 84, progressMode: 'minutes' })).rejects.toThrow(/page/i);
-    await expect(add({ where: 'finished' })).rejects.toThrow(/day/i);
     await expect(add({ where: 'finished', finishedOn: 'August' })).rejects.toThrow(/day/i);
     // Nothing half-opened along the way.
     expect(await bookLog.listForLearner(LEARNER)).toHaveLength(1);
