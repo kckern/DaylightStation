@@ -467,7 +467,7 @@ try {
       const [
         { GetLearnerReadings }, { UpdateReading }, { AddReadingEntry }, { UpdateReadingEntry },
         { DeleteReadingEntry }, { AddReadingForLearner }, { MoveReading }, { DeleteReading },
-        { UndoReadingRevision },
+        { UndoReadingRevision }, { GetBookReaders },
       ] = await Promise.all([
         import("../application/usecases/teacher/GetLearnerReadings.mjs"),
         import("../application/usecases/teacher/UpdateReading.mjs"),
@@ -478,6 +478,7 @@ try {
         import("../application/usecases/teacher/MoveReading.mjs"),
         import("../application/usecases/teacher/DeleteReading.mjs"),
         import("../application/usecases/teacher/UndoReadingRevision.mjs"),
+        import("../application/usecases/teacher/GetBookReaders.mjs"),
       ]);
       const shared = {
         bookLog: dependencies.schoolLifecycle.stores.bookLog,
@@ -500,6 +501,8 @@ try {
         moveReading: new MoveReading(shared),
         deleteReading: new DeleteReading(shared),
         undoReadingRevision: new UndoReadingRevision(shared),
+        // The quick-log sheet's read: one book against every enrolled learner.
+        getBookReaders: new GetBookReaders({ ...shared, roster: () => schoolLearnerDirectory.listLearners() }),
       };
     })()
     : {};

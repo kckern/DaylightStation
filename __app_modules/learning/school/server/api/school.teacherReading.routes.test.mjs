@@ -254,3 +254,49 @@ describe('the teacher reading edit routes', () => {
       .post(`${READING}/reassign`).send({ toLearnerId: 'learner_b', reason: 'x', baseRevisionCount: 0 })).expect(404);
   });
 });
+
+/**
+ * The quick-log sheet's read (2026-10-20): one book, every enrolled learner.
+ * The gate lives in the use case, so the route's job is the address, the
+ * acting teacher off the capability, and `no-store`.
+ */
+describe('GET /teacher/books/:isbn/readers', () => {
+  const READERS_PATH = '/api/v1/school/teacher/books/9780000000002/readers';
+  const READERS = Object.freeze({
+    isbn: '9780000000002', studyDay: '2026-09-06', pageCount: 32, suggestedMode: 'check',
+    readers: [{ learnerId: LEARNER, name: 'Learner A', suggestedMode: 'check', today: true, openReadingId: null, openReading: null, unreadable: false }],
+  });
+  const readersDeps = (overrides = {}) => ({
+    getBookReaders: { execute: vi.fn(async () => READERS) },
+    teacherGate: { assert: vi.fn() },
+    teacherCapabilitySessions: activeCapability(),
+    ...overrides,
+  });
+
+  it('serves the readers view, no-store, for the teacher on the capability', async () => {
+    const deps = readersDeps();
+    await withCookie(request(app(deps)).get(READERS_PATH))
+      .expect(200).expect('Cache-Control', 'no-store').expect(READERS);
+    expect(deps.getBookReaders.execute).toHaveBeenCalledWith({
+      isbn: '9780000000002', by: 'test-user', pin: { capabilityToken: 'session-1', stepUpToken: null },
+    });
+  });
+
+  it('answers 403 when the gate refuses', async () => {
+    const deps = readersDeps({
+      getBookReaders: { execute: vi.fn(async () => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) },
+    });
+    const response = await request(app(deps)).get(READERS_PATH).expect(403);
+    expect(response.body).toMatchObject({ error: 'Only a listed teacher can do this.' });
+  });
+
+  it('answers 404 where it is not wired', async () => {
+    await withCookie(request(app(readersDeps({ getBookReaders: null }))).get(READERS_PATH)).expect(404);
+  });
+
+  it('is read-only: no write lives at this address', async () => {
+    const deps = readersDeps();
+    await withCookie(request(app(deps)).post(READERS_PATH).send({})).expect(404);
+    expect(deps.getBookReaders.execute).not.toHaveBeenCalled();
+  });
+});
