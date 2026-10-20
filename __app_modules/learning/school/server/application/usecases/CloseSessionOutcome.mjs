@@ -55,7 +55,7 @@ import { formatPageSpans } from "../../domain/questionBankV2.mjs";
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
+  #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone; #earningsQuote;
   #courseRecovery = new Map();
   #selfService; #realtime; #planProjection; #practiceAssessments;
 
@@ -93,6 +93,7 @@ export class CloseSessionOutcome {
    *   (Slice H, 2026-08-22 — this is what Learner-Three's receipt was missing).
    *   Absent or falsy: no code is minted, and the QR prints with an explicit
    *   "Scanning is the only way in." line instead of a silent gap.
+   * @param {{quote: Function, ifDone: Function}|null} [deps.earningsQuote]
    * @param {object} [deps.logger]
    */
   constructor({
@@ -110,6 +111,7 @@ export class CloseSessionOutcome {
     // The shared assembler. This use case asks it for a DELIBERATELY narrower
     // projection than the agenda does — see `#projectPlan`.
     planProjection = null, practiceAssessments = null,
+    earningsQuote = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -149,6 +151,7 @@ export class CloseSessionOutcome {
     this.#selfService = selfService?.enabled === true;
     this.#realtime = realtime;
     this.#logger = logger;
+    this.#earningsQuote = earningsQuote;
   }
 
   /**

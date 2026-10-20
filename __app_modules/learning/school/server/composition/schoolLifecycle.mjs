@@ -152,6 +152,7 @@ import { createSchoolLifecycleRouter } from "../api/schoolLifecycle.mjs";
 import { SchoolLifecycleAgendaResource } from "../application/services/SchoolLifecycleAgendaResource.mjs";
 import { SchoolLifecycleReadService } from "../application/services/SchoolLifecycleReadService.mjs";
 import { SchoolLifecycleSyllabusService } from "../application/services/SchoolLifecycleSyllabusService.mjs";
+import { EarningsQuoteClient } from "../application/services/EarningsQuoteClient.mjs";
 import { VirtualSchoolDeviceConsole } from "../application/services/VirtualSchoolDeviceConsole.mjs";
 import { createSchoolVirtualDevicesRouter } from "../api/schoolVirtualDevices.mjs";
 import { createSchoolSelfServiceRouter } from "../api/school.selfservice.mjs";
@@ -251,6 +252,8 @@ export async function createSchoolLifecycle({
   languageReelService = null,
   languageReelGrants = null,
   launchPreviewTokens = null,
+  // Late-bound getter for the economy earnings preview (composed after School).
+  getEarningsPreview = () => null,
   // Piano's `GetPlayableUnits` use case, injected so the piano-course program
   // reads the SAME course/progress/lock projection the kiosk itself renders.
   // Null in a composition without Piano: the program simply never registers.
@@ -1043,6 +1046,8 @@ export async function createSchoolLifecycle({
   // after the learner's rows are already claimed (2026-09-15).
   const publishPrintDocument = new PublishPrintDocument({ repository: printDocuments, texLint: lintTex });
 
+  const earningsQuote = new EarningsQuoteClient({ getService: getEarningsPreview, logger });
+
   const issueDocument = new IssueDocument({
     practiceAssessments,
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
@@ -1103,7 +1108,7 @@ export async function createSchoolLifecycle({
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
     grader: schoolService, bankReader, worksheetInstances,
-    grownUps, teacherGate, passOverrides, clock, logger,
+    grownUps, teacherGate, passOverrides, clock, earningsQuote, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     practiceAssessments,
@@ -1138,7 +1143,7 @@ export async function createSchoolLifecycle({
     // below — optional, so an install with no eventBus settles exactly as
     // it did before that feature existed.
     realtime: schoolRealtime,
-    clock, rng: draw, logger,
+    clock, rng: draw, earningsQuote, logger,
   });
   const closeLanguageDay = languageStudyService && schoolRealtime
     ? new CloseLanguageDay({

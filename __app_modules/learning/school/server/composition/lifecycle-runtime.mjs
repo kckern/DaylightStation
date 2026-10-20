@@ -75,6 +75,7 @@ try {
       languageReelService,
       languageReelGrants: dependencies.schoolReelGrants,
       launchPreviewTokens: dependencies.schoolLaunchPreviewTokens,
+      getEarningsPreview: () => dependencies.getEarningsPreview?.() ?? null,
       // Piano's own use case, so School's piano-course program reads exactly
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.

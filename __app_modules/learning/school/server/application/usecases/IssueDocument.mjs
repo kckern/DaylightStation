@@ -263,7 +263,7 @@ export class IssueDocument {
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
-  #clock; #rng; #newArtifactId; #timezone; #logger;
+  #clock; #rng; #newArtifactId; #timezone; #logger; #earningsQuote;
 
   /**
    * @param {object} deps
@@ -305,6 +305,7 @@ export class IssueDocument {
    *   (default `DEFAULT_PRINT_POLICY.printCooldownMinutes`, 10). See the
    *   debounce check near the top of `execute()` for the deliberate silence
    *   this implements.
+   * @param {{quote: Function, ifDone: Function}|null} [deps.earningsQuote]
    * @param {object} [deps.logger]
    */
   constructor({
@@ -319,7 +320,7 @@ export class IssueDocument {
     // board only learned of it on its five-minute poll.
     realtime = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
-    newArtifactId = () => `art_${shortId(8)}`, logger = console,
+    newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, logger = console,
   } = {}) {
     this.#practiceAssessments = practiceAssessments;
     this.#realtime = realtime;
@@ -353,6 +354,7 @@ export class IssueDocument {
     this.#newArtifactId = newArtifactId;
     this.#timezone = timezone;
     this.#logger = logger;
+    this.#earningsQuote = earningsQuote;
   }
 
   /** A schema fault must be shown on the Portal, not mistaken for screen-only work. */
