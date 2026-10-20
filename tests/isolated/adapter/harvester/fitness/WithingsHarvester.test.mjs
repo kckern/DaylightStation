@@ -115,6 +115,28 @@ describe('WithingsHarvester', () => {
   });
 
   describe('harvest', () => {
+    test('skips without refreshing when this process may not rotate tokens', async () => {
+      const gated = new WithingsHarvester({
+        httpClient: mockHttpClient,
+        lifelogStore: mockLifelogStore,
+        authStore: mockAuthStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        redirectUri: 'http://localhost/callback',
+        weightProcessor: mockWeightProcessor,
+        logger: mockLogger,
+        canRefreshTokens: () => false,
+      });
+
+      await expect(gated.harvest('alice')).resolves.toEqual({
+        count: 0, status: 'skipped', reason: 'token_refresh_disabled',
+      });
+      expect(mockHttpClient.post).not.toHaveBeenCalled();
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(mockAuthStore.save).not.toHaveBeenCalled();
+    });
+
     const mockTokenResponse = {
       data: {
         body: {

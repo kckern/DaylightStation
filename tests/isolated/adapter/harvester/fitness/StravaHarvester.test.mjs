@@ -114,6 +114,27 @@ describe('StravaHarvester', () => {
     });
   });
 
+  describe('token writer policy', () => {
+    it('skips without refreshing when this process may not rotate tokens', async () => {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+      const gated = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        authStore: mockAuthStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        logger: mockLogger,
+        canRefreshTokens: () => false,
+      });
+
+      await expect(gated.harvest('alice')).resolves.toEqual({
+        count: 0, status: 'skipped', reason: 'token_refresh_disabled',
+      });
+      expect(mockStravaClient.refreshToken).not.toHaveBeenCalled();
+      expect(mockStravaClient.getActivities).not.toHaveBeenCalled();
+    });
+  });
+
   describe('reauthSequence', () => {
     it('should generate reauthorization URL', async () => {
       const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');

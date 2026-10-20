@@ -34,6 +34,7 @@ import { SystemBotLoader } from '#composition/integrations/SystemBotLoader.mjs';
 // EventBus imports
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
+import { canRotateOAuthTokens } from '#system/runtime/runtimeEnvironment.mjs';
 import { PrewarmHttpStatusClient } from "../../../__capabilities/content-catalog/server/adapters/PrewarmHttpStatusClient.mjs";
 import { ReadOnlyConfigAuthStore } from '#adapters/auth/ReadOnlyConfigAuthStore.mjs';
 import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFactory.mjs';
@@ -1975,6 +1976,7 @@ export function createHarvesterServices(config) {
       timezone: harvesterTimezone,
       fitnessHistoryDir: configService.getHouseholdPath('fitness/log'),
       logger,
+      canRefreshTokens: () => canRotateOAuthTokens(),
     }));
   }
 
@@ -1995,6 +1997,7 @@ export function createHarvesterServices(config) {
       }),
       timezone: harvesterTimezone,
       logger,
+      canRefreshTokens: () => canRotateOAuthTokens(),
     }));
   }
 
@@ -2007,6 +2010,7 @@ export function createHarvesterServices(config) {
       configService,
       timezone: configService?.getTimezone?.() || 'America/New_York',
       logger,
+      canRefreshTokens: () => canRotateOAuthTokens(),
     }));
   }
 

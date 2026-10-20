@@ -13,7 +13,7 @@ describe('Strava Harvester Live', () => {
     const result = await runHarvest('strava', { since: daysAgo(30) });
     expect(result.status).not.toBe('auth_error');
     expect(result.status).not.toBe('error');
-    expect(ACCEPTABLE_STATUSES).toContain(result.status);
+    expect([...ACCEPTABLE_STATUSES, 'skipped']).toContain(result.status);
   }, 120000);
 
   it('deep backfills archives to Jan 2024', async () => {
@@ -27,6 +27,6 @@ describe('Strava Harvester Live', () => {
     });
     expect(result.status).not.toBe('auth_error');
     expect(result.status).not.toBe('error');
-    expect(ACCEPTABLE_STATUSES).toContain(result.status);
+    expect([...ACCEPTABLE_STATUSES, 'skipped']).toContain(result.status);
   }, 2700000);  // Jest timeout: 45 minutes
 });

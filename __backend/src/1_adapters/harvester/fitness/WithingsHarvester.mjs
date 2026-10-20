@@ -47,6 +47,7 @@ export class WithingsHarvester extends IHarvester {
   #logger;
   #tokenCache;
   #weightProcessor;
+  #canRefreshTokens;
 
   /**
    * @param {Object} config
@@ -60,6 +61,7 @@ export class WithingsHarvester extends IHarvester {
    * @param {Object} config.weightProcessor - Application workflow invoked after persistence
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
+   * @param {() => boolean} [config.canRefreshTokens] - Whether this process may rotate the OAuth refresh token (default: yes)
    */
   constructor({
     httpClient,
@@ -72,6 +74,7 @@ export class WithingsHarvester extends IHarvester {
     weightProcessor,
     timezone = 'America/Los_Angeles',
     logger = console,
+    canRefreshTokens = () => true,
   }) {
     super();
 
@@ -103,6 +106,7 @@ export class WithingsHarvester extends IHarvester {
     this.#redirectUri = redirectUri;
     this.#timezone = timezone;
     this.#logger = logger;
+    this.#canRefreshTokens = canRefreshTokens;
 
     this.#weightProcessor = weightProcessor;
 
@@ -158,6 +162,12 @@ export class WithingsHarvester extends IHarvester {
         reason: 'cooldown',
         remainingMins: cooldown?.remainingMins,
       };
+    }
+
+    // Refresh tokens rotate. Only the copy that keeps the result may refresh.
+    if (!this.#canRefreshTokens()) {
+      this.#logger.info?.('withings.harvest.token_writer_disabled', { username });
+      return { count: 0, status: 'skipped', reason: 'token_refresh_disabled' };
     }
 
     try {
