@@ -567,6 +567,23 @@ describe('remediation holds: two rounds, or three idle school days, then a grown
       expect(at('2026-10-01T19:00:00.000Z', { householdSchedule })).toMatchObject({ idleStudyDays: 2, held: false });
     });
 
+    it('reads both ends on the 4am study-day boundary', () => {
+      // 02:30 Pacific on Tue 9/29 is still Monday's study day; 03:30 on Fri
+      // 10/2 is still Thursday's. Calendar dates would say 1 and 3.
+      const failedLate = [failed('ses_0', null, { open: true, at: '2026-09-29T09:30:00.000Z' })];
+      expect(at('2026-10-01T19:00:00.000Z', { sessions: failedLate })).toMatchObject({ idleStudyDays: 2, held: false });
+      const failedMonday = [failed('ses_0', null, { open: true, at: '2026-09-28T19:00:00.000Z' })];
+      expect(at('2026-10-02T10:30:00.000Z', { sessions: failedMonday })).toMatchObject({ idleStudyDays: 2, held: false });
+    });
+
+    it('a pass rewritten to needs_remediation for a practice gate is never a hold', () => {
+      // PlanProjection rewrites a passed session whose linked card practice is
+      // unfinished; still at `outcome_recorded` (coins awaiting sign-off), it
+      // must not read as a failure nobody retried.
+      const rewritten = [{ ...failed('ses_0', null, { open: true, at: FAILED_AT }), gradedPercent: 100, practiceRewrittenPass: true }];
+      expect(at('2026-10-02T19:00:00.000Z', { sessions: rewritten })).toBeNull();
+    });
+
     it('cap wins when both apply', () => {
       const rows = [failed('ses_a', null, { at: FAILED_AT }), failed('ses_b', 'ses_a', { at: FAILED_AT }),
         failed('ses_c', 'ses_b', { open: true, at: FAILED_AT })];

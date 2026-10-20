@@ -297,3 +297,31 @@ describe('PlanProjection — stale remediation holds are logged as they form', (
     expect(heldCalls(logger)).toEqual([]);
   });
 });
+
+describe('PlanProjection — a practice-gated pass is not a stale failure', () => {
+  it('a passed sheet still at outcome_recorded, rewritten for unfinished card practice, is never held or logged', async () => {
+    const clock = fakeClock();
+    const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
+    const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+    const assignments = new FakeAssignmentStore([{
+      learnerId: LEARNER, courses: ['math-fractions'],
+      programs: [{ programId: 'flashcards', linkedUnitId: MEDIA_UNIT, deckId: 'deck-1' }],
+    }]);
+    const sessions = new FakeSessionRepository();
+    // Passed a week before the fake clock, coins still awaiting sign-off: the
+    // session never left `outcome_recorded`.
+    await sessions.appendEvent('ses_pass', { type: 'created', at: '2026-07-20T16:00:00.000Z', learnerId: LEARNER, unitId: MEDIA_UNIT });
+    await sessions.appendEvent('ses_pass', { type: 'launch_dispatched', at: '2026-07-20T16:01:00.000Z', surface: 'portal' });
+    await sessions.appendEvent('ses_pass', { type: 'outcome_recorded', at: '2026-07-20T16:02:00.000Z', outcomeId: 'out_pass', result: 'passed' });
+    const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    const projection = new PlanProjection({
+      curriculum, assignments, sessions, clock: clock.now, logger,
+      practiceAssessments: { evaluate: async () => ({ stage: 'review' }) },
+    });
+    const { plan } = await projection.project({ learnerId: LEARNER, assignedPrograms: false, programStatuses: {} });
+    const entry = entryFor(plan, MEDIA_UNIT);
+    expect(entry.status).toBe('in_progress'); // the rewrite still gates the plan
+    expect(entry.remediation).toBeNull();
+    expect(logger.info.mock.calls.filter(([event]) => event === 'school.remediation.held')).toEqual([]);
+  });
+});

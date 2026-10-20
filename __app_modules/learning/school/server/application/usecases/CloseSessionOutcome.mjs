@@ -52,7 +52,7 @@ import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
-import { remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
+import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class CloseSessionOutcome {
@@ -414,7 +414,9 @@ export class CloseSessionOutcome {
     // says a grown-up will help; the agenda excuses the hold and the teacher
     // dashboard surfaces it.
     const depth = passed || repairableOnThisSheet ? 0
-      : await remediationDepthOf(state.remediationOf, this.#sessions, { limit: this.#remediationMaxRounds });
+      : await remediationDepthOf(state.remediationOf, this.#sessions, {
+        limit: this.#remediationMaxRounds + REMEDIATION_COUNT_HEADROOM,
+      });
     const teacherHold = !passed && !repairableOnThisSheet && depth >= this.#remediationMaxRounds;
     // The hold forms HERE, at the moment this result settles — the one place
     // the cap reason is ever first known — so this is where it is logged.

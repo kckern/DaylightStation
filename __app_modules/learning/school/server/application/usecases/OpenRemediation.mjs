@@ -32,7 +32,7 @@ import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.
 import { noticeDocument } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
-import { remediationMaxRounds, retriesPhrase } from "../../domain/sessions/remediationLineage.mjs";
+import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds, retriesPhrase } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class OpenRemediation {
@@ -92,7 +92,9 @@ export class OpenRemediation {
     }
 
     if (!openedBy) {
-      const depth = await remediationDepthOf(state.remediationOf, this.#sessions, { limit: this.#maxRounds });
+      const depth = await remediationDepthOf(state.remediationOf, this.#sessions, {
+        limit: this.#maxRounds + REMEDIATION_COUNT_HEADROOM,
+      });
       if (depth >= this.#maxRounds) {
         this.#logger.info?.('school.remediation.capped', {
           learnerId: state.learnerId, unitId: state.unitId, depth, sessionId, maxRounds: this.#maxRounds,

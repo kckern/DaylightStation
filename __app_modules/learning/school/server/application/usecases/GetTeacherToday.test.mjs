@@ -304,6 +304,14 @@ describe('GetTeacherToday — remediation holds', () => {
     expect((await teacherDay.execute({ version: 'v2' })).learners[0].attention).toEqual([]);
   });
 
+  it('a past study day reads holds as of that day, not as of now', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-09-22' }); // stale by 10/02
+    expect((await teacherDay.execute({ studyDay: '2026-09-23' })).learners[0].attention).toEqual([]);
+    expect((await teacherDay.execute({ studyDay: '2026-09-28' })).learners[0].attention)
+      .toEqual([expect.objectContaining({ kind: 'remediation-stale', idleStudyDays: 3 })]);
+  });
+
   it('rides on the v1 rows too, and is empty without a projection', async () => {
     const { sessions, useCase: teacherDay } = harness();
     await round(sessions, 'ses_0', { day: '2026-09-22' });

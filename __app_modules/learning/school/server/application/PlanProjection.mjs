@@ -377,7 +377,9 @@ export class PlanProjection {
       catch (error) { this.#logger.warn?.('school.practice-assessment.projection-failed', { learnerId, unitId: enrollment.linkedUnitId, error: error.message }); }
     }
     const effectiveHistory = history.map((s) => !s.attested && !s.curriculumException && assessmentByUnit.has(s.unitId) && assessmentByUnit.get(s.unitId).stage !== 'completed' && s.outcome?.result === 'passed'
-      ? { ...s, outcome: { ...s.outcome, result: 'needs_remediation' } } : s);
+      // Marked, so the remediation hold rules can tell this from a real
+      // failure (`isOpenFailure`): it gates the plan, it is not a retry owed.
+      ? { ...s, outcome: { ...s.outcome, result: 'needs_remediation' }, practiceRewrittenPass: true } : s);
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({

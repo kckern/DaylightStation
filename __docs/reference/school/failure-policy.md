@@ -93,8 +93,9 @@ counts without reading events. A store whose rows omit the field is read from
 events by `PlanProjection` before planning (`application/remediationDepth.mjs`).
 An absent link means "unknown", never "original", because treating it as an
 original would under-count. A lineage that loops back on itself ends the walk
-at the first repeat. Use cases that walk by reading events stop at the cap,
-since that is all they need to know.
+at the first repeat. Use cases that walk by reading events stop three rounds
+past the cap: enough to decide it and still print the real number of retries
+when a grown-up has opened rounds beyond it.
 
 **Counting idle days.** Idle days are *school* days by the learner's own
 calendar: the course enrollment's `schedule` and the household calendar. They
@@ -125,6 +126,12 @@ What a hold does:
 | Teacher dashboard | — | `attention` item `remediation-cap` (depth, last score) | `attention` item `remediation-stale` (idle school days, last score) |
 | Log | — | `school.remediation.held {reason: 'cap'}` when the result settles | `school.remediation.held {reason: 'stale'}` the first time a live projection sees it each study day |
 
+A pass is never a hold. `PlanProjection` rewrites a passed session to
+`needs_remediation` while the unit's linked card practice is unfinished, so the
+plan keeps gating on it; that rewritten row is marked `practiceRewrittenPass`
+and the hold rules ignore it, even when the session is still at
+`outcome_recorded` (coins awaiting sign-off).
+
 `held` requires the unit's plan status to be `in_progress`. A unit passed on
 another session is `completed` and never held, whatever an older failure says,
 and only the newest open session on a unit is judged.
@@ -139,6 +146,17 @@ passes with nothing done, and nothing observes that. So `PlanProjection` logs
 it the first time it projects the hold, de-duplicated per session per study
 day in memory. A restart may log the same hold once more that day. The dry-run
 preview projection does not log, so the same hold is not reported twice.
+
+The teacher dashboard reads holds off the plan. For a named past study day
+(`/teacher/day?studyDay=`) it projects as of that day, with evidence up to the
+day's window close and idle days counted to its midpoint, so a past board
+never shows a hold that only formed later.
+
+Holds are derived, never stored, so a rebuilt term grid can re-colour past
+days: a day that used to read obligated (TRY AGAIN owed and not done) may come
+back `excused · teacher_hold` once the rule applies to it. That is the school
+convention for derived history (editing the rules re-colours the past), not a
+data change.
 
 A grown-up is never capped. "Offer another try" on the session page opens the
 next round through the teacher gate (`openedBy`). If that round fails too, the

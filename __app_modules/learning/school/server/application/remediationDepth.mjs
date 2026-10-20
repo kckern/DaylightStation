@@ -31,8 +31,9 @@ async function linkFromEvents(sessions, sessionId) {
  * Rounds behind a session, from its own `remediationOf`: 0 for an original.
  * Each link followed counts, whether or not the parent can still be read.
  *
- * Stops at `limit`: a caller asking "is this at the cap" passes the cap and
- * never reads further back than it needs to.
+ * Stops at `limit`: a caller passes the cap plus `REMEDIATION_COUNT_HEADROOM`,
+ * enough to decide the cap and still say how many retries there really were,
+ * without reading the whole history back to the first sheet.
  *
  * @param {string|null|undefined} remediationOf
  * @param {{readEvents: Function}} sessions

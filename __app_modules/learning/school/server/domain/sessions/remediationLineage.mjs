@@ -37,6 +37,14 @@ export const DEFAULT_REMEDIATION_MAX_ROUNDS = 2;
 /** `school.yml → lifecycle.remediation.holdAfterStudyDays` when unset or unusable. */
 export const DEFAULT_REMEDIATION_HOLD_AFTER_STUDY_DAYS = 3;
 
+/**
+ * How far past the cap an event-reading walk keeps counting. The cap decision
+ * only needs `maxRounds`, but the receipt and the refusal say "after N
+ * retries", and a grown-up can open rounds past the cap — stopping exactly at
+ * it would under-state them. A few more reads buys an honest number.
+ */
+export const REMEDIATION_COUNT_HEADROOM = 3;
+
 /** A malformed lineage (a cycle written by hand) must never hang a planner. */
 const MAX_WALK = 50;
 /** No failure is examined further back than this; it is long since stale. */
@@ -118,9 +126,17 @@ export function idleSchoolDays({ fromDay, today, isSchoolDay = () => true, limit
   return count;
 }
 
-/** An open, settled `needs_remediation` result — the only thing that can be held. */
+/**
+ * An open, settled `needs_remediation` result — the only thing that can be
+ * held. NOT a pass that `PlanProjection` rewrote to `needs_remediation` because
+ * the unit's linked card practice is unfinished (`practiceRewrittenPass`): the
+ * child passed that sheet, and if it is still at `outcome_recorded` (coins
+ * awaiting a grown-up's sign-off, an economy error) it would otherwise read as
+ * a failure nobody retried — "not retried in N school days, last 100%".
+ */
 export function isOpenFailure(session) {
   return Boolean(session) && !session.terminal
+    && session.practiceRewrittenPass !== true
     && session.state === 'outcome_recorded'
     && session.outcome?.result === 'needs_remediation';
 }

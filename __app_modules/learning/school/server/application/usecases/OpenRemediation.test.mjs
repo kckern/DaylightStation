@@ -56,6 +56,15 @@ describe('OpenRemediation — remediation cap', () => {
     expect(logger.info).toHaveBeenCalledWith('school.remediation.capped', { learnerId: LEARNER, unitId: UNIT, depth: 2, sessionId: 'ses_2', maxRounds: 2 });
   });
 
+  it('tells the child the real number of retries past the cap', async () => {
+    const { sessions, useCase } = build();
+    await fail(sessions, 'ses_0');
+    await fail(sessions, 'ses_1', 'ses_0');
+    await fail(sessions, 'ses_2', 'ses_1');
+    await fail(sessions, 'ses_3', 'ses_2');
+    expect((await useCase.execute({ sessionId: 'ses_3' })).message).toBe('After 3 retries, a grown-up will help with this one.');
+  });
+
   it('a grown-up can still open one past the cap', async () => {
     const { sessions, useCase } = build();
     await fail(sessions, 'ses_0');
@@ -86,15 +95,13 @@ describe('OpenRemediation — remediation cap', () => {
     expect((await later.execute({ sessionId: 'ses_0' })).status).toBe('opened');
   });
 
-  it('stops reading the lineage at the cap', async () => {
+  it('stops reading the lineage a few rounds past the cap', async () => {
     const { sessions, useCase } = build();
     await fail(sessions, 'ses_0');
-    await fail(sessions, 'ses_1', 'ses_0');
-    await fail(sessions, 'ses_2', 'ses_1');
-    await fail(sessions, 'ses_3', 'ses_2');
+    for (let n = 1; n <= 6; n += 1) await fail(sessions, `ses_${n}`, `ses_${n - 1}`);
     const reads = vi.spyOn(sessions, 'readEvents');
-    expect((await useCase.execute({ sessionId: 'ses_3' })).status).toBe('unavailable');
-    // ses_3 itself, then its two nearest ancestors — never ses_0.
+    expect((await useCase.execute({ sessionId: 'ses_6' })).status).toBe('unavailable');
+    // Cap 2 plus headroom 3: ses_5 back to ses_1 are walked — never ses_0.
     expect(reads.mock.calls.map(([id]) => id)).not.toContain('ses_0');
   });
 

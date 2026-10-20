@@ -331,9 +331,16 @@ export class GetTeacherToday {
         try {
           // Curriculum only, no launchers: holds live on curriculum units, and
           // a teacher screen must not fan out to every program's status.
+          // A named study day is read AS OF that day — evidence before its
+          // window closes, idle days counted to its midpoint — so a past
+          // board never shows a hold that only formed later.
           // eslint-disable-next-line no-await-in-loop
           const { plan } = await this.#planProjection.project({
             learnerId: learner.id, assignedPrograms: false, programStatuses: {},
+            ...(studyDay ? {
+              now: new Date((window.startAtMs + window.endAtMs) / 2).toISOString(),
+              historyUntil: new Date(window.endAtMs).toISOString(),
+            } : {}),
           });
           attention = remediationHoldItems(plan?.entries, {
             learnerId: learner.id, statesById: new Map(reduced.map((state) => [state.sessionId, state])),
@@ -347,8 +354,9 @@ export class GetTeacherToday {
         learnerName: learner.name ?? learner.id,
         sessions,
         processedToday,
-        // A standing list, not a day's: a hold stays here until a grown-up
-        // opens another round or the work is settled some other way.
+        // The holds standing on the day viewed (today, unless a study day was
+        // named): a hold stays listed until a grown-up opens another round or
+        // the work is settled some other way.
         attention,
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,

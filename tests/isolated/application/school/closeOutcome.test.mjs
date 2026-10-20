@@ -852,6 +852,15 @@ describe('remediation cap: no retry ticket past two rounds', () => {
     expect(thermal.lastTranscript()).toContain('After 2 retries, a grown-up will sit down with you on this one.');
   });
 
+  it('counts the real retries when a grown-up opened one past the cap', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', 'ses_c');
+    await priorFailure('ses_c', 'ses_b', SID);
+    await failRetry('ses_c');
+    await close.execute({ sessionId: SID });
+    expect(thermal.lastTranscript()).toContain('After 3 retries, a grown-up will sit down with you on this one.');
+  });
+
   it('logs the hold as it forms, once, at settle', async () => {
     const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
     build({ logger });
