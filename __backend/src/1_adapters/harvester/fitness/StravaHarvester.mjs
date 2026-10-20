@@ -56,6 +56,7 @@ export class StravaHarvester extends IHarvester {
   #logger;
   #rateLimitDelayMs;
   #fitnessHistoryDir;
+  #canRefreshTokens;
 
   /**
    * @param {Object} config
@@ -71,6 +72,7 @@ export class StravaHarvester extends IHarvester {
    * @param {number} [config.rateLimitDelayMs=5000] - Delay between stream fetches
    * @param {string|null} [config.fitnessHistoryDir=null] - Path to fitness history YAML directory
    * @param {Object} [config.logger] - Logger instance
+   * @param {() => boolean} [config.canRefreshTokens] - Whether this process may rotate the OAuth refresh token (default: yes)
    */
   constructor({
     stravaClient,
@@ -85,6 +87,7 @@ export class StravaHarvester extends IHarvester {
     rateLimitDelayMs = 5000,
     fitnessHistoryDir = null,
     logger = console,
+    canRefreshTokens = () => true,
   }) {
     super();
 
@@ -112,6 +115,7 @@ export class StravaHarvester extends IHarvester {
     this.#timezone = timezone;
     this.#rateLimitDelayMs = rateLimitDelayMs;
     this.#logger = logger;
+    this.#canRefreshTokens = canRefreshTokens;
     this.#fitnessHistoryDir = fitnessHistoryDir;
 
     this.#circuitBreaker = new CircuitBreaker({
@@ -156,6 +160,12 @@ export class StravaHarvester extends IHarvester {
         reason: 'cooldown',
         remainingMins: cooldown?.remainingMins,
       };
+    }
+
+    // Refresh tokens rotate. Only the copy that keeps the result may refresh.
+    if (!this.#canRefreshTokens()) {
+      this.#logger.info?.('strava.harvest.token_writer_disabled', { username });
+      return { count: 0, status: 'skipped', reason: 'token_refresh_disabled' };
     }
 
     try {
@@ -279,15 +289,6 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
-   * Public wrapper for token refresh
-   * @param {string} username - Target user
-   * @returns {Promise<boolean>} True if token refresh succeeded
-   */
-  async refreshAccessToken(username) {
-    return this.#refreshAccessToken(username);
-  }
-
-  /**
    * Public wrapper for fetching raw activities
    * @param {string} username - Target user
    * @param {number} [daysBack=90] - Days of history to fetch
@@ -347,7 +348,15 @@ export class StravaHarvester extends IHarvester {
           access_token: tokenData.access_token,
           expires_at: tokenData.expires_at,
         };
-        await this.#authStore.save(username, 'strava', newAuthData);
+        try {
+          await this.#authStore.save(username, 'strava', newAuthData);
+        } catch (error) {
+          this.#logger.error?.('strava.auth.token_persist_failed', {
+            username,
+            error: this.#cleanErrorMessage(error),
+          });
+          throw error;
+        }
       }
 
       return true;

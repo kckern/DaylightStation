@@ -1,7 +1,8 @@
 // tests/live/adapter/harvesters/withings.live.test.mjs
-import { runHarvest, ACCEPTABLE_STATUSES } from './_test-helper.mjs';
+import { runHarvest, ACCEPTABLE_STATUSES, describeIfTokenWriter } from './_test-helper.mjs';
 
-describe('Withings Harvester Live', () => {
+// Each refresh rotates the Withings token; see describeIfTokenWriter.
+describeIfTokenWriter('Withings Harvester Live', () => {
   it('harvests scale measurements', async () => {
     const result = await runHarvest('withings');
     expect(result.status).not.toBe('auth_error');

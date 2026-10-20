@@ -5,6 +5,11 @@ export class ReadOnlyConfigAuthStore {
     this.logger = logger;
   }
 
+  /** Saves are dropped: a refresh through this store would lose the rotated token. */
+  get writable() {
+    return false;
+  }
+
   async load(username, provider) {
     return this.configService?.getUserAuth?.(provider, username) || null;
   }

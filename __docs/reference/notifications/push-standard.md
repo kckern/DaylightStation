@@ -38,6 +38,7 @@ producer, UTC timestamps, and the same event ringing two to six times.
 | `__backend/src/2_domains/notification/push/pushText.mjs` | Shared helpers: `personDisplayName`, `titleCaseId` (last resort only), `formatClockTime`, `formatDuration`, `formatStudyDay`, `pushData`, `findPushTextDefects` |
 | `__backend/src/2_domains/school/notifications/schoolPush.mjs` | `composeSchoolPush(event)`: every school outcome's copy, or `null` for no push |
 | `__backend/src/2_domains/shutdown/shutdownPush.mjs` | `composeKioskShutdownPush` |
+| `__backend/src/2_domains/notification/push/harvesterHealthPush.mjs` | `composeHarvesterHealthPush`: a data source failing, stale or recovered (`__docs/reference/harvesters/health-and-reconnect.md`) |
 | Producers that call `pushData` directly | NFC unknown tag (`TriggerDispatchService`), TV power failure (`WakeAndLoadService`), story time (`NotifyReadingSessionFailure`), DoNow approval (`HaApprovalNotifier`) |
 
 ## School pushes

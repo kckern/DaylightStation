@@ -98,3 +98,12 @@ export class IHarvester {
  */
 
 export default IHarvester;
+
+/** A harvester that can't do its job returns status 'error' instead of throwing; callers must check. */
+export function isFailedHarvest(result) {
+  return result?.status === 'error';
+}
+
+export function describeHarvestFailure(result) {
+  return [result?.reason, result?.error].filter(Boolean).join(': ') || 'harvest returned an error';
+}

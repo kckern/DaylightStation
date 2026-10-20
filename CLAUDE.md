@@ -256,6 +256,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
 | School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `__docs/runbooks/school/README.md` |
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
+| Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 
