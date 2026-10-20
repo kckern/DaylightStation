@@ -3305,7 +3305,9 @@
   &__pins-room {
     flex: 1 1 0; min-width: 0;
     container-type: inline-size;
-    display: flex; justify-content: center;
+    // Against the count, not centred in the room: the number and its discs
+    // are one fact, and on a wide card a centred room stranded the count.
+    display: flex; justify-content: flex-start;
   }
   &__left { font-size: clamp(2rem, 7vh, 3.4rem); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
   &__check {
@@ -3328,7 +3330,7 @@
   // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
   &__two-weeks {
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
-    --grid-cell: clamp(10px, 2.2vh, 18px); --grid-gap: 3px;
+    --grid-cell: clamp(10px, min(2.6vh, 1.6vw), 28px); --grid-gap: 3px;
   }
   &__grid--weeks { --grid-cell: inherit; --grid-gap: inherit; }
   // Last week reads as background to this week (weeks-as-rows is row-major,

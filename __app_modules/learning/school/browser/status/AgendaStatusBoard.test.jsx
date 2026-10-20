@@ -1043,6 +1043,14 @@ describe('the four partitions', () => {
     expect(styleRule('.school-status-board__day')).toContain('container-type: size');
   });
 
+  // From the live render at 1920x1080: the pins centred in their room left
+  // the count stranded far from its discs, and the day squares sat at their
+  // 18px cap in a cell twice their width.
+  it('keeps the pins against their count, and grows the day squares with the card', () => {
+    expect(styleRule('.school-status-board__pins-room')).toContain('justify-content: flex-start');
+    expect(styleRule('.school-status-board__two-weeks')).toContain('--grid-cell: clamp(10px, min(2.6vh, 1.6vw), 28px)');
+  });
+
   it('hangs each +N after its own number, not at the end of the column', () => {
     expect(styleRule('.school-status-board__figure')).toContain('justify-self: start');
   });
