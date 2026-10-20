@@ -4,7 +4,7 @@ import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
 
 vi.mock("../schoolApi.js", () => ({
-  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn(), earningsRoster: vi.fn() },
+  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn(), earningsRoster: vi.fn(), wallet: vi.fn() },
 }));
 // Capture the board's `omr` handler so a scan can be delivered to it directly.
 // The board must not wait out its five-minute poll to show a disc turning.
@@ -1277,5 +1277,43 @@ describe('AgendaStatusBoard silver this week', () => {
     schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     expect(silverOf('17')).toBeTruthy();
+  });
+});
+
+describe('AgendaStatusBoard gold', () => {
+  const DAY = '2026-10-20';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
+      entries: [{ unitId: 'math.01', subject: 'math' }] } });
+  });
+  const wallet = (balance) => ({ ok: true, status: 200, data: { balance, session: null } });
+
+  it('gold shows without silver, per learner, once its wallet read lands', async () => {
+    schoolApi.wallet.mockImplementation((id) => Promise.resolve(id === 'learner1' ? wallet(7) : { ok: false, status: 500, data: null }));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(await screen.findByLabelText('7 gold')).toBeTruthy();
+    // learner2's read failed: no figure is invented for them.
+    expect(screen.getAllByLabelText(/ gold$/)).toHaveLength(1);
+    expect(schoolApi.wallet).toHaveBeenCalledWith('learner1');
+    expect(schoolApi.wallet).toHaveBeenCalledWith('learner2');
+  });
+
+  it('a zero balance is shown as 0, not hidden', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(0));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 gold')).toHaveLength(2));
+  });
+
+  it('a failed re-read keeps the gold already shown', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(4));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('4 gold')).toHaveLength(2));
+    schoolApi.wallet.mockRejectedValue(new Error('down'));
+    await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: DAY }));
+    expect(screen.getAllByLabelText('4 gold')).toHaveLength(2);
   });
 });

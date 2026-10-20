@@ -350,25 +350,34 @@ function RestDayStatus({ restDay, pinned }) {
  * Nothing until the read lands, and nothing for a cached figure from another
  * week. "+N if done" appears only while some of the week could still pay.
  */
-function WeekSilver({ figure, studyDay }) {
-  if (!figure || !Number.isFinite(figure.silver)) return null;
-  if (studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to)) return null;
+function WeekSilver({ figure, studyDay, gold }) {
+  const silverOk = Boolean(figure) && Number.isFinite(figure.silver)
+    && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
+  if (!silverOk && !Number.isFinite(gold)) return null;
   const pending = [];
-  if (figure.pendingSilver > 0) pending.push(`+${figure.pendingSilver} silver`);
-  if (figure.pendingGems > 0) pending.push(`+${figure.pendingGems} gem${figure.pendingGems === 1 ? '' : 's'}`);
+  if (silverOk && figure.pendingSilver > 0) pending.push(`+${figure.pendingSilver} silver`);
+  if (silverOk && figure.pendingGems > 0) pending.push(`+${figure.pendingGems} gem${figure.pendingGems === 1 ? '' : 's'}`);
   return (
     <span className="school-status-board__silver">
-      <span className="school-status-board__coin" aria-label={`${figure.silver} silver this week`}>
-        <CoinIcon size="1.6em" color="#c0c0c0" />
-        <span className="school-status-board__rings-count">{figure.silver}</span>
-      </span>
-      {figure.gems > 0 && (
+      {Number.isFinite(gold) && (
+        <span className="school-status-board__coin" aria-label={`${gold} gold`}>
+          <CoinIcon size="1.1em" />
+          <span className="school-status-board__rings-count">{gold}</span>
+        </span>
+      )}
+      {silverOk && (
+        <span className="school-status-board__coin" aria-label={`${figure.silver} silver this week`}>
+          <CoinIcon size="1.6em" color="#c0c0c0" />
+          <span className="school-status-board__rings-count">{figure.silver}</span>
+        </span>
+      )}
+      {silverOk && figure.gems > 0 && (
         <span className="school-status-board__coin" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
           <GemIcon size="1.4em" />
           <span className="school-status-board__rings-count">{figure.gems}</span>
         </span>
       )}
-      {pending.length > 0 && <span className="school-status-board__pending">{pending.join(' · ')}</span>}
+      {silverOk && pending.length > 0 && <span className="school-status-board__pending">{pending.join(' · ')}</span>}
     </span>
   );
 }
@@ -390,6 +399,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // This week's silver (the earnings preview), learnerId -> figure + the week
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
+  const [gold, setGold] = useState(() => seed?.gold ?? {});
   // The term grid, per learner: `undefined` while in flight, `null` when the
   // read failed (the card then simply has no term), else the term read model.
   // Settles independently, like the rings — the server replays today and
@@ -467,20 +477,34 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       });
   }, []);
 
-  const refreshEarnings = useCallback(() => {
-    if (!schoolApi.earningsRoster) return;
-    // One roster read prices everyone. Fired alongside the plans, never
-    // awaited; a failed read keeps the figures already on the cards.
-    Promise.resolve(schoolApi.earningsRoster(day ?? null))
-      .then((res) => {
-        if (!aliveRef.current) return;
-        if (res?.ok) setEarnings(earningsByLearner(res.data));
-        else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
-      })
-      .catch((error) => {
-        schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
-      });
-  }, [day]);
+  const refreshCoins = useCallback(() => {
+    if (schoolApi.earningsRoster) {
+      // One roster read prices everyone. Fired alongside the plans, never
+      // awaited; a failed read keeps the figures already on the cards.
+      Promise.resolve(schoolApi.earningsRoster(day ?? null))
+        .then((res) => {
+          if (!aliveRef.current) return;
+          if (res?.ok) setEarnings(earningsByLearner(res.data));
+          else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
+        })
+        .catch((error) => {
+          schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
+        });
+    }
+    if (!schoolApi.wallet) return;
+    // One wallet per learner; each lands (or fails) on its own and a failure
+    // keeps that learner's figure.
+    for (const kid of kids) {
+      Promise.resolve(schoolApi.wallet(kid.id))
+        .then((res) => {
+          if (!aliveRef.current || !res?.ok || !Number.isFinite(res.data?.balance)) return;
+          setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
+        })
+        .catch((error) => {
+          schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
+        });
+    }
+  }, [day, kids]);
 
   /**
    * Re-read the given learners (all of them when `learnerIds` is omitted).
@@ -581,16 +605,16 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   useEffect(() => {
     refresh();
     refreshRings();
-    refreshEarnings();
-  }, [refresh, refreshRings, refreshEarnings]);
+    refreshCoins();
+  }, [refresh, refreshRings, refreshCoins]);
 
   // Periodic refresh — minutes, not seconds; a hidden panel refreshes nothing.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') { refresh(); refreshRings(); refreshEarnings(); }
+      if (document.visibilityState !== 'hidden') { refresh(); refreshRings(); refreshCoins(); }
     }, REFRESH_MS);
     return () => clearInterval(timer);
-  }, [refresh, refreshRings, refreshEarnings]);
+  }, [refresh, refreshRings, refreshCoins]);
 
   // Persist what has settled, so the next mount paints it immediately.
   useEffect(() => {
@@ -602,8 +626,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
         term: terms[row.kid.id],
       };
     }
-    writeBoardCache({ studyDay, learners, rings, earnings });
-  }, [rows, terms, rings, earnings, studyDay]);
+    writeBoardCache({ studyDay, learners, rings, earnings, gold });
+  }, [rows, terms, rings, earnings, gold, studyDay]);
 
   /**
    * COMPLETED WORK CHANGES THE BOARD NOW, not in up to five minutes.
@@ -641,8 +665,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     });
     refresh(learnerId ? [learnerId] : null);
     // Graded work is what moves the week's silver.
-    refreshEarnings();
-  }, [studyDay, rosterIds, refresh, refreshEarnings]);
+    refreshCoins();
+  }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
   const onSchool = useCallback((payload) => {
@@ -658,8 +682,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,
     });
     refresh([learnerId]);
-    refreshEarnings();
-  }, [studyDay, rosterIds, refresh, refreshEarnings]);
+    refreshCoins();
+  }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -674,9 +698,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     // The rings, and that learner's card: closing a workout is what moves the
     // gate, and the day digest's Fitness disc rides on the same event.
     refreshRings();
-    refreshEarnings();
+    refreshCoins();
     refresh(learnerId ? [learnerId] : null);
-  }, [rosterIds, refreshRings, refreshEarnings, refresh]);
+  }, [rosterIds, refreshRings, refreshCoins, refresh]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   const visible = useMemo(() => rows ?? [], [rows]);
@@ -766,7 +790,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   </span>
                 </span>
               )}
-              <WeekSilver figure={earnings[kid.id]} studyDay={studyDay} />
+              <WeekSilver figure={earnings[kid.id]} studyDay={studyDay} gold={gold[kid.id]} />
             </div>
             {/* THE TERM: every day since September, one square each, weeks as
                 columns. Blank-but-present while loading, so the card is the
