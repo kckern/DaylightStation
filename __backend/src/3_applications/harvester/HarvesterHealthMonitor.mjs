@@ -10,7 +10,7 @@
  * State is keyed by service id (one household). Records are applied one at a
  * time, so concurrent harvests can't overwrite each other's state; the store may
  * be sync or async. record() never rejects: a push or store failure is logged and
- * the harvest carries on.
+ * the harvest carries on. Pushes are sent after the queue step, never inside it.
  */
 import { isFailedHarvest, describeHarvestFailure } from './ports/IHarvester.mjs';
 import { composeHarvesterHealthPush, localDay } from '#domains/notification/push/harvesterHealthPush.mjs';
@@ -43,14 +43,22 @@ export class HarvesterHealthMonitor {
     this.#skip = new Set(skip); this.#logger = logger;
   }
 
-  /** @returns {Promise<'failing'|'stale'|'recovered'|null>} the transition, if any */
+  /**
+   * Resolves with the transition once state is saved. The push goes out after
+   * that, outside the queue, so a slow or hung push never holds later records.
+   * @returns {Promise<'failing'|'stale'|'recovered'|null>} the transition, if any
+   */
   record(event = {}) {
-    const run = this.#chain.then(() => this.#apply(event)).catch((err) => {
+    const step = this.#chain.then(() => this.#apply(event)).catch((err) => {
       this.#logger.warn?.('harvester.health.record_failed', { serviceId: event?.serviceId, error: err?.message });
       return null;
     });
-    this.#chain = run;
-    return run;
+    this.#chain = step;
+    return step.then((outcome) => {
+      if (!outcome) return null;
+      void this.#push(outcome);
+      return outcome.status;
+    });
   }
 
   /** Current state per service id. */
@@ -97,8 +105,7 @@ export class HarvesterHealthMonitor {
       return null;
     }
 
-    if (transition) await this.#push(serviceId, transition, s, nowIso);
-    return transition;
+    return transition ? { serviceId, status: transition, snapshot: { ...s }, now: nowIso } : null;
   }
 
   // Stale when the newest entry is more than N household calendar days old.
@@ -111,7 +118,7 @@ export class HarvesterHealthMonitor {
     return Number.isFinite(age) && age > days;
   }
 
-  async #push(serviceId, status, s, now) {
+  async #push({ serviceId, status, snapshot: s, now }) {
     try {
       await this.#sendPush(composeHarvesterHealthPush({
         serviceId, status, error: s.lastError, lastSuccessAt: s.lastSuccessAt, latestDate: s.latestDate, now, timezone: this.#timezone,

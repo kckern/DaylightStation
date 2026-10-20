@@ -65,7 +65,7 @@ describe('HarvesterHealthMonitor', () => {
     const { m, logger } = monitor({ sendPush: vi.fn().mockRejectedValue(new Error('ha down')) });
     for (let i = 0; i < 2; i++) await m.record(fail);
     await expect(m.record(fail)).resolves.toBe('failing');
-    expect(logger.warn).toHaveBeenCalledWith('harvester.health.push_failed', expect.objectContaining({ serviceId: 'withings' }));
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('harvester.health.push_failed', expect.objectContaining({ serviceId: 'withings' })));
   });
   it('a store failure is logged, not thrown', async () => {
     const sendPush = vi.fn().mockResolvedValue();
@@ -111,5 +111,22 @@ describe('HarvesterHealthMonitor', () => {
     const { m, logger } = monitor({ store: { load: () => { throw new Error('disk gone'); }, save: () => {} } });
     expect(await m.report()).toEqual({});
     expect(logger.warn).toHaveBeenCalledWith('harvester.health.store_failed', expect.anything());
+  });
+  it('a hung push does not block later records', async () => {
+    const sendPush = vi.fn(() => new Promise(() => {}));
+    const { m } = monitor({ sendPush });
+    for (let i = 0; i < 2; i++) await m.record(fail);
+    await expect(m.record(fail)).resolves.toBe('failing');
+    await expect(m.record(ok())).resolves.toBe('recovered');
+    await m.record({ ...fail, serviceId: 'fitsync' });
+    const r = await m.report();
+    expect(r.withings).toMatchObject({ status: 'healthy', failures: 0 });
+    expect(r.fitsync).toMatchObject({ failures: 1 });
+    expect(sendPush).toHaveBeenCalledTimes(2);
+  });
+  it('exactly staleAfterDays old is not stale yet', async () => {
+    const { m } = monitor();
+    expect(await m.record(ok('2026-10-13'))).toBe(null);
+    expect((await m.report()).withings).toMatchObject({ status: 'healthy' });
   });
 });
