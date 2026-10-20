@@ -3332,6 +3332,9 @@
   &__days-door {
     padding: 0; border: 0; background: none; color: inherit; font: inherit;
     cursor: pointer; border-radius: 6px;
+    // The panel's board pane is `pointer-events: none`; like the book door,
+    // this button alone takes taps back.
+    pointer-events: auto;
   }
 
   // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
@@ -3709,7 +3712,10 @@
 // anywhere closes it (TermModal.jsx). Cells are sized for a full screen, not
 // the card's 11px.
 .school-term-modal {
-  position: fixed; inset: 0; z-index: 50;
+  // Mounted from inside the inert board pane, so it must take taps back, and
+  // it sits above the keypad like the book-scan overlay.
+  pointer-events: auto;
+  position: fixed; inset: 0; z-index: 150;
   display: grid; place-items: center;
   background: color-mix(in srgb, #000 72%, transparent);
   &__sheet {
@@ -3719,7 +3725,10 @@
     background: var(--school-surface);
     max-width: 94vw; max-height: 92vh;
   }
-  &__header { position: relative; display: flex; align-items: center; gap: 1rem; align-self: stretch; }
+  &__header {
+    position: relative; display: flex; align-items: center; gap: 1rem; align-self: stretch;
+    .piano-avatar { width: clamp(3rem, 8vh, 4.5rem); height: clamp(3rem, 8vh, 4.5rem); }
+  }
   &__title { margin: 0; font-size: clamp(1.4rem, 4vh, 2.2rem); font-weight: 800; }
   &__close {
     margin-left: auto; width: 48px; height: 48px; border-radius: 50%;

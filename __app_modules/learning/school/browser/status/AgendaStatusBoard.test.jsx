@@ -1110,6 +1110,16 @@ describe('the four partitions', () => {
     expect(styleRule('.school-status-board__two-weeks')).toContain('--grid-cell: clamp(10px, min(2.6vh, 1.6vw), 28px)');
   });
 
+  // From the live page: the panel's board pane is `pointer-events: none`, so
+  // the days door and the popup must take taps back themselves, and the popup
+  // must sit above the keypad (like the book-scan overlay, z-index 150).
+  it('the days door and the term popup take taps back from the inert board pane', () => {
+    expect(styleRule('.school-status-board__days-door')).toContain('pointer-events: auto');
+    const modal = styleRule('.school-term-modal');
+    expect(modal).toContain('pointer-events: auto');
+    expect(modal).toContain('z-index: 150');
+  });
+
   it('hangs each +N after its own number, not at the end of the column', () => {
     expect(styleRule('.school-status-board__figure')).toContain('justify-self: start');
   });
