@@ -382,6 +382,31 @@ describe('EmulatorConsole', () => {
       expect(onJustPlay).toHaveBeenCalledTimes(1);
     });
 
+    it('gamepad: with focus stolen outside the sheet (EJS at boot), A picks the default button, not the first', async () => {
+      const onJustPlay = vi.fn(); const onClose = vi.fn();
+      const { pad, set } = makePad();
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      renderConsole({
+        props: {
+          menuInitiallyOpen: true,
+          getGamepads: () => [pad],
+          menuSection: (
+            <>
+              <button type="button" onClick={onClose}>first</button>
+              <button type="button" data-autofocus onClick={onJustPlay}>Just play</button>
+            </>
+          ),
+        },
+      });
+      await frames();
+      outside.focus(); // the emulator core grabs focus when it boots
+      set(0, true); await frames();
+      expect(onJustPlay).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      outside.remove();
+    });
+
     it('gamepad: B closes the menu and the game resumes', async () => {
       const { pad, set } = makePad();
       const { queryByRole, engine } = renderConsole({ props: { menuInitiallyOpen: true, getGamepads: () => [pad] } });

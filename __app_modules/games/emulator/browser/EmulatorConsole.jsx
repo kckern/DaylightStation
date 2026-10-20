@@ -648,12 +648,15 @@ export function EmulatorConsole({
   // primeOnStart: the A press that launched the game is still held when the
   // menu mounts open, and must not also pick its first button.
   const sheetRef = useRef(null);
-  useEffect(() => {
-    if (!settingsOpen) return;
+  const menuDefaultButton = () => {
     const sheet = sheetRef.current;
-    const target = sheet?.querySelector('[data-autofocus]') || sheet?.querySelector('button');
-    target?.focus?.();
-  }, [settingsOpen]);
+    return sheet?.querySelector('[data-autofocus]') || sheet?.querySelector('button');
+  };
+  // Focus the default on open — and again once the game is ready, because the
+  // emulator core takes focus for itself when it finishes booting.
+  useEffect(() => {
+    if (settingsOpen) menuDefaultButton()?.focus?.();
+  }, [settingsOpen, playReady]);
   const onMenuIntent = useCallback((intent) => {
     const sheet = sheetRef.current;
     if (!sheet) return;
@@ -661,8 +664,16 @@ export function EmulatorConsole({
     const buttons = [...sheet.querySelectorAll('button:not([disabled])')];
     if (!buttons.length) return;
     const at = buttons.indexOf(document.activeElement);
+    // Focus wandered out of the sheet (the core grabbed it): the first press
+    // acts on the default the kid can see highlighted, never on ✕.
+    if (at < 0) {
+      const fallback = menuDefaultButton() || buttons[0];
+      if (intent === 'select') fallback.click();
+      else fallback.focus();
+      return;
+    }
     if (intent === 'select') {
-      (at >= 0 ? buttons[at] : buttons[0]).click();
+      buttons[at].click();
       return;
     }
     const step = intent === 'up' || intent === 'left' ? -1 : 1;
