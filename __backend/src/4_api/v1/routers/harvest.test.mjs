@@ -7,6 +7,7 @@ function build({
   has = true,
   harvest = async () => ({ count: 2 }),
   describeFailure = r => (r?.status === 'error' ? 'auth_failed: invalid refresh_token' : null),
+  healthReport,
 } = {}) {
   const harvesterService = {
     has: vi.fn(() => has),
@@ -26,6 +27,7 @@ function build({
     deadline: { run: promise => promise },
     timeoutPolicy: () => 120000,
     logger,
+    ...(healthReport ? { healthReport } : {}),
   }));
   return { app, harvesterService, logger };
 }
@@ -84,5 +86,26 @@ describe('harvester HTTP characterization', () => {
 
     const limited = build({ harvest: async () => { const error = new Error('limited'); error.response = { status: 429 }; throw error; } });
     expect((await request(limited.app).get('/harvest/sample')).status).toBe(429);
+  });
+
+  it('GET / includes harvester health when a report is wired', async () => {
+    const { app } = build({ healthReport: async () => ({ withings: { status: 'failing', failures: 3 } }) });
+    const response = await request(app).get('/harvest');
+    expect(response.status).toBe(200);
+    expect(response.body.health).toEqual({ withings: { status: 'failing', failures: 3 } });
+    expect(response.body.harvesters).toEqual([{ serviceId: 'sample', status: { serviceId: 'sample', running: false } }]);
+  });
+
+  it('GET / redacts tokens in a health lastError', async () => {
+    const { app } = build({ healthReport: async () => ({ withings: { status: 'failing', lastError: 'Bearer abc123 rejected' } }) });
+    const response = await request(app).get('/harvest');
+    expect(response.body.health.withings.lastError).toBe('Bearer [REDACTED] rejected');
+  });
+
+  it('GET / reports health null when no report is wired', async () => {
+    const { app } = build();
+    const response = await request(app).get('/harvest');
+    expect(response.status).toBe(200);
+    expect(response.body.health).toBe(null);
   });
 });

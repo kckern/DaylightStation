@@ -1569,6 +1569,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Register headline harvester so scheduler can run feed-headlines job
   registerFeedHeadlineHarvester({ harvesterServices, feedServices, rootLogger });
 
+  // Harvester health: every harvest result feeds the monitor, which pushes the
+  // head of household when a source keeps failing, goes stale, or comes back.
+  const { HarvesterHealthMonitor } = await import("./3_applications/harvester/HarvesterHealthMonitor.mjs");
+  const { YamlHarvesterHealthStore } = await import("./1_adapters/harvester/YamlHarvesterHealthStore.mjs");
+  const harvesterHealthLogger = rootLogger.child({ module: 'harvester-health' });
+  const harvesterHealth = new HarvesterHealthMonitor({
+    store: new YamlHarvesterHealthStore({ path: configService.getHouseholdPath('harvester-health') }),
+    sendPush: async ({ title, message, data }) => {
+      // Resolved per push so a later household reload is picked up.
+      const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+      const recipient = configService.getHeadOfHousehold?.();
+      const notifyService = recipient
+        ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
+        : null;
+      if (!haGateway || !notifyService) {
+        harvesterHealthLogger.warn?.('harvester.health.no_push_target', { recipient: recipient || null });
+        return;
+      }
+      await haGateway.callService('notify', notifyService, { title, message, data });
+    },
+    // Same zone the harvesters themselves use (bootstrap harvesterTimezone).
+    timezone: configService.getTimezone?.() || null,
+    failureThreshold: 3, // keep ≤ the harvesters' circuit-breaker maxFailures
+    staleAfterDays: { withings: 7 },
+    skip: ['strava'], // StravaSyncHealth already pushes for Strava
+    logger: harvesterHealthLogger,
+  });
+  harvesterServices.harvesterService.onResult((event) => { harvesterHealth.record(event); });
+
   // Create harvest router using HarvesterService
   const { DefaultPrincipalResolver } = await import("./3_applications/common/context/DefaultPrincipalResolver.mjs");
   const { NodePromiseDeadline } = await import("./1_adapters/scheduling/NodePromiseDeadline.mjs");
@@ -1582,6 +1611,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     requestIds: { next: crypto.randomUUID },
     deadline: new NodePromiseDeadline(),
     timeoutPolicy: () => 120_000,
+    healthReport: () => harvesterHealth.report(),
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
