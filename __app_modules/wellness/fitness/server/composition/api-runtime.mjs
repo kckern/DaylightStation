@@ -1,5 +1,6 @@
 /** Existing fitness api runtime assembly; preserves construction order. */
 import path from "path";
+import { canRotateOAuthTokens } from "#system/runtime/runtimeEnvironment.mjs";
 import { YamlFitnessHistoryRepository as YamlFitnessHistoryRepository } from "../adapters/YamlFitnessHistoryRepository.mjs";
 import { YamlEmergencyLockDatastore as YamlEmergencyLockDatastore } from "../adapters/persistence/YamlEmergencyLockDatastore.mjs";
 import { FitnessEmergencyPublications as FitnessEmergencyPublications } from "../adapters/eventbus/FitnessEmergencyPublications.mjs";
@@ -62,6 +63,9 @@ let providerWebhookAdapters = {};
       const stravaActivityAccess = new StravaActivityAccessGateway({
         client: stravaClient,
         configService,
+        authStore: harvesterServices?.authStore ?? null,
+        canRefreshTokens: () => canRotateOAuthTokens(),
+        logger: rootLogger.child({ module: 'strava-client' }),
       });
       const stravaRetryScheduler = new NodeApplicationScheduler();
 

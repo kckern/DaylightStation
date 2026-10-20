@@ -2083,5 +2083,8 @@ export function createHarvesterServices(config) {
     harvesterService,
     jobExecutor,
     lifelogStore,
+    // OAuth token persistence; shared with code outside the harvesters that
+    // refreshes the same tokens (e.g. Strava activity access).
+    authStore,
   };
 }
