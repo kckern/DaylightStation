@@ -144,6 +144,9 @@ const ABANDONED_ENTRY_MS = 60_000;
  *   left standing keeps `engaged` true, which is the very thing that defers a
  *   book scan. Without this, "Open it" on the deferred card could never lift
  *   the gate that put it there.
+ * @param {() => void} [props.onEntryStart] - a digit landed on an empty pad:
+ *   the next code has begun, so whatever was said about the last one is done.
+ *   The hook clears a refusal's sentence here.
  * @param {(engaged: boolean) => void} [props.onEngagedChange] - the pad is
  *   mid-interaction in a way a CLOCK cannot see: a code partly typed, or a
  *   refusal still playing. Recency alone would call both of those idle.
@@ -161,6 +164,7 @@ export default function Keypad({
   screenOffSuppressed = false,
   onActivity = null,
   onEngagedChange = null,
+  onEntryStart = null,
   clearToken = 0,
 }) {
   const [entry, setEntry] = useState('');
@@ -298,15 +302,20 @@ export default function Keypad({
   // activation that arrives before anyone could have read the answer is the
   // previous gesture finishing, not a new one starting, and it is dropped
   // outright rather than allowed to cancel the refusal it caused.
+  // Through a ref so a caller's inline callback does not re-create `press`.
+  const onEntryStartRef = useRef(onEntryStart);
+  onEntryStartRef.current = onEntryStart;
+
   const press = useCallback((digit) => {
     if (isStray()) {
       schoolLog.selfService('keypad.stray-press', { key: 'digit' });
       return;
     }
     stopReject();
+    if (entry.length === 0) onEntryStartRef.current?.();
     setEntry((current) => (current.length >= length ? current : current + digit));
     schoolLog.selfService('keypad.digit-pressed', {});
-  }, [isStray, length, stopReject]);
+  }, [entry.length, isStray, length, stopReject]);
 
   /**
    * Clear wipes the entry; Clear on an ALREADY-EMPTY entry refreshes the panel.
@@ -455,9 +464,9 @@ export default function Keypad({
     return () => clearTimeout(timer);
   }, [activityEpoch, entry]);
 
-  // A child-fixable refusal's sentence, for as long as the pad is empty. The
-  // first digit of the next code is a new attempt, and the old words would
-  // caption it.
+  // A child-fixable refusal's sentence. The first digit of the next code is a
+  // new attempt: `onEntryStart` has the hook drop the words for good, and the
+  // empty-pad check covers a caller that does not wire it.
   const refusalWords = !degraded && message && entry.length === 0 ? message : null;
 
   const cells = reject

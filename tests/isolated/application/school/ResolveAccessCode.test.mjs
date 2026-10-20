@@ -58,6 +58,7 @@ const build = async ({
   clockIso,
   logger = silentLogger,
   attemptLimiter = null,
+  kioskFrictionTracker = null,
 } = {}) => {
   clock = fakeClock(clockIso);
   appended = [];
@@ -103,6 +104,7 @@ const build = async ({
     selfService: { mediaSurface },
     timezone,
     attemptLimiter,
+    kioskFrictionTracker,
     clock: clock.now,
     logger,
   });
@@ -344,6 +346,50 @@ describe('a code that does not work', () => {
     const [, data] = events.find(([event]) => event === 'school.selfservice.code.rejected');
     expect(data.reason).toBe('expired');
     expect(data.ageHours).toBe(26.1);
+  });
+
+  it('still counts an old sheet as kiosk friction', async () => {
+    const calls = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      kioskFrictionTracker: { recordFriction: async (call) => { calls.push(call); } },
+    });
+    await useCase.execute({ code: CODE, deviceId: 'panel-1' });
+    expect(calls).toEqual([{ deviceId: 'panel-1', kind: 'code-rejected' }]);
+  });
+
+  it('falls back to a plain try again when the explaining lookup throws', async () => {
+    const warns = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      logger: { ...silentLogger, warn: (event, data) => warns.push([event, data]) },
+    });
+    tokens.lookupAccessCode = async () => { throw new Error('index on fire'); };
+    const card = await useCase.execute({ code: CODE });
+    expect(card.reason).toBe('unknown_code');
+    expect(card.sentence).toBe('Try again.');
+    expect(warns).toEqual([['school.selfservice.code.lookup-failed', { error: 'index on fire' }]]);
+  });
+
+  it('says "last" for a sheet six days old or more, so a weekday cannot mean today', async () => {
+    // Minted Mon 2026-07-27 09:00Z, read the next Monday: "Monday" alone would
+    // name the day the child is standing in.
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: TOMORROW }],
+    });
+    clock.advanceDays(7);
+    const card = await useCase.execute({ code: CODE });
+    expect(card.reason).toBe('expired');
+    expect(card.sentence).toBe("That sheet is from last Monday. Tap your card for today's.");
+  });
+
+  it('keeps the bare weekday just under six days', async () => {
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: TOMORROW }],
+    });
+    clock.advanceHours(143.9);
+    const card = await useCase.execute({ code: CODE });
+    expect(card.sentence).toBe("That sheet is from Monday. Tap your card for today's.");
   });
 
   it('never throttles an old sheet, however many times it is typed', async () => {

@@ -1060,6 +1060,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 screenOffSuppressed={!!ceremony.current}
                 onActivity={onKeypadActivity}
                 onEngagedChange={onKeypadEngagedChange}
+                onEntryStart={selfService.startEntry}
                 clearToken={keypadClearToken}
               />
               {/* Read-only status pane: names appear here by design — this is

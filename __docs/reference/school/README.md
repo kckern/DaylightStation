@@ -1488,8 +1488,11 @@ comes back with `live: false`, while a revoked, unknown or malformed code comes
 back with no record. `ResolveAccessCode` turns the expired case into
 `reason: 'expired'` with the sentence *"That sheet is from Sunday. Tap your card
 for today's."*, the weekday being the study day the code belonged to (the instant
-before its `accessCodeExpiresAt`, in the household timezone). The panel keeps the
-NONONO animation and prints that sentence under the slots until the next digit;
+before its `accessCodeExpiresAt`, in the household timezone). A sheet six days
+old or more says "last Monday", so a weekday can never read as today. The panel
+keeps the NONONO animation and prints that sentence under the slots until the
+first digit of the next code, which clears it for good (backspacing to an empty
+pad does not bring it back);
 a plain wrong code still gets the animation alone. An expired code spends **no**
 throttle allowance — the child is reading paper, not guessing — though it still
 counts as kiosk friction. `getByAccessCode` is unchanged and is still the only

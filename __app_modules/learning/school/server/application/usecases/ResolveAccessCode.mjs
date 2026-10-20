@@ -115,12 +115,20 @@ const TRY_AGAIN = Object.freeze({
  * and the card beside the panel is how they get today's.
  *
  * Built per call, not frozen, because the day is in the sentence.
+ *
+ * Six days or older gets "last": a Monday sheet read the next Monday would
+ * otherwise name the very day the child is standing in. The index keeps a code
+ * for up to a fortnight, so "last" is approximate at the far end — still truer
+ * than a bare weekday that reads as today.
  */
-function expiredCard(weekday) {
+const LAST_WEEKDAY_AGE_HOURS = 144;
+function expiredCard(weekday, ageHours) {
+  const day = weekday && Number.isFinite(ageHours) && ageHours >= LAST_WEEKDAY_AGE_HOURS
+    ? `last ${weekday}` : weekday;
   return {
     ok: false, reason: 'expired', learner: null, subject: null, title: null,
-    sentence: weekday
-      ? `That sheet is from ${weekday}. Tap your card for today's.`
+    sentence: day
+      ? `That sheet is from ${day}. Tap your card for today's.`
       : "That sheet is from another day. Tap your card for today's.",
     actions: [],
   };
@@ -363,16 +371,17 @@ export class ResolveAccessCode {
       if (expired) {
         const issuedAt = expired.issuedAt ?? null;
         const issuedMs = Date.parse(issuedAt ?? '');
+        const ageHours = Number.isFinite(issuedMs)
+          ? Math.round((this.#clock().getTime() - issuedMs) / 360_000) / 10
+          : null;
         this.#logger.info?.('school.selfservice.code.rejected', {
           reason: 'expired',
           learnerId: expired.subject?.learnerId ?? null,
           issuedAt,
-          ageHours: Number.isFinite(issuedMs)
-            ? Math.round((this.#clock().getTime() - issuedMs) / 360_000) / 10
-            : null,
+          ageHours,
         });
         this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
-        return { card: expiredCard(sheetWeekday(expired, this.#timezone)), resolution: null };
+        return { card: expiredCard(sheetWeekday(expired, this.#timezone), ageHours), resolution: null };
       }
     }
 

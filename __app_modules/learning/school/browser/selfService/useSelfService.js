@@ -488,7 +488,7 @@ export function useSelfService({
           status: res.status, inBody: true, reason: res.data.reason ?? null,
         });
       } else {
-        schoolLog.selfService('code.rejected', { status: res.status });
+        schoolLog.selfService('code.rejected', { status: res.status, reason: res.data.reason ?? null });
       }
       return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE, degraded: faulted };
     }
@@ -713,6 +713,17 @@ export function useSelfService({
    * a child anything (there is nothing typed to lose, and a reload lands back
    * on this same keypad), and it needs no code, no gesture and no grown-up.
    */
+  /**
+   * The first digit of the next code. A refusal's sentence captions the code
+   * it refused, so it goes for good here — backspacing back to an empty pad is
+   * still the next attempt, and must not bring the old words back. An outage
+   * message stays: its retry button is the way out, and typing is not.
+   */
+  const startEntry = useCallback(() => {
+    if (degraded) return;
+    setMessage(null);
+  }, [degraded]);
+
   const reload = useCallback(() => {
     schoolLog.selfService('keypad.reload', {});
     window.location.reload();
@@ -725,7 +736,7 @@ export function useSelfService({
     // without any chance of the two disagreeing about the window.
     confirmRemainingMs,
     confirmTotalMs: confirmRemainingMs === null ? null : Number(printConfirmTimeoutMs),
-    submit, retry, runAction, confirmPrint, confirmIdentity, denyIdentity, exit: toLock, reload,
+    submit, retry, runAction, confirmPrint, confirmIdentity, denyIdentity, exit: toLock, reload, startEntry,
   };
 }
 
