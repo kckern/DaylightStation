@@ -1,7 +1,7 @@
 /** Existing school lifecycle runtime assembly; preserves construction order. */
 import { declaredEntryActions as declaredEntryActions } from "../domain/reachability.mjs";
 import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScans.mjs";
-import { storyBooksFromNfcTags } from "./storyBookCorpus.mjs";
+import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
@@ -71,9 +71,10 @@ try {
       // a screen that a mounted widget is about to be told something on.
       wakeScreen: wakeScreenForBroadcast,
       startReadingSession: (args) => dependencies.startReadingSession?.(args) ?? { status: 'reading_session_failed', message: 'Story time is still starting up.' },
-      // The NFC book stickers, read live: a sticker added after boot becomes a
-      // suggestion without a restart. Null until the trigger registry exists.
-      storyCorpus: () => storyBooksFromNfcTags(dependencies.nfcTagsForStoryTime?.() ?? null),
+      // The NFC book stickers, asked of the trigger owner on every refusal so
+      // a sticker added after boot is suggested without a restart. Null until
+      // the trigger API exists.
+      storyCorpus: () => storyBooksFromContentTags(dependencies.contentTagsForStoryTime?.() ?? null),
       languageStudyService,
       studyGrants: dependencies.schoolStudyGrants,
       languageReelService,

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { bookCover, __resetBookCovers } from "./bookCovers.js";
+import { bookCover, bookInfo, __resetBookCovers } from "./bookCovers.js";
+import { ART_BOX } from "../plexImage.js";
 
 const ok = (body) => ({ ok: true, json: async () => body });
 
@@ -83,5 +84,35 @@ describe('bookCover', () => {
     const fetchImpl = vi.fn();
     expect(await bookCover(null, fetchImpl)).toBe(null);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('bookInfo', () => {
+  const PLEX = '/api/v1/proxy/plex/library/metadata/620705/thumb/1779295360';
+
+  it("returns Plex's title alongside the cover", async () => {
+    const fetchImpl = vi.fn(async () => ok({ title: 'Goodnight Moon', image: '/img/moon.jpg' }));
+    expect(await bookInfo('plex:1', ART_BOX.readingSuggestion, fetchImpl)).toEqual({ cover: '/img/moon.jpg', title: 'Goodnight Moon' });
+  });
+
+  it('shares ONE lookup with bookCover for the same book', async () => {
+    const fetchImpl = vi.fn(async () => ok({ title: 'Corduroy', image: PLEX }));
+    await bookCover('plex:2', fetchImpl);
+    const info = await bookInfo('plex:2', ART_BOX.readingSuggestion, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(info.title).toBe('Corduroy');
+  });
+
+  it('sizes the cover for the box it is drawn in, not the shelf', async () => {
+    const fetchImpl = vi.fn(async () => ok({ title: 'X', image: PLEX }));
+    const shelf = await bookCover('plex:3', fetchImpl);
+    const { cover } = await bookInfo('plex:3', ART_BOX.readingSuggestion, fetchImpl);
+    const width = (url) => Number(new URL(url, 'http://x').searchParams.get('width'));
+    expect(width(cover)).toBeGreaterThan(width(shelf));
+  });
+
+  it('a miss is {cover: null, title: null}', async () => {
+    expect(await bookInfo('plex:4', ART_BOX.readingSuggestion, async () => ({ ok: false }))).toEqual({ cover: null, title: null });
+    expect(await bookInfo(null)).toEqual({ cover: null, title: null });
   });
 });

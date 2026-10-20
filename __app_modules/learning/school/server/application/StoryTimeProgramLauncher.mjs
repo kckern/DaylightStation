@@ -35,9 +35,11 @@ import {
 } from "../domain/storyTime.mjs";
 
 /**
- * How far back a refusal's suggestions look for "when was this last read". A
- * book last read before this counts as never read — at four weeks that is
- * true enough for a child, and it caps a refusal at one bounded set of reads.
+ * How far PAST the no-repeat window a refusal's suggestions look for "when was
+ * this last read". Past the window, not from today: with a 40-day window a
+ * flat four weeks would see no allowed read at all and call every book never
+ * read. A book last read before this counts as never read — true enough for a
+ * child, and it caps a refusal at one bounded set of reads.
  */
 const SUGGESTION_LOOKBACK_DAYS = 28;
 
@@ -291,7 +293,7 @@ export class StoryTimeProgramLauncher {
   async #suggestions({ userId, contentId, today, noRepeatDays, windowReads }) {
     try {
       const corpus = typeof this.#storyCorpus === 'function' ? await this.#storyCorpus() : null;
-      const older = noRepeatWindowDays(today, Math.max(SUGGESTION_LOOKBACK_DAYS, noRepeatDays)).slice(noRepeatDays);
+      const older = noRepeatWindowDays(today, noRepeatDays + SUGGESTION_LOOKBACK_DAYS).slice(noRepeatDays);
       // One unreadable old day only blurs the ordering; it is not worth losing
       // every suggestion over.
       const olderReads = await Promise.all(older.map(async (day) => {

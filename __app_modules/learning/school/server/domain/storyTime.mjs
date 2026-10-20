@@ -65,6 +65,16 @@ export function recentlyRead({ reads, contentId, today, noRepeatDays } = {}) {
 /** How many other books a refusal offers. Three covers fit a TV notice at sofa distance. */
 export const STORY_SUGGESTION_LIMIT = 3;
 
+/** FNV-1a, 32-bit: a stable, dependency-free hash for the daily rotation. */
+function rotationKey(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
 /**
  * WHAT TO READ INSTEAD. A refusal that only says "pick a different book" leaves
  * a four-year-old standing at the shelf with no idea which one; this names the
@@ -86,16 +96,6 @@ export const STORY_SUGGESTION_LIMIT = 3;
  *
  * @returns {Array<{contentId: string, title: string|null, lastReadOn: string|null}>}
  */
-/** FNV-1a, 32-bit: a stable, dependency-free hash for the daily rotation. */
-function rotationKey(text) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i += 1) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h;
-}
-
 export function suggestStories({ corpus, reads, today, noRepeatDays, learnerId = null, exclude = null, limit = STORY_SUGGESTION_LIMIT } = {}) {
   const history = Array.isArray(reads) ? reads : [];
   const window = new Set(noRepeatWindowDays(today, noRepeatDays));
@@ -122,7 +122,10 @@ export function suggestStories({ corpus, reads, today, noRepeatDays, learnerId =
     if (id === exclude || window.has(lastRead.get(id))) continue;
     candidates.push({ contentId: id, title: loggedTitle.get(id) ?? (b.title || null), lastReadOn: lastRead.get(id) ?? null });
   }
-  const rank = new Map(candidates.map((c) => [c.contentId, rotationKey(`${today ?? ''}\u0000${learnerId ?? ''}\u0000${c.contentId}`)]));
+  const rank = new Map(candidates.map((c) => [
+    c.contentId,
+    rotationKey(`${today ?? ''}\u0000${learnerId ?? ''}\u0000${c.contentId}`),
+  ]));
   candidates.sort((a, b) => {
     if ((a.lastReadOn === null) !== (b.lastReadOn === null)) return a.lastReadOn === null ? -1 : 1;
     if (a.lastReadOn !== b.lastReadOn) return a.lastReadOn < b.lastReadOn ? -1 : 1;

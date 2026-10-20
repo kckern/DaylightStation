@@ -1,37 +1,25 @@
 /**
- * The household's story books, read off the NFC book stickers.
+ * The household's story books, as the trigger owner reports them.
  *
  * A refused story-time book suggests others (`suggestStories`), and the only
  * books worth suggesting are ones a child can pick up and tap: the physical
- * books with a sticker. The trigger registry already holds them, so this maps
- * its parsed tags (`{[uid]: {global, overrides}}`) to `[{contentId, title}]`.
- *
- * Only the tag-global layer is read, and only the two content spellings the
- * book file actually uses — `plex: <id>` shorthand and an explicit
- * `content: <source:id>`. A tag with an action other than `play` (a shuffled
- * `queue` of a whole collection) is not one book, and a learner card is a
- * person. `note` is the hand-typed label, used as a title only until the
- * reading log has the real one.
+ * books with a sticker. Which tags play which content is the trigger owner's
+ * rule (`NfcResolver.contentTags`), so School takes that list as given and
+ * only renames it into its own vocabulary: `note`, the hand-typed sticker
+ * label, becomes the fallback `title` until the reading log or Plex has the
+ * real one.
  *
  * `null` (not `[]`) when there is no registry yet: "unknown" lets the launcher
  * fall back to the learner's own history, where `[]` would say "no books".
+ *
+ * @param {Array<{contentId: string, note?: string|null}>|null|undefined} contentTags
+ * @returns {Array<{contentId: string, title: string|null}>|null}
  */
-export function storyBooksFromNfcTags(tags) {
-  if (!tags || typeof tags !== 'object') return null;
-  const books = [];
-  for (const entry of Object.values(tags)) {
-    const g = entry?.global;
-    if (!g || typeof g !== 'object') continue;
-    if (g.school_learner !== undefined && g.school_learner !== null) continue;
-    if (g.action !== undefined && g.action !== 'play') continue;
-    let contentId = null;
-    if (typeof g.content === 'string' && g.content.includes(':')) contentId = g.content.trim();
-    else if ((typeof g.plex === 'string' && g.plex.trim()) || Number.isFinite(g.plex)) contentId = `plex:${String(g.plex).trim()}`;
-    if (!contentId) continue;
-    const title = typeof g.note === 'string' && g.note.trim() ? g.note.trim() : null;
-    books.push({ contentId, title });
-  }
-  return books;
+export function storyBooksFromContentTags(contentTags) {
+  if (!Array.isArray(contentTags)) return null;
+  return contentTags
+    .filter((t) => typeof t?.contentId === 'string' && t.contentId)
+    .map((t) => ({ contentId: t.contentId, title: t.note ?? null }));
 }
 
-export default storyBooksFromNfcTags;
+export default storyBooksFromContentTags;

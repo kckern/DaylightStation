@@ -104,6 +104,19 @@ describe('suggestStories', () => {
       expect(seen.size).toBeGreaterThan(3);
     });
 
+    it('a tier of books last read on the SAME day rotates by day too', () => {
+      const reads = shelf.map((b) => row('2026-09-10', b.contentId));
+      const tier = (today) => suggestStories({ corpus: shelf, reads, today, noRepeatDays: 4, learnerId: 'kid', limit: 20 })
+        .map((s) => s.contentId);
+      expect(tier('2026-10-08')).toEqual(tier('2026-10-08'));
+      expect(tier('2026-10-09')).not.toEqual(tier('2026-10-08'));
+      expect(tier('2026-10-09').slice().sort()).toEqual(tier('2026-10-08').slice().sort());
+    });
+
+    it('different children on the same day get different orders', () => {
+      expect(on('2026-10-08', 'kid-a')).not.toEqual(on('2026-10-08', 'kid-b'));
+    });
+
     it('ties among books last read the same day rotate too, after older reads', () => {
       const reads = [row('2026-09-01', 'plex:0'), ...shelf.slice(1).map((b) => row('2026-09-10', b.contentId))];
       const got = suggestStories({ corpus: shelf, reads, today: '2026-10-08', noRepeatDays: 4, learnerId: 'kid' });

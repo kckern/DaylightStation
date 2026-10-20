@@ -304,8 +304,60 @@ describe('ReadingSessionScreen', () => {
     const notice = screen.getByTestId('reading-notice');
     expect(notice).toHaveTextContent('Pick a different book!');
     const cards = within(notice).getAllByTestId('reading-suggestion');
-    expect(cards.map((c) => c.textContent)).toEqual(['Goodnight Moon', 'Corduroy']);
+    expect(cards).toHaveLength(2);
+    // Plex's own title (the /info stub's) replaces the sticker label.
     await waitFor(() => expect(cards[0].querySelector('img')).toHaveAttribute('src', '/img/frog.jpg'));
+    await waitFor(() => expect(cards.map((c) => c.textContent)).toEqual(['Frog and Toad', 'Frog and Toad']));
+    expect(within(notice).getByTestId('reading-suggestions')).not.toHaveClass('reading-session__suggestions--compact');
+  });
+
+  it('keeps the sticker label when Plex has no title', async () => {
+    vi.stubGlobal('fetch', stubFetch({ info: { image: '/img/frog.jpg' } }));
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({
+      event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+      lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4,
+      suggestions: [{ contentId: 'plex:suggest-untitled', title: 'Eyes shut', lastReadOn: null }],
+    });
+    const card = screen.getByTestId('reading-suggestion');
+    await waitFor(() => expect(card.querySelector('img')).toHaveAttribute('src', '/img/frog.jpg'));
+    expect(card).toHaveTextContent('Eyes shut');
+  });
+
+  it('over playing content (no session, the adoption path) the suggestion row is the compact one', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({
+      event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+      lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4,
+      suggestions: [{ contentId: 'plex:suggest-idle', title: 'Moon', lastReadOn: null }],
+    });
+    expect(screen.getByTestId('reading-session')).toHaveAttribute('data-view', 'idle');
+    expect(screen.getByTestId('reading-suggestions')).toHaveClass('reading-session__suggestions--compact');
+  });
+
+  it('a refusal with suggestions stays up 20 s; without, it clears at 7 s', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const refuse = (suggestions) => deliver({
+        event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+        lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4, suggestions,
+      });
+      render(<ReadingSessionScreen />);
+      await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+      await refuse([{ contentId: 'plex:suggest-timer', title: 'Moon', lastReadOn: null }]);
+      await act(async () => { vi.advanceTimersByTime(8000); });
+      expect(screen.getByTestId('reading-notice')).toHaveTextContent('Pick a different book!');
+      await act(async () => { vi.advanceTimersByTime(12500); });
+      expect(screen.queryByTestId('reading-notice')).toBeNull();
+
+      await refuse([]);
+      expect(screen.getByTestId('reading-notice')).toBeTruthy();
+      await act(async () => { vi.advanceTimersByTime(7500); });
+      expect(screen.queryByTestId('reading-notice')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a refusal with no suggestions shows no suggestion row', async () => {

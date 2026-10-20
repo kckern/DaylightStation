@@ -8,6 +8,7 @@ import { TriggerActuationGateway } from "../adapters/TriggerActuationGateway.mjs
 import { createTriggerRouter } from "../api/trigger.mjs";
 import { dispatchSideEffect, TriggerSideEffectExecutor, UnknownSideEffectError } from "../application/sideEffectHandlers.mjs";
 import { TriggerDispatchService } from "../application/TriggerDispatchService.mjs";
+import { NfcResolver } from "../domain/services/NfcResolver.mjs";
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { randomUUID } from 'node:crypto';
 import { createVoiceTriggerService } from "./voiceTrigger.mjs";
@@ -44,7 +45,7 @@ import { createVoiceTriggerService } from "./voiceTrigger.mjs";
  * @param {Object} [config.learnerActions] - Registry of what a school learner card DOES per reader (createLearnerActions). Absent, a learner tap answers `no_handler` by name.
  * @param {Object} [config.decisionGateway] - IDecisionGateway for voice transcripts (optional; null keeps voice exact-keyword only)
  * @param {Object} [config.logger] - Logger instance
- * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
+ * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router, triggerConfig: object, contentTags: () => Array<{uid: string, contentId: string, note: string|null}> }}
  */
 export function createTriggerApiRouter(config) {
   const {
@@ -149,5 +150,9 @@ export function createTriggerApiRouter(config) {
   // `triggerConfig` is the LIVE registry object the repository mutates in place
   // when a tag is renamed, not a copy — a consumer holding it sees a card
   // enrolled at runtime without a reload.
-  return { triggerDispatchService, router, triggerConfig };
+  //
+  // `contentTags()` is the owner's query over that live registry: every tag
+  // that plays one piece of content, with the id a tap would dispatch.
+  const contentTags = () => NfcResolver.contentTags({ registry: triggerConfig.nfc, contentIdResolver });
+  return { triggerDispatchService, router, triggerConfig, contentTags };
 }

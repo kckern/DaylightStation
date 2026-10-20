@@ -2521,11 +2521,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // "no reader declares anything".
   let triggerNfcLocations = null;
   const nfcLocationsForReachability = () => triggerNfcLocations;
-  // The parsed NFC tags — the LIVE registry object, which the trigger
-  // repository mutates in place — so a refused story-time book can suggest the
-  // other stickered books. Null until the trigger API is composed below.
-  let triggerNfcTags = null;
-  const nfcTagsForStoryTime = () => triggerNfcTags;
+  // The trigger owner's content-tag query, so a refused story-time book can
+  // suggest the other stickered books. Null until the trigger API is composed
+  // below.
+  let triggerContentTags = null;
+  const contentTagsForStoryTime = () => triggerContentTags?.() ?? null;
 
   let schoolLifecycle = {
     wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
@@ -2559,7 +2559,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // one repository and one resolver.
   const books = createBooksModule({ configService, logger: rootLogger });
 
-  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, nfcTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
+  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -2748,7 +2748,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService, triggerConfig, contentTags: triggerContentTagsQuery } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -2780,7 +2780,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // The school reachability check can now answer for real (it has been
   // returning "could not tell" for every projection until this line).
   triggerNfcLocations = triggerConfig?.nfc?.locations ?? null;
-  triggerNfcTags = triggerConfig?.nfc?.tags ?? null;
+  triggerContentTags = triggerContentTagsQuery ?? null;
   reportUnreachableSchoolPrograms({
     launchers: schoolLifecycle?.launchers ?? null,
     declared: declaredEntryActions(triggerNfcLocations),

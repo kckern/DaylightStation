@@ -649,6 +649,25 @@
   overflow: hidden;
 }
 
+/* Over playing content (the idle frame): half-size, so the story stays visible. */
+.reading-session__suggestions--compact {
+  gap: 1.4vw;
+  margin-top: 1vh;
+
+  .reading-session__suggestion {
+    width: 12vh;
+  }
+
+  .reading-session__suggestion-cover {
+    width: 12vh;
+    height: 12vh;
+  }
+
+  .reading-session__suggestion-title {
+    font-size: 1.8vh;
+  }
+}
+
 .reading-session__notice--warn {
   background: #6b4d12;
   color: #ffeec2;

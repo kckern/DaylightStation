@@ -307,6 +307,23 @@ describe('StoryTimeProgramLauncher.repeatCheck', () => {
       ]);
     });
 
+    it('looks four weeks PAST the window, so a long window still ranks older reads', async () => {
+      // noRepeatDays 40: the window is 08-31..10-09. A read on 08-15 is outside
+      // it, so it is allowed — and it must rank AFTER the never-read book.
+      const asked = [];
+      const byDay = { '2026-10-09': [{ contentId: BOOK }], '2026-08-15': [{ contentId: 'plex:a', title: 'Ant' }] };
+      const l = make({
+        program: { noRepeatDays: 40 },
+        listForDay: async (_u, day) => { asked.push(day); return byDay[day] ?? []; },
+        storyCorpus: () => [{ contentId: BOOK }, { contentId: 'plex:a' }, { contentId: 'plex:b', title: 'Bear' }],
+      });
+      const r = await ask(l);
+      expect(r.suggestions.map((s) => s.contentId)).toEqual(['plex:b', 'plex:a']);
+      expect(r.suggestions[1].lastReadOn).toBe('2026-08-15');
+      expect(asked).toContain('2026-08-03'); // 40 + 28 - 1 days back
+      expect(asked).not.toContain('2026-08-02');
+    });
+
     it('an empty corpus suggests nothing', async () => {
       const r = await ask(make({ byDay: { '2026-10-09': [{ contentId: BOOK }] }, storyCorpus: () => [] }));
       expect(r).toMatchObject({ refuse: true, suggestions: [] });
