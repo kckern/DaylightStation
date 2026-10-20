@@ -420,9 +420,10 @@
       font-weight: 700;
       button { background: none; border: none; color: #fff; font-size: 1rem; cursor: pointer; padding: 0.25rem 0.5rem; }
     }
-    // Gamepad focus has to be visible on a touch kiosk, where :focus-visible
-    // often stays off after programmatic focus.
-    &__sheet button:focus { outline: 3px solid #b6d94a; outline-offset: 2px; }
+    // Gamepad focus has to be visible. A global `:focus { outline: none
+    // !important }` rule wins over any outline, so draw the ring as a shadow
+    // (the arcade grid does the same).
+    &__sheet button:focus { box-shadow: 0 0 0 2px #0c100c, 0 0 0 5px #b6d94a; }
     &__row--label { margin-top: 0; margin-bottom: 0.5rem; }
     &__row {
       display: flex;
