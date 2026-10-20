@@ -4,7 +4,8 @@
  * per-assignment discs carry the subject wall's own icons, so a kid walking
  * past reads their day as pictures rather than as a bar chart. Extra completed
  * work owned by one assignment rides on that disc as a `+N` badge instead of
- * inflating the assigned day; one "x of y" carries the assignment count.
+ * inflating the assigned day; one big number beside the pins says how many
+ * are left (a check mark once none are).
  *
  * A CLEARED DAY IS A STATE, NOT A SENTENCE. When every disc is filled the card
  * itself goes green — the child should be able to see they are finished from
@@ -194,10 +195,14 @@ const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  * Monday morning this week is blank, and last week is what tells the story.
  * Today is outlined; days after it are outlines, not verdicts. Nothing while
  * the term is in flight; nothing at all without one.
+ *
+ * `anchor` is the day the board shows — a pinned `day` when there is one. The
+ * term read is never pinned (its `today` is always the real today), so
+ * anchoring on `term.today` drew the wrong fortnight for a pinned past day.
  */
-function TwoWeeks({ term }) {
-  if (!term?.today) return null;
-  const thisWeek = weekStart(term.today);
+function TwoWeeks({ term, anchor }) {
+  if (!term?.today || !anchor) return null;
+  const thisWeek = weekStart(anchor);
   const from = addDays(thisWeek, -7);
   const to = addDays(thisWeek, 6);
   const days = (term.days ?? []).filter((d) => d.studyDay >= from && d.studyDay <= to)
@@ -208,11 +213,11 @@ function TwoWeeks({ term }) {
         {WEEKDAY_LETTERS.map((letter, i) => <li key={i}>{letter}</li>)}
       </ol>
       <DayGrid
-        days={days.length ? days : [{ studyDay: term.today, state: 'unknown' }]}
+        days={days.length ? days : [{ studyDay: anchor, state: 'unknown' }]}
         orientation="weeks-as-rows"
         from={from}
         to={to}
-        studyDay={term.today}
+        studyDay={anchor}
         className="school-status-board__grid school-status-board__grid--weeks"
         testId="board-days-grid"
         todayTestId="board-days-today"
@@ -280,22 +285,25 @@ function RestDayStatus({ restDay, pinned }) {
  * when earned or pending), as a two-column grid - icon cell, number cell - so
  * the coins centre on one line and the numbers start at one edge, down every
  * card. A faded +N hangs after a number without moving it. No captions: the
- * icon is the label; the words are for a screen reader. Nothing until a read
- * lands, and nothing for a cached silver figure from another week.
+ * icon is the label; the words are for a screen reader — each figure is ONE
+ * image whose name carries its pending too ("27 silver this week, 5 more
+ * possible"), and the visible +N is hidden from that tree. Nothing until a
+ * read lands, and nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
   const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
   const hasGold = Number.isFinite(gold);
   if (!inWeek && !hasGold) return null;
-  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-label={`${n} more possible`}>+{n}</span> : null);
+  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-hidden="true">+{n}</span> : null);
+  const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
   const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
   return (
     <div className="school-status-board__coin-grid">
       {inWeek && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color="#c0c0c0" />
-          <span className="school-status-board__figure school-status-board__figure--silver" aria-label={`${figure.silver} silver this week`}>
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver this week`, figure.pendingSilver)}>
             {figure.silver}{more(figure.pendingSilver)}
           </span>
         </>
@@ -303,13 +311,13 @@ function Coins({ figure, gold, studyDay }) {
       {hasGold && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
-          <span className="school-status-board__figure school-status-board__figure--gold" aria-label={`${gold} gold`}>{gold}</span>
+          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
         </>
       )}
       {showGems && (
         <>
           <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
-          <span className="school-status-board__figure school-status-board__figure--gem" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`, figure.pendingGems)}>
             {figure.gems}{more(figure.pendingGems)}
           </span>
         </>
@@ -336,8 +344,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
-  // The term grid, per learner: `undefined` while in flight, `null` when the
-  // read failed (the card then simply has no term), else the term read model.
+  // The term read, per learner — the board draws only last week and this week
+  // from it: `undefined` while in flight, `null` when the read failed (the
+  // card then simply has no squares), else the term read model.
   // Settles independently, like the rings — the server replays today and
   // yesterday on every read and serves the rest from its cache.
   const [terms, setTerms] = useState(() => Object.fromEntries(
@@ -433,7 +442,12 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     for (const kid of kids) {
       Promise.resolve(schoolApi.wallet(kid.id))
         .then((res) => {
-          if (!aliveRef.current || !res?.ok || !Number.isFinite(res.data?.balance)) return;
+          if (!aliveRef.current) return;
+          if (res && !res.ok) {
+            schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
+            return;
+          }
+          if (!res?.ok || !Number.isFinite(res.data?.balance)) return;
           setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
         })
         .catch((error) => {
@@ -667,35 +681,40 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               <span className="school-status-board__name">{kid.name}</span>
               <ProfileAvatar id={kid.id} name={kid.name} size={192} />
             </div>
-            {/* THE DAY: the assignments as a bowling-pin triangle, with the
-                count beside them. Time widens left to right across the
-                card — who, today, this week, the term — and each partition
-                is one thing with its own number inside it, not a count
-                floating away from the thing it counts. */}
-            {/* No "Today" heading: this is the leftmost partition of a row
-                that reads who / today / this week / this term, and its two
-                neighbours are labelled, so the one in the middle of that
-                sentence is already named by its position. The label is kept for
-                anyone reading the page rather than looking at it. */}
+            {/* THE DAY: the assignments as a bowling-pin triangle, with how
+                many are left beside them. The card reads left to right —
+                who, today, coins, the last two weeks — and each partition is
+                one thing with its own number inside it, not a count floating
+                away from the thing it counts. No "Today" heading: the
+                position names it; the label is kept for anyone reading the
+                page rather than looking at it. */}
             <div className="school-status-board__day" data-testid="board-day" role="group" aria-label="Today">
-              <div className="school-status-board__today">
-                {loading ? null : <DayCount summary={summary} />}
-                {loading ? (
-                  // SKELETON PINS while the plan is in flight — a three-disc
-                  // pyramid, the row's height fixed by the disc size rather than
-                  // by how many there turn out to be. They shimmer so the panel
-                  // reads as working rather than as broken.
-                  <div className="school-status-board__pins" aria-hidden="true">
-                    {[[0], [1, 2]].map((row, r) => (
-                      <ul key={r} className="school-status-board__pills">
-                        {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
-                      </ul>
-                    ))}
+              {/* Only when there is a count or pins to hold: a rest day or a
+                  plan-less card would otherwise carry an empty row above its
+                  copy. The pins sit in their own room so their width is
+                  measured against what is left beside the count. */}
+              {(loading || (summary && (summary.total > 0 || summary.segments.length > 0))) && (
+                <div className="school-status-board__today">
+                  {loading ? null : <DayCount summary={summary} />}
+                  <div className="school-status-board__pins-room">
+                    {loading ? (
+                      // SKELETON PINS while the plan is in flight — a three-disc
+                      // pyramid, the row's height fixed by the disc size rather than
+                      // by how many there turn out to be. They shimmer so the panel
+                      // reads as working rather than as broken.
+                      <div className="school-status-board__pins" aria-hidden="true">
+                        {[[0], [1, 2]].map((row, r) => (
+                          <ul key={r} className="school-status-board__pills">
+                            {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
+                          </ul>
+                        ))}
+                      </div>
+                    ) : summary.segments.length > 0 ? (
+                      <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
+                    ) : null}
                   </div>
-                ) : summary && summary.segments.length > 0 ? (
-                  <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
-                ) : null}
-              </div>
+                </div>
+              )}
               {loading ? null : summary && summary.total > 0 ? null : summary?.restDay ? (
                 // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
                 // is excused as not a school day, and the optional work is
@@ -716,7 +735,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 zero would be a claim we cannot support yet. The count stands
                 alone until a weekly goal is authored (`ringProgressByLearner`). */}
             <div className="school-status-board__days" data-testid="board-days">
-              <TwoWeeks term={terms[kid.id]} />
+              <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
                   <RingIcon size="1.4em" label={`${rings[kid.id].current} rings this week`} />

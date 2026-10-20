@@ -199,13 +199,18 @@ earnings preview (`GET /api/v1/earnings/preview`; see
 payday. Gold is smaller beneath it: the economy wallet balance
 (`GET /api/v1/economy/users/:id/wallet`), which reads 0 until payouts exist.
 Gems are a third line only once earned or pending. A faded `+N` hangs after a
-number for what is still possible. There are no captions; icons carry the
-meaning and aria-labels keep the names.
+number for what is still possible; it is decoration only, and the figure's one
+spoken name carries it ("27 silver this week, 5 more possible"). There are no
+captions; icons carry the meaning and each figure is an image whose name says
+it. A wallet or roster read that comes back not-ok is logged
+(`status-board.wallet-failed` / `status-board.earnings-failed`).
 
 **Days.** Last week (dimmer) above this week, seven squares each, today
 outlined, weekday letters above. The ring count with its ring icon sits
-beneath. The term grid is not drawn here; the teacher console shows the term
-(`__docs/reference/school/term-grid.md`).
+beneath. Both rows come from the term read; the full term is not drawn here,
+and no surface currently draws it (`__docs/reference/school/term-grid.md`).
+A pinned `day` anchors the two rows on that day, not on the term read's own
+`today`.
 
 One roster read prices every card. It runs beside the plans, never blocking
 them, on the board's refresh timer, on visibility, and after every school,
@@ -245,7 +250,7 @@ extra work**: a card scan prints the agenda, and a rest-day agenda still
 carries every optional lesson with its code (the obligation is excused, not
 forbidden).
 
-- Excused work is still never a disc and never counts toward the meter.
+- Excused work is still never a disc and never counts toward the number left.
   Work a child actually does on a day off appears as usual (sessions,
   served work, reading, fitness), and the rest-day copy sits under any
   supplemental pins while `total` is 0.
@@ -269,7 +274,7 @@ replaced in place as its read lands, and a card that has data never goes back
 to a skeleton. Skeletons appear only on a cold browser, and at the study-day
 rollover: when the digest names a different `studyDay` than the snapshot, every
 card's discs are dropped (yesterday's greens must not stand in for today) while
-the term grids and ring count stay until their own reads replace them.
+the day squares and ring count stay until their own reads replace them.
 
 Refreshes are scoped to what changed:
 
@@ -282,7 +287,7 @@ Refreshes are scoped to what changed:
 | `fitness.weekly-rings` State Gate event | Rings + that learner |
 
 A failed re-read keeps what the card already shows; only a card with nothing on
-it falls back to the plan-less summary or an absent term grid. A per-learner
+it falls back to the plan-less summary or no day squares. A per-learner
 generation counter drops a slow read that a newer one has overtaken.
 
 ## Learner-day completion

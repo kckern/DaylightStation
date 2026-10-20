@@ -12,7 +12,7 @@
  *
  * The day's discs belong to one study day. The snapshot records which, and the
  * board drops them the moment the server names a different day — yesterday's
- * greens must never stand in for this morning's work. The term grid and ring
+ * greens must never stand in for this morning's work. The term read and ring
  * count are not day-scoped the same way and survive the rollover until their
  * own reads replace them.
  *
@@ -53,7 +53,7 @@ export function writeBoardCache({ studyDay, learners = {}, rings, earnings, gold
     const sameDay = previous?.studyDay === studyDay;
     const merged = {};
     for (const [id, entry] of Object.entries(previous?.learners ?? {})) {
-      // Another day's discs are dropped; its term grid is still the best we have.
+      // Another day's discs are dropped; its term read is still the best we have.
       merged[id] = sameDay ? { ...entry } : { term: entry.term };
     }
     for (const [id, entry] of Object.entries(learners)) {

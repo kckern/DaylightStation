@@ -98,4 +98,14 @@ describe('School keypad outage layout', () => {
     expect(styleRule('.school-selfservice__message')).toContain('white-space: nowrap');
     expect(styleRule('.school-selfservice__retry')).toContain('flex: 0 0 52px');
   });
+
+  // jsdom has no layout, so this pins the RULE: a vertically centred column
+  // re-centres when the band under the keys grows (~85px for an outage), and
+  // the code boxes and keys jump. Top-anchored, the pad's position cannot
+  // depend on anything below it; only "Turn off screen" moves down.
+  it('anchors the keypad column at the top of the lock split, so an outage cannot move the keys', () => {
+    const rule = styleRule('.school-lock-split > .school-selfservice');
+    expect(rule).toContain('align-self: start');
+    expect(rule).not.toContain('align-self: center');
+  });
 });

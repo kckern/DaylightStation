@@ -535,9 +535,13 @@ export default function Keypad({
       </div>
 
       {/* The outage band sits UNDER the keys and is sized to its content, so
-          the code boxes sit directly on the pad. It is the last thing in the
-          column: when it appears it grows downward and nothing above the pad
-          changes height or position.
+          the code boxes sit directly on the pad. The keys stay put because of
+          TWO things together: nothing above the pad changes height (the title
+          and the code boxes are fixed), and the lock split anchors this column
+          at the top rather than centring it (`.school-lock-split >
+          .school-selfservice` in School.scss) — a centred column would
+          re-centre and lift the pad by half of whatever grew below it. So an
+          outage grows the column downward and moves only "Turn off screen".
 
           WORDS ONLY FOR AN OUTAGE. A wrong code says what it has to say in the
           slots above; printing "Try again." underneath as well would be the
@@ -545,9 +549,7 @@ export default function Keypad({
           thing here a child cannot act on differently. `degraded` is the whole
           gate — the hook still sets `message` for a refusal, and the day it
           starts sending something a child CAN act on, this is the line to
-          revisit.
-
-          Under the keys, so nothing above the pad ever changes height. */}
+          revisit. */}
       <div className="school-selfservice__status">
         {message && degraded && (
           <p className="school-selfservice__message is-degraded">
