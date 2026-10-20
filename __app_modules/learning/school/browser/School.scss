@@ -3367,6 +3367,10 @@
     align-items: center; column-gap: 0.45em; row-gap: 0.3em;
     color: var(--school-text); font-weight: 900; line-height: 1;
     font-variant-numeric: tabular-nums;
+    // Room for the hanging +NN: it is absolutely positioned (no layout), so
+    // reserve its width here, sized off the silver figure it hangs from
+    // (3 glyphs at half size plus its margin), so it never crosses the cell edge.
+    padding-right: calc(clamp(1.6rem, 5vh, 2.6rem) * 1.1);
   }
   &__coin-icon { justify-self: center; width: 100%; height: auto; }
   &__coin-icon--gold, &__coin-icon--gem { width: 58%; }
