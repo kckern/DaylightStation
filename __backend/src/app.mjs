@@ -183,6 +183,7 @@ import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
 import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
+import { createOAuthRouter } from "./4_api/v1/routers/admin/oauth.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
 // the admin router; keeps 4_api/**/admin/* free of #apps imports).
 import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
@@ -3944,6 +3945,26 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     ledger: notificationStack.ledgerStore,
   });
 
+  // Withings reconnect: admin-only, server-side code exchange (Withings codes
+  // expire in ~30s, so the exchange has to happen in the callback itself).
+  // The redirect URI must match one registered with the Withings app; set
+  // system auth withings.connect_redirect_uri when the request host differs.
+  let oauthRouter = null;
+  if (harvesterServices.withingsOAuth) {
+    oauthRouter = createOAuthRouter({
+      withingsOAuth: harvesterServices.withingsOAuth,
+      authStore: harvesterServices.authStore,
+      harvesterService: harvesterServices.harvesterService,
+      resolveUsername: () => configService.getHeadOfHousehold(),
+      redirectUri: (req) => configService.getSystemAuth?.('withings', 'connect_redirect_uri')
+        || `${(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim()}://${req.get('host')}${req.baseUrl}/withings/callback`,
+      newState: () => crypto.randomUUID(),
+      logger: adminApiLogger.child?.({ submodule: 'oauth' }) || adminApiLogger,
+    });
+  } else {
+    adminApiLogger.info?.('oauth.withings.disabled', { reason: 'Withings client_id/client_secret not configured' });
+  }
+
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
     householdContext,
@@ -3961,6 +3982,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     notificationLedgerStore: notificationStack.ledgerStore,
     stateGatesAdministration: stateGatesModule.administrationOperations,
     stateGatesActorFromRequest: stateGatesModule.actorFromRequest,
+    oauthRouter,
     logger: adminApiLogger
   });
 

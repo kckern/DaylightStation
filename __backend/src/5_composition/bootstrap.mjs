@@ -367,7 +367,7 @@ import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mj
 import { WeightProcessor } from "../../../__app_modules/wellness/health/server/application/health/analytics/WeightProcessor.mjs";
 
 // Harvester adapter imports
-import { YamlLifelogDatastore, YamlCurrentDatastore, TodoistHarvester, ClickUpHarvester, GitHubHarvester, LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester, GmailHarvester, GCalHarvester, ShoppingHarvester, BuxferHarvester, WeatherHarvester, StravaHarvester, WithingsHarvester, FitnessSyncerHarvester, YamlAuthDatastore, createInfinityHarvesters } from "#adapters/harvester/index.mjs";
+import { YamlLifelogDatastore, YamlCurrentDatastore, TodoistHarvester, ClickUpHarvester, GitHubHarvester, LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester, GmailHarvester, GCalHarvester, ShoppingHarvester, BuxferHarvester, WeatherHarvester, StravaHarvester, WithingsHarvester, WithingsOAuth, FitnessSyncerHarvester, YamlAuthDatastore, createInfinityHarvesters } from "#adapters/harvester/index.mjs";
 
 // MIDI recording harvest: vendor (JamCorder) adapters + vendor-neutral use case
 
@@ -1984,15 +1984,21 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Withings - requires httpClient
+  // Withings - requires httpClient. The same client credentials drive token
+  // refresh (harvester) and the in-app reconnect (withingsOAuth, returned below).
+  const withingsClientId = configService.getSystemAuth?.('withings', 'client_id') || secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT');
+  const withingsClientSecret = configService.getSystemAuth?.('withings', 'client_secret') || secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET');
+  const withingsOAuth = httpClient && withingsClientId && withingsClientSecret
+    ? new WithingsOAuth({ httpClient, clientId: withingsClientId, clientSecret: withingsClientSecret })
+    : null;
   if (httpClient) {
     registerHarvester('withings', () => new WithingsHarvester({
       httpClient,
       lifelogStore,
       authStore,
       getUserAuth,
-      clientId: configService.getSystemAuth?.('withings', 'client_id') || secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
-      clientSecret: configService.getSystemAuth?.('withings', 'client_secret') || secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
+      clientId: withingsClientId,
+      clientSecret: withingsClientSecret,
       redirectUri: configService.getSystemAuth?.('withings', 'redirect_uri') || secret('WITHINGS_REDIRECT'),
       weightProcessor: new WeightProcessor({
         lifelogStore,
@@ -2091,5 +2097,8 @@ export function createHarvesterServices(config) {
     // the harvesters that refreshes the same tokens (e.g. Strava activity access).
     authStore,
     canRefreshTokens,
+    // Withings authorize URL + code exchange for the admin reconnect flow;
+    // null when the Withings client credentials are not configured.
+    withingsOAuth,
   };
 }

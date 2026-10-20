@@ -381,6 +381,31 @@ describe('WithingsHarvester', () => {
       await harvester.harvest('testuser');
       expect(mockHttpClient.post).toHaveBeenCalledTimes(1);
     });
+
+    test('resetAuth drops the cached token so the next harvest refreshes', async () => {
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+      mockHttpClient.get.mockResolvedValue(mockMeasureResponse);
+
+      await harvester.harvest('testuser');
+      harvester.resetAuth();
+      await harvester.harvest('testuser');
+      expect(mockHttpClient.post).toHaveBeenCalledTimes(2);
+    });
+
+    test('resetAuth clears a cooldown', async () => {
+      const rateLimitError = new Error('Too Many Requests');
+      rateLimitError.response = { status: 429 };
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+      mockHttpClient.get.mockRejectedValue(rateLimitError);
+      for (let i = 0; i < 3; i++) {
+        await harvester.harvest('testuser').catch(() => {});
+      }
+      expect(harvester.isInCooldown()).toBe(true);
+
+      harvester.resetAuth();
+      expect(harvester.isInCooldown()).toBe(false);
+      expect(harvester.getStatus().failures).toBe(0);
+    });
   });
 
   describe('measurement parsing', () => {

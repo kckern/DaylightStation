@@ -243,6 +243,12 @@ export class WithingsHarvester extends IHarvester {
     return this.#circuitBreaker?.isOpen?.() ?? false;
   }
 
+  /** After a reconnect: drop the cached access token and any cooldown. */
+  resetAuth() {
+    this.#tokenCache = { token: null, expiresAt: null };
+    this.#circuitBreaker.reset();
+  }
+
   /**
    * Refresh OAuth access token
    * @private
