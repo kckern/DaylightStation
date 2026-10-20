@@ -122,7 +122,12 @@ export function mountTeacherReadingRoutes({
     send(res, 200, result);
   }));
 
-  /** A day they read that never got logged. */
+  /**
+   * A day they read that never got logged. Answers with the reading's
+   * `revisionCount` after the write, so a caller chaining a finish onto it
+   * carries the served count rather than assuming one. A repeat of the same
+   * `Idempotency-Key` returns the first entry and appends nothing.
+   */
   router.post(`${BASE}/:readingId/entries`, wrap(async (req, res) => {
     const body = req.body ?? {};
     const result = await need(addReadingEntry, 'teacher reading edit').execute({

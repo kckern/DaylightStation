@@ -258,6 +258,32 @@ describe('AddReadingEntry', () => {
     expect(notes).not.toHaveBeenCalled();
     expect(result.revision).toMatchObject({ verb: 'reading.entry.add', toldChild: false });
     expect(reading.revisions).toHaveLength(1);
+    expect(result.revisionCount).toBe(1);
+  });
+
+  it('a replay of the same key returns the first entry, with no second revision, even on a stale base', async () => {
+    const add = (baseRevisionCount) => new AddReadingEntry(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER,
+      on: '2026-09-05', page: 120, baseRevisionCount, idempotencyKey: 'log-1:entry',
+    });
+    const first = await add(0);
+    // The first response was lost; the retry carries the count it had before.
+    const replay = await add(0);
+    const reading = await only();
+    expect(replay.replayed).toBe(true);
+    expect(replay.result.id).toBe(first.result.id);
+    expect(replay.revision).toBeNull();
+    expect(replay.revisionCount).toBe(1);
+    expect(reading.entries.filter((row) => row.idempotencyKey === 'log-1:entry')).toHaveLength(1);
+    expect(reading.revisions.filter((row) => row.verb === 'reading.entry.add')).toHaveLength(1);
+  });
+
+  it('a new key on a stale base is still refused', async () => {
+    const add = (idempotencyKey, page) => new AddReadingEntry(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page, baseRevisionCount: 0, idempotencyKey,
+    });
+    await add('a', 120);
+    await expect(add('b', 130)).rejects.toThrow();
   });
 
   it('refuses a day that is not a real calendar day', async () => {

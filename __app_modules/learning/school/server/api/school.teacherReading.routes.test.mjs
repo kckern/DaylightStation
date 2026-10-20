@@ -174,6 +174,18 @@ describe('the teacher reading edit routes', () => {
     }));
   });
 
+  it('serves the reading\'s revision count with an added day, and a replay on the same key', async () => {
+    const deps = EDIT_DEPS();
+    deps.addReadingEntry.execute.mockResolvedValue({
+      revision: null, result: { id: 'ent_1' }, revisionCount: 2, replayed: true,
+    });
+    const response = await withCookie(request(app(deps)).post(`${READING}/entries`)
+      .set('Idempotency-Key', 'log-1:entry')
+      .send({ on: '2026-09-05', baseRevisionCount: 1 })).expect(201);
+    expect(response.body).toMatchObject({ result: { id: 'ent_1' }, revisionCount: 2, replayed: true });
+    expect(deps.addReadingEntry.execute).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'log-1:entry' }));
+  });
+
   it('fixes one entry, and deletes one entry with its reason', async () => {
     const deps = EDIT_DEPS();
     const server = app(deps);

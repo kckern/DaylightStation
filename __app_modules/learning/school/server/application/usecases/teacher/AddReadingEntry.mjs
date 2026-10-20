@@ -20,6 +20,20 @@ export class AddReadingEntry {
   } = {}) {
     this.#context.assert({ op: OPS.ENTRY_ADD, userId: by, pin, learnerId, readingId });
     const reading = await this.#context.reading(learnerId, readingId);
+    const revisionCount = Array.isArray(reading?.revisions) ? reading.revisions.length : 0;
+
+    // A replay BEFORE the freshness check: a retry whose first response was
+    // lost carries the count it loaded before that first write landed, so it
+    // is stale by exactly the write it is repeating. The entry is already
+    // there; hand it back and append nothing (no second revision).
+    const replayOf = idempotencyKey
+      ? (reading?.entries ?? []).find((row) => row?.idempotencyKey === idempotencyKey) ?? null
+      : null;
+    if (replayOf) {
+      this.#context.logger.info?.('school.teacher-reading.entry-replayed', { learnerId, readingId });
+      return { revision: null, result: replayOf, revisionCount, replayed: true };
+    }
+
     assertFreshRevisions(reading, baseRevisionCount);
     if (!isDayKey(on)) throw new ValidationError(`on must be a real day: ${on}`);
     if (page !== null && !(Number.isInteger(page) && page > 0)) {
@@ -35,7 +49,7 @@ export class AddReadingEntry {
       throw new ValidationError('an entry needs a page or minutes unless the book is logged by check-in');
     }
 
-    return applyReadingOperation(this.#context, {
+    const applied = await applyReadingOperation(this.#context, {
       learnerId, reading, op: OPS.ENTRY_ADD, by, pin, reason,
       entry: {
         on, page, minutes, source: 'teacher', at: this.#context.now(),
@@ -43,6 +57,9 @@ export class AddReadingEntry {
         idempotencyKey,
       },
     });
+    // The count the NEXT write on this reading must carry: an added day
+    // appends exactly one revision. Served so the caller never assumes it.
+    return { ...applied, revisionCount: revisionCount + 1, replayed: false };
   }
 }
 
