@@ -414,6 +414,46 @@ describe('EmulatorGameWidget save choice at launch', () => {
   });
 });
 
+describe('EmulatorGameWidget save list arrives after the menu opens', () => {
+  function deferredSavesApi() {
+    let resolveSaves;
+    api.mockImplementation((p) => {
+      if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
+      if (p.startsWith('api/v1/emulator/saves/')) return new Promise((r) => { resolveSaves = r; });
+      return Promise.resolve({});
+    });
+    return (users) => resolveSaves({ users });
+  }
+  async function launch() {
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    return screen.findByTestId('console');
+  }
+
+  it('the Continue as row is held as loading, then says nobody has a save', async () => {
+    kiosk.value = true;
+    const resolveSaves = deferredSavesApi();
+    await launch();
+    expect(document.querySelector('.emu-player-panel__savers').getAttribute('aria-busy')).toBe('true');
+    await act(async () => { resolveSaves([]); });
+    expect(screen.getByText('No saved games yet')).toBeTruthy();
+  });
+
+  it('Save as me pressed before the list landed still catches an existing save', async () => {
+    kiosk.value = true;
+    const resolveSaves = deferredSavesApi();
+    let finishScan;
+    identity.registerIdentify.mockImplementation(() => new Promise((r) => { finishScan = r; }));
+    await launch();
+    fireEvent.click(screen.getByText('Save as me'));
+    await act(async () => { resolveSaves(['user_5']); });
+    await act(async () => { finishScan({ matched: true, userId: 'user_5' }); });
+    expect(await screen.findByText(/replaces User_5/)).toBeTruthy();
+    expect(screen.getByTestId('console').getAttribute('data-user')).not.toBe('user_5');
+  });
+});
+
 describe('EmulatorGameWidget fingerprint step keeps the choice', () => {
   function sharedApi(users = ['user_5']) {
     api.mockImplementation((p) => {

@@ -51,4 +51,20 @@ describe('PlayerPanel', () => {
     expect(screen.getByText("User_5's game · saving")).toBeTruthy();
     expect(screen.queryByText('Just play')).toBeNull();
   });
+
+  it('while the save list is still loading, the Continue as row holds its place empty', () => {
+    const { container } = render(<PlayerPanel savers={null} onJustPlay={() => {}} />);
+    const row = container.querySelector('.emu-player-panel__savers');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByText('No saved games yet')).toBeNull();
+    expect(screen.getByText('Save as me')).toBeTruthy();
+  });
+
+  it('nobody has a save yet: the row says so instead of vanishing', () => {
+    const { container } = render(<PlayerPanel savers={[]} onJustPlay={() => {}} />);
+    expect(container.querySelector('.emu-player-panel__savers')).toBeTruthy();
+    expect(screen.getByText('No saved games yet')).toBeTruthy();
+    expect(screen.queryByText('Continue as')).toBeNull();
+  });
 });

@@ -61,7 +61,12 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const [arcadeUnlocked, setArcadeUnlocked] = useState(false);
   const [pendingGame, setPendingGame] = useState(null);
   const [launch, setLaunch] = useState(null);
-  const [savers, setSavers] = useState([]);
+  // null = this launch's save list has not arrived yet (PlayerPanel holds the
+  // row's place). The ref lets a scan that started before it arrived check
+  // the list as it stands when the scan ends.
+  const [savers, setSavers] = useState(null);
+  const saversRef = useRef(null);
+  saversRef.current = savers;
   const [selectMessage, setSelectMessage] = useState(null);
   const [claimConflict, setClaimConflict] = useState(null);
   // Bumped to (re)open the game menu after a fingerprint step that ends in a
@@ -326,7 +331,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const launchFresh = useCallback((game) => {
     setSelectMessage(null);
     setClaimConflict(null);
-    setSavers([]);
+    setSavers(null);
     if (game.saveOwner && supportsSave(game.saveMode)) { launchOwned(game); return; }
     startGame(game, freshLaunch());
     loadSavers(game);
@@ -434,7 +439,15 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         return;
       }
       const uid = verdict.userId;
-      if (savers.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
+      const known = saversRef.current;
+      if (known === null) {
+        // The list never arrived: claiming now could overwrite a save nobody was warned about.
+        setSelectMessage('Still checking who has a save. Try again.');
+        logger.warn('fitness-emulator.claim.reask', { game: game.id, reason: 'savers-unknown', user: uid });
+        reopenMenu();
+        return;
+      }
+      if (known.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
         setClaimConflict(resolvePersonCard(uid));
         logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'conflict', user: uid });
         reopenMenu();
@@ -442,12 +455,12 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         activateSave(uid);
       }
     });
-  }, [launch, registerIdentify, savers, resolvePersonCard, activateSave, reopenMenu, logger]);
+  }, [launch, registerIdentify, resolvePersonCard, activateSave, reopenMenu, logger]);
 
   const handleExitGame = useCallback(() => {
     setLaunch(null);
     setView('arcade');
-    setSavers([]);
+    setSavers(null);
     setSelectMessage(null);
     setClaimConflict(null);
   }, []);

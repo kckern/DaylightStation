@@ -594,12 +594,18 @@ export function EmulatorConsole({
   // player had already paused it from the bezel's start-button hotspot.
   const hotspotPausedRef = useRef(false);
   hotspotPausedRef.current = !!hotspotState.paused;
+  // Set by the first cleanup to run on unmount (cleanups run in declaration
+  // order), so exiting with the menu open neither resumes an engine that is
+  // being torn down nor logs a menu close nobody made.
+  const unmountingRef = useRef(false);
+  useEffect(() => () => { unmountingRef.current = true; }, []);
   useEffect(() => {
     if (!settingsOpen) return undefined;
     const engine = runtimeRef.current?.engine;
     if (!hotspotPausedRef.current) engine?.pause?.();
     logger.info('emulator.console.menu-open', { game: game?.id });
     return () => {
+      if (unmountingRef.current) return;
       if (!hotspotPausedRef.current && !holdPausedRef.current) runtimeRef.current?.engine?.resume?.();
       logger.info('emulator.console.menu-close', { game: game?.id });
     };
@@ -1270,6 +1276,11 @@ export function EmulatorConsole({
                 {shade.name}
               </button>
             </div>
+            {typeof onExit === 'function' && (
+              <button type="button" className="emulator-settings-modal__exit" onClick={onExit}>
+                Exit game
+              </button>
+            )}
           </div>
         </div>
       )}

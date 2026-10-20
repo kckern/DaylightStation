@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, within } from '@testing-library/react';
 import { EmulatorConsole } from "./EmulatorConsole.jsx";
 import { computeScreenBox } from "./screenBoxGeometry.js";
 
@@ -354,6 +354,30 @@ describe('EmulatorConsole', () => {
       const { unmount } = renderConsole({ props: { menuInitiallyOpen: true } });
       await act(async () => {});
       expect(() => unmount()).not.toThrow();
+    });
+
+    it('unmount with the menu open does not resume an engine on its way out', async () => {
+      const { unmount, engine } = renderConsole({ props: { menuInitiallyOpen: true } });
+      await act(async () => {});
+      engine.resume.mockClear();
+      act(() => unmount());
+      expect(engine.resume).not.toHaveBeenCalled();
+    });
+
+    it('the menu carries Exit game, which calls onExit', async () => {
+      const onExit = vi.fn();
+      const { getByRole } = renderConsole({ props: { menuInitiallyOpen: true, onExit } });
+      await act(async () => {});
+      const sheet = getByRole('dialog', { name: 'Game menu' });
+      act(() => { within(sheet).getByRole('button', { name: 'Exit game' }).click(); });
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('no onExit, no Exit game in the menu', async () => {
+      const { getByRole } = renderConsole({ props: { menuInitiallyOpen: true } });
+      await act(async () => {});
+      const sheet = getByRole('dialog', { name: 'Game menu' });
+      expect(within(sheet).queryByRole('button', { name: 'Exit game' })).toBeNull();
     });
 
     // A standard-mapping pad whose buttons the test flips between frames.

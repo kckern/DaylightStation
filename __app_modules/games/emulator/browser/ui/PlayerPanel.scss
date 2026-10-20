@@ -53,10 +53,14 @@
 
   &__hint { font-size: 0.85rem; opacity: 0.75; width: 100%; }
 
+  // Holds one hint line plus one row of avatar buttons whether the list is
+  // loading, empty or full, so the buttons below never move when it lands.
   &__savers {
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 0.5rem;
+    min-height: calc(1.1rem + 0.5rem + 54px);
   }
 
   &__btn {

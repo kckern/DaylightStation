@@ -75,7 +75,11 @@ remounts on their save), *Save as me* (claims the running game — asking first
 if that person already has a save it would replace) or *Just play*. After
 that the menu stays on the bezel's single ⋯ button (bottom-left; the game
 pauses while it is open), which carries a small amber dot while nothing is
-being saved. The menu works from a gamepad too: the d-pad moves between its
+being saved. The *Continue as* row keeps its height while the save list is
+loading and reads "No saved games yet" when nobody has one, so the buttons
+under it never move; *Save as me* pressed before the list arrived checks the
+list as it stands when the scan ends. The menu ends with *Exit game*, the same
+exit as the bezel's ✕. The menu works from a gamepad too: the d-pad moves between its
 buttons, A activates, B closes (*Just play* has focus when it opens at launch,
 and the button still held from launching the game is ignored). While a
 fingerprint prompt from the menu is up the game stays paused; a cancelled scan,

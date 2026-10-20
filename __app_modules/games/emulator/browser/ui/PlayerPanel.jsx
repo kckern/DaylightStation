@@ -73,22 +73,26 @@ export function PlayerPanel({
         <>
           {canIdentify ? (
             <>
-              {savers.length > 0 && (
-                <div className="emu-player-panel__savers">
-                  <span className="emu-player-panel__hint">Continue as</span>
-                  {savers.map((s) => (
-                    <button
-                      key={s.userId}
-                      type="button"
-                      className="emu-player-panel__btn emu-player-panel__saver"
-                      aria-label={`Continue as ${s.name}`}
-                      onClick={() => onLoad(s.userId)}
-                    >
-                      <Person person={s} />
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* Always present on the kiosk, at a fixed height, so the list
+                  arriving after the menu opens does not shift the buttons.
+                  savers === null means the list is still loading. */}
+              <div className="emu-player-panel__savers" aria-busy={savers === null ? 'true' : undefined}>
+                {savers?.length === 0 && (
+                  <span className="emu-player-panel__hint">No saved games yet</span>
+                )}
+                {savers?.length > 0 && <span className="emu-player-panel__hint">Continue as</span>}
+                {savers?.length > 0 && savers.map((s) => (
+                  <button
+                    key={s.userId}
+                    type="button"
+                    className="emu-player-panel__btn emu-player-panel__saver"
+                    aria-label={`Continue as ${s.name}`}
+                    onClick={() => onLoad(s.userId)}
+                  >
+                    <Person person={s} />
+                  </button>
+                ))}
+              </div>
               <div className="emu-player-panel__choice">
                 <button type="button" className="emu-player-panel__btn emu-player-panel__btn--primary" onClick={onClaim}>
                   Save as me
