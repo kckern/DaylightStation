@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   recentlyRead, noRepeatWindowDays, validateStoryTimeEnrollment, DEFAULT_STORY_NO_REPEAT_DAYS,
+  suggestStories, STORY_SUGGESTION_LIMIT,
 } from '../../../../__app_modules/learning/school/server/domain/storyTime.mjs';
 
 const BOOK = 'plex:621568';
@@ -57,5 +58,54 @@ describe('story-time noRepeatDays validation', () => {
   });
   it.each([-1, 1.5, '4', 1000])('refuses %s', (bad) => {
     expect(v({ noRepeatDays: bad }).errors[0]).toMatch(/noRepeatDays/);
+  });
+});
+
+describe('suggestStories', () => {
+  // Thursday 10-08, N=4: the window is 10-05..10-08.
+  const TODAY = '2026-10-08';
+  const book = (contentId, title = null) => ({ contentId, title });
+  const row = (studyDay, contentId, title = null) => ({ studyDay, contentId, title });
+  const suggest = (extra) => suggestStories({ today: TODAY, noRepeatDays: 4, ...extra });
+
+  it('the limit is three', () => expect(STORY_SUGGESTION_LIMIT).toBe(3));
+
+  it('leaves out every book read inside the window, and the refused book itself', () => {
+    const corpus = [book('a', 'A'), book('b', 'B'), book('c', 'C'), book('d', 'D')];
+    const reads = [row('2026-10-07', 'a'), row('2026-10-05', 'b')];
+    expect(suggest({ corpus, reads, exclude: 'c' }).map((s) => s.contentId)).toEqual(['d']);
+  });
+
+  it('never-read first, then least-recently read, ties by title then id', () => {
+    const corpus = [book('old', 'Zebra'), book('older', 'Apple'), book('n2', 'Moon'), book('n1', 'Moon'), book('n0', 'Ant')];
+    const reads = [row('2026-10-03', 'old'), row('2026-09-20', 'older'), row('2026-10-01', 'older')];
+    expect(suggest({ corpus, reads, limit: 5 }).map((s) => s.contentId)).toEqual(['n0', 'n1', 'n2', 'older', 'old']);
+  });
+
+  it('gives at most three', () => {
+    const corpus = ['a', 'b', 'c', 'd', 'e'].map((id) => book(id, id));
+    expect(suggest({ corpus, reads: [] })).toHaveLength(3);
+  });
+
+  it('an empty corpus suggests nothing', () => {
+    expect(suggest({ corpus: [], reads: [row('2026-09-01', 'a', 'A')] })).toEqual([]);
+  });
+
+  it("prefers the reading log's title over the corpus label, and says when it was last read", () => {
+    const corpus = [book('plex:1', 'Eyes shuts')];
+    const reads = [row('2026-09-30', 'plex:1', 'I Can Read with My Eyes Shut!')];
+    expect(suggest({ corpus, reads })).toEqual([
+      { contentId: 'plex:1', title: 'I Can Read with My Eyes Shut!', lastReadOn: '2026-09-30' },
+    ]);
+  });
+
+  it('with no corpus at all, falls back to the books in the history outside the window', () => {
+    const reads = [row('2026-10-07', 'a', 'A'), row('2026-09-28', 'b', 'B'), row('2026-09-28', 'b', 'B')];
+    expect(suggest({ corpus: null, reads })).toEqual([{ contentId: 'b', title: 'B', lastReadOn: '2026-09-28' }]);
+  });
+
+  it('drops corpus entries with no id and duplicates', () => {
+    expect(suggest({ corpus: [book(null, 'X'), book('a', 'A'), book('a', 'A again')], reads: [] }))
+      .toEqual([{ contentId: 'a', title: 'A', lastReadOn: null }]);
   });
 });

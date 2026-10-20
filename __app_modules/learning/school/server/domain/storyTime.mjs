@@ -62,6 +62,63 @@ export function recentlyRead({ reads, contentId, today, noRepeatDays } = {}) {
   return last ? { recent: true, lastReadOn: last } : none;
 }
 
+/** How many other books a refusal offers. Three covers fit a TV notice at sofa distance. */
+export const STORY_SUGGESTION_LIMIT = 3;
+
+/**
+ * WHAT TO READ INSTEAD. A refusal that only says "pick a different book" leaves
+ * a four-year-old standing at the shelf with no idea which one; this names the
+ * books that WOULD be accepted, so the screen can show their covers.
+ *
+ * `corpus` is the household's story books, `[{contentId, title}]` (the NFC book
+ * tags — the physical books a child can actually grab). When it is not an array
+ * (the registry was not wired), the learner's own history stands in for it.
+ * `reads` are credited reads `{studyDay|day, contentId, title}`, as far back as
+ * the caller looked; a book with no read in them counts as never read.
+ *
+ * Order: never read first, then least recently read, then title, then id — so
+ * the same shelf gives the same three on every refusal. The reading log's title
+ * beats the corpus label: the log holds the book's real title, the tag only a
+ * hand-typed note. Pure: no I/O, no clock.
+ *
+ * @returns {Array<{contentId: string, title: string|null, lastReadOn: string|null}>}
+ */
+export function suggestStories({ corpus, reads, today, noRepeatDays, exclude = null, limit = STORY_SUGGESTION_LIMIT } = {}) {
+  const history = Array.isArray(reads) ? reads : [];
+  const window = new Set(noRepeatWindowDays(today, noRepeatDays));
+  const lastRead = new Map();
+  const loggedTitle = new Map();
+  for (const r of history) {
+    const day = r?.studyDay ?? r?.day;
+    const id = r?.contentId;
+    if (!id || typeof day !== 'string' || (today && day > today)) continue;
+    if (!lastRead.has(id) || day >= lastRead.get(id)) {
+      lastRead.set(id, day);
+      if (r.title) loggedTitle.set(id, r.title);
+    }
+  }
+  const shelf = Array.isArray(corpus)
+    ? corpus
+    : [...lastRead.keys()].map((contentId) => ({ contentId, title: null }));
+  const seen = new Set();
+  const candidates = [];
+  for (const b of shelf) {
+    const id = b?.contentId;
+    if (typeof id !== 'string' || !id || seen.has(id)) continue;
+    seen.add(id);
+    if (id === exclude || window.has(lastRead.get(id))) continue;
+    candidates.push({ contentId: id, title: loggedTitle.get(id) ?? (b.title || null), lastReadOn: lastRead.get(id) ?? null });
+  }
+  const text = (s) => (s.title ?? '').toLowerCase();
+  candidates.sort((a, b) => {
+    if ((a.lastReadOn === null) !== (b.lastReadOn === null)) return a.lastReadOn === null ? -1 : 1;
+    if (a.lastReadOn !== b.lastReadOn) return a.lastReadOn < b.lastReadOn ? -1 : 1;
+    if (text(a) !== text(b)) return text(a) < text(b) ? -1 : 1;
+    return a.contentId < b.contentId ? -1 : (a.contentId > b.contentId ? 1 : 0);
+  });
+  return candidates.slice(0, Math.max(0, limit));
+}
+
 /** Validate a story-time enrollment. Same `{errors, enrollment}` shape every other program validator returns. */
 export function validateStoryTimeEnrollment(raw) {
   const errors = [];

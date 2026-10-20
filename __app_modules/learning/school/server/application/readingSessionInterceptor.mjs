@@ -120,10 +120,13 @@ export class ReadingSessionInterceptor {
     if (session.state !== 'reading') {
       const repeat = await this.#repeatOf(learnerId, contentId);
       if (repeat) {
+        // What to grab instead: up to three books the child may read now, so
+        // the screen can show their covers. `[]` when there are none.
+        const suggestions = Array.isArray(repeat.suggestions) ? repeat.suggestions : [];
         const announced = this.#broadcast(location, {
           event: 'book-refused', reason: 'read-recently', learnerId, location, contentId,
           lastReadOn: repeat.lastReadOn, today: repeat.today, noRepeatDays: repeat.noRepeatDays,
-          target: response.target ?? null, at: this.#clock().toISOString(),
+          suggestions, target: response.target ?? null, at: this.#clock().toISOString(),
         });
         if (!announced) {
           this.#abandonReopen(reopened, location);
@@ -132,6 +135,9 @@ export class ReadingSessionInterceptor {
         this.#log('info', 'school.reading.book-refused', {
           location, learnerId, contentId, reason: 'read-recently',
           lastReadOn: repeat.lastReadOn, noRepeatDays: repeat.noRepeatDays, state: session.state,
+        });
+        this.#log('info', 'school.story-time.refused', {
+          learnerId, bookId: contentId, suggestions: suggestions.length, location, path: 'interceptor',
         });
         return { claimed: true, by: CLAIMED_BY, refused: true, reason: 'read-recently', learnerId, contentId, lastReadOn: repeat.lastReadOn };
       }

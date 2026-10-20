@@ -605,6 +605,50 @@
   }
 }
 
+/* A refusal's "try one of these" row: kid-sized covers, picked off a shelf by picture. */
+.reading-session__suggestions {
+  display: flex;
+  justify-content: center;
+  gap: 2.4vw;
+  margin: 1.6vh 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reading-session__suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8vh;
+  width: 24vh;
+}
+
+.reading-session__suggestion-cover {
+  position: relative;
+  width: 24vh;
+  height: 24vh;
+  border-radius: 1vh;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.reading-session__suggestion-title {
+  font-size: 2.6vh;
+  line-height: 1.15;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .reading-session__notice--warn {
   background: #6b4d12;
   color: #ffeec2;

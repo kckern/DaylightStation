@@ -314,15 +314,20 @@ export function makeReadingSessionHandler({
           && departed?.session?.learnerId === learnerId
           && RECLAIMABLE_CLOSE_REASONS.has(departed.reason);
         if (!ownRoom && repeat) {
+          const contentId = sessions.unclaimedPlay?.(location)?.contentId ?? null;
+          // Same courtesy as the interceptor's refusal: what to grab instead.
+          const suggestions = Array.isArray(repeat.suggestions) ? repeat.suggestions : [];
           tell(location, {
-            event: 'book-refused', reason: 'read-recently', learnerId, location, target,
-            contentId: sessions.unclaimedPlay?.(location)?.contentId ?? null,
+            event: 'book-refused', reason: 'read-recently', learnerId, location, target, contentId,
             lastReadOn: repeat.lastReadOn, today: repeat.today, noRepeatDays: repeat.noRepeatDays,
-            at: clock().toISOString(),
+            suggestions, at: clock().toISOString(),
           });
           log('info', 'school.reading.book-refused', {
             location, learnerId, reason: 'read-recently', lastReadOn: repeat.lastReadOn,
             noRepeatDays: repeat.noRepeatDays, path: 'adoption',
+          });
+          log('info', 'school.story-time.refused', {
+            learnerId, bookId: contentId, suggestions: suggestions.length, location, path: 'adoption',
           });
           return { status: 'reading_session_refused', reason: 'read-recently', learnerId, location };
         }

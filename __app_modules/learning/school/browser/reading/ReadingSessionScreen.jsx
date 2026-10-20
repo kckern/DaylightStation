@@ -474,12 +474,48 @@ export function Ceremony({ tier, name, learner, pick, summary }) {
   );
 }
 
+/**
+ * One book a refusal suggests instead. Same cover source and the same
+ * fixed-box-then-image behaviour as the Recent shelf, so the card does not
+ * jump when the cover lands.
+ */
+function SuggestedBook({ book }) {
+  const [cover, setCover] = useState(null);
+  const contentId = book?.contentId ?? null;
+
+  useEffect(() => {
+    if (!contentId) return undefined;
+    let live = true;
+    bookCover(contentId).then((url) => { if (live && url) setCover(url); });
+    return () => { live = false; };
+  }, [contentId]);
+
+  return (
+    <li className="reading-session__suggestion" data-testid="reading-suggestion">
+      <div className="reading-session__suggestion-cover">
+        {cover
+          ? <img src={cover} alt="" />
+          : <div className="reading-session__recent-spine" aria-hidden="true" />}
+      </div>
+      {book.title ? <span className="reading-session__suggestion-title">{book.title}</span> : null}
+    </li>
+  );
+}
+
 function Notice({ notice }) {
   if (!notice) return null;
+  const suggestions = Array.isArray(notice.suggestions) ? notice.suggestions : [];
   return (
     <div className={`reading-session__notice reading-session__notice--${notice.tone}`} role="status" data-testid="reading-notice">
       <strong>{notice.title}</strong>
       {notice.detail ? <span>{notice.detail}</span> : null}
+      {/* A refused book offers the ones that WOULD be read — as covers, because
+          the child choosing cannot read the titles. */}
+      {suggestions.length ? (
+        <ul className="reading-session__suggestions" data-testid="reading-suggestions" aria-label="Try one of these">
+          {suggestions.map((book) => <SuggestedBook key={book.contentId} book={book} />)}
+        </ul>
+      ) : null}
     </div>
   );
 }

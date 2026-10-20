@@ -247,6 +247,9 @@ export async function createSchoolLifecycle({
   economyService = null, userService = null, eventBus = null, realtime = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   startReadingSession = null,
+  // The household's story books, `() => [{contentId, title}] | null` — what a
+  // refused story-time book suggests instead. Null: the learner's history.
+  storyCorpus = null,
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -694,7 +697,7 @@ export async function createSchoolLifecycle({
   // before the `school.yml` `programs:` loop for the same reason piano-course
   // is: a config entry reusing the id must trip that loop's collision check.
   launchers.set(STORY_TIME_PROGRAM_ID, new StoryTimeProgramLauncher({
-    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession,
+    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession, storyCorpus,
   }));
 
   // The reading shelf. Unconditional like story-time: an enrollment with no

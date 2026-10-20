@@ -290,6 +290,35 @@ describe('ReadingSessionScreen', () => {
     expect(screen.getByTestId('reading-notice')).toHaveTextContent('Pick a different book!');
   });
 
+  it('a recently read book shows the books to grab instead — covers and titles', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({
+      event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+      lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4,
+      suggestions: [
+        { contentId: 'plex:suggest-1', title: 'Goodnight Moon', lastReadOn: null },
+        { contentId: 'plex:suggest-2', title: 'Corduroy', lastReadOn: '2026-09-20' },
+      ],
+    });
+    const notice = screen.getByTestId('reading-notice');
+    expect(notice).toHaveTextContent('Pick a different book!');
+    const cards = within(notice).getAllByTestId('reading-suggestion');
+    expect(cards.map((c) => c.textContent)).toEqual(['Goodnight Moon', 'Corduroy']);
+    await waitFor(() => expect(cards[0].querySelector('img')).toHaveAttribute('src', '/img/frog.jpg'));
+  });
+
+  it('a refusal with no suggestions shows no suggestion row', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'user_5', location: 'livingroom' });
+    await deliver({
+      event: 'book-refused', learnerId: 'user_5', contentId: 'plex:999', reason: 'read-recently',
+      lastReadOn: '2026-10-07', today: '2026-10-09', noRepeatDays: 4, suggestions: [],
+    });
+    expect(screen.getByTestId('reading-notice')).toHaveTextContent('Pick a different book!');
+    expect(screen.queryByTestId('reading-suggestions')).toBeNull();
+  });
+
   // §9: an obligation that cannot be read is surfaced, never silently relaxed —
   // and it must not stop a four-year-old picking a book.
   it('an unreadable obligation is said out loud, and the prompt stays usable', async () => {

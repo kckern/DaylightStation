@@ -31,16 +31,28 @@ import { studyDayForInstant } from "../domain/studyDay.mjs";
 // failing.
 import {
   STORY_TIME_PROGRAM_ID, DEFAULT_STORY_TARGET, DEFAULT_STORY_NO_REPEAT_DAYS,
-  MAX_STORY_NO_REPEAT_DAYS, recentlyRead, noRepeatWindowDays,
+  MAX_STORY_NO_REPEAT_DAYS, recentlyRead, noRepeatWindowDays, suggestStories,
 } from "../domain/storyTime.mjs";
+
+/**
+ * How far back a refusal's suggestions look for "when was this last read". A
+ * book last read before this counts as never read — at four weeks that is
+ * true enough for a child, and it caps a refusal at one bounded set of reads.
+ */
+const SUGGESTION_LOOKBACK_DAYS = 28;
 
 /** Wording for every "you can't start this here" path — one sentence, one place. */
 const AT_THE_TV = 'Story time happens on the living room TV — tap your card there.';
 
 export class StoryTimeProgramLauncher {
-  #readingLog; #assignments; #timezone; #clock; #logger; #startReadingSession;
+  #readingLog; #assignments; #timezone; #clock; #logger; #startReadingSession; #storyCorpus;
 
-  constructor({ readingLog, assignments, timezone = null, clock = () => new Date(), logger = console, startReadingSession = null } = {}) {
+  /**
+   * `storyCorpus` answers the household's story books, `[{contentId, title}]`
+   * (sync or async) — what a refusal suggests from. Optional: absent, or
+   * answering null, the learner's own history stands in for it.
+   */
+  constructor({ readingLog, assignments, timezone = null, clock = () => new Date(), logger = console, startReadingSession = null, storyCorpus = null } = {}) {
     if (!readingLog) throw new Error('StoryTimeProgramLauncher requires a readingLog');
     if (!assignments) throw new Error('StoryTimeProgramLauncher requires an assignments store');
     this.#readingLog = readingLog;
@@ -49,6 +61,7 @@ export class StoryTimeProgramLauncher {
     this.#clock = clock;
     this.#logger = logger;
     this.#startReadingSession = startReadingSession;
+    this.#storyCorpus = storyCorpus;
   }
 
   get id() { return STORY_TIME_PROGRAM_ID; }
@@ -243,10 +256,15 @@ export class StoryTimeProgramLauncher {
    * because refusing a child's book on a guess is worse than a repeat.
    * See `recentlyRead` for the exact window (today included).
    *
-   * @returns {Promise<{refuse: boolean, lastReadOn: string|null, today: string|null, noRepeatDays: number|null}>}
+   * A refusal carries `suggestions` — up to three books the child COULD read
+   * now (see `suggestStories`). Suggestions are a courtesy: a failure to build
+   * them answers `[]` and never changes the verdict.
+   *
+   * @returns {Promise<{refuse: boolean, lastReadOn: string|null, today: string|null, noRepeatDays: number|null,
+   *   suggestions: Array<{contentId: string, title: string|null, lastReadOn: string|null}>}>}
    */
   async repeatCheck({ userId, contentId }) {
-    const allow = { refuse: false, lastReadOn: null, today: null, noRepeatDays: null };
+    const allow = { refuse: false, lastReadOn: null, today: null, noRepeatDays: null, suggestions: [] };
     if (!contentId) return allow;
     try {
       const status = await this.status({ userId });
@@ -261,10 +279,32 @@ export class StoryTimeProgramLauncher {
         return (Array.isArray(rows) ? rows : []).map((r) => ({ ...r, studyDay: day }));
       }));
       const { recent, lastReadOn } = recentlyRead({ reads: perDay.flat(), contentId, today, noRepeatDays });
-      return { refuse: recent, lastReadOn, today, noRepeatDays };
+      const suggestions = recent ? await this.#suggestions({ userId, contentId, today, noRepeatDays, windowReads: perDay.flat() }) : [];
+      return { refuse: recent, lastReadOn, today, noRepeatDays, suggestions };
     } catch (err) {
       this.#logger.warn?.('school.story-time.repeat-check-failed', { userId, contentId, error: err?.message ?? String(err) });
       return allow;
+    }
+  }
+
+  /** Up to three books this learner may read now. Never throws: `[]` on any doubt. */
+  async #suggestions({ userId, contentId, today, noRepeatDays, windowReads }) {
+    try {
+      const corpus = typeof this.#storyCorpus === 'function' ? await this.#storyCorpus() : null;
+      const older = noRepeatWindowDays(today, Math.max(SUGGESTION_LOOKBACK_DAYS, noRepeatDays)).slice(noRepeatDays);
+      // One unreadable old day only blurs the ordering; it is not worth losing
+      // every suggestion over.
+      const olderReads = await Promise.all(older.map(async (day) => {
+        const rows = await Promise.resolve().then(() => this.#readingLog.listForDay(userId, day)).catch(() => []);
+        return (Array.isArray(rows) ? rows : []).map((r) => ({ ...r, studyDay: day }));
+      }));
+      return suggestStories({
+        corpus: Array.isArray(corpus) ? corpus : null,
+        reads: [...windowReads, ...olderReads.flat()], today, noRepeatDays, exclude: contentId,
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.story-time.suggestions-failed', { userId, contentId, error: err?.message ?? String(err) });
+      return [];
     }
   }
 
