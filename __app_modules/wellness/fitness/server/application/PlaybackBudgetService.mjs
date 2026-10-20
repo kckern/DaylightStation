@@ -121,7 +121,7 @@ export class PlaybackBudgetService {
       value.sequences[`${streamId}:seq`]=sequence;value.receipts[receiptKey]=view;
       const receipts=Object.keys(value.receipts);for(const id of receipts.slice(0,Math.max(0,receipts.length-256)))delete value.receipts[id];
       await this.#store.save({...key,value});
-      this.#logger?.info?.('fitness.playback_budget.observed',{deviceId:setup.deviceId,localDate:setup.localDate,generation:view.generation,supervised,policies:view.policies.map(({id,spentMs,remainingMs,expired})=>({id,spentMs,remainingMs,expired}))});
+      this.#logger?.debug?.('fitness.playback_budget.observed',{deviceId:setup.deviceId,localDate:setup.localDate,generation:view.generation,supervised,policies:view.policies.map(({id,spentMs,remainingMs,expired})=>({id,spentMs,remainingMs,expired}))});
       return view;
     });
   }
