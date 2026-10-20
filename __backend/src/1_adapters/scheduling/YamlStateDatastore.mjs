@@ -1,8 +1,8 @@
 /**
  * YamlStateDatastore - Persists job runtime state to YAML files
  *
- * Stores state in: {dataDir}/system/state/cron-runtime.yml
- * Backup in: {dataDir}/system/state/cron-runtime_bak.yml
+ * Stores state in: {dataDir}/system/scheduling/cron-runtime.yml
+ * Backup in: {dataDir}/system/scheduling/cron-runtime_bak.yml
  *
  * Uses DataService for filesystem abstraction - adapter does not
  * interact with filesystem directly.

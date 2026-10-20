@@ -186,6 +186,27 @@ describe('WithingsHarvester', () => {
       expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'Invalid Params: invalid refresh_token' });
     });
 
+    it('falls back to the Withings status code when the response has no error text', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: { status: 401, body: {} } });
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'Withings status 401' });
+    });
+
+    it('says the access token was missing when the response has neither error nor status', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: {} });
+      const result = await harvester.harvest('alice');
+      expect(result.error).toBe('no access token in Withings response');
+    });
+
+    it('reports the request error when the token call throws', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockRejectedValue(new Error('socket hang up'));
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'socket hang up' });
+    });
+
     test('respects yearsBack option', async () => {
       mockHttpClient.post.mockResolvedValue(mockTokenResponse);
       mockHttpClient.get.mockResolvedValue(mockMeasureResponse);

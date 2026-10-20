@@ -1,12 +1,23 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
-function sanitizeError(error, serviceId) {
-  let message = error.message || 'Unknown error';
-  message = message
+function redact(str) {
+  return str
     .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
     .replace(/token[=:]\s*[^\s&]+/gi, 'token=[REDACTED]')
     .replace(/key[=:]\s*[^\s&]+/gi, 'key=[REDACTED]');
+}
+
+function redactFailedResult(result) {
+  const data = { ...result };
+  for (const field of ['error', 'reason']) {
+    if (typeof data[field] === 'string') data[field] = redact(data[field]);
+  }
+  return data;
+}
+
+function sanitizeError(error, serviceId) {
+  const message = redact(error.message || 'Unknown error');
   return { harvester: serviceId, message, type: error.name || 'Error' };
 }
 
@@ -46,10 +57,11 @@ export function createHarvestRouter({ harvesterService, principalResolver, reque
       const result = await deadline.run(harvesterService.harvest(serviceId, username(req), options), {
         timeoutMs, message: `Timeout: ${serviceId} exceeded ${timeoutMs}ms limit`,
       });
-      const message = harvesterService.describeFailure(result);
-      if (message) {
+      const failure = harvesterService.describeFailure(result);
+      if (failure) {
+        const message = redact(failure);
         logger.warn?.('harvest.failed', { serviceId, requestId, message });
-        return res.status(502).json({ ok: false, harvester: serviceId, message, data: result, requestId });
+        return res.status(502).json({ ok: false, harvester: serviceId, message, data: redactFailedResult(result), requestId });
       }
       logger.info?.('harvest.response', { serviceId, requestId, result });
       return res.status(200).json({ ok: true, harvester: serviceId, data: result, requestId });
