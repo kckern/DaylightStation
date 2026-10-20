@@ -70,6 +70,28 @@ describe('GetBookReaders', () => {
     expect(rowFor(view, 'learner_a')).toMatchObject({ today: true, openReadingId: null, openReading: null });
   });
 
+  it('counts a reading opened on the study day, with nothing logged yet, as today', async () => {
+    bookLog = fakeBookLog({
+      learner_c: [seedReading({
+        id: 'rdg_c', learnerId: 'learner_c', book: { isbn: ISBN, pageCount: 32 }, progressMode: 'check',
+        status: 'unread', openedOn: '2026-09-06', entries: [],
+      })],
+    });
+    const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
+    expect(rowFor(view, 'learner_c')).toMatchObject({ today: true, openReadingId: 'rdg_c' });
+  });
+
+  it('counts a day logged on the study day as today, on a reading opened earlier and not finished', async () => {
+    bookLog = fakeBookLog({
+      learner_c: [seedReading({
+        id: 'rdg_c', learnerId: 'learner_c', book: { isbn: ISBN, pageCount: 32 }, progressMode: 'check',
+        status: 'reading', openedOn: '2026-09-01', entries: [day('2026-09-06', 'ent_c')],
+      })],
+    });
+    const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
+    expect(rowFor(view, 'learner_c')).toMatchObject({ today: true, openReadingId: 'rdg_c' });
+  });
+
   it('names the open reading, with what a write to it must carry', async () => {
     const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
     expect(rowFor(view, 'learner_b')).toMatchObject({

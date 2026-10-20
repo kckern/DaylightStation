@@ -57,8 +57,7 @@ export class GetBookReaders {
 
     const learners = (await this.#roster()) ?? [];
     const readers = [];
-    // Sequential on purpose: a household roster is a handful of children, and
-    // the store serializes its file reads anyway.
+    // Sequential on purpose: a household roster is a handful of children.
     for (const learner of learners) {
       const learnerId = learner?.id ?? learner?.learnerId ?? null;
       if (!learnerId) continue;
