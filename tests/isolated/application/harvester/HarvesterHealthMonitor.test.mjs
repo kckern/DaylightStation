@@ -51,6 +51,14 @@ describe('HarvesterHealthMonitor', () => {
     expect(await m.record(ok('2026-10-01'))).toBe(null);
     expect(await m.record(ok('2026-10-19'))).toBe('recovered');
   });
+  it('failing then a success with old data goes stale, then recovers on fresh data', async () => {
+    const { m, sendPush } = monitor();
+    for (let i = 0; i < 3; i++) await m.record(fail);
+    expect(await m.record(ok('2026-10-01'))).toBe('stale');
+    expect(m.report().withings).toMatchObject({ status: 'stale', failures: 0 });
+    expect(await m.record(ok('2026-10-19'))).toBe('recovered');
+    expect(sendPush).toHaveBeenCalledTimes(3);
+  });
   it('a push failure is logged, not thrown', async () => {
     const { m, logger } = monitor({ sendPush: vi.fn().mockRejectedValue(new Error('ha down')) });
     for (let i = 0; i < 2; i++) await m.record(fail);

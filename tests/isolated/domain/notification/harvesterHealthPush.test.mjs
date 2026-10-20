@@ -19,6 +19,7 @@ describe('composeHarvesterHealthPush', () => {
     const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'failing', error: 'auth_failed', lastSuccessAt: '2026-10-01T19:00:00.000Z', now, timezone: tz });
     expect(p.message).toMatch(/since Thu Oct 1/);
     expect(p.message).not.toMatch(/\d+ hr/);
+    clean(p);
   });
   it('a short outage gives the span and the local clock time', () => {
     const p = composeHarvesterHealthPush({ serviceId: 'withings', status: 'failing', error: 'ETIMEDOUT', lastSuccessAt: '2026-10-20T16:00:00.000Z', now, timezone: tz });
