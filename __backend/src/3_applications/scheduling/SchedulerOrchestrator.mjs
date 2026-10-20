@@ -14,8 +14,11 @@
 import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { JobExecution } from '#domains/scheduling/entities/JobExecution.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { isFailedHarvest, describeHarvestFailure } from '#apps/harvester/ports/IHarvester.mjs';
 
 export class SchedulerOrchestrator {
+  #clock;
+
   constructor({
     schedulerService,
     timestampCodec,
@@ -29,7 +32,8 @@ export class SchedulerOrchestrator {
     mediaExecutor = null,
     newsReporterExecutor = null,
     schoolExecutor = null,
-    runInJobContext = null
+    runInJobContext = null,
+    clock = () => new Date()
   }) {
     this.schedulerService = schedulerService;
     if (!timestampCodec || typeof timestampCodec.format !== 'function') throw new Error('SchedulerOrchestrator requires timestampCodec');
@@ -49,6 +53,7 @@ export class SchedulerOrchestrator {
     this.mediaExecutor = mediaExecutor;
     this.newsReporterExecutor = newsReporterExecutor;
     this.schoolExecutor = schoolExecutor;
+    this.#clock = clock;
     this.runningJobs = new Map();
     // Composition supplies this to run each job's work under a `job:<id>`
     // context (the AI usage ledger's origin). Identity when absent.
@@ -150,12 +155,12 @@ export class SchedulerOrchestrator {
     execution.start(timestamp);
 
     try {
-      await this.runInJobContext(job.id, () => this.#dispatch(job, executionId, execution, timestamp));
+      await this.runInJobContext(job.id, () => this.#dispatch(job, executionId, execution));
     } catch (err) {
       if (err.message?.includes('timeout')) {
-        execution.timeout(timestamp);
+        execution.timeout(this.#stamp());
       } else {
-        execution.fail(err, timestamp);
+        execution.fail(err, this.#stamp());
       }
     } finally {
       this.runningJobs.delete(job.id);
@@ -166,24 +171,31 @@ export class SchedulerOrchestrator {
 
   /**
    * Hand a job to the executor that owns it (or the legacy module import) and
-   * mark the execution succeeded. Errors propagate to executeJob.
+   * mark the execution succeeded (or failed, for a harvest that returns status
+   * 'error'). Thrown errors propagate to executeJob.
    */
-  async #dispatch(job, executionId, execution, timestamp) {
+  async #dispatch(job, executionId, execution) {
     // Check newsreporter executor FIRST. Reporter jobs have no `module`, so if
     // they fell through to the legacy dynamic-import branch they would throw
     // INVALID_MODULE.
     if (this.newsReporterExecutor?.canHandle(job.id)) {
       await this.#runWithinDeadline(this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      execution.succeed(timestamp);
+      execution.succeed(this.#stamp());
     } else if (this.harvesterExecutor?.canHandle(job.id)) {
-      await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
+      const result = await this.#runWithinDeadline(this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      execution.succeed(timestamp);
+      // A harvester that can't do its job (e.g. expired auth) returns status
+      // 'error' rather than throwing; that is still a failed run.
+      if (isFailedHarvest(result)) {
+        execution.fail(new Error(describeHarvestFailure(result)), this.#stamp());
+      } else {
+        execution.succeed(this.#stamp());
+      }
     } else if (this.applicationExecutor?.canHandle(job.id)) {
       await this.#runWithinDeadline(this.applicationExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      execution.succeed(timestamp);
+      execution.succeed(this.#stamp());
     } else if (this.schoolExecutor?.canHandle(job.id)) {
       // School housekeeping (the stale-session sweep). Its own slot rather
       // than a registration on `mediaExecutor`: that registry is generic
@@ -191,12 +203,12 @@ export class SchedulerOrchestrator {
       // kind of small lie that makes the next person hunt.
       await this.#runWithinDeadline(this.schoolExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      execution.succeed(timestamp);
+      execution.succeed(this.#stamp());
     } else if (this.mediaExecutor?.canHandle(job.id)) {
       // Check if media executor can handle this job (youtube, etc.)
       await this.#runWithinDeadline(this.mediaExecutor.execute(job.id, job.options || {}, { executionId }), job);
 
-      execution.succeed(timestamp);
+      execution.succeed(this.#stamp());
     } else {
       // Fall back to dynamic module import (legacy)
       const resolvedPath = this.resolveModulePath(job.module);
@@ -218,8 +230,13 @@ export class SchedulerOrchestrator {
 
       await this.#runWithinDeadline(promise, job);
 
-      execution.succeed(timestamp);
+      execution.succeed(this.#stamp());
     }
+  }
+
+  /** Current time in the codec's format, so end timestamps reflect when the work finished. */
+  #stamp() {
+    return this.timestampCodec.format(this.#clock());
   }
 
   #runWithinDeadline(work, job) {
