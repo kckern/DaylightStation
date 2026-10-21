@@ -301,6 +301,16 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
     const unit = units.find((candidate) => candidate.unitId === lessonId);
     if (unit?.courseId) setForm((current) => ({ ...current, courseId: unit.courseId }));
   }, [lessonId, units.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sent here for a lesson: bring the form into view once, after it and its
+  // catalog have loaded. Scrolling on mount let the panels settling above and
+  // this one's own skeleton push the form back below the fold.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (!lessonId || scrolled.current) return;
+    if (exceptions.state === 'loading' || catalog.state === 'loading') return;
+    scrolled.current = true;
+    document.getElementById('curriculum-exceptions')?.scrollIntoView?.({ block: 'start' });
+  }, [lessonId, exceptions.state, catalog.state]);
   const [preview, setPreview] = useState(null);
   const [retracting, setRetracting] = useState(null);
   const [retractReason, setRetractReason] = useState('');
@@ -557,15 +567,13 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
 
 /**
  * `?unit` and `?learner` come from a child's "excuse or pause this lesson for
- * everyone" link: the exception form opens on them and scrolls into view.
+ * everyone" link: the exception form opens on them and, once loaded, scrolls
+ * into view (CurriculumExceptionPanel owns the scroll).
  */
 export function OperationsView({ kids }) {
   const params = new URLSearchParams(globalThis.location?.search ?? '');
   const unit = params.get('unit') ?? '';
   const learner = params.get('learner') ?? '';
-  useEffect(() => {
-    if (unit) document.getElementById('curriculum-exceptions')?.scrollIntoView?.({ block: 'start' });
-  }, [unit]);
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={learner} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
 }
 

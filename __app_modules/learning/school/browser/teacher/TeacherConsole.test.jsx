@@ -493,15 +493,26 @@ describe('TeacherConsole workspace', () => {
     const scrollIntoView = vi.fn();
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = scrollIntoView;
+    // Hold the exception read: the scroll must wait for the form to load, or
+    // the layout settling above and inside it pushes the form below the fold.
+    let releaseExceptions;
+    teacherWorkspaceApi.curriculumExceptions.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseExceptions = () => resolve({ ok: true, status: 200, data: { active: [] } });
+    }));
     try {
       window.history.pushState({}, '', '/school/teacher/operations?unit=unit-a&learner=user_4');
       render(<TeacherConsole />);
+      await waitFor(() => expect(releaseExceptions).toBeTypeOf('function'));
+      await waitFor(() => expect(schoolApi.curriculumUnits).toHaveBeenCalled());
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      await act(async () => { releaseExceptions(); });
       const field = (label) => [...document.querySelectorAll('#curriculum-exceptions label')]
         .find((node) => node.firstChild?.textContent === label)?.querySelector('select');
       await waitFor(() => expect(field('Lesson')?.value).toBe('unit-a'));
       expect(field('Student').value).toBe('user_4');
       await waitFor(() => expect(field('Course').value).toBe('c1'));
-      expect(scrollIntoView).toHaveBeenCalled();
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+      expect(scrollIntoView.mock.contexts[0].id).toBe('curriculum-exceptions');
     } finally {
       schoolApi.curriculumUnits.mockImplementation(units);
       Element.prototype.scrollIntoView = original;
