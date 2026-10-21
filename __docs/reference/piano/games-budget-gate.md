@@ -31,6 +31,17 @@ a gate — [Games off](#games-off-gameaccessdisabledfor) — which no player act
 | 2 | Match gate | a played challenge scores at or above the bar | open on infrastructure; the ladder floor cannot fail on verdict |
 | 3 | Budget | minutes remain in the learner's allowance *and* the device's | open |
 
+**One early pass a day (amends P12).** P12 read "no balance, however large, buys a
+privilege before the day is green". It now reads: no balance buys **more than one early
+pass a day**. A learner whose gate 1 is closed may buy one `early-pass` voucher per study
+day, in silver or gold, across all privileges; it opens one game, is consumed when that
+game ends, refunds if the game ends within the first minute, and expires at the 4 am
+rollover. Everything beyond that pass still needs a green day. The pass is consulted only
+after the entitlement says no; it is not a State Gates assertion. The economy side
+(purchase, cap, price, refund) is in
+[economy.md § Early passes](../economy/economy.md#early-passes); the kiosk's lock-screen
+offer is not wired yet, so today gate 1 behaves as the table says.
+
 Gate 3 is two balances checked in series with distinct copy — "you've used your piano
 game time for today" for a learner, "this piano has reached its shared game time" for
 the device.

@@ -8,11 +8,30 @@
  * datastore's per-user lock: an append awaits the user's queue, so without
  * the lock a second call could pass the same check before the first lands.
  */
-import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS } from "../domain/index.mjs";
+import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS,
+  passRef, parsePassRef, passesOn, findPass, priceIn, consumedRef, refundedRef, refundRef } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
+import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
 
 const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session considered dead
+// How long after the purchase the server still believes a "played under a
+// minute" claim: the refund window plus this much for picking and loading a
+// game. Past it, a client saying `playedMs: 0` is not taken at its word.
+export const REFUND_SETUP_MS = 5 * 60 * 1000;
+const CAP_PERIODS = new Set(['study-day', 'day']);
+
+const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const isPlayedMs = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+
+/** `{count, across}` from a pass's `cap`, or null when it cannot be honoured as written. Absent: one a day, across all passes. */
+function readCap(cap) {
+  if (cap == null) return { count: 1, across: 'all-passes' };
+  if (!CAP_PERIODS.has(cap.per ?? 'study-day')) return null;
+  const count = cap.count ?? 1;
+  if (!Number.isInteger(count) || count < 0) return null;
+  return { count, across: cap.across ?? 'all-passes' };
+}
 
 /** Whole `to` coins for `amount` at `rate`, floored (the epsilon absorbs 0.29 × 100 = 28.999…). */
 export function convertedAmount(amount, rate) {
@@ -41,9 +60,17 @@ function repairFigures(fromHalf, from, ref) {
 }
 
 export class EconomyService {
-  #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId;
+  #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId; #timezone; #boundaryHour;
 
+  /**
+   * @param {object} deps
+   * @param {string|null} [deps.timezone] - the household's, for the study day a
+   *   pass belongs to. Composition hands the SAME timezone and boundary hour
+   *   to the earnings preview, so a pass's day and the preview's "today" agree.
+   * @param {number} [deps.boundaryHour=4]
+   */
   constructor({ datastore, configProjection, logger = console, clock = () => new Date(),
+    timezone = null, boundaryHour = 4,
     newTransactionId = () => `txn_${shortId()}`,
     newSessionId = () => `ses_${shortId()}` }) {
     this.#ds = datastore;
@@ -53,6 +80,18 @@ export class EconomyService {
     this.#clock = clock;
     this.#newTransactionId = newTransactionId;
     this.#newSessionId = newSessionId;
+    this.#timezone = timezone ?? null;
+    this.#boundaryHour = boundaryHour;
+  }
+
+  /** Today's study day (4 am boundary, household timezone): the day a pass belongs to. */
+  currentStudyDay(date = this.#clock()) {
+    return studyDayForInstant(date.getTime(), { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+  }
+
+  /** The household's timezone and study-day boundary, for read models that name days. */
+  get studyCalendar() {
+    return { timezone: this.#timezone, boundaryHour: this.#boundaryHour };
   }
 
   #config() {
@@ -376,19 +415,211 @@ export class EconomyService {
    * the ledger, which already holds an earlier half. A snapshot failure is
    * logged and never replaces the append's own error.
    */
-  async #appendThenSnapshot(userId, txn, ref) {
+  async #appendThenSnapshot(userId, txn, ref, event = 'economy.convert.snapshot-failed') {
     let appendErr = null;
     try {
-      await this.#ds.appendTransaction(userId, txn);
+      // In order; the first failure stops the rest.
+      for (const t of Array.isArray(txn) ? txn : [txn]) await this.#ds.appendTransaction(userId, t);
     } catch (err) {
       appendErr = err;
     }
+    let wallet = null;
     try {
-      this.#snapshot(userId);
+      wallet = this.#snapshot(userId);
     } catch (err) {
-      this.#logger.error?.('economy.convert.snapshot-failed', { userId, ref, error: err?.message ?? String(err) });
+      this.#logger.error?.(event, { userId, ref, error: err?.message ?? String(err) });
     }
     if (appendErr) throw appendErr;
+    return wallet;
+  }
+
+  // ── Early passes ─────────────────────────────────────────────────────────
+  //
+  // A pass opens one unit of a privilege (one piano game) before the day is
+  // done. The ledger entries are listed in domain/passes.mjs; the pass id is
+  // the purchase marker's ref, `pass:{learnerId}:{studyDay}`. Every write
+  // runs in the user lock over a strict read, and every transition is a new
+  // marker entry: the first transition wins, a repeat is a no-op.
+  //
+  // Write order fails safe for the kid:
+  //   buy     marker, then spend. A crash between leaves a pass nobody paid
+  //           for (`paid: 0`), never coins gone with no pass. It is not
+  //           charged later; a refund of it hands back what was paid, 0.
+  //   refund  the earn, then the `:refunded` marker. The earn is the commit
+  //           point: with it present the pass reads refunded, a consume is
+  //           refused, and a retried refund writes only the missing marker.
+
+  #catalog() {
+    return this.#configProjection.catalog?.() ?? { passes: {} };
+  }
+
+  #passRefused(userId, privilege, coin, price, code, message, details = undefined) {
+    this.#logger.info('economy.pass.refused', { learnerId: userId, privilege, coin, price, reason: code });
+    throw new ValidationError(message, { code, ...(details ? { details } : {}) });
+  }
+
+  #readFrom(studyDay) {
+    // Shards are UTC days; a study day's instants can fall on the UTC day before.
+    return addDays(studyDay, -1);
+  }
+
+  /**
+   * Buy today's pass for `privilege`, paid in `coin` (silver or gold, at the
+   * catalog's price). Refusals write nothing:
+   *   PASS_NOT_SOLD      no catalog pass lists the privilege, the coin is
+   *                      priced 0 / unset, is gems or unknown, or the cap is
+   *                      not one this code can honour
+   *   PASS_CAP           `cap.count` passes already bought this study day,
+   *                      in ANY state (a refunded pass still uses the day);
+   *                      `across: all-passes` counts every pass, any other
+   *                      value only this one
+   *   PASS_UNAFFORDABLE  the ledger balance in `coin` is short;
+   *                      `details: {coin, price, balance, shortfall}`
+   * @returns {Promise<{userId: string, pass: object, balances: object}>}
+   */
+  async buyPass(userId, { privilege, coin } = {}) {
+    this.#assertUser(userId);
+    if (typeof privilege !== 'string' || !privilege.trim()) throw new ValidationError('privilege is required', { field: 'privilege' });
+    if (typeof coin !== 'string' || !coin.trim()) throw new ValidationError('coin is required', { field: 'coin' });
+    const found = findPass(this.#catalog(), privilege);
+    if (!found) this.#passRefused(userId, privilege, coin, null, 'PASS_NOT_SOLD', `no pass opens ${privilege}`);
+    const price = priceIn(found.def, coin);
+    if (price == null) this.#passRefused(userId, privilege, coin, null, 'PASS_NOT_SOLD', `${found.key} is not sold in ${coin}`);
+    const cap = readCap(found.def.cap);
+    if (!cap) this.#passRefused(userId, privilege, coin, price, 'PASS_NOT_SOLD', `${found.key} has a cap this economy cannot honour`);
+    return this.#ds.withUserLock(userId, async () => {
+      const date = this.#clock();
+      const at = date.toISOString();
+      const studyDay = this.currentStudyDay(date);
+      const txns = this.#ds.readAllTransactions(userId, { strict: true });
+      const today = passesOn(txns, { learnerId: userId, studyDay });
+      const counted = cap.across === 'all-passes' ? today : today.filter((p) => p.pass === found.key);
+      if (counted.length >= cap.count) {
+        this.#passRefused(userId, privilege, coin, price, 'PASS_CAP', `${cap.count} pass${cap.count === 1 ? '' : 'es'} a day: already used today`);
+      }
+      const balance = foldBalances(txns)[coin];
+      if (balance < price) {
+        this.#passRefused(userId, privilege, coin, price, 'PASS_UNAFFORDABLE', `${found.key} costs ${price} ${coin}; the balance is ${balance}`,
+          { coin, price, balance, shortfall: price - balance });
+      }
+      const id = passRef({ learnerId: userId, studyDay, seq: today.length + 1 });
+      const common = { action: found.key, source: 'pass', ref: id, evidenceRef: id, currency: coin, at };
+      const marker = createTransaction({ ...common, id: this.#newTransactionId(), kind: 'pass', delta: 0,
+        meta: { pass: found.key, privilege, coin, price, state: 'active', boughtAt: at, studyDay,
+          refundWithinMs: Number.isFinite(found.def.refund_within_ms) ? found.def.refund_within_ms : null } });
+      const spend = createTransaction({ ...common, id: this.#newTransactionId(), kind: 'spend', delta: -price });
+      const wallet = await this.#appendThenSnapshot(userId, [marker, spend], id, 'economy.pass.snapshot-failed');
+      this.#logger.info('economy.pass.bought', { learnerId: userId, privilege, coin, price, passId: id });
+      const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay }).find((p) => p.passId === id);
+      return { userId, pass, balances: wallet?.balances ?? foldBalances([...txns, spend]) };
+    });
+  }
+
+  /** Today's passes, first first (lenient read: display and gating only). */
+  async passesToday(userId) {
+    this.#assertUser(userId);
+    const studyDay = this.currentStudyDay();
+    return passesOn(this.#ds.readAllTransactions(userId, { fromDay: this.#readFrom(studyDay) }), { learnerId: userId, studyDay });
+  }
+
+  /** Today's active pass for `privilege`, or null. A pass expires when the study day rolls over at 4 am. */
+  async activePass(userId, { privilege } = {}) {
+    return (await this.passesToday(userId)).find((p) => p.state === 'active' && p.privilege === privilege) ?? null;
+  }
+
+  /** Lock, strict read, and the pass `passId` names for this user; 404 for anything else. */
+  async #withPass(userId, passId, fn) {
+    this.#assertUser(userId);
+    const parsed = parsePassRef(passId);
+    if (!parsed || parsed.learnerId !== userId) throw new EntityNotFoundError('pass', passId);
+    return this.#ds.withUserLock(userId, async () => {
+      const txns = this.#ds.readAllTransactions(userId, { strict: true });
+      const pass = passesOn(txns, { learnerId: userId, studyDay: parsed.studyDay }).find((p) => p.passId === passId);
+      if (!pass) throw new EntityNotFoundError('pass', passId);
+      return fn(pass, txns, parsed);
+    });
+  }
+
+  #notActive(pass, verb) {
+    throw new ValidationError(`pass ${pass.passId} is ${pass.state}; it cannot be ${verb}`, { code: 'PASS_NOT_ACTIVE', details: { state: pass.state } });
+  }
+
+  /**
+   * The game the pass bought has ended. Consuming twice is a no-op
+   * (`duplicate: true`); a refunded pass refuses with PASS_NOT_ACTIVE.
+   * @param {{passId: string, playedMs?: number|null}} args
+   */
+  async consumePass(userId, { passId, playedMs = null } = {}) {
+    if (playedMs != null && !isPlayedMs(playedMs)) throw new ValidationError('playedMs must be a non-negative number', { field: 'playedMs' });
+    return this.#withPass(userId, passId, async (pass, txns) => {
+      if (pass.state === 'consumed') return { userId, pass, duplicate: true };
+      if (pass.state !== 'active') this.#notActive(pass, 'consumed');
+      const marker = createTransaction({ id: this.#newTransactionId(), kind: 'pass', delta: 0, currency: pass.coin ?? 'silver',
+        action: pass.pass ?? 'pass', source: 'pass', ref: consumedRef(passId), evidenceRef: passId, at: this.#now(),
+        meta: { pass: pass.pass, privilege: pass.privilege, state: 'consumed', playedMs } });
+      await this.#ds.appendTransaction(userId, marker);
+      this.#logger.info('economy.pass.consumed', { learnerId: userId, privilege: pass.privilege, coin: pass.coin, price: pass.price, passId, playedMs });
+      return { userId, pass: this.#stateAfter(txns, marker, userId, passId), duplicate: false };
+    });
+  }
+
+  #stateAfter(txns, added, userId, passId) {
+    const parsed = parsePassRef(passId);
+    return passesOn([...txns, ...[].concat(added)], { learnerId: userId, studyDay: parsed.studyDay }).find((p) => p.passId === passId);
+  }
+
+  /**
+   * Hand back what the pass cost: the game ended within the refund window.
+   * Allowed only while the pass is active, on its own study day, with the
+   * client's `playedMs` under `refund_within_ms` (as recorded at purchase),
+   * AND the server's time since purchase under that window plus
+   * REFUND_SETUP_MS, so a client cannot claim `playedMs: 0` an hour later.
+   * Otherwise PASS_REFUND_CLOSED; consumed: PASS_NOT_ACTIVE. Refunding twice
+   * refunds once (`duplicate: true`).
+   * @param {{passId: string, playedMs: number, reason?: string|null}} args
+   */
+  async refundPass(userId, { passId, playedMs, reason = null } = {}) {
+    if (!isPlayedMs(playedMs)) throw new ValidationError('playedMs must be a non-negative number', { field: 'playedMs' });
+    const why = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 80) : null;
+    return this.#withPass(userId, passId, async (pass, txns, parsed) => {
+      const log = { learnerId: userId, privilege: pass.privilege, coin: pass.coin, price: pass.price, passId };
+      const markerFor = () => createTransaction({ id: this.#newTransactionId(), kind: 'pass', delta: 0, currency: pass.coin ?? 'silver',
+        action: pass.pass ?? 'pass', source: 'pass', ref: refundedRef(passId), evidenceRef: passId, at: this.#now(),
+        meta: { pass: pass.pass, privilege: pass.privilege, state: 'refunded', playedMs, ...(why ? { reason: why } : {}) } });
+      if (pass.state === 'refunded') {
+        // Finish a refund whose marker never landed; never pay it twice.
+        if (txns.some((t) => t.kind === 'pass' && t.ref === refundedRef(passId))) return { userId, pass, refunded: 0, duplicate: true, balances: foldBalances(txns) };
+        const marker = markerFor();
+        await this.#ds.appendTransaction(userId, marker);
+        return { userId, pass: this.#stateAfter(txns, marker, userId, passId), refunded: 0, duplicate: true, balances: foldBalances(txns) };
+      }
+      if (pass.state !== 'active') {
+        this.#logger.info('economy.pass.refused', { ...log, reason: 'PASS_NOT_ACTIVE' });
+        this.#notActive(pass, 'refunded');
+      }
+      const date = this.#clock();
+      const window = txns.find((t) => t.kind === 'pass' && t.ref === passId)?.meta?.refundWithinMs
+        ?? findPass(this.#catalog(), pass.privilege)?.def?.refund_within_ms;
+      const sinceBought = date.getTime() - Date.parse(pass.boughtAt);
+      const closed = !Number.isFinite(window) || window <= 0 ? 'this pass has no refund window'
+        : parsed.studyDay !== this.currentStudyDay(date) ? 'the pass was for an earlier day'
+          : playedMs >= window ? `played ${Math.round(playedMs / 1000)} s, past the ${Math.round(window / 1000)} s refund window`
+            : !(sinceBought < window + REFUND_SETUP_MS) ? 'bought too long ago to refund' : null;
+      if (closed) {
+        this.#logger.info('economy.pass.refused', { ...log, reason: 'PASS_REFUND_CLOSED' });
+        throw new ValidationError(`no refund: ${closed}`, { code: 'PASS_REFUND_CLOSED' });
+      }
+      const owed = Math.max(0, pass.paid);
+      const writes = [];
+      if (owed > 0) {
+        writes.push(createTransaction({ id: this.#newTransactionId(), kind: 'earn', currency: pass.coin, delta: owed,
+          action: `${pass.pass}-refund`, source: 'pass', ref: refundRef(passId), evidenceRef: passId, at: date.toISOString() }));
+      }
+      writes.push(markerFor());
+      const wallet = await this.#appendThenSnapshot(userId, writes, passId, 'economy.pass.snapshot-failed');
+      this.#logger.info('economy.pass.refunded', { ...log, refunded: owed, playedMs, reason: why });
+      return { userId, pass: this.#stateAfter(txns, writes, userId, passId), refunded: owed, duplicate: false, balances: wallet?.balances ?? foldBalances([...txns, ...writes]) };
+    });
   }
 
   async openSession(userId, { action, source }) {

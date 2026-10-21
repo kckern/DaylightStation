@@ -32,8 +32,21 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       ringEvidence: fitnessRings,
       learners: async () => schoolLearnerDirectory.listLearners(),
       clock: () => new Date(),
-      timezone: measuresTimezone,
+      // One study calendar for the preview and the passes (the bank's "today").
+      timezone: economyApi.studyCalendar?.timezone ?? measuresTimezone,
+      boundaryHour: economyApi.studyCalendar?.boundaryHour ?? 4,
       logger: rootLogger.child({ module: 'economy-earnings' }),
+    });
+    // The bank names a payout by the preview line it paid for (ref → label).
+    // A learner off the school roster has no preview: rule labels name theirs.
+    economyApi.useEvidenceLabels?.(async (learnerId) => {
+      try {
+        const week = await earningsPreview.preview({ learnerId });
+        return new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
+      } catch (err) {
+        if (err instanceof EntityNotFoundError) return null;
+        throw err;
+      }
     });
     // Payouts mint what this same preview says was earned (B3), so the board
     // and the ledger read one evaluator. Started by `startEconomyPayouts`.

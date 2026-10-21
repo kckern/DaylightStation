@@ -8,6 +8,7 @@ import { YamlEarnRulesStore } from "../adapters/persistence/YamlEarnRulesStore.m
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
 import { EconomyService } from "../application/EconomyService.mjs";
 import { EarnRulesService } from "../application/EarnRulesService.mjs";
+import { BankService } from "../application/BankService.mjs";
 import { createEconomyRouter } from "../api/economy.mjs";
 
 /**
@@ -16,14 +17,23 @@ import { createEconomyRouter } from "../api/economy.mjs";
  * @param {Object} config.configService - ConfigService (user profiles, dirs, economy/config.yml)
  * @param {Object} [config.logger] - Logger instance
  * @param {() => Date} [config.clock]
- * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, configProjection: EconomyConfigProjection, router: import('express').Router }}
+ * @param {string|null} [config.timezone] - the household's. The earnings
+ *   runtime reads it back from `studyCalendar`, so the preview's "today" and
+ *   the day a pass belongs to come from one setting.
+ * @param {number} [config.boundaryHour=4]
+ * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, bankService: BankService,
+ *   configProjection: EconomyConfigProjection, studyCalendar: {timezone: string|null, boundaryHour: number},
+ *   useEvidenceLabels: (fn: (userId: string) => Promise<Map<string,string>|null>) => void,
+ *   router: import('express').Router }}
  */
-export function createEconomyApi({ configService, logger = console, clock = () => new Date() }) {
+export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4 }) {
   const configProjection = new EconomyConfigProjection({ configService, logger });
+  const studyCalendar = Object.freeze({ timezone: timezone ?? null, boundaryHour });
   const economyService = new EconomyService({
     datastore: new YamlEconomyDatastore({ configService }),
     configProjection,
     clock,
+    ...studyCalendar,
     logger,
   });
   // The household earn rules (weekly earnings preview; the future payout).
@@ -33,7 +43,23 @@ export function createEconomyApi({ configService, logger = console, clock = () =
     clock,
     logger,
   });
-  return { economyService, earnRulesService, configProjection, router: createEconomyRouter({ economyService, logger }) };
+  // The bank names payout lines from the current week's preview, which is
+  // built later (the earnings runtime); until it binds a source, the ruleset
+  // labels name them.
+  let evidenceLabels = null;
+  const bankService = new BankService({
+    economy: economyService,
+    config: configProjection,
+    rules: earnRulesService,
+    evidenceLabels: (userId) => (evidenceLabels ? evidenceLabels(userId) : null),
+    clock,
+    logger,
+  });
+  return {
+    economyService, earnRulesService, bankService, configProjection, studyCalendar,
+    useEvidenceLabels(fn) { evidenceLabels = typeof fn === 'function' ? fn : null; },
+    router: createEconomyRouter({ economyService, bankService, logger }),
+  };
 }
 
 export default createEconomyApi;

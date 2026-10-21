@@ -1094,6 +1094,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // router itself is mounted below where the other v1Routers are assembled.
   const economyApi = createEconomyApi({
     configService,
+    // The same setting the weekly measures read; the earnings preview takes
+    // its study calendar from here, so passes and the preview share "today".
+    timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
     logger: rootLogger.child({ module: 'economy-api' })
   });
 

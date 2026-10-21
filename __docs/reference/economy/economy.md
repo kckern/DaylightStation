@@ -74,7 +74,7 @@ rules sit beside it in `economy/earn-rules.yml`.
 | `spend`, `withdraw` | < 0 | arcade drain; cash-out |
 | `adjust` | ≠ 0, either sign | auditable reconciliation (may push the ledger below zero) |
 | `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry. The ledger does not enforce the pairing; the week close writes both halves under the user lock |
-| `pass` | exactly 0 | voucher marker; the coin it cost is a separate `spend` |
+| `pass` | exactly 0 | voucher marker; the coin it cost is a separate `spend`. A state change is a new marker entry (see [Early passes](#early-passes)) |
 
 ## Discrete vs metered entries
 
@@ -167,6 +167,102 @@ passes for a payout or a week close.
 
 Domain errors map to HTTP: `ValidationError` → 400 (bad amount, blackout, no
 balance, existing session), `EntityNotFoundError` → 404 (unknown user).
+
+| Method / Path | Body | Returns |
+|---|---|---|
+| GET `/users/:userId/bank` | — | `{ userId, balances, history, pass, offers, weekEndsAt }` |
+| POST `/users/:userId/passes` | `{ privilege, coin }` | `{ userId, pass, balances }` |
+| POST `/users/:userId/passes/:passId/consume` | `{ playedMs? }` | `{ userId, pass, duplicate }` |
+| POST `/users/:userId/passes/:passId/refund` | `{ playedMs, reason? }` | `{ userId, pass, refunded, duplicate, balances }` |
+
+**Bank.** `history` is the last 50 ledger lines in plain words, newest first
+(`{ text, at, kind, ids }`): "+2 silver · Green day", "−3 silver · early pass",
+"+3 silver · early pass refunded", "12 silver → 12 gold · Sunday". A payout is
+named by the current week's preview line it paid for (its `evidenceRef`), then
+by the ruleset's label for its `ruleId`, then "schoolwork"; the two halves of a
+conversion (same `at` and `evidenceRef`) read as one line, named by the local
+weekday. Zero-delta `pass` markers are left out. `pass` is today's latest pass
+(`{ state: 'none', studyDay }` before any). `offers` maps each privilege a pass
+opens to its quote: `[{ coin, price, affordable }]`, one row per coin the pass is
+sold in, so `[]` means not for sale. `weekEndsAt` is the next
+`week_close.cron` instant (a weekly `M H * * D` cron in the household timezone),
+or the end of the week's Sunday study day (Monday at 4 am) when the cron is unset
+or not that shape. The code is `domain/historyText.mjs` (pure) and
+`application/BankService.mjs`.
+
+**Pass errors** carry a `code`. `PASS_CAP`, `PASS_NOT_SOLD`, `PASS_NOT_ACTIVE`
+and `PASS_REFUND_CLOSED` → 409: the request is well-formed, and the day, the
+catalog or the pass's state refuses it (a price the owner sets later can make
+the same request succeed). `PASS_UNAFFORDABLE` → 402 with `{ coin, price,
+balance, shortfall }`. An unknown pass, or one of another learner → 404; a
+missing privilege or coin, or a `playedMs` that is not a non-negative number →
+400. The routes read only the fields above from the body.
+
+## Early passes
+
+One pass a day lets a learner open one unit of a privilege (one piano game)
+before the day's schoolwork is done, paid in silver or gold. Economy owns the
+purchase, the cap and the price; the privilege owns consumption (the piano
+kiosk consumes the pass when the game ends). Authorization is `trust`: no PIN,
+a kid buys their own.
+
+**Price.** `passes.<key>.price.{silver,gold}`; a price of 0 (or unset, or not a
+whole number) means not sold in that coin, so the shipped `{ silver: 0, gold: 0 }`
+sells nothing until the owner prices it. Gems never buy a pass. Buying in a coin
+it is not sold in, or an unknown coin, or for a privilege no pass lists, is
+`PASS_NOT_SOLD`.
+
+**Cap.** `cap: { per: study-day, count, across }`. `count` passes per learner
+per study day, in any state: a refunded pass still uses up the day.
+`across: all-passes` counts every pass that day, whatever privilege; any other
+value counts only this pass. A `per` other than `study-day` (or `day`) sells
+nothing. No `cap` reads as one a day across all passes.
+
+**Study day.** The 4 am boundary in the household timezone, from the same
+`studyDayForInstant` and the same timezone setting as the earnings preview
+(`createEconomyApi({ timezone })` hands its `studyCalendar` to the preview). A
+pass expires when the study day rolls over: `activePass` returns null after 4 am.
+
+**Ledger entries.** The pass id is `pass:{learnerId}:{studyDay}` (a second
+pass the same day, only when `count` allows it, is `….2`). Every entry carries
+`evidenceRef` = the pass id and `source: pass`; the action is the catalog key.
+
+| Entry | `ref` | Written by |
+|---|---|---|
+| `pass` marker, `meta.state: active` (`privilege, coin, price, boughtAt, refundWithinMs`) | pass id | buy |
+| `spend`, −price in the coin | pass id | buy |
+| `pass` marker, `meta.state: consumed` (`playedMs`) | `{id}:consumed` | consume |
+| `earn`, +what was paid, action `{key}-refund` | `{id}:refund` | refund |
+| `pass` marker, `meta.state: refunded` (`playedMs, reason`) | `{id}:refunded` | refund |
+
+The ledger is append-only, so a state change is a new marker; `passState` folds
+them, latest first. Every buy and transition runs in the user lock over a
+strict ledger read, and affordability is the folded ledger balance, never the
+wallet snapshot. A refusal writes nothing.
+
+**Transitions.** The first transition wins: consuming a refunded pass, or
+refunding a consumed one, is `PASS_NOT_ACTIVE`. Consuming twice, or refunding
+twice, is a no-op (`duplicate: true`) and refunds once.
+
+**Write order fails safe for the kid.** A purchase writes the marker, then the
+spend: a crash between leaves a pass nobody paid for (`paid: 0`), never coins
+gone with no pass; it is not charged later. A refund writes the earn, then the
+marker: the earn is the refund's commit point, so with it present the pass reads
+refunded and a retried refund writes only the missing marker. The refund hands
+back what was paid (0 for an unpaid pass). The wallet snapshot is refreshed
+after either, even when an append fails; the append's error is what the caller
+sees (`economy.pass.snapshot-failed` logs a snapshot failure).
+
+**Refund window.** Allowed only while the pass is active, on its own study day,
+when the client's `playedMs` is under `refund_within_ms` (recorded on the
+purchase marker) **and** the server's time since purchase is under that window
+plus `REFUND_SETUP_MS` (5 minutes for picking and loading a game). The second
+bound stops a client claiming `playedMs: 0` an hour later. Otherwise
+`PASS_REFUND_CLOSED`.
+
+**Logs** (info, one line each): `economy.pass.bought`, `economy.pass.consumed`,
+`economy.pass.refunded`, `economy.pass.refused` with `{ learnerId, privilege,
+coin, price, reason }` (the refusal code as `reason`).
 
 ## Integration points
 
