@@ -642,35 +642,63 @@ gate; it remains locked with `non_exempt_contributor_required` and no exempt
 user in `missingUsers`. This lets an exempt child race with the group without
 turning their monitor into a solo playback key.
 
-When `unattended_policy` is enabled and none of the configured `superusers` is
-in the active roster, each governed video starts locked until a non-guest,
-non-exempt child reaches the configured startup zone. That achievement is
-latched for the current media item. Every other eligible child must reach the
-startup zone once within 120 seconds of joining, or of the video opening for
-children already present. Inside that window nothing pauses. Past it, the
-engine adds a `__unattended_child_start` requirement (`rule: 'all'`) naming only
-the overdue children, which takes the normal warning, grace and lock path.
-Each child's start is kept for the media item, through leaving and rejoining or
-a supervisor's visit, and is reset when the media changes
-(`governance.unattended.child_started` / `child_start_overdue`). Once the video
-has opened, the composed state carries `unattendedStart` (`{ zone, zoneLabel,
-children: { [id]: { started, overdue, remainingMs } } }`, otherwise `null`);
-`resolveParticipantGovernanceStatuses()` in `useGovernanceDisplay.js` turns it
-into `reach-start` / `start-overdue`, which the sidebar roster card, the
-fullscreen vitals avatar and the warning/lock rows draw as a "Reach Hot" badge
-(`GovernanceStartBadge`, warning style once overdue). The engine then replaces the ordinary
-random challenge schedule with cyclic group challenges at the configured zones
-on the exact configured interval. The group rule scales with the roster: `all`
-(label "All warm") for one or two eligible children, `most` ("Most warm") for
-three or more, so one straggler cannot lock the others. Each child's met/missing
-status is still evaluated, logged (`governance.challenge_eval`) and shown. By default those targets alternate between
-Warm and the startup zone (normally Hot). These challenges bypass the 20-BPM
-feasibility check that ordinary policies use: the cycle exists to demand effort
-from children who are coasting, so "nobody is close to Hot right now" is the
-moment to fire, not a reason to skip. A missed challenge locks playback
-until the rule's required count of governed children hold the target. A superuser joining immediately
-stands this policy down and restores the normal policy; leaving again starts a
-fresh startup gate.
+#### Unattended policy
+
+**Supervisors** come from household profiles: anyone whose profile has
+`type: owner`, plus anyone with `roles: [guardian]`. `governance.superusers` in
+the fitness config is retired and ignored; if present it logs
+`governance.config.superusers_retired` once.
+
+The decision tree, evaluated against the active roster:
+
+1. `unattended_policy` disabled, or a supervisor on the roster: normal policy.
+2. No eligible child (the roster holds only supervisors, guests and exempt
+   riders): normal policy. An exempt rider alone still cannot unlock governed
+   content, because the normal policy's non-exempt-contributor anchor is kept.
+   An exempt adult who should unlock content gets a profile with
+   `roles: [guardian]`.
+3. Otherwise the unattended policy applies, as follows.
+
+Each governed video starts locked until a non-guest, non-exempt child reaches
+the configured startup zone (latched for the media item). Every other eligible
+child must then reach the startup zone once within 120 seconds of joining, or
+of the video opening for children already present. Inside that window nothing
+pauses. Past it, the engine adds a `__unattended_child_start` requirement
+(`rule: 'all'`) naming only the overdue children, which takes the normal
+warning, grace and lock path.
+
+Start bookkeeping per media item:
+
+- A child who leaves before reaching the start zone keeps the original 120s
+  window on rejoin, so a flapping HR strap cannot extend it forever.
+- A child who already started keeps that on the same video, through leaving,
+  rejoining or a supervisor's visit.
+- A new video re-arms everything.
+- Events: `governance.unattended.child_started` and
+  `governance.unattended.child_start_overdue`.
+
+Once the video has opened, the composed state carries `unattendedStart`
+(`{ zone, zoneLabel, children: { [id]: { started, overdue, remainingMs } } }`,
+otherwise `null`); `resolveParticipantGovernanceStatuses()` in
+`useGovernanceDisplay.js` turns it into `reach-start` / `start-overdue`, which
+the sidebar roster card, the fullscreen vitals avatar and the warning/lock rows
+draw as a "Reach Hot" badge (`GovernanceStartBadge`, warning style once
+overdue).
+
+The engine also replaces the ordinary random challenge schedule with cyclic
+group challenges at the configured zones on the exact configured interval. The
+group rule scales with the roster: `all` (label "All warm") for one or two
+eligible children, `most` ("Most warm") for three or more. "Most" means at
+least half, `ceil(n/2)`: 3 children need 2, 4 need 2. One straggler therefore
+cannot lock the others. Each child's met/missing status is still evaluated,
+logged (`governance.challenge_eval`) and shown. By default those targets
+alternate between Warm and the startup zone (normally Hot). These challenges
+bypass the 20-BPM feasibility check that ordinary policies use: the cycle
+exists to demand effort from children who are coasting, so "nobody is close to
+Hot right now" is the moment to fire. A missed challenge locks playback until
+the rule's required count of governed children hold the target. A supervisor
+joining immediately stands this policy down and restores the normal policy;
+leaving again starts a fresh startup gate.
 
 Ordinary (non-unattended) zone challenges are feasibility-checked at start: if
 no participant is within 20 BPM of the target the challenge is skipped
@@ -688,14 +716,15 @@ or unattended selection at or below the baseline is skipped at start
 
 Every zone challenge (supervised or unattended) counts a rider only after they
 have held the target zone for `challenge_hold_seconds` (default 10) continuous
-seconds within that challenge. A rider already in the zone when the challenge
+seconds within that challenge. Holds keep accruing while a challenge is paused;
+the hold starts at the first evaluation after a rider enters the zone. A rider already in the zone when the challenge
 appears still holds for the full time; dropping below the zone resets that
 rider's hold. The challenge completes once the required count of riders have
 each completed a hold. `0` restores instant completion. The evaluation result
 carries `holding` (in zone, hold incomplete) and `holdRemainingMs`, and the
 engine pulses at the earliest hold end so completion is not late. The
 challenge snapshot in the composed state copies `holding` and `holdRemainingMs`.
-Riders mid-hold stay in `missingUsers`, but the display layer gives them the
+Riders mid-hold stay in `missingUsers` (they still count as missing in the engine), but the display layer gives them the
 status `holding`: the challenge overlay draws them as pulsing blocks after the
 completed ones, and warning/lock rows read "Holding" rather than missing. Cycle
 challenges are unaffected.
@@ -710,8 +739,7 @@ Located in `data/household/fitness/config.yml`:
 governance:
   grace_period_seconds: 30
   challenge_hold_seconds: 10  # zone challenges: continuous seconds in zone (0 = instant)
-  superusers:
-    - user_1
+  # superusers: retired and ignored; supervisors are profiles with type: owner or roles: [guardian]
   unattended_policy:
     enabled: true
     startup_zone: hot

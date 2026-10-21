@@ -12,7 +12,9 @@ governance:
       reset_on: [local_day, supervisor_join]
 ```
 
-No budget entries preserves existing playback. A supervisor is an active roster participant whose normalized ID occurs in `governance.superusers`, the same definition used by unattended HOT governance. Exemptions and guests do not imply supervision. Presence is instrumented through the roster.
+No budget entries preserves existing playback. A supervisor is an active roster participant whose household profile is `type: owner` or has `roles: [guardian]`, the same definition used by unattended HOT governance (`governance.superusers` is retired and ignored). Exemptions and guests do not imply supervision. Presence is instrumented through the roster.
+
+A budget only meters while a governed child is on the roster. With no governed child (only supervisors, guests or exempt riders) playback is not metered and the allowance is NOT reset. The server requires `userDirectory` to classify the roster: the budget service constructor throws without it. Server and browser share one predicate, `isGovernedChildId` in `shared/supervision.mjs`.
 
 Allowance resets at household-local midnight, or once on an absent-to-present supervisor transition. Supervised time is free; when the supervisor leaves, the fresh allowance remains. The provider observes roster changes even with no Player mounted. HOT and challenges never replenish the allowance.
 
