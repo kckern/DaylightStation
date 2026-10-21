@@ -162,6 +162,7 @@ function TeacherShell({ PianoProgramsPanel }) {
       day: /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '') ? [`Back to ${humanDate(originDay)}`, () => goDay(originDay)] : null,
       today: ['Back to dashboard', dashboardBack],
       queue: ['Back to action queue', () => goGlobal('queue')],
+      operations: ['Back to operations', () => goGlobal('operations')],
     };
     // Own keys only: `?from=constructor` must not reach Object.prototype.
     const [backLabel, onBack] = (Object.hasOwn(ORIGINS, from ?? '') ? ORIGINS[from] : null)

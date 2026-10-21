@@ -26,6 +26,7 @@ import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherLog } from "../teacherLog.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { teacherDate } from "../teacherDates.js";
+import { presentSessionState } from "../sessionPresentation.js";
 import { teacherSessionPath, teacherSectionPath } from "../teacherUrl.js";
 
 /**
@@ -65,9 +66,13 @@ function PendingReviewCount({ sessionId }) {
   );
 }
 
+// A lesson three school days quiet is already stuck to the family; the
+// server's default of seven hid it for a week.
+const STALE_AFTER_DAYS = 3;
+
 export default function StaleSessions({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
-  const stale = usePanelFetch(() => schoolApi.staleSessions(), {
+  const stale = usePanelFetch(() => schoolApi.staleSessions(STALE_AFTER_DAYS), {
     panel: 'stale-sessions',
     notFoundAs: 'unavailable',
     isEmpty: (d) => !(d?.sessions ?? []).length,
@@ -87,7 +92,7 @@ export default function StaleSessions({ kids = [] }) {
       title="Stuck sessions"
       state={stale.state}
       retry={stale.retry}
-      emptyCopy="Nothing has been sitting for more than a week."
+      emptyCopy={`Nothing has been sitting for more than ${STALE_AFTER_DAYS} days.`}
     >
       <ul className="teacher-stale" data-testid="stale-sessions">
         {(stale.data?.sessions ?? []).map((row) => (
@@ -97,7 +102,7 @@ export default function StaleSessions({ kids = [] }) {
             <span className="teacher-stale__meta">
               {/* Human copy (audit): 'created since 2026-07-30' was written by
                   string concatenation, not a person. */}
-              waiting since {teacherDate(row.updatedAt)} ({row.state ?? 'open'})
+              waiting since {teacherDate(row.updatedAt)} ({presentSessionState({ state: row.state }).label})
             </span>
             {asking === row.sessionId ? (
               <span className="teacher-stale__reason">
@@ -123,7 +128,7 @@ export default function StaleSessions({ kids = [] }) {
               // grading or close, not abandonment (`MarkSessionAbandoned`
               // would refuse it). Offer the move that actually works.
               <span className="teacher-stale__settle">
-                <a className="teacher-stale__settle-link" href={teacherSessionPath(null, row.sessionId)}>
+                <a className="teacher-stale__settle-link" href={teacherSessionPath(row.learnerId ?? null, row.sessionId, undefined, { from: 'operations' })}>
                   Settle by hand →
                 </a>
                 <PendingReviewCount sessionId={row.sessionId} />

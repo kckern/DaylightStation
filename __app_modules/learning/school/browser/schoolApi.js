@@ -245,7 +245,8 @@ export const schoolApi = {
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   allAssignments: () => req('/lifecycle/assignments'),
-  staleSessions: () => req('/lifecycle/sessions/stale'),
+  // `olderThanDays` omitted → the server's default (7).
+  staleSessions: (olderThanDays = null) => req(`/lifecycle/sessions/stale${olderThanDays ? `?${new URLSearchParams({ olderThanDays: String(olderThanDays) })}` : ''}`),
   abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
   // Settling stuck work by hand (session inspector). Two calls because they
   // are two events — `submitted → graded → outcome_recorded` is the whole

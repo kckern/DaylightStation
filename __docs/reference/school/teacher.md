@@ -208,7 +208,9 @@ started**, and is excluded from the unfinished count.
 
 Opening a session from a Day records `from=day&studyDay=YYYY-MM-DD` in the URL.
 The inspector's Back control returns to that exact date; a session opened from
-History returns to History. The browser's incidental navigation stack is not
+History returns to History, and one opened from the action queue
+(`from=queue`) or from Operations' stuck sessions (`from=operations`) returns
+there. The browser's incidental navigation stack is not
 the source of this promise.
 
 ### The code-free door, and a program's own test mode
@@ -939,7 +941,7 @@ retake ask and a flag on the same bank are different sentences.
 
 ```mermaid
 flowchart LR
-    S["Non-terminal, untouched for 7+ days"] --> LIST["Stuck sessions — roster-wide"]
+    S["Non-terminal, untouched for 3+ days"] --> LIST["Stuck sessions — roster-wide"]
     LIST --> C{"Does the state accept 'abandoned'?"}
     C -->|yes| A["Abandon with a mandatory reason"]
     C -->|"no — submitted, graded, outcome_recorded"| G["Settle by hand → · session inspector"]
@@ -952,6 +954,12 @@ Household-scoped by design, not per-learner: a wedged session is an operational
 leak whoever it belongs to, and the point is that somebody finally notices. A
 nightly sweep closes out work that was handed to a child and never came back;
 before it existed, the threshold on the manual route was never once consulted.
+
+The Operations panel asks the server for sessions quiet for three days
+(`olderThanDays=3`); the endpoint's own default of seven hid a stuck lesson for
+a week after the family already felt it. Each row names its state in words
+(`presentSessionState`), and "Settle by hand" opens the inspector with
+`?from=operations`, so its Back returns to Operations.
 
 ---
 
