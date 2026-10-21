@@ -97,3 +97,87 @@ describe('composeSchoolPush — delivery metadata', () => {
       .toBe('school-user_4-piano-2026-09-04');
   });
 });
+
+describe('composeSchoolPush — the parent digest', () => {
+  const learners = [
+    { learnerId: 'learner_a', child: 'Learner A', served: 3, asked: 3, judged: true, silverEarned: 12, passesUsed: 1, failure: null },
+    { learnerId: 'learner_b', child: 'Learner B', served: 1, asked: 2, judged: true, silverEarned: 0, passesUsed: 0, failure: 'print_failed' },
+    { learnerId: 'learner_c', child: 'Learner C', served: 0, asked: 0, judged: true, silverEarned: null, passesUsed: null, failure: null },
+    { learnerId: 'learner_d', child: 'Learner D', served: 0, asked: 0, judged: false, silverEarned: null, passesUsed: 2, failure: 'code_rejected' },
+  ];
+  const digest = (extra = {}) => composeSchoolPush({ kind: 'digest', studyDay: '2026-10-20', today: '2026-10-20', coins: 'live', learners, ...extra });
+
+  it('one line per child: served of asked, silver, passes and the first failure', () => {
+    const push = digest();
+    expect(push.title).toBe('School today');
+    expect(push.message.split('\n')).toEqual([
+      'Learner A: 3 of 3 done · 12 silver · 1 pass used',
+      'Learner B: 1 of 2 done · a print failed',
+      'Learner C: nothing asked',
+      "Learner D: couldn't be checked · 2 passes used · a code was turned away",
+    ]);
+    expect(push.data).toMatchObject({ tag: 'school-digest', group: 'school', channel: 'School progress' });
+  });
+
+  it('says the coins are not live in dry-run, and never shows a silver figure', () => {
+    const lines = digest({ coins: 'dry-run' }).message.split('\n');
+    expect(lines[0]).toBe('Learner A: 3 of 3 done · 1 pass used');
+    expect(lines.at(-1)).toBe('Coins not live yet');
+  });
+
+  it('says nothing about coins when the economy is off', () => {
+    const push = digest({ coins: 'off' });
+    expect(push.message).not.toMatch(/silver|Coins/);
+  });
+
+  it('names the day when it is not today', () => {
+    expect(digest({ today: '2026-10-21' }).title).toBe('School · Tue Oct 20');
+  });
+
+  it('caps the body: a long line drops its tail clauses, extra children fold into a count', () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      learnerId: `learner_${i}`, child: `Learner ${i} With A Rather Long Display Name`, served: 1, asked: 4, judged: true,
+      silverEarned: 1234, passesUsed: 3, failure: 'issue_failed',
+    }));
+    const push = digest({ learners: many });
+    const lines = push.message.split('\n');
+    expect(push.message.length).toBeLessThanOrEqual(600);
+    expect(lines.every((line) => line.length <= 100)).toBe(true);
+    expect(lines.at(-1)).toMatch(/^\+\d+ more in the teacher view$/);
+    expect(findPushTextDefects(push.message)).toEqual([]);
+  });
+
+  it('renders without defects', () => {
+    for (const coins of ['live', 'dry-run', 'off']) {
+      const push = digest({ coins });
+      expect(findPushTextDefects(push.title)).toEqual([]);
+      expect(findPushTextDefects(push.message)).toEqual([]);
+    }
+  });
+
+  it('sends nothing with no children', () => {
+    expect(digest({ learners: [] })).toBeNull();
+  });
+});
+
+describe('composeSchoolPush — two empty study days', () => {
+  it('names the child and says it is the second study day in a row', () => {
+    const push = composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', child: 'Learner A', days: 2, studyDay: '2026-10-20' });
+    expect(push.title).toBe('📭 Learner A — School');
+    expect(push.message).toBe('Nothing done for the second study day in a row');
+    expect(push.data).toMatchObject({ tag: 'school-learner_a-zero-days', group: 'school-learner_a', channel: 'School needs you', importance: 'high' });
+    expect(findPushTextDefects(push.title)).toEqual([]);
+    expect(findPushTextDefects(push.message)).toEqual([]);
+  });
+
+  it('counts past the ordinals it knows', () => {
+    expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', child: 'Learner A', days: 3 }).message)
+      .toBe('Nothing done for the third study day in a row');
+    expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', child: 'Learner A', days: 9 }).message)
+      .toBe('Nothing done for 9 study days in a row');
+  });
+
+  it('drops the name, not the push, when the name is missing', () => {
+    expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', days: 2 }).title).toBe('📭 School');
+  });
+});

@@ -129,6 +129,12 @@ spend: {}
   value); a typo never pays out. A bare `mode:` (null) counts as unknown; only a
   missing key is quietly `off`.
 
+**`digest`** is read by School's parent digest
+(`__docs/reference/notifications/push-standard.md`). `cron` is read once at boot:
+a change needs a restart, and null registers no job. `zero_days_alert` (study days
+in a row with work asked and none done before the `zero-days` alert) and `mode`
+are read on every run; null turns the alert off.
+
 **Modes** (read by PayoutService on every settle). `off`: payouts do nothing. `dry-run`: payouts log
 `economy.payout.would-mint` and change no balance. `live`: payouts write the ledger.
 

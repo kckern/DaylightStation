@@ -3418,6 +3418,38 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   }
 
+  // Parent digest (school economy C6): one push to each teacher at the
+  // economy catalog's `digest.cron` (read here, at boot: a change needs a
+  // restart; null registers nothing) summing each child's school day, plus a
+  // `zero-days` alert after `digest.zero_days_alert` study days in a row with
+  // work asked and none done. A push held by quiet hours is resent by a
+  // 15-minute retry tick. Gated like the economy payouts.
+  if (agentsServices.scheduler && notificationStack?.notificationService
+      && schoolLifecycle.useCases?.getLearnerDayCompletion) {
+    try {
+      const { createSchoolParentDigest } = await import("../../__app_modules/learning/school/server/composition-parent-digest.mjs");
+      createSchoolParentDigest({
+        economyConfig: economyApi.configProjection,
+        economyService: economyApi.economyService,
+        studyCalendar: economyApi.studyCalendar ?? {},
+        roster: () => schoolLearnerDirectory.listLearners(),
+        learnerName: learnerDisplayName,
+        getLearnerDayCompletion: schoolLifecycle.useCases.getLearnerDayCompletion,
+        termVerdicts: schoolLifecycle.useCases.termVerdicts ?? null,
+        sessions: schoolLifecycle.stores?.sessions ?? null,
+        notificationService: notificationStack.notificationService,
+        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
+        logsDir: path.join(configService.getMediaDir(), 'logs'),
+        timezone: configService.getTimezone?.() || null,
+        scheduler: agentsServices.scheduler,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        logger: rootLogger.child({ module: 'school-parent-digest' }),
+      });
+    } catch (err) {
+      rootLogger.error('school.parent-digest.unavailable', { error: err.message });
+    }
+  }
+
   // Relay staleness watchdog — the hardware relays are pass-throughs that keep
   // no liveness state, so a dead ESP board is invisible except as history that
   // stopped being written. The kitchen relay sat dark 2026-07-31 → 2026-08-12

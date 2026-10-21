@@ -36,7 +36,7 @@ producer, UTC timestamps, and the same event ringing two to six times.
 | Module | Role |
 |---|---|
 | `__backend/src/2_domains/notification/push/pushText.mjs` | Shared helpers: `personDisplayName`, `titleCaseId` (last resort only), `formatClockTime`, `formatDuration`, `formatStudyDay`, `pushData`, `findPushTextDefects` |
-| `__backend/src/2_domains/school/notifications/schoolPush.mjs` | `composeSchoolPush(event)`: every school outcome's copy, or `null` for no push |
+| `__app_modules/learning/school/server/domain/notifications/schoolPush.mjs` | `composeSchoolPush(event)`: every school outcome's copy, or `null` for no push |
 | `__backend/src/2_domains/shutdown/shutdownPush.mjs` | `composeKioskShutdownPush` |
 | `__backend/src/2_domains/notification/push/harvesterHealthPush.mjs` | `composeHarvesterHealthPush`: a data source failing, stale or recovered (`__docs/reference/harvesters/health-and-reconnect.md`) |
 | Producers that call `pushData` directly | NFC unknown tag (`TriggerDispatchService`), TV power failure (`WakeAndLoadService`), story time (`NotifyReadingSessionFailure`), DoNow approval (`HaApprovalNotifier`) |
@@ -61,6 +61,8 @@ clause; it never renders an id.
 | Rows blank or double-marked, unreadable/refused card, nothing marked | ⚠️ | School needs you (high) |
 | Unmarked old record on a card whose other work graded | none (logged `school.push.suppressed`) | — |
 | Card ladder: the tuning agent read a day as a concern | 🔤 | School needs you (high) |
+| Parent digest: the day for every child (`digest`) | none | School progress (low) |
+| Two study days in a row with nothing done (`zero-days`) | 📭 | School needs you (high) |
 
 - `tag` is `school-{learnerId}-{sessionId ?? testId}`, so a rescan, or a Partial
   followed by the Pass for the same session, replaces one card. With no learner
@@ -78,6 +80,47 @@ clause; it never renders an id.
   tag and channel reach the phone.
 - The piano body shows **unit** progress (`Folk Songs: 3 of 8 lessons`). The
   launcher's `score` is course completion, not a lesson score, and is never shown.
+
+## The parent digest and the zero-days alert
+
+`SchoolParentDigest` (`__app_modules/learning/school/server/application/`)
+sends both, composed in `composition/parentDigest.mjs`.
+
+- **When.** The economy catalog's `digest.cron` (`0 18 * * *` here). It is
+  read once at boot, so a change needs a restart; a null cron registers
+  nothing. The job runs only where the scheduler runs (production or
+  `ENABLE_CRON`).
+- **`digest`.** Title `School today` (`School · Tue Oct 20` for a replayed
+  day). One line per child: `{Child}: {served} of {asked} done`, then
+  `{n} silver`, `{n} pass(es) used` and the day's first failure, each only
+  when there is something to say. Excused sections are not asked. A day with
+  nothing asked reads `nothing asked`; a day that could not be judged reads
+  `couldn't be checked`. Tag `school-digest`, group `school`.
+- **Silver** is the ledger's: positive silver payout deltas inside the study
+  day. With the catalog mode `dry-run` nothing is minted, so no figure is
+  shown and the body ends `Coins not live yet`; with `off` coins are not
+  mentioned. Passes used are the day's purchases less refunds.
+- **Failures** come from the school ledger (`media/logs/school/*.jsonl`):
+  `status: print_failed` and `school.issue.failed` at stage `print` read
+  `a print failed`, other `school.issue.failed` read `a sheet couldn't be
+  made`, `school.selfservice.code.rejected` reads `a code was turned away`.
+  An event is a child's when its `learnerId` names them or its `sessionId`
+  is theirs; one naming neither is left out.
+- **Length.** A line over 100 characters drops its clauses from the end
+  (failure, then passes, then silver). A body over 600 characters keeps the
+  first children and ends `+N more in the teacher view`.
+- **`zero-days`.** Title `📭 {Child} — School`, body `Nothing done for the
+  second study day in a row`. Sent when today asked for work and none was
+  done, and so did the previous study day (`digest.zero_days_alert` days in
+  all, today included). The previous study day is the last earlier day that
+  asked for something: weekends and days off are skipped. A day that cannot
+  be judged stops the check with no alert. Tag `school-{learnerId}-zero-days`.
+- **Delivery.** Each teacher through `NotificationService` (`category:
+  school`), dedupe keys `digest:{day}` and `zero:{learnerId}:{day}`. A send
+  held by quiet hours (`suppressed`) is resent every 15 minutes until it is
+  delivered or the next evening's run replaces it. The hold lives in memory;
+  a restart drops it.
+- **Logs.** `school.parent-digest.sent|skipped|failed`, `school.zero-days.sent`.
 
 ## The `notification` script variable
 

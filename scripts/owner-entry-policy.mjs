@@ -574,6 +574,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/school/server/application-usecases-read-lesson-snapshot.mjs': 'application',
   '__app_modules/learning/school/server/application-usecases-record-checkpoint-answer.mjs': 'application',
   '__app_modules/learning/school/server/composition-learner-card-actions.mjs': 'composition',
+  '__app_modules/learning/school/server/composition-parent-digest.mjs': 'composition',
   '__app_modules/learning/school/server/composition-school-reachability.mjs': 'composition',
   '__app_modules/learning/school/server/domain-access-gate.mjs': 'domain',
   '__app_modules/learning/school/server/domain-catalog.mjs': 'domain',
