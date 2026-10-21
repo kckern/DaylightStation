@@ -13,7 +13,7 @@ import { createEconomyRouter } from "../api/economy.mjs";
 /**
  * Create the economy application service + API router.
  * @param {Object} config
- * @param {Object} config.configService - ConfigService (user profiles, dirs, economy.yml)
+ * @param {Object} config.configService - ConfigService (user profiles, dirs, economy/config.yml)
  * @param {Object} [config.logger] - Logger instance
  * @param {() => Date} [config.clock]
  * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, router: import('express').Router }}
@@ -21,7 +21,7 @@ import { createEconomyRouter } from "../api/economy.mjs";
 export function createEconomyApi({ configService, logger = console, clock = () => new Date() }) {
   const economyService = new EconomyService({
     datastore: new YamlEconomyDatastore({ configService }),
-    configProjection: new EconomyConfigProjection({ configService }),
+    configProjection: new EconomyConfigProjection({ configService, logger }),
     clock,
     logger,
   });

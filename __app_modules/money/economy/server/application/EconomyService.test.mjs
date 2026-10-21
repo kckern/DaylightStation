@@ -86,13 +86,25 @@ describe('EconomyService', () => {
   it('earn no-ops (does not throw) when the install has no economy config', async () => {
     const svc = new EconomyService({
       datastore: new YamlEconomyDatastore({ configService }),
-      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => null } }), // no economy.yml
+      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => null } }), // no economy/config.yml
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     });
     const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
     expect(res.earned).toBe(0);
     expect(res.skipped).toBe(true);
     expect(res.balance).toBe(0);
+  });
+  // The catalog file ships `earn: {}` (prices live in earn-rules.yml now), and
+  // `{}` is truthy: the always-on piano hook must still skip, not throw.
+  it('earn skips an action an empty earn map does not price', async () => {
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => ({ mode: 'dry-run', earn: {}, spend: {} }) } }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(res).toMatchObject({ earned: 0, skipped: true, reason: 'not-priced', txnId: null, balance: 0 });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toEqual([]);
   });
   it('earn dedups a replayed ref within the day (pays out once)', async () => {
     const svc = makeService();

@@ -41,8 +41,9 @@ whole check-and-append inside the lock, so a retried earn with the same ref
 cannot pay twice. A day file that exists but does not parse is never appended
 to: the append fails (`CORRUPT_LEDGER`) and the file stays as it was.
 
-Household policy lives at `data/household/config/economy.yml` (auto-loaded as the
-`economy` household app config).
+Household policy lives at `data/household/economy/config.yml` (registered as the
+`economy` household app config in `shared/contracts/householdConfig.mjs`). The earn
+rules sit beside it in `economy/earn-rules.yml`.
 
 ### Transaction shape
 
@@ -87,17 +88,59 @@ Household policy lives at `data/household/config/economy.yml` (auto-loaded as th
     immune to sub-coin flushing.
 - **Award** — ring thresholds and the weekly ring contest → coins (not built). Rings are evidence, never exchanged.
 
-## Policy catalog (`economy.yml`)
+## Policy catalog (`economy/config.yml`)
 
-Every earnable/spendable is an entry with parent rules; `users:` holds per-kid
-overrides (most-specific-wins). See the committed example
-`data/household/config/economy.yml` for the full annotated schema. Key fields:
+One file holds the payout mode, the Sunday week close, the pass definitions, the
+parent digest schedule, and the legacy keyed `earn`/`spend` maps:
+
+```yaml
+schema: household.economy/v1
+mode: dry-run              # off | dry-run | live
+rules_source: earn-rules   # economy/earn-rules.yml
+week_close:
+  cron: "30 23 * * 0"      # Sunday 23:30 local
+  convert:
+    - { from: silver, to: gold, rate: 1 }
+passes:
+  early-pass:
+    privileges: [piano.games]
+    price: { silver: 0, gold: 0 }   # 0 means "not sold in this coin"
+    cap: { per: study-day, count: 1, across: all-passes }
+    authorization: trust
+    refund_within_ms: 60000
+digest:
+  cron: "0 18 * * *"
+  zero_days_alert: 2
+earn: {}
+spend: {}
+```
+
+`EconomyConfigProjection` reads it two ways:
+
+- `policy()` is the raw doc (`{}` when there is no file). `EconomyService.earn` and
+  `openSession` read its `earn`/`spend` maps.
+- `catalog()` is the doc with every section filled: `mode: off`,
+  `rules_source: earn-rules`, `week_close: { cron: null, convert: [] }`,
+  `passes: {}`, `digest: { cron: null, zero_days_alert: null }`. A section of the
+  wrong type reads as its default. A `mode` other than `off`, `dry-run` or `live`
+  reads as `off` and logs `economy.catalog.unknown-mode`; a typo never pays out.
+
+**Modes.** `off`: payouts do nothing. `dry-run`: payouts log
+`economy.payout.would-mint` and change no balance. `live`: payouts write the ledger.
+
+**Legacy `earn`/`spend` maps.** Every earnable/spendable is a keyed entry with
+parent rules; `users:` holds per-kid overrides (most-specific-wins). Key fields:
 
 - earn: `reward`, `per`, `daily_cap` (per UTC day)
 - spend: `cost` + `per` (→ drain rate), `self_serve`, `auth`, `blackout` (local-time windows)
 
-**Config is cached at backend startup** — edits require a dev-server restart
-before they take effect.
+`earn` skips (returns `skipped: true`, no ledger entry) when there is no `earn`
+map, and when the map is empty (`reason: 'not-priced'`), so the always-on piano
+lesson hook stays quiet. An unknown action in a non-empty map is a
+`ValidationError`.
+
+Both reads go through `getHouseholdAppConfig`, so `dscli system reload
+--allow-write` (or `--app economy`) picks up an edit without a restart.
 
 Card Game's daily-research award uses this configurable catalog entry:
 
