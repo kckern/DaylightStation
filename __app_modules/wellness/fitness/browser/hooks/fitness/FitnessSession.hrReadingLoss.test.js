@@ -74,7 +74,8 @@ describe('FitnessSession — an HR strap with no reading counts for nothing', ()
     expect(session.treasureBox.perUser.get('user_1')?.highestZone?.id).toBe('warm');
 
     const feed = vi.spyOn(session.treasureBox, 'recordHeartRateForDevice');
-    for (let i = 0; i < 5; i += 1) {
+    // Past HR_LOSS_GRACE_MS since the last real reading (t0).
+    for (let i = 0; i < 6; i += 1) {
       vi.setSystemTime(t0 + 1_000 * (i + 1));
       session.ingestData(hr('hr-1', null));
     }
@@ -110,9 +111,13 @@ describe('FitnessSession — an HR strap with no reading counts for nothing', ()
     const reset = vi.spyOn(session.zoneProfileStore, 'resetZoneState');
     logCalls.length = 0;
 
-    for (let i = 0; i < 6; i += 1) session.ingestData(hr('hr-1', null));
+    for (let i = 0; i < 8; i += 1) {
+      vi.setSystemTime(t0 + 1_000 * (i + 1));
+      session.ingestData(hr('hr-1', null));
+    }
     expect(reset.mock.calls.filter(([id]) => id === 'user_1')).toHaveLength(1);
 
+    vi.setSystemTime(t0 + 10_000);
     for (let i = 0; i < 6; i += 1) session.ingestData(hr('hr-1', 130));
 
     const lost = logCalls.filter((c) => c.event === 'fitness.device.hr_reading_lost');
@@ -219,12 +224,102 @@ describe('Governance — a user whose HR went null does not satisfy a zone requi
     // Control: with a live warm reading the rule is met.
     expect(evaluateWith().engine.phase).toBe('unlocked');
 
-    for (let i = 0; i < 4; i += 1) session.ingestData(hr('hr-1', null));
-    session.ingestData(hr('hr-2', 90));
+    for (let i = 0; i < 6; i += 1) {
+      vi.setSystemTime(t0 + 1_000 * (i + 1));
+      session.ingestData(hr('hr-1', null));
+      session.ingestData(hr('hr-2', 90));
+    }
 
     const { engine, state } = evaluateWith();
     expect(state.participants).not.toContain('user_1');
     expect(state.zoneMap.user_1).toBeUndefined();
     expect(engine.phase).not.toBe('unlocked');
+  });
+});
+
+describe('Governance — a short no-reading blip does not drop a child', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(t0); logCalls.length = 0; });
+  afterEach(() => vi.useRealTimers());
+
+  const evaluate = (session, engine) => {
+    const state = session.getActiveParticipantState();
+    engine.evaluate({
+      activeParticipants: state.participants,
+      userZoneMap: state.zoneMap,
+      totalCount: state.totalCount,
+      hrInactiveUsers: state.hrInactiveUsers,
+    });
+    return state;
+  };
+
+  it('a solo child stays unlocked through a 2s null blip, and is excluded once it outlasts the grace', () => {
+    const session = startedSession();
+    warmUp(session, 'hr-1', 144);
+    const engine = new GovernanceEngine(session);
+    engine.configure({
+      governed_labels: ['governed'],
+      policies: { default: { base_requirement: [{ warm: 'all' }], challenges: [] } },
+      zoneConfig: ZONES,
+    });
+    engine.setMedia({ id: 'm1', type: 'test', labels: ['governed'] });
+    evaluate(session, engine);
+    expect(engine.phase).toBe('unlocked');
+
+    const feed = vi.spyOn(session.treasureBox, 'recordHeartRateForDevice');
+    for (const ms of [1_000, 2_000]) {
+      vi.setSystemTime(t0 + ms);
+      session.ingestData(hr('hr-1', null));
+      session.updateActiveDevices();
+    }
+    const blip = evaluate(session, engine);
+    expect(blip.participants).toContain('user_1');
+    expect(engine.phase).toBe('unlocked');
+    // ...but nothing accrued during the blip.
+    expect(fedValues(feed, 'hr-1').every((v) => v == null)).toBe(true);
+    expect(session.treasureBox.perUser.get('user_1').highestZone).toBeNull();
+
+    for (const ms of [3_000, 4_000, 5_000, 6_000]) {
+      vi.setSystemTime(t0 + ms);
+      session.ingestData(hr('hr-1', null));
+    }
+    const sustained = evaluate(session, engine);
+    expect(sustained.participants).not.toContain('user_1');
+    expect(sustained.hrInactiveUsers).toContain('user_1');
+  });
+
+  it('a strap that goes silent (no packets at all) is excluded once the grace passes on a prune tick', () => {
+    const session = startedSession();
+    warmUp(session, 'hr-1', 144);
+    session.ingestData(hr('hr-1', null));
+    vi.setSystemTime(t0 + 6_000);
+    session.ingestData(cad('cad-1', 70)); // pipeline alive
+    session.updateActiveDevices();
+    const user = session.userManager.getAllUsers().find((u) => u.id === 'user_1');
+    expect(user.currentData.hrInactive).toBe(true);
+  });
+});
+
+describe('FitnessSession.reset — per-device HR bookkeeping does not leak into the next session', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(t0); logCalls.length = 0; });
+  afterEach(() => vi.useRealTimers());
+
+  it('clears reading state and the warm-up count', () => {
+    const session = startedSession();
+    warmUp(session, 'hr-1', 144);
+    session.reset();
+    expect(session._hrReadingState.size).toBe(0);
+    expect(session._deviceHrSampleCount.size).toBe(0);
+
+    session.updateActiveDevices();
+    expect(logCalls.filter((c) => c.event === 'fitness.device.hr_reading_lost')).toEqual([]);
+
+    // reset() replaces the UserManager; configure the next session's rider.
+    session.userManager.configure({ primary: [{ id: 'user_1', name: 'User_1', hr_device_id: 'hr-1' }] }, ZONES);
+    session.ensureStarted({ force: true, reason: 'hrReadingLoss-test-2' });
+    session.zoneProfileStore.setBaseZoneConfig(ZONES);
+    session.treasureBox.configure({ zones: ZONES });
+    const feed = vi.spyOn(session.treasureBox, 'recordHeartRateForDevice');
+    for (let i = 0; i < STARTUP_DISCARD_COUNT; i += 1) session.ingestData(hr('hr-1', 150));
+    expect(fedValues(feed, 'hr-1').filter(Number.isFinite)).toEqual([]);
   });
 });

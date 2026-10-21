@@ -407,16 +407,32 @@ export class FitnessSession {
 
   /**
    * A strap stopped reading (null packets, stale reading, inactive, removed).
-   * The user's HR becomes null, TreasureBox takes its dropout path, and the
-   * committed zone is dropped so hysteresis cannot hold a zone that no real
-   * reading supports.
+   * Accrual stops at once: TreasureBox takes its dropout path. The user's
+   * governance-facing state (HR, hrInactive, committed zone) follows only once
+   * the loss outlasts HR_LOSS_GRACE_MS — see _maybeConfirmHrLoss.
    */
   _onHrReadingLost(deviceId, userId) {
-    const user = this.userManager?.resolveUserForDevice(deviceId);
-    // The packet path has already pushed the null; the prune path has no packet.
-    user?.updateFromDevice?.({ type: 'heart_rate', deviceId, heartRate: null });
     if (!userId) return;
     this.treasureBox?.recordHeartRateForDevice(deviceId, null, { profileId: userId, fallbackUserId: userId });
+  }
+
+  /**
+   * Push "no reading" into the device's user and, if that is the moment the
+   * user goes hrInactive (grace elapsed), drop the committed zone so hysteresis
+   * cannot hold a zone no real reading supports. Idempotent; called on every
+   * null packet and every prune tick while a device has no reading.
+   */
+  _maybeConfirmHrLoss(deviceId, user = null, wasHrInactive = null) {
+    const key = String(deviceId);
+    const owner = user || this.userManager?.resolveUserForDevice(key);
+    if (!owner) return;
+    const before = wasHrInactive ?? !!owner.currentData?.hrInactive;
+    if (wasHrInactive == null) {
+      owner.updateFromDevice?.({ type: 'heart_rate', deviceId: key, heartRate: null });
+    }
+    if (before || !owner.currentData?.hrInactive) return;
+    const userId = this._hrOccupantId(key) || owner.id;
+    getLogger().info('fitness.device.hr_loss_confirmed', { deviceId: key, userId });
     this.zoneProfileStore?.resetZoneState?.(userId);
     this._syncPresentZoneProfiles(userId);
   }
@@ -434,10 +450,13 @@ export class FitnessSession {
       if (device.inactiveSince) {
         this._observeHrReading(key, false, { reason: 'inactive' });
         this._deviceHrSampleCount.delete(key);
+        this._maybeConfirmHrLoss(key);
         continue;
       }
       if (!(Number.isFinite(device.heartRate) && device.heartRate > 0)) {
         this._observeHrReading(key, false, { reason: 'stale-reading' });
+        // No packet may arrive to end the grace: re-check it on the prune tick.
+        this._maybeConfirmHrLoss(key);
       }
     }
     for (const key of [...this._hrReadingState.keys()]) {
@@ -562,6 +581,7 @@ export class FitnessSession {
         }
         device.lastOccupantSlug = currentOccupant;
         
+        const wasHrInactive = !!user.currentData?.hrInactive;
         user.updateFromDevice(deviceData);
 
         // No reading is a real state: the strap is present but not reading.
@@ -570,6 +590,7 @@ export class FitnessSession {
         const hasHrReading = isHrPacket && Number.isFinite(deviceData.heartRate) && deviceData.heartRate > 0;
         if (isHrPacket) {
           this._observeHrReading(device.id, hasHrReading, { reason: 'no-reading-packet' });
+          if (!hasHrReading) this._maybeConfirmHrLoss(device.id, user, wasHrInactive);
         }
 
         // Device startup discard: first 3 HR readings may be stale/cached from prior session
@@ -2899,6 +2920,14 @@ export class FitnessSession {
     this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
+    // Session end (not engine.reset(), which also runs mid-session): the
+    // inert-requirement alarm may fire once more in the next session.
+    this.governanceEngine.resetSessionAlarms?.();
+    // The device manager is replaced above; per-device HR bookkeeping must go
+    // with it, or the next prune logs every old strap as "removed" and the
+    // next session skips its warm-up discard.
+    this._hrReadingState.clear();
+    this._deviceHrSampleCount.clear();
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};

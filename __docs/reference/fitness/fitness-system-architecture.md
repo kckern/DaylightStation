@@ -580,28 +580,33 @@ value". The garage bridge sends `ComputedHeartRate: null` when the strap has no
 real reading (and, after a wake-up, until real beats are confirmed). The browser
 treats that as follows:
 
-- **Null everywhere.** An HR packet with a null or missing reading sets
-  `device.heartRate = null`, and the user's `currentData.heartRate` goes null
-  (`hrInactive: true`), so the per-user chart/timeline series records a gap.
-  Liveness follows the *reading*, not the packet: `device.lastHeartRateAt` moves
-  only on a real reading, and a device with none for `hrStaleMs` (5 s) reads null
-  on the next prune even while its packets keep arriving. An inactive device
-  never holds a reading. During a whole-pipeline transport stall the reading is
-  held, as cadence is — then no device's silence says anything about its strap.
-- **Nothing accrues or counts while null.** TreasureBox is handed `null`, never
-  a held value, so it takes its dropout path (interval restarts, no award). The
-  zone-store sync is skipped, and governance excludes the user as `hrInactive`,
-  so a stale reading can satisfy no zone requirement.
-- **The committed zone resets on loss.** On the reading → no-reading edge
-  (null packet, stale reading, device inactive or removed)
+- **The device reads null at once.** An HR packet with a null or missing
+  reading sets `device.heartRate = null`. Liveness follows the *reading*, not the
+  packet: `device.lastHeartRateAt` moves only on a real reading, and a device
+  with none for `hrStaleMs` (5 s) reads null on the next prune even while its
+  packets keep arriving. An inactive device never holds a reading. During a
+  whole-pipeline transport stall the reading is held, as cadence is — then no
+  device's silence says anything about its strap.
+- **Nothing accrues at once.** TreasureBox is handed `null`, never a held value,
+  so it takes its dropout path (interval restarts, no award), and the per-packet
+  zone-store sync is skipped.
+- **The user follows after a grace.** The user keeps their last reading for
+  `HR_LOSS_GRACE_MS` (5 s, `UserManager.js`) since their last real one, so a strap
+  blip (a beat freeze, a short radio gap) does not drop a solo child out of
+  governance and freeze the video. Past the grace — checked on every null packet
+  and every prune tick — `currentData.heartRate` goes null with
+  `hrInactive: true`: the chart/timeline records a gap and governance excludes
+  the user, so a stale reading can satisfy no zone requirement.
+- **The committed zone resets when the loss is confirmed.** At that same moment
   `ZoneProfileStore.resetZoneState(userId)` drops the hysteresis state, so the
   5 bpm exit margin cannot hold a zone that no real reading supports.
 - **Warm-up on every reconnect.** The first 3 real readings after a device is
-  first seen, loses its reading, goes inactive or is removed are discarded
-  (BLE/ANT+ straps can replay a cached value on connect). Null packets do not
-  count toward the 3.
+  first seen, loses its reading, goes inactive or is removed — and at the start
+  of every session — are discarded (straps can replay a cached value on
+  connect). Null packets do not count toward the 3.
 - **Observability.** One `info` line per edge, never per packet:
-  `fitness.device.hr_reading_lost` (`deviceId`, `userId`, `reason`) and
+  `fitness.device.hr_reading_lost` (`deviceId`, `userId`, `reason`),
+  `fitness.device.hr_loss_confirmed` (`deviceId`, `userId`; grace elapsed) and
   `fitness.device.hr_reading_restored` (`deviceId`, `userId`).
 
 ---
