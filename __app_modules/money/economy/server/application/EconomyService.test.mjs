@@ -152,6 +152,27 @@ describe('multi-currency balances', () => {
     expect(res).toMatchObject({ userId: USER, balance: 4, balances: { silver: 4, gold: 0, gems: 0 }, session: null });
   });
 
+  // A pure read for surfaces that must not write (the agenda tape and its
+  // preview): the ledger folded, no wallet snapshot, no session reaped.
+  it('peekBalance folds the ledger and writes nothing', async () => {
+    const svc = makeService();
+    const walletFile = () => fs.readdirSync(USER_DIR, { recursive: true }).filter((f) => /wallet/.test(String(f)));
+    expect(await svc.peekBalance(USER)).toEqual({ silver: 0, gold: 0, gems: 0 });
+    expect(walletFile()).toEqual([]);
+    await svc.deposit(USER, { amount: 4 });
+    const [file] = walletFile();
+    const before = fs.statSync(path.join(USER_DIR, file)).mtimeMs;
+    const bytes = fs.readFileSync(path.join(USER_DIR, file), 'utf8');
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(await svc.peekBalance(USER)).toEqual({ silver: 4, gold: 0, gems: 0 });
+    expect(fs.statSync(path.join(USER_DIR, file)).mtimeMs).toBe(before);
+    expect(fs.readFileSync(path.join(USER_DIR, file), 'utf8')).toBe(bytes);
+  });
+
+  it('peekBalance refuses an unknown user', async () => {
+    await expect(makeService().peekBalance('nobody')).rejects.toThrow(/unknown user/);
+  });
+
   it('legacy entries without a currency count as silver', async () => {
     writeDay('2026-07-17', [
       { id: 'txn_old', at: '2026-07-17T10:00:00.000Z', kind: 'deposit', delta: 10, action: 'parent-deposit', source: 'admin', ref: null },

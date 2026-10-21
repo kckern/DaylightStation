@@ -44,6 +44,7 @@ import { ReceiptPngArtifactRenderer } from "../adapters/documents/ReceiptPngArti
 import { UnavailableSchoolMediaDispatcher } from "../adapters/UnavailableSchoolMediaDispatcher.mjs";
 import { SchoolServiceBankReader } from "../adapters/SchoolServiceBankReader.mjs";
 import { NodeApplicationScheduler } from "#adapters/scheduling/NodeApplicationScheduler.mjs";
+import { createAgendaEconomyPort } from "./agendaEconomy.mjs";
 import { SchoolTeacherConfigSource } from "../adapters/SchoolTeacherConfigSource.mjs";
 import { HouseholdSchoolRoster } from "../adapters/HouseholdSchoolRoster.mjs";
 import { YamlCurriculumDatastore } from "../adapters/persistence/YamlCurriculumDatastore.mjs";
@@ -189,8 +190,9 @@ function cryptoRng(crypto) {
  * @param {string|null} [deps.householdId]
  * @param {object} deps.schoolService - the existing grading engine + bank reader
  * @param {object} [deps.economyService] - also the source of the agenda's
- *   economy line: its `getBalance(userId).balances.silver` is the week's silver.
- *   Read through duck typing only; School imports no economy code.
+ *   economy line: `peekBalance(userId).silver`, the unspent silver in the
+ *   bank, read without writing (`agendaEconomy.mjs`). Read through duck typing
+ *   only; School imports no economy code.
  * @param {object} [deps.userService]
  * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
  *   Present means the `language` program is a live launcher, reachable from a
@@ -884,29 +886,14 @@ export async function createSchoolLifecycle({
   practiceAssessments?.configureProjection?.(planProjection);
 
   // --- use cases -------------------------------------------------------------
-  // The agenda's economy line ("This week: 7 silver · Next: Math"). Silver is
-  // the bank figure the Portal strip shows; "next" is the same dry-run preview
-  // `GET /self-service/learners/:id/next` answers. `issueSubjectNext` is
-  // composed further down, so it is read when an agenda prints, never here. A
-  // failed preview still prints the silver; a failed balance prints no line
-  // (BuildAgenda catches it). No `getBalance`, no port, no line.
-  const agendaEconomy = typeof economyService?.getBalance === 'function' ? {
-    weekSummary: async (learnerId) => {
-      const [wallet, next] = await Promise.all([
-        economyService.getBalance(learnerId),
-        Promise.resolve()
-          .then(() => issueSubjectNext.preview({ learnerId }))
-          .then((preview) => (preview?.unit?.title
-            ? { title: preview.unit.title, reward: preview.reward ?? null }
-            : null))
-          .catch((error) => {
-            logger.warn?.('school.agenda.economy-next-failed', { learnerId, error: error?.message ?? String(error) });
-            return null;
-          }),
-      ]);
-      return { silver: wallet?.balances?.silver ?? null, next };
-    },
-  } : null;
+  // The agenda's economy line ("This week: 7 silver · Next: Math"); see
+  // `agendaEconomy.mjs`. `issueSubjectNext` is composed further down, so the
+  // thunk reads it when an agenda prints, never here.
+  const agendaEconomy = createAgendaEconomyPort({
+    economyService,
+    previewNext: (learnerId) => issueSubjectNext.preview({ learnerId }),
+    logger,
+  });
   // Bounds the economy line's read (2 s, BuildAgenda's default): the
   // application layer holds no timers of its own.
   const agendaScheduler = new NodeApplicationScheduler();
@@ -992,7 +979,8 @@ export async function createSchoolLifecycle({
     // Teacher planning is a non-recording view.  Its document must not carry
     // a token or panel code that resembles an issued agenda ticket.
     previewOnly: true,
-    // Read-only, like the review queue: a preview without the line the real
+    // Read-only, like the review queue: `peekBalance` writes no wallet and the
+    // next-item preview opens no session. A preview without the line the real
     // print carries would show a parent a different sheet.
     economy: agendaEconomy, scheduler: agendaScheduler,
     curriculumExceptions: curriculumExceptionStore,

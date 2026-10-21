@@ -370,13 +370,17 @@ coin, price, reason }` (the refusal code as `reason`).
   `school.yml`): school work is paid by PayoutService only, and turning both on
   would pay a unit twice.
 - **Read (school agenda tape):** the morning agenda opens with `This week: 7
-  silver · Next: Math`. School's composition builds a `weekSummary(learnerId)`
-  port over `economyService.getBalance(id).balances.silver` (the figure the
-  Portal bank strip shows and the week close converts) and School's own "next"
-  preview; it imports no economy code. Read at print time with a 2 s bound. An
-  economy failure, a timeout or an unknown figure prints no line and never
-  delays or breaks the tape. See the school reference, "The first line under
-  the name is the week's silver".
+  silver · Next: Math`. School's composition (`agendaEconomy.mjs`) builds a
+  `bankSummary(learnerId)` port over `economyService.peekBalance(id).silver`:
+  the *unspent* silver in the bank (the figure the Portal bank strip shows and
+  the week close converts), not the week's mints. `peekBalance` is the pure
+  read: `#assertUser`, then `foldBalances` over the ledger, with no wallet
+  write and no session reap (unlike `getBalance`). The port checks `hasUser`
+  first, so a learner without a wallet gets no line and one info log, not a
+  warn on every print. School imports no economy code. Read at print time with
+  a 2 s bound; a failure, a timeout or an unknown figure prints no line and
+  never delays or breaks the tape. See the school reference, "The first line
+  under the name is the week's silver".
 - **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
   session and drains coins as the timer runs, surfacing the balance in the
   EmulatorConsole overlay (`session.coins`) and its `depleted` state
@@ -605,7 +609,7 @@ teacher capability cookie is scoped to `/api/v1/school`).
 - `2_domains/economy/` — `Transaction` (factory + `foldBalance`), `policy`
   (`resolvePolicy`/`inBlackout`/`drainPerSecond`). Pure, no I/O.
 - `3_applications/economy/EconomyService.mjs` — all balance math + policy
-  enforcement (deposit/earn/openSession/settleSession/closeSession/getBalance).
+  enforcement (deposit/earn/openSession/settleSession/closeSession/getBalance), plus `peekBalance`, the write-free ledger fold.
 - `1_adapters/persistence/yaml/YamlEconomyDatastore.mjs` — dumb ledger/wallet
   storage.
 - `4_api/v1/routers/economy.mjs` + `5_composition/modules/economyApi.mjs` —

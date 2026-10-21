@@ -134,12 +134,18 @@ export class BuildAgenda {
    *   for the "Notes for you" section (spec R7): a grown-up's resolved-item
    *   notes for this learner, from the current or previous study day.
    *   Optional — absent, the agenda simply carries no notes section.
-   * @param {{weekSummary: (learnerId: string) => Promise<{silver: number,
+   * @param {{bankSummary: (learnerId: string) => Promise<{silver: number,
    *   next: {title: string, reward: {silver?: number}|null}|null}|null>}|null} [deps.economy]
    *   source of the economy line at the top of the paper (`agendaEconomyLine`).
+   *   `silver` is the UNSPENT silver in the bank, not the week's mints.
    *   Optional: absent, the agenda is byte-identical to one built before the
-   *   line existed. A throw, a timeout or an unknown silver figure all mean no
-   *   line, logged at warn as `school.agenda.economy-failed` for the first two.
+   *   line existed. Every failure means no line:
+   *   - the port throws (or rejects): warn, `school.agenda.economy-failed`,
+   *     `{learnerId, error}`;
+   *   - it misses the `economyTimeoutMs` deadline: the same warn and event,
+   *     `error` reading "economy summary timed out after N ms";
+   *   - it answers `null`, or silver that is not a whole number of 0 or more:
+   *     no log here (an unknown learner is the port's to report).
    * @param {number} [deps.economyTimeoutMs] - how long to wait for it (2 s)
    * @param {{withDeadline: Function}|null} [deps.scheduler] - bounds the
    *   economy call (this layer holds no timers of its own). Composition always
@@ -183,7 +189,7 @@ export class BuildAgenda {
     this.#reviewQueue = reviewQueue;
     this.#logger = logger;
     this.#teacherNotes = teacherNotes;
-    this.#economy = typeof economy?.weekSummary === 'function' ? economy : null;
+    this.#economy = typeof economy?.bankSummary === 'function' ? economy : null;
     this.#economyTimeoutMs = economyTimeoutMs;
     this.#scheduler = typeof scheduler?.withDeadline === 'function' ? scheduler : null;
     if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
@@ -884,7 +890,7 @@ export class BuildAgenda {
   async #economyLine(learnerId) {
     if (!this.#economy) return null;
     try {
-      const asked = Promise.resolve().then(() => this.#economy.weekSummary(learnerId));
+      const asked = Promise.resolve().then(() => this.#economy.bankSummary(learnerId));
       const ms = this.#economyTimeoutMs;
       const summary = await (this.#scheduler
         ? this.#scheduler.withDeadline(asked, {

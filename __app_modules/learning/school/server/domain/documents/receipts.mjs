@@ -530,24 +530,33 @@ function appendNoteLines(blocks, noteLines) {
 }
 
 /**
- * The longest economy line, in characters. The canvas receipt draws body text
- * in 24px Roboto Condensed across 530px, and a line of this shape measures
- * about 10px a character (55 characters came to 516-559px), so 50 keeps it on
- * one row. Only the title is shortened to fit: the silver and the reward are
- * the point of the line. The renderer wraps a longer line rather than losing
- * it, so a miss costs a second row, never the text.
+ * The longest economy line, in characters (code points). The canvas receipt
+ * draws body text in 24px Roboto Condensed across a 530px content width, and a
+ * line of this shape in Latin text measures about 10px a character (55
+ * characters came to 516-559px), so 50 keeps it on one row. Wider scripts
+ * (Hangul, emoji) run wider per character; the renderer wraps a longer line
+ * rather than losing it, so a miss costs a second row, never the text. Only
+ * the title is shortened to fit: the silver and the reward are the point of
+ * the line.
  */
 const ECONOMY_LINE_MAX_CHARS = 50;
 
+/** Silver worth printing: a whole number of coins, 0 or more. */
+const isPrintableSilver = (n) => Number.isSafeInteger(n) && n >= 0;
+
 /**
  * The one economy line at the top of the agenda: `This week: 7 silver · Next:
- * Math +2`. Pure: the caller fetches the figures.
+ * Math +2`. Pure: the caller fetches the figures. The silver is the UNSPENT
+ * silver in the bank (what the week close converts on Sunday), not the week's
+ * mints.
  *
- * - Unknown silver (absent, not a finite number) is NO line, even when there
- *   is a next item. A line that read "0 silver" because the bank did not
- *   answer would tell a child their week was wasted.
+ * - Silver that is not a whole number of 0 or more is NO line, even when there
+ *   is a next item. Absent or unreadable, a "0 silver" line would tell a child
+ *   their week was wasted. A negative is ruled out too: the ledger fold floors
+ *   at 0, so a negative figure means something upstream is wrong, and the tape
+ *   is no place to show it.
  * - No next item (or a blank title) prints the silver alone.
- * - ` +N` only when the reward pays silver (`reward.silver > 0`).
+ * - ` +N` only when the reward pays silver (`reward.silver` a whole number > 0).
  * - The `·` is the separator the rest of the agenda already prints (the focus
  *   heading, the taxonomy rows), so the receipt font is known to carry it.
  *
@@ -556,24 +565,32 @@ const ECONOMY_LINE_MAX_CHARS = 50;
  */
 export function agendaEconomyLine(summary) {
   const silver = summary?.silver;
-  if (typeof silver !== 'number' || !Number.isFinite(silver)) return null;
+  if (!isPrintableSilver(silver)) return null;
   const head = `This week: ${silver} silver`;
   const title = isNonEmptyString(summary?.next?.title) ? summary.next.title.trim() : null;
   if (!title) return head;
   const pays = summary.next.reward?.silver;
-  const tail = typeof pays === 'number' && Number.isFinite(pays) && pays > 0 ? ` +${pays}` : '';
+  const tail = Number.isSafeInteger(pays) && pays > 0 ? ` +${pays}` : '';
   const stem = `${head} · Next: `;
-  const room = ECONOMY_LINE_MAX_CHARS - stem.length - tail.length;
+  const room = ECONOMY_LINE_MAX_CHARS - Array.from(stem).length - Array.from(tail).length;
+  const chars = Array.from(title);
+  if (chars.length <= room) return `${stem}${title}${tail}`;
   // Too little room for a word worth reading: say the silver and stop.
   if (room < 4) return head;
-  return `${stem}${title.length <= room ? title : shorten(title, room)}${tail}`;
+  return `${stem}${shorten(chars, room)}${tail}`;
 }
 
-/** `title` cut to `room` characters, ellipsis included, at a word if one is near. */
-function shorten(title, room) {
-  const cut = title.slice(0, room - 1);
-  const space = cut.lastIndexOf(' ');
-  return `${(space >= room / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+/**
+ * A title's code points cut to `room`, ellipsis included, at a word if one is
+ * near. Code points, so an emoji's surrogate pair is never split.
+ */
+function shorten(chars, room) {
+  const keep = room - 1;
+  // The last space at or before the cut: a cut landing just after a word
+  // (the next character is a space) keeps that word whole.
+  const space = chars.lastIndexOf(' ', keep);
+  const cut = space >= room / 2 ? chars.slice(0, space) : chars.slice(0, keep);
+  return `${cut.join('').trimEnd()}…`;
 }
 
 /**

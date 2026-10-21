@@ -999,7 +999,7 @@ describe('the economy line', () => {
 
   it('opens the agenda with the week\'s silver and the next item', async () => {
     const asked = [];
-    build({ economy: { weekSummary: async (id) => { asked.push(id); return { silver: 7, next: { title: 'Math', reward: null } }; } } });
+    build({ economy: { bankSummary: async (id) => { asked.push(id); return { silver: 7, next: { title: 'Math', reward: null } }; } } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(asked).toEqual(['kid1']);
     expect(document.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
@@ -1007,13 +1007,13 @@ describe('the economy line', () => {
   });
 
   it('adds the reward when the next item pays silver', async () => {
-    build({ economy: { weekSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
+    build({ economy: { bankSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(document.blocks[0].md).toBe('This week: 7 silver · Next: Math +2');
   });
 
   it('prints the silver alone when there is no next item', async () => {
-    build({ economy: { weekSummary: async () => ({ silver: 7, next: null }) } });
+    build({ economy: { bankSummary: async () => ({ silver: 7, next: null }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(document.blocks[0].md).toBe('This week: 7 silver');
   });
@@ -1021,7 +1021,7 @@ describe('the economy line', () => {
   it('prints no line when the silver is unknown', async () => {
     build();
     const without = await useCase.execute({ learnerId: 'kid1' });
-    build({ economy: { weekSummary: async () => ({ silver: null, next: { title: 'Math', reward: null } }) } });
+    build({ economy: { bankSummary: async () => ({ silver: null, next: { title: 'Math', reward: null } }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(document).toEqual(without.document);
   });
@@ -1030,7 +1030,7 @@ describe('the economy line', () => {
     build();
     const without = await useCase.execute({ learnerId: 'kid1' });
     const { warnings, logger } = recordingLogger();
-    build({ logger, economy: { weekSummary: async () => { throw new Error('bank is down'); } } });
+    build({ logger, economy: { bankSummary: async () => { throw new Error('bank is down'); } } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(document).toEqual(without.document);
     expect(warnings).toContainEqual({
@@ -1044,7 +1044,7 @@ describe('the economy line', () => {
     const { warnings, logger } = recordingLogger();
     build({
       logger, economyTimeoutMs: 20, scheduler: new NodeApplicationScheduler(),
-      economy: { weekSummary: () => new Promise(() => {}) },
+      economy: { bankSummary: () => new Promise(() => {}) },
     });
     const started = Date.now();
     const { document } = await useCase.execute({ learnerId: 'kid1' });
@@ -1057,7 +1057,7 @@ describe('the economy line', () => {
   it('hands the call to the injected scheduler with the configured deadline', async () => {
     const deadlines = [];
     const scheduler = { withDeadline: (work, opts) => { deadlines.push(opts.milliseconds); return work; } };
-    build({ scheduler, economy: { weekSummary: async () => ({ silver: 3, next: null }) } });
+    build({ scheduler, economy: { bankSummary: async () => ({ silver: 3, next: null }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(deadlines).toEqual([2000]);
     expect(document.blocks[0].md).toBe('This week: 3 silver');

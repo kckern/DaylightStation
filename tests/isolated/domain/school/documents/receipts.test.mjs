@@ -516,6 +516,13 @@ describe('noticeDocument', () => {
 // commit, not against today's code with the argument switched off.
 describe('agendaDocument — the economy line', () => {
   const baseline = JSON.parse(readFileSync(new URL('./fixtures/agenda-before-economy-line.json', import.meta.url), 'utf8'));
+  const fixture = (name) => {
+    const found = baseline.cases.find((c) => c.name === name);
+    if (!found) throw new Error(`no baseline case named "${name}"`);
+    return found;
+  };
+  const FULL = 'sections, codes, bulk, reading and notes';
+  const EMPTY = 'empty plan with notes and a printed time';
 
   it.each(baseline.cases.map((c) => [c.name, c]))('without it, prints exactly what it printed before (%s)', (_name, c) => {
     expect(agendaDocument(c.args)).toEqual(c.document);
@@ -523,21 +530,21 @@ describe('agendaDocument — the economy line', () => {
   });
 
   it('with it, the line is the first block, centred', () => {
-    const c = baseline.cases[2];
+    const c = fixture(FULL);
     const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver · Next: Math' }));
     expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
     expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
   });
 
   it('opens the "nothing assigned" sheet too', () => {
-    const c = baseline.cases[1];
+    const c = fixture(EMPTY);
     const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver' }));
     expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver', align: 'center' });
     expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
   });
 
   it('a blank line is no line', () => {
-    const c = baseline.cases[2];
+    const c = fixture(FULL);
     expect(agendaDocument({ ...c.args, economyLine: '   ' })).toEqual(c.document);
   });
 });
@@ -567,12 +574,44 @@ describe('agendaEconomyLine', () => {
     expect(agendaEconomyLine(null)).toBeNull();
   });
 
+  it('prints whole, non-negative silver only', () => {
+    expect(agendaEconomyLine({ silver: 2.5 })).toBeNull();
+    expect(agendaEconomyLine({ silver: -3 })).toBeNull();
+    expect(agendaEconomyLine({ silver: Infinity })).toBeNull();
+    expect(agendaEconomyLine({ silver: 2 ** 53 })).toBeNull();
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2.5 } } })).toBe('This week: 7 silver · Next: Math');
+  });
+
   it('shortens a long title with an ellipsis so the line stays on one row', () => {
     const line = agendaEconomyLine({
       silver: 120, next: { title: 'Adding and Subtracting Fractions with Unlike Denominators', reward: { silver: 12 } },
     });
     expect(line).toBe('This week: 120 silver · Next: Adding and… +12');
     expect(line.length).toBeLessThanOrEqual(50);
+  });
+
+  it('keeps a word whose end lands exactly on the cut', () => {
+    const line = agendaEconomyLine({ silver: 7, next: { title: 'Adding Mixed Numbers1 Review', reward: null } });
+    expect(line).toBe('This week: 7 silver · Next: Adding Mixed Numbers1…');
+    expect(line.length).toBe(50);
+  });
+
+  it('prints a title that fits, however little room is left', () => {
+    // 16-digit silver and a 4-character reward leave 3 characters of room.
+    expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Go', reward: { silver: 99 } } }))
+      .toBe(`This week: ${10 ** 15} silver · Next: Go +99`);
+    expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Gone', reward: { silver: 99 } } }))
+      .toBe(`This week: ${10 ** 15} silver`);
+  });
+
+  it('counts and cuts by code point, never splitting an emoji', () => {
+    const line = agendaEconomyLine({ silver: 7, next: { title: `Fractions${'🍕'.repeat(15)}`, reward: null } });
+    expect(Array.from(line)).toHaveLength(50);
+    expect(line).toBe(`This week: 7 silver · Next: Fractions${'🍕'.repeat(12)}…`);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(line)).toBe(false);
+    // A title that fits by code point is not cut, though its UTF-16 length is longer.
+    expect(agendaEconomyLine({ silver: 7, next: { title: '🍕'.repeat(22), reward: null } }))
+      .toBe(`This week: 7 silver · Next: ${'🍕'.repeat(22)}`);
   });
 
   it('cuts a title with no break in it mid-word', () => {
@@ -582,7 +621,7 @@ describe('agendaEconomyLine', () => {
   });
 
   it('drops the next item rather than print a stub of it', () => {
-    expect(agendaEconomyLine({ silver: 10 ** 18, next: { title: 'Equivalent Fractions', reward: { silver: 999999 } } }))
-      .toBe(`This week: ${10 ** 18} silver`);
+    expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Equivalent Fractions', reward: { silver: 999999 } } }))
+      .toBe(`This week: ${10 ** 15} silver`);
   });
 });

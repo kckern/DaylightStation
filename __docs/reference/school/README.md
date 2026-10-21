@@ -2133,33 +2133,41 @@ the section is the retry's only way back in.
 **The first line under the name is the week's silver.** When the economy is
 wired, the tape opens with one centred line: `This week: 7 silver · Next:
 Math`, with ` +2` appended when the next item's reward pays silver. The silver
-is the bank figure the Portal strip shows
-(`EconomyService.getBalance(id).balances.silver`, the amount the week close
-converts on Sunday), read at print time, so a morning tape shows the bank
+is the *unspent* silver in the bank, not the week's mints: the figure the
+Portal strip shows and the week close converts on Sunday. It is read with
+`EconomyService.peekBalance(id).silver`, a pure ledger fold that writes no
+wallet and reaps no session, at print time, so a morning tape shows the bank
 before that day's payouts. "Next" is the title `IssueSubjectNext.preview`
-answers for `GET /self-service/learners/:id/next`. Its `reward` is null until a `rewardFor` port
-is wired, so today the line carries no `+N`. The line is capped at 50
-characters, which keeps it on one row of the 580px tape; only the title is
-shortened, at a word where it can be, with an ellipsis. The rules:
+answers for `GET /self-service/learners/:id/next`. Its `reward` is null until a
+`rewardFor` port is wired, so today the line carries no `+N`. The line is capped
+at 50 code points, which keeps Latin text on one row of the tape's 530px
+content width; only the title is shortened, at a word where it can be, with an
+ellipsis, and never through the middle of an emoji. The rules:
 
 - No next item: `This week: 7 silver`.
-- Silver unknown (the bank threw, or answered no figure): no line at all, even
-  when there is a next item. The tape never prints a 0 it did not read.
-- A failed preview still prints the silver.
+- Silver must be a whole number of 0 or more, or there is no line at all, even
+  when there is a next item. The tape never prints a 0 it did not read. A
+  negative is refused too: the ledger fold floors at 0, so a negative means
+  something upstream is wrong.
+- A learner the economy does not know (`hasUser` false) gets no line, logged
+  once per learner per process at info (`school.agenda.economy-unknown-user`).
+- A failed preview still prints the silver, and logs
+  `school.agenda.economy-next-failed` at warn.
 - The bank gets 2 s (`economyTimeoutMs`, enforced by the injected scheduler's
   `withDeadline`; the use case holds no timers). A throw or a timeout logs
   `school.agenda.economy-failed` at warn and the agenda prints without the line.
-  A failed preview logs `school.agenda.economy-next-failed`.
 - No economy wired: the agenda is byte-identical to one printed before the line
   existed (pinned against a fixture captured at the parent commit).
 
 Wiring: `BuildAgenda` takes an optional `economy` port,
-`{ weekSummary(learnerId) → { silver, next: { title, reward } | null } }`, and formats the text with the
-pure `agendaEconomyLine` in `receipts.mjs`; `agendaDocument({ economyLine })`
-prints it. `createSchoolLifecycle` builds the port from the `economyService` it
-is already handed (duck-typed, so School imports no economy code) and its own
-`issueSubjectNext`, and gives it to both the printing agenda and the agenda
-preview.
+`{ bankSummary(learnerId) → { silver, next: { title, reward } | null } | null }`,
+and formats the text with the pure `agendaEconomyLine` in `receipts.mjs`;
+`agendaDocument({ economyLine })` prints it. `createAgendaEconomyPort`
+(`composition/agendaEconomy.mjs`) builds the port from the `economyService`
+`createSchoolLifecycle` is already handed (duck-typed, so School imports no
+economy code) and its own `issueSubjectNext`. Both the printing agenda and the
+agenda preview get it; both reads are side-effect free, so the preview stays
+read-only.
 
 **The study day is 4am→4am**, the same boundary the language ladder already
 uses — one shared implementation, so the agenda's "today" and the ladder's

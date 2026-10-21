@@ -13,6 +13,8 @@
  *
  * @see tests/_lib/school/lifecycleHarness.mjs
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createLifecycleHarness, fixtureBank,
@@ -840,5 +842,17 @@ describe('the agenda opens with the week\'s silver', () => {
     // preview's, shortened at a word to keep the line on one row.
     expect(lines[0]).toBe('TEST LEARNER');
     expect(lines[1]).toBe('This week: 0 silver · Next: Equivalent Fractions…');
+  });
+
+  it('the agenda preview carries the same line and writes no wallet', async () => {
+    const economyDir = path.join(h.dataDir, 'users', DEFAULT_LEARNER, 'apps', 'economy');
+    const before = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
+    const { document } = await h.useCases.previewAgenda.execute({ learnerId: DEFAULT_LEARNER });
+    expect(document.blocks[0]).toEqual({
+      type: 'rich_text', md: 'This week: 0 silver · Next: Equivalent Fractions…', align: 'center',
+    });
+    const after = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
+    expect(after).toEqual(before);
+    expect(after.some((f) => /wallet/.test(String(f)))).toBe(false);
   });
 });

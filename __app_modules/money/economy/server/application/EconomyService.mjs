@@ -147,6 +147,21 @@ export class EconomyService {
     return wallet;
   }
 
+  /**
+   * The balances folded straight from the ledger: a pure read. Unlike
+   * `getBalance` it writes no wallet snapshot and reaps no stale session, so a
+   * surface that must not write (the School agenda tape and its preview) can
+   * ask without side effects, and a caller that gives up on it mid-call
+   * leaves nothing half-done. An open metered session's undrained time is not
+   * reflected; the ledger is.
+   * @param {string} userId
+   * @returns {Promise<{silver: number, gold: number, gems: number}>}
+   */
+  async peekBalance(userId) {
+    this.#assertUser(userId);
+    return foldBalances(this.#ds.readAllTransactions(userId));
+  }
+
   async getBalance(userId) {
     this.#assertUser(userId);
     const wallet = this.#reapStale(userId);
