@@ -68,8 +68,9 @@ export class MediaProgress {
   }
 
   /**
-   * Check if item is considered fully watched: >= 90% with at most 10 minutes
-   * left (shared/contracts/media/watchCompletion.mjs)
+   * Check if item is considered fully watched — the default (movie-mode) rule in
+   * shared/contracts/media/watchCompletion.mjs. Library overrides apply where the
+   * namespace is known (RecordPlaybackProgress, Fitness show views).
    * @returns {boolean}
    */
   isWatched() {

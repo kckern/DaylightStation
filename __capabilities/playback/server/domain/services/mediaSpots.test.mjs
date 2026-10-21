@@ -48,14 +48,8 @@ describe('finished / unfinished rule (RQ-FIND-12 defaults)', () => {
     expect(isSpotOpen({ playhead: 30, duration: 600 })).toBe(true);
   });
   it('a spot at 90% (credits) is finished, not open', () => {
-    expect(isSpotFinished({ playhead: 5400, duration: 6000 })).toBe(true);
-    expect(isSpotOpen({ playhead: 5400, duration: 6000 })).toBe(false);
-  });
-  it('a spot past 90% of a long item with more than 10 min left is still open', () => {
-    // 4h51m racing longplay stopped at 94%: 17 minutes, a whole cup, to go
-    expect(isSpotFinished({ playhead: 16429, duration: 17467 })).toBe(false);
-    expect(isSpotOpen({ playhead: 16429, duration: 17467 })).toBe(true);
-    expect(isSpotFinished({ playhead: 6900, duration: 7200 })).toBe(true);
+    expect(isSpotFinished({ playhead: 6480, duration: 7200 })).toBe(true);
+    expect(isSpotOpen({ playhead: 6480, duration: 7200 })).toBe(false);
   });
   it('falls back to a stored percent when duration is unknown', () => {
     expect(isSpotOpen({ playhead: 400, duration: 0, percent: 50 })).toBe(true);
