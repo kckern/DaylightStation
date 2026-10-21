@@ -33,78 +33,43 @@ function ShellProbe() {
   return <span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>;
 }
 const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /><ShellProbe /></TeacherProfileProvider>);
-const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('kckern'));
-
-// Rows as `GET /lifecycle/learners/:id/sessions` serves them
-// (YamlWorkSessionDatastore.listForLearner): no `remediation` field — an
-// attempt already given another try reads `state: 'remediation_opened'`.
-const failed = (sessionId, updatedAt, extra = {}) => ({
-  sessionId, learnerId: 'user_4', unitId: 'unit-a', state: 'outcome_recorded', terminal: false,
-  outcome: { result: 'needs_remediation', at: updatedAt }, updatedAt, remediationOf: null, ...extra,
-});
+const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
-  sessionStorage.setItem('school-teacher-claim', 'kckern');
-  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }));
-  schoolApi.quizRequests.mockResolvedValue(ok([{ kind: 'retake', userId: 'user_4', unitId: 'unit-a', title: 'Fractions' }]));
-  schoolApi.offerRetake.mockResolvedValue(ok({ status: 'opened', newSessionId: 's9' }, 201));
+  sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }));
+  schoolApi.quizRequests.mockResolvedValue(ok([{ kind: 'retake', userId: 'user_4', unitId: 'unit-a', sessionId: 'ses_7', title: 'Fractions' }]));
   schoolApi.quizRequestDismiss.mockResolvedValue(ok({ dismissed: true }));
 });
 
-describe('QuizRequestBacklog — granting a retake from the queue', () => {
-  it('opens another try on the latest failed attempt, then tells the child yes', async () => {
-    schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [
-      failed('s0', '2026-10-18T10:00:00Z'),
-      failed('s1', '2026-10-20T10:00:00Z'),
-      failed('s2', '2026-10-21T10:00:00Z', { unitId: 'unit-b' }),
-      { sessionId: 's3', unitId: 'unit-a', state: 'outcome_recorded', outcome: { result: 'passed' }, updatedAt: '2026-10-21T11:00:00Z' },
-    ] }));
+// 2026-10-21: on-screen quizzes retake until passed, so the runner files no
+// new retake asks. Rows already on file are cleared like any other — a
+// Dismiss with a reason — and the queue no longer opens retries itself.
+describe('QuizRequestBacklog — legacy retake rows are dismiss-only', () => {
+  it('offers no grant on a retake row', async () => {
+    mount(<QuizRequestBacklog kids={KIDS} />);
+    await screen.findByText('Fractions');
+    expect(screen.getByText(/wants another try — asked by User_4/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Offer another try' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Dismiss…' })).toBeTruthy();
+  });
+
+  it('dismisses exactly that retake row with the reason, then refreshes the dashboard', async () => {
     const onChanged = vi.fn();
     mount(<QuizRequestBacklog kids={KIDS} onChanged={onChanged} />);
     await screen.findByText('Fractions');
     await waitForClaim();
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Offer another try' })); });
-    await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalled());
-    expect(schoolApi.learnerSessions).toHaveBeenCalledWith('user_4');
-    expect(schoolApi.offerRetake).toHaveBeenCalledWith('s1', expect.objectContaining({ openedBy: 'kckern' }));
-    expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'retake', userId: 'user_4', unitId: 'unit-a', dismissedBy: 'kckern', reason: expect.stringMatching(/another try/),
-    }));
-    expect(schoolApi.offerRetake.mock.invocationCallOrder[0])
-      .toBeLessThan(schoolApi.quizRequestDismiss.mock.invocationCallOrder[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' }));
+    fireEvent.change(screen.getByLabelText('Dismissal reason'), { target: { value: 'Quizzes retake on their own now.' } });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss & tell them' })); });
+    await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'retake', sessionId: 'ses_7', userId: 'user_4', unitId: 'unit-a',
+      dismissedBy: 'teacher_1', reason: 'Quizzes retake on their own now.',
+    })));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
-  });
-
-  it('says to open the lesson from History when no failed attempt of the unit exists', async () => {
-    schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [failed('s2', '2026-10-21T10:00:00Z', { unitId: 'unit-b' })] }));
-    mount(<QuizRequestBacklog kids={KIDS} />);
-    await screen.findByText('Fractions');
-    await waitForClaim();
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Offer another try' })); });
-    expect(await screen.findByText(/open the lesson from History/)).toBeTruthy();
+    expect(schoolApi.learnerSessions).not.toHaveBeenCalled();
     expect(schoolApi.offerRetake).not.toHaveBeenCalled();
-    expect(schoolApi.quizRequestDismiss).not.toHaveBeenCalled();
-  });
-
-  // OpenRemediation answers 201 even when it opened nothing; telling the
-  // child "yes" then would be a promise with no sheet behind it.
-  it('keeps the request, and says why, when the server opened no retry', async () => {
-    schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [failed('s1', '2026-10-20T10:00:00Z')] }));
-    schoolApi.offerRetake.mockResolvedValue(ok({ status: 'unavailable', message: 'This lesson is paused: field trip.' }, 201));
-    mount(<QuizRequestBacklog kids={KIDS} />);
-    await screen.findByText('Fractions');
-    await waitForClaim();
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Offer another try' })); });
-    expect(await screen.findByText('This lesson is paused: field trip.')).toBeTruthy();
-    expect(schoolApi.quizRequestDismiss).not.toHaveBeenCalled();
-  });
-
-  it('offers no grant on a request that is not a retake', async () => {
-    schoolApi.quizRequests.mockResolvedValue(ok([{ userId: 'user_4', unitId: 'unit-a', unitTitle: 'Fractions' }]));
-    mount(<QuizRequestBacklog kids={KIDS} />);
-    await screen.findByText('Fractions');
-    expect(screen.queryByRole('button', { name: 'Offer another try' })).toBeNull();
   });
 });

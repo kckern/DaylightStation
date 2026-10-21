@@ -1,12 +1,13 @@
 /**
  * QuizRequestBacklog — units children flagged as quiz-gated with no bank,
- * plus kid-filed retake asks (kind:'retake'). The backlog shrinks two ways
+ * plus kid-filed retake asks (kind:'retake') and flags. The backlog shrinks two ways
  * (wave 2, teacher.quizrequests.clear): a request shows a "bank authored"
  * badge once a bank bound to its unit exists, and any request can be
  * dismissed through the gate — but a dismissal REQUIRES a reason, which is
  * delivered to the child as a note (advocacy A5: no silent verbs about
- * children). A retake ask can also be GRANTED here, which clears it with a
- * note that says yes.
+ * children). Retake asks are dismiss-only: since 2026-10-21 an on-screen
+ * quiz retakes until passed and the runner files no new ones, so the rows
+ * left are legacy and clear like any other.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -34,39 +35,6 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
     }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); onChanged?.(); } });
   };
 
-  // Granting a retake: open another try on the most recent failed attempt of
-  // that unit, then clear the ask with a sentence that says YES — it used to
-  // take a trip to History and back, and the child then read a "dismissal"
-  // for a request that had been granted.
-  //
-  // Session rows (`listForLearner`) carry no `remediation` field; an attempt
-  // already given another try reads `state: 'remediation_opened'`. It is not
-  // filtered out: OpenRemediation answers `already_opened` for it, and "yes,
-  // you have another try" is still true — which also keeps a retried tap
-  // (after a lapsed sign-in) from failing on the try the first tap opened.
-  const grant = (r, key) => run(key, async ({ actorId, pin }) => {
-    const sessions = await schoolApi.learnerSessions(r.userId);
-    if (!sessions.ok) return sessions;
-    const failed = (sessions.data?.sessions ?? [])
-      .filter((s) => s.unitId === r.unitId && s.outcome?.result === 'needs_remediation')
-      .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))[0];
-    if (!failed) {
-      return { ok: false, status: 409, data: { error: 'No failed attempt of this lesson is waiting for another try — open the lesson from History to check.' } };
-    }
-    const opened = await schoolApi.offerRetake(failed.sessionId, { openedBy: actorId, pin });
-    if (!opened.ok) return opened;
-    // 201 with `status: 'unavailable'` opened nothing (a paused lesson, say);
-    // the ask stays, with the server's own reason.
-    if (opened.data?.status === 'unavailable') {
-      return { ok: false, status: 409, data: { error: opened.data.message ?? 'There is nothing to try again right now.' } };
-    }
-    return schoolApi.quizRequestDismiss({
-      unitId: r.unitId ?? null, bankId: r.bankId ?? null, kind: 'retake', sessionId: r.sessionId ?? null,
-      userId: r.userId, dismissedBy: actorId, pin,
-      reason: 'Yes — you have another try. It will be on your next agenda.',
-    });
-  }, { onSuccess: () => { requests.retry(); onChanged?.(); } });
-
   return (
     <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting." unavailableCopy="Quiz requests aren't enabled on this install.">
       <ul className="teacher-quizreq">
@@ -88,9 +56,6 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
                 <span className="teacher-quizreq__note">&ldquo;{r.note}&rdquo;</span>
               )}
               {r.fulfilled && <span className="teacher-quizreq__done">bank authored</span>}
-              {r.kind === 'retake' && r.unitId && asking !== key && (
-                <button type="button" disabled={busy === key} onClick={() => grant(r, key)}>Offer another try</button>
-              )}
               {asking === key ? (
                 <span className="teacher-quizreq__reason">
                   <input
