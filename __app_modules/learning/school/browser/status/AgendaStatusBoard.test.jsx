@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
 import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
+import { BOARD_CACHE_KEY } from "./boardCache.js";
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
 
 vi.mock("../schoolApi.js", () => ({
@@ -1451,7 +1452,7 @@ describe('AgendaStatusBoard silver earned this week', () => {
   it('a cached figure from another week is not painted', async () => {
     // The snapshot IS of this study day (so the seed is accepted), but its
     // silver prices LAST week: the Coins week check alone must hide it.
-    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+    localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
       earnings: { learner1: { silver: 99, gems: 0, pendingSilver: 0, pendingGems: 0, from: '2026-10-12', to: '2026-10-18' } },
     }));
@@ -1462,7 +1463,7 @@ describe('AgendaStatusBoard silver earned this week', () => {
   });
 
   it('a cached figure from this week paints before the read lands', async () => {
-    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+    localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
       earnings: { learner1: { silver: 17, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to } },
     }));
@@ -1485,6 +1486,17 @@ describe('AgendaStatusBoard gold', () => {
   // `balance` is the SILVER figure (EconomyService); gold is `balances.gold`.
   // The silver here differs on purpose, so reading the wrong field fails.
   const wallet = (gold, silver = 40) => ({ ok: true, status: 200, data: { balance: silver, balances: { silver, gold, gems: 0 }, session: null } });
+
+  it('a v1 board cache (gold that was really silver) never paints as gold', async () => {
+    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+      studyDay: DAY, learners: {}, rings: {}, earnings: {}, gold: { learner1: 40, learner2: 40 },
+    }));
+    schoolApi.wallet.mockResolvedValue({ ok: false, status: 503, data: null });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(schoolApi.wallet).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText('40 gold')).toBeNull();
+    expect(screen.queryByLabelText(/ gold$/)).toBeNull();
+  });
 
   it('gold is the gold balance, never the silver `balance` figure', async () => {
     schoolApi.wallet.mockResolvedValue(wallet(3, 12));
