@@ -7,6 +7,7 @@ import SchoolDebriefHeader from "./SchoolDebriefHeader.jsx";
 import PromptItem from "./items/PromptItem.jsx";
 import ChoiceItem from "./items/ChoiceItem.jsx";
 import ShortAnswerItem from "./items/ShortAnswerItem.jsx";
+import RetryButton from "./RetryButton.jsx";
 import SummaryItem from "./items/SummaryItem.jsx";
 import { schoolApi } from "../../schoolApi.js";
 import "./SchoolDebrief.scss";
@@ -32,6 +33,8 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   const [nudge, setNudge] = useState(false);
   const [earned, setEarned] = useState(null);
   const [weekBefore, setWeekBefore] = useState(null);
+  const [retry, setRetry] = useState(0);
+  const [failedStart, setFailedStart] = useState(null);
   const [currentQid, setCurrentQid] = useState(null); // the question on screen; the server's `next` moves on once it is answered
 
   useEffect(() => { schoolDebriefLog.mounted({ learnerId, lateDay }); return () => schoolDebriefLog.unmounted({ learnerId }); }, [learnerId, lateDay]);
@@ -39,9 +42,9 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     if (!debriefGrant || !todayProp) return;
     (async () => {
       const r = await api.day(todayProp);
-      if (r.ok) setTodayView(r.data); else setError('The debrief could not load. Ask a grown-up.');
+      if (r.ok) { setTodayView(r.data); setError(null); } else setError('The debrief could not load. Try again.');
     })();
-  }, [api, debriefGrant, todayProp]);
+  }, [api, debriefGrant, todayProp, retry]);
   useInputStall(day ? `${day}:${view?.next?.kind}:${view?.next?.id}:${promptIdx}` : 'start', (ms) => {
     schoolDebriefLog.stall({ ms, day });
     if (ms >= 120_000) setNudge(true);
@@ -70,7 +73,8 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     setBusy(true);
     const r = await api.open(d);
     setBusy(false);
-    if (!apply(r)) return;
+    if (!apply(r)) { setFailedStart(d); return; }
+    setFailedStart(null);
     setDay(d);
     const firstMissing = PROMPTS.findIndex((p) => !(p.id in (r.data.entries ?? {})));
     setPromptIdx(firstMissing < 0 ? PROMPTS.length : firstMissing);
@@ -86,18 +90,45 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     if (apply(r)) {
       const next = PROMPTS.findIndex((p, i) => i > promptIdx && !(p.id in r.data.entries));
       if (next >= 0) setPromptIdx(next);
-      else { setPromptIdx(PROMPTS.length); apply(await api.submit(day)); }
+      else setPromptIdx(PROMPTS.length); // the submit effect below takes it from here
     }
     setBusy(false);
   };
+  const answering = useRef(false);
   const answer = async (question, response) => {
+    if (answering.current) return;
+    answering.current = true;
     setBusy(true);
     setCurrentQid(question.id);
     const r = await api.answer(day, { questionId: question.id, response });
     setBusy(false);
+    answering.current = false;
     if (r.ok) setResult(r.data); else setError(r.data?.error ?? 'Try again.');
   };
-  const advance = async () => { setResult(null); apply(await api.day(day)); };
+  // Fetch first, then swap view and clear the grade together: the answered
+  // question must never re-render as answerable during the round trip.
+  const advance = async () => {
+    if (busy) return;
+    setBusy(true);
+    const r = await api.day(day);
+    if (r.ok) { setView(r.data); setResult(null); setError(null); } else setError(r.data?.error ?? 'Something went wrong. Try again.');
+    setBusy(false);
+  };
+  // After the last prompt the server wants a submit. Re-entry with all three
+  // entries saved lands here too. Ref-guarded like complete.
+  const submitting = useRef(false);
+  const readyToSubmit = Boolean(day) && Boolean(view) && promptIdx >= PROMPTS.length && !view.questions
+    && !['clarify', 'completed', 'excused'].includes(view.phase) && !busy;
+  useEffect(() => {
+    if (!readyToSubmit || submitting.current) return;
+    submitting.current = true;
+    (async () => {
+      setBusy(true);
+      apply(await api.submit(day));
+      setBusy(false);
+      submitting.current = false;
+    })();
+  }, [readyToSubmit, retry]); // eslint-disable-line react-hooks/exhaustive-deps
   // Completing is an effect of the server saying "complete is next", never a
   // side effect of rendering. The ref keeps a re-render from completing twice.
   const completing = useRef(false);
@@ -120,28 +151,37 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
       }
       completing.current = false;
     })();
-  }, [readyToComplete]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [readyToComplete, retry]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tryAgain = () => { setError(null); if (!day && failedStart) start(failedStart); else setRetry((n) => n + 1); };
+  const waiting = (text) => (
+    <>
+      <p className="sd-thinking" role="status">{text}</p>
+      {error && <RetryButton onRetry={tryAgain} />}
+    </>
+  );
 
   let body;
   if (!debriefGrant) body = <p className="sd-notice">Open your debrief with the code on your agenda.</p>;
-  else if (error && !view && !todayView) body = <p className="sd-notice">{error}</p>;
+  else if (error && !view && !todayView) body = <><p className="sd-notice">{error}</p><RetryButton onRetry={tryAgain} /></>;
   else if (!day && todayView && !lateDay && ['completed', 'excused'].includes(todayView.phase)) body = <SummaryItem view={todayView} earned={null} coinsLive onFinish={onExit} />;
+  else if (!day && error && failedStart) body = <RetryButton onRetry={tryAgain} />;
   else if (!day) body = todayView ? <SchoolDebriefStartCard today={todayView} lateDay={lateDay} onStart={start} /> : <p className="sd-notice">Loading…</p>;
   else if (!view) body = <p className="sd-notice">Loading…</p>;
   else if (['completed', 'excused'].includes(view.phase)) body = <SummaryItem view={view} earned={earned} coinsLive={coinsLive} onFinish={onExit} />;
   else if (promptIdx < PROMPTS.length && !view.questions && view.phase !== 'clarify') {
     const p = PROMPTS[promptIdx];
-    body = <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} onTake={takeFor} onBack={promptIdx > 0 ? () => setPromptIdx(promptIdx - 1) : null} onSubmit={(b) => submitPrompt(p.id, b)} />;
+    body = <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={promptIdx > 0 ? () => setPromptIdx(promptIdx - 1) : null} onSubmit={(b) => submitPrompt(p.id, b)} />;
   } else if (view.phase === 'clarify') {
-    body = <PromptItem prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setBusy(false); }} />;
-  } else if (busy && !view.questions) body = <p className="sd-thinking" role="status">Reading your answer…</p>;
+    body = <PromptItem prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setBusy(false); }} />;
+  } else if (!view.questions) body = waiting('Reading your answer…');
   else if (view.next?.kind === 'question' || result) {
     const q = view.questions.find((x) => x.id === (result ? currentQid : view.next.id));
     body = q.kind === 'choice'
       ? <ChoiceItem question={q} result={result} busy={busy} onAnswer={(o) => answer(q, o)} onContinue={advance} />
-      : <ShortAnswerItem question={q} result={result} onTake={takeFor} onAnswer={(t) => answer(q, t)} onContinue={advance} />;
-  } else if (view.next?.kind === 'complete') body = <p className="sd-thinking" role="status">Saving…</p>;
-  else body = <p className="sd-thinking" role="status">Reading your answer…</p>;
+      : <ShortAnswerItem question={q} result={result} onTake={takeFor} busy={busy} onAnswer={(t) => answer(q, t)} onContinue={advance} />;
+  } else if (view.next?.kind === 'complete') body = waiting('Saving…');
+  else body = waiting('Reading your answer…');
 
   return (
     <div className="sd-program">

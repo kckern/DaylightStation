@@ -60,4 +60,18 @@ describe('every debrief action has a key', () => {
     expect(screen.queryByRole('button', { name: /record/i })).toBeNull();
     recorder.unavailable = false;
   });
+  it('prompt: Space on the focused empty textarea starts recording instead of typing a space', () => {
+    recorder.start.mockClear();
+    render(<PromptItem prompt={{ id: 'learned', text: 'x', required: true }} initial="" onSubmit={vi.fn()} onBack={vi.fn()} onTake={vi.fn()} />);
+    const field = screen.getByRole('textbox');
+    const notPrevented = fireEvent.keyDown(field, { code: 'Space', key: ' ' });
+    expect(notPrevented).toBe(false);
+    expect(recorder.start).toHaveBeenCalledTimes(1);
+  });
+  it('prompt: busy parent blocks submit', () => {
+    const onSubmit = vi.fn();
+    render(<PromptItem prompt={{ id: 'learned', text: 'x', required: false }} initial="hi" busy onSubmit={onSubmit} onBack={vi.fn()} onTake={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole('textbox'), { code: 'Enter', key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

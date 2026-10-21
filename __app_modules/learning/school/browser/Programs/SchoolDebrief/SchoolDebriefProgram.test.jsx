@@ -64,4 +64,78 @@ describe('SchoolDebriefProgram start card', () => {
       expect(screen.queryByText('Coins start soon')).toBeNull();
     });
   });
+
+  describe('no dead ends', () => {
+    const full = { classes: { text: 'a' }, learned: { text: 'b' }, notable: { text: 'c' } };
+    const qs = [{ id: 'q1', kind: 'choice', prompt: 'One', options: ['a', 'b', 'c'] }, { id: 'q2', kind: 'choice', prompt: 'Two', options: ['a', 'b', 'c'] }];
+    const enter = () => fireEvent.keyDown(window, { code: 'Enter', key: 'Enter' });
+    const go = async (today) => {
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /pick up|tell me/i }));
+    };
+    it('submit failure then Enter retries and reaches the questions', async () => {
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'entry', next: { kind: 'submit' }, entries: full }));
+      api.open = api.day;
+      api.submit = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, data: null })
+        .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: full, questions: qs, answers: {} }));
+      await go();
+      fireEvent.click(await screen.findByRole('button', { name: /try again/i }));
+      expect(await screen.findByText('One')).toBeInTheDocument();
+      expect(api.submit).toHaveBeenCalledTimes(2);
+    });
+    it('submit failure then the Enter key retries', async () => {
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'entry', next: { kind: 'submit' }, entries: full }));
+      api.open = api.day;
+      api.submit = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, data: null })
+        .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: full, questions: qs, answers: {} }));
+      await go();
+      await screen.findByRole('button', { name: /try again/i });
+      enter();
+      expect(await screen.findByText('One')).toBeInTheDocument();
+    });
+    it('complete failure then Enter retries and reaches the summary', async () => {
+      school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'answering', next: { kind: 'complete' }, entries: {}, questions: [], answers: {} }));
+      api.open = api.day;
+      api.complete = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, data: null })
+        .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'completed', next: null, entries: {}, late: false, summary: { substance: 7, substantive: true, quiz: { right: 1, graded: 2 } } }));
+      await go();
+      await screen.findByRole('button', { name: /try again/i });
+      enter();
+      expect(await screen.findByText(/1 of 2/)).toBeInTheDocument();
+    });
+    it('a failed open shows the error and Enter retries it', async () => {
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'not-started', next: { kind: 'prompt', id: 'classes' }, entries: {} }));
+      api.open = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, data: null })
+        .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'entry', next: { kind: 'prompt', id: 'classes' }, entries: {} }));
+      await go();
+      await screen.findByRole('button', { name: /try again/i });
+      enter();
+      expect(await screen.findByText(/What classes or subjects/)).toBeInTheDocument();
+      expect(api.open).toHaveBeenCalledTimes(2);
+    });
+    it('after answering, two rapid digits answer once and the next question is fresh', async () => {
+      let answered = false;
+      const view = () => ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: answered ? 'q2' : 'q1' }, entries: full, questions: qs, answers: answered ? { q1: {} } : {} });
+      api.day = vi.fn(async () => view());
+      api.open = api.day;
+      let release;
+      api.answer = vi.fn(() => new Promise((r) => { release = () => { answered = true; r(ok({ correct: true, grade: 1, answer: 'a' })); }; }));
+      await go();
+      await screen.findByText('One');
+      fireEvent.keyDown(window, { code: 'Digit1', key: '1' });
+      fireEvent.keyDown(window, { code: 'Digit2', key: '2' });
+      expect(api.answer).toHaveBeenCalledTimes(1);
+      release();
+      fireEvent.keyDown(await screen.findByRole('button', { name: /^Next/ }), { code: 'Enter', key: 'Enter' });
+      enter();
+      expect(await screen.findByText('Two')).toBeInTheDocument();
+      expect(screen.queryByText('One')).toBeNull();
+      expect(api.answer).toHaveBeenCalledTimes(1);
+    });
+  });
 });

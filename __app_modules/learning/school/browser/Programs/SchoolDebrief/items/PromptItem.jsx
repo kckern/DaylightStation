@@ -11,7 +11,7 @@ import { schoolDebriefLog } from "../schoolDebriefLog.js";
  * Space to record → transcript lands in the field to correct → Enter submits.
  * Speaking is never required; with no mic API the record control is absent.
  */
-export default function PromptItem({ prompt, initial = '', onSubmit, onBack = null, onTake, submitLabel = 'Next' }) {
+export default function PromptItem({ prompt, initial = '', onSubmit, onBack = null, onTake, submitLabel = 'Next', busy: parentBusy = false }) {
   const [text, setText] = useState(initial);
   const [audioRef, setAudioRef] = useState(null);
   const [via, setVia] = useState(initial ? 'typed' : null);
@@ -37,7 +37,7 @@ export default function PromptItem({ prompt, initial = '', onSubmit, onBack = nu
   }, [recorder.verdict, prompt.id]);
 
   const recording = recorder.phase === 'recording';
-  const canSubmit = !busy && !recording && (!prompt.required || text.trim().length > 0);
+  const canSubmit = !parentBusy && !busy && !recording && (!prompt.required || text.trim().length > 0);
   const submit = () => { if (canSubmit) { schoolDebriefLog.submit({ promptId: prompt.id, via: via ?? 'typed', chars: text.length }); onSubmit({ text: text.trim(), via: via ?? 'typed', audioRef }); } };
   const record = () => { setNotice(null); if (recording) recorder.stop(); else { schoolDebriefLog.takeStart({ promptId: prompt.id }); recorder.start(); } };
 
@@ -54,7 +54,10 @@ export default function PromptItem({ prompt, initial = '', onSubmit, onBack = nu
       <textarea
         ref={field} className="sd-prompt__field" value={text} rows={4} autoFocus aria-label={prompt.text}
         onChange={(e) => { setText(e.target.value); if (!via) setVia('typed'); }}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        onKeyDown={(e) => {
+          if ((e.code === 'Space' || e.key === ' ') && !recorder.unavailable && (!text || recording)) { e.preventDefault(); record(); return; }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+        }}
       />
       {!recorder.unavailable && <VoiceBand stream={recording ? recorder.stream : null} onLevel={recording ? recorder.onLevel : null} />}
       {notice && <p className="sd-notice" role="status">{notice}</p>}
