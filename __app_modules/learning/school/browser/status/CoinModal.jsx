@@ -63,11 +63,11 @@ function UnpaidWeek({ figure }) {
       <h3 id="coin-modal-pending-title" className="school-coin-modal__heading">This week, not yet paid</h3>
       {figure ? (
         <>
-          <p className="school-coin-modal__so-far"><CoinIcon metal="silver" />{`${figure.silver} silver so far`}</p>
-          {(figure.earned ?? []).length > 0 && (
+          <p className="school-coin-modal__so-far"><CoinIcon metal="silver" />{`${count(figure.silver)} silver so far`}</p>
+          {(figure.earned ?? []).some((l) => earnedText(l)) && (
             <ul className="school-coin-modal__lines">
-              {figure.earned.map((l) => (
-                <li key={l.ruleId ?? l.label} className="school-coin-modal__pending-line">{`${earnedText(l)} · ${l.label}`}</li>
+              {figure.earned.filter((l) => earnedText(l)).map((l, i) => (
+                <li key={`${l.ruleId ?? l.label}-${i}`} className="school-coin-modal__pending-line">{`${earnedText(l)} · ${l.label}`}</li>
               ))}
             </ul>
           )}
@@ -119,10 +119,16 @@ export default function CoinModal({ kid, figure = null, onClose, now = null }) {
   const [bank, setBank] = useState({ status: 'loading', data: null });
   const closeRef = useRef(null);
 
+  const closeWith = (reason) => {
+    schoolLog.selfService('coin-modal.closed', { learnerId: kid.id, reason });
+    onClose();
+  };
+  useEffect(() => { schoolLog.selfService('coin-modal.opened', { learnerId: kid.id }); }, [kid.id]);
+
   useEffect(() => {
-    const timer = setTimeout(onClose, AUTO_CLOSE_MS);
+    const timer = setTimeout(() => closeWith('timer'), AUTO_CLOSE_MS);
     return () => clearTimeout(timer);
-  }, [onClose]);
+  }, [onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // OK on a kiosk presses whatever has focus: give it the way out.
   useEffect(() => { closeRef.current?.focus(); }, []);
@@ -146,9 +152,9 @@ export default function CoinModal({ kid, figure = null, onClose, now = null }) {
     return () => { alive = false; };
   }, [kid.id]);
 
-  const close = (event) => { event.stopPropagation(); onClose(); };
+  const close = (event) => { event.stopPropagation(); closeWith('button'); };
   const onKeyDown = (event) => {
-    if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+    if (event.key === 'Escape') { event.stopPropagation(); closeWith('escape'); }
   };
 
   return (
@@ -158,7 +164,7 @@ export default function CoinModal({ kid, figure = null, onClose, now = null }) {
       role="dialog"
       aria-modal="true"
       aria-label={`${kid.name}'s coins`}
-      onClick={onClose}
+      onClick={() => closeWith('tap')}
       onKeyDown={onKeyDown}
     >
       <div className="school-term-modal__sheet school-coin-modal__sheet">
@@ -169,7 +175,7 @@ export default function CoinModal({ kid, figure = null, onClose, now = null }) {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" /></svg>
           </button>
         </header>
-        {bank.status === 'ok' && <Balances balances={bank.data.balances} />}
+        {bank.status === 'ok' && bank.data.balances && <Balances balances={bank.data.balances} />}
         <UnpaidWeek figure={figure} />
         <section className="school-coin-modal__section" data-testid="coin-modal-ledger" aria-labelledby="coin-modal-ledger-title">
           <h3 id="coin-modal-ledger-title" className="school-coin-modal__heading">History</h3>

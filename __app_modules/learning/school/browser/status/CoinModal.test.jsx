@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 vi.mock("../schoolApi.js", () => ({ schoolApi: { economyBank: vi.fn() } }));
+vi.mock("../schoolLog.js", () => ({ schoolLog: { selfService: vi.fn(), selfServiceError: vi.fn() } }));
+import { schoolLog } from "../schoolLog.js";
 import { schoolApi } from "../schoolApi.js";
 import CoinModal from "./CoinModal.jsx";
 import { AUTO_CLOSE_MS } from "./TermModal.jsx";
@@ -36,7 +38,7 @@ async function open(props = {}) {
   return { onClose, dialog: screen.getByRole('dialog', { name: "Alpha's coins" }) };
 }
 
-beforeEach(() => { schoolApi.economyBank.mockReset().mockResolvedValue(ok(BANK)); });
+beforeEach(() => { schoolLog.selfService.mockClear(); schoolApi.economyBank.mockReset().mockResolvedValue(ok(BANK)); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('CoinModal', () => {
@@ -113,5 +115,16 @@ describe('CoinModal', () => {
     expect(within(dialog).getByTestId('coin-modal-pending').textContent).toContain('Nothing earned yet this week.');
     const [only] = within(dialog).getAllByTestId('coin-ledger-line');
     expect(only.textContent).toContain('+1 silver · Green day');
+  });
+
+  it('logs open, and the reason it closed', async () => {
+    const { dialog } = await open();
+    expect(schoolLog.selfService).toHaveBeenCalledWith('coin-modal.opened', { learnerId: 'test-learner' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(schoolLog.selfService).toHaveBeenCalledWith('coin-modal.closed', { learnerId: 'test-learner', reason: 'button' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(schoolLog.selfService).toHaveBeenCalledWith('coin-modal.closed', { learnerId: 'test-learner', reason: 'escape' });
+    fireEvent.click(dialog);
+    expect(schoolLog.selfService).toHaveBeenCalledWith('coin-modal.closed', { learnerId: 'test-learner', reason: 'tap' });
   });
 });
