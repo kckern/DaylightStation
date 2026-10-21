@@ -7,6 +7,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createRequire } from 'module';
 import { createCadenceGate } from "./cadenceGate.mjs";
+import { createHrBeatGate } from "./hrBeatGate.mjs";
 
 const execAsync = promisify(exec);
 const require = createRequire(import.meta.url);
@@ -35,6 +36,12 @@ export class ANTPlusManager {
     // a session. Drop ANT+ HR readings outside a physiological window.
     this._minHr = 50;
     this._maxHr = 230;
+
+    // Gate heart rate on BeatCount advancement. A strap waking from sleep replays
+    // its pre-sleep HR (e.g. 161 hours later) and then zeros on a frozen beat
+    // count; the range check alone passes the replay. HR is withheld until the
+    // strap has counted two new beats, and again whenever the count freezes.
+    this._hrBeatGate = createHrBeatGate();
 
     /**
      * Which sensors are currently speaking, and when each last did.
@@ -227,7 +234,26 @@ export class ANTPlusManager {
         }
 
         // Extract key metrics for logging (avoid raw buffer spam)
-        const rawHr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        const packetHr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        // Beat-gate first: a value on a beat count that is not advancing (wake-up
+        // replay, lost contact) is not a heartbeat, whatever its magnitude.
+        let rawHr = packetHr;
+        if (packetHr !== null) {
+          const beat = this._hrBeatGate.gate(deviceId, {
+            heartRate: packetHr,
+            beatCount: data.BeatCount,
+            beatTime: data.BeatTime,
+            now: Date.now()
+          });
+          rawHr = beat.hr;
+          if (rawHr === null) {
+            if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
+            if ('heartRate' in data) data.heartRate = null;
+          }
+          if (beat.openedAfterMs !== undefined) {
+            console.log(`[${timestamp}] ${deviceId} HR beat-gate open after ${beat.openedAfterMs}ms (wake; first value ${packetHr} bpm)`);
+          }
+        }
         // Reject physiologically implausible HR (phantom straps / bike sensors
         // leaking a junk HR page). Strip it from `data` so downstream consumers
         // (the app's DeviceManager) never see the ghost reading.
