@@ -961,19 +961,19 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               {canOfferRetake && <button type="button" className="teacher-btn" disabled={busy === sessionId}
                 onClick={offerRetake}>Offer another try</button>}
             </div>
-            <details className="teacher-session-more-actions">
-              <summary>More actions</summary>
-              {/* Each lands on the child's Operations page with its repair
-                  preselected: the lesson for credit, the day for a reassign. */}
-              {(result.ownerId ?? learnerId) && <>
+            {(result.ownerId ?? learnerId) && (
+              <details className="teacher-session-more-actions">
+                <summary>More actions</summary>
+                {/* Each lands on the child's Operations page with its repair
+                    preselected: the lesson for credit, the day for a reassign. */}
                 <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { unit: sessionState?.unitId ?? null })}>
                   Give credit for work completed offline →
                 </a>
                 <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { day: sessionDay })}>
                   This was another child’s work →
                 </a>
-              </>}
-            </details>
+              </details>
+            )}
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {/* Below the repair a teacher came for, never above it: settling

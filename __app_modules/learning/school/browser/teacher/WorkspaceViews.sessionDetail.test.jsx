@@ -187,6 +187,15 @@ describe('SessionInspector detail coherence', () => {
     expect(new URL(link.getAttribute('href'), 'http://x').searchParams.get('day')).toBe('2026-10-20');
   });
 
+  // With no owner both links are hidden; the disclosure must not open onto nothing.
+  it('shows no More actions when the lesson has no owner', async () => {
+    const { learnerId: _owner, ...ownerless } = SESSION.state;
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: { ...SESSION, state: ownerless } });
+    render(<SessionInspector learnerId={null} sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await screen.findByRole('button', { name: 'Fix a marked answer' });
+    expect(screen.queryByText('More actions')).toBeNull();
+  });
+
   it('puts the reprint control inside the card it reprints', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
