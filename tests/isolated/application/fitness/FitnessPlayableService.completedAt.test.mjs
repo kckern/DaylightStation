@@ -1,6 +1,7 @@
 // tests/isolated/application/fitness/FitnessPlayableService.completedAt.test.mjs
 import { describe, test, expect, vi } from 'vitest';
 import { FitnessPlayableService } from "../../../../__app_modules/wellness/fitness/server/application/FitnessPlayableService.mjs";
+import { compileWatchCompletion } from "../../../../shared/contracts/media/watchCompletion.mjs";
 
 function makeService({ items, completionRules } = {}) {
   const fakeAdapter = {
@@ -11,19 +12,23 @@ function makeService({ items, completionRules } = {}) {
     getItem: vi.fn().mockResolvedValue(null),
   };
   return new FitnessPlayableService({
-    fitnessConfigService: {},
     contentCatalog: fakeAdapter,
     completionRules,
     logger: { info: vi.fn(), warn: vi.fn() }
   });
 }
 
-// Mirrors the household Fitness override: <= 45 min 50%; longer 95% and <= 5 min left.
-const FITNESS_RULES = { ruleFor: (ns, duration) => (ns === 'plex/14_fitness'
-  ? (duration > 2700
-    ? { minPercent: 95, maxRemainingSec: 300, minWatchSec: 30 }
-    : { minPercent: 50, maxRemainingSec: null, minWatchSec: 30 })
-  : { minPercent: 90, maxRemainingSec: null, minWatchSec: null }) };
+// The documented household block, compiled by the real rule compiler.
+const { ruleFor } = compileWatchCompletion({
+  default: { min_percent: 90 },
+  libraries: {
+    'plex/14_fitness': {
+      min_watch_sec: 30,
+      tiers: [{ max_duration_sec: 2700, min_percent: 50 }, { min_percent: 95, max_remaining_sec: 300 }],
+    },
+  },
+});
+const FITNESS_RULES = { ruleFor };
 
 describe('FitnessPlayableService treats completedAt as ever-completed', () => {
   test('isWatched = true when completedAt is set, even if percent low', async () => {

@@ -576,7 +576,7 @@ export async function createSchoolLifecycle({
     catalog: new FitnessCourseCurriculumCatalog({
       baseCatalog, sourceProvider: fitnessPlayableService,
       projectionStore: new YamlFitnessCourseProjectionStore({ configService, logger }),
-      householdId, logger,
+      logger,
     }),
     sessions: new YamlWorkSessionDatastore({ configService, logger }),
     tokens: tokenRegistry ?? new YamlTokenRegistry({ configService, logger }),

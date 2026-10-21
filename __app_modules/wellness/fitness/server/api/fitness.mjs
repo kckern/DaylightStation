@@ -329,9 +329,8 @@ export function createFitnessRouter(config) {
     }
 
     const { id } = req.params;
-    const householdId = req.query.household || defaultHouseholdId;
 
-    const result = await fitnessPlayableService.getPlayableEpisodes(id, householdId);
+    const result = await fitnessPlayableService.getPlayableEpisodes(id);
 
     res.json(presentPublicResources({
       id: result.compoundId,
