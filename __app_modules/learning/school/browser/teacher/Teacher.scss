@@ -2480,8 +2480,10 @@
   grid-column: 2; grid-row: 1; justify-self: end;
   display: inline-flex; align-items: center;
   .teacher-agenda-dispatch { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  button { border: 0; border-radius: 8px; padding: 7px 11px; cursor: pointer; font-weight: 650; white-space: nowrap;
-    background: #3d3326; color: #fdfbf6; }
+  // Secondary, not primary: reading the day is the common job, printing it the
+  // occasional one — and this one drives a physical printer behind a PIN.
+  button { border: 1px solid #c9b896; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-weight: 650; white-space: nowrap;
+    background: transparent; color: #3d3326; }
   button:disabled { opacity: .55; cursor: progress; }
   .teacher-agenda-dispatch__ready, .teacher-agenda-dispatch__blocked { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; }
   .teacher-agenda-dispatch__ready button:last-child,
@@ -2971,4 +2973,18 @@
     border-radius: 0;
     padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
   }
+}
+
+// Phone: the row card takes the full width on its own line; the print button
+// and the agenda icon sit under it. Before this the card was squeezed into
+// one grid column, the day dots stacked into a vertical column, and "Print
+// agenda" overlapped the card (audit 2026-10-21 F2).
+@media (max-width: 760px) {
+  .teacher-roster__entry { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .teacher-roster__card { grid-column: 1 / -1; grid-row: 1; flex-wrap: wrap; }
+  .teacher-roster__identity { flex: 1 1 auto; }
+  .teacher-roster__dots { order: 3; flex: 1 0 100%; margin-right: 0; }
+  .teacher-roster__agenda-print { grid-column: 1; grid-row: 2; justify-self: start; }
+  .teacher-roster__agenda-link { grid-column: 2; grid-row: 2; }
+  .teacher-roster__plan-link { margin-left: 0; }
 }
