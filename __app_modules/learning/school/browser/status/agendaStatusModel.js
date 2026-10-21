@@ -333,9 +333,30 @@ export function earningsByLearner(payload) {
       pendingGems: Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0,
       from: week.from ?? null,
       to: week.to ?? null,
+      // What the week has earned so far, line by line, for the coin window.
+      earned: lines
+        .filter((line) => line?.status === 'earned'
+          && ((line.amount?.silver ?? 0) > 0 || (line.amount?.gems ?? 0) > 0))
+        .map((line) => ({
+          ruleId: line.ruleId ?? null,
+          label: line.label ?? line.ruleId ?? 'schoolwork',
+          silver: Number.isFinite(line.amount?.silver) ? line.amount.silver : 0,
+          gems: Number.isFinite(line.amount?.gems) ? line.amount.gems : 0,
+        })),
     };
   }
   return out;
+}
+
+/**
+ * A week's figure, or null when it has no silver or prices another week than
+ * `studyDay` (a cached figure from last week). The coin cell, its door and
+ * the coin window all ask this one question.
+ */
+export function figureInWeek(figure, studyDay) {
+  if (!figure || !Number.isFinite(figure.silver)) return null;
+  if (studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to)) return null;
+  return figure;
 }
 
 /** The most rows a triangle may take: a fourth row shrinks the disc below the

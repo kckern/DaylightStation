@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
 import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
 import { BOARD_CACHE_KEY } from "./boardCache.js";
-import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 
 vi.mock("../schoolApi.js", () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn(), earningsRoster: vi.fn(), wallet: vi.fn() },
@@ -1354,9 +1354,31 @@ const roster = (...learners) => ({ ok: true, status: 200, data: { windows: { sch
 describe('earningsByLearner', () => {
   it('maps the roster preview by learner, with the week it prices', () => {
     expect(earningsByLearner(roster(priced('user_4', 21), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
-      user_4: { silver: 21, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to },
-      user_5: { silver: 23, gems: 0, pendingSilver: 5, pendingGems: 1, from: WEEK.from, to: WEEK.to },
+      user_4: { silver: 21, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to, earned: [] },
+      user_5: { silver: 23, gems: 0, pendingSilver: 5, pendingGems: 1, from: WEEK.from, to: WEEK.to, earned: [] },
     });
+  });
+
+  it('keeps the earned lines, with their labels, for the coin window', () => {
+    const learner = priced('user_4', 9, { lines: [
+      { status: 'earned', ruleId: 'korean-daily', label: 'Korean (each day done)', amount: { silver: 6, gems: 0 } },
+      { status: 'earned', ruleId: 'green-week', label: 'Green week', amount: { silver: 0, gems: 1 } },
+      { status: 'pending', ruleId: 'scripture-week', label: 'Scripture (whole week)', amount: { silver: 0, gems: 0 } },
+      { status: 'earned', ruleId: 'piano-daily', label: 'Piano (each day done)', amount: { silver: 0, gems: 0 } },
+    ] });
+    expect(earningsByLearner(roster(learner).data).user_4.earned).toEqual([
+      { ruleId: 'korean-daily', label: 'Korean (each day done)', silver: 6, gems: 0 },
+      { ruleId: 'green-week', label: 'Green week', silver: 0, gems: 1 },
+    ]);
+  });
+
+  it('figureInWeek: the figure only for the week it prices', () => {
+    const fig = { silver: 3, from: '2026-10-19', to: '2026-10-25' };
+    expect(figureInWeek(fig, '2026-10-21')).toBe(fig);
+    expect(figureInWeek(fig, '2026-10-26')).toBeNull();
+    expect(figureInWeek(fig, null)).toBe(fig);
+    expect(figureInWeek({ silver: undefined }, '2026-10-21')).toBeNull();
+    expect(figureInWeek(null, '2026-10-21')).toBeNull();
   });
 
   it("leaves out a learner it cannot price: every line 'can't tell', or no totals", () => {
