@@ -10,6 +10,7 @@ import {
   SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE, deriveDebriefState, previousStudyDay,
 } from "../domain/schoolDebrief.mjs";
 
+const nextDay = (day) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
 const LABELS = { 'not-started': 'Not started', entry: 'Telling', clarify: 'Telling', questions: 'Questions', answering: 'Questions', completed: 'Done', excused: 'Excused', rejected: 'Needs redoing' };
 
 export class SchoolDebriefProgramLauncher {
@@ -25,6 +26,28 @@ export class SchoolDebriefProgramLauncher {
   get entryAction() { return null; }
   get surface() { return 'portal'; }
   get replayable() { return true; }
+  /** One fact row per owed day in [week.from, week.to] (spec §5). Null when not enrolled. Throws when a day cannot be read. */
+  async weekFacts({ learnerId, week, quizPassRatio, substantiveScore }) {
+    const enrollment = await this.#enrollment(learnerId);
+    if (!enrollment) return null;
+    const today = this.studyDay(); const graceDay = previousStudyDay(today);
+    const rows = [];
+    for (let day = week.from; day <= week.to; day = nextDay(day)) {
+      if (!this.#owed(day, enrollment)) continue;
+      const state = await this.#state(learnerId, day);
+      if (!state) throw new Error(`debrief day unreadable: ${day}`);
+      const quiz = state.summary?.quiz ?? { right: 0, graded: 0 };
+      const done = ['completed', 'excused', 'rejected'].includes(state.phase);
+      rows.push({
+        day, state: done ? state.phase : (day >= graceDay ? 'open' : 'missed'),
+        timeliness: state.late ? 'late' : 'on-time',
+        substantive: !state.late && state.questioner === 'model' && Number.isInteger(state.substance) && state.substance >= substantiveScore,
+        quiz, quizPassed: quiz.graded > 0 && quiz.right / quiz.graded >= quizPassRatio,
+      });
+    }
+    return rows;
+  }
+
   studyDay() { return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone }); }
 
   async #enrollment(userId) {

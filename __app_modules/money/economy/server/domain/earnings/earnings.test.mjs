@@ -21,8 +21,8 @@ function evaluate(rs, facts = {}, extra = {}) {
 const line = (out, id) => out.lines.find((l) => l.ruleId === id);
 
 describe('validateRuleset', () => {
-  it('knows seven kinds, one per earning trigger', () => {
-    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest']);
+  it('knows nine kinds, one per earning trigger', () => {
+    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week']);
   });
 
   it('normalizes a bare number reward to silver and fills defaults', () => {
@@ -422,5 +422,55 @@ describe('evaluateEarnings — per-learner pricing and refs', () => {
     const out = evaluate(rs, {});
     expect(out).toMatchObject({ learnerId: 'kid', currency: 'silver', multiplier: 1.5, windows: { school: WEEK, rings: RINGS_WEEK } });
     expect(evaluateEarnings({ ruleset: rs, learnerId: 'other', facts: {}, windows: { school: WEEK, rings: RINGS_WEEK } }).multiplier).toBe(1);
+  });
+});
+
+const debriefs = (list) => list.map(([day, state, timeliness = 'on-time', substantive = false, quizPassed = false]) =>
+  ({ day, state, timeliness, substantive, quiz: { right: quizPassed ? 2 : 0, graded: 2 }, quizPassed }));
+const DEBRIEF_RULES = [
+  { id: 'debrief-done', kind: 'debrief-day', match: { criterion: 'completed' }, reward: 2 },
+  { id: 'debrief-substantive', kind: 'debrief-day', match: { criterion: 'substantive' }, reward: 1 },
+  { id: 'debrief-quiz', kind: 'debrief-day', match: { criterion: 'quiz-passed' }, reward: 1 },
+  { id: 'debrief-week', kind: 'debrief-week', reward: { silver: 5, gems: 1 } },
+];
+
+describe('debrief kinds', () => {
+  it('prices completed, substantive and quiz per day; late pays completion and quiz only', () => {
+    const out = evaluate(ruleset(DEBRIEF_RULES), { debriefs: debriefs([
+      ['2026-09-21', 'completed', 'on-time', true, true],
+      ['2026-09-22', 'completed', 'late', false, true],
+      ['2026-09-23', 'rejected', 'on-time', true, true],
+    ]) });
+    expect(line(out, 'debrief-done')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 4, gems: 0 } });
+    expect(line(out, 'debrief-substantive')).toMatchObject({ count: 1 });
+    expect(line(out, 'debrief-quiz')).toMatchObject({ count: 2 });
+  });
+  it('week pays when every owed day is completed (late counts) or excused', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const full = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed', 'late'], ['2026-09-23', 'excused'], ['2026-09-24', 'completed'], ['2026-09-25', 'completed']]);
+    expect(line(evaluate(rs, { debriefs: full }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'earned', amount: { silver: 5, gems: 1 } });
+  });
+  it('week is pending until Friday grace closes (end of Saturday)', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const rows = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed'], ['2026-09-23', 'completed'], ['2026-09-24', 'completed'], ['2026-09-25', 'open']]);
+    expect(line(evaluate(rs, { debriefs: rows }, { today: '2026-09-26' }), 'debrief-week').status).toBe('pending');
+    expect(line(evaluate(rs, { debriefs: debriefs([['2026-09-21', 'missed'], ['2026-09-22', 'completed']]) }, { today: '2026-09-27' }), 'debrief-week').status).toBe('none');
+  });
+  it('rejected blocks the week; an unknown day makes lines indeterminate', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    expect(line(evaluate(rs, { debriefs: debriefs([['2026-09-21', 'rejected'], ['2026-09-22', 'completed']]) }, { today: '2026-09-27' }), 'debrief-week').status).toBe('none');
+    const unk = evaluate(rs, { debriefs: debriefs([['2026-09-21', 'unknown']]) });
+    expect(line(unk, 'debrief-done').status).toBe('indeterminate');
+    expect(line(unk, 'debrief-week').status).toBe('indeterminate');
+  });
+  it('a learner with no debrief facts earns nothing and is not indeterminate', () => {
+    expect(line(evaluate(ruleset(DEBRIEF_RULES), {}), 'debrief-done')).toMatchObject({ status: 'none', count: 0 });
+  });
+  it('per-day refs carry timeliness', () => {
+    const out = evaluate(ruleset(DEBRIEF_RULES), { debriefs: debriefs([['2026-09-22', 'completed', 'late']]) });
+    expect(line(out, 'debrief-done').evidence[0].ref).toBe('earn:kid:debrief-done:2026-09-22:late');
+  });
+  it('validation: debrief-day needs a known criterion', () => {
+    expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'vibes' }, reward: 1 }])).toThrow(/criterion/);
   });
 });

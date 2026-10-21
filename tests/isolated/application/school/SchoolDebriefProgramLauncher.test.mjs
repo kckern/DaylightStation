@@ -49,4 +49,18 @@ describe('SchoolDebriefProgramLauncher', () => {
     const t = await make().issueLaunchTarget({ userId: 'test-learner', unitId: 'school-debrief:daily' });
     expect(t).toEqual({ kind: 'program', program: 'school-debrief', learnerId: 'test-learner', debriefGrant: 'grant:test-learner:2026-10-21,2026-10-20', today: '2026-10-21', lateDay: '2026-10-20' });
   });
+  it('weekFacts: one row per owed day with timeliness and bonuses', async () => {
+    const days = {
+      '2026-10-20': [{ type: 'questions', substance: 8, questions: [{ id: 'q1', kind: 'choice', prompt: 'p', options: ['a', 'b', 'c'], answer: 'a' }], questioner: 'model', at: 'x' },
+        { type: 'answer', questionId: 'q1', response: 'a', correct: true, at: 'y' }, { type: 'completed', at: 'z' }],
+      '2026-10-21': [{ type: 'opened', late: true, at: 'x' }, { type: 'questions', substance: 9, questions: [], questioner: 'model', late: true, at: 'x' }, { type: 'completed', late: true, at: 'z' }],
+    };
+    const rows = await make({ days, now: '2026-10-22T22:00:00Z' }).weekFacts({ learnerId: 'test-learner', week: { from: '2026-10-19', to: '2026-10-25' }, quizPassRatio: 0.67, substantiveScore: 6 });
+    expect(rows.map((r) => [r.day, r.state, r.timeliness, r.substantive, r.quizPassed])).toEqual([
+      ['2026-10-20', 'completed', 'on-time', true, true],
+      ['2026-10-21', 'completed', 'late', false, false],
+      ['2026-10-22', 'open', 'on-time', false, false],
+      ['2026-10-23', 'open', 'on-time', false, false],
+    ]);
+  });
 });

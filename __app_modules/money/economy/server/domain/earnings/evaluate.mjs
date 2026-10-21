@@ -18,7 +18,7 @@
 import { resolveRules } from "./ruleset.mjs";
 
 const ZERO = Object.freeze({ silver: 0, gems: 0 });
-const SCHOOL_KINDS = new Set(['unit', 'section-day', 'section-week', 'day-met', 'week-met']);
+const SCHOOL_KINDS = new Set(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'debrief-day', 'debrief-week']);
 
 /** The payout idempotency key. `timeliness` is reserved for makeup work (D14). */
 export function earningRef({ learnerId, ruleId, period, timeliness = 'on-time' }) {
@@ -170,7 +170,41 @@ function ringContest(rule, facts, ctx) {
   return { status: paid(amount) ? 'earned' : 'none', count: mine, amount, evidence: [], note: leaders.length > 1 ? 'Tied for the most rings' : null, leader: true };
 }
 
+const DEBRIEF_PASS = {
+  completed: (f) => f.state === 'completed',
+  substantive: (f) => f.state === 'completed' && f.timeliness === 'on-time' && f.substantive === true,
+  'quiz-passed': (f) => f.state === 'completed' && f.quizPassed === true,
+};
+
+function debriefDay(rule, facts, ctx) {
+  const matched = facts.debriefs.filter((f) => inEffect(rule.effective, f.day)).sort(byDay);
+  const pays = DEBRIEF_PASS[rule.match.criterion];
+  const hits = matched.filter(pays);
+  const unknown = matched.filter((f) => f.state === 'unknown');
+  const evidence = matched.map((f) => ({ day: f.day, state: f.state, timeliness: f.timeliness, ref: earningRef({ learnerId: ctx.learnerId, ruleId: rule.id, period: f.day, timeliness: f.timeliness }) }));
+  if (hits.length) return { status: 'earned', count: hits.length, amount: price(rule, hits.length), evidence, note: unknown.length ? `${unknown.length} day(s) could not be read` : null };
+  if (unknown.length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Debrief record could not be read' };
+  if (matched.some((f) => f.state === 'open')) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do' };
+  return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length ? 'Not earned this week' : 'No debriefs this week' };
+}
+
+/** Every owed debrief day completed (late counts) or excused. Friday's grace is Saturday, so it settles after Saturday. */
+function debriefWeek(rule, facts, ctx) {
+  const owed = facts.debriefs.filter((f) => inEffect(rule.effective, f.day)).sort(byDay);
+  const evidence = owed.map((f) => ({ day: f.day, state: f.state, timeliness: f.timeliness }));
+  if (!owed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No debriefs this week' };
+  if (owed.some((f) => f.state === 'unknown')) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Debrief record could not be read' };
+  const failed = owed.filter((f) => f.state === 'rejected' || f.state === 'missed');
+  if (failed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not done: ${failed.map((f) => f.day).join(', ')}` };
+  const lastDay = owed[owed.length - 1].day;
+  const graceClosed = ctx.today != null && addDays(lastDay, 1) < ctx.today;
+  if (owed.some((f) => f.state === 'open') || !graceClosed) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
+  return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
+}
+
 const EVALUATORS = {
+  'debrief-day': debriefDay,
+  'debrief-week': debriefWeek,
   'section-day': sectionDay,
   'section-week': sectionWeek,
   'day-met': dayMet,
@@ -202,7 +236,7 @@ function windowDates(window) {
  *   settles once its Friday has passed (Saturday is payday, D1).
  */
 export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
-  const f = { sectionDays: [], days: [], week: null, units: [], rings: null, ...(facts ?? {}) };
+  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const isOpen = (day) => today != null && day >= today;
   // A week's verdict is final only once its Friday has passed (or the week
@@ -242,7 +276,7 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
       continue;
     }
     const ctx = {
-      learnerId, standings, contestClosed, weekdaysCovered, isOpen, unknownDays,
+      learnerId, today, standings, contestClosed, weekdaysCovered, isOpen, unknownDays,
       ref: (occurrence) => earningRef({ learnerId, ruleId: rule.id, period: occurrence }),
     };
     lines.push({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) });

@@ -5,7 +5,7 @@
  * Vocabulary: ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
  * Design: ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
  *
- * Seven kinds, one per earning trigger (scope × period):
+ * Nine kinds, one per earning trigger (scope × period):
  *   unit            each served unit matching the selector        School × Unit
  *   section-day     each day the matched section was served        School × Day, one subject
  *   section-week    every obligated day that week served           School × Week, one subject
@@ -13,6 +13,8 @@
  *   week-met        the week row `met`                             School × Week
  *   ring-threshold  `rate` silver per N rings + each threshold crossed (award week) Fitness × Week (absolute)
  *   ring-contest    most rings in the roster at award-week close   Fitness × Week (relative)
+ *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed)
+ *   debrief-week    every owed debrief done (late counts) or excused  School × Week
  *
  * A rule that pays twice is two rules: there is no `bonus`.
  */
@@ -20,7 +22,8 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';
 
 export { CURRENCIES };
-export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest']);
+export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week']);
+const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -99,6 +102,10 @@ function normalizeMatch(match, field) {
     if (typeof match[key] !== 'string' || !match[key]) fail(`${field}.${key} must be a string`, field);
     out[key] = match[key];
   }
+  if (match.criterion != null) {
+    if (typeof match.criterion !== 'string' || !match.criterion) fail(`${field}.criterion must be a string`, field);
+    out.criterion = match.criterion;
+  }
   return out;
 }
 
@@ -120,6 +127,9 @@ function normalizeRule(rule, i) {
   if (!RULE_KINDS.includes(rule.kind)) fail(`${field}.kind must be one of ${RULE_KINDS.join(', ')}`, `${field}.kind`);
   const match = normalizeMatch(rule.match, `${field}.match`);
   if (SECTION_KINDS.has(rule.kind) && !match.subject) fail(`${field} (${rule.kind}) needs match.subject`, `${field}.match`);
+  if (rule.kind === 'debrief-day' && !DEBRIEF_CRITERIA.includes(match.criterion)) {
+    fail(`${field}.match.criterion must be one of ${DEBRIEF_CRITERIA.join(', ')}`, `${field}.match.criterion`);
+  }
   const out = {
     id: rule.id,
     label: typeof rule.label === 'string' && rule.label.trim() ? rule.label.trim() : rule.id,

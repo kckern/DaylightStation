@@ -115,6 +115,15 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
               return unit ? { subject: unit.subject ?? null, courseId: unit.courseId ?? null } : null;
             }
             : null,
+          debriefs: schoolLifecycle?.debriefLauncher?.weekFacts
+            ? {
+              week: ({ learnerId, week }) => schoolLifecycle.debriefLauncher.weekFacts({
+                learnerId, week,
+                quizPassRatio: schoolLifecycle.debriefConfig?.quizPassRatio ?? 0.67,
+                substantiveScore: schoolLifecycle.debriefConfig?.substantiveScore ?? 6,
+              }),
+            }
+            : null,
           logger: rootLogger.child({ module: 'school-earning-evidence' }),
         })
         : unavailableSchool,
