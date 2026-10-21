@@ -6,7 +6,8 @@
  *
  *   sync  --config <file>                       archive the board's posts
  *   notes --config <file> [--from D] [--to D]   write dated teacher notes
- *   run   --config <file> [--day D]             sync, then notes for one day
+ *   deck  --config <file> [--day D]             rebuild the class deck to the lessons open by D
+ *   run   --config <file> [--day D]             sync, deck, then notes for one day
  *
  * Writes (archive files, teacher notes) need --apply; without it nothing is
  * written and the plan is printed. --base defaults to DAYLIGHT_BASE_PATH; the
@@ -14,9 +15,10 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import yaml from 'js-yaml';
-import { addDays, classNotes, compileParse, pick, postRecord } from './lib/class-board.mjs';
+import { addDays, classDeck, classNotes, compileParse, pick, postRecord } from './lib/class-board.mjs';
+import { expandLexiconDeck, parseMediaRef, validateLexicon } from '../server/domain/cardLadder/lexicon.mjs';
 import { YamlTeacherNotes } from '../server/adapters/persistence/YamlTeacherNotes.mjs';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -28,7 +30,7 @@ const say = (line) => process.stdout.write(`${line}\n`);
 const dump = (value) => yaml.dump(value, { noRefs: true, lineWidth: -1 });
 
 const command = positionals[0];
-if (!['sync', 'notes', 'run'].includes(command) || !values.config) fail('Usage: class-board sync|notes|run --config <file> [--base <dir>] [--from D --to D | --day D] [--apply]');
+if (!['sync', 'deck', 'notes', 'run'].includes(command) || !values.config) fail('Usage: class-board sync|deck|notes|run --config <file> [--base <dir>] [--from D --to D | --day D] [--apply]');
 const base = values.base ?? process.env.DAYLIGHT_BASE_PATH;
 if (!base) fail('class-board: pass --base or set DAYLIGHT_BASE_PATH');
 const config = yaml.load(fs.readFileSync(path.resolve(base, values.config), 'utf8'));
@@ -77,7 +79,31 @@ async function notes(from, to) {
   }
 }
 
+/** Rebuild the class deck so it holds every lesson opened by `day` (config `deck`). */
+async function deck(day) {
+  const spec = config.deck;
+  if (!spec) { say('no deck in config; skipped'); return; }
+  for (const key of ['id', 'title', 'lexicon', 'lessonDeck', 'catalog']) if (!spec[key]) fail(`class-board config: deck.${key} is required`);
+  const calendar = yaml.load(fs.readFileSync(path.resolve(base, config.calendar), 'utf8'));
+  const catalog = path.resolve(base, spec.catalog);
+  const deckFile = (id) => path.join(catalog, `${id}.yml`);
+  const lessonWords = (n) => {
+    const file = deckFile(spec.lessonDeck.replace('{nn}', String(n).padStart(2, '0')).replace('{n}', String(n)));
+    return fs.existsSync(file) ? yaml.load(fs.readFileSync(file, 'utf8')).words : null;
+  };
+  const next = classDeck({ deck: spec, calendar, lessonWords, day });
+  const { lexicon, errors: lexiconErrors } = validateLexicon(yaml.load(fs.readFileSync(path.join(base, 'media/school', parseMediaRef(spec.lexicon).path), 'utf8')));
+  const errors = lexiconErrors.length ? lexiconErrors : expandLexiconDeck(next, lexicon).errors;
+  if (errors.length) fail(`class-board deck: ${errors.join('; ')}`);
+  const file = deckFile(spec.id);
+  const current = fs.existsSync(file) ? yaml.load(fs.readFileSync(file, 'utf8')) : null;
+  if (isDeepStrictEqual(current?.words, next.words) && isDeepStrictEqual(current?.releases, next.releases)) { say(`deck ${spec.id}: ${next.words.length} cards, unchanged`); return; }
+  say(`deck ${spec.id}: ${current?.words?.length ?? 0} → ${next.words.length} cards (${next.releases.length} lessons open)`);
+  if (values.apply) fs.writeFileSync(file, dump(next));
+}
+
 if (command === 'sync' || command === 'run') await sync();
+if (command === 'deck' || command === 'run') await deck(values.day ?? today);
 if (command === 'notes') await notes(values.from ?? today, values.to ?? addDays(values.from ?? today, 6));
 if (command === 'run') await notes(values.day ?? today, values.day ?? today);
 if (!values.apply) say('(dry run — pass --apply to write)');

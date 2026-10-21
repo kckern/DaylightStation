@@ -15,7 +15,8 @@ to read a post, and the wording of the notes.
 ```bash
 node cli/class-board.cli.mjs sync  --config <file>                   # archive posts
 node cli/class-board.cli.mjs notes --config <file> [--from D --to D]  # dated notes (default: next 7 days)
-node cli/class-board.cli.mjs run   --config <file> [--day D]          # sync, then that day's notes
+node cli/class-board.cli.mjs deck  --config <file> [--day D]          # rebuild the class deck
+node cli/class-board.cli.mjs run   --config <file> [--day D]          # sync, deck, then that day's notes
 ```
 
 Every command is a dry run until `--apply`. `--base` (default
@@ -33,6 +34,13 @@ by: {adultId}                     # the notes' `from`
 timezone: {tz}
 calendar: {path to class calendar}
 archive: {dir for archived posts}
+deck:                             # optional: the class's card deck, rebuilt by `deck`/`run`
+  id: {deck id}
+  title: …
+  lexicon: media:{package}/lexicon.yml
+  lessonDeck: {deck id with {n} or {nn}}   # one deck per textbook lesson
+  catalog: {flashcard-decks dir}
+  leadDays: 6                     # cards open this long before the lesson's first class
 source:
   url: {endpoint returning the post list}
   method: POST                    # default POST
@@ -71,7 +79,9 @@ notes:
 ```
 
 The class calendar (`school.class-calendar/v1`) lists `lessons: {n: pages}`
-and `classes: [{date, lesson | exam + review | noClass}]`.
+and `classes: [{date, lesson | exam + review | noClass}]`, plus optional
+`projectedLessons: {n: firstClassDate}` for lessons the calendar does not
+reach yet (read by the deck only; notes wait for real classes).
 
 ## Behaviour
 
@@ -83,6 +93,11 @@ and `classes: [{date, lesson | exam + review | noClass}]`.
 - **Read-ahead.** The calendar's lesson for the next class, capped at one
   lesson past the furthest lesson any earlier post mentions, so a slow week
   does not race ahead. Exam and no-class weeks use their own templates.
+- **Deck.** Each lesson opens `leadDays` before its first class. The deck's
+  `words` hold only opened lessons (each word once, lesson order) with one
+  `releases` entry per lesson, so it paces itself on a card ladder with or
+  without release support. It is validated against the lexicon and written
+  only when it changes. Introduced words keep their state.
 - **Delivery.** Notes are teacher notes (`school/records/teacher-notes.yml`),
   shown by the agenda's "Notes for you" on their day and the next, at most
   three, each printed as `Note: …` cut at 120 characters. They record no

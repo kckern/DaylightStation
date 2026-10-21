@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classDateOf, classNotes, compileParse, fill, homeworkOf, htmlToText, lessonsOf, localInstant, pick, postRecord, prepLine } from './class-board.mjs';
+import { classDateOf, classDeck, classNotes, compileParse, fill, homeworkOf, htmlToText, lessonOpenings, lessonsOf, localInstant, pick, postRecord, prepLine } from './class-board.mjs';
 
 // A made-up board: everything board-specific comes from config, as in production.
 const PARSE = {
@@ -119,5 +119,31 @@ describe('notes', () => {
     const hw = notesFor([long], '2030-03-11').find((n) => n.id.endsWith('-hw'));
     expect(hw.note.length).toBe(110);
     expect(hw.note.endsWith('…')).toBe(true);
+  });
+});
+
+describe('class deck', () => {
+  const calendar = {
+    classes: [
+      { date: '2030-03-09', lesson: 3 },
+      { date: '2030-03-16', lesson: 3 },
+      { date: '2030-03-23', exam: '중간고사' },
+      { date: '2030-03-30', lesson: 4 },
+    ],
+    projectedLessons: { 5: '2030-04-20', 3: '2031-01-01' },
+  };
+  const deck = { id: 'language/x/class', title: 'Class', lexicon: 'media:language/x/lexicon.yml', leadDays: 6 };
+  const lessonWords = (n) => ({ 3: ['a', 'b'], 4: ['b', 'c'], 5: ['d'] })[n];
+  it('opens each lesson leadDays before its first class; the calendar beats a projection', () => {
+    expect(lessonOpenings(calendar, 6)).toEqual([
+      { lesson: 3, opensOn: '2030-03-03' }, { lesson: 4, opensOn: '2030-03-24' }, { lesson: 5, opensOn: '2030-04-14' },
+    ]);
+  });
+  it('holds only opened lessons, in lesson order, each word once, with a release per lesson', () => {
+    expect(classDeck({ deck, calendar, lessonWords, day: '2030-03-23' })).toMatchObject({ words: ['a', 'b'], releases: [{ opensOn: '2030-03-03', words: ['a', 'b'] }], revision: 1 });
+    expect(classDeck({ deck, calendar, lessonWords, day: '2030-03-24' })).toMatchObject({
+      id: 'language/x/class', words: ['a', 'b', 'c'],
+      releases: [{ opensOn: '2030-03-03', words: ['a', 'b'] }, { opensOn: '2030-03-24', words: ['c'] }], revision: 2,
+    });
   });
 });

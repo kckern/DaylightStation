@@ -155,3 +155,37 @@ export function classNotes({ notes, calendar, records, learnerId, from, to, time
   }
   return out;
 }
+
+/**
+ * When each lesson's cards open: `leadDays` before the first class that
+ * teaches it (calendar classes, then `projectedLessons: {n: firstClassDate}`
+ * for lessons the calendar does not reach yet). Sorted by lesson.
+ */
+export function lessonOpenings(calendar, leadDays = 6) {
+  const first = new Map();
+  for (const c of [...(calendar.classes ?? [])].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (c.lesson && !first.has(Number(c.lesson))) first.set(Number(c.lesson), c.date);
+  }
+  for (const [lesson, date] of Object.entries(calendar.projectedLessons ?? {})) if (!first.has(Number(lesson))) first.set(Number(lesson), date);
+  return [...first].sort((a, b) => a[0] - b[0]).map(([lesson, date]) => ({ lesson, opensOn: addDays(date, -leadDays) }));
+}
+
+/**
+ * The class deck as of `day`: every opened lesson's words in lesson order
+ * (first lesson to name a word keeps it) with a release per lesson. Lessons
+ * not yet open are left out of `words` entirely, so the deck paces itself
+ * even where the card ladder predates `releases`.
+ */
+export function classDeck({ deck, calendar, lessonWords, day }) {
+  const words = [];
+  const releases = [];
+  const seen = new Set();
+  for (const { lesson, opensOn } of lessonOpenings(calendar, deck.leadDays)) {
+    if (opensOn > day) continue;
+    const fresh = (lessonWords(lesson) ?? []).filter((id) => !seen.has(id));
+    fresh.forEach((id) => seen.add(id));
+    words.push(...fresh);
+    if (fresh.length) releases.push({ opensOn, words: fresh });
+  }
+  return { schema: 'school.flashcard-deck/v1', id: deck.id, title: deck.title, revision: releases.length, lexicon: deck.lexicon, words, releases };
+}
