@@ -33,6 +33,19 @@ describe('createDigestEconomyPort', () => {
     expect(calls[0].since).toBe('2026-10-20T11:00:00.000Z');
   });
 
+  it('opens the window at 4 am standard time on the day the clocks fall back', async () => {
+    const calls = [];
+    const port = createDigestEconomyPort({
+      economyService: { getHistory: async (id, opts) => { calls.push(opts.since); return [
+        { at: '2026-11-01T11:30:00.000Z', kind: 'earn', currency: 'silver', delta: 2, source: 'payout', action: 'payout:a' },
+        { at: '2026-11-01T12:30:00.000Z', kind: 'earn', currency: 'silver', delta: 3, source: 'payout', action: 'payout:b' },
+      ]; } },
+      timezone: TZ,
+    });
+    expect(await port('learner_a', '2026-11-01')).toEqual({ silverEarned: 3, passesUsed: 0 });
+    expect(calls).toEqual(['2026-11-01T12:00:00.000Z']);
+  });
+
   it('answers null for a learner the economy does not know', async () => {
     const port = createDigestEconomyPort({ economyService: { hasUser: () => false, getHistory: async () => LEDGER }, timezone: TZ });
     expect(await port('learner_x', '2026-10-20')).toBeNull();
@@ -59,7 +72,7 @@ describe('createSchoolParentDigest', () => {
   it('registers the digest on the catalog cron, and the retry tick', () => {
     const { wired, tasks } = base({ cron: '0 18 * * *', zero_days_alert: 2 });
     expect(wired.digest).toBeTruthy();
-    expect(tasks).toEqual([['school:parent-digest', '0 18 * * *'], ['school:parent-digest-retry', '*/15 * * * *']]);
+    expect(tasks).toEqual([['school:parent-digest', '0 18 * * *'], ['school:parent-digest-retry', '0 * * * *']]);
   });
 
   it('registers nothing for a null cron', () => {

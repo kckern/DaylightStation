@@ -22,4 +22,9 @@ describe('school ledger reader', () => {
     expect(await reader.readDay('2026-10-19')).toEqual([]);
     expect(await reader.readDay('../secrets')).toEqual([]);
   });
+
+  it('surfaces a read error other than a missing file', async () => {
+    fs.mkdirSync(path.join(base, 'school', '2026-10-20.jsonl'), { recursive: true });
+    await expect(createSchoolLedgerReader({ baseDir: base }).readDay('2026-10-20')).rejects.toThrow();
+  });
 });

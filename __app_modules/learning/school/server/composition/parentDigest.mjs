@@ -20,15 +20,17 @@
  *   and `mode` are read on every run.
  *
  * Scheduling: `school:parent-digest` on the catalog cron, plus
- * `school:parent-digest-retry` every 15 minutes, which resends any push the
- * NotificationService held (`suppressed`). Both register only when
+ * `school:parent-digest-retry` hourly, which resends any push the
+ * NotificationService held for quiet hours. Both register only when
  * `enabled` (the agents scheduler's production/ENABLE_CRON gate).
  */
 import { SchoolParentDigest } from "../application/SchoolParentDigest.mjs";
 import { createSchoolLedgerReader } from "../adapters/logging/SchoolLedgerReader.mjs";
 import { studyDayWindowForDate, studyDayForInstant } from "../domain/studyDay.mjs";
 
-export const RETRY_CRON = '*/15 * * * *';
+// Hourly: the agents scheduler runs a job at most once per clock hour
+// (AgentAssignmentScheduler's dedupe), so a finer cron would still be hourly.
+export const RETRY_CRON = '0 * * * *';
 
 const isPayout = (t) => (t?.kind === 'earn' || t?.kind === 'prize') && t.source === 'payout'
   && typeof t.action === 'string' && t.action.startsWith('payout:');

@@ -3,12 +3,13 @@
  * per process-local day under `{logs}/school/YYYY-MM-DD.jsonl`, one log event
  * (`{ts, level, event, data, context}`) per line.
  *
- * Read-only. A missing file is an empty day; a line that does not parse is
- * skipped (the transport appends while we read, so the last line may be
+ * Read-only. A missing file is an empty day; any other read error (a
+ * permission, a directory in its place) is thrown so the caller can log it.
+ * A line that does not parse is skipped (the transport appends while we read, so the last line may be
  * half-written).
  */
 import path from 'node:path';
-import { readFile } from '#system/utils/FileIO.mjs';
+import { readTextFromPathAsync } from '#system/utils/FileIO.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,8 +20,13 @@ export function createSchoolLedgerReader({ baseDir }) {
     /** @param {string} day - the file's day, `YYYY-MM-DD` */
     async readDay(day) {
       if (!DAY.test(day ?? '')) return [];
-      const text = readFile(path.join(directory, `${day}.jsonl`));
-      if (!text) return [];
+      let text;
+      try {
+        text = await readTextFromPathAsync(path.join(directory, `${day}.jsonl`));
+      } catch (error) {
+        if (error?.code === 'ENOENT') return [];
+        throw error;
+      }
       const events = [];
       for (const line of text.split('\n')) {
         if (!line.trim()) continue;

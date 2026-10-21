@@ -91,43 +91,59 @@ sends both, composed in `composition/parentDigest.mjs`.
   nothing. The job runs only where the scheduler runs (production or
   `ENABLE_CRON`).
 - **`digest`.** Title `School today` (`School · Tue Oct 20` for a replayed
-  day). One line per child: `{Child}: {served} of {asked} done`, then
-  `{n} silver`, `{n} pass(es) used` and the day's first failure, each only
-  when there is something to say. Excused sections are not asked. A day with
-  nothing asked reads `nothing asked`; a day that could not be judged reads
-  `couldn't be checked`. Tag `school-digest`, group `school`.
+  day or one resent after its day). One line per child:
+  `{Child}: {served} of {asked} done`, then `{n} silver`, `{n} pass(es) used`
+  and the day's most actionable failure, each only when there is something
+  to say. Excused sections are not asked. A day with nothing asked reads
+  `nothing asked`; a day that could not be judged reads `couldn't be
+  checked`. A child with no name reads `A learner (1)`, `A learner (2)`.
+  Tag `school-digest`, group `school`.
 - **Silver** is the ledger's: positive silver payout deltas inside the study
   day. With the catalog mode `dry-run` nothing is minted, so no figure is
   shown and the body ends `Coins not live yet`; with `off` coins are not
   mentioned. Passes used are the day's purchases less refunds.
-- **Failures** come from the school ledger (`media/logs/school/*.jsonl`):
-  `status: print_failed` and `school.issue.failed` at stage `print` read
-  `a print failed`, other `school.issue.failed` read `a sheet couldn't be
-  made`, `school.selfservice.code.rejected` reads `a code was turned away`.
-  `school.selfservice.action.failed` at stage `print` is a print failure
-  too. An event is a child's when its `learnerId` names them or its
-  `sessionId` is theirs; one naming neither is left out. A rejected code
-  names its learner only when the code was known (used up, expired); a code
-  nobody issued is never attributed to anyone.
-- **Length.** A line over 100 characters drops its clauses from the end
-  (failure, then passes, then silver). A body over 600 characters keeps the
-  first children and ends `+N more in the teacher view`.
+- **Failures** come from the school ledger (`media/logs/school/*.jsonl`).
+  One is shown per child, ranked print, then sheet, then code, the earliest
+  within the top rank:
+  - `a print failed`: any `status: print_failed`, `school.issue.failed` or
+    `school.selfservice.action.failed` at stage `print`, and
+    `school.card.print-failed`.
+  - `a sheet couldn't be made`: `school.issue.failed` at any other stage.
+  - `an old code was typed`: `school.selfservice.code.rejected` for an
+    expired code; `a code was turned away` for other rejections that name a
+    learner. A used-up code is left out: retyping one is normal.
+
+  An event is a child's when its `learnerId` names them or its `sessionId`
+  is theirs; one naming neither is left out. A code nobody issued has no
+  learner and is never attributed to anyone.
+- **Length.** A line over 100 characters (counted in code points, so an
+  emoji is never split) drops its clauses from the end: failure, then
+  passes, then silver. A body over 600 characters keeps the first children,
+  then the `Coins not live yet` footer if any, then `+N more in the teacher
+  view`.
 - **`zero-days`.** Title `📭 {Child} — School`, body `Nothing done for the
   second study day in a row`. Sent when today asked for work and none was
   done, and so did the previous study day (`digest.zero_days_alert` days in
-  all, today included). The copy counts the whole run (`third`, `fourth`):
-  the look-back goes on to a day with work done, a day that cannot be
-  judged, or 14 days. The previous study day is the last earlier day that
-  asked for something: weekends and days off are skipped. Tag `school-{learnerId}-zero-days`.
+  all, today included). The previous study day is the last earlier day that
+  asked for something: weekends and days off are skipped. The copy counts
+  the whole run (`third`, `fourth`, then `N study days in a row`): the
+  look-back goes on to a day with work done, a day that cannot be judged, or
+  14 days, reading earlier days from the term-verdict cache. A stop at a day
+  that cannot be judged still fires on the days counted before it. Tag
+  `school-{learnerId}-zero-days`.
 - **Delivery.** Each teacher through `NotificationService` (`category:
   school`), dedupe keys `digest:{day}` and `zero:{learnerId}:{day}`. A send
-  held by quiet hours (`reason: quiet_hours`) is resent every 15 minutes until
-  it is delivered or the next evening's run replaces it. A `cooldown`
-  suppression means that teacher already has it: it counts as sent and is
-  never resent. The day, the ledger window and the silver window all use the
+  held by quiet hours (`reason: quiet_hours`) is resent hourly (the
+  scheduler runs a job at most once per clock hour) until it is delivered or
+  the next evening's run drops it. A `cooldown` suppression means that
+  teacher already has it: it counts as sent and is never resent. A push
+  resent after its day names that day (`School · Tue Oct 20`, `… · from Tue
+  Oct 20`). The day, the ledger window and the silver window all use the
   economy's study calendar (household zone, 4 am). The hold lives in memory;
   a restart drops it.
-- **Logs.** `school.parent-digest.sent|skipped|failed`, `school.zero-days.sent`.
+- **Logs.** `school.parent-digest.sent|skipped|failed|dropped`,
+  `school.zero-days.sent`, and warnings `school.parent-digest.name-failed`,
+  `learner-failed`, `economy-failed`, `ledger-failed`, `verdict-failed`.
 
 ## The `notification` script variable
 

@@ -147,6 +147,34 @@ describe('composeSchoolPush — the parent digest', () => {
     expect(findPushTextDefects(push.message)).toEqual([]);
   });
 
+  it('says an old code was typed for an expired code', () => {
+    const push = digest({ learners: [{ ...learners[0], failure: 'old_code', passesUsed: 0, silverEarned: 0 }] });
+    expect(push.message).toBe('Learner A: 3 of 3 done · an old code was typed');
+  });
+
+  it('numbers children with no name instead of printing an id', () => {
+    const push = digest({ learners: [
+      { learnerId: 'learner_x', served: 1, asked: 1, judged: true },
+      { learnerId: 'learner_y', child: null, served: 0, asked: 1, judged: true },
+    ] });
+    expect(push.message.split('\n')).toEqual(['A learner (1): 1 of 1 done', 'A learner (2): 0 of 1 done']);
+  });
+
+  it('never splits an emoji when a line is cut', () => {
+    const name = '🦊'.repeat(120);
+    const line = digest({ learners: [{ learnerId: 'learner_a', child: name, served: 1, asked: 1, judged: true }] }).message;
+    expect(Array.from(line)).toHaveLength(100);
+    expect(line).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it('keeps the dry-run footer when children are folded into a count', () => {
+    const huge = Array.from({ length: 12 }, (_, i) => ({ learnerId: `learner_${i}`, child: `Learner ${i} ${'N'.repeat(300)}`, served: 1, asked: 1, judged: true }));
+    const push = digest({ learners: huge, coins: 'dry-run' });
+    const lines = push.message.split('\n');
+    expect(push.message.length).toBeLessThanOrEqual(600);
+    expect(lines.slice(-2)).toEqual(['Coins not live yet', `+${12 - (lines.length - 2)} more in the teacher view`]);
+  });
+
   it('renders without defects', () => {
     for (const coins of ['live', 'dry-run', 'off']) {
       const push = digest({ coins });
@@ -175,6 +203,11 @@ describe('composeSchoolPush — two empty study days', () => {
       .toBe('Nothing done for the third study day in a row');
     expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', child: 'Learner A', days: 9 }).message)
       .toBe('Nothing done for 9 study days in a row');
+  });
+
+  it('names the day when it arrives on a later day', () => {
+    expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', child: 'Learner A', days: 2, studyDay: '2026-10-20', today: '2026-10-21' }).message)
+      .toBe('Nothing done for the second study day in a row · from Tue Oct 20');
   });
 
   it('drops the name, not the push, when the name is missing', () => {

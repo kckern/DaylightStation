@@ -3422,8 +3422,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // economy catalog's `digest.cron` (read here, at boot: a change needs a
   // restart; null registers nothing) summing each child's school day, plus a
   // `zero-days` alert after `digest.zero_days_alert` study days in a row with
-  // work asked and none done. A push held by quiet hours is resent by a
-  // 15-minute retry tick. Gated like the economy payouts.
+  // work asked and none done. A push held by quiet hours is resent by an
+  // hourly retry tick. Gated like the economy payouts.
   if (agentsServices.scheduler && notificationStack?.notificationService
       && schoolLifecycle.useCases?.getLearnerDayCompletion) {
     try {
