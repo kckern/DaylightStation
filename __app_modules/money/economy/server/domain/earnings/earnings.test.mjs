@@ -463,6 +463,15 @@ describe('debrief kinds', () => {
     expect(line(unk, 'debrief-done').status).toBe('indeterminate');
     expect(line(unk, 'debrief-week').status).toBe('indeterminate');
   });
+  it('an all-excused week pays no week bonus (excused only does not block); one completed day is enough', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const allExcused = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'excused'], ['2026-09-23', 'excused']]);
+    expect(line(evaluate(rs, { debriefs: allExcused }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'none', amount: { silver: 0, gems: 0 }, note: 'No debriefs done this week' });
+    const oneDone = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'completed'], ['2026-09-23', 'excused']]);
+    expect(line(evaluate(rs, { debriefs: oneDone }, { today: '2026-09-27' }), 'debrief-week').status).toBe('earned');
+    const stillOpen = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'open']]);
+    expect(line(evaluate(rs, { debriefs: stillOpen }, { today: '2026-09-22' }), 'debrief-week').status).toBe('pending');
+  });
   it('a learner with no debrief facts earns nothing and is not indeterminate', () => {
     expect(line(evaluate(ruleset(DEBRIEF_RULES), {}), 'debrief-done')).toMatchObject({ status: 'none', count: 0 });
   });

@@ -188,7 +188,11 @@ function debriefDay(rule, facts, ctx) {
   return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length ? 'Not earned this week' : 'No debriefs this week' };
 }
 
-/** Every owed debrief day completed (late counts) or excused. Friday's grace is Saturday, so it settles after Saturday. */
+/**
+ * Every owed debrief day completed (late counts) or excused, with at least one completed:
+ * excused only means "does not block" — an all-excused week pays nothing (R9).
+ * Friday's grace is Saturday, so it settles after Saturday.
+ */
 function debriefWeek(rule, facts, ctx) {
   const owed = facts.debriefs.filter((f) => inEffect(rule.effective, f.day)).sort(byDay);
   const evidence = owed.map((f) => ({ day: f.day, state: f.state, timeliness: f.timeliness }));
@@ -196,6 +200,7 @@ function debriefWeek(rule, facts, ctx) {
   if (owed.some((f) => f.state === 'unknown')) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Debrief record could not be read' };
   const failed = owed.filter((f) => f.state === 'rejected' || f.state === 'missed');
   if (failed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not done: ${failed.map((f) => f.day).join(', ')}` };
+  if (!owed.some((f) => f.state === 'completed' || f.state === 'open')) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No debriefs done this week' };
   const lastDay = owed[owed.length - 1].day;
   const graceClosed = ctx.today != null && addDays(lastDay, 1) < ctx.today;
   if (owed.some((f) => f.state === 'open') || !graceClosed) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
