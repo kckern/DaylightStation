@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
+import { consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerOpsPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {
@@ -164,5 +164,13 @@ describe('consoleLinkTarget', () => {
   });
   it('ignores clicks that are not inside an anchor', () => {
     expect(consoleLinkTarget(click(document.createElement('div')))).toBeNull();
+  });
+});
+
+describe('teacherLearnerOpsPath', () => {
+  it('builds a learner operations link that carries why it was opened', () => {
+    expect(teacherLearnerOpsPath('user_2', { reason: 'program_unavailable', subject: 'arts', unit: 'u 1', day: '2026-10-21' }))
+      .toBe('/school/teacher/students/user_2/operations?reason=program_unavailable&subject=arts&unit=u+1&day=2026-10-21');
+    expect(teacherLearnerOpsPath('user_2')).toBe('/school/teacher/students/user_2/operations');
   });
 });

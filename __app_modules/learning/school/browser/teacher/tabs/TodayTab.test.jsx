@@ -465,7 +465,7 @@ describe('TodayTab', () => {
       expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
     });
 
-    it('counts a fault and an actionable excuse across BOTH learners, and links to the first', async () => {
+    it('counts a fault and an actionable excuse across BOTH learners, one link per subject', async () => {
       schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'user_4'
         ? [
           { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
@@ -475,9 +475,14 @@ describe('TodayTab', () => {
       mount(<TodayTab kids={KIDS} />);
       const strip = await screen.findByTestId('grownup-strip');
       expect(strip).toHaveTextContent('2 subjects need a grown-up');
-      // user_4's own fault is first in roster order, so the strip lands
-      // on School Operations, not user_2's Courses page.
-      expect(strip).toHaveAttribute('href', '/school/teacher/operations');
+      // One link per affected subject, each landing on that child's own
+      // page with the problem named — not one href for the first learner.
+      const links = within(strip).getAllByRole('link');
+      expect(links).toHaveLength(2);
+      expect(links[0]).toHaveTextContent('User_4 · Science — This program can’t start →');
+      expect(links[0]).toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=program_unavailable&subject=science');
+      expect(links[1]).toHaveTextContent('User_2 · Math — This course has no more lessons →');
+      expect(links[1]).toHaveAttribute('href', '/school/teacher/students/user_2/courses');
     });
 
     // A DOWN PLANNER MUST NOT LOOK LIKE A QUIET MORNING.

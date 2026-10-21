@@ -115,6 +115,22 @@ export function teacherLearnerPath(learnerId, section = 'day', detailId = null, 
   return `${base}/students/${encodeURIComponent(learnerId)}/${safe}${suffix}`;
 }
 
+/**
+ * A learner's Operations page, told why it was opened. The page reads these
+ * to name the problem and preselect its repair tools (audit 2026-10-21 §2,
+ * "Heal / unstick") — the link used to land on a generic page that knew none
+ * of it.
+ */
+export function teacherLearnerOpsPath(learnerId, { reason = null, subject = null, unit = null, day = null } = {}, base = TEACHER_BASE) {
+  const path = teacherLearnerPath(learnerId, 'operations', null, base);
+  const query = new URLSearchParams();
+  if (reason) query.set('reason', reason);
+  if (subject) query.set('subject', subject);
+  if (unit) query.set('unit', unit);
+  if (day) query.set('day', day);
+  return query.size ? `${path}?${query}` : path;
+}
+
 /** The day record for one learner. An omitted day means "today" to the view. */
 export function teacherDayPath(learnerId, studyDay = null, base = TEACHER_BASE) {
   if (!learnerId) return teacherSectionPath('dashboard', base);

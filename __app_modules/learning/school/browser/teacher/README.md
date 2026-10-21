@@ -19,12 +19,12 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | The expanded grid of lesson cards under a learner | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
 | **One lesson card** — subject header band, breadcrumb, poster, title, footer chip/score/paper icons | `LessonCard` | `panels/RosterStrip.jsx` |
 | A card that says "This program can't start" / "Locked behind work nothing can reach" (red header/foot) | `LessonCard` (`teacher-lesson-card--faulted`) | `panels/RosterStrip.jsx` |
-| The muted excuse sentence / "Open Courses" / "School → Operations" link in a card's footer | `LessonCard` (`GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`) | `panels/RosterStrip.jsx` |
+| The muted excuse sentence / "Open Courses" / "Open repair tools" / "Open the lesson" link in a card's footer | `LessonCard` (words: `GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`; link: `grownUpHref`) | `panels/RosterStrip.jsx` (copy: `obligationCopy.js`; learner Operations link: `teacherUrl.js`'s `teacherLearnerOpsPath`) |
 | Green ✓ / red ✗ marks + percent | `ScoreMarks` | `panels/RosterStrip.jsx` |
 | The PDF / receipt square buttons | `ArtifactButtons` | `panels/RosterStrip.jsx` |
 | "CIVILIZATION" / "SCRIPTURE & GOSPEL" subject label + icon | `SubjectIdentity` | `CurriculumIdentity.jsx` (labels: `../home/subjects.js`, icons: `../home/icons/svg/*.svg`) |
 | "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` |
-| "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
+| "N subjects need a grown-up" strip, above the roster, with one "child · subject — problem →" link per affected subject | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally and links reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
 | The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, and how the server's counted window and undo refusals are read: `panels/readingDetail.js`) |

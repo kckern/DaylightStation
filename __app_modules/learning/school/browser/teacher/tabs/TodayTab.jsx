@@ -11,6 +11,7 @@ import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch, allUnavailable } from "../usePanelFetch.js";
 import PanelFrame from "../panels/PanelFrame.jsx";
 import RosterStrip from "../panels/RosterStrip.jsx";
+import { labelize } from "../labelize.js";
 
 /**
  * Compact backlog counts linking to the queue — the dashboard summarizes,
@@ -51,15 +52,28 @@ function BacklogStrip({ backlog, onOpenQueue }) {
  * visible on a collapsed roster — the "couldn't load the day's plan" notice is
  * inside the day grid, which nobody has opened. A silent strip over a down
  * planner would say the morning is fine when nothing was checked.
+ *
+ * `items` is one entry per affected subject, each with its own link to that
+ * child's repair tools (or the failed lesson, or Courses) — the strip used to
+ * carry a single href to the first learner's problem, so the second child's
+ * broken subject was a tap and a hunt away. Open by default while the list
+ * is short enough to read at a glance.
  */
-function GrownUpStrip({ count, href, unknown = 0 }) {
+function GrownUpStrip({ count, items = [], unknown = 0 }) {
   if (!count && !unknown) return null;
   return (
     <div className="teacher-grownup">
       {count > 0 && (
-        <a className="teacher-grownup-strip" data-testid="grownup-strip" href={href}>
-          {count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up →
-        </a>
+        <details className="teacher-grownup-strip" data-testid="grownup-strip" open={count <= 3}>
+          <summary>{count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up</summary>
+          <ul>
+            {items.map((item) => (
+              <li key={`${item.learnerId}:${item.subject}:${item.reason}`}>
+                <a href={item.href}>{item.name} · {labelize(item.subject ?? 'lesson')} — {item.headline} →</a>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {unknown > 0 && (
         <p className="teacher-grownup-strip teacher-grownup-strip--unknown" data-testid="grownup-strip-unknown">
@@ -88,14 +102,14 @@ export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null
     () => (Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])),
     [today.data],
   );
-  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, href: null });
+  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, items: [] });
 
   return (
     <div className="teacher-tab teacher-tab--today">
       {lifecycleDown && (
         <p className="teacher-banner">School lifecycle is not enabled on this install — the daily digest needs it.</p>
       )}
-      <GrownUpStrip count={needsGrownUp.count} href={needsGrownUp.href} unknown={needsGrownUp.unknown ?? 0} />
+      <GrownUpStrip count={needsGrownUp.count} items={needsGrownUp.items ?? []} unknown={needsGrownUp.unknown ?? 0} />
       <PanelFrame
         title="Today"
         state={rosterState}

@@ -1688,6 +1688,12 @@
   border: 1px solid #e3b7a6; border-radius: 12px; background: #fbe4de;
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #813927;
   &:hover, &:focus-visible { background: #f8dfd8; }
+  // One link per affected subject under the count. The list is the strip's
+  // content, so an open strip keeps its colour under the pointer.
+  > summary { cursor: pointer; }
+  &[open]:hover { background: #fbe4de; }
+  ul { margin: 0.5rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+  li a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   // "We couldn't read the plan" — a caution, not a fault, and not a link:
   // there is nowhere useful to send a parent whose planner read failed. Amber
   // rather than the strip's red so an unknown never reads as a known problem.

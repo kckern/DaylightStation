@@ -33,13 +33,15 @@ describe('RosterStrip — a faulted subject looks like a fault (plan 3.2)', () =
   it.each([
     ['program_unavailable', 'This program can’t start'],
     ['blocked_unreachable', 'Locked behind work nothing can reach'],
-  ])('renders the fault card treatment and the Operations link for %s', async (reason, headline) => {
+  ])('renders the fault card treatment and the learner\'s own repair tools for %s', async (reason, headline) => {
     const grid = await mountExpanded(section({ state: 'faulted', reason }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).toMatch(/teacher-lesson-card--faulted/);
     expect(grid.getByText(headline)).toBeInTheDocument();
-    const link = grid.getByRole('link', { name: 'School → Operations' });
-    expect(link).toHaveAttribute('href', '/school/teacher/operations');
+    // The learner's own Operations page, told the reason and subject — not
+    // the generic school page that knew neither.
+    const link = grid.getByRole('link', { name: 'Open repair tools' });
+    expect(link).toHaveAttribute('href', `/school/teacher/students/user_4/operations?reason=${reason}&subject=math`);
     // Never the schema's own word for itself.
     expect(grid.queryByText(reason)).toBeNull();
   });
@@ -55,12 +57,13 @@ describe('RosterStrip — actionable excuses say so (plan 3.3)', () => {
     expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/courses');
   });
 
-  it('awaiting_grown_up links to School → Operations, using the dormant-unit sentence', async () => {
+  it('awaiting_grown_up links to the learner\'s repair tools, using the dormant-unit sentence', async () => {
     const grid = await mountExpanded(section({ state: 'excused', reason: 'awaiting_grown_up' }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).not.toMatch(/--faulted/);
     expect(grid.getByText('Ask a grown-up to continue or reschedule this work.')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'School → Operations' })).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'Open repair tools' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=awaiting_grown_up&subject=math');
   });
 
   // Table-driven, and the absence of a link is asserted as deliberately as
@@ -120,7 +123,7 @@ describe('RosterStrip — the collapsed roster row (DayDots)', () => {
 });
 
 describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (plan 3.4)', () => {
-  it('counts faults and actionable excuses across every learner, and links to the first in roster order', async () => {
+  it('counts faults and actionable excuses across every learner, one named link per affected subject', async () => {
     const kids = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
     const rows = [{ learnerId: 'user_4', sessions: [] }, { learnerId: 'user_2', sessions: [] }];
     schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
@@ -131,10 +134,14 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     await screen.findByRole('button', { name: /User_4/ });
     await screen.findByRole('button', { name: /User_2/ });
     // Both learners' agenda reads settle asynchronously; the LAST report,
-    // once both have landed, must count only user_2's fault and link to
-    // the first (in roster order) learner who has one.
+    // once both have landed, must count only user_2's fault and carry one
+    // link to that child's own repair tools, named.
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 0, href: '/school/teacher/operations',
+      count: 1, unknown: 0, items: [{
+        learnerId: 'user_2', name: 'User_2', reason: 'program_unavailable', subject: 'math',
+        headline: 'This program can’t start',
+        href: '/school/teacher/students/user_2/operations?reason=program_unavailable&subject=math',
+      }],
     }));
   });
 
@@ -143,7 +150,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
-    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, href: null }));
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, items: [] }));
   });
 
   // A FAILED PLANNER READ IS NOT A ZERO.
@@ -161,7 +168,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
-    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, href: null }));
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, items: [] }));
   });
 
   it('counts a readable learner and an unreadable one separately', async () => {
@@ -174,7 +181,9 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     render(<RosterStrip rows={rows} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_2/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 1, href: '/school/teacher/operations',
+      count: 1, unknown: 1, items: [expect.objectContaining({
+        learnerId: 'user_4', href: '/school/teacher/students/user_4/operations?reason=program_unavailable&subject=math',
+      })],
     }));
   });
 
@@ -219,7 +228,9 @@ describe('RosterStrip — a section\'s obligation is stated once, not once per r
     render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 0, href: '/school/teacher/students/user_4/courses',
+      count: 1, unknown: 0, items: [expect.objectContaining({
+        learnerId: 'user_4', reason: 'caught_up', href: '/school/teacher/students/user_4/courses',
+      })],
     }));
   });
 
@@ -258,7 +269,8 @@ describe('RosterStrip — a copy-gap never renders blank (drift safety net)', ()
     expect(card.className).toMatch(/--faulted/);
     expect(grid.queryByText('unforeseen_fault')).toBeNull();
     expect(grid.getByText('This needs a grown-up (Unforeseen Fault).')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'School → Operations' })).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'Open repair tools' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=unforeseen_fault&subject=math');
     expect(warn).toHaveBeenCalledWith('grown-up-reason-unmapped', { reason: 'unforeseen_fault' });
     warn.mockRestore();
   });
@@ -277,14 +289,26 @@ describe('RosterStrip — a copy-gap never renders blank (drift safety net)', ()
 });
 
 describe('RosterStrip — teacher hold (remediation cap)', () => {
-  it('teacher_hold says a grown-up is needed and links to the learner\'s History', async () => {
+  it('teacher_hold with no session on the row falls back to the learner\'s History', async () => {
     const grid = await mountExpanded(section({ state: 'excused', reason: 'teacher_hold' }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).not.toMatch(/--faulted/);
     expect(grid.getByText('Stuck on a failed lesson — this one needs you.')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'Open History' }))
+    expect(grid.getByRole('link', { name: 'Open the lesson' }))
       .toHaveAttribute('href', '/school/teacher/students/user_4/history');
     expect(grid.queryByText('teacher_hold')).toBeNull();
+  });
+
+  // The same row's attention item already links straight to the session;
+  // the obligation link used to stop at the whole History list.
+  it('teacher_hold links to the failed session itself when the row carries one', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [section({ state: 'excused', reason: 'teacher_hold' })] }));
+    const row = { ...ROW, sessions: [{ subject: 'math', sessionId: 'ses_9', unitId: 'm1', lessonTitle: 'Math A', state: 'graded' }] };
+    render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-08-26" />);
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
+    const grid = within(await screen.findByTestId('lesson-grid'));
+    expect(grid.getByRole('link', { name: 'Open the lesson' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/history/sessions/ses_9?from=today');
   });
 
   it('names each remediation-cap item on the card, linked to the session that can offer another try', async () => {
