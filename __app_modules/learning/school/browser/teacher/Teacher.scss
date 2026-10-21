@@ -556,7 +556,7 @@
   .teacher-workspace__scrim { display: block; position: fixed; inset: 58px 0 0; z-index: 55; border: 0; background: rgba(36, 29, 20, .38); }
   .teacher-workspace__learner-nav { top: 58px; padding: 7px 10px; }
   .teacher-workspace .teacher-console__body { padding: 16px 12px 82px; }
-  .teacher-workspace__mobile-nav { position: fixed; inset: auto 0 0; z-index: 45; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 6px 7px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid #ddd3c1; background: rgba(255, 253, 248, .97); backdrop-filter: blur(10px);
+  .teacher-workspace__mobile-nav { position: fixed; inset: auto 0 0; z-index: 45; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; padding: 6px 7px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid #ddd3c1; background: rgba(255, 253, 248, .97); backdrop-filter: blur(10px);
     button { position: relative; border: 0; border-radius: 8px; padding: 9px 3px; background: transparent; color: #756d5f; font-size: 12px; font-weight: 700; }
     button[aria-current='page'] { background: #efe2cc; color: #3d3326; }
     b { position: absolute; top: 2px; right: 8px; border-radius: 999px; padding: 1px 5px; background: #9a452e; color: white; font-size: 9px; }

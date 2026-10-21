@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import TeacherConsoleView from "./TeacherConsole.jsx";
 import PianoProgramsPanel from "../../../piano/browser/teacher-programs.mjs";
 
@@ -76,6 +77,56 @@ const ready = async () => {
 };
 
 describe('TeacherConsole workspace', () => {
+  describe('"Log a book"', () => {
+    // No camera in the test browser: the typed number is the way in.
+    let mediaDevices;
+    beforeEach(() => {
+      mediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
+    });
+    afterEach(() => {
+      if (mediaDevices) Object.defineProperty(navigator, 'mediaDevices', mediaDevices);
+      else delete navigator.mediaDevices;
+    });
+
+    it('is on the rail and on the phone bar, and opens over any page', async () => {
+      await ready();
+      const entries = screen.getAllByRole('button', { name: 'Log a book' });
+      expect(entries).toHaveLength(2);
+      fireEvent.click(entries[1]);
+      const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
+      expect(await within(sheet).findByLabelText('ISBN')).toBeTruthy();
+      // An action, not a section: the page underneath does not change.
+      expect(window.location.pathname).toBe('/school/teacher');
+      fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
+      expect(document.activeElement).toBe(entries[1]);
+    });
+
+    it('opened from the phone rail, closes the rail first, and gives focus back to its control', async () => {
+      await ready();
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      expect(rail.className).toMatch(/is-open/);
+      const entry = within(rail).getByRole('button', { name: 'Log a book' });
+      fireEvent.click(entry);
+      expect(rail.className).not.toMatch(/is-open/);
+      expect(screen.queryByRole('button', { name: 'Close navigation' })).toBeNull();
+      const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
+      fireEvent.keyDown(sheet, { key: 'Escape' });
+      expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
+      expect(document.activeElement).toBe(entry);
+    });
+  });
+
+  it('sizes the phone tab bar to its item count rather than a fixed four', () => {
+    const scss = readFileSync(new URL('./Teacher.scss', import.meta.url), 'utf8');
+    const start = scss.indexOf('.teacher-workspace__mobile-nav {');
+    const rule = scss.slice(start, scss.indexOf('\n', start));
+    expect(rule).not.toMatch(/repeat\(\d+,\s*1fr\)/);
+    expect(rule).toMatch(/grid-auto-flow: column/);
+  });
+
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the

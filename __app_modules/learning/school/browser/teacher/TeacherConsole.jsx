@@ -6,10 +6,11 @@
  * on a phone. Business actions remain in the existing panels and all writes
  * continue through useTeacherWrite/TeacherGate.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from "../../../../../frontend/src/lib/identity/ProfilePicker.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import PinPrompt from "./panels/PinPrompt.jsx";
+import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { teacherLog } from "./teacherLog.js";
@@ -56,6 +57,17 @@ function TeacherShell({ PianoProgramsPanel }) {
   const [backlog, setBacklog] = useState(0);
   const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
   const [railOpen, setRailOpen] = useState(false);
+  const [logBookOpen, setLogBookOpen] = useState(false);
+  // The control that opened "Log a book", so focus goes back to it on close.
+  const logBookOpenerRef = useRef(null);
+  // An action, not a section: it opens over whatever page is showing. The
+  // phone rail (and its scrim) sit above the sheet, so it closes first.
+  const openLogBook = (event) => {
+    logBookOpenerRef.current = event.currentTarget;
+    setRailOpen(false);
+    setLogBookOpen(true);
+    teacherLog.nav('log-book', { from: event.currentTarget.dataset.from });
+  };
 
   const navigate = useCallback((path, replace = false) => {
     if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
@@ -194,6 +206,9 @@ function TeacherShell({ PianoProgramsPanel }) {
                   <span>{item.label}</span>{item.id === 'queue' && backlog > 0 && <b aria-label={`${backlog} items waiting`}>{backlog}</b>}
                 </button>
               ))}
+              <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
+                <span>Log a book</span>
+              </button>
             </nav>
             <div className="teacher-workspace__rail-label">Students</div>
             <nav className="teacher-workspace__students" aria-label="Students">
@@ -230,7 +245,9 @@ function TeacherShell({ PianoProgramsPanel }) {
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
           {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
+          <button type="button" aria-label="Log a book" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
+        <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />
         <PinPrompt />
         <ProfilePicker open={pickerOpen} users={teachers} activeId={currentTeacher?.id} onPick={claim} onDismiss={closePicker} timeoutMs={600000} title="Who’s teaching?" />
       </div>

@@ -57,12 +57,19 @@ export function useTeacherWrite({ panel }) {
     return false;
   }, [currentTeacher, requestAuthorization, invalidateAuthorization, panel]);
 
-  const run = useCallback(async (key, call, { onSuccess, stepUp = null } = {}) => {
+  // `awaitClaim: true` makes a run blocked on the picker resolve only once
+  // its replay has finished (or the stash is dropped, with false), so a
+  // caller can treat the whole wait as one write in progress. Without it, a
+  // blocked run answers false at once, as it always has.
+  const run = useCallback(async (key, call, { onSuccess, stepUp = null, awaitClaim = false } = {}) => {
     if (!currentTeacher) {
-      pendingClaimRef.current = { key, call, onSuccess, stepUp };
+      pendingClaimRef.current?.settle?.(false); // a newer tap replaces the stash
+      let settle = null;
+      const settled = awaitClaim ? new Promise((resolve) => { settle = resolve; }) : null;
+      pendingClaimRef.current = { key, call, onSuccess, stepUp, settle };
       teacherLog.writeRefused('blocked-on-claim', { panel, key });
       openPicker();
-      return false;
+      return settled ?? false;
     }
     return attempt(key, call, onSuccess, stepUp);
   }, [currentTeacher, openPicker, attempt, panel]);
@@ -72,10 +79,12 @@ export function useTeacherWrite({ panel }) {
     if (!pending) return;
     if (currentTeacher) {
       pendingClaimRef.current = null;
-      attempt(pending.key, pending.call, pending.onSuccess, pending.stepUp);
+      attempt(pending.key, pending.call, pending.onSuccess, pending.stepUp)
+        .then((result) => pending.settle?.(result), () => pending.settle?.(false));
     } else if (!pickerOpen) {
       teacherLog.writeRefused('stash-dropped', { panel, key: pending.key });
       pendingClaimRef.current = null;
+      pending.settle?.(false);
     }
   }, [currentTeacher, pickerOpen, attempt, panel]);
 

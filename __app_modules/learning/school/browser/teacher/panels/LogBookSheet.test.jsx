@@ -67,6 +67,8 @@ beforeEach(() => {
   profile.openPicker = vi.fn();
   profile.requestAuthorization = vi.fn(async () => ({ ok: true, grantToken: null }));
   profile.invalidateAuthorization = vi.fn();
+  profile.pickerOpen = false;
+  profile.pinPromptOpen = false;
   schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { isbn13: ISBN, title: 'A Borrowed Title', authors: ['Someone'], pageCount: 32, coverUrl: null } }));
   teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(READERS));
   teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(ok({ reading: { id: 'rdg_new' }, created: true }, 201));
@@ -570,5 +572,72 @@ describe('LogBookSheet — partial failure and retry', () => {
     save();
     await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C – not sent'));
     expect(screen.getByRole('button', { name: 'Retry Learner C' })).toBeTruthy();
+  });
+});
+
+describe('LogBookSheet — focus follows the steps', () => {
+  const heading = () => screen.getByRole('heading', { name: 'Log a book' });
+
+  it('moves focus to the heading when the scan gives way to the book, and back', async () => {
+    render(sheet());
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    expect(document.activeElement).toBe(heading());
+    fireEvent.click(screen.getByRole('button', { name: 'Scan a different book' }));
+    expect(document.activeElement).toBe(heading());
+  });
+
+  it('takes focus back from the page when the PIN prompt closes', async () => {
+    const { rerender } = render(sheet());
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    profile.pinPromptOpen = true;
+    rerender(sheet());
+    document.activeElement?.blur?.();
+    profile.pinPromptOpen = false;
+    rerender(sheet());
+    expect(document.activeElement).toBe(heading());
+  });
+});
+
+describe('LogBookSheet — a save waiting on the teacher picker', () => {
+  const ready = async () => {
+    const utils = render(sheet());
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    fireEvent.click(face('Learner C'));
+    return utils;
+  };
+
+  it('stays a running save until a teacher is chosen, then sends', async () => {
+    profile.currentTeacher = null;
+    const { rerender } = await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(profile.openPicker).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Save' }).disabled).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(true);
+    expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
+
+    profile.currentTeacher = { id: 'test-user', name: 'test-user' };
+    rerender(sheet());
+    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'));
+    expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
+  });
+
+  it('a picker closed with nobody chosen ends the save: "not sent"', async () => {
+    profile.currentTeacher = null;
+    const { rerender } = await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(profile.openPicker).toHaveBeenCalled());
+    profile.pickerOpen = true;
+    rerender(sheet());
+    profile.pickerOpen = false;
+    rerender(sheet());
+    await waitFor(() => expect(summary()).toBe('Learner C – not sent'));
+    expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
   });
 });

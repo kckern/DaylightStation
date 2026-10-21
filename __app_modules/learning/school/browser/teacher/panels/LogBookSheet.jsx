@@ -337,13 +337,17 @@ function BookStep({ isbn, onAnother, onSaving }) {
     setSaving(true);
     const touched = new Set();
     try {
+      // A run blocked on the teacher picker stays this save until its replay
+      // ends (or the picker closes with nobody chosen), so a second Save, a
+      // Retry or "Log another book" cannot overlap it.
       const sent = await run(WRITE_KEY, batch(learnerIds, touched), {
+        awaitClaim: true,
         onSuccess: () => { if (!disposedRef.current) setReloadKey((n) => n + 1); },
       });
-      // A run that ended without finishing (a second 403, a refused PIN) says
-      // so on every child it never reached. A run waiting on the picker has
-      // not ended: it replays once a teacher is chosen.
-      if (!sent && currentTeacher && !disposedRef.current) {
+      // A run that ended without finishing (a second 403, a refused PIN, a
+      // picker closed with nobody chosen) says so on every child it never
+      // reached.
+      if (!sent && !disposedRef.current) {
         const unsent = learnerIds.filter((id) => !touched.has(id) && !progressRef.current[id]?.done);
         if (unsent.length) {
           setResults((value) => ({
@@ -496,13 +500,17 @@ function BookStep({ isbn, onAnother, onSaving }) {
 
 const FOCUSABLE = 'button, select, input, [tabindex]:not([tabindex="-1"])';
 
-export default function LogBookSheet({ open, onClose }) {
+export default function LogBookSheet({ open, onClose, returnFocusRef = null }) {
+  const { pinPromptOpen, pickerOpen } = useTeacherProfile();
   const [isbn, setIsbn] = useState(null);
   const [generation, setGeneration] = useState(0);
   const [saving, setSaving] = useState(false);
   const sheetRef = useRef(null);
   const closeRef = useRef(null);
+  const headingRef = useRef(null);
   const returnRef = useRef(null);
+  const stepRef = useRef(null);
+  const overlayRef = useRef({ pinPromptOpen: false, pickerOpen: false });
 
   const reset = () => {
     setIsbn(null);
@@ -517,11 +525,33 @@ export default function LogBookSheet({ open, onClose }) {
     returnRef.current = document.activeElement;
     closeRef.current?.focus();
     return () => {
-      const back = returnRef.current;
+      // The control that opened the sheet, when the caller names it: a tap
+      // does not focus a button on every browser, so activeElement may be the
+      // page itself.
+      const back = returnFocusRef?.current ?? returnRef.current;
       returnRef.current = null;
       if (back?.isConnected && typeof back.focus === 'function') back.focus();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the caller's ref is stable
   }, [open]);
+
+  // A step change unmounts whatever held focus (the ISBN field, a face):
+  // put it on the heading rather than leaving it on the page.
+  const step = open ? `${generation}:${isbn ?? ''}` : null;
+  useEffect(() => {
+    const previous = stepRef.current;
+    stepRef.current = step;
+    if (step && previous && previous !== step) headingRef.current?.focus();
+  }, [step]);
+
+  // The PIN prompt and the teacher picker sit above the sheet and take focus;
+  // when one closes, focus comes back into the sheet if it landed outside.
+  useEffect(() => {
+    const before = overlayRef.current;
+    overlayRef.current = { pinPromptOpen: Boolean(pinPromptOpen), pickerOpen: Boolean(pickerOpen) };
+    const closed = (before.pinPromptOpen && !pinPromptOpen) || (before.pickerOpen && !pickerOpen);
+    if (open && closed && !sheetRef.current?.contains(document.activeElement)) headingRef.current?.focus();
+  }, [open, pinPromptOpen, pickerOpen]);
 
   if (!open) return null;
 
@@ -544,7 +574,7 @@ export default function LogBookSheet({ open, onClose }) {
     <div className="teacher-logbook" role="dialog" aria-modal="true" aria-label="Log a book" ref={sheetRef} onKeyDown={onKeyDown}>
       <div className="teacher-logbook__card">
         <header className="teacher-logbook__head">
-          <h2>Log a book</h2>
+          <h2 ref={headingRef} tabIndex={-1}>Log a book</h2>
           <button type="button" className="teacher-logbook__close" ref={closeRef} disabled={saving} onClick={close}>Close</button>
         </header>
         {isbn
