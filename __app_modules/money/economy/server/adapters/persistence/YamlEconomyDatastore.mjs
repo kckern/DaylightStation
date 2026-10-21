@@ -73,14 +73,14 @@ export class YamlEconomyDatastore {
     if (!dir) return null;
     return withKey(dir, () => {
       const base = path.join(dir, 'ledger', String(txn.at).slice(0, 10));
-      const list = this.#loadShardForAppend(`${base}.yml`);
+      const list = this.#loadShardStrict(`${base}.yml`);
       list.push(txn);
       saveYamlToPathAtomic(`${base}.yml`, list, { noRefs: true });
       return txn;
     });
   }
 
-  #loadShardForAppend(file) {
+  #loadShardStrict(file) {
     if (!fileExists(file)) return [];
     let list;
     try {
@@ -111,8 +111,13 @@ export class YamlEconomyDatastore {
     return loadYamlSafe(path.join(dir, 'ledger', day)) || [];
   }
 
-  /** Every ledger entry, oldest shard first. `fromDay` (YYYY-MM-DD) skips earlier shards. */
-  readAllTransactions(userId, { fromDay = null } = {}) {
+  /**
+   * Every ledger entry, oldest shard first. `fromDay` (YYYY-MM-DD) skips
+   * earlier shards. Lenient by default (a shard that does not parse reads as
+   * empty, for display); `strict` throws `CORRUPT_LEDGER` instead, for a
+   * read-check-append that must not mistake a lost day for an unpaid one.
+   */
+  readAllTransactions(userId, { fromDay = null, strict = false } = {}) {
     const dir = this.#economyDir(userId);
     if (!dir) return [];
     const ledgerDir = path.join(dir, 'ledger');
@@ -121,7 +126,9 @@ export class YamlEconomyDatastore {
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
       .filter((f) => fromDay == null || f.slice(0, 10) >= fromDay)
       .sort()
-      .flatMap((f) => loadYamlSafe(path.join(ledgerDir, f.replace(/\.yml$/, ''))) || []);
+      .flatMap((f) => (strict
+        ? this.#loadShardStrict(path.join(ledgerDir, f))
+        : loadYamlSafe(path.join(ledgerDir, f.replace(/\.yml$/, ''))) || []));
   }
 
   readWallet(userId) {

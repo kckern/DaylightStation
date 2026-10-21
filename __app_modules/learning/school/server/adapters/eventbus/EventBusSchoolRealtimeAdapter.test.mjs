@@ -74,6 +74,9 @@ it('broadcasts authoritative assessment invalidations and subscribes completion 
   expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'assessment-changed', learnerId: 'kid', unitId: 'lesson', sessionId: 'session' } });
   gateway.sessionGradeChanged({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session' });
   expect(bus.sent.filter(x => x.payload.event === 'assessment-changed')).toHaveLength(2);
+  expect(bus.sent).toContainEqual({ topic: 'school.session.outcome-recorded', payload: { learnerId: 'kid', sessionId: 'session' } });
+  gateway.sessionGradeChanged({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session', studyDay: '2026-10-07' });
+  expect(bus.sent).toContainEqual({ topic: 'school.session.outcome-recorded', payload: { learnerId: 'kid', sessionId: 'session', studyDay: '2026-10-07' } });
   const fact = { learnerId: 'kid', package: 'ko', deckId: 'deck', studyDay: '2026-10-07', doneAt: 'stamp', evidenceId: 'stable' };
   gateway.cardPracticeDayCompleted(fact);
   expect(bus.sent).toContainEqual({ topic: 'school.card-ladder.day-complete', payload: fact });

@@ -13,6 +13,7 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 import { shortId } from '#system/utils/id.mjs';
 
 const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session considered dead
+const PAID_KINDS = new Set(['earn', 'prize']); // what counts toward a payout ref's "paid"
 
 export class EconomyService {
   #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId;
@@ -41,6 +42,11 @@ export class EconomyService {
 
   #now() {
     return this.#clock().toISOString();
+  }
+
+  /** Whether the household knows this user (has a profile, so has a wallet). */
+  hasUser(userId) {
+    return this.#configProjection.hasUser(userId);
   }
 
   #snapshot(userId, session = undefined) {
@@ -109,7 +115,8 @@ export class EconomyService {
     if (typeof source !== 'string' || !source.trim()) throw new ValidationError('adjust source is required');
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('adjust ref is required');
     return this.#ds.withUserLock(userId, async () => {
-      const existing = this.#ds.readAllTransactions(userId).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
+      // Strict: a shard that does not parse could hold this very ref.
+      const existing = this.#ds.readAllTransactions(userId, { strict: true }).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
       if (existing) {
         if (existing.delta !== delta || existing.source !== source) {
           throw new ValidationError(`adjust ref was already used: ${ref}`);
@@ -205,7 +212,13 @@ export class EconomyService {
    * nothing, and a week line that grew (a second green day) pays only the
    * difference. A ref already paid more than `amount` (a rate cut, a retracted
    * grade) is never clawed back here; that is an `adjust`.
-   * Outside the earn catalog: no `daily_cap`, no action lookup.
+   * "Paid" counts only `earn` and `prize` entries. A clawback is an `adjust`
+   * under its OWN ref (e.g. `${ref}:clawback`); even an adjust that reuses
+   * this ref is not counted, so a correction never makes the payout mint again.
+   * The ledger read is strict: a corrupt shard throws `CORRUPT_LEDGER` rather
+   * than read as "never paid".
+   * Outside the earn catalog: no `daily_cap`, no action lookup. The entry's
+   * `action` is `payout:<ruleId>` so earn()'s per-action cap never counts it.
    * @param {string} userId
    * @param {object} args
    * @param {'silver'|'gold'|'gems'} args.currency
@@ -224,15 +237,15 @@ export class EconomyService {
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('mint ref is required');
     return this.#ds.withUserLock(userId, async () => {
       // One all-time read per mint, under the lock: the authoritative check.
-      const paid = this.#ds.readAllTransactions(userId)
-        .filter((t) => t.ref === ref && (t.currency ?? 'silver') === currency)
+      const paid = this.#ds.readAllTransactions(userId, { strict: true })
+        .filter((t) => PAID_KINDS.has(t.kind) && t.ref === ref && (t.currency ?? 'silver') === currency)
         .reduce((s, t) => s + (t.delta || 0), 0);
       const owed = amount - paid;
       if (owed <= 0) {
         const wallet = this.#snapshot(userId);
         return { userId, minted: 0, duplicate: true, paid, txnId: null, balance: wallet.balance, balances: wallet.balances };
       }
-      const txn = createTransaction({ id: this.#newTransactionId(), kind, currency, delta: owed, action: ruleId ?? kind, source, ref, ruleId, timeliness, evidenceRef, at: this.#now() });
+      const txn = createTransaction({ id: this.#newTransactionId(), kind, currency, delta: owed, action: `payout:${ruleId ?? kind}`, source, ref, ruleId, timeliness, evidenceRef, at: this.#now() });
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });

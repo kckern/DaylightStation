@@ -410,6 +410,8 @@ describe('evaluateEarnings — per-learner pricing and refs', () => {
     const out = evaluate(rs, { sectionDays: sections('language', [['2026-09-21', 'served']]) });
     expect(line(out, 'korean').ref).toBe(earningRef({ learnerId: 'kid', ruleId: 'korean', period: WEEK.from }));
     expect(line(out, 'korean').ref).toBe('earn:kid:korean:2026-09-21:on-time');
+    // The payout stamps the line's timeliness on the ledger entry; it is the ref's last part.
+    expect(line(out, 'korean').timeliness).toBe('on-time');
     expect(line(out, 'korean').evidence[0].ref).toBe('earn:kid:korean:2026-09-21:on-time');
     const bumped = evaluate({ ...rs, revision: 9 }, { sectionDays: sections('language', [['2026-09-21', 'served']]) });
     expect(line(bumped, 'korean').ref).toBe(line(out, 'korean').ref);

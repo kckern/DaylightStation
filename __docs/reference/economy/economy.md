@@ -13,7 +13,7 @@ ledger is append-only and auditable.
 > `ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
 > are a measure, not money. They are never exchanged or debited; reaching ring
 > thresholds and winning the weekly ring contest earn coin *awards*, paid by
-> PayoutService (see "Weekly earnings payout").
+> PayoutService (see "Payout" under "Weekly earnings preview").
 
 ## Currency model & source of truth
 
@@ -181,10 +181,18 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   see the design doc's "Known assumptions".)
 - **Payout (school, fitness, piano → ledger):** `PayoutService.settle` mints what
   the weekly earnings preview says was earned (next section). Wired by
-  `startEconomyPayouts` (`composition/earnings.mjs`): it settles a learner 30 s after
-  the last `school.session.outcome-recorded` (`{learnerId}`) or
-  `piano.lesson.completed` (`{userId}`), and every learner every 15 min
-  (`economy:payout-reconcile`). School's own per-unit reward in
+  `startEconomyPayouts` (`composition/earnings.mjs`): it settles a learner's week
+  30 s after the last `school.session.outcome-recorded` (`{learnerId, studyDay?}`;
+  a fact with the session's `studyDay` settles that day's week, so a late grade
+  re-prices the week the work belongs to) or `piano.lesson.completed`
+  (`{userId}`, the current week), debounced per learner and week. The hourly
+  reconcile (`economy:payout-reconcile`, `0 * * * *`) settles every learner for
+  the current week, and for the previous week too while today's study day is
+  Monday, Tuesday or Wednesday. The agents scheduler runs a task at most once per
+  clock hour (it dedupes on `<task>:<YYYY-MM-DDTHH>`), so a finer cron would still
+  run hourly. Both triggers are gated like the other scheduled jobs (production,
+  or `ENABLE_CRON=true`); a backend without cron logs `economy.payout.disabled`
+  and subscribes to nothing. School's own per-unit reward in
   `CloseSessionOutcome` stays off (`lifecycle.economy.enabled: false` in
   `school.yml`): school work is paid by PayoutService only, and turning both on
   would pay a unit twice.
@@ -241,7 +249,12 @@ pays twice is two rules. Per-learner overrides live under `users.<id>`:
   `none`. Other statuses: `earned`, `none` (with a note saying why), `disabled`.
 - Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>` — the
   payout's idempotency key. The rules revision is recorded on the line
-  (`priced`), never in the ref, so a rate edit cannot pay a week twice.
+  (`priced`), never in the ref, so a rate edit cannot pay a week twice. A
+  settle prices with the current ruleset, so a past week is re-priced under
+  today's rates only when it is settled again: by the hourly reconcile inside
+  its three-day grace window (Monday to Wednesday after it), or by a grade
+  event naming one of its study days. A raise then pays the difference; a cut
+  is never clawed back.
 
 ### Payout
 
@@ -251,27 +264,42 @@ triggers pass none, which is the preview's current study day at the 4 am
 boundary).
 
 - Only `earned` lines pay. `indeterminate` and `pending` lines are held (H9) and
-  logged `economy.payout.held` (`info` for indeterminate, `debug` for pending);
-  `none` and `disabled` pay nothing.
+  logged `economy.payout.held`; `none` and `disabled` pay nothing.
 - A line that pays both currencies writes one entry per currency: silver under the
   line's `ref`, gems under `<ref>:gems`. Each entry carries `ruleId`,
-  `timeliness`, `evidenceRef` (the line's `ref`) and `source: payout`. The ring
-  contest is kind `prize`; every other rule is `earn`.
+  `timeliness` (the line's), `evidenceRef` (the line's `ref`), `source: payout`
+  and `action: payout:<ruleId>`, a namespace `earn()`'s per-action daily cap never
+  counts. The ring contest is kind `prize`; every other rule is `earn`.
 - `EconomyService.mint(userId, { currency, amount, kind, ref, ... })` treats
   `amount` as what the ref is worth in total and pays only the shortfall, read
   from the whole ledger under the user lock. A second settle writes nothing; two
   racing settles (an event and the reconcile) pay once; a line that grew
   (Tuesday's green day on top of Monday's, more rings) pays the difference. A ref
   already paid more than the line now says (a rate cut, a retracted grade) is not
-  clawed back; that is an `adjust`.
+  clawed back. "Paid" counts only `earn` and `prize` entries: a clawback is an
+  `adjust` under its own ref (e.g. `<ref>:clawback`), and even an adjust that
+  reuses the line's ref does not count, so a correction never makes the payout
+  mint again.
+- The ledger read inside `mint` and `adjust` is strict
+  (`readAllTransactions(userId, { strict: true })`): a shard that does not parse
+  or is not a list throws `CORRUPT_LEDGER` and nothing is written, rather than
+  reading a lost day as "never paid". The payout logs it at `error`.
+- A learner on the roster who is not a household user (no wallet) logs
+  `economy.payout.not-a-user` at info once per process, then is skipped.
+- Settles repeat, so `would-mint`, `held` and `bad-amount` (a non-integer amount,
+  never minted) log only when that line's status or amount changed since the
+  process last logged it. The per-settle summary `economy.payout.settled` is
+  `debug` unless something minted or a count changed.
 - `dry-run` logs `economy.payout.would-mint { learnerId, ref, currency, amount,
   ruleId }` per entry and writes nothing (no wallet snapshot either). `off` skips
   the preview.
 - A settle failure is logged `economy.payout.failed` and never thrown into the
   event bus or the scheduler. A player who is not on the school roster logs
   `economy.payout.unknown-learner` at debug.
-- The reconcile settles the current week only. Evidence for a past week that
-  lands after its Monday 04:00 rollover (a late grade) is not paid automatically.
+- Late evidence: the reconcile re-settles last week until Wednesday, and a grade
+  event names its session's study day. Later than that, with no event, a past
+  week is not paid automatically. Silver minted after Sunday's week close sits
+  in the wallet and converts at the next close.
 
 ### API
 

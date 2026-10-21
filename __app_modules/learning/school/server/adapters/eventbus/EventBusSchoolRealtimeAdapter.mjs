@@ -115,9 +115,10 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   sessionIssued({ learnerId, sessionId, unitId, type }) {
     return this.#broadcast('school', { event: 'session-issued', learnerId, sessionId, unitId, type });
   }
-  sessionGradeChanged({ learnerId, sessionId, unitId }) {
+  sessionGradeChanged({ learnerId, sessionId, unitId, studyDay = null }) {
     this.#assessmentChanged({ learnerId, unitId, sessionId });
-    this.#publish('school.session.outcome-recorded', { learnerId, sessionId });
+    // The session's study day rides along so a payout re-prices that week.
+    this.#publish('school.session.outcome-recorded', { learnerId, sessionId, ...(studyDay ? { studyDay } : {}) });
     return this.#broadcast('school', { event: 'session-grade-changed', learnerId, sessionId });
   }
   assignmentsChanged(fact) { return this.#publish('school.assignments.changed', fact); }

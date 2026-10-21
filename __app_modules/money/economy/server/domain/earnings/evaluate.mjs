@@ -221,12 +221,13 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
     // date would be the Sunday before.
     if (!overlaps(rule.effective, schoolDates)) continue;
     const period = schoolDates?.from ?? 'unknown';
-    const ref = earningRef({ learnerId, ruleId: rule.id, period });
+    const timeliness = 'on-time'; // makeup work (D14) will vary this
+    const ref = earningRef({ learnerId, ruleId: rule.id, period, timeliness });
     const priced = {
       revision: ruleset.revision, reward: rule.reward, multiplier: rule.multiplier,
       ...(rule.kind === 'ring-threshold' ? { rate: rule.rate, thresholds: rule.thresholds } : {}),
     };
-    const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, overridden: rule.overridden, priced, ref };
+    const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, overridden: rule.overridden, priced, ref, timeliness };
     if (rule.disabled) {
       lines.push({ ...base, status: 'disabled', count: 0, amount: ZERO, evidence: [], note: 'Off for this learner' });
       continue;

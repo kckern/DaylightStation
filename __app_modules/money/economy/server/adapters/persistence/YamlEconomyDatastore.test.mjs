@@ -144,3 +144,31 @@ describe('readAllTransactions', () => {
     expect(ds.readAllTransactions(USER, { fromDay: '2026-10-18' }).map((t) => t.id)).toEqual(['txn_new']);
   });
 });
+
+describe('readAllTransactions strict', () => {
+  const shard = (day, body) => {
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${day}.yml`), body);
+  };
+  it('lenient (the default) skips a shard that does not parse', async () => {
+    const ds = makeStore();
+    await ds.appendTransaction(USER, txn('ok', { at: '2026-10-19T10:00:00.000Z' }));
+    shard('2026-10-01', '- id: txn_old\n  delta: [unclosed\n');
+    expect(ds.readAllTransactions(USER).map((t) => t.id)).toEqual(['txn_ok']);
+  });
+  it('strict throws CORRUPT_LEDGER on a shard that does not parse or is not a list', async () => {
+    const ds = makeStore();
+    await ds.appendTransaction(USER, txn('ok', { at: '2026-10-19T10:00:00.000Z' }));
+    shard('2026-10-01', '- id: txn_old\n  delta: [unclosed\n');
+    expect(() => ds.readAllTransactions(USER, { strict: true })).toThrow(expect.objectContaining({ code: 'CORRUPT_LEDGER' }));
+    shard('2026-10-01', 'id: not-a-list\n');
+    expect(() => ds.readAllTransactions(USER, { strict: true })).toThrow(expect.objectContaining({ code: 'CORRUPT_LEDGER' }));
+  });
+  it('strict still honours fromDay: a corrupt shard before it is not read', async () => {
+    const ds = makeStore();
+    await ds.appendTransaction(USER, txn('ok', { at: '2026-10-19T10:00:00.000Z' }));
+    shard('2026-10-01', '- id: txn_old\n  delta: [unclosed\n');
+    expect(ds.readAllTransactions(USER, { strict: true, fromDay: '2026-10-02' }).map((t) => t.id)).toEqual(['txn_ok']);
+  });
+});

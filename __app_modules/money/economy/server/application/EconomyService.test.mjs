@@ -290,7 +290,7 @@ describe('mint (payouts)', () => {
     const res = await svc.mint(USER, mintArgs());
     expect(res).toMatchObject({ userId: USER, minted: 4, duplicate: false, balances: { silver: 4, gold: 0, gems: 0 } });
     const [txn] = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
-    expect(txn).toMatchObject({ kind: 'earn', currency: 'silver', delta: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout' });
+    expect(txn).toMatchObject({ kind: 'earn', currency: 'silver', delta: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout', action: 'payout:korean' });
     expect(res.txnId).toBe(txn.id);
   });
 
@@ -343,6 +343,59 @@ describe('mint (payouts)', () => {
     await expect(svc.mint(USER, mintArgs({ kind: 'deposit' }))).rejects.toThrow(/kind/);
     await expect(svc.mint(USER, mintArgs({ currency: 'copper' }))).rejects.toThrow(/currency/);
     await expect(svc.mint('nobody', mintArgs())).rejects.toThrow(/unknown user/);
+  });
+
+  // A payout's `action` is namespaced so earn()'s per-action daily cap
+  // (which sums today's earns by action) can never count payout coins.
+  it('stamps action payout:<ruleId>, or payout:<kind> without a rule', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ ruleId: null, kind: 'prize' }));
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)[0].action).toBe('payout:prize');
+  });
+
+  // Clawbacks are adjusts under their OWN ref: paid counts earn and prize
+  // entries only, so a correction never makes the payout mint again.
+  it('a clawback adjust under its own ref leaves the payout paid: no re-mint, balance net of it', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 10 }));
+    await svc.adjust(USER, { delta: -5, source: 'parent', ref: `${REF}:clawback` });
+    const again = await svc.mint(USER, mintArgs({ amount: 10 }));
+    expect(again).toMatchObject({ minted: 0, duplicate: true, paid: 10 });
+    expect((await svc.getBalance(USER)).balance).toBe(5);
+  });
+
+  it('an adjust that reuses the line\'s ref is not counted as paid either (decision: only earn/prize count)', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 10 }));
+    await svc.adjust(USER, { delta: -5, source: 'parent', ref: REF });
+    const again = await svc.mint(USER, mintArgs({ amount: 10 }));
+    // paid is the earn entries' 10, not 10 − 5: the adjust is not a refund to re-pay.
+    expect(again).toMatchObject({ minted: 0, duplicate: true, paid: 10 });
+    expect((await svc.getBalance(USER)).balance).toBe(5);
+  });
+
+  it('fails closed on a corrupt past shard: rejects and writes nothing', async () => {
+    const svc = makeService();
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2026-01-05.yml'), '- id: txn_old\n  delta: [unclosed\n');
+    await expect(svc.mint(USER, mintArgs())).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(fs.readdirSync(dir)).toEqual(['2026-01-05.yml']);
+  });
+
+  it('adjust fails closed on a corrupt past shard too', async () => {
+    const svc = makeService();
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2026-01-05.yml'), 'id: not-a-list\n');
+    await expect(svc.adjust(USER, { delta: 2, source: 'parent', ref: 'adj:x' })).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(fs.readdirSync(dir)).toEqual(['2026-01-05.yml']);
+  });
+
+  it('hasUser says whether the household knows the user', () => {
+    const svc = makeService();
+    expect(svc.hasUser(USER)).toBe(true);
+    expect(svc.hasUser('nobody')).toBe(false);
   });
 
   it('two concurrent mints of one ref pay once', async () => {

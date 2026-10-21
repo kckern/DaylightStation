@@ -257,6 +257,20 @@ describe('school.session.outcome-recorded publish', () => {
     expect(published[0].topic).toBe('school.session.outcome-recorded');
     expect(published[0].payload).toMatchObject({ sessionId: SID, unitId: WORKSHEET_UNIT, result: 'passed', learnerId: 'kid1' });
     expect(typeof published[0].payload.at).toBe('string');
+    expect(published[0].payload).not.toHaveProperty('studyDay');
+  });
+
+  it('names the session\'s study day when it has one (a payout settles that week)', async () => {
+    const published = [];
+    build({ realtime: { sessionOutcomeRecorded: (payload) => published.push(payload) } });
+    await sessions.appendEvent(SID, {
+      type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT, studyDay: '2026-09-14',
+    });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 90 });
+    await close.execute({ sessionId: SID });
+    expect(published[0]).toMatchObject({ learnerId: 'kid1', sessionId: SID, studyDay: '2026-09-14' });
   });
 
   it('does not throw when no realtime gateway is supplied (the default)', async () => {

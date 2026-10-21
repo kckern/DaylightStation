@@ -384,8 +384,11 @@ export class CloseSessionOutcome {
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
     // transition (design 2026-08-23-student-completion-state-machine, §5).
+    // `studyDay` (when the session has one) lets a payout settle the week
+    // the work belongs to, not the week the grade landed in.
     this.#realtime?.sessionOutcomeRecorded?.({
       learnerId: state.learnerId, sessionId, unitId: state.unitId, result: outcome.result, at: nowIso,
+      ...(state.studyDay ? { studyDay: state.studyDay } : {}),
     });
     const passed = outcome.result === 'passed';
     const reward = passed

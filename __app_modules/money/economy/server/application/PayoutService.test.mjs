@@ -7,14 +7,17 @@ import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatasto
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
 import { EconomyService } from "./EconomyService.mjs";
 import { PayoutService } from "./PayoutService.mjs";
+import { EarningsPreviewService } from "./EarningsPreviewService.mjs";
+import { validateRuleset } from "../domain/earnings/index.mjs";
 
 const LEARNERS = ['learner-a', 'learner-b'];
 const ref = (learnerId, ruleId) => `earn:${learnerId}:${ruleId}:2026-09-21:on-time`;
-const line = (learnerId, ruleId, kind, status, amount = { silver: 0, gems: 0 }) => ({ ruleId, kind, status, amount, ref: ref(learnerId, ruleId) });
+const line = (learnerId, ruleId, kind, status, amount = { silver: 0, gems: 0 }) => ({ ruleId, kind, status, amount, ref: ref(learnerId, ruleId), timeliness: 'on-time' });
 
 function weekFor(learnerId, over = {}) {
   return {
     learnerId,
+    windows: { school: { from: '2026-09-21', to: '2026-09-27' } },
     lines: [
       line(learnerId, 'korean', 'section-day', 'earned', { silver: 4, gems: 0 }),
       line(learnerId, 'green-week', 'week-met', 'earned', { silver: 5, gems: 1 }),
@@ -22,6 +25,7 @@ function weekFor(learnerId, over = {}) {
       line(learnerId, 'green-day', 'day-met', 'indeterminate'),
       line(learnerId, 'math-week', 'section-week', 'pending'),
       line(learnerId, 'piano', 'unit', 'none'),
+      line(learnerId, 'reading', 'unit', 'disabled'),
       ...(over.extra ?? []),
     ],
   };
@@ -127,6 +131,51 @@ describe('PayoutService.settle', () => {
     expect(ledger('learner-a').filter((t) => t.ruleId === 'korean').map((t) => t.delta)).toEqual([4, 2]);
   });
 
+  it('a second identical dry-run settle logs nothing per line at info', async () => {
+    const { payout, log } = setup({ mode: 'dry-run' });
+    await payout.settle({ learnerId: 'learner-a' });
+    const before = log.entries.length;
+    await payout.settle({ learnerId: 'learner-a' });
+    const second = log.entries.slice(before);
+    expect(second.filter((e) => e.level === 'info')).toEqual([]);
+    expect(second).toEqual([expect.objectContaining({ level: 'debug', event: 'economy.payout.settled' })]);
+  });
+
+  it('a changed line logs again: a held line that turns earned, a would-mint that grows', async () => {
+    const { payout, state, log } = setup({ mode: 'dry-run' });
+    await payout.settle({ learnerId: 'learner-a' });
+    const before = log.entries.length;
+    state.weeks['learner-a'].lines[0].amount = { silver: 6, gems: 0 };
+    state.weeks['learner-a'].lines[3] = { ...state.weeks['learner-a'].lines[3], status: 'earned', amount: { silver: 1, gems: 0 } };
+    await payout.settle({ learnerId: 'learner-a' });
+    const info = log.entries.slice(before).filter((e) => e.level === 'info');
+    expect(info.map((e) => [e.event, e.data.ref, e.data.amount])).toEqual([
+      ['economy.payout.would-mint', ref('learner-a', 'korean'), 6],
+      ['economy.payout.would-mint', ref('learner-a', 'green-day'), 1],
+      ['economy.payout.settled', undefined, undefined],
+    ]);
+  });
+
+  it('a non-integer amount is not minted and is logged as bad-amount', async () => {
+    const { payout, state, ledger, log } = setup();
+    state.weeks['learner-a'].lines[0].amount = { silver: 2.5, gems: 0 };
+    await payout.settle({ learnerId: 'learner-a' });
+    expect(ledger('learner-a').some((t) => t.ruleId === 'korean')).toBe(false);
+    expect(log.of('economy.payout.bad-amount')).toEqual([expect.objectContaining({ level: 'warn', data: expect.objectContaining({ ref: ref('learner-a', 'korean'), amount: 2.5 }) })]);
+  });
+
+  it('a learner with no household wallet is said once at info, then skipped quietly (settle and settleAll alike)', async () => {
+    const weeks = { 'learner-x': weekFor('learner-x'), 'learner-a': weekFor('learner-a') };
+    const { payout, state, log } = setup({ weeks });
+    expect(await payout.settle({ learnerId: 'learner-x' })).toMatchObject({ minted: [], reason: 'not-a-user' });
+    await payout.settle({ learnerId: 'learner-x' });
+    const all = await payout.settleAll({});
+    expect(all.learners.map((l) => [l.learnerId, l.reason ?? l.minted.length])).toEqual([['learner-x', 'not-a-user'], ['learner-a', 5]]);
+    expect(log.of('economy.payout.not-a-user')).toEqual([{ level: 'info', event: 'economy.payout.not-a-user', data: { learnerId: 'learner-x' } }]);
+    expect(log.of('economy.payout.failed')).toEqual([]);
+    expect(state.previews.filter((p) => p.learnerId === 'learner-x')).toEqual([]);
+  });
+
   it('dry-run writes nothing and logs what it would mint', async () => {
     const { payout, log } = setup({ mode: 'dry-run' });
     const out = await payout.settle({ learnerId: 'learner-a' });
@@ -175,8 +224,8 @@ describe('PayoutService.settle', () => {
   });
 
   it('a failing preview throws to the caller (the wiring logs it)', async () => {
-    const { payout } = setup();
-    await expect(payout.settle({ learnerId: 'learner-z' })).rejects.toThrow(/no learner/);
+    const { payout } = setup({ weeks: { 'learner-a': weekFor('learner-a') } });
+    await expect(payout.settle({ learnerId: 'learner-b' })).rejects.toThrow(/no learner/);
   });
 });
 
@@ -190,18 +239,83 @@ describe('PayoutService.settleAll', () => {
     expect(ledger('learner-b')).toHaveLength(5);
   });
 
-  it('one learner failing does not stop the others, and is logged', async () => {
-    const weeks = { 'learner-x': weekFor('learner-x'), 'learner-a': weekFor('learner-a') };
-    const { payout, ledger, log } = setup({ weeks });
+  it('one learner failing does not stop the others; a corrupt ledger fails closed at error level', async () => {
+    const { payout, ledger, log } = setup();
+    const dir = path.join(root, 'learner-a', 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2026-01-05.yml'), '- id: txn_old\n  delta: [unclosed\n');
     const out = await payout.settleAll({});
-    expect(out.learners.map((l) => [l.learnerId, l.error ? 'failed' : l.minted.length])).toEqual([['learner-x', 'failed'], ['learner-a', 5]]);
-    expect(ledger('learner-a')).toHaveLength(5);
-    expect(log.of('economy.payout.failed')[0].data).toMatchObject({ learnerId: 'learner-x' });
+    expect(out.learners.map((l) => [l.learnerId, l.error ? 'failed' : l.minted.length])).toEqual([['learner-a', 'failed'], ['learner-b', 5]]);
+    expect(fs.readdirSync(dir)).toEqual(['2026-01-05.yml']);
+    expect(ledger('learner-b')).toHaveLength(5);
+    expect(log.of('economy.payout.failed')).toEqual([
+      expect.objectContaining({ level: 'error', data: expect.objectContaining({ learnerId: 'learner-a', code: 'CORRUPT_LEDGER' }) }),
+    ]);
   });
 
   it('off: does not read the roster', async () => {
     const { payout, state } = setup({ mode: 'off' });
     expect(await payout.settleAll({})).toEqual({ learners: [], mode: 'off' });
     expect(state.previews).toEqual([]);
+  });
+});
+
+// The real evaluator end to end: if the line shape the preview emits drifts
+// (ref, amount, kind, timeliness), this pays the wrong thing and fails.
+describe('PayoutService with the real EarningsPreviewService', () => {
+  it('the ledger ends up holding exactly the preview\'s earned totals', async () => {
+    const RULES = validateRuleset({
+      revision: 3,
+      rules: [
+        { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },
+        { id: 'green-week', kind: 'week-met', reward: { silver: 5, gems: 1 } },
+        { id: 'contest', kind: 'ring-contest', reward: { silver: 5, gems: 1 } },
+        { id: 'math-week', kind: 'section-week', match: { subject: 'math' }, reward: 3 },
+      ],
+      users: { 'learner-b': { rules: { contest: { disabled: true } } } },
+    });
+    const log = recorder();
+    const preview = new EarningsPreviewService({
+      rules: { get: async () => RULES },
+      schoolEvidence: {
+        async schoolWeek({ week }) {
+          const day = (i) => new Date(Date.parse(`${week.from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+          return {
+            sectionDays: [
+              { day: day(0), subject: 'language', state: 'served', reason: null },
+              { day: day(1), subject: 'language', state: 'served', reason: null },
+              { day: day(2), subject: 'math', state: 'faulted', reason: 'scan' },
+            ],
+            days: [0, 1, 2, 3, 4].map((i) => ({ day: day(i), state: 'met', reason: null })),
+            week: { weekId: week.from, state: 'met', reason: null, open: false },
+            units: [],
+          };
+        },
+      },
+      ringEvidence: { async standings() { return [{ learnerId: 'learner-a', rings: 12 }, { learnerId: 'learner-b', rings: 4 }]; } },
+      learners: async () => LEARNERS.map((id) => ({ id })),
+      clock: () => new Date('2026-09-27T17:00:00.000Z'), // Sunday: the week and the contest are closed
+      timezone: 'America/Los_Angeles',
+      logger: log.logger,
+    });
+    const economy = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService, logger: log.logger }),
+      logger: log.logger,
+    });
+    const payout = new PayoutService({ preview, economy, config: { catalog: () => ({ mode: 'live' }) }, logger: log.logger });
+
+    const priced = await preview.roster({});
+    await payout.settleAll({});
+    await payout.settleAll({});
+    for (const learner of priced.learners) {
+      const { balances } = await economy.getBalance(learner.learnerId);
+      expect({ silver: balances.silver, gems: balances.gems }).toEqual(learner.totals);
+    }
+    expect(priced.learners[0].totals).toEqual({ silver: 14, gems: 2 });
+    expect(priced.learners[1].lines.find((l) => l.ruleId === 'contest').status).toBe('disabled');
+    const ledgerA = new YamlEconomyDatastore({ configService }).readAllTransactions('learner-a');
+    expect(ledgerA.find((t) => t.ruleId === 'contest' && t.currency === 'silver')).toMatchObject({ kind: 'prize', timeliness: 'on-time', ref: 'earn:learner-a:contest:2026-09-21:on-time' });
+    expect(ledgerA.some((t) => t.ruleId === 'math-week')).toBe(false); // indeterminate: held
   });
 });

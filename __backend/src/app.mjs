@@ -3333,6 +3333,22 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     rootLogger.error('nutrition.cleanup.unavailable', { error: error.message });
   }
 
+  // Weekly earnings payouts (economy B3): mint what the earnings preview
+  // says was earned. Settles on school outcomes and piano lessons (debounced
+  // per learner and week) and in the hourly reconcile. Gated like the other
+  // scheduled jobs; inert while economy/config.yml reads `mode: off`, and
+  // `dry-run` only logs. School's own per-unit reward
+  // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
+  startEconomyPayouts({
+    payoutService: economyEarnings.payoutService,
+    config: economyApi.configProjection,
+    enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+    eventBus,
+    scheduler: agentsServices.scheduler,
+    timezone: measuresTimezone,
+    logger: rootLogger.child({ module: 'economy-payout' }),
+  });
+
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all
   // users with a life plan. CeremonyScheduler gates each ceremony to its
   // household-local delivery hour (plan.ceremonies[type].at or per-type
@@ -3343,19 +3359,6 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // Hourly check, deduped per study-day+counts, so a stable backlog nudges
   // once and a grown one nudges again — Telegram via the same notification
   // stack the lifeplan ceremonies use, with a tappable console link.
-  // Weekly earnings payouts (economy B3): mint what the preview above says
-  // was earned. Settles on school outcomes and piano lessons (debounced per
-  // learner) and every 15 min for the roster. Inert while economy/config.yml
-  // reads `mode: off`; `dry-run` only logs. School's own per-unit reward
-  // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
-  startEconomyPayouts({
-    payoutService: economyEarnings.payoutService,
-    config: economyApi.configProjection,
-    eventBus,
-    scheduler: agentsServices.scheduler,
-    logger: rootLogger.child({ module: 'economy-payout' }),
-  });
-
   if (agentsServices.scheduler && notificationStack?.notificationService) {
     agentsServices.scheduler.registerTask('school:teacher-backlog-nudge', '0 * * * *', async () => {
       try {
