@@ -77,6 +77,30 @@ describe('useHandOff failure-safe transfer', () => {
     expect(stopIfCurrent).not.toHaveBeenCalled();
   });
 
+  it('starts the destination at an explicit start time when one is given (fling)', async () => {
+    capture.mockReturnValueOnce({
+      snapshot: { position: 612.4, meta: { playbackOwner: { ownerInstanceId: 'source-owner', playbackRevision: 3 } } },
+      identity: { ownerInstanceId: 'source-owner', playbackRevision: 3 },
+    });
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: 0 }); });
+    expect(adopt.mock.calls[0][0].snapshot.position).toBe(0);
+  });
+
+  it('keeps the captured live position when no start time is given', async () => {
+    capture.mockReturnValueOnce({
+      snapshot: { position: 612.4, meta: { playbackOwner: { ownerInstanceId: 'source-owner', playbackRevision: 3 } } },
+      identity: { ownerInstanceId: 'source-owner', playbackRevision: 3 },
+    });
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: Number.NaN }); });
+    expect(adopt.mock.calls[0][0].snapshot.position).toBe(612.4);
+  });
+
   it('keeps an explicitly non-destructive fork available', async () => {
     dispatchToTarget.mockResolvedValue(['dispatch-1']);
     const { result } = renderHook(() => useHandOff(), { wrapper });

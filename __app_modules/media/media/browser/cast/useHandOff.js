@@ -3,6 +3,11 @@
 // position included) dispatched in adopt mode. A transfer uses the typed
 // receiver executor and stops local only after native adoption evidence;
 // a fork remains a non-destructive ordinary dispatch (C7.4).
+//
+// `startAt` (seconds) sets where the destination starts instead of the
+// captured live position — the fling's "Start from the beginning" passes 0.
+// It rides the snapshot's `position`, which both destinations already honour
+// (typed hand-off: positionPolicy.absolute; idle screen: the adopt load).
 import { useCallback, useContext } from 'react';
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { useDispatch } from "./useDispatch.js";
@@ -15,10 +20,11 @@ export function useHandOff() {
   const local = useContext(LocalSessionContext)?.controller ?? null;
   const fleetStore = useContext(FleetContext)?.store ?? null;
   const { dispatchToTarget } = useDispatch();
-  return useCallback(async (deviceId, { mode = 'transfer' } = {}) => {
+  return useCallback(async (deviceId, { mode = 'transfer', startAt = null } = {}) => {
     if (mode === 'transfer') {
       const captured = local?.portability?.capture?.();
       if (!captured?.snapshot || !captured?.identity) return { ok: false, error: 'no-snapshot' };
+      if (Number.isFinite(startAt)) captured.snapshot.position = Math.max(0, startAt);
       const operationId = globalThis.crypto?.randomUUID?.()
         ?? `move-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       let request;
@@ -27,7 +33,7 @@ export function useHandOff() {
       } catch {
         return { ok: false, error: 'invalid-source' };
       }
-      mediaLog.handoffInitiated({ deviceId, mode, operationId });
+      mediaLog.handoffInitiated({ deviceId, mode, operationId, ...(Number.isFinite(startAt) ? { startAt: Math.round(startAt) } : {}) });
       const source = {
         getIdentity: () => {
           const identity = local?.portability?.capture?.()?.identity;
