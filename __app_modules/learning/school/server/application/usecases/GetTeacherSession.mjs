@@ -55,8 +55,12 @@ export class GetTeacherSession {
         // it does not care whether the work has been handed in.
         return artifact ? {
           ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
+          // Mirrors ReprintResultReceiptArtifact: it reads the manifest's own
+          // session and refuses a receipt that session does not list. A manifest
+          // with no session reads no events there, so it is refused too.
           reprintable: RECEIPT_KINDS.includes(artifact.manifest.kind)
-            && artifact.manifest.representation?.mediaType === 'image/png',
+            && artifact.manifest.representation?.mediaType === 'image/png'
+            && artifact.manifest.sessionId === sessionId,
           originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
           printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
         } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false, reprintable: false };

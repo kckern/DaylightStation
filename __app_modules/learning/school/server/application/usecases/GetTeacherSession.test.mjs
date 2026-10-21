@@ -129,27 +129,39 @@ describe('GetTeacherSession artifact read-through', () => {
     const handedIn = await build(events).execute({ sessionId: 'ses_illinois' });
     expect(handedIn.artifacts[0].reprintable).toBe(false);
   });
+  // Receipt rows for `ses_illinois`, keyed by which retained receipt it lists.
+  const receiptEvent = { type: 'result_receipt_captured', seq: 5, at: '2026-08-24T15:21:00.000Z', artifactId: 'rcpt-1', kind: 'result-receipt' };
+  const manifests = {
+    'rcpt-1': { artifactId: 'rcpt-1', sessionId: 'ses_illinois', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
+    'rcpt-2': { artifactId: 'rcpt-2', sessionId: 'ses_illinois', kind: 'result-receipt', representation: { mediaType: 'application/pdf' } },
+    // The reprint reads the MANIFEST's session (e.g. after a reassignment);
+    // a receipt naming another session is refused there, so not offered here.
+    'rcpt-other': { artifactId: 'rcpt-other', sessionId: 'some-other-session', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
+    // No session on the manifest: the server reads no events and refuses.
+    'rcpt-nosession': { artifactId: 'rcpt-nosession', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
+  };
+  const withReceipt = (receiptId) => new GetTeacherSession({
+    sessions: { readEvents: vi.fn(async () => [...events, { ...receiptEvent, artifactId: receiptId }]), listForLearner: vi.fn(async () => []) },
+    curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+    worksheetInstances: { findBySession: vi.fn(async () => null) },
+    issuedArtifacts: { get: vi.fn(async (artifactId) => (manifests[artifactId] ? { manifest: manifests[artifactId] } : null)) },
+    reviewQueue: { listForSession: vi.fn(async () => []) },
+    printDocuments: { getPublished: vi.fn(async () => null) },
+  });
+  const receiptRow = (out) => out.artifacts.find((row) => row.role === 'result-receipt');
   // `SchoolArtifactService.reprint` sends receipt kinds to
   // `ReprintResultReceiptArtifact`, which has no session-state gate: a receipt
   // stays reprintable after hand-in, as long as it is a retained PNG.
   it('keeps a retained receipt reprintable after the work is marked', async () => {
-    const receiptEvent = { type: 'result_receipt_captured', seq: 5, at: '2026-08-24T15:21:00.000Z', artifactId: 'rcpt-1', kind: 'result-receipt' };
-    const manifests = {
-      'rcpt-1': { artifactId: 'rcpt-1', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
-      'rcpt-2': { artifactId: 'rcpt-2', kind: 'result-receipt', representation: { mediaType: 'application/pdf' } },
-    };
-    const build = (receiptId) => new GetTeacherSession({
-      sessions: { readEvents: vi.fn(async () => [...events, { ...receiptEvent, artifactId: receiptId }]), listForLearner: vi.fn(async () => []) },
-      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
-      worksheetInstances: { findBySession: vi.fn(async () => null) },
-      issuedArtifacts: { get: vi.fn(async (artifactId) => (manifests[artifactId] ? { manifest: manifests[artifactId] } : null)) },
-      reviewQueue: { listForSession: vi.fn(async () => []) },
-      printDocuments: { getPublished: vi.fn(async () => null) },
-    });
-    const receiptRow = (out) => out.artifacts.find((row) => row.role === 'result-receipt');
-    expect(receiptRow(await build('rcpt-1').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(true);
-    expect(receiptRow(await build('rcpt-2').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
-    expect(receiptRow(await build('rcpt-missing').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+    expect(receiptRow(await withReceipt('rcpt-1').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(true);
+    expect(receiptRow(await withReceipt('rcpt-2').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+    expect(receiptRow(await withReceipt('rcpt-missing').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+  });
+  // `ReprintResultReceiptArtifact` reads the events of `manifest.sessionId`
+  // and refuses a receipt that session does not list (ARTIFACT_LINEAGE_MISMATCH).
+  it('offers a receipt reprint only from the session its manifest names', async () => {
+    expect(receiptRow(await withReceipt('rcpt-other').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+    expect(receiptRow(await withReceipt('rcpt-nosession').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
   });
   // `ReprintIssuedArtifact` refuses CURRICULUM_PAUSED before it looks at state.
   it('withholds a worksheet reprint while its lesson is paused', async () => {
