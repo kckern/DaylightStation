@@ -4,6 +4,11 @@
   box-sizing: border-box;
   min-height: 100vh;
   background: #ece5d6;   // a darkened sibling of the console cream — never raw #000 gutters
+  // The console paints itself light, so it must say so. The app root runs a
+  // dark color-scheme, under which a button with no colour of its own takes
+  // the UA's dark `buttontext` — white — and the roster's learner names and
+  // the teacher chip rendered white on white.
+  color-scheme: light;
   --ds-background: #f6f2e9;
   --ds-surface: #fffdf8;
   --ds-surface-alt: #f3eee5;
