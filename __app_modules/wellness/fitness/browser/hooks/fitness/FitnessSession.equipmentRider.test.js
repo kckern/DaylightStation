@@ -106,6 +106,19 @@ describe('FitnessSession — riders declared in config', () => {
     expect(session.getEquipmentRider('tricycle')).toBe('rider_c');
   });
 
+  // 2026-10-20: reset() cleared every rider and nothing re-seeded, so from the
+  // second session after a page load the tricycle had no rider and its
+  // cadence floor stood down silently for the whole workout.
+  it('re-seeds the configured riders when a session resets', () => {
+    const session = new FitnessSession();
+    session.setEquipmentCatalog(catalog);
+    session.setEquipmentRider('tricycle', 'rider_c');
+    session.reset();
+    expect(session.getEquipmentRider('tricycle')).toBe('rider_a');
+    expect(session.getEquipmentRider('step_mat')).toBe('rider_b');
+    expect(session.getEquipmentRider('niceday')).toBeNull();
+  });
+
   it('re-seeds after the equipment is explicitly unclaimed', () => {
     const session = new FitnessSession();
     session.setEquipmentCatalog(catalog);

@@ -2801,6 +2801,10 @@ export class FitnessSession {
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};
     this._equipmentRider?.clear();
+    // Configured riders are per-session defaults. Seeding used to run only on
+    // page load, so after the first session ended the tricycle had no rider and
+    // its cadence floor stood down for every later workout (2026-10-20).
+    this.seedConfiguredRiders(this.getEquipmentCatalog());
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }

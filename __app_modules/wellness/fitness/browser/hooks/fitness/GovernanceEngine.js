@@ -1979,6 +1979,8 @@ export class GovernanceEngine {
   reset() {
     this._clearTimers();
     this._cleanupPlaybackSubscription();
+    // The inert-requirement alarm is per session, not per page load.
+    this._requirementLiveness = null;
     if (this._zoneChangeDebounceTimer) {
       clearTimeout(this._zoneChangeDebounceTimer);
       this._zoneChangeDebounceTimer = null;
