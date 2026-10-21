@@ -2,6 +2,7 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
+import { resolvePassingPercent } from "../passBar.mjs";
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
@@ -15,11 +16,11 @@ function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, c
 
 /** Append-only, preview-first correction of one settled session's grade. */
 export class AdjustSessionGrade {
-  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger; #receiptIssuer; #passOverrides; #realtime;
+  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger; #receiptIssuer; #passOverrides; #realtime; #assignments;
 
   constructor({ sessions, teacherGate, worksheetInstances = null, reviewQueue = null,
     curriculum = null, economy = null, economyEnabled = false,
-    receiptIssuer = null, passOverrides = null, realtime = null, clock = () => new Date(), logger = console } = {}) {
+    receiptIssuer = null, passOverrides = null, assignments = null, realtime = null, clock = () => new Date(), logger = console } = {}) {
     if (!sessions) throw new Error('AdjustSessionGrade requires sessions');
     if (!teacherGate) throw new Error('AdjustSessionGrade requires teacherGate');
     this.#sessions = sessions;
@@ -32,6 +33,7 @@ export class AdjustSessionGrade {
     this.#receiptIssuer = receiptIssuer;
     this.#realtime = realtime;
     this.#passOverrides = passOverrides;
+    this.#assignments = assignments;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -83,9 +85,15 @@ export class AdjustSessionGrade {
     }
     // Pre-stamp machine grades need an explicit rule for the corrected outcome.
     // Pin it on the annotation so later curriculum edits cannot change the result.
+    // An unstamped grade (pre-stamp, or any card scan) resolves the bar in
+    // grading's order: override → enrollment for the unit's course → the
+    // unit's own percent (Task 16).
     const passingPercent = state.machineGrade.passingPercent
-      ?? state.gradedPassingPercent ?? this.#passOverrides?.percentFor?.(state.unitId)
-      ?? (await this.#curriculum?.getUnit?.(state.unitId))?.passing?.percent;
+      ?? state.gradedPassingPercent
+      ?? await resolvePassingPercent({
+        passOverrides: this.#passOverrides, assignments: this.#assignments, learnerId: state.learnerId,
+        unit: { unitId: state.unitId, ...((await this.#curriculum?.getUnit?.(state.unitId)) ?? {}) },
+      });
     const built = createEvent({
       type: 'grade_adjusted', at: this.#clock().toISOString(), sessionId,
       adjustmentId: id, ...normalized,

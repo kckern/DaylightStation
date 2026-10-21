@@ -3,8 +3,10 @@
 > **Current state:** whole-course enrollment is built. A teacher can enroll,
 > re-materialize, or unenroll a learner from the School matrix or lifecycle API.
 > Syllabi can be stored and archived through the API, but there is no syllabus
-> authoring UI; new syllabus YAML is authored by hand. Module-subset enrollment,
-> per-learner pass bars, and per-enrollment report-card rows remain unbuilt.
+> authoring UI; new syllabus YAML is authored by hand. A syllabus `passing` bar
+> is copied onto the enrollment and grading honors it (see "The pass bar"
+> below). Module-subset enrollment and per-enrollment report-card rows remain
+> unbuilt.
 
 Related: [planning](./planning.md),
 [timing and priority](./timing-and-priority.md), and
@@ -105,9 +107,28 @@ school days, so a weekend or a vacation stops reading as unmet work. Both are
 described in [timing and priority](./timing-and-priority.md); `schedule` is
 snapshotted onto the enrollment, so adding a vacation mid-year is a
 re-materialize, not a syllabus edit. The current syllabus validator
-does not accept a `modules` subset, a per-learner passing threshold, or a term
-that creates a separate grading scope. Those are future model changes, not
-hidden YAML features.
+does not accept a `modules` subset or a term that creates a separate grading
+scope. Those are future model changes, not hidden YAML features.
+
+### The pass bar
+
+A syllabus may set `passing: <integer 1–100>`. `EnrollLearner` copies it onto
+the course entry (`courses[].passing`), so it is per learner: two children on
+the same course through different syllabi can have different bars. Grading
+honors it (`resolvePassingPercent`, `server/application/passBar.mjs`), in this
+order:
+
+1. a per-lesson pass override (the household override store);
+2. the learner's enrollment `passing` for the lesson's course — matched by
+   `courseId`, else by the lesson appearing in the enrollment's lesson order;
+3. the lesson's own authored `passing.percent`.
+
+`GradeSubmission` stamps the result onto the `graded` event, so the bar never
+moves under a graded child. A card scan stamps no bar, so the close
+(`CloseSessionOutcome`) and a later correction (`AdjustSessionGrade`) resolve
+it the same way. The printed sheet (`IssueDocument`, `IssueComposedWorksheet`)
+prints the same resolved bar. Changing a syllabus's `passing` reaches a learner
+only on re-materialize.
 
 ## Runtime behavior
 
@@ -175,7 +196,7 @@ future work.
 - The enrollment surface is whole-course; module-subset authoring is not live.
 - Course profiles are still constrained by the existing worksheet profile
   implementation.
-- Passing thresholds are unit-level plus household pass overrides; they are not
-  snapshotted per learner.
+- The enrollment pass bar is course-wide. There is no per-module or per-lesson
+  bar for one learner; a per-lesson override applies to every learner.
 - Academic periods scope reports, but an enrollment does not yet own a term or
   independent grading window.

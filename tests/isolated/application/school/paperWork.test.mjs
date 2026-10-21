@@ -283,6 +283,27 @@ describe('GradeSubmission through the one engine', () => {
     expect(sessions.derive(SID).gradedPassingPercent).toBe(55);
   });
 
+  it('stamps the learner\'s enrollment bar for the unit\'s course when no override is set (Task 16)', async () => {
+    // The order is override → enrollment → the unit's own bar; this pins the
+    // middle step, which `EnrollLearner` wrote and nothing read until now.
+    const inCourse = {
+      getUnit: async (id) => ({ ...(await curriculum.getUnit(id)), courseId: 'course-a' }),
+      getDocument: (ref) => curriculum.getDocument(ref),
+    };
+    const assignments = {
+      get: async (learnerId) => (learnerId === 'kid1' ? { courses: [{ courseId: 'course-a', passing: 95 }] } : null),
+    };
+    const withEnrollment = new GradeSubmission({
+      curriculum: inCourse, sessions, reviewQueue, grader, bankReader: { getBank: (id) => BANKS[id] ?? null },
+      grownUps: fakeGrownUps(clock), passOverrides: { percentFor: () => null }, assignments,
+      clock: clock.now, logger: silentLogger,
+    });
+    await submitAll(RIGHT);
+    const result = await withEnrollment.execute({ sessionId: SID, entries: RIGHT });
+    expect(result.passingPercent).toBe(95);
+    expect(sessions.events(SID).find((e) => e.type === 'graded').passingPercent).toBe(95);
+  });
+
   it('scores out of what the sheet printed, not out of what came back', async () => {
     const partial = without(['u3-q6']);
     await submitAll(partial);

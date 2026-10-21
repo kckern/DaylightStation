@@ -54,6 +54,7 @@ import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
 import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
+import { resolvePassingPercent } from "../passBar.mjs";
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
@@ -202,8 +203,9 @@ export class CloseSessionOutcome {
       return refused('not_access_veto');
     if (state.state !== 'outcome_recorded') return refused('settlement_already_advanced');
     const unit = await this.#curriculum.getUnit(state.unitId);
+    const liveBar = await this.#liveBar({ state, unit });
     const gradeValid = (s) => evaluateOutcome({ gradedPercent: s.gradedPercent,
-      passingPercent: s.gradedPassingPercent ?? unit?.passing?.percent,
+      passingPercent: s.gradedPassingPercent ?? liveBar,
       companionGate: s.companionGate }).result === 'passed';
     const outcomeIndex = events.findIndex((e) => e.type === 'outcome_recorded' && e.reason === 'course_questions_unresolved');
     if (outcomeIndex < 0 || !Number.isFinite(Date.parse(events[outcomeIndex].at))) return refused('missing_original_settlement');
@@ -255,7 +257,7 @@ export class CloseSessionOutcome {
       // grown-up, and only ever in the narrow case `#reviseAfterGateRead`
       // allows: the gate — never the score — is what blocked it, and the rule
       // that decides has genuinely changed its answer.
-      const revised = this.#reviseAfterGateRead({ state, unit });
+      const revised = await this.#reviseAfterGateRead({ state, unit });
       if (revised) {
         return this.#recordOutcomeAndSettle({
           sessionId, state, unit, nowIso, signedOff, rewardOverride,
@@ -303,10 +305,10 @@ export class CloseSessionOutcome {
     // payment (in `rewardDecision`), not the result.
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
-      // The bar stamped AT GRADING wins (advocacy A4); the live override /
-      // authored percent is only the fallback for pre-stamp sessions.
-      passingPercent: state.gradedPassingPercent
-        ?? this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
+      // The bar stamped AT GRADING wins (advocacy A4). Unstamped events —
+      // pre-stamp sessions, and every card scan, whose `graded` event carries
+      // no bar — take the live one, in grading's order (`#liveBar`).
+      passingPercent: state.gradedPassingPercent ?? await this.#liveBar({ state, unit }),
       // The scan's own verdict on the finish-code row (Task 10), stamped onto
       // the `graded` event by `RecordCardScanOutcome`. Read from the session,
       // never from the companion record: the question is "did THIS sheet's
@@ -321,6 +323,20 @@ export class CloseSessionOutcome {
     }
     return this.#recordOutcomeAndSettle({
       sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
+    });
+  }
+
+  /**
+   * The bar for a `graded` event that stamped none: per-lesson override → the
+   * learner's enrollment for the unit's course → the unit's own percent, the
+   * same order `GradeSubmission` stamps (Task 16). A card scan never stamps,
+   * so without this a scanned card ignored the enrollment bar that a screen
+   * or hand-marked sheet of the same lesson honored.
+   */
+  #liveBar({ state, unit }) {
+    return resolvePassingPercent({
+      passOverrides: this.#passOverrides, assignments: this.#assignments,
+      learnerId: state.learnerId, unit: unit ?? { unitId: state.unitId },
     });
   }
 
@@ -342,13 +358,12 @@ export class CloseSessionOutcome {
    *
    * @returns {{result: string, reason: string}|null} the superseding outcome
    */
-  #reviseAfterGateRead({ state, unit }) {
+  async #reviseAfterGateRead({ state, unit }) {
     const blockedByGate = companionVetoStatus(state.outcome?.reason ?? null);
     if (!blockedByGate) return null;
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
-      passingPercent: state.gradedPassingPercent
-        ?? this.#passOverrides?.percentFor?.(unit?.unitId) ?? unit?.passing?.percent,
+      passingPercent: state.gradedPassingPercent ?? await this.#liveBar({ state, unit }),
       companionGate: state.companionGate,
     });
     return evaluated.reason === state.outcome.reason ? null : evaluated;
@@ -589,7 +604,8 @@ export class CloseSessionOutcome {
       totalCount: state.gradedTotalCount,
       questionStart: worksheet?.omr?.rowRange?.start ?? null,
       marks,
-      passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
+      // The bar that decided it — for an unstamped event that is the live one.
+      passingPercent: state.gradedPassingPercent ?? (await this.#liveBar({ state, unit })) ?? null,
       // Named, never implied (Task 10): a sheet that answered everything right
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.

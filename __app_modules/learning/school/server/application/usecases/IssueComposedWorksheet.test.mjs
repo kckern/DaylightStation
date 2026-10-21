@@ -114,6 +114,42 @@ describe('IssueComposedWorksheet', () => {
     expect(composed.blocks[0].reading).not.toContain('For Home and Church');
   });
 
+  it('prints the bar grading will use: override → enrollment → the unit\'s own (Task 16)', async () => {
+    const run = async ({ passOverrides = null }) => {
+      const sessions = fakeSessions();
+      const instances = new Map();
+      const published = new Map();
+      const cards = new Map();
+      const useCase = new IssueComposedWorksheet({
+        curriculum: { async getUnit(id) { return { unitId: id, title: id, subject: 'science', courseId: 'chemistry', bank: `bank-${id}`, passing: { percent: 80 } }; } },
+        sessions,
+        assignments: { async get() { return { courses: [{ courseId: 'chemistry', profile: 'lower', passing: 70, enrollment: { enrollmentId: 'enr-1' } }] }; } },
+        worksheetInstances: {
+          async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
+          async put(instance) { instances.set(instance.id, instance); return instance; },
+        },
+        bankReader: { getBank(id) { return bank(id); } },
+        printDocuments: { async getPublished(id, rev) { return published.get(`${id}@${rev}`) ?? null; } },
+        publishPrintDocument: { async execute({ source }) { const rev = 'abcdef123'; published.set(`${source.id}@${rev}`, { ...source, rev }); return { id: source.id, rev }; } },
+        allocationStore: { async findReusableCard() { return null; }, async findByCard(id) { return cards.get(id) ?? []; }, async release() {} },
+        renderPrintDocument: {
+          async execute({ context }) {
+            const sections = context.sectionAttribution.map((section, index) => ({ ...section, rowRange: { start: index * 6 + 1, end: index * 6 + 6 } }));
+            cards.set('1234567', [{ cardId: '1234567', recordId: 'rec-1', sections }]);
+            return { bytes: Buffer.from('%PDF test'), pageCount: 1, allocation: { cardId: '1234567', recordId: 'rec-1', rowRange: { start: 1, end: 12 } } };
+          },
+        },
+        printer: { async printPdf() { return { ok: true }; } },
+        passOverrides,
+        clock: () => new Date('2026-08-21T09:00:00.000Z'), logger: { info() {} },
+      });
+      await useCase.execute({ sessionIds: ['s-one', 's-two'] });
+      return [...published.values()].find((source) => source.id.startsWith('composed/')).blocks[0].passPercent;
+    };
+    expect(await run({})).toBe(70);
+    expect(await run({ passOverrides: { percentFor: () => 65 } })).toBe(65);
+  });
+
   it('splits a teacher selection at the physical 50-row OMR-card boundary', async () => {
     const entries = Array.from({ length: 9 }, (_, index) => [`s-${index + 1}`, `lesson-${index + 1}`]);
     const sessions = fakeSessions(entries);

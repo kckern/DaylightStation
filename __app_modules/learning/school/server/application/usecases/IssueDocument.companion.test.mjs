@@ -99,6 +99,7 @@ function issuer({
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
   cardRequests = [], printer: suppliedPrinter = null, allocationStore: suppliedAllocationStore = null,
   issuedArtifacts = null, renderAllocation = null, publishPrintDocument: suppliedPublish = null,
+  coursePassing = undefined, passOverrides = null,
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
@@ -126,6 +127,7 @@ function issuer({
           courses: [{
             courseId: 'cfm',
             profile: 'lower',
+            ...(coursePassing !== undefined ? { passing: coursePassing } : {}),
             enrollment: {
               enrollmentId: 'enr-1',
               moduleOrder: ['w35-aug24'],
@@ -162,6 +164,7 @@ function issuer({
     companions,
     companionCodes,
     householdId,
+    passOverrides,
     clock: () => new Date(now),
     rng,
     issuedArtifacts,
@@ -689,3 +692,24 @@ describe('IssueDocument — a publish refusal is a render failure caught before 
   });
 });
 
+describe('IssueDocument — the printed pass bar is the one that will grade it (Task 16)', () => {
+  it('prints the learner\'s enrollment bar over the unit\'s own', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, cardRequests, published } = issuer({ companionCodes: codeStore(), units: [unit], coursePassing: 70 });
+    await seedSession(sessions, { sessionId: 'ses-bar', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar' });
+    expect(cardRequests[0].passPercent).toBe(70);
+    // The lesson card on the sheet says the same number the header does.
+    expect(JSON.stringify([...published.values()][0])).toContain('"passPercent":70');
+  });
+
+  it('prints a per-lesson override over both', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, cardRequests } = issuer({
+      companionCodes: codeStore(), units: [unit], coursePassing: 70, passOverrides: { percentFor: () => 65 },
+    });
+    await seedSession(sessions, { sessionId: 'ses-bar2', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar2' });
+    expect(cardRequests[0].passPercent).toBe(65);
+  });
+});

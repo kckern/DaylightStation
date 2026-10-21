@@ -539,9 +539,20 @@ the last non-retracted one is the effective interpretation that reports and
 gates read. If both an effective percent and a passing bar exist, the *outcome*
 re-derives too — a correction can turn `needs_remediation` into `passed`.
 
+**Which bar grades a child.** One resolver (`resolvePassingPercent`,
+`server/application/passBar.mjs`) decides it, in this order: a per-lesson
+pass override → the learner's enrollment `passing` for the lesson's course
+(copied from the syllabus at enroll time; see
+[enrollment](./enrollment.md#the-pass-bar)) → the lesson's own
+`passing.percent`. A failed enrollment read falls through to the lesson's bar
+rather than blocking a grade. The printed sheet shows the same resolved bar.
+
 **The bar cannot move under a graded child.** `graded` stamps
-`passingPercent` — the bar in effect at grading time. A later pass-override
-edit is read by `CloseSessionOutcome` only for work not yet graded.
+`passingPercent` — the bar in effect at grading time. A later override or
+enrollment edit is read by `CloseSessionOutcome` only for a `graded` event that
+carries no stamp: work graded before stamping existed, and every card scan
+(`RecordCardScanOutcome` stamps none). Those resolve the live bar in the same
+order, and so does a correction (`AdjustSessionGrade`) of an unstamped grade.
 
 **Regrade is a different animal.** It re-runs the same `gradeAnswer` over
 recorded attempts against the bank's *current* content, and appends corrective
@@ -806,8 +817,9 @@ discovering a lock reappeared.
 that beats the authored `passing.percent`. It is read at **grading** time and
 stamped onto the `graded` event (`GradeSubmission`), so the bar cannot move
 under a child who has already been graded; the close reads that stamp first and
-falls back to the live override only for sessions graded before stamping
-existed (`CloseSessionOutcome`). §7 states the same rule. A course-level bar is a bulk write over the same
+falls back to the live bar only for an unstamped `graded` event (pre-stamp work
+and card scans, `CloseSessionOutcome`). An override beats the learner's
+enrollment bar; §5 gives the full order. A course-level bar is a bulk write over the same
 per-unit store — one concept, not two. Garbage input must never become a
 silent *clear* of a real override, so the field validates 1–100 before it
 writes.

@@ -13,6 +13,7 @@ import { slugify } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { worksheetPresentation } from "../../domain/curriculum/worksheetPresentation.mjs";
+import { resolvePassingPercent } from "../passBar.mjs";
 
 // Derived from the transition table, not hand-copied — see `IssueDocument`'s
 // own ISSUABLE for why the answer is the union of these two events' states.
@@ -65,18 +66,20 @@ function chunksForCard(sections, capacity) {
 export class IssueComposedWorksheet {
   #curriculum; #sessions; #assignments; #worksheetInstances; #bankReader;
   #printDocuments; #render; #allocations; #publish; #printer; #issuedArtifacts; #teacherGate; #clock; #logger; #policy;
+  #passOverrides;
 
   constructor({
     curriculum, sessions, assignments, worksheetInstances, bankReader,
     printDocuments, renderPrintDocument, allocationStore, printer,
     publishPrintDocument = null, issuedArtifacts = null, answerSheetPolicy: policy = null,
-    teacherGate = null, clock = () => new Date(), logger = console,
+    teacherGate = null, passOverrides = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!curriculum || !sessions || !assignments || !worksheetInstances || !bankReader
       || !printDocuments || !renderPrintDocument || !allocationStore || !printer) {
       throw new Error('IssueComposedWorksheet requires curriculum, sessions, assignments, worksheetInstances, bankReader, printDocuments, renderPrintDocument, allocationStore, and printer');
     }
     this.#curriculum = curriculum; this.#sessions = sessions; this.#assignments = assignments;
+    this.#passOverrides = passOverrides;
     this.#worksheetInstances = worksheetInstances; this.#bankReader = bankReader;
     this.#printDocuments = printDocuments; this.#render = renderPrintDocument; this.#allocations = allocationStore;
     this.#publish = publishPrintDocument ?? new PublishPrintDocument({ repository: printDocuments });
@@ -184,7 +187,11 @@ export class IssueComposedWorksheet {
       subject: unit.subject ?? 'School', course: work?.title ?? unit.courseTitle ?? unit.courseId ?? null,
       breadcrumb: presentation.breadcrumb,
       title: unit.title, reading: presentation.reading, citation: presentation.citation,
-      sourceTitle: presentation.sourceTitle, passPercent: unit.passing?.percent ?? null,
+      sourceTitle: presentation.sourceTitle,
+      // The bar grading will stamp (Task 16): override → enrollment → unit.
+      passPercent: (await resolvePassingPercent({
+        passOverrides: this.#passOverrides, assignments: this.#assignments, learnerId: state.learnerId, unit,
+      })) ?? null,
       printedPages: presentation.printedPages,
     };
   }

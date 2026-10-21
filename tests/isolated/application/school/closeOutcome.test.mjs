@@ -13,7 +13,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, MEDIA_UNIT, fixtureUnit,
+  WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, MEDIA_UNIT, fixtureUnit, COURSE_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const SID = 'ses_1';
@@ -149,6 +149,27 @@ describe('the outcome', () => {
     build({ passOverrides: { percentFor: () => 40 } });
     await graded({ percent: 50 }); // graded event carries no passingPercent
     expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+  });
+
+  it('an UNSTAMPED graded event (a card scan stamps no bar) honors the learner\'s enrollment bar (Task 16)', async () => {
+    // `RecordCardScanOutcome` files `graded` with no `passingPercent`, so the
+    // close decides the bar for every scanned card. It must use the same order
+    // grading does: override → enrollment → the unit's own bar.
+    build({ assignments: new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]) });
+    await graded({ percent: 50 });
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+    // ...and the receipt prints the bar that decided it, not the unit's own.
+    const lines = thermal.jobs.at(-1).items.map((i) => i.content);
+    expect(lines).toContain('passing is 40%');
+  });
+
+  it('a per-lesson override still beats the enrollment bar on an unstamped event (Task 16)', async () => {
+    build({
+      passOverrides: { percentFor: () => 60 },
+      assignments: new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]),
+    });
+    await graded({ percent: 50 });
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
   });
 
   it('a null override falls through to the authored percent (W3-2)', async () => {
