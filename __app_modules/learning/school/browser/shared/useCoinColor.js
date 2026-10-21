@@ -12,6 +12,7 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 export const COIN_TOKENS = Object.freeze({
   silver: ['--school-coin-silver', '#c0c0c0'],
+  gold: ['--school-coin-gold', '#e2c15a'],
 });
 
 export function useCoinColor(coin) {

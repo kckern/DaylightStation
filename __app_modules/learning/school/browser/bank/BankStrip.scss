@@ -88,8 +88,13 @@
 }
 
 // Narrow mounts hide the board pane, so the strip rides in the keypad column,
-// under the pad (SchoolApp renders it there below 820px).
+// under the pad (SchoolApp renders it there below 820px). It runs to the
+// bottom of the viewport there, so the toast hangs ABOVE it instead of below,
+// where it would be off-screen. "Turn off screen" is in the keypad's flow,
+// above the strip, so nothing fixed sits in the toast's way.
 .school-lock-split > .school-bank-strip {
   padding: 0 clamp(1rem, 4vw, 1.5rem) 1.25rem;
   box-sizing: border-box;
+
+  .school-bank-strip__toast { top: auto; bottom: 100%; margin: 0 0 .4rem; }
 }

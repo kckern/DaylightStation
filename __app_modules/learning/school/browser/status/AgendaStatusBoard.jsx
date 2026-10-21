@@ -290,6 +290,8 @@ function RestDayStatus({ restDay, pinned }) {
  */
 function Coins({ figure, gold, studyDay }) {
   const [silverColor, silverRef] = useCoinColor('silver');
+  // The gold icon and the gold figure share --school-coin-gold.
+  const [goldColor, goldRef] = useCoinColor('gold');
   const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
   const hasGold = Number.isFinite(gold);
@@ -298,7 +300,7 @@ function Coins({ figure, gold, studyDay }) {
   const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
   const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
   return (
-    <div className="school-status-board__coin-grid" ref={silverRef}>
+    <div className="school-status-board__coin-grid" ref={(el) => { silverRef(el); goldRef(el); }}>
       {inWeek && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color={silverColor} />
@@ -309,7 +311,7 @@ function Coins({ figure, gold, studyDay }) {
       )}
       {hasGold && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" color={goldColor} />
           <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
         </>
       )}

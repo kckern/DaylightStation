@@ -11,7 +11,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  * errorHandlerMiddleware({ shape: 'string' }).
  *
  * Routes (mounted at /api/v1/economy):
- *   GET  /users/:userId/wallet                          → { userId, balance, session }
+ *   GET  /users/:userId/wallet                          → { userId, balance, balances: {silver, gold, gems}, session }   (`balance` is the silver figure)
  *   POST /users/:userId/deposit                         → { userId, balance }
  *   POST /users/:userId/earn                            → { userId, earned, capped, duplicate, balance }
  *   POST /users/:userId/sessions                        → { userId, sessionId, balance, drainPerSecond }
