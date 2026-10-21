@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { historyLines, entrySentence } from './historyText.mjs';
+import { historyLines, entrySentence, entrySource } from './historyText.mjs';
+import { foldBalances } from './entities/Transaction.mjs';
 
 const AT = '2026-10-19T06:30:00.000Z'; // Sunday 23:30 in Los Angeles
 const tx = (over) => ({ id: over.id ?? 'x', at: AT, kind: 'earn', currency: 'silver', delta: 1, action: 'a', source: 's', ref: null, ...over });
@@ -81,5 +82,46 @@ describe('historyLines', () => {
   it('a Map works as the evidence lookup', () => {
     const pay = tx({ kind: 'earn', delta: 2, action: 'payout:r', ruleId: 'r', evidenceRef: 'e' });
     expect(texts([pay], { evidenceLabels: new Map([['e', 'Math 4-02 passed']]) })).toEqual(['+2 silver · Math 4-02 passed']);
+  });
+});
+
+describe('historyLines: structured fields for the coin window', () => {
+  // Newest first, as getHistory returns them.
+  const entries = [
+    tx({ id: 'e', at: '2026-10-21T16:00:00.000Z', kind: 'earn', delta: 2, action: 'payout:korean-daily', source: 'payout', ruleId: 'korean-daily' }),
+    tx({ id: 's', at: '2026-10-20T16:00:00.000Z', kind: 'spend', delta: -3, action: 'early-pass', source: 'pass' }),
+    tx({ id: 'g', kind: 'convert', currency: 'gold', delta: 12, action: 'week-close', evidenceRef: 'close:w' }),
+    tx({ id: 'o', kind: 'convert', currency: 'silver', delta: -12, action: 'week-close', evidenceRef: 'close:w' }),
+    tx({ id: 'd', at: '2026-10-12T16:00:00.000Z', kind: 'deposit', delta: 20, action: 'parent-deposit' }),
+  ];
+  const o = { ...opts, ruleLabels: { 'korean-daily': 'Korean (each day done)' } };
+
+  it('each line carries its source, label, signed legs and the balance after it', () => {
+    const lines = historyLines(entries, o).map(({ source, label, legs, balanceAfter }) => ({ source, label, legs, balanceAfter }));
+    expect(lines).toEqual([
+      { source: 'payout', label: 'Korean (each day done)', legs: [{ currency: 'silver', delta: 2 }], balanceAfter: { silver: 7, gold: 12, gems: 0 } },
+      { source: 'spend', label: 'early pass', legs: [{ currency: 'silver', delta: -3 }], balanceAfter: { silver: 5, gold: 12, gems: 0 } },
+      { source: 'conversion', label: 'silver → gold', legs: [{ currency: 'silver', delta: -12 }, { currency: 'gold', delta: 12 }], balanceAfter: { silver: 8, gold: 12, gems: 0 } },
+      { source: 'deposit', label: 'deposit', legs: [{ currency: 'silver', delta: 20 }], balanceAfter: { silver: 20, gold: 0, gems: 0 } },
+    ]);
+  });
+
+  it('the newest line\'s balance is the fold of the whole ledger', () => {
+    expect(historyLines(entries, o)[0].balanceAfter).toEqual(foldBalances(entries));
+  });
+
+  it('refunds, prizes, plain earns, corrections and withdrawals are named for what they are', () => {
+    expect(entrySource(tx({ kind: 'earn', delta: 3, action: 'early-pass-refund', source: 'pass' }))).toBe('refund');
+    expect(entrySource(tx({ kind: 'prize', currency: 'gems', delta: 1, action: 'payout:ring-contest', source: 'payout' }))).toBe('payout');
+    expect(entrySource(tx({ kind: 'prize', currency: 'gems', delta: 1, action: 'contest' }))).toBe('prize');
+    expect(entrySource(tx({ kind: 'earn', delta: 5, action: 'piano-lesson-complete' }))).toBe('earn');
+    expect(entrySource(tx({ kind: 'adjust', delta: -2, action: 'reward-reconciliation' }))).toBe('correction');
+    expect(entrySource(tx({ kind: 'withdraw', delta: -4, action: 'cash-out' }))).toBe('withdraw');
+    expect(entrySource(tx({ kind: 'mystery', delta: 1 }))).toBe('other');
+  });
+
+  it('a conversion half with no partner is one leg, worded alone', () => {
+    const [line] = historyLines([entries[3]], o);
+    expect(line).toMatchObject({ source: 'conversion', label: 'converted', legs: [{ currency: 'silver', delta: -12 }], balanceAfter: { silver: 0, gold: 0, gems: 0 } });
   });
 });
