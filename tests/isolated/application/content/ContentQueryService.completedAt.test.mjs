@@ -38,6 +38,8 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
     const enriched = await service.enrichWithWatchState(items, 'plex', 'plex:674496');
 
     expect(enriched[0].completedAt).toBe('2026-04-20 06:07:44');
+    // The library whose completion rule judges this item (watch_completion).
+    expect(enriched[0].progressNamespace).toBe('plex/14_fitness');
   });
 
   test('enriched item has completedAt=null when progress has no completedAt', async () => {

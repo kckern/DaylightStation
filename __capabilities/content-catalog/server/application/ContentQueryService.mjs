@@ -961,6 +961,8 @@ export class ContentQueryService extends IContentQueryPort {
         watchTime: progress.watchTime > 0 ? progress.watchTime : undefined,
         lastPlayed: progress.lastPlayed ?? null,
         completedAt: progress.completedAt ?? null,
+        // Which library's completion rule applies (watch_completion); resolved once per container above.
+        progressNamespace,
         watched: percent >= 90,
         // Set priority to in_progress if partially watched (unless already set)
         priority: isInProgress && !item.priority ? 'in_progress' : item.priority
