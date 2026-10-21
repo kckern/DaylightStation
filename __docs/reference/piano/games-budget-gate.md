@@ -97,6 +97,10 @@ button. With an affordable offer the blurb reads "Finish school, or buy one game
 active pass already reads as unlocked ("One game today"). A used cap, an unreadable
 ledger, or no bank answer at all leaves the tile disabled.
 [Games off](#games-off-gameaccessdisabledfor) is checked first and never offers.
+With `passes` in the economy catalog, then, a school-locked kid's Games tile is enabled
+and opens SchoolLock (progress plus Print). That is intended, not the gate failing open.
+Before the economy is `live` no pass can be bought: the bank offers nothing and
+`POST …/passes` answers `PASS_NOT_SOLD`.
 
 **The lock screen** (`SchoolLock.jsx`) keeps each lock reason's copy. In the plain
 incomplete case it adds:

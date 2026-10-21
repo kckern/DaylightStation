@@ -1,6 +1,7 @@
 /**
- * A kid's bank, in one read: balances, the ledger in plain words, today's
- * pass per privilege, what a pass costs, and when the week closes. Read-only.
+ * A kid's bank, in one read: the catalog `mode`, balances, the ledger in plain
+ * words, today's pass per privilege, what a pass costs (`offers`, empty unless
+ * the mode is `live`), and when the week closes. Read-only.
  *
  * Balances and offer affordability are the fold of the same ledger read the
  * history comes from (never the wallet snapshot), so an offer says what
@@ -128,13 +129,17 @@ export class BankService {
       nowMs: this.#clock().getTime(), studyDay, cron: catalog.week_close?.cron ?? null, timezone, boundaryHour,
       onUnreadable: (err) => this.#logger.warn?.('economy.bank.cron-unreadable', { cron: catalog.week_close?.cron, error: err?.message ?? String(err) }),
     });
+    // Nothing is for sale before live (`buyPass` refuses), so nothing is
+    // offered; `mode` lets a surface show a neutral bank until then.
+    const live = catalog.mode === 'live';
     return {
       userId,
+      mode: catalog.mode ?? 'off',
       studyDay,
       balances,
       history,
       pass: Object.fromEntries(privileges.map((privilege) => [privilege, passFor(privilege)])),
-      offers: Object.fromEntries(privileges.map((privilege) => [privilege, quote(catalog, { privilege, balances })])),
+      offers: live ? Object.fromEntries(privileges.map((privilege) => [privilege, quote(catalog, { privilege, balances })])) : {},
       weekEndsAt,
       weekEndsOn: weekCloseStudyDay(weekEndsAt, { timezone, boundaryHour: boundaryHour ?? 4 }),
     };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { passRef, parsePassRef, passState, passesOn, findPass, quote, PASS_SELLABLE_COINS, nonePass, capUsed } from './passes.mjs';
+import { passRef, parsePassRef, passState, passesOn, findPass, quote, PASS_SELLABLE_COINS, nonePass, capUsed, DEFAULT_MAX_ACTIVE_MS } from './passes.mjs';
 
 const L = 'kid';
 const DAY = '2026-10-20';
@@ -71,6 +71,43 @@ describe('passState', () => {
     const other = marker(`pass:${L}:2026-10-19`, 'active');
     const second = marker(`${REF}.2`, 'active');
     expect(passState([other, second], { learnerId: L, studyDay: DAY }).state).toBe('none');
+  });
+  it('carries the refund window and the active limit recorded on the purchase', () => {
+    const txns = [marker(REF, 'active', { refundWithinMs: 120000, maxActiveMs: 600000 }), spend];
+    expect(passState(txns, { learnerId: L, studyDay: DAY })).toMatchObject({ refundWithinMs: 120000, maxActiveMs: 600000 });
+  });
+  it('an older marker with neither reads no refund window and the default active limit', () => {
+    expect(passState([marker(REF, 'active'), spend], { learnerId: L, studyDay: DAY }))
+      .toMatchObject({ refundWithinMs: null, maxActiveMs: DEFAULT_MAX_ACTIVE_MS });
+    expect(DEFAULT_MAX_ACTIVE_MS).toBe(30 * 60_000);
+  });
+});
+
+describe('passState: the active limit', () => {
+  const bought = Date.parse('2026-10-20T15:00:00.000Z');
+  const read = (txns, nowMs) => passState(txns, { learnerId: L, studyDay: DAY, now: nowMs });
+  it('an active pass past maxActiveMs reads consumed, reason expired, ended at the limit', () => {
+    const txns = [marker(REF, 'active', { maxActiveMs: 600000 }), spend];
+    expect(read(txns, bought + 599_999)).toMatchObject({ state: 'active', endedAt: null });
+    expect(read(txns, bought + 600_001)).toMatchObject({
+      state: 'consumed', reason: 'expired', endedAt: '2026-10-20T15:10:00.000Z', playedMs: null, refunded: 0,
+    });
+  });
+  it('an older marker without the key expires at the default 30 minutes', () => {
+    const txns = [marker(REF, 'active'), spend];
+    expect(read(txns, bought + 29 * 60_000).state).toBe('active');
+    expect(read(txns, bought + 31 * 60_000)).toMatchObject({ state: 'consumed', reason: 'expired' });
+  });
+  it('a real transition still wins over the limit', () => {
+    const txns = [marker(REF, 'active'), spend, refundEarn, marker(`${REF}:refunded`, 'refunded')];
+    expect(read(txns, bought + 60 * 60_000).state).toBe('refunded');
+  });
+  it('without a now, nothing expires (a pure read of the ledger)', () => {
+    expect(passState([marker(REF, 'active'), spend], { learnerId: L, studyDay: DAY }).state).toBe('active');
+  });
+  it('passesOn applies the same limit', () => {
+    const txns = [marker(REF, 'active'), spend];
+    expect(passesOn(txns, { learnerId: L, studyDay: DAY, now: new Date(bought + 31 * 60_000) })[0].state).toBe('consumed');
   });
 });
 

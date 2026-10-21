@@ -5,11 +5,23 @@
  *
  * `policy()` is the raw doc, for the legacy keyed `earn`/`spend` maps.
  * `catalog()` is the same doc with every section filled, so payout, week close,
- * passes and digest can read it without null checks.
+ * passes and digest can read it without null checks. Each pass gets
+ * `refund_within_ms: 60000` and `max_active_ms: 1800000` when it leaves them
+ * out (an explicit value, 0 included, is kept as written).
  */
+import { DEFAULT_MAX_ACTIVE_MS, DEFAULT_REFUND_WITHIN_MS } from '../../domain/index.mjs';
+
 const MODES = new Set(['off', 'dry-run', 'live']);
 
 const isMap = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+
+const withPassDefaults = (passes) => Object.fromEntries(Object.entries(passes).map(([key, def]) => [key, isMap(def)
+  ? {
+    ...def,
+    refund_within_ms: def.refund_within_ms === undefined ? DEFAULT_REFUND_WITHIN_MS : def.refund_within_ms,
+    max_active_ms: def.max_active_ms === undefined ? DEFAULT_MAX_ACTIVE_MS : def.max_active_ms,
+  }
+  : def]));
 
 export class EconomyConfigProjection {
   #lastWarnedMode;
@@ -47,7 +59,7 @@ export class EconomyConfigProjection {
         cron: weekClose.cron ?? null,
         convert: Array.isArray(weekClose.convert) ? weekClose.convert : [],
       },
-      passes: isMap(doc.passes) ? doc.passes : {},
+      passes: isMap(doc.passes) ? withPassDefaults(doc.passes) : {},
       digest: { ...digest, cron: digest.cron ?? null, zero_days_alert: digest.zero_days_alert ?? null },
     };
   }

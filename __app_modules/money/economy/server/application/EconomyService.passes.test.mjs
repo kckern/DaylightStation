@@ -12,6 +12,7 @@ const OTHER = 'other-user';
 let USER_DIR;
 let now;
 let passes;
+let mode;
 const earlyPass = (over = {}) => ({
   privileges: ['piano.games'], price: { silver: 3, gold: 1 },
   cap: { per: 'study-day', count: 1, across: 'all-passes' }, authorization: 'trust', refund_within_ms: 60000, ...over,
@@ -19,7 +20,7 @@ const earlyPass = (over = {}) => ({
 const configService = {
   getUserProfile: (id) => ([USER, OTHER].includes(id) ? { id } : null),
   getUserDir: (id) => path.join(USER_DIR, id),
-  getHouseholdAppConfig: () => ({ mode: 'live', earn: {}, passes }),
+  getHouseholdAppConfig: () => ({ mode, earn: {}, passes }),
 };
 const quiet = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
 const ds = () => new YamlEconomyDatastore({ configService });
@@ -36,6 +37,7 @@ const fundGold = (svc, n) => svc.mint(USER, { currency: 'gold', amount: n, ref: 
 beforeEach(() => {
   USER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'econ-pass-'));
   passes = { 'early-pass': earlyPass() };
+  mode = 'live';
   at('2026-10-20T15:00:00.000Z');
 });
 afterEach(() => { fs.rmSync(USER_DIR, { recursive: true, force: true }); });
@@ -226,6 +228,89 @@ describe('EconomyService.buyPass', () => {
   });
 });
 
+describe('EconomyService.buyPass: the catalog mode', () => {
+  it.each([['dry-run'], ['off']])('in %s, a purchase is refused as not sold and writes nothing', async (m) => {
+    const logger = quiet();
+    const svc = makeService({ logger });
+    await fundSilver(svc, 5);
+    mode = m;
+    const before = ledger();
+    await expect(svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }))
+      .rejects.toMatchObject({ code: 'PASS_NOT_SOLD', message: expect.stringMatching(/not live/) });
+    expect(ledger()).toEqual(before);
+    expect(logger.info).toHaveBeenCalledWith('economy.pass.refused', expect.objectContaining({ reason: 'PASS_NOT_SOLD' }));
+  });
+  it('in live, a purchase goes through', async () => {
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    await expect(svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' })).resolves.toMatchObject({ pass: { state: 'active' } });
+  });
+  it.each([['dry-run'], ['off']])('a pass bought while live still consumes after a switch to %s', async (m) => {
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    mode = m;
+    await expect(svc.consumePass(USER, { passId: PASS, playedMs: 120000 })).resolves.toMatchObject({ pass: { state: 'consumed' } });
+  });
+  it.each([['dry-run'], ['off']])('a pass bought while live still refunds after a switch to %s', async (m) => {
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    mode = m;
+    await expect(svc.refundPass(USER, { passId: PASS, playedMs: 1000 })).resolves.toMatchObject({ refunded: 3, balances: { silver: 5 } });
+  });
+});
+
+describe('EconomyService passes: the refund window and the active limit', () => {
+  it('the purchase records both, and the pass state carries them', async () => {
+    passes = { 'early-pass': earlyPass({ refund_within_ms: 120000, max_active_ms: 600000 }) };
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    const res = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    expect(res.pass).toMatchObject({ refundWithinMs: 120000, maxActiveMs: 600000 });
+    expect(ledger().find((t) => t.kind === 'pass').meta).toMatchObject({ refundWithinMs: 120000, maxActiveMs: 600000 });
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toMatchObject({ refundWithinMs: 120000 });
+  });
+  it('a catalog pass that sets neither gets the 60 s window and the 30 minute limit', async () => {
+    const { refund_within_ms: _r, ...bare } = earlyPass();
+    passes = { 'early-pass': bare };
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    const res = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    expect(res.pass).toMatchObject({ refundWithinMs: 60000, maxActiveMs: 30 * 60_000 });
+  });
+  it('a pass past its active limit is no longer active: no game, no refund, and the day stays used', async () => {
+    passes = { 'early-pass': earlyPass({ max_active_ms: 600000 }) };
+    const svc = makeService();
+    await fundSilver(svc, 10);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    at('2026-10-20T15:09:00.000Z');
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toMatchObject({ state: 'active' });
+    at('2026-10-20T15:10:01.000Z');
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toBeNull();
+    expect((await svc.passesToday(USER))[0]).toMatchObject({ state: 'consumed', reason: 'expired' });
+    await expect(svc.refundPass(USER, { passId: PASS, playedMs: 0 })).rejects.toMatchObject({ code: 'PASS_NOT_ACTIVE' });
+    // A late consume from the kiosk is a no-op, not an error.
+    await expect(svc.consumePass(USER, { passId: PASS, playedMs: 1000 })).resolves.toMatchObject({ duplicate: true });
+    await expect(svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' })).rejects.toMatchObject({ code: 'PASS_CAP' });
+    expect(ledger().filter((t) => t.kind === 'earn')).toEqual([]);
+    expect((await svc.getBalance(USER)).balances.silver).toBe(7);
+  });
+  it('an older purchase marker without the limit expires at 30 minutes', async () => {
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    // Rewrite the marker as an older build wrote it.
+    const shard = path.join(USER_DIR, USER, 'apps', 'economy', 'ledger', '2026-10-20.yml');
+    fs.writeFileSync(shard, fs.readFileSync(shard, 'utf8').replace(/\n\s*maxActiveMs: \d+/, ''));
+    expect(ledger().find((t) => t.kind === 'pass').meta.maxActiveMs).toBeUndefined();
+    at('2026-10-20T15:29:00.000Z');
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toMatchObject({ state: 'active' });
+    at('2026-10-20T15:31:00.000Z');
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toBeNull();
+  });
+});
+
 describe('EconomyService.activePass', () => {
   it('returns today\'s active pass for the privilege, else null', async () => {
     const svc = makeService();
@@ -263,13 +348,14 @@ describe('EconomyService.activePass', () => {
   it('a used pass never reads active again: purchase in shard D, consume in D+1, D+1 corrupt', async () => {
     const svc = makeService();
     await fundSilver(svc, 5);
-    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }); // 2026-10-20T15:00Z, shard 10-20
-    at('2026-10-21T02:00:00.000Z'); // still study day 10-20, shard 10-21
+    at('2026-10-20T23:50:00.000Z');
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }); // shard 10-20
+    at('2026-10-21T00:05:00.000Z'); // still study day 10-20, shard 10-21
     await svc.consumePass(USER, { passId: PASS, playedMs: 300000 });
     const dPlus1 = path.join(USER_DIR, USER, 'apps', 'economy', 'ledger', '2026-10-21.yml');
     expect(fs.readFileSync(dPlus1, 'utf8')).toContain(':consumed');
     fs.writeFileSync(dPlus1, ': : not yaml [');
-    at('2026-10-21T03:00:00.000Z');
+    at('2026-10-21T00:10:00.000Z');
     expect(await svc.activePass(USER, { privilege: 'piano.games' })).toBeNull();
   });
   it('the 4 am boundary is the household\'s, not UTC\'s', async () => {
@@ -319,15 +405,16 @@ describe('EconomyService.consumePass / refundPass', () => {
     expect(res).toMatchObject({ refunded: 1, balances: { gold: 2, silver: 0 } });
     expect(ledger().find((t) => t.kind === 'earn' && t.source === 'pass')).toMatchObject({ currency: 'gold', delta: 1, ref: `${PASS}:refund` });
   });
-  it('the server bounds the window too: playedMs 0 an hour later is refused', async () => {
+  it('the server bounds the window too: playedMs 0 ten minutes later is refused', async () => {
     const svc = await bought();
-    later(60 * 60_000);
+    later(10 * 60_000);
     await expect(svc.refundPass(USER, { passId: PASS, playedMs: 0 })).rejects.toMatchObject({ code: 'PASS_REFUND_CLOSED' });
     expect(ledger().filter((t) => t.kind === 'earn')).toEqual([]);
   });
   it('a pass from an earlier study day cannot be refunded', async () => {
+    at('2026-10-21T03:59:50.000Z');
     const svc = await bought();
-    at('2026-10-21T04:00:30.000Z');
+    at('2026-10-21T04:00:10.000Z');
     await expect(svc.refundPass(USER, { passId: PASS, playedMs: 0 })).rejects.toMatchObject({ code: 'PASS_REFUND_CLOSED' });
   });
   it('a refund twice refunds once', async () => {

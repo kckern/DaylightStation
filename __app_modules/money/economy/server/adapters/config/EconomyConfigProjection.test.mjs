@@ -63,7 +63,23 @@ describe('EconomyConfigProjection.catalog', () => {
       earn: { 'piano-lesson-complete': { reward: 5 } },
       spend: {},
     };
-    expect(projectionOver(doc).catalog()).toEqual(doc);
+    expect(projectionOver(doc).catalog()).toEqual({
+      ...doc,
+      passes: { 'early-pass': { ...doc.passes['early-pass'], refund_within_ms: 60000, max_active_ms: 1800000 } },
+    });
+  });
+
+  it('gives each pass the 60 s refund window and the 30 minute active limit it leaves out, and keeps what it sets', () => {
+    const catalog = projectionOver({
+      passes: {
+        bare: { privileges: ['piano.games'] },
+        set: { privileges: ['arcade'], refund_within_ms: 120000, max_active_ms: 600000 },
+        none: { privileges: ['tv'], refund_within_ms: 0 },
+      },
+    }).catalog();
+    expect(catalog.passes.bare).toMatchObject({ refund_within_ms: 60000, max_active_ms: 1800000 });
+    expect(catalog.passes.set).toMatchObject({ refund_within_ms: 120000, max_active_ms: 600000 });
+    expect(catalog.passes.none).toMatchObject({ refund_within_ms: 0, max_active_ms: 1800000 });
   });
 
   it.each([['dry-run'], ['live'], ['off']])('accepts mode %s', (mode) => {

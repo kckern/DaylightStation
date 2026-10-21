@@ -9,7 +9,7 @@
  * the lock a second call could pass the same check before the first lands.
  */
 import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS,
-  passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef } from "../domain/index.mjs";
+  passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef, DEFAULT_MAX_ACTIVE_MS } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
@@ -503,7 +503,10 @@ export class EconomyService {
   /**
    * Buy today's pass for `privilege`, paid in `coin` (silver or gold, at the
    * catalog's price). Refusals write nothing:
-   *   PASS_NOT_SOLD      no catalog pass lists the privilege, the coin is
+   *   PASS_NOT_SOLD      the catalog mode is not `live` (off and dry-run sell
+   *                      nothing; consume and refund do not look at the mode,
+   *                      so a pass bought while live still settles after a
+   *                      switch), no catalog pass lists the privilege, the coin is
    *                      priced 0 / unset, is gems or unknown, or the cap is
    *                      not one this code can honour
    *   PASS_CAP           `cap.count` passes already bought this study day,
@@ -518,7 +521,9 @@ export class EconomyService {
     this.#assertUser(userId);
     if (typeof privilege !== 'string' || !privilege.trim()) throw new ValidationError('privilege is required', { field: 'privilege' });
     if (typeof coin !== 'string' || !coin.trim()) throw new ValidationError('coin is required', { field: 'coin' });
-    const found = findPass(this.#catalog(), privilege);
+    const catalog = this.#catalog();
+    if (catalog.mode !== 'live') throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', 'the economy is not live');
+    const found = findPass(catalog, privilege);
     if (!found) throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', `no pass opens ${privilege}`);
     const price = priceIn(found.def, coin);
     if (price == null) throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', `${found.key} is not sold in ${coin}`);
@@ -542,7 +547,8 @@ export class EconomyService {
       const common = { action: found.key, source: 'pass', ref: id, evidenceRef: id, currency: coin, at };
       const marker = createTransaction({ ...common, id: this.#newTransactionId(), kind: 'pass', delta: 0,
         meta: { pass: found.key, privilege, coin, price, state: 'active', boughtAt: at, studyDay,
-          refundWithinMs: Number.isFinite(found.def.refund_within_ms) ? found.def.refund_within_ms : null } });
+          refundWithinMs: Number.isFinite(found.def.refund_within_ms) ? found.def.refund_within_ms : null,
+          maxActiveMs: Number.isFinite(found.def.max_active_ms) && found.def.max_active_ms > 0 ? found.def.max_active_ms : DEFAULT_MAX_ACTIVE_MS } });
       const spend = createTransaction({ ...common, id: this.#newTransactionId(), kind: 'spend', delta: -price });
       // Marker first: if it fails nothing was written. If the spend fails
       // after it, the pass exists unpaid; the error names it (`passId`) and
@@ -557,7 +563,7 @@ export class EconomyService {
         throw err;
       }
       this.#logger.info('economy.pass.bought', { learnerId: userId, privilege, coin, price, passId: id });
-      const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay }).find((p) => p.passId === id);
+      const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay, now: date }).find((p) => p.passId === id);
       return { userId, pass, balances: wallet?.balances ?? foldBalances([...txns, spend]) };
     }), () => 'pass-bought');
   }
@@ -573,12 +579,13 @@ export class EconomyService {
     this.#assertUser(userId);
     const studyDay = this.currentStudyDay();
     const txns = this.#ds.readAllTransactions(userId, { fromDay: this.#readFrom(studyDay), strict: true });
-    return passesOn(txns, { learnerId: userId, studyDay });
+    return passesOn(txns, { learnerId: userId, studyDay, now: this.#clock() });
   }
 
   /**
    * Today's active pass for `privilege`, or null. A pass expires when the
-   * study day rolls over at 4 am. Fails closed: a shard it cannot read logs
+   * study day rolls over at 4 am, or sooner: `maxActiveMs` after its purchase
+   * it reads consumed (`reason: 'expired'`, no refund). Fails closed: a shard it cannot read logs
    * `economy.pass.ledger-unreadable` and returns null (games stay locked).
    */
   async activePass(userId, { privilege } = {}) {
@@ -600,7 +607,7 @@ export class EconomyService {
     if (!parsed || parsed.learnerId !== userId) throw new EntityNotFoundError('pass', passId);
     return this.#ds.withUserLock(userId, async () => {
       const txns = this.#ds.readAllTransactions(userId, { strict: true });
-      const pass = passesOn(txns, { learnerId: userId, studyDay: parsed.studyDay }).find((p) => p.passId === passId);
+      const pass = passesOn(txns, { learnerId: userId, studyDay: parsed.studyDay, now: this.#clock() }).find((p) => p.passId === passId);
       if (!pass) throw new EntityNotFoundError('pass', passId);
       return fn(pass, txns, parsed);
     });
@@ -612,7 +619,8 @@ export class EconomyService {
 
   /**
    * The game the pass bought has ended. Consuming twice is a no-op
-   * (`duplicate: true`); a refunded pass refuses with PASS_NOT_ACTIVE.
+   * (`duplicate: true`), as is consuming a pass past its active limit (it
+   * already reads consumed); a refunded pass refuses with PASS_NOT_ACTIVE.
    * @param {{passId: string, playedMs?: number|null}} args
    */
   async consumePass(userId, { passId, playedMs = null } = {}) {
@@ -631,7 +639,7 @@ export class EconomyService {
 
   #stateAfter(txns, added, userId, passId) {
     const parsed = parsePassRef(passId);
-    return passesOn([...txns, ...[].concat(added)], { learnerId: userId, studyDay: parsed.studyDay }).find((p) => p.passId === passId);
+    return passesOn([...txns, ...[].concat(added)], { learnerId: userId, studyDay: parsed.studyDay, now: this.#clock() }).find((p) => p.passId === passId);
   }
 
   /**
@@ -640,7 +648,9 @@ export class EconomyService {
    * client's `playedMs` under `refund_within_ms` (as recorded at purchase),
    * AND the server's time since purchase under that window plus
    * REFUND_SETUP_MS, so a client cannot claim `playedMs: 0` an hour later.
-   * Otherwise PASS_REFUND_CLOSED; consumed: PASS_NOT_ACTIVE. Refunding twice
+   * Otherwise PASS_REFUND_CLOSED; consumed: PASS_NOT_ACTIVE. A pass past its
+   * active limit reads consumed, so the limit is checked first: an expired
+   * pass is never refunded, whatever its window says. Refunding twice
    * refunds once (`duplicate: true`).
    * @param {{passId: string, playedMs: number, reason?: string|null}} args
    */

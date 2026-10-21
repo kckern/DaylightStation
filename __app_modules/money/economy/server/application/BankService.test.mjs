@@ -63,7 +63,11 @@ describe('BankService.bank', () => {
     passesToday: async () => [],
     ...over,
   });
-  const config = { catalog: () => ({ week_close: { cron: '30 23 * * 0' },
+  const passesCatalog = {
+      'early-pass': { privileges: ['piano.games'], price: { silver: 3, gold: 0 }, cap: { per: 'study-day', count: 1, across: 'all-passes' } },
+      arcade: { privileges: ['arcade'], price: { silver: 70 }, cap: { per: 'study-day', count: 1, across: 'all-passes' } },
+  };
+  const config = { catalog: () => ({ mode: 'live', week_close: { cron: '30 23 * * 0' },
     passes: {
       'early-pass': { privileges: ['piano.games'], price: { silver: 3, gold: 0 }, cap: { per: 'study-day', count: 1, across: 'all-passes' } },
       arcade: { privileges: ['arcade'], price: { silver: 70 }, cap: { per: 'study-day', count: 1, across: 'all-passes' } },
@@ -71,6 +75,19 @@ describe('BankService.bank', () => {
   const rules = { get: async () => ({ rules: [{ id: 'green-day', label: 'Green day' }] }) };
   const clock = () => new Date(TUESDAY);
   const quiet = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
+
+  it.each([['dry-run'], ['off']])('before live (%s) it offers nothing, and says the mode', async (mode) => {
+    const bank = new BankService({ economy: makeEconomy(), config: { catalog: () => ({ mode, week_close: {}, passes: passesCatalog }) }, clock });
+    const res = await bank.bank('kid');
+    expect(res.mode).toBe(mode);
+    expect(res.offers).toEqual({});
+    // The pass and the balances are still the ledger's.
+    expect(Object.keys(res.pass)).toEqual(['piano.games', 'arcade']);
+    expect(res.balances.silver).toBe(63);
+  });
+  it('live: says so', async () => {
+    expect((await new BankService({ economy: makeEconomy(), config, clock }).bank('kid')).mode).toBe('live');
+  });
 
   it('balances and offers come from the ledger fold the history read, not the wallet', async () => {
     const bank = new BankService({ economy: makeEconomy({ getBalance: async () => ({ balances: { silver: 999 } }) }), config, rules, clock,

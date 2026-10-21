@@ -168,7 +168,8 @@ passes:
     price: { silver: 0, gold: 0 }   # 0 means "not sold in this coin"
     cap: { per: study-day, count: 1, across: all-passes }
     authorization: trust
-    refund_within_ms: 60000
+    refund_within_ms: 60000         # default when omitted
+    max_active_ms: 1800000          # default when omitted (30 minutes)
 digest:
   cron: "0 18 * * *"
   zero_days_alert: 2
@@ -185,7 +186,9 @@ it two ways:
   passes and the digest read it without null checks. Defaults: `mode: off`,
   `rules_source: earn-rules`, `week_close: { cron: null, convert: [] }`,
   `passes: {}`, `digest: { cron: null, zero_days_alert: null }`. A section of the
-  wrong type reads as its default.
+  wrong type reads as its default. Each pass that leaves them out gets
+  `refund_within_ms: 60000` and `max_active_ms: 1800000`; a value that is set
+  (0 included) is kept as written.
 
 **Modes.** `off`: nothing runs (no preview, no ledger, no per-line logs).
 `dry-run`: payouts log `economy.payout.would-mint` and the week close logs
@@ -194,14 +197,16 @@ is written. `live`: payouts and the close write the ledger. A `mode` other than
 `off`, `dry-run` or `live` reads as `off` and logs `economy.catalog.unknown-mode`
 (once per distinct bad value), so a typo never pays out. A bare `mode:` (null)
 counts as unknown and warns; only a missing key reads as `off` without a
-warning. The mode does not gate passes: a pass is sold whenever the catalog
-prices it.
+warning. Passes are sold only in `live`: in `off` and `dry-run`, `buyPass`
+refuses with `PASS_NOT_SOLD` ("the economy is not live") and the bank offers
+nothing (`offers: {}`). Consume and refund do not read the mode, so a pass
+bought while live still settles after a switch away from it.
 
 Each section's reader:
 
 | Section | Read by | See |
 |---|---|---|
-| `mode` | PayoutService (every settle), WeekCloseService (every close), `rewardFor`, the parent digest (every run) | [Payouts](#payouts), [Week close](#week-close) |
+| `mode` | PayoutService (every settle), WeekCloseService (every close), `rewardFor`, the parent digest (every run), `buyPass` and the bank's `offers`/`mode` | [Payouts](#payouts), [Week close](#week-close) |
 | `week_close` | WeekCloseService; BankService for `weekEndsAt` | [Week close](#week-close) |
 | `passes` | `EconomyService` pass methods, BankService offers | [Early passes](#early-passes) |
 | `digest` | School's parent digest | [Integration points](#integration-points) |
@@ -474,9 +479,9 @@ does the locking and the writes.
 **Price.** `passes.<key>.price.{silver,gold}`; a price of 0 (or unset, or not a
 whole number) means not sold in that coin, so a catalog priced
 `{ silver: 0, gold: 0 }` sells nothing until the owner prices it. Gems never buy
-a pass (`PASS_SELLABLE_COINS` is silver and gold). Buying in a coin it is not
-sold in, or an unknown coin, or for a privilege no pass lists, is
-`PASS_NOT_SOLD`.
+a pass (`PASS_SELLABLE_COINS` is silver and gold). Buying while the catalog
+mode is not `live`, in a coin it is not sold in, or an unknown coin, or for a
+privilege no pass lists, is `PASS_NOT_SOLD`.
 
 **Cap.** `cap: { per: study-day, count, across }`. `count` passes per learner
 per study day, in any state: a refunded pass still uses up the day.
@@ -488,13 +493,25 @@ nothing. No `cap` reads as one a day across all passes.
 `studyCalendar` as the earnings preview. A pass expires when the study day
 rolls over: `activePass` returns null after 4 am.
 
+**Active limit.** An active pass also ends `max_active_ms` after its purchase
+(recorded on the marker as `maxActiveMs`; an older marker without it reads the
+30-minute default, `DEFAULT_MAX_ACTIVE_MS`). Past the limit `passState` reads
+it `consumed` with `reason: 'expired'` and `endedAt` at the limit. Nothing is
+written and nothing is refunded. `activePass`, `passesToday`, the bank and the
+kiosk's access read the same state, so a kiosk reload or a consume that never
+landed cannot open a second game after the limit. A real transition in the
+ledger always wins. A late consume of an expired pass is a no-op
+(`duplicate: true`); a refund is `PASS_NOT_ACTIVE`, because the limit is
+checked before the refund window. The window (60 s) is far shorter than the
+limit, so this only matters for a catalog that sets them the other way round.
+
 **Ledger entries.** The pass id is `pass:{learnerId}:{studyDay}` (a second
 pass the same day, only when `count` allows it, is `….2`). Every entry carries
 `evidenceRef` = the pass id and `source: pass`; the action is the catalog key.
 
 | Entry | `ref` | Written by |
 |---|---|---|
-| `pass` marker, `meta.state: active` (`privilege, coin, price, boughtAt, refundWithinMs`) | pass id | buy |
+| `pass` marker, `meta.state: active` (`privilege, coin, price, boughtAt, refundWithinMs, maxActiveMs`) | pass id | buy |
 | `spend`, −price in the coin | pass id | buy |
 | `pass` marker, `meta.state: consumed` (`playedMs`) | `{id}:consumed` | consume |
 | `earn`, +what was paid, action `{key}-refund` | `{id}:refund` | refund |
@@ -526,8 +543,14 @@ when the client's `playedMs` is under `refund_within_ms` (recorded on the
 purchase marker) **and** the server's time since purchase is under that window
 plus `REFUND_SETUP_MS` (5 minutes for picking and loading a game, exported from
 `EconomyService.mjs`). The second bound stops a client claiming `playedMs: 0` an
-hour later. A pass with no `refund_within_ms` (or 0) has no refund window.
-Otherwise `PASS_REFUND_CLOSED`.
+hour later. A catalog pass that omits `refund_within_ms` gets 60000; one set to
+0 has no refund window. Otherwise `PASS_REFUND_CLOSED`.
+
+The pass state carries `refundWithinMs` (as recorded on the purchase, null on
+an older marker that lacks it) and `maxActiveMs`, so the bank's
+`pass[privilege]` and the kiosk's `access.pass` say the window. The kiosk
+refunds only when `playedMs` is under that window minus a 5 s network margin;
+with no window (null or 0) it consumes.
 
 **Gating fails closed.** `activePass`, used for gating, reads strictly: on
 `CORRUPT_LEDGER` it logs `economy.pass.ledger-unreadable` (warn) and returns
@@ -545,7 +568,7 @@ coin, price, reason }` (the refusal code as `reason`).
 | Method / Path | Body | Returns |
 |---|---|---|
 | GET `/users/:userId/wallet` | — | `{ userId, balance, balances, session }` |
-| GET `/users/:userId/bank` | — | `{ userId, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt, weekEndsOn }` |
+| GET `/users/:userId/bank` | — | `{ userId, mode, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt, weekEndsOn }` |
 | POST `/users/:userId/deposit` | `{ amount, note? }` | `{ userId, balance }` |
 | POST `/users/:userId/earn` | `{ action, ref?, amount? }` | `{ userId, earned, capped, duplicate, balance }` |
 | POST `/users/:userId/sessions` | `{ action, source }` | `{ userId, sessionId, balance, drainPerSecond }` |
@@ -593,7 +616,8 @@ markers are left out.
 from the same ledger read as the history, never the wallet snapshot, so an offer
 says what `buyPass` will decide. `offers` maps each privilege a pass opens to
 its quote: `[{ coin, price, affordable }]`, one row per coin the pass is sold
-in, so `[]` means not for sale.
+in, so `[]` means not for sale. Unless the catalog mode is `live`, `offers`
+is `{}`. `mode` is the catalog mode.
 
 **Pass, keyed by privilege.** `pass['piano.games']` is that privilege's latest
 pass today, or the "none" shape (`passId: null, state: 'none'`, the same keys a
@@ -620,6 +644,8 @@ timezone of its own. Two caveats:
   the household timezone (`getHouseholdTimezone`), a separate setting. The two
   must match, or `weekEndsAt` and the real close disagree. `createEconomyApi`
   logs `economy.timezone-mismatch` at warn on boot when `TZ` is set and differs.
+  School's configured zone must match both too: the process TZ, the household
+  TZ and School's zone are one setting in practice.
 - The job's cron is read once at boot, while the bank reads the live catalog. After
   a cron edit and a reload, `weekEndsAt` shows the new schedule but the job keeps
   the old one until a restart.
@@ -827,7 +853,11 @@ the old snapshot when the file is missing.
 1. Ship the catalog in `mode: dry-run` with passes priced 0 (not for sale). Payouts
    log `economy.payout.would-mint`, the week close logs
    `economy.week-close.would-convert`, `rewardFor` answers null (no `+N` on any
-   surface), and the digest ends `Coins not live yet`. No balance moves.
+   surface), and the digest ends `Coins not live yet`. No balance moves. No pass
+   can be bought before live (`PASS_NOT_SOLD`) and the bank offers nothing.
+   With `passes` in the catalog, a school-locked kid's piano Games tile is
+   enabled and opens SchoolLock (today's progress and the Print button). That
+   is intended, not the gate failing open: SchoolLock sells nothing until live.
 2. Run one week in dry-run. The owner reads the would-mint volumes per learner
    and rule and prices the earn rules, the conversion rate and the pass.
 3. Set `mode: live` and reload. Payouts mint from the next settle (event or the

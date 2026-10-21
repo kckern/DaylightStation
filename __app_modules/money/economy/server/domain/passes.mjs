@@ -21,6 +21,16 @@
 /** Coins a pass can be bought in. Gems are a trophy, never spent on a pass. */
 export const PASS_SELLABLE_COINS = Object.freeze(['silver', 'gold']);
 
+/**
+ * How long a pass stays active when its catalog entry (or an older purchase
+ * marker) does not say: 30 minutes from the purchase. Past it the pass reads
+ * `consumed` (`reason: 'expired'`) with no refund, so a kiosk reload or a
+ * consume that never landed cannot open a second game on it.
+ */
+export const DEFAULT_MAX_ACTIVE_MS = 30 * 60 * 1000;
+/** The refund window a catalog pass gets when it does not set `refund_within_ms`. */
+export const DEFAULT_REFUND_WITHIN_MS = 60 * 1000;
+
 const DAY = '\\d{4}-\\d{2}-\\d{2}';
 const PASS_ID = new RegExp(`^pass:(.+):(${DAY})(?:\\.(\\d+))?$`);
 
@@ -46,10 +56,19 @@ const sum = (txns) => txns.reduce((s, t) => s + (t.delta || 0), 0);
 
 /** A day with no pass (for `privilege`): the same keys a real pass state has. */
 export function nonePass({ learnerId = null, studyDay = null, privilege = null, passId = null } = {}) {
-  return { passId, learnerId, studyDay, state: 'none', pass: null, privilege, coin: null, price: null, paid: 0, refunded: 0, boughtAt: null, endedAt: null, playedMs: null };
+  return { passId, learnerId, studyDay, state: 'none', pass: null, privilege, coin: null, price: null, paid: 0, refunded: 0, boughtAt: null, endedAt: null, playedMs: null, refundWithinMs: null, maxActiveMs: null };
 }
 
-function stateOf(txns, id) {
+const positive = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+const toMs = (now) => (now == null ? null : now instanceof Date ? now.getTime() : typeof now === 'number' ? now : Date.parse(now));
+
+/**
+ * One pass's state from the ledger. With `nowMs`, an active pass bought more
+ * than `maxActiveMs` ago reads `consumed`, `reason: 'expired'`, ended at the
+ * limit: nothing is written, and nothing is refunded. A real transition in the
+ * ledger always wins over the limit. Without `nowMs` nothing expires.
+ */
+function stateOf(txns, id, nowMs = null) {
   const parsed = parsePassRef(id);
   const purchase = txns.find((t) => t.kind === 'pass' && t.ref === id);
   const base = { learnerId: parsed?.learnerId ?? null, studyDay: parsed?.studyDay ?? null };
@@ -62,14 +81,20 @@ function stateOf(txns, id) {
   // the refund's first write (its earn; its marker when nothing was paid).
   const first = txns.find((t) => (t.kind === 'pass' && (t.ref === consumedRef(id) || t.ref === refundedRef(id)))
     || (t.kind === 'earn' && t.ref === refundRef(id)));
-  const state = !first ? 'active' : (first.ref === consumedRef(id) ? 'consumed' : 'refunded');
-  const ended = state === 'active' ? null : txns.find((t) => t.kind === 'pass' && t.ref === (state === 'consumed' ? consumedRef(id) : refundedRef(id)));
+  const boughtAt = m.boughtAt ?? purchase.at ?? null;
+  const maxActiveMs = positive(m.maxActiveMs) ?? DEFAULT_MAX_ACTIVE_MS;
+  const limitMs = Date.parse(boughtAt ?? '') + maxActiveMs;
+  const expired = !first && Number.isFinite(nowMs) && Number.isFinite(limitMs) && nowMs > limitMs;
+  const state = expired ? 'consumed' : !first ? 'active' : (first.ref === consumedRef(id) ? 'consumed' : 'refunded');
+  const ended = state === 'active' || expired ? null : txns.find((t) => t.kind === 'pass' && t.ref === (state === 'consumed' ? consumedRef(id) : refundedRef(id)));
+  const reason = expired ? 'expired' : ended?.meta?.reason ?? null;
   return {
     ...base, passId: id, state,
     pass: m.pass ?? null, privilege: m.privilege ?? null, coin, price: m.price ?? null,
-    paid, refunded: sum(refundEntries), boughtAt: m.boughtAt ?? purchase.at ?? null,
-    endedAt: ended?.at ?? null, playedMs: ended?.meta?.playedMs ?? null,
-    ...(ended?.meta?.reason ? { reason: ended.meta.reason } : {}),
+    paid, refunded: sum(refundEntries), boughtAt,
+    endedAt: expired ? new Date(limitMs).toISOString() : ended?.at ?? null, playedMs: ended?.meta?.playedMs ?? null,
+    refundWithinMs: m.refundWithinMs ?? null, maxActiveMs,
+    ...(reason ? { reason } : {}),
   };
 }
 
@@ -98,14 +123,16 @@ export function capUsed(passesToday, { key, def }) {
 
 /**
  * One pass's state: `none | active | consumed | refunded`, with its privilege,
- * coin, price and what was paid (0 for a pass whose spend never landed).
+ * coin, price, what was paid (0 for a pass whose spend never landed), and the
+ * `refundWithinMs` and `maxActiveMs` recorded at purchase. `now` (a Date, ms
+ * or ISO) applies the active limit; see `stateOf`.
  */
-export function passState(txns, { learnerId, studyDay, seq = 1 }) {
-  return stateOf(txns ?? [], passRef({ learnerId, studyDay, seq }));
+export function passState(txns, { learnerId, studyDay, seq = 1, now = null }) {
+  return stateOf(txns ?? [], passRef({ learnerId, studyDay, seq }), toMs(now));
 }
 
-/** Every pass the learner bought on a study day, first first. */
-export function passesOn(txns, { learnerId, studyDay }) {
+/** Every pass the learner bought on a study day, first first; `now` applies the active limit. */
+export function passesOn(txns, { learnerId, studyDay, now = null }) {
   const list = txns ?? [];
   const ids = [];
   for (const t of list) {
@@ -113,7 +140,7 @@ export function passesOn(txns, { learnerId, studyDay }) {
     const p = parsePassRef(t.ref);
     if (p && p.learnerId === learnerId && p.studyDay === studyDay && !ids.includes(t.ref)) ids.push(t.ref);
   }
-  return ids.sort((a, b) => parsePassRef(a).seq - parsePassRef(b).seq).map((id) => stateOf(list, id));
+  return ids.sort((a, b) => parsePassRef(a).seq - parsePassRef(b).seq).map((id) => stateOf(list, id, toMs(now)));
 }
 
 /** The catalog pass that opens `privilege`: `{key, def}`, or null when none does. */
