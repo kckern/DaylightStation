@@ -5,6 +5,7 @@ import { HmacSchoolReelGrantIssuer as HmacSchoolReelGrantIssuer } from "../adapt
 import { HmacSchoolCubeGrantIssuer as HmacSchoolCubeGrantIssuer } from "../adapters/actions/HmacSchoolCubeGrantIssuer.mjs";
 import { HmacSchoolBookGrantIssuer as HmacSchoolBookGrantIssuer } from "../adapters/actions/HmacSchoolBookGrantIssuer.mjs";
 import { HmacSchoolLaunchPreviewTokenIssuer as HmacSchoolLaunchPreviewTokenIssuer } from "../adapters/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs";
+import { HmacSchoolDebriefGrantIssuer as HmacSchoolDebriefGrantIssuer } from "../adapters/actions/HmacSchoolDebriefGrantIssuer.mjs";
 import { YamlDocumentFileStore as YamlDocumentFileStore } from "../adapters/YamlDocumentFileStore.mjs";
 import { LanguageReelService as LanguageReelService } from "../application/LanguageReelService.mjs";
 import { FilesystemLanguageReelRepository as FilesystemLanguageReelRepository } from "../adapters/FilesystemLanguageReelRepository.mjs";
@@ -28,6 +29,7 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
   let schoolBookGrants = null;
   let schoolBookPanelGrants = null;
   let schoolLaunchPreviewTokens = null;
+  let schoolDebriefGrants = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
   } catch (error) {
@@ -53,6 +55,9 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
   }
   try { schoolLaunchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.launch-preview.tokens-unavailable', { error: error.message });
+  }
+  try { schoolDebriefGrants = new HmacSchoolDebriefGrantIssuer({ key: jwtSecret }); } catch (error) {
+    rootLogger.error('school.debrief.grants-unavailable', { error: error.message });
   }
   const schoolDocumentFileStore = new YamlDocumentFileStore();
   const languageReelService = new LanguageReelService({
@@ -121,5 +126,5 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
     },
     logger: rootLogger.child({ module: 'school-language' })
   });
-  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
+  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, schoolDebriefGrants, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
 }
