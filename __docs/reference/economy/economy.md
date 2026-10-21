@@ -237,6 +237,17 @@ The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
 - Pass ids hold colons and may end in `.2`; `encodeURIComponent` them in the
   consume and refund paths.
 
+**Coins changed.** With an `eventBus` (from `createEconomyApi`), every write
+that moves a balance or a pass publishes `economy.coins-changed {userId, reason}`
+on the internal bus (`publish`, not `broadcast`), through the `IEconomyEvents`
+port (`adapters/eventbus/EventBusEconomyEvents.mjs`). `reason` is `deposit`,
+`adjust`, `earn`, `mint`, `convert`, `pass-bought`, `pass-consumed` or
+`pass-refunded`. A dry run, a duplicate, a zero grant or a refusal publishes
+nothing. Metered sessions do not publish. A listener that throws is logged
+(`economy.coins-changed.publish-failed`) and never fails the write. School
+forwards it to the Portal's `school` topic (see the bank strip in the School
+README).
+
 **Pass errors** carry a `code`. `PASS_CAP`, `PASS_NOT_SOLD`, `PASS_NOT_ACTIVE`
 and `PASS_REFUND_CLOSED` → 409: the request is well-formed, and the day, the
 catalog or the pass's state refuses it (a price the owner sets later can make

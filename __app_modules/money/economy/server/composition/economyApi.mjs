@@ -9,6 +9,7 @@ import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProject
 import { EconomyService } from "../application/EconomyService.mjs";
 import { EarnRulesService } from "../application/EarnRulesService.mjs";
 import { BankService } from "../application/BankService.mjs";
+import { EventBusEconomyEvents } from "../adapters/eventbus/EventBusEconomyEvents.mjs";
 import { createEconomyRouter } from "../api/economy.mjs";
 
 /**
@@ -22,13 +23,16 @@ import { createEconomyRouter } from "../api/economy.mjs";
  *   the day a pass belongs to come from one setting.
  * @param {number} [config.boundaryHour=4]
  * @param {string} [config.processTimezone] - defaults to `process.env.TZ`
+ * @param {Object|null} [config.eventBus] - the house bus; with it, every write
+ *   that moves a balance or a pass publishes `economy.coins-changed {userId}`.
+ *   Without it nobody is told.
  * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, bankService: BankService,
  *   configProjection: EconomyConfigProjection, studyCalendar: {timezone: string|null, boundaryHour: number},
  *   useEvidenceLabels: (fn: (userId: string) => Promise<Map<string,string>|null>) => void,
  *   router: import('express').Router }}
  */
 export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4,
-  processTimezone = process.env.TZ }) {
+  processTimezone = process.env.TZ, eventBus = null }) {
   // The week-close job fires in the process TZ (the container's, from
   // system.yml); the bank and the passes read the household's. Say so once
   // when they differ.
@@ -42,6 +46,7 @@ export function createEconomyApi({ configService, logger = console, clock = () =
     configProjection,
     clock,
     ...studyCalendar,
+    events: eventBus ? new EventBusEconomyEvents({ eventBus }) : null,
     logger,
   });
   // The household earn rules (weekly earnings preview; the future payout).

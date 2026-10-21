@@ -1,0 +1,70 @@
+// The Portal's bank strip: one chip per kid, roster order, a Print under each.
+// It sits in the board pane, which is `pointer-events: none` so the board never
+// intercepts a tap (School.scss `.school-lock-split__board`). The strip is the
+// pane's other tappable neighbour, beside the book door, so it re-enables them.
+// Calm by design: no motion, no ranking colours, the school's own tokens.
+.school-bank-strip {
+  pointer-events: auto;
+  user-select: none;
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: .5rem;
+  min-width: 0;
+}
+
+.school-bank-strip__kids {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .6rem;
+}
+
+.school-bank-strip__kid {
+  display: flex; flex-direction: column; gap: .4rem;
+  min-width: 0;
+  padding: .55rem .75rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface);
+}
+
+.school-bank-strip__chip {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  min-width: 0;
+}
+.school-bank-strip__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 700; font-size: 1.05rem;
+}
+.school-bank-strip__coins { display: inline-flex; align-items: center; gap: .3rem; font-size: 1.35rem; font-weight: 700; }
+.school-bank-strip__coin, .school-bank-strip__gem { width: 1.1em; height: 1.1em; }
+.school-bank-strip__gem { width: .85em; height: .85em; }
+.school-bank-strip__sneak { color: var(--school-board-done); font-size: .9em; }
+.school-bank-strip__napping { color: var(--school-muted); font-size: .95rem; font-style: italic; }
+
+.school-bank-strip__next {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  min-width: 0;
+}
+.school-bank-strip__label {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--school-muted); font-size: .95rem;
+}
+// TouchButton is kiosk-sized for a full-screen choice; on a chip it is a
+// thumb-sized button that still clears the 44px touch floor.
+.school-bank-strip__print.ds-touch {
+  flex: 0 0 auto;
+  min-height: 2.9rem; min-width: 5.5rem; padding: .35rem .9rem;
+  font-size: 1.05rem;
+  border-color: var(--school-border); color: var(--school-fg);
+}
+
+.school-bank-strip__toast {
+  margin: 0; padding: .5rem .85rem;
+  border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface-2); color: var(--school-fg);
+  font-size: 1.05rem;
+}
+
+// Narrow mounts hide the board pane, so the strip rides in the keypad column,
+// under the pad (SchoolApp renders it there below 820px).
+.school-lock-split > .school-bank-strip {
+  padding: 0 clamp(1rem, 4vw, 1.5rem) 1.25rem;
+  box-sizing: border-box;
+}

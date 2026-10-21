@@ -291,4 +291,27 @@ describe('createSchoolLifecycle — school.yml `programs:` + donow (Task 13)', (
     expect(result.wired).toBe(true);
     expect(result.donowSchoolBridge).toBeNull();
   });
+
+  it("forwards the economy's coins-changed to the Portal's school topic", async () => {
+    const handlers = new Map();
+    const sent = [];
+    await createSchoolLifecycle({
+      configService: {
+        getHouseholdAppConfig: () => ({ lifecycle: { enabled: true }, printing: { host: 'printer.local' } }),
+        getDataDir: () => dataDir,
+        getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
+        getDeviceConfig: () => null,
+        getTimezone: () => null,
+      },
+      schoolService: { listBanks: () => [], getBank: () => null, activeSittings: async () => [] },
+      eventBus: {
+        broadcast(topic, payload) { sent.push({ topic, payload }); },
+        onClientMessage() {},
+        subscribe(topic, handler) { handlers.set(topic, handler); return () => handlers.delete(topic); },
+      },
+      logger: silent,
+    });
+    handlers.get('economy.coins-changed')({ userId: 'kid1', reason: 'mint' });
+    expect(sent).toContainEqual({ topic: 'school', payload: { event: 'coins-changed', learnerId: 'kid1' } });
+  });
 });

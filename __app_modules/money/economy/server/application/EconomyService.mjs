@@ -50,7 +50,7 @@ function repairFigures(fromHalf, from, ref) {
 }
 
 export class EconomyService {
-  #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId; #timezone; #boundaryHour;
+  #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId; #timezone; #boundaryHour; #events;
 
   /**
    * @param {object} deps
@@ -58,9 +58,13 @@ export class EconomyService {
    *   pass belongs to. Composition hands the SAME timezone and boundary hour
    *   to the earnings preview, so a pass's day and the preview's "today" agree.
    * @param {number} [deps.boundaryHour=4]
+   * @param {{coinsChanged: (fact: {userId: string, reason: string}) => void}|null} [deps.events] -
+   *   told after a write that moved a balance or a pass (`IEconomyEvents`).
+   *   Optional: none means nobody is told. Never told for a dry run, a
+   *   duplicate or a refusal, since nothing changed.
    */
   constructor({ datastore, configProjection, logger = console, clock = () => new Date(),
-    timezone = null, boundaryHour = 4,
+    timezone = null, boundaryHour = 4, events = null,
     newTransactionId = () => `txn_${shortId()}`,
     newSessionId = () => `ses_${shortId()}` }) {
     this.#ds = datastore;
@@ -72,6 +76,20 @@ export class EconomyService {
     this.#newSessionId = newSessionId;
     this.#timezone = timezone ?? null;
     this.#boundaryHour = boundaryHour;
+    this.#events = typeof events?.coinsChanged === 'function' ? events : null;
+  }
+
+  /**
+   * Say that `userId`'s coins changed. Called after the write landed; a
+   * listener that throws is logged and never fails the write, which is done.
+   */
+  #coinsChanged(userId, reason) {
+    if (!this.#events) return;
+    try {
+      this.#events.coinsChanged({ userId, reason });
+    } catch (err) {
+      this.#logger.warn?.('economy.coins-changed.publish-failed', { userId, reason, error: err?.message ?? String(err) });
+    }
   }
 
   /** Today's study day (4 am boundary, household timezone): the day a pass belongs to. */
@@ -154,6 +172,7 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note, at: this.#now() }));
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-deposit', { userId, amount, balance: wallet.balance });
+      this.#coinsChanged(userId, 'deposit');
       return { userId, balance: wallet.balance };
     });
   }
@@ -186,6 +205,7 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
+      this.#coinsChanged(userId, 'adjust');
       return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
     });
   }
@@ -254,6 +274,7 @@ export class EconomyService {
       }
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
+      if (grant > 0) this.#coinsChanged(userId, 'earn');
       return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
     });
   }
@@ -303,6 +324,7 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });
+      this.#coinsChanged(userId, 'mint');
       return { userId, minted: owed, duplicate: false, paid, txnId: txn.id, balance: wallet.balance, balances: wallet.balances };
     });
   }
@@ -374,6 +396,7 @@ export class EconomyService {
         const txn = half(original.to, original.got, toRef, original);
         await this.#appendThenSnapshot(userId, txn, ref);
         this.#logger.debug?.('economy.convert.repaired', { userId, ref, from, ...original });
+        this.#coinsChanged(userId, 'convert');
         return result('repaired', original.spent, original.got, { ...opts, txnIds: [txn.id] });
       }
       const toRef = `${ref}:${to}`;
@@ -396,6 +419,7 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, out);
       await this.#appendThenSnapshot(userId, back, ref);
       this.#logger.debug?.('economy.convert', { userId, ref, from, to, rate, spent, got });
+      this.#coinsChanged(userId, 'convert');
       return result('converted', spent, got, { txnIds: [out.id, back.id] });
     });
   }
@@ -511,6 +535,7 @@ export class EconomyService {
         throw err;
       }
       this.#logger.info('economy.pass.bought', { learnerId: userId, privilege, coin, price, passId: id });
+      this.#coinsChanged(userId, 'pass-bought');
       const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay }).find((p) => p.passId === id);
       return { userId, pass, balances: wallet?.balances ?? foldBalances([...txns, spend]) };
     });
@@ -579,6 +604,7 @@ export class EconomyService {
         meta: { pass: pass.pass, privilege: pass.privilege, state: 'consumed', playedMs } });
       await this.#ds.appendTransaction(userId, marker);
       this.#logger.info('economy.pass.consumed', { learnerId: userId, privilege: pass.privilege, coin: pass.coin, price: pass.price, passId, playedMs });
+      this.#coinsChanged(userId, 'pass-consumed');
       return { userId, pass: this.#stateAfter(txns, marker, userId, passId), duplicate: false };
     });
   }
@@ -638,6 +664,7 @@ export class EconomyService {
       writes.push(markerFor());
       const wallet = await this.#appendThenSnapshot(userId, writes, passId, 'economy.pass.snapshot-failed');
       this.#logger.info('economy.pass.refunded', { ...log, refunded: owed, playedMs, reason: why });
+      this.#coinsChanged(userId, 'pass-refunded');
       return { userId, pass: this.#stateAfter(txns, writes, userId, passId), refunded: owed, duplicate: false, balances: wallet?.balances ?? foldBalances([...txns, ...writes]) };
     });
   }

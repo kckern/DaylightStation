@@ -49,6 +49,7 @@ import { moduleLaunchAllowed } from "./catalog/certification.js";
 import Keypad from "./selfService/Keypad.jsx";
 import AgendaStatusBoard from "./status/AgendaStatusBoard.jsx";
 import BoardHeader from "./status/BoardHeader.jsx";
+import BankStrip, { useNarrowPortal } from "./bank/BankStrip.jsx";
 import LaunchCard from "./selfService/LaunchCard.jsx";
 import LaunchCardPreview from "./selfService/LaunchCardPreview.jsx";
 import ScanCeremony from "./selfService/ScanCeremony.jsx";
@@ -637,6 +638,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
+  // Below 820px the board pane is hidden, so the bank strip moves under the
+  // keypad. One mount either way: the strip's reads are not doubled.
+  const narrowPortal = useNarrowPortal();
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -1063,6 +1067,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 onEntryStart={selfService.startEntry}
                 clearToken={keypadClearToken}
               />
+              {narrowPortal && <BankStrip kids={roster} deviceId={deviceIdFor(screenId)} />}
               {/* Read-only status pane: names appear here by design — this is
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
@@ -1076,6 +1081,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   <BookShelfDoor screenId={screenId} roster={roster}
                     onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                 </BoardHeader>
+                {/* The bank strip: each kid's silver and next sheet, with a
+                    Print. Its own tappable neighbour, like the door; its
+                    reads never wait on (or for) the board's. */}
+                {!narrowPortal && <BankStrip kids={roster} deviceId={deviceIdFor(screenId)} />}
                 <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} />
               </div>
             </div>

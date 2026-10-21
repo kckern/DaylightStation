@@ -368,3 +368,20 @@ describe('books endpoints', () => {
     await expect(schoolApi.books.shelf('kid', 'g1')).resolves.toEqual({ ok: false, status: 0, data: null });
   });
 });
+
+describe('schoolApi bank strip', () => {
+  it('reads the economy bank, the next item and prints the next sheet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.economyBank('kid 1');
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/v1/economy/users/kid%201/bank');
+    await schoolApi.nextItem('kid1');
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/v1/school/self-service/learners/kid1/next');
+    await schoolApi.nextItem('kid1', 'math');
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/v1/school/self-service/learners/kid1/next?subject=math');
+    await schoolApi.printNext('kid1', null, 'portal');
+    const [url, opts] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/self-service/learners/kid1/print-next');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ deviceId: 'portal' });
+  });
+});

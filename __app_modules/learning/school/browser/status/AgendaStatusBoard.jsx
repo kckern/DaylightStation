@@ -60,16 +60,9 @@ import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
+import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, COINS_COALESCE_MS } from "./schoolRefreshEvents.js";
 
 const REFRESH_MS = 5 * 60_000;
-const SCHOOL_REFRESH_EVENTS = new Set([
-  'session-issued',
-  'session-grade-changed',
-  'story-read',
-  'book-log-changed',
-  'piano-lesson-complete',
-  'program-day-bypass-changed',
-]);
 
 // The subject wall's own icon set, addressed by subject id (icons/MANIFEST.md:
 // "filenames are the subject ids"), so the board and the wall say the same
@@ -632,11 +625,20 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
+  // Coins moved on the ledger (gold after a convert): the coin figures only,
+  // once per burst, since a payout run mints entry by entry.
+  const coinsTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(coinsTimerRef.current), []);
   const onSchool = useCallback((payload) => {
     const event = payload?.event;
     if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
     const learnerId = payload?.learnerId ?? null;
     if (!learnerId || !rosterIds.has(learnerId)) return;
+    if (event === COINS_CHANGED) {
+      clearTimeout(coinsTimerRef.current);
+      coinsTimerRef.current = setTimeout(refreshCoins, COINS_COALESCE_MS);
+      return;
+    }
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
     if (event === 'story-read' && eventStudyDay && eventStudyDay !== studyDay) return;

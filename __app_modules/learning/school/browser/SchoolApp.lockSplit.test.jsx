@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import SchoolApp from "./SchoolApp.jsx";
 
 vi.mock("./schoolApi.js", () => ({
@@ -68,6 +68,18 @@ describe('locked kiosk split home', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('below 820px the bank strip rides in the keypad column, since the board pane is hidden', async () => {
+    vi.stubGlobal('matchMedia', (query) => ({
+      matches: query === '(max-width: 820px)', media: query, addEventListener() {}, removeEventListener() {},
+    }));
+    render(<SchoolApp mode="locked" />);
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    const split = document.querySelector('.school-lock-split');
+    await screen.findByTestId('bank-chip');
+    expect(split.querySelectorAll('.school-bank-strip')).toHaveLength(1);
+    expect(split.querySelector(':scope > .school-bank-strip')).toBeTruthy();
+  });
+
   it('renders keypad AND the read-only status board side by side', async () => {
     render(<SchoolApp mode="locked" />);
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
@@ -75,7 +87,11 @@ describe('locked kiosk split home', () => {
     const split = document.querySelector('.school-lock-split');
     expect(split).toBeTruthy();
     expect(split.getAttribute('data-side')).toBe('keypad-left');
-    expect(screen.getByText('Learner3')).toBeInTheDocument();
+    expect(within(screen.getByTestId('agenda-status-board')).getByText('Learner3')).toBeInTheDocument();
+    // The bank strip rides in the board pane, between the header and the board.
+    const strip = split.querySelector('.school-lock-split__board > .school-bank-strip');
+    expect(strip).toBeTruthy();
+    expect(within(strip).getByText('Learner3')).toBeInTheDocument();
     // The board loads in TWO stages: the roster names it, and `teacherDay`
     // supplies what has been passed today. `agenda-status-board` exists after
     // the first, so a synchronous query here races the second — it failed at

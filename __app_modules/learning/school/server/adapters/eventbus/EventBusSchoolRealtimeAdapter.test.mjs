@@ -83,3 +83,14 @@ it('broadcasts authoritative assessment invalidations and subscribes completion 
   await bus.handlers.get('school.card-ladder.day-complete')(fact);
   expect(change).toHaveBeenCalledWith(fact);
 });
+
+it("forwards the economy's coins-changed to the Portal's school topic, learner by learner", async () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  const unsubscribe = gateway.relayCoinsChanged();
+  await bus.handlers.get('economy.coins-changed')({ userId: 'kid1', reason: 'mint' });
+  await bus.handlers.get('economy.coins-changed')({ reason: 'mint' });
+  expect(bus.sent).toEqual([{ topic: 'school', payload: { event: 'coins-changed', learnerId: 'kid1' } }]);
+  unsubscribe();
+  expect(bus.handlers.has('economy.coins-changed')).toBe(false);
+});

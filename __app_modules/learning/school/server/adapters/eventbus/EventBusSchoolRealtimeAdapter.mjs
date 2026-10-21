@@ -95,6 +95,15 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
   }
   onCompletionStateObserved(handler) { return this.#on('school.completion.state-observed', handler); }
+  /**
+   * The economy's `economy.coins-changed {userId}`, as a School fact. The
+   * topic is a string on the bus: School imports nothing from the economy.
+   */
+  onCoinsChanged(handler) {
+    return this.#on('economy.coins-changed', handler, (wire) => (
+      typeof wire?.userId === 'string' && wire.userId.trim() ? { learnerId: wire.userId.trim() } : null
+    ));
+  }
   onPrintSheet(config, handler) {
     const unsubscribers = printTopics(config).map((topic) => this.#on(topic, handler, (wire) => (
       wire?.event === 'sheet' && Array.isArray(wire.marks) ? decodePrintSheet(wire.marks) : null
@@ -125,6 +134,14 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   completionStateObserved(fact) { return this.#publish('school.completion.state-observed', fact); }
   schoolCeremony(announcement) { return this.#broadcast('school', { event: 'piano-lesson-complete', ...announcement }); }
   programDayBypassChanged(announcement) { return this.#broadcast('school', { event: 'program-day-bypass-changed', ...announcement }); }
+  /** The Portal's bank strip re-reads that learner's bank on this. */
+  coinsChanged({ learnerId }) { return this.#broadcast('school', { event: 'coins-changed', learnerId }); }
+  /**
+   * Forward every coins-changed fact to the `school` topic, one for one. The
+   * Portal coalesces a burst (a payout run mints line by line); this does not.
+   * Returns the unsubscribe.
+   */
+  relayCoinsChanged() { return this.onCoinsChanged((fact) => this.coinsChanged(fact)); }
   storyReadRecorded(announcement) { return this.#broadcast('school', { event: 'story-read', ...announcement }); }
   readingRoomChanged(location, { kind, ...announcement }) { return this.#broadcast(`reading:${location}`, { event: kind, ...announcement }); }
   printAgendaReady(announcement) { return this.#broadcast('omr', { event: 'agenda-suppressed', ...announcement }); }

@@ -1097,6 +1097,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // The same setting the weekly measures read; the earnings preview takes
     // its study calendar from here, so passes and the preview share "today".
     timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
+    // Writes that move coins publish `economy.coins-changed`; School forwards
+    // it to the Portal's bank strip.
+    eventBus,
     logger: rootLogger.child({ module: 'economy-api' })
   });
 

@@ -1289,6 +1289,11 @@ export async function createSchoolLifecycle({
     logger.warn?.('school.lifecycle.completion-bridge-unwired', { reason: 'no eventBus' });
   }
 
+  // The Portal's bank strip hears about coins on the `school` topic it already
+  // subscribes to: the economy publishes `economy.coins-changed` internally
+  // and this forwards it. A topic string, not an import.
+  if (realtimeSubscriptionsAvailable) schoolRealtime?.relayCoinsChanged?.();
+
   // The two parent-only writes. They are use cases rather than raw store calls
   // because the router may not be the place a child's sign-off is checked.
   const resolveReviewItem = new ResolveReviewItem({

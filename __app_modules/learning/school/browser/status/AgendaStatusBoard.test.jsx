@@ -633,6 +633,27 @@ describe('a scan updates the board immediately', () => {
     },
   );
 
+  it('a coins-changed burst re-reads the coins once, and not the plans', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
+    const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+    const plans = schoolApi.teacherDay.mock.calls.length;
+    const coins = schoolApi.earningsRoster.mock.calls.length;
+
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+
+    await waitFor(() => expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins + 1));
+    expect(schoolApi.teacherDay.mock.calls.length).toBe(plans);
+  });
+
   it('ignores story events outside the displayed roster, from another study day, and unrelated traffic', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
