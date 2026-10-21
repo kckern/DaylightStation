@@ -244,12 +244,13 @@ describe('useSchoolGameAccess and the early pass', () => {
   const bankCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('/economy/'));
 
   it('unlocks with via: "pass" while today\'s pass is active', async () => {
-    h.bank = bankWith({ state: 'active', capUsed: true, coin: 'silver', paid: 3 });
+    h.bank = bankWith({ state: 'active', capUsed: true, coin: 'silver', paid: 3, refundWithinMs: 120000 });
     const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
     await waitFor(() => expect(result.current.unlocked).toBe(true));
     expect(result.current).toMatchObject({
       status: 'ready', state: 'incomplete', unlocked: true, via: 'pass',
-      pass: expect.objectContaining({ passId: PASS_ID, state: 'active' }),
+      // The server's refund window rides along for the session's settle.
+      pass: expect.objectContaining({ passId: PASS_ID, state: 'active', refundWithinMs: 120000 }),
     });
     expect(bankCalls()[0][0]).toBe('api/v1/economy/users/kid-one/bank');
     expect(h.log.info).toHaveBeenCalledWith(

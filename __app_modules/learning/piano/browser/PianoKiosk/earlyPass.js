@@ -16,10 +16,12 @@ import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 /** The privilege the piano's pass opens. `pass` and `offers` are keyed by it. */
 export const EARLY_PASS_PRIVILEGE = 'piano.games';
 /**
- * Under this much play, a game that ends hands the coins back. The server
- * records its own `refund_within_ms` on the purchase and bounds a refund by
- * its own clock too, so this is the client's half of the rule, never the
- * whole of it: a refund can still be refused.
+ * The refund window when the server's pass state does not carry one
+ * (`refundWithinMs` absent, an older server). The session settles against
+ * `pass.refundWithinMs` when it is there. The server records its own
+ * `refund_within_ms` on the purchase and bounds a refund by its own clock
+ * too, so this is the client's half of the rule, never the whole of it: a
+ * refund can still be refused.
  */
 export const REFUND_WITHIN_MS = 60_000;
 

@@ -140,9 +140,12 @@ labelled by its heading.
   Games lock again until school is done." plus Print, or "Games are locked again until
   school is done." when no game ever started) replaces the routes; nothing remounts a game or
   opens the picker. Switching back to the player who bought it shows the relock screen.
-- *Settle modes.* `by-play-time` refunds when `playedMs < 60000` and consumes otherwise;
-  `playedMs` runs from the game's own mount, so a pass that never reached a game played
-  0 ms. `force-consume` is used for a profile switch (whatever the play time), and for
+- *Settle modes.* `by-play-time` refunds when `playedMs` is under the pass's refund window
+  less a 5 s network margin, and consumes otherwise. The window is the server's
+  `pass.refundWithinMs` (60 s by default, from the catalog's `refund_within_ms`);
+  `REFUND_WITHIN_MS` in `earlyPass.js` is used only when the server sends none, and a
+  window of null or 0 never asks for a refund. `playedMs` runs from the game's own mount,
+  so a pass that never reached a game played 0 ms. `force-consume` is used for a profile switch (whatever the play time), and for
   any end after a completion.
 - *Completion.* `registerCompletion` marks the pass completed synchronously, before the
   board game's save is awaited, so an exit a moment later consumes. It consumes once the
@@ -157,7 +160,15 @@ force-consumed as a `switch` and the game remounts, so the new pass's clock star
 own game's mount. The relock is kept per player. The host's unmount is deferred one microtask and cancelled by a remount,
 so a StrictMode unmount-remount pair cannot spend the pass, and no timer outlives the
 screen. Hiding these routes in React `<Activity>` would run that cleanup and settle the
-pass. A refund refused as `PASS_NOT_ACTIVE` is only logged. Any other refund failure
+pass.
+
+Ended pass ids also outlive the screen: each is written to localStorage per learner
+(`piano.earlyPass.ended.{learnerId}`, pruned after a day), and on a fresh mount a stored
+id relocks without starting a game, even while the server still reads the pass active (a
+reload, or a consume that never landed). The server closes that gap too: a pass reads
+consumed `max_active_ms` (30 minutes by default) after its purchase. Every storage access
+is wrapped, so storage that throws only loses the guard. A refund refused as
+`PASS_NOT_ACTIVE` is only logged. Any other refund failure
 (`PASS_REFUND_CLOSED`, a 5xx, the network) tries one consume; if that fails too, it is
 logged and left. Nothing retries.
 

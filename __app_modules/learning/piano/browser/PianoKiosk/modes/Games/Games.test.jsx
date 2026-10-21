@@ -217,6 +217,9 @@ beforeEach(() => {
   probe.sawContext = false;
   gateProps.last = null;
   gatePassResult.value = { score: 1 };
+  // Ended pass ids persist per learner (a reload must not reopen one); each
+  // test starts with none.
+  localStorage.clear();
   // Which physical kiosk this browser is. Captured from the launch URL and
   // persisted; the host reads it rather than stamping a shared literal.
   localStorage.setItem('piano.kioskDeviceId', 'yellow-room-tablet');
@@ -889,6 +892,109 @@ describe('Games mode — early pass', () => {
     await new Promise((resolve) => { setTimeout(resolve, 10); });
     expect(screen.getByTestId('probe-game')).toBeTruthy();
     expect(terminalCalls()).toHaveLength(0);
+  });
+
+  describe('the refund window comes from the server', () => {
+    const withWindow = (refundWithinMs) => {
+      withActivePass();
+      schoolAccess.pass = { ...activePass(), refundWithinMs };
+    };
+    it('a 120 s window refunds an exit at 90 s', async () => {
+      withWindow(120_000);
+      renderGames('/games/probe-game', 'learner1');
+      now += 90_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/refund')).toHaveLength(1));
+      expect(posts('/refund')[0][1]).toEqual({ playedMs: 90_000, reason: 'exit' });
+      expect(posts('/consume')).toHaveLength(0);
+    });
+    it('a 120 s window still consumes inside the 5 s network margin (at 116 s)', async () => {
+      withWindow(120_000);
+      renderGames('/games/probe-game', 'learner1');
+      now += 116_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      expect(posts('/refund')).toHaveLength(0);
+    });
+    it('a 30 s window refunds at 20 s and consumes at 28 s', async () => {
+      withWindow(30_000);
+      const view = renderGames('/games/probe-game', 'learner1');
+      now += 20_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/refund')).toHaveLength(1));
+      view.unmount();
+      localStorage.clear();
+      daylightApi.mockClear();
+      withWindow(30_000);
+      renderGames('/games/probe-game', 'learner1');
+      now += 28_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      expect(posts('/refund')).toHaveLength(0);
+    });
+    it.each([[null], [0]])('a window of %s never asks for a refund: an exit at 5 s consumes', async (refundWithinMs) => {
+      withWindow(refundWithinMs);
+      renderGames('/games/probe-game', 'learner1');
+      now += 5_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      expect(posts('/refund')).toHaveLength(0);
+    });
+  });
+
+  describe('an ended pass survives a reload', () => {
+    const KEY = 'piano.earlyPass.ended.learner1';
+    it('after a remount, a pass that ended (its consume lost) relocks and never opens a game', async () => {
+      withActivePass();
+      consumeError = new Error('Network error: offline');
+      const view = renderGames('/games/probe-game', 'learner1');
+      now += 90_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      view.unmount();
+      expect(Object.keys(JSON.parse(localStorage.getItem(KEY)))).toEqual([PASS_ID]);
+
+      // The kiosk reloads; the server still says the pass is active.
+      daylightApi.mockClear();
+      probe.mounts = 0;
+      withActivePass();
+      renderGames('/games/probe-game', 'learner1');
+      expect(screen.getByText('Games are locked again until school is done.')).toBeTruthy();
+      expect(screen.queryByTestId('probe-game')).toBeNull();
+      await new Promise((resolve) => { setTimeout(resolve, 10); });
+      expect(probe.mounts).toBe(0);
+      expect(terminalCalls()).toHaveLength(0);
+    });
+    it('a stored id for another pass, or another learner, does not lock this one', () => {
+      localStorage.setItem(KEY, JSON.stringify({ 'pass:learner1:2026-10-20': now }));
+      localStorage.setItem('piano.earlyPass.ended.learner2', JSON.stringify({ [PASS_ID]: now }));
+      withActivePass();
+      renderGames('/games/probe-game', 'learner1');
+      expect(screen.getByTestId('probe-game')).toBeTruthy();
+    });
+    it('ids older than a day are pruned', async () => {
+      localStorage.setItem(KEY, JSON.stringify({ [PASS_ID]: now - 25 * 60 * 60_000, 'pass:learner1:2026-10-20': now - 60_000 }));
+      withActivePass();
+      renderGames('/games/probe-game', 'learner1');
+      expect(screen.getByTestId('probe-game')).toBeTruthy();
+      now += 90_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      expect(Object.keys(JSON.parse(localStorage.getItem(KEY))).sort()).toEqual([PASS_ID, 'pass:learner1:2026-10-20'].sort());
+      expect(JSON.parse(localStorage.getItem(KEY))[PASS_ID]).toBe(now);
+    });
+    it('a throwing localStorage changes nothing: the game runs, settles once and relocks', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('SecurityError'); });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+      withActivePass();
+      renderGames('/games/probe-game', 'learner1');
+      expect(screen.getByTestId('probe-game')).toBeTruthy();
+      now += 90_000;
+      fireEvent.click(screen.getByText('probe-exit'));
+      expect(await screen.findByText('Good game!')).toBeTruthy();
+      await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+      expect(terminalCalls()).toHaveLength(1);
+    });
   });
 
   it('a refund that fails for an unknown reason tries ONE consume', async () => {
