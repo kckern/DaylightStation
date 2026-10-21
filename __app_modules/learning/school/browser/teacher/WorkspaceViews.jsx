@@ -38,6 +38,7 @@ import CardLadderWordsPanel, { cardLadderEnrollments } from "./panels/CardLadder
 import { LessonIdentity, SubjectIdentity } from "./CurriculumIdentity.jsx";
 import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacherUrl.js";
 import { grownUpActionFor } from "./obligationCopy.js";
+import { teacherLog } from "./teacherLog.js";
 import { curriculumTitles } from "./curriculumTitles.js";
 import { localDay, humanDate, humanDateTime } from "./teacherDates.js";
 import { presentSessionState } from "./sessionPresentation.js";
@@ -827,6 +828,28 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
+/**
+ * The child's sheet as it came back, marked. Two steps on purpose: the
+ * step-up PIN first, then a link — opening a tab after an async PIN prompt
+ * is what popup blockers refuse.
+ */
+function MarkedSheet({ artifactId }) {
+  const [url, setUrl] = useState(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-postview' });
+  const key = `postview:${artifactId}`;
+  useEffect(() => () => { if (url) URL.revokeObjectURL?.(url); }, [url]);
+  if (url) return <a href={url} target="_blank" rel="noreferrer">Open the marked sheet (PDF)</a>;
+  return <>
+    <button type="button" disabled={busy === key} onClick={() => run(key,
+      ({ stepUpToken }) => teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken),
+      { stepUp: { action: 'artifact.postview', resource: artifactId },
+        onSuccess: (blob) => { setUrl(URL.createObjectURL(blob)); teacherLog.nav('postview-open', { artifactId }); } })}>
+      See the marked sheet
+    </button>
+    {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
+  </>;
+}
+
 export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel = 'Back' }) {
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
@@ -1003,9 +1026,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
                 lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'}
                 // The read model says which paper the server will reprint;
                 // offering any other is a button that only ever refuses.
-                action={artifact.reprintable === true
-                  ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
-                  : null}
+                action={<>
+                  {artifact.reprintable === true
+                    && <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />}
+                  {/* The marked sheet exists only once the child has handed the
+                      work back, and only for their own sheet — a receipt is the
+                      result, not the work, and a sheet with no bytes on file
+                      cannot be drawn on. */}
+                  {artifact.role !== 'result-receipt' && artifact.availability !== 'unavailable'
+                    && !['created', 'issued', 'reprinted'].includes(sessionState?.state)
+                    && <MarkedSheet artifactId={artifact.artifactId} />}
+                </>}
               />
             ))}</div>
           </section>}

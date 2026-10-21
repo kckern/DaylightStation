@@ -311,6 +311,54 @@ describe('TeacherConsole workspace', () => {
     expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, pin: null }), 'grant-1');
   });
 
+  // The step-up first, then a link: opening a tab after an async PIN prompt
+  // is what popup blockers refuse.
+  it('shows the child\'s marked sheet after a step-up, as a link', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    const created = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    try {
+      teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+        schema: 'school.teacher-session/v3', sessionId: 'ses_m', revision: 2,
+        taxonomy: { subject: 'Math', lessonTitle: 'Fractions' },
+        state: { learnerId: 'user_4', state: 'graded', machineGrade: { percent: 80 }, gradedPercent: 80 }, events: [],
+        artifacts: [
+          { artifactId: 'a1', kind: 'worksheet', availability: 'regenerable', reprintable: false },
+          { artifactId: 'r1', kind: 'result-receipt', role: 'result-receipt', availability: 'exact', reprintable: false },
+        ],
+      } });
+      teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: true, status: 200, data: new Blob(['%PDF']) });
+      window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_m');
+      render(<TeacherConsole />);
+      // One per worksheet: a receipt is not the child's sheet.
+      const button = await screen.findByRole('button', { name: 'See the marked sheet' });
+      expect(screen.getAllByRole('button', { name: 'See the marked sheet' })).toHaveLength(1);
+      fireEvent.click(button);
+      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      const link = await screen.findByRole('link', { name: 'Open the marked sheet (PDF)' });
+      expect(link).toHaveAttribute('href', 'blob:x');
+      expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'artifact.postview', resource: 'a1' });
+      expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalledWith('a1', 'grant-1');
+    } finally {
+      URL.createObjectURL = created;
+    }
+  });
+
+  it('offers no marked sheet before the child has handed the work in', async () => {
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v3', sessionId: 'ses_i', revision: 1,
+      taxonomy: { subject: 'Math', lessonTitle: 'Fractions' },
+      state: { learnerId: 'user_4', state: 'issued' }, events: [],
+      artifacts: [{ artifactId: 'a2', kind: 'worksheet', availability: 'regenerable', reprintable: true }],
+    } });
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_i');
+    render(<TeacherConsole />);
+    await screen.findByRole('heading', { name: 'Fractions' });
+    expect(screen.queryByRole('button', { name: 'See the marked sheet' })).toBeNull();
+  });
+
   it('reads a bookmarked session without a local teacher claim', async () => {
     const priorSessionReads = teacherWorkspaceApi.session.mock.calls.length;
     teacherWorkspaceApi.session
