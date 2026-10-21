@@ -645,7 +645,14 @@ turning their monitor into a solo playback key.
 When `unattended_policy` is enabled and none of the configured `superusers` is
 in the active roster, each governed video starts locked until a non-guest,
 non-exempt child reaches the configured startup zone. That achievement is
-latched for the current media item. The engine then replaces the ordinary
+latched for the current media item. Every other eligible child must reach the
+startup zone once within 120 seconds of joining, or of the video opening for
+children already present. Inside that window nothing pauses. Past it, the
+engine adds a `__unattended_child_start` requirement (`rule: 'all'`) naming only
+the overdue children, which takes the normal warning, grace and lock path.
+Each child's start is kept for the media item, through leaving and rejoining or
+a supervisor's visit, and is reset when the media changes
+(`governance.unattended.child_started` / `child_start_overdue`). The engine then replaces the ordinary
 random challenge schedule with cyclic `all` challenges at the configured zones
 on the exact configured interval. By default those targets alternate between
 Warm and the startup zone (normally Hot). These challenges bypass the 20-BPM

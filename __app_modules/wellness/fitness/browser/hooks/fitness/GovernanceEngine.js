@@ -25,6 +25,10 @@ const normalizeZoneId = (value) => {
     .replace(/[^a-z0-9]+/g, '-');
 };
 
+// Unattended: every eligible child must reach the startup zone once within this
+// window of joining (or of the video opening, for children already present).
+const CHILD_START_WINDOW_MS = 120_000;
+
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 // Supported governance audio-cue triggers (see _normalizeAudioCues).
@@ -2977,10 +2981,13 @@ export class GovernanceEngine {
         this.challengeState.nextChallengeRemainingMs = null;
         this.challengeState.videoLocked = false;
       }
+      const mediaId = this.media?.id ?? null;
       this._unattendedPolicyState = {
-        mediaId: this.media?.id ?? null,
+        mediaId,
         active: false,
         startupSatisfied: false,
+        // A child who leaves and rejoins within the same video keeps their start.
+        children: state.mediaId === mediaId ? (state.children || {}) : {},
       };
       return policy;
     }
@@ -3004,6 +3011,22 @@ export class GovernanceEngine {
 
     const startupZone = String(settings.startup_zone || 'hot').toLowerCase();
     const startupRank = this._getZoneRank(startupZone);
+    const now = this._now();
+    const currentMediaId = this.media?.id ?? null;
+    if (state.mediaId !== currentMediaId) {
+      state.mediaId = currentMediaId;
+      state.startupSatisfied = false;
+      state.children = {};
+    }
+    state.children = state.children || {};
+    for (const id of eligibleChildren) {
+      const rank = this._getZoneRank(userZoneMap?.[id]);
+      const child = state.children[id] || (state.children[id] = { since: now, started: false });
+      if (!child.started && Number.isFinite(rank) && Number.isFinite(startupRank) && rank >= startupRank) {
+        child.started = true;
+        getLogger().info('governance.unattended.child_started', { contentId: state.mediaId, participantId: id });
+      }
+    }
     if (!state.startupSatisfied && Number.isFinite(startupRank)) {
       const achiever = eligibleChildren.find((id) => {
         const rank = this._getZoneRank(userZoneMap?.[id]);
@@ -3011,6 +3034,10 @@ export class GovernanceEngine {
       });
       if (achiever) {
         state.startupSatisfied = true;
+        // The 120s window counts from the video opening for children already present.
+        for (const child of Object.values(state.children)) {
+          if (!child.started) child.since = now;
+        }
         this._playbackEvidence = this._capturePlaybackEvidence(achiever, startupZone, 'startup_gate');
         getLogger().info('governance.unattended.startup_satisfied', {
           contentId: state.mediaId,
@@ -3032,6 +3059,18 @@ export class GovernanceEngine {
       };
     }
 
+    const overdue = eligibleChildren.filter((id) => !state.children[id]?.started
+      && now - state.children[id].since >= CHILD_START_WINDOW_MS);
+    for (const id of overdue) {
+      if (!state.children[id].overdueLogged) {
+        state.children[id].overdueLogged = true;
+        getLogger().info('governance.unattended.child_start_overdue', { contentId: state.mediaId, participantId: id });
+      }
+    }
+    const childStartRequirement = overdue.length
+      ? [{ id: '__unattended_child_start', type: 'unattended_startup', zone: startupZone, rule: 'all', eligibleChildren: overdue }]
+      : [];
+
     const intervalSeconds = Math.max(1, Math.round(Number(settings.challenge_interval_seconds) || 180));
     const timeAllowedSeconds = Math.max(1, Math.round(Number(settings.challenge_time_allowed_seconds) || 90));
     const configuredChallengeZones = Array.isArray(settings.challenge_zones)
@@ -3043,6 +3082,7 @@ export class GovernanceEngine {
     const effectiveChallengeZones = challengeZones.length > 0 ? challengeZones : [startupZone];
     return {
       ...policy,
+      requirements: [...(policy.requirements || []), ...childStartRequirement],
       challenges: [{
         id: '__unattended_zone_cycle',
         intervalRangeSeconds: [intervalSeconds, intervalSeconds],
@@ -3223,7 +3263,10 @@ export class GovernanceEngine {
       if (definitionType === 'unattended_startup') {
         const zoneId = String(definition.zone || 'hot').toLowerCase();
         const requiredRank = this._getZoneRank(zoneId);
-        const metUsers = (definition.eligibleChildren || []).filter((id) => {
+        const children = definition.eligibleChildren || [];
+        const ruleAll = definition.rule === 'all';
+        const required = ruleAll ? children.length : 1;
+        const metUsers = children.filter((id) => {
           const rank = this._getZoneRank(userZoneMap?.[id]);
           return Number.isFinite(rank) && rank >= requiredRank;
         });
@@ -3234,13 +3277,13 @@ export class GovernanceEngine {
           zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
           targetZoneId: zoneId,
           severity: requiredRank,
-          rule: 1,
-          ruleLabel: this._describeRule(1, 1),
-          requiredCount: 1,
+          rule: ruleAll ? 'all' : 1,
+          ruleLabel: this._describeRule(ruleAll ? 'all' : 1, required),
+          requiredCount: required,
           actualCount: metUsers.length,
           metUsers,
-          missingUsers: metUsers.length ? [] : [...(definition.eligibleChildren || [])],
-          satisfied: metUsers.length >= 1,
+          missingUsers: children.filter((id) => !metUsers.includes(id)),
+          satisfied: metUsers.length >= required,
         };
       } else if (definitionType !== 'zone') {
         summary = this.requirementTypes.evaluate(definitionType, definition, {

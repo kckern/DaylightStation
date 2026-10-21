@@ -71,7 +71,7 @@ describe('GovernanceEngine — unattended child policy', () => {
 
   it('alternates all-child warm and hot challenges after startup unlock', () => {
     const h = harness();
-    h.evaluate({ first: 'hot', second: 'active' });
+    h.evaluate({ first: 'hot', second: 'hot' }); // both started: these tests are about challenges, not the D3 start gate
     h.advance(179_999);
     h.evaluate({ first: 'active', second: 'active' });
     expect(h.engine.challengeState.activeChallenge).toBeNull();
@@ -93,7 +93,7 @@ describe('GovernanceEngine — unattended child policy', () => {
 
   it('locks a failed all-warm challenge and recovers only when every child is warm', () => {
     const h = harness();
-    h.evaluate({ first: 'hot', second: 'active' });
+    h.evaluate({ first: 'hot', second: 'hot' }); // both started: these tests are about challenges, not the D3 start gate
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
     h.advance(90_000);
@@ -117,7 +117,7 @@ describe('GovernanceEngine — unattended child policy', () => {
     h.engine.session = {
       getParticipantProfile: () => ({ heartRate: 134, zoneConfig }),
     };
-    h.evaluate({ first: 'hot', second: 'active' });
+    h.evaluate({ first: 'hot', second: 'hot' }); // both started: these tests are about challenges, not the D3 start gate
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
     h.evaluate({ first: 'warm', second: 'warm' });
@@ -196,5 +196,55 @@ describe('GovernanceEngine — no eligible child', () => {
     const h = harness();
     h.evaluate({ visitor: 'active' }, ['visitor']);
     expect(h.engine.phase).toBe('unlocked');
+  });
+});
+
+describe('GovernanceEngine — per-child start gate', () => {
+  it('a second child does not lock the video while inside the 120s window', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'hot' });
+    expect(h.engine.phase).toBe('unlocked');
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    h.advance(119_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(['unlocked']).toContain(h.engine.phase);
+  });
+  it('past 120s without hot, the start requirement names only that child', () => {
+    const h = harness();
+    h.engine.config.grace_period_seconds = 30; // harness has no grace; 0 grace locks with no warning step
+    h.evaluate({ 'child-a': 'hot' });
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    h.advance(121_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    const req = h.engine.requirementSummary.requirements.find((r) => r.id === '__unattended_child_start');
+    expect(req.missingUsers).toEqual(['child-b']);
+    expect(h.engine.phase).toBe('warning');
+  });
+  it('a child already hot when the video opens is started immediately', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
+    h.advance(200_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.requirementSummary.requirements.some((r) => r.id === '__unattended_child_start')).toBe(false);
+  });
+  it('rejoining on the same video keeps the started state; a new video resets it', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
+    h.evaluate({ 'child-a': 'active' });
+    h.advance(200_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.requirementSummary.requirements.some((r) => r.id === '__unattended_child_start')).toBe(false);
+    h.engine.setMedia({ id: 'episode-2', type: 'episode', labels: ['cardio'] });
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.phase).toBe('pending'); // new video: hot gate again
+  });
+  it('a stand-down on the same video (parent visits) keeps each child\'s start', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
+    h.evaluate({ parent: 'active', 'child-a': 'active', 'child-b': 'active' });
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'active' }); // fresh hot gate reopens
+    h.advance(200_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.requirementSummary.requirements.some((r) => r.id === '__unattended_child_start')).toBe(false);
   });
 });
