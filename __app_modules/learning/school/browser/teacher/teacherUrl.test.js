@@ -174,3 +174,20 @@ describe('teacherLearnerOpsPath', () => {
     expect(teacherLearnerOpsPath('user_2')).toBe('/school/teacher/students/user_2/operations');
   });
 });
+
+// Older Safari has URLSearchParams without `.size`; a query built there must
+// still reach the URL instead of being dropped as "empty".
+describe('query strings without URLSearchParams.size', () => {
+  it('keeps the query on the ops and session paths', () => {
+    const desc = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+    Object.defineProperty(URLSearchParams.prototype, 'size', { configurable: true, get: () => undefined });
+    try {
+      expect(teacherLearnerOpsPath('user_2', { reason: 'r' })).toBe('/school/teacher/students/user_2/operations?reason=r');
+      expect(teacherSessionPath('user_2', 's1', '/school/teacher', { from: 'today' }))
+        .toBe('/school/teacher/students/user_2/history/sessions/s1?from=today');
+    } finally {
+      if (desc) Object.defineProperty(URLSearchParams.prototype, 'size', desc);
+      else delete URLSearchParams.prototype.size;
+    }
+  });
+});

@@ -480,7 +480,9 @@ describe('TodayTab', () => {
       const links = within(strip).getAllByRole('link');
       expect(links).toHaveLength(2);
       expect(links[0]).toHaveTextContent('User_4 · Science — This program can’t start →');
-      expect(links[0]).toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=program_unavailable&subject=science');
+      // The day rides along too; this digest names none, so it is today's.
+      expect(links[0]).toHaveAttribute('href', expect.stringMatching(
+        /^\/school\/teacher\/students\/user_4\/operations\?reason=program_unavailable&subject=science&day=\d{4}-\d{2}-\d{2}$/));
       expect(links[1]).toHaveTextContent('User_2 · Math — This course has no more lessons →');
       expect(links[1]).toHaveAttribute('href', '/school/teacher/students/user_2/courses');
     });

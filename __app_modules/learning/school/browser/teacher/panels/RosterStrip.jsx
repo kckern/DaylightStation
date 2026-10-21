@@ -136,12 +136,19 @@ function needsAdult(obligation) {
  * Where a grown-up action goes, carrying the row it came from:
  * - a hold → the failed lesson itself, where "Offer another try" lives;
  * - a finished course → the learner's Courses;
- * - everything else → the learner's own Operations, told the reason, subject
- *   and unit, so it can name the problem and preselect the repair.
+ * - everything else → the learner's own Operations, told the reason, subject,
+ *   unit and day, so it can name the problem and preselect the repair.
+ *
+ * A held subject's row rarely carries the failed session: agenda.mjs makes
+ * the held entry the section's `next`, and the failed attempt is from an
+ * earlier day, so nothing of today's joins it. The digest's `attention` item
+ * for that unit is what still names the session, so it is asked first.
  */
-function grownUpHref(linkTo, learnerId, base, row = null) {
+function grownUpHref(linkTo, learnerId, base, row = null, { attention = [], studyDay = null } = {}) {
+  const unitId = row?.offer?.unitId ?? row?.session?.unitId ?? null;
   if (linkTo === 'history') {
-    const sessionId = row?.session?.remediation?.activeSessionId ?? row?.session?.sessionId ?? null;
+    const held = unitId ? attention.find((item) => item.unitId === unitId) : null;
+    const sessionId = held?.sessionId ?? row?.session?.remediation?.activeSessionId ?? row?.session?.sessionId ?? null;
     return sessionId
       ? teacherSessionPath(learnerId, sessionId, base, { from: 'today' })
       : teacherLearnerPath(learnerId, 'history', null, base);
@@ -151,6 +158,7 @@ function grownUpHref(linkTo, learnerId, base, row = null) {
     reason: row?.obligation?.reason ?? null,
     subject: row?.subject ?? null,
     unit: row?.session?.unitId ?? row?.offer?.unitId ?? null,
+    day: studyDay,
   }, base);
 }
 
@@ -251,7 +259,7 @@ const progressNote = (session) => {
  * sessions under one `excused:caught_up` subject must not print "This course
  * has no more lessons" on two adjacent cards.
  */
-function LessonCard({ row, learnerId, base, onOpen, showObligation = true }) {
+function LessonCard({ row, learnerId, base, onOpen, showObligation = true, attention = [], studyDay = null }) {
   const session = row.session;
   const subject = session?.subject ?? row.subject;
   // A PLANNED LESSON IS AS FULLY DESCRIBED AS A RECORDED ONE.
@@ -394,7 +402,7 @@ function LessonCard({ row, learnerId, base, onOpen, showObligation = true }) {
           {grownUp ? (
             <span className={`teacher-lesson-card__obligation${faulted ? ' teacher-lesson-card__obligation--fault' : ''}`}>
               <strong>{grownUp.headline}</strong>
-              <a className="teacher-lesson-card__obligation-link" href={grownUpHref(grownUp.linkTo, learnerId, base, row)}>
+              <a className="teacher-lesson-card__obligation-link" href={grownUpHref(grownUp.linkTo, learnerId, base, row, { attention, studyDay })}>
                 {grownUp.linkLabel}
               </a>
             </span>
@@ -482,7 +490,7 @@ function DayDots({ rows }) {
  * The expanded day for one learner: the joined rows as a grid of lesson cards.
  * The join itself lives on the entry above — the collapsed card needs it too.
  */
-function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, agenda, onOpenArtifact }) {
+function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, agenda, attention = [], onOpenArtifact }) {
   useEffect(() => {
     teacherLog.nav('drill-open', { learnerId, lessons: rows.length, markedToday: markedToday.length });
   }, [learnerId]); // eslint-disable-line react-hooks/exhaustive-deps -- one open, one event
@@ -515,7 +523,8 @@ function LearnerDayGrid({ learnerId, rows, markedToday = [], base, studyDay, age
                 if (gridRow.obligation) seenObligations.add(gridRow.obligation);
                 return (
                   <LessonCard key={gridRow.key} row={gridRow} learnerId={learnerId} base={base}
-                    onOpen={onOpenArtifact} showObligation={showObligation} />
+                    onOpen={onOpenArtifact} showObligation={showObligation}
+                    attention={attention} studyDay={studyDay} />
                 );
               });
             })()}
@@ -587,6 +596,9 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   const claimedCarried = new Set(joined.rows.filter((joinedRow) => joinedRow.carriedOver)
     .map((joinedRow) => joinedRow.session?.sessionId));
   const markedToday = carriedOver.filter((session) => !claimedCarried.has(session.sessionId));
+  // Holds only a grown-up can move, by unit — a held lesson's link reads its
+  // failed session from here (see `grownUpHref`).
+  const attention = row.attention ?? [];
   const openArtifact = (kind, session) => {
     teacherLog.nav('artifact-open', { learnerId, sessionId: session.sessionId, kind });
   };
@@ -651,7 +663,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   const grownUpSignature = grownUpEntries.map((r) => [
     r.key, r.obligation.reason, r.subject ?? '', r.session?.sessionId ?? '',
     r.session?.remediation?.activeSessionId ?? '', r.session?.unitId ?? r.offer?.unitId ?? '',
-  ].join(':')).join('|');
+  ].join(':')).join('|') + `#${attention.map((item) => `${item.unitId}=${item.sessionId}`).join(',')}`;
   // Three answers, not two: a tally, "we could not tell", and — while the read
   // is still in flight — nothing at all.
   useEffect(() => {
@@ -665,11 +677,11 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
         reason: r.obligation.reason,
         subject: r.subject ?? null,
         headline: action.headline,
-        href: grownUpHref(action.linkTo, learnerId, base, r),
+        href: grownUpHref(action.linkTo, learnerId, base, r, { attention, studyDay }),
       };
     }) : [], { known: settled });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- grownUpSignature stands in for grownUpEntries
-  }, [onNeedsGrownUp, settled, planUnknown, learnerId, grownUpSignature, base]);
+  }, [onNeedsGrownUp, settled, planUnknown, learnerId, grownUpSignature, base, studyDay]);
   return (
     <div className="teacher-roster__entry">
       <button
@@ -764,7 +776,8 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
       {open && <div id={panelId} className="teacher-roster__details">
         <LearnerDayGrid
           learnerId={learnerId} rows={joined.rows} base={base}
-          markedToday={markedToday} studyDay={studyDay} agenda={agenda} onOpenArtifact={openArtifact}
+          markedToday={markedToday} studyDay={studyDay} agenda={agenda} attention={attention}
+          onOpenArtifact={openArtifact}
         />
       </div>}
     </div>
@@ -806,18 +819,23 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
   // dashboard-report effect below must fire on an actual roster-order
   // change, never on an unrelated re-render.
   const rowOrder = rows.map((row) => row.learnerId).join('|');
-  // The same stand-in for `kids`, which the strip's items read for names.
-  const kidIds = kids.map((k) => k.id).join('|');
+  // The same stand-in for `kids`, which the strip's items read for names —
+  // names included, so a rename refreshes the strip.
+  const kidIds = kids.map((k) => `${k.id}=${k.name}`).join('|');
   useEffect(() => {
     if (!onNeedsGrownUp) return;
-    const count = Object.values(grownUpByLearner)
-      .reduce((sum, report) => sum + (report?.entries?.length ?? 0), 0);
+    // Count, unknowns and links all come from the SAME set — the learners on
+    // the roster now. A report left behind by a learner who has since left
+    // the roster used to keep counting while its links had gone.
+    const reports = rows.map((row) => ({ row, report: grownUpByLearner[row.learnerId] }))
+      .filter(({ report }) => Boolean(report));
+    const count = reports.reduce((sum, { report }) => sum + (report.entries?.length ?? 0), 0);
     // Learners whose plan could not be read at all. The count above is short
     // by an unknown amount for each one, and saying so is the whole point.
-    const unknown = Object.values(grownUpByLearner).filter((report) => report?.known === false).length;
+    const unknown = reports.filter(({ report }) => report.known === false).length;
     // One link per affected subject, in roster order, each named for its
     // child — the strip used to carry a single href to the first learner.
-    const items = rows.flatMap((row) => (grownUpByLearner[row.learnerId]?.entries ?? [])
+    const items = reports.flatMap(({ row, report }) => (report.entries ?? [])
       .map((entry) => ({
         ...entry,
         learnerId: row.learnerId,

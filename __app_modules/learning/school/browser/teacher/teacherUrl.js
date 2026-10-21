@@ -128,7 +128,9 @@ export function teacherLearnerOpsPath(learnerId, { reason = null, subject = null
   if (subject) query.set('subject', subject);
   if (unit) query.set('unit', unit);
   if (day) query.set('day', day);
-  return query.size ? `${path}?${query}` : path;
+  // `toString()`, not `.size`: older Safari has no `URLSearchParams.size`.
+  const qs = query.toString();
+  return qs ? `${path}?${qs}` : path;
 }
 
 /** The day record for one learner. An omitted day means "today" to the view. */
@@ -161,5 +163,7 @@ export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { 
   const query = new URLSearchParams();
   if (from) query.set('from', from);
   if (studyDay && STUDY_DAY.test(studyDay)) query.set('studyDay', studyDay);
-  return query.size ? `${path}?${query}` : path;
+  // `toString()`, not `.size`: older Safari has no `URLSearchParams.size`.
+  const qs = query.toString();
+  return qs ? `${path}?${qs}` : path;
 }
