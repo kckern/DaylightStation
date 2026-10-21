@@ -201,6 +201,14 @@ describe('TeacherConsole workspace', () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe('/school/teacher/dashboard?open=user_4');
   });
 
+  it('returns a lesson opened from the action queue to the queue', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_x?from=queue');
+    render(<TeacherConsole />);
+    const back = await screen.findByRole('button', { name: /Back to action queue/ });
+    act(() => fireEvent.click(back));
+    expect(`${window.location.pathname}${window.location.search}`).toBe('/school/teacher/queue');
+  });
+
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the

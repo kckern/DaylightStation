@@ -30,6 +30,8 @@ vi.mock("../../schoolApi.js", () => ({
     printApprove: vi.fn(),
     printDeny: vi.fn(),
     quizRequestDismiss: vi.fn(),
+    // The queue names each review row's lesson from the catalog.
+    curriculumUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
   },
 }));
 const { schoolApi } = await import("../../schoolApi.js");

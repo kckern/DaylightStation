@@ -97,3 +97,21 @@ describe('ReviewQueueView — "Can\'t mark this"', () => {
     })));
   });
 });
+
+describe('ReviewQueueView — which lesson', () => {
+  it('names the lesson and links to it, and says where a paper answer is', () => {
+    render(<ReviewQueueView
+      items={[{ sessionId: 'ses_9', itemId: 'q2', learnerId: 'user_4', unitId: 'unit-a', reason: 'free_response', given: null, questionNumber: 2 }]}
+      kids={[{ id: 'user_4', name: 'User_4' }]} onResolved={vi.fn()}
+      titleFor={(id) => (id === 'unit-a' ? 'Illinois' : null)} />);
+    const link = screen.getByRole('link', { name: /Illinois/ });
+    expect(link.getAttribute('href')).toBe('/school/teacher/students/user_4/history/sessions/ses_9?from=queue');
+    expect(screen.getByText(/written on the paper sheet/i)).toBeTruthy();
+  });
+
+  it('still links to the session when the lesson title is unknown', () => {
+    paint();
+    const link = screen.getByRole('link', { name: /Open the lesson/ });
+    expect(link.getAttribute('href')).toBe('/school/teacher/students/kid1/history/sessions/ses_1?from=queue');
+  });
+});
