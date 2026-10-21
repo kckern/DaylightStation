@@ -42,7 +42,6 @@ import { computeAllowLoadingOverlayFullscreen } from "./loadingOverlayFullscreen
 import { useScreenDataRefetch } from "../../../../../__capabilities/screen-host/browser/data.mjs";
 import useLoopWindow from "./hooks/useLoopWindow.js";
 import StudyControls from "./footer/StudyControls.jsx";
-import { isWatchComplete } from '@shared-contracts/media/watchCompletion.mjs';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -1175,18 +1174,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // Check if currently stalled (3C fix)
     const isStalled = Boolean(resilienceState?.stalled || resilienceState?.waitingToPlay);
 
-    // Near the end = past 90% with little left; a long tail of real content
-    // (the last cup of a racing longplay) is not credits (watchCompletion).
-    const nearEnd = isWatchComplete({ percent, playhead: positionSeconds, duration: durationSeconds });
-
+    // Completion is the backend's call (the library's watch_completion rule);
+    // this only reports a natural end as finished.
     let status = 'none';
-    if (durationSeconds < 30 && naturalEnd && !isStalled) {
+    if (naturalEnd && !isStalled) {
       status = 'completed';
-    } else if ((naturalEnd || nearEnd) && !isStalled) {
-      // Only mark completed if not stalled (3C fix)
-      status = 'completed';
-    } else if (nearEnd && isStalled) {
-      // Near end but stalled - don't mark as completed (3C fix)
+    } else if (percent != null && percent >= 90 && isStalled) {
+      // Near the end but stalled - don't post at all (3C fix)
       status = 'stalled_near_end';
     } else if (percent != null && percent >= 10) {
       status = 'in_progress';
