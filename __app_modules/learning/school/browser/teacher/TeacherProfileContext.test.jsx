@@ -215,3 +215,66 @@ describe('a step-up refusal always settles or stays retryable', () => {
     expect(screen.getByTestId('settled').textContent).toBe('pending');
   });
 });
+
+/**
+ * With no PIN configured the console unlocks and steps up without a dialog.
+ * A refusal there must still carry the server's own words as `message`,
+ * because that is the field useTeacherWrite puts on screen.
+ */
+describe('a refused step-up with no PIN configured shows the server reason', () => {
+  const noPinSession = () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
+      data: { configured: true, teachers: [{ id: 'kckern', name: 'KC' }] } });
+    teacherWorkspaceApi.authStatus.mockResolvedValue({ ok: true, status: 200,
+      data: { active: false, pinRequired: false } });
+  };
+
+  const stepUpAndSettle = async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('kckern'));
+    fireEvent.click(screen.getByText('step-up'));
+    await waitFor(() => expect(screen.getByTestId('settled').textContent).not.toBe('pending'));
+    expect(screen.queryByLabelText('PIN')).toBeNull();
+    return JSON.parse(screen.getByTestId('settled').textContent);
+  };
+
+  it('carries data.error as message', async () => {
+    noPinSession();
+    teacherWorkspaceApi.unlock.mockResolvedValueOnce({ ok: true, status: 200, data: { active: true, userId: 'kckern' } });
+    teacherWorkspaceApi.stepUp.mockResolvedValueOnce({ ok: false, status: 403,
+      data: { error: 'That action is closed today.' } });
+    expect(await stepUpAndSettle()).toMatchObject({
+      ok: false, refused: true, status: 403,
+      message: 'That action is closed today.', error: 'That action is closed today.',
+    });
+  });
+
+  it('reads a nested data.error.message', async () => {
+    noPinSession();
+    teacherWorkspaceApi.unlock.mockResolvedValueOnce({ ok: true, status: 200, data: { active: true, userId: 'kckern' } });
+    teacherWorkspaceApi.stepUp.mockResolvedValueOnce({ ok: false, status: 403,
+      data: { error: { message: 'Nested reason.' } } });
+    expect(await stepUpAndSettle()).toMatchObject({ ok: false, message: 'Nested reason.' });
+  });
+
+  it('falls back to the generic sentence when the body has no reason', async () => {
+    noPinSession();
+    teacherWorkspaceApi.unlock.mockResolvedValueOnce({ ok: true, status: 200, data: { active: true, userId: 'kckern' } });
+    teacherWorkspaceApi.stepUp.mockResolvedValueOnce({ ok: false, status: 500, data: null });
+    expect(await stepUpAndSettle()).toMatchObject({
+      ok: false, refused: true, status: 500, message: 'Could not authorize that action.',
+    });
+  });
+
+  it('a refused unlock also carries the server reason', async () => {
+    noPinSession();
+    teacherWorkspaceApi.unlock.mockResolvedValueOnce({ ok: false, status: 403,
+      data: { message: 'The console is locked for the night.' } });
+    expect(await stepUpAndSettle()).toMatchObject({
+      ok: false, refused: true, status: 403,
+      message: 'The console is locked for the night.', error: 'The console is locked for the night.',
+    });
+    expect(teacherWorkspaceApi.stepUp).not.toHaveBeenCalled();
+  });
+});

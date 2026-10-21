@@ -15,9 +15,11 @@ const STORAGE_KEY = 'school-teacher-claim';
 const TeacherProfileContext = createContext(null);
 
 const inactiveAuthorization = () => ({ active: false, userId: null, idleExpiresAt: null, absoluteExpiresAt: null });
+// The server's own reason for a refusal: `{ error: '…' }`,
+// `{ error: { message: '…' } }` or `{ message: '…' }`, else the fallback.
 const errorMessage = (response, fallback) => (
   typeof response?.data?.error === 'string' ? response.data.error
-    : response?.data?.error?.message ?? fallback
+    : response?.data?.error?.message ?? response?.data?.message ?? fallback
 );
 
 export function TeacherProfileProvider({ children }) {
@@ -139,15 +141,20 @@ export function TeacherProfileProvider({ children }) {
     if (!pinRequiredRef.current) {
       return (async () => {
         const unlocked = await teacherWorkspaceApi.unlock(teacherId, null);
-        if (!unlocked.ok) return { ok: false, error: unlocked.error ?? 'Could not unlock the console.' };
+        if (!unlocked.ok) {
+          const message = errorMessage(unlocked, 'Could not unlock the console.');
+          return { ok: false, refused: true, status: unlocked.status, error: message, message };
+        }
         const next = { active: true, userId: teacherId };
         authorizationRef.current = next;
         setAuthorization(next);
         if (!action) return { ok: true, grantToken: null };
         const grant = await teacherWorkspaceApi.stepUp({ pin: null, action, resource });
-        return grant.ok
-          ? { ok: true, grantToken: grant.data?.grantToken ?? null }
-          : { ok: false, error: grant.error ?? 'Could not authorize that action.' };
+        if (grant.ok) return { ok: true, grantToken: grant.data?.grantToken ?? null };
+        // `message` is what useTeacherWrite puts on screen; `error` stays for
+        // older callers. Both carry the server's words when it gave any.
+        const message = errorMessage(grant, 'Could not authorize that action.');
+        return { ok: false, refused: true, status: grant.status, error: message, message };
       })();
     }
     return new Promise((resolve) => {
