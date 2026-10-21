@@ -11,6 +11,27 @@
  */
 export const TEACHER_BASE = '/school/teacher';
 
+/**
+ * The console path a click on an `<a>` should route to in-app, or null to let
+ * the browser have it. Console links stay real anchors — middle-click and
+ * long-press keep working — and the shell takes only the plain left-click.
+ * Every one of them used to be a full page load that also threw away the
+ * dashboard's open learner (audit 2026-10-21 §0.1).
+ */
+export function consoleLinkTarget(event) {
+  if (!event || event.defaultPrevented || event.button !== 0) return null;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const anchor = event.target?.closest?.('a[href]');
+  if (!anchor) return null;
+  const target = anchor.getAttribute('target');
+  if ((target && target !== '_self') || anchor.hasAttribute('download')) return null;
+  let url;
+  try { url = new URL(anchor.href, globalThis.location?.href); } catch { return null; }
+  if (url.origin !== globalThis.location?.origin) return null;
+  if (url.pathname !== TEACHER_BASE && !url.pathname.startsWith(`${TEACHER_BASE}/`)) return null;
+  return `${url.pathname}${url.search}`;
+}
+
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'coins', 'operations'];
 export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'words', 'coins', 'reports', 'operations'];
 

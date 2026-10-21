@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
+import { consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {
@@ -107,5 +107,43 @@ describe('teacherReadingPath — the open reading is part of the URL', () => {
   it('encodes both, so an id with a slash cannot invent a route', () => {
     expect(teacherReadingPath('learner a', 'rd/1'))
       .toBe('/school/teacher/students/learner%20a/reading?reading=rd%2F1');
+  });
+});
+
+describe('consoleLinkTarget', () => {
+  const anchor = (href, attrs = {}) => {
+    const a = document.createElement('a');
+    a.setAttribute('href', href);
+    Object.entries(attrs).forEach(([k, v]) => a.setAttribute(k, v));
+    const child = document.createElement('span');
+    a.appendChild(child);
+    document.body.appendChild(a);
+    return child; // clicks usually land on a child of the anchor
+  };
+  const click = (target, extra = {}) => ({ target, button: 0, defaultPrevented: false,
+    metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...extra });
+
+  it('routes a plain click on an in-console link, keeping its query', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher/students/a/reading?reading=r1'))))
+      .toBe('/school/teacher/students/a/reading?reading=r1');
+  });
+  it('routes the bare console root', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher')))).toBe('/school/teacher');
+  });
+  it('leaves modified clicks, new tabs, downloads and other buttons to the browser', () => {
+    const t = anchor('/school/teacher/queue');
+    expect(consoleLinkTarget(click(t, { metaKey: true }))).toBeNull();
+    expect(consoleLinkTarget(click(t, { button: 1 }))).toBeNull();
+    expect(consoleLinkTarget(click(t, { defaultPrevented: true }))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue', { target: '_blank' })))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue', { download: '' })))).toBeNull();
+  });
+  it('leaves links outside the console alone', () => {
+    expect(consoleLinkTarget(click(anchor('/api/v1/school/transcript?format=pdf')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacherish')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('https://example.com/school/teacher')))).toBeNull();
+  });
+  it('ignores clicks that are not inside an anchor', () => {
+    expect(consoleLinkTarget(click(document.createElement('div')))).toBeNull();
   });
 });

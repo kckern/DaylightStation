@@ -163,6 +163,19 @@ describe('TeacherConsole workspace', () => {
     expect(rule).toMatch(/grid-auto-flow: column/);
   });
 
+  it('routes an in-console anchor through the shell instead of reloading', async () => {
+    await ready();
+    const probe = document.createElement('a');
+    probe.href = '/school/teacher/students/user_2/history';
+    probe.textContent = 'probe link';
+    document.querySelector('.teacher-workspace__main').appendChild(probe);
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    act(() => { probe.dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.location.pathname).toBe('/school/teacher/students/user_2/history');
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_2 workspace' })).toBeTruthy());
+  });
+
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the

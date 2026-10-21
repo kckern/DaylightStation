@@ -15,7 +15,7 @@ import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileConte
 import { schoolApi } from "../schoolApi.js";
 import { teacherLog } from "./teacherLog.js";
 import {
-  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
+  consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from "./teacherUrl.js";
 import { humanDate, localDay } from "./teacherDates.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
@@ -80,8 +80,18 @@ function TeacherShell({ PianoProgramsPanel }) {
     const next = parseTeacherPath(new URL(path, window.location.origin).pathname);
     setRoute(next);
     setRailOpen(false);
+    // A new page starts at its top; a replace (a canonicalized URL) does not move.
+    if (!replace) { try { window.scrollTo(0, 0); } catch { /* jsdom */ } }
     teacherLog.nav('workspace', { kind: next.kind, section: next.section, learnerId: next.learnerId, sessionId: next.sessionId });
   }, []);
+
+  // One delegated handler for every console link (see `consoleLinkTarget`).
+  const onLinkClick = useCallback((event) => {
+    const path = consoleLinkTarget(event);
+    if (!path) return;
+    event.preventDefault();
+    navigate(path);
+  }, [navigate]);
 
   useEffect(() => {
     teacherLog.nav('mounted', { kind: initial.kind, section: initial.section, learnerId: initial.learnerId });
@@ -186,7 +196,7 @@ function TeacherShell({ PianoProgramsPanel }) {
 
   return (
     /* Grown-up admin: dates, bank ids, reasons. Never Hangul. */
-    <div className="teacher-console-page" data-ime="off">
+    <div className="teacher-console-page" data-ime="off" onClick={onLinkClick}>
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
           <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
