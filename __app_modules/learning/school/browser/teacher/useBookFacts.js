@@ -22,6 +22,15 @@ import { schoolApi } from "../schoolApi.js";
 import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 import { teacherLog } from "./teacherLog.js";
 
+/**
+ * An API call that rejects (a network error, a thrown parse) is a failed
+ * read like any other — `{ ok: false, status: 0 }` — and never an unhandled
+ * rejection out of the effect.
+ */
+const settle = (call) => Promise.resolve().then(call).catch((error) => ({
+  ok: false, status: 0, data: null, error: error?.message ?? String(error),
+}));
+
 export const IDLE_BOOK_FACTS = Object.freeze({ bookStatus: 'idle', book: null, readersStatus: 'idle', readers: null });
 
 /**
@@ -48,7 +57,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
     }
     (async () => {
       if (!reload) {
-        const resolved = await schoolApi.books.resolve(isbn13);
+        const resolved = await settle(() => schoolApi.books.resolve(isbn13));
         if (!alive) return;
         const book = resolved?.ok && resolved.data?.status === 'ok' && resolved.data.book ? resolved.data.book : null;
         const bookStatus = book ? 'ok' : (resolved?.data?.status === 'not-found' ? 'not-found' : 'unavailable');
@@ -57,7 +66,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
         teacherLog.read('book-facts', { isbn: isbn13, state: bookStatus });
       }
 
-      const readers = await teacherWorkspaceApi.bookReaders(isbn13);
+      const readers = await settle(() => teacherWorkspaceApi.bookReaders(isbn13));
       if (!alive) return;
       const readable = readers?.ok && Array.isArray(readers.data?.readers);
       // A failed RELOAD keeps the last good answer: the saves already made
