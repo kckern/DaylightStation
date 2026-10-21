@@ -66,8 +66,8 @@ plex:12345:
   explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
   them; a record with an empty spots map is judged by its single playhead.
 - Unfinished / finished rules for a spot: `__backend/src/2_domains/content/services/mediaSpots.mjs`
-  (≥ 5 min or ≥ 5% to count as unfinished; finished at the same 90% line as
-  `isWatched`).
+  (≥ 5 min or ≥ 5% to count as unfinished; finished at the same line as
+  `isWatched` — see [Default Classifier](#default-classifier)).
 
 ### Watched / unwatched marks
 
@@ -91,8 +91,23 @@ Classifiers determine when content transitions between states (unwatched, in-pro
 | Condition | State |
 |-----------|-------|
 | `percent === 0` | unwatched |
-| `0 < percent < 90` | in-progress |
-| `percent >= 90` | watched |
+| `percent < 90`, or more than 10 min left | in-progress |
+| `percent >= 90` and at most 10 min left | watched |
+
+The rule is `isWatchComplete` in `shared/contracts/media/watchCompletion.mjs`,
+shared by the backend and the Player. It is behind `MediaProgress.isWatched`,
+the `completedAt` stamp in `RecordPlaybackProgress`, per-screen spots and the
+media-server scrobble. A natural end always counts as watched. With no known
+duration it falls back to the percentage alone.
+
+The remaining-time cap exists because a fixed percentage scales with length.
+The last 10% of a 30-minute class is a cooldown, but the last 10% of a 5-hour
+racing longplay is half an hour of riding. Items up to 100 minutes are
+unaffected; longer ones need more (91.7% of 2 h, 94.4% of 3 h).
+
+A client's `status: 'completed'` on `play/log` is a claim, not a verdict. It
+scrobbles the item on the media server (marking it watched there and clearing
+the server's resume point) only when the same rule agrees.
 
 ### Custom Classifiers
 

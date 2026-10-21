@@ -70,10 +70,25 @@ describe('RecordPlaybackProgress reports the playback session', () => {
     expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: true }));
   });
 
-  it('reports completion on an explicit completed status', async () => {
+  it('reports completion on an explicit completed status near the end', async () => {
+    const report = reporter();
+    await build({ reportPlaybackSession: report }).execute(progress({ status: 'completed', percent: 95, seconds: 1710 }));
+    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: true }));
+  });
+
+  // 2026-10-20: FitnessPlayer closed a 4h51m racing longplay at 94% and sent
+  // status 'completed'. The scrobble marked it watched on Plex and wiped its
+  // resume point with 17 minutes, a whole cup, still unplayed.
+  it('does NOT report completion for a completed status with a long tail left', async () => {
+    const report = reporter();
+    await build({ reportPlaybackSession: report }).execute(progress({ status: 'completed', percent: 94, seconds: 16429 }));
+    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: false }));
+  });
+
+  it('does NOT report completion for a completed status early in the item', async () => {
     const report = reporter();
     await build({ reportPlaybackSession: report }).execute(progress({ status: 'completed' }));
-    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: true }));
+    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: false }));
   });
 
   it('does NOT report when the request names no surface', async () => {

@@ -57,6 +57,20 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
     expect(typeof persisted.completedAt).toBe('string');
   });
 
+  test('does not stamp completedAt past 90% when a long tail is left', async () => {
+    // 4h51m racing longplay at 94%: 17 minutes (a whole cup) still to play
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const app = makeApp({ existingState: null, setSpy });
+
+    await request(app)
+      .post('/log')
+      .send({ type: 'plex', assetId: 'plex:674290', percent: 94.1, seconds: 16429 })
+      .expect(200);
+
+    const persisted = setSpy.mock.calls[0][0];
+    expect(persisted.completedAt).toBeFalsy();
+  });
+
   test('does not stamp completedAt when percent < 90', async () => {
     const setSpy = vi.fn().mockResolvedValue(undefined);
     const app = makeApp({ existingState: null, setSpy });
