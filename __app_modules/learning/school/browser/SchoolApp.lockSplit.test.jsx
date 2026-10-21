@@ -68,16 +68,16 @@ describe('locked kiosk split home', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('below 820px the bank strip rides in the keypad column, since the board pane is hidden', async () => {
+  // Owner ruling 2026-10-21: the bank-strip cards above the board are gone —
+  // the board's own coin column is where a child's coins are shown.
+  it('below 820px there is no bank strip in the keypad column', async () => {
     vi.stubGlobal('matchMedia', (query) => ({
       matches: query === '(max-width: 820px)', media: query, addEventListener() {}, removeEventListener() {},
     }));
     render(<SchoolApp mode="locked" />);
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
     const split = document.querySelector('.school-lock-split');
-    await screen.findByTestId('bank-chip');
-    expect(split.querySelectorAll('.school-bank-strip')).toHaveLength(1);
-    expect(split.querySelector(':scope > .school-bank-strip')).toBeTruthy();
+    expect(split.querySelectorAll('.school-bank-strip')).toHaveLength(0);
   });
 
   it('renders keypad AND the read-only status board side by side', async () => {
@@ -88,10 +88,8 @@ describe('locked kiosk split home', () => {
     expect(split).toBeTruthy();
     expect(split.getAttribute('data-side')).toBe('keypad-left');
     expect(within(screen.getByTestId('agenda-status-board')).getByText('Learner3')).toBeInTheDocument();
-    // The bank strip rides in the board pane, between the header and the board.
-    const strip = split.querySelector('.school-lock-split__board > .school-bank-strip');
-    expect(strip).toBeTruthy();
-    expect(within(strip).getByText('Learner3')).toBeInTheDocument();
+    // No bank-strip cards above the board: the coin column is the one place coins show.
+    expect(split.querySelector('.school-bank-strip')).toBeNull();
     // The board loads in TWO stages: the roster names it, and `teacherDay`
     // supplies what has been passed today. `agenda-status-board` exists after
     // the first, so a synchronous query here races the second — it failed at

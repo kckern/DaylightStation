@@ -601,15 +601,6 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 
-  it('a strip chip opens that kid\'s bank straight through the same door', async () => {
-    render(<SchoolApp mode="locked" />);
-    await screen.findByTestId('selfservice-keypad');
-    const open = await screen.findByTestId('bank-chip-open');
-    await act(async () => fireEvent.click(open));
-    expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
-    expect(await screen.findByTestId('bank-screen')).toBeInTheDocument();
-  });
-
   it('an identity lapse closes the bank: the keypad, never someone\'s coins', async () => {
     await openBankFromDoor();
     const now = Date.now();
@@ -640,7 +631,8 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    await act(async () => fireEvent.click(await screen.findByTestId('bank-chip-open')));
+    fireEvent.click(screen.getByTestId('bank-door'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
 
     // Something else takes the panel (a reading shelf, here), then goes home.
@@ -666,7 +658,8 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    await act(async () => fireEvent.click(await screen.findByTestId('bank-chip-open')));
+    fireEvent.click(screen.getByTestId('bank-door'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
     for (const d of '123456') {
       const key = screen.getByRole('button', { name: d });
