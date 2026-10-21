@@ -44,6 +44,11 @@
  * teacher console uses: the agenda dry-run preview (the plan) and the teacher
  * day digest (what's done). Exported for reuse by adult surfaces that may
  * mount a more interactive variant later.
+ *
+ * Two read-only doors are the exceptions: the two weeks open the term popup
+ * (TermModal) and the coin cell opens that kid's bank screen through
+ * `onOpenBank(learnerId)`, which the Portal wires to its economy-bank launch.
+ * Neither starts tracked work. Without `onOpenBank` the cell is plain.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -55,7 +60,7 @@ import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
@@ -288,20 +293,19 @@ function RestDayStatus({ restDay, pinned }) {
  * read lands, and nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
-  const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
-    && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
+  const week = figureInWeek(figure, studyDay);
   const hasGold = Number.isFinite(gold);
-  if (!inWeek && !hasGold) return null;
+  if (!week && !hasGold) return null;
   const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-hidden="true">+{n}</span> : null);
   const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
-  const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
+  const showGems = week && (week.gems > 0 || week.pendingGems > 0);
   return (
     <div className="school-status-board__coin-grid">
-      {inWeek && (
+      {week && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" metal="silver" />
-          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver earned this week`, figure.pendingSilver)}>
-            {figure.silver}{more(figure.pendingSilver)}
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${week.silver} silver earned this week`, week.pendingSilver)}>
+            {week.silver}{more(week.pendingSilver)}
           </span>
         </>
       )}
@@ -314,8 +318,8 @@ function Coins({ figure, gold, studyDay }) {
       {showGems && (
         <>
           <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
-          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`, figure.pendingGems)}>
-            {figure.gems}{more(figure.pendingGems)}
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${week.gems} gem${week.gems === 1 ? '' : 's'} this week`, week.pendingGems)}>
+            {week.gems}{more(week.pendingGems)}
           </span>
         </>
       )}
@@ -323,7 +327,9 @@ function Coins({ figure, gold, studyDay }) {
   );
 }
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
+const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
+
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -341,6 +347,10 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
+  const openBank = useCallback((kidId) => {
+    schoolLog.selfService('status-board.bank-open', { learnerId: kidId });
+    onOpenBank?.(kidId);
+  }, [onOpenBank]);
   // Whose term popup is open (a learner id), or null.
   const [termFor, setTermFor] = useState(null);
   const openTerm = useCallback((kidId) => {
@@ -752,7 +762,22 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               )}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
-              <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+              {onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
+                // The coin cell is the door to this kid's bank screen: a real
+                // button, so keyboard/OK reach it. Opening the bank starts no
+                // tracked work; the bank screen's Back returns to the keypad.
+                <button
+                  type="button"
+                  className="school-status-board__coins-door"
+                  data-testid="board-coins-door"
+                  aria-label={coinDoorLabel(kid.name, figureInWeek(earnings[kid.id], studyDay))}
+                  onClick={() => openBank(kid.id)}
+                >
+                  <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+                </button>
+              ) : (
+                <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+              )}
             </div>
             {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.
                 Rings render only once the number has arrived — a placeholder

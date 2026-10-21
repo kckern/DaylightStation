@@ -1414,6 +1414,26 @@ describe('AgendaStatusBoard silver earned this week', () => {
     expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
   });
 
+  it('the coin cell is a real button that opens that kid\'s bank; stale week or no handler draws none', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    const onOpenBank = vi.fn();
+    const { rerender } = render(<AgendaStatusBoard kids={KIDS} day={DAY} onOpenBank={onOpenBank} />);
+    const door = await screen.findByRole('button', { name: "Learner One's bank, 21 silver this week" });
+    expect(screen.queryByRole('button', { name: /Learner Two's bank/ })).toBeNull();
+    fireEvent.click(door);
+    expect(onOpenBank).toHaveBeenCalledWith('learner1');
+    rerender(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(screen.queryByRole('button', { name: /'s bank/ })).toBeNull();
+  });
+
+  it('a figure for another week draws no bank door', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    render(<AgendaStatusBoard kids={KIDS} day="2026-11-04" onOpenBank={vi.fn()} />);
+    await waitFor(() => expect(schoolApi.earningsRoster).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: /'s bank/ })).toBeNull();
+  });
+
   it('pending is a faded +N after the number, gems a third line only when earned or pending', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(
       priced('learner1', 23, { pending: { silver: 5, gems: 1 } }),

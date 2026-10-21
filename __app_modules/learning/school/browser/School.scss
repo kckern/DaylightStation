@@ -3347,6 +3347,15 @@
     pointer-events: auto;
   }
 
+  // The coin cell as a door to the kid's bank screen: no button chrome, the coins
+  // ARE the control. The board pane is `pointer-events: none`; this takes taps back.
+  &__coins-door {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit;
+    cursor: pointer; border-radius: 6px;
+    pointer-events: auto;
+    &:focus-visible { outline: 3px solid var(--school-coin-silver); outline-offset: 3px; }
+  }
+
   // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
   &__two-weeks {
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;

@@ -51,7 +51,7 @@ import Keypad from "./selfService/Keypad.jsx";
 import AgendaStatusBoard from "./status/AgendaStatusBoard.jsx";
 import BoardHeader from "./status/BoardHeader.jsx";
 import BankScreen from "./bank/BankScreen.jsx";
-import { useBankDoor, BankDoorButton, BankDoorSheet } from "./bank/BankDoor.jsx";
+import { useBankDoor, BankDoorSheet } from "./bank/BankDoor.jsx";
 import LaunchCard from "./selfService/LaunchCard.jsx";
 import LaunchCardPreview from "./selfService/LaunchCardPreview.jsx";
 import ScanCeremony from "./selfService/ScanCeremony.jsx";
@@ -695,9 +695,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     deviceId: deviceIdFor(screenId),
   });
 
-  // The panel's bank door: the coin button in the board header asks whose
-  // bank; a tap on a strip chip opens that kid's straight through the same
-  // request. Like the shelf door, it claims the kid and lands in
+  // The panel's bank door: the coin window's "Open my bank" and a tap on a
+  // strip chip open that kid's bank through the same request. Like the shelf door, it claims the kid and lands in
   // `onPortalLaunch`.
   const launchFromBankDoor = useCallback((target, learnerId) => {
     claim(learnerId);
@@ -705,6 +704,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   }, [claim, onPortalLaunch]);
   const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
   const { choose: chooseBank, close: closeBankDoor } = bankDoor;
+  // The coin window's "Open my bank": the kid is known, so no face picker.
+  // Same request and proof as a strip chip.
+  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-window'); }, [chooseBank]);
   // The door belongs to the locked panel's resting view (keypad + board).
   // Anything that leaves it (a code's card, a runner, a section) closes it.
   const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
@@ -1132,12 +1134,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
                   <div className="school-board-header__doors">
-                    <BankDoorButton door={bankDoor} />
                     <BookShelfDoor screenId={screenId} roster={roster}
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} />
               </div>
               {/* "Whose bank?" is drawn by the panel, not inside the board
                   header: below 820px the board pane is hidden, and a chip in
