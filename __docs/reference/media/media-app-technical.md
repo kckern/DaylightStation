@@ -285,14 +285,20 @@ literal text: `pending` with no sources, then `complete` with a warning
 (`GET …/search` answers the same warning with no items). Text such as
 `mission:impossible` still searches everywhere.
 
-Id-shaped text is also looked up directly, alongside the text search (the
-same shared parser `GET …/search` uses): `plex:697495` and a bare number
-`697495` (digits mean a Plex rating key; the endpoint's 2-character minimum is
-the only length floor) and a bare UUID (Immich). The resolved item streams as
-an extra `results` event for its source, scored as an exact id match so it
-leads the list, with `matchReason: "id-lookup"`; if the text search returns the
-same id it is not repeated. A missing id adds nothing. Logged as
-`content-query.searchStream.direct-id`.
+Id-shaped text is also looked up directly, alongside the text search (`GET …/search`
+does the same). Explicit `plex:697495` always works. Unprefixed text is matched
+against the `directIdPatterns` the source adapters declare (see
+`__docs/reference/content/content-sources.md`): today a bare number of 2 or
+more digits is a Plex rating key and a bare UUID is an Immich asset. If several
+adapters' patterns match, each is looked up in parallel (at most 4), ordered by
+declared `priority` then adapter registration order. No adapter declaring
+patterns means no change. Each hit streams as its own `results` event scored
+as an exact id match with `matchReason: "id-lookup"`, and a text-search hit for
+the same id is upgraded to that score (even if its title lacks the number), so
+the exact item always leads, and the client's merge upgrades an earlier,
+lower-scored copy of the same id. A miss or 404 is silent (no warning); real
+lookup errors surface as warnings. Logged as `content-query.direct-id.matched`,
+`.hit` and `.miss`.
 
 **App behavior requirement:** the app MUST use `/stream` for live search.
 

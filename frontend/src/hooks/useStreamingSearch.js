@@ -177,7 +177,19 @@ export function mergeSearchResults(prev, incoming, query) {
 
   for (const raw of incoming ?? []) {
     const id = itemId(raw);
-    if (id && seenIds.has(id)) continue; // first occurrence wins
+    if (id && seenIds.has(id)) {
+      // First occurrence wins, unless the newcomer is a better match for the
+      // same id (an exact-id lookup arriving after a weak text hit): upgrade
+      // in place so the exact match can lead the list.
+      const at = next.findIndex((it) => itemId(it) === id);
+      if (at >= 0) {
+        const upgraded = scoreSearchResult(raw, query);
+        if (upgraded > (next[at]._score ?? 0)) {
+          next[at] = { ...raw, _score: upgraded, _arrival: next[at]._arrival };
+        }
+      }
+      continue;
+    }
     const src = itemSource(raw);
     const key = (src === 'plex' || src === 'abs') ? crossSourceKey(raw) : null;
     const item = { ...raw, _score: scoreSearchResult(raw, query), _arrival: ++arrival };
