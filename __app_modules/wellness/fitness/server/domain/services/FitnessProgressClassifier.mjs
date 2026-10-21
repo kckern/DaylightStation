@@ -1,6 +1,7 @@
 // __backend/src/1_domains/fitness/services/FitnessProgressClassifier.mjs
 
 import { MediaProgressClassificationStrategy } from "../../../../../../__capabilities/playback/server/domain/services/MediaProgressClassificationStrategy.mjs";
+import { isWatchComplete } from "#shared/contracts/media/watchCompletion.mjs";
 
 /**
  * Fitness-specific media progress classifier
@@ -12,11 +13,14 @@ import { MediaProgressClassificationStrategy } from "../../../../../../__capabil
  * - Users often skip warmups/cooldowns but complete the main workout
  * - Example: 30-min HIIT, user stops at 85% skipping cooldown = "watched"
  *
- * **Long workouts (>45 min):** 95% threshold
+ * **Long workouts (>45 min):** 95% threshold AND at most 5 min left
  * - These are typically multi-session content (e.g., Mario Kart longplay
  *   where you do one cup per day)
  * - Need to preserve progress for resuming across days
  * - Example: 2-hour cycling video at 60% should stay "in_progress"
+ * - A percentage alone scales with length: 5% of a 5-hour longplay is
+ *   15 minutes, a whole cup. Example: 4h51m Sonic Racing stopped at 94%
+ *   (17 min left) stays "in_progress"; so would 96% (12 min left)
  *
  * **Anti-seeking protection:** 30 seconds minimum
  * - Prevents accidental "watched" status from seeking/previewing
@@ -30,6 +34,7 @@ export class FitnessProgressClassifier extends MediaProgressClassificationStrate
    * @param {number} [config.shortThresholdPercent=50] - % to mark short content watched
    * @param {number} [config.longThresholdPercent=95] - % to mark long content watched
    * @param {number} [config.longDurationSeconds=2700] - Duration threshold (45 min)
+   * @param {number} [config.longMaxRemainingSeconds=300] - Most that may be left of long content
    * @param {number} [config.minWatchTimeSeconds=30] - Anti-seeking minimum
    */
   constructor(config = {}) {
@@ -38,6 +43,7 @@ export class FitnessProgressClassifier extends MediaProgressClassificationStrate
       shortThresholdPercent: 50,
       longThresholdPercent: 95,
       longDurationSeconds: 45 * 60,  // 45 minutes
+      longMaxRemainingSeconds: 5 * 60,
       minWatchTimeSeconds: 30,
       ...config
     };
@@ -85,11 +91,16 @@ export class FitnessProgressClassifier extends MediaProgressClassificationStrate
     // Long content (>45 min) uses stricter threshold to preserve
     // resume position for multi-session viewing
     const isLongContent = duration > this.config.longDurationSeconds;
-    const threshold = isLongContent
-      ? this.config.longThresholdPercent
-      : this.config.shortThresholdPercent;
+    if (!isLongContent) {
+      return percent >= this.config.shortThresholdPercent ? 'watched' : 'in_progress';
+    }
 
-    return percent >= threshold ? 'watched' : 'in_progress';
+    // ...and the remaining time must be short too, or a long tail of real
+    // content (the last cup of a longplay) is written off as credits
+    return isWatchComplete(
+      { percent, playhead, duration },
+      { minPercent: this.config.longThresholdPercent, maxRemainingSec: this.config.longMaxRemainingSeconds }
+    ) ? 'watched' : 'in_progress';
   }
 }
 

@@ -23,17 +23,22 @@
  * Thresholds are the RQ-FIND-12 defaults (requirements NF-DEF):
  *   - unfinished once 5 minutes OR 5% has been played;
  *   - finished "once the credits start" — read as the codebase's existing
- *     completion line, 90% (MediaProgress.isWatched, completedAt in
- *     RecordPlaybackProgress). One rule everywhere, so a spot is never
- *     "finished" here and "in progress" to the Player's resume logic.
+ *     completion line, 90% with at most 10 minutes left
+ *     (shared/contracts/media/watchCompletion.mjs, also behind
+ *     MediaProgress.isWatched and completedAt in RecordPlaybackProgress). One
+ *     rule everywhere, so a spot is never "finished" here and "in progress" to
+ *     the Player's resume logic.
  *
  * @module domains/content/services/mediaSpots
  */
+
+import { isWatchComplete } from "#shared/contracts/media/watchCompletion.mjs";
 
 export const SPOT_DEFAULTS = Object.freeze({
   unfinishedMinSeconds: 300,
   unfinishedMinPercent: 5,
   finishedPercent: 90,
+  finishedMaxRemainingSeconds: 600,
 });
 
 const DEVICE_ID_PATTERN = /^(fleet|browser):[A-Za-z0-9._-]{1,96}$/;
@@ -86,7 +91,10 @@ export function spotPercent(spot) {
 }
 
 export function isSpotFinished(spot, policy = SPOT_DEFAULTS) {
-  return spotPercent(spot) >= policy.finishedPercent;
+  return isWatchComplete(
+    { percent: spotPercent(spot), playhead: Number(spot?.playhead) || 0, duration: Number(spot?.duration) || 0 },
+    { minPercent: policy.finishedPercent, maxRemainingSec: policy.finishedMaxRemainingSeconds ?? Infinity },
+  );
 }
 
 export function isSpotOpen(spot, policy = SPOT_DEFAULTS) {

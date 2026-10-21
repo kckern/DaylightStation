@@ -1,4 +1,5 @@
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
+import { isWatchComplete } from "#shared/contracts/media/watchCompletion.mjs";
 
 const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
 
@@ -110,8 +111,13 @@ export class RecordPlaybackProgress {
     const statePercent = estimatedDuration > 0
       ? Math.round((normalizedSeconds / estimatedDuration) * 100)
       : 0;
+    // One completion rule for the stamp and the media-server report below: a
+    // high percentage with a long tail left is not finished (watchCompletion).
+    const watchComplete = naturalEnd === true || isWatchComplete({
+      percent: statePercent, playhead: normalizedSeconds, duration: estimatedDuration,
+    });
     const completedAt = existingState?.completedAt
-      || (statePercent >= 90 ? this.nowTimestamp() : null);
+      || (watchComplete ? this.nowTimestamp() : null);
     const lastPlayed = this.nowTimestamp();
     const spotFields = spotDevice
       ? {
@@ -162,7 +168,10 @@ export class RecordPlaybackProgress {
           contentId: compoundId,
           positionMs: Math.round(normalizedSeconds * 1000),
           durationMs: Math.round(estimatedDuration * 1000),
-          completed: naturalEnd === true || status === 'completed',
+          // A client's `completed` status is a claim, not a verdict: it marks
+          // the item watched on the media server and clears its resume point,
+          // so it must pass the same rule as completedAt.
+          completed: naturalEnd === true || (status === 'completed' && watchComplete),
           at: this.nowEpoch(),
         });
       } catch (error) {

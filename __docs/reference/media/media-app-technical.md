@@ -423,8 +423,10 @@ When a start reports none, the ledger takes the origin a load noted for that
 screen within the last 3 min (routine or remote send, §2.6).
 
 **Defaults** (NF-DEF): unfinished after **5 min or 5%** played; finished at
-**90%** — the line `MediaProgress.isWatched`, `completedAt` and Plex
-next-episode selection already use, read as "the credits have started". An
+**90% with at most 10 minutes left** (`shared/contracts/media/watchCompletion.mjs`)
+— the line `MediaProgress.isWatched`, `completedAt` and the Plex scrobble
+use, read as "the credits have started". The cap keeps the last tenth of a
+multi-hour item (real content, not credits) from counting as finished. An
 item leaves carry on only when no screen holds an open spot. A same-item
 report after **15 quiet minutes** on a screen is a new ledger start; a
 terminal report (`naturalEnd`, or `status` `completed`/`stopped`/`ended`)
