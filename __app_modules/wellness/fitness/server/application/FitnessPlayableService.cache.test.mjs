@@ -11,7 +11,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { FitnessPlayableService } from "./FitnessPlayableService.mjs";
 
-const configService = { getProgressClassification: () => ({}), getSuggestionPolicy: () => ({ slots: 8, lookbackDays: 10 }) };
 const catalog = ({ resolvePlayables, getContainerInfo, getItem, enrichWithWatchState = async (items) => items, listConfiguredShows = async () => ({ shows: [] }) }) => ({
   canonicalize: (id) => ({ contentId: `plex:${String(id).replace(/^(?:plex:)+/, '')}`, localId: String(id).replace(/^(?:plex:)+/, ''), source: 'plex' }),
   resolvePlayables,
@@ -29,9 +28,7 @@ function makeService({ now = () => 0, structureTtlMs = 1000, structureSnapshot =
   const enrichWithWatchState = vi.fn(async (items) => items.map((i) => ({ ...i, watched: true })));
   const listConfiguredShows = vi.fn(async () => ({ shows: [{ id: '1' }] }));
   const service = new FitnessPlayableService({
-    fitnessConfigService: configService,
     contentCatalog: catalog({ resolvePlayables, getContainerInfo, getItem, enrichWithWatchState, listConfiguredShows }),
-    createProgressClassifier: () => ({ classify: () => 'unwatched' }),
     logger: { warn() {}, debug() {}, info() {} },
     structureTtlMs,
     structureSnapshot,
@@ -160,10 +157,8 @@ describe('FitnessPlayableService structure cache', () => {
       .mockRejectedValueOnce(new Error('plex down'))
       .mockResolvedValue([{ id: 'plex:1', title: 'Lesson 1' }]);
     const service = new FitnessPlayableService({
-      fitnessConfigService: configService,
-      contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
-      createProgressClassifier: () => ({ classify: () => 'unwatched' }),
-      logger: { warn() {}, debug() {}, info() {} },
+        contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
+        logger: { warn() {}, debug() {}, info() {} },
     });
     await expect(service.getPlayableEpisodes('675689', 'h')).rejects.toThrow('plex down');
     await expect(service.getPlayableEpisodes('675689', 'h')).resolves.toBeTruthy();
