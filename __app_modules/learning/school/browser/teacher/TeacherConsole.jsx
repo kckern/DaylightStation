@@ -14,6 +14,7 @@ import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { teacherLog } from "./teacherLog.js";
+import { useBacklog } from "./useBacklog.js";
 import {
   consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from "./teacherUrl.js";
@@ -56,8 +57,10 @@ function TeacherShell({ PianoProgramsPanel }) {
   const initial = useMemo(() => parseTeacherPath(window.location.pathname), []);
   const [route, setRoute] = useState(initial);
   const [kids, setKids] = useState([]);
-  const [backlog, setBacklog] = useState(0);
-  const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
+  // One count for the rail badge, the phone tab bar and the dashboard strip;
+  // the queue's panels call `backlog.refresh` when the teacher acts.
+  const backlog = useBacklog();
+  const [shellWarnings, setShellWarnings] = useState({ roster: false });
   const [railOpen, setRailOpen] = useState(false);
   const [logBookOpen, setLogBookOpen] = useState(false);
   // Where focus goes when "Log a book" closes: the control that opened it,
@@ -117,25 +120,6 @@ function TeacherShell({ PianoProgramsPanel }) {
     });
     return () => { alive = false; };
   }, [initial]);
-
-  useEffect(() => {
-    let alive = true;
-    const poll = async () => {
-      // A hidden tab polls nothing; visibilitychange below catches up on return.
-      if (document.visibilityState === 'hidden') return;
-      const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
-      if (!alive) return;
-      setBacklog((review.ok ? (review.data?.items ?? []).length : 0) + (prints.ok && Array.isArray(prints.data) ? prints.data.length : 0));
-      const failed = !review.ok || !prints.ok;
-      setShellWarnings((value) => ({ ...value, backlog: failed }));
-      if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status });
-    };
-    poll();
-    const timer = setInterval(poll, 60_000);
-    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, []);
 
   useEffect(() => {
     const onPop = () => setRoute(parseTeacherPath(window.location.pathname));
@@ -199,8 +183,8 @@ function TeacherShell({ PianoProgramsPanel }) {
     view = views[route.section] ?? views.day;
   } else {
     const views = {
-      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,
-      queue: <QueueView kids={kids} />,
+      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} backlog={backlog} onOpenQueue={() => goGlobal('queue')} />,
+      queue: <QueueView kids={kids} onChanged={backlog.refresh} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
       operations: <OperationsView kids={kids} />,
@@ -233,7 +217,7 @@ function TeacherShell({ PianoProgramsPanel }) {
             <nav className="teacher-workspace__global" aria-label="Workspace">
               {GLOBAL_NAV.map((item) => (
                 <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
-                  <span>{item.label}</span>{item.id === 'queue' && backlog > 0 && <b aria-label={`${backlog} items waiting`}>{backlog}</b>}
+                  <span>{item.label}</span>{item.id === 'queue' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
                 </button>
               ))}
               <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
@@ -252,10 +236,10 @@ function TeacherShell({ PianoProgramsPanel }) {
           {railOpen && <button type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
 
           <div className="teacher-workspace__main">
-            {(shellWarnings.roster || shellWarnings.backlog) && (
+            {(shellWarnings.roster || backlog.failed) && (
               <div className="teacher-workspace__alerts" role="status">
                 {shellWarnings.roster && <span>Student roster unavailable. Navigation may be incomplete.</span>}
-                {shellWarnings.backlog && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
+                {backlog.failed && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
               </div>
             )}
             {learner && route.kind !== 'session' && (
@@ -274,7 +258,7 @@ function TeacherShell({ PianoProgramsPanel }) {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
+          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
           <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />

@@ -415,26 +415,34 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/lifecycle is not enabled/i)).toBe(null);
   });
 
+  // The strip draws the shell's `useBacklog` counts (one count for badge and
+  // dashboard); it no longer reads the queue endpoints itself.
+  const BACKLOG = (over = {}) => ({ review: 0, prints: 0, quizzes: 0, total: 0, failed: false, refresh: vi.fn(), ...over });
+
   it('hides the backlog strip when there is no backlog', async () => {
-    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [] }));
-    schoolApi.printPending.mockResolvedValue(ok([]));
-    schoolApi.quizRequests.mockResolvedValue(ok([]));
-    schoolApi.teacherDay.mockResolvedValue(ok({ learners: [] }));
-    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} />);
-    // Gate on the three backlog reads having SETTLED — asserting absence on
-    // the first paint would pass vacuously, before the strip could exist.
-    await waitFor(() => expect(schoolApi.quizRequests).toHaveBeenCalled());
-    await act(async () => { await Promise.resolve(); });
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG()} />);
+    // Gate on the page having rendered — asserting absence on the first
+    // paint would pass vacuously, before the strip could exist.
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
     expect(screen.queryByTestId('backlog-strip')).not.toBeInTheDocument();
   });
 
   it('shows the backlog strip as soon as anything is waiting', async () => {
-    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{ id: 'r1' }] }));
-    schoolApi.printPending.mockResolvedValue(ok([]));
-    schoolApi.quizRequests.mockResolvedValue(ok([]));
-    schoolApi.teacherDay.mockResolvedValue(ok({ learners: [] }));
-    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} />);
-    await waitFor(() => expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review'));
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ review: 1, total: 1 })} />);
+    expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review · 0 prints · 0 requests →');
+  });
+
+  it('leaves a feature this install lacks out of the strip', async () => {
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ prints: 1, quizzes: null, total: 1 })} />);
+    expect(screen.getByTestId('backlog-strip')).toHaveTextContent('0 to review · 1 print →');
+    expect(screen.getByTestId('backlog-strip')).not.toHaveTextContent(/request/);
+  });
+
+  it('the strip reads no backlog endpoints of its own', async () => {
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ review: 2, total: 2 })} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
+    expect(schoolApi.printPending).not.toHaveBeenCalled();
+    expect(schoolApi.quizRequests).not.toHaveBeenCalled();
   });
 
   it('pending prints and quiz requests render their rows (queue)', async () => {
@@ -520,13 +528,16 @@ describe('wave-2 mutations', () => {
 
   it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
     await claim();
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3',
       { verdict: 'correct', note: null, gradedBy: 'kckern', pin: null }));
     await waitFor(() => expect(schoolApi.lifecycleReview.mock.calls.length).toBeGreaterThan(1));
+    // …and the shell's badge count re-reads at once, not on the next poll.
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('a 403 opens the PIN prompt and marks only that item', async () => {
@@ -567,13 +578,15 @@ describe('wave-2 mutations', () => {
 
   it('print approve/deny post the approver and refresh', async () => {
     await claim();
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
     await waitFor(() => expect(schoolApi.printApprove).toHaveBeenCalledWith('pr_1',
       { approver: 'kckern', pin: null }));
     await waitFor(() => expect(schoolApi.printPending.mock.calls.length).toBeGreaterThan(1));
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('dismissing a quiz request demands a reason and sends it (advocacy A5)', async () => {
@@ -581,7 +594,8 @@ describe('wave-2 mutations', () => {
     schoolApi.quizRequests.mockResolvedValue(ok([
       { at: 't', userId: 'user_2', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
     ]));
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' })); });
@@ -594,6 +608,7 @@ describe('wave-2 mutations', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
       { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {

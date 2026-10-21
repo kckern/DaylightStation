@@ -217,6 +217,19 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByRole('status').textContent).toContain('Action-queue totals unavailable');
   });
 
+  it('the rail badge, the phone tab bar and the dashboard strip show one backlog count', async () => {
+    // Once: this file never resets its mocks, and the shell reads these once on mount.
+    schoolApi.lifecycleReview.mockResolvedValueOnce({ ok: true, status: 200, data: { items: [{ id: 'r1' }] } });
+    schoolApi.printPending.mockResolvedValueOnce({ ok: true, status: 200, data: [{ id: 'p1' }] });
+    schoolApi.quizRequests.mockResolvedValueOnce({ ok: true, status: 200, data: [{ userId: 'user_2' }, { userId: 'user_4' }] });
+    await ready();
+    // Quiz requests count too — the badge used to leave them out.
+    await waitFor(() => expect(screen.getByLabelText('4 items waiting').textContent).toBe('4'));
+    const tabBar = document.querySelector('.teacher-workspace__mobile-nav');
+    expect(within(tabBar).getByRole('button', { name: 'Action queue' }).querySelector('b').textContent).toBe('4');
+    expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review · 1 print · 2 requests →');
+  });
+
   it('opens a persistent learner workspace with deep-linkable sections', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     await ready();

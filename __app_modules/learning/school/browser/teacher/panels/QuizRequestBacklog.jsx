@@ -13,7 +13,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
 
-export default function QuizRequestBacklog({ kids }) {
+export default function QuizRequestBacklog({ kids, onChanged }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests', notFoundAs: 'unavailable' });
   // A degraded/older endpoint must leave this auxiliary panel empty, never
@@ -30,7 +30,7 @@ export default function QuizRequestBacklog({ kids }) {
       unitId: r.unitId ?? null, bankId: r.bankId ?? null,
       kind: r.kind ?? null, sessionId: r.sessionId ?? null, userId: r.userId,
       dismissedBy: actorId, pin, reason: reason.trim(),
-    }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); } });
+    }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); onChanged?.(); } });
   };
 
   return (

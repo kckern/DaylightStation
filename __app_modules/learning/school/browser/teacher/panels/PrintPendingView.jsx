@@ -51,7 +51,7 @@ function useQuotaByUser(userIds) {
   return quotaByUser;
 }
 
-export default function PrintPendingView({ kids }) {
+export default function PrintPendingView({ kids, onChanged }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   // 404 = the feature isn't wired on this install — the quiet unavailable
   // copy, never a Retry that can't succeed.
@@ -65,7 +65,7 @@ export default function PrintPendingView({ kids }) {
     decision === 'approve'
       ? schoolApi.printApprove(job.id, { approver: actorId, pin })
       : schoolApi.printDeny(job.id, { approver: actorId, pin })
-  ), { onSuccess: pending.retry });
+  ), { onSuccess: () => { pending.retry(); onChanged?.(); } });
 
   return (
     <PanelFrame title="Print approvals" state={pending.state} retry={pending.retry} emptyCopy="No prints waiting." unavailableCopy="Print approvals aren't enabled on this install.">

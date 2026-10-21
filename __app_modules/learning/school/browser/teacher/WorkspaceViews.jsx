@@ -149,7 +149,7 @@ function SessionList({ learnerId, onOpenSession }) {
   );
 }
 
-export function DashboardView({ kids, onSelectLearner: _onSelectLearner, onOpenQueue }) {
+export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog = null, onOpenQueue }) {
   // The sidebar/students nav already navigates to workspaces; a duplicate
   // card grid promising "agenda … and repair" (names the tabs don't use)
   // was pure drift (UX audit F25/F26). The dashboard is the Today digest
@@ -160,24 +160,28 @@ export function DashboardView({ kids, onSelectLearner: _onSelectLearner, onOpenQ
         <div><p className="teacher-view__eyebrow">Household school</p><h2>Today at a glance</h2><p>Start with what needs a grown-up, then move into a learner’s day.</p></div>
         <button type="button" className="teacher-primary" onClick={onOpenQueue}>Open action queue</button>
       </div>
-      <TodayTab kids={kids} onOpenQueue={onOpenQueue} />
+      <TodayTab kids={kids} backlog={backlog} onOpenQueue={onOpenQueue} />
     </div>
   );
 }
 
-export function QueueView({ kids }) {
+/**
+ * `onChanged` is the shell's `backlog.refresh`: every resolve, print and
+ * dismiss here re-reads the badge count at once instead of on the next poll.
+ */
+export function QueueView({ kids, onChanged }) {
   const review = usePanelFetch(() => schoolApi.lifecycleReview(), { panel: 'queue-review', notFoundAs: 'unavailable', isEmpty: (d) => !(d?.items ?? []).length });
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Action queue</p><h2>Needs a grown-up</h2><p>Review, print, and learner requests in one interruption-friendly list.</p></div></div>
       <PanelFrame title="Grading & review" state={review.state} retry={review.retry} emptyCopy="Nothing is waiting for a mark." unavailableCopy="The review queue is unavailable.">
-        <ReviewQueueView items={review.data?.items ?? []} kids={kids} onResolved={review.retry} />
+        <ReviewQueueView items={review.data?.items ?? []} kids={kids} onResolved={() => { review.retry(); onChanged?.(); }} />
       </PanelFrame>
       <PanelFrame title="Answer-sheet pairing" state="ok">
         <AnswerSheetPairingQueue />
       </PanelFrame>
-      <PrintPendingView kids={kids} />
-      <QuizRequestBacklog kids={kids} />
+      <PrintPendingView kids={kids} onChanged={onChanged} />
+      <QuizRequestBacklog kids={kids} onChanged={onChanged} />
     </div>
   );
 }
