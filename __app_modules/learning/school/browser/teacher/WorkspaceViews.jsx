@@ -36,7 +36,8 @@ import ReadingShelfPanel from "./panels/ReadingShelfPanel.jsx";
 import ReadingDetailPanel from "./panels/ReadingDetailPanel.jsx";
 import CardLadderWordsPanel, { cardLadderEnrollments } from "./panels/CardLadderWordsPanel.jsx";
 import { LessonIdentity, SubjectIdentity } from "./CurriculumIdentity.jsx";
-import { teacherBaseFor, teacherDayPath } from "./teacherUrl.js";
+import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacherUrl.js";
+import { grownUpActionFor } from "./obligationCopy.js";
 import { curriculumTitles } from "./curriculumTitles.js";
 import { localDay, humanDate, humanDateTime } from "./teacherDates.js";
 import { presentSessionState } from "./sessionPresentation.js";
@@ -482,15 +483,38 @@ export function ReportsView({ learnerId, kids }) {
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reports & diagnosis</p><h2>Progress, grades, and pacing</h2><p>Live evidence, frozen records, mastery signals, retries, and blockers—without comparing siblings.</p></div></div><RecordsTab learnerId={learnerId} kids={kids} /></div>;
 }
 
+/**
+ * `?reason`, `?subject`, `?unit` and `?day` say why the page was opened (see
+ * `teacherLearnerOpsPath`): the problem is named and its repair preselected.
+ */
 export function LearnerOperationsView({ learnerId, learnerName, kids }) {
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  const focus = { reason: params.get('reason'), subject: params.get('subject'), unit: params.get('unit'), day: params.get('day') };
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student operations</p><h2>Repair {learnerName}’s record</h2><p>Use the narrowest intervention that matches what actually happened. Every write is attributed and auditable.</p></div></div>
+      {focus.reason && <OpsFocusNotice focus={focus} learnerId={learnerId} learnerName={learnerName} />}
       <InterventionsIndex learnerId={learnerId} />
-      <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
+      <AttestationPanel learnerId={learnerId} learnerName={learnerName} initialUnitId={focus.unit} />
       <ProgramDayBypassPanel learnerId={learnerId} learnerName={learnerName} />
-      <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
+      <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} initialDay={focus.day} />
     </div>
+  );
+}
+
+/** Why this page was opened, in words, with the two repairs that fit. */
+function OpsFocusNotice({ focus, learnerId, learnerName }) {
+  const action = grownUpActionFor(focus.reason);
+  const schoolFix = `${teacherBaseFor(globalThis.location?.pathname ?? '')}/operations?${new URLSearchParams({
+    ...(focus.unit ? { unit: focus.unit } : {}), learner: learnerId })}`;
+  return (
+    <section className="teacher-panel teacher-ops-focus" role="status">
+      <h3 className="teacher-panel__title">{labelize(focus.subject ?? 'Lesson')}: {action.headline}</h3>
+      <ul>
+        <li>{learnerName} did the work, but the tech lost it? <strong>Give credit</strong> below{focus.unit ? ' — the lesson is already picked' : ''}.</li>
+        <li>The lesson itself is the problem? <a href={schoolFix}>Excuse or pause this lesson for everyone →</a></li>
+      </ul>
+    </section>
   );
 }
 
@@ -893,9 +917,16 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
             </div>
             <details className="teacher-session-more-actions">
               <summary>More actions</summary>
-              <a href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>
-                Give credit for work completed offline →
-              </a>
+              {/* Each lands on the child's Operations page with its repair
+                  preselected: the lesson for credit, the day for a reassign. */}
+              {(result.ownerId ?? learnerId) && <>
+                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { unit: sessionState?.unitId ?? null })}>
+                  Give credit for work completed offline →
+                </a>
+                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { day: sessionState?.studyDay ?? (Number.isNaN(Date.parse(updatedAt ?? '')) ? null : localDay(new Date(updatedAt))) })}>
+                  This was another child’s work →
+                </a>
+              </>}
             </details>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>

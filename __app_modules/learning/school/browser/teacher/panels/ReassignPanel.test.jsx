@@ -72,6 +72,22 @@ const loadTheDay = async (d = '2026-08-26') => {
 describe('ReassignPanel — work with no machine attempts', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // Opened from a lesson ("this was another child's work"): its day is known,
+  // so the panel loads it without a second tap.
+  it('loads the day it was opened for without a click', async () => {
+    seed();
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} initialDay="2026-10-20" />);
+    await waitFor(() => expect(schoolApi.attemptsSummary).toHaveBeenCalledWith('user_4', '2026-10-20'));
+  });
+
+  it('loads a day chip on the tap that picks it', async () => {
+    seed();
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
+    fireEvent.click(screen.getByText('2026-08-26'));
+    await waitFor(() => expect(schoolApi.attemptsSummary).toHaveBeenCalledWith('user_4', '2026-08-26'));
+  });
+
   it('lists a lesson with no recorded answers and moves it, with a reason, to the sibling', async () => {
     seed();
     render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);

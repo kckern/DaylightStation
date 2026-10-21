@@ -13,7 +13,9 @@ import { useTeacherWrite } from "../useTeacherWrite.js";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate } from "../teacherDates.js";
 
-export default function AttestationPanel({ learnerId, learnerName }) {
+// `initialUnitId`: opened from a "needs a grown-up" link that named the
+// lesson, so the form opens with it already picked.
+export default function AttestationPanel({ learnerId, learnerName, initialUnitId = null }) {
   const log = usePanelFetch(() => schoolApi.attestations(learnerId), {
     deps: [learnerId],
     panel: 'attestations',
@@ -28,8 +30,8 @@ export default function AttestationPanel({ learnerId, learnerName }) {
   const retract = (a) => run(`retract:${a.id}`, ({ actorId, pin }) => schoolApi.retract({
     kind: 'attestation', entryId: a.id, retractedBy: actorId, pin,
   }), { onSuccess: log.retry });
-  const [open, setOpen] = useState(false);
-  const [unitId, setUnitId] = useState('');
+  const [open, setOpen] = useState(Boolean(initialUnitId));
+  const [unitId, setUnitId] = useState(initialUnitId ?? '');
   const [reason, setReason] = useState('');
 
   const units = catalog.data?.units ?? [];

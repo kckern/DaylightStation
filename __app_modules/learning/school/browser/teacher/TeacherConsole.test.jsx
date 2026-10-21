@@ -392,6 +392,23 @@ describe('TeacherConsole workspace', () => {
     );
   });
 
+  // A "needs a grown-up" link says why it was sent; the page names the
+  // problem, links the school-wide fix and preselects the credit form.
+  it('learner operations names why it was opened and preselects the lesson', async () => {
+    const units = schoolApi.curriculumUnits.getMockImplementation();
+    schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
+    try {
+      window.history.pushState({}, '', '/school/teacher/students/user_4/operations?reason=program_unavailable&subject=arts&unit=unit-a');
+      render(<TeacherConsole />);
+      expect(await screen.findByText(/This program can’t start/)).toBeTruthy();
+      expect(screen.getByRole('link', { name: /Excuse or pause this lesson for everyone/ }))
+        .toHaveAttribute('href', '/school/teacher/operations?unit=unit-a&learner=user_4');
+      await waitFor(() => expect(screen.getByLabelText('Unit to attest').value).toBe('unit-a'));
+    } finally {
+      schoolApi.curriculumUnits.mockImplementation(units);
+    }
+  });
+
   it('previews a bounded systematic regrade before a protected apply', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts

@@ -19,7 +19,7 @@
  * attempts, and offering it nowhere would send a grown-up back to typing dates
  * blind, which is the defect the picker exists to have fixed.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -27,8 +27,8 @@ import { curriculumTitles } from "../curriculumTitles.js";
 
 const RECENT_DAYS = 14;
 
-export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
-  const [day, setDay] = useState('');
+export default function ReassignPanel({ learnerId, learnerName, kids = [], initialDay = null }) {
+  const [day, setDay] = useState(initialDay ?? '');
   // Recent days WITH recorded work (advocacy B18) — no more typing dates blind.
   const recentDays = usePanelFetch(() => schoolApi.attemptDays(learnerId), {
     deps: [learnerId],
@@ -95,6 +95,10 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
     setLoaded({ day: forDay, assessments: summary.data?.assessments ?? [] });
   };
 
+  // Opened from a lesson ("this was another child's work"): its day is
+  // already known, so it is loaded, not left for a second tap.
+  useEffect(() => { if (initialDay) load(initialDay); }, [learnerId, initialDay]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const move = (a) => run(a.assessmentId, ({ actorId, pin }) => schoolApi.reassign({
     fromLearnerId: learnerId, toLearnerId: target, day: loaded.day, assessmentId: a.assessmentId,
     reassignedBy: actorId, pin,
@@ -116,7 +120,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
       {days.length > 0 && (
         <div className="teacher-reassign__days">
           {days.map((d) => (
-            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => setDay(d)}>{d}</button>
+            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{d}</button>
           ))}
         </div>
       )}

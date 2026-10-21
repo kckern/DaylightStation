@@ -162,6 +162,19 @@ describe('SessionInspector detail coherence', () => {
     expect(credit).not.toHaveClass('teacher-back');
   });
 
+  // Both repairs land on the child's Operations page with the lesson or day
+  // already picked, not on a bare page that knows neither.
+  it('sends More actions to operations with the lesson and day', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, state: { ...SESSION.state, unitId: 'unit-a', studyDay: '2026-10-20' },
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const credit = await screen.findByRole('link', { name: /Give credit for work completed offline/ });
+    expect(credit).toHaveAttribute('href', '/school/teacher/students/user_2/operations?unit=unit-a');
+    expect(screen.getByRole('link', { name: /This was another child’s work/ }))
+      .toHaveAttribute('href', '/school/teacher/students/user_2/operations?day=2026-10-20');
+  });
+
   it('puts the reprint control inside the card it reprints', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);

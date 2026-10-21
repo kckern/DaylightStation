@@ -540,8 +540,9 @@
 }
 .teacher-session-more-actions { margin-top: 10px;
   summary { min-height: 44px; color: #654318; cursor: pointer; font-size: 13px; font-weight: 700; }
-  a { display: inline-flex; min-height: 44px; align-items: center; color: #5a3d18; font-weight: 700; }
+  a { display: flex; min-height: 44px; align-items: center; color: #5a3d18; font-weight: 700; }
 }
+.teacher-ops-focus { ul { margin: 6px 0 0; padding-left: 18px; } li { margin: 4px 0; line-height: 1.45; } }
 .teacher-session-materials { > .teacher-muted { margin: -3px 0 10px; } &__cards { display: grid; gap: 10px; } &__card { display: grid; gap: 7px; } &__print { display: flex; justify-content: flex-end; } &__print > button { border: 1px solid #d4c6af; border-radius: 6px; padding: 5px 8px; background: white; color: #604521; font: inherit; font-size: 12px; font-weight: 700; } }
 .teacher-curriculum__preview { display: inline-block; margin-top: 8px; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none; }
 .teacher-curriculum__sandbox { margin-top: 20px; padding: 16px; border: 1px solid #e2d8c7; border-radius: 12px; background: #fffdf8; }
