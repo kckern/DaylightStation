@@ -908,6 +908,15 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               learnerName={ownerName} currentPercent={effectiveGrade}
               onSettled={() => setAttempt((n) => n + 1)} />
           )}
+          {/* Answers still waiting for a mark: the server would refuse the
+              settle as `awaiting_review` after the PIN, so the read model
+              withholds it and this says where the work actually is. */}
+          {!canSettleByHand && (capabilities.pendingReview ?? 0) > 0 && (
+            <CapabilityNotice>
+              {capabilities.pendingReview} answer{capabilities.pendingReview === 1 ? ' is' : 's are'} waiting for your mark.{' '}
+              <a href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/queue`}>Mark {capabilities.pendingReview === 1 ? 'it' : 'them'} in the action queue →</a>
+            </CapabilityNotice>
+          )}
           {/* The escape hatch for a required read-along that will not play.
               The read model exposes the capability only for lessons whose
               companion is required, so unrelated sessions do not advertise

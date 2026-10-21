@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GetTeacherSession, GetLearnerTimeline } from "./GetTeacherSession.mjs";
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { KEY_ALIGNMENT_SUSPECTED_REASON } from "../ports/IReviewQueue.mjs";
 
 const events = [
   { type: 'created', seq: 1, at: '2026-08-24T14:27:36.519Z', learnerId: 'learner3', unitId: 'atlas-us-p044-illinois' },
@@ -87,6 +88,32 @@ describe('GetTeacherSession artifact read-through', () => {
     expect(result.assessment.items.some((item) => item.itemId === 'key-alignment')).toBe(false);
     // Still visible to a teacher elsewhere (the raw review-queue read model).
     expect(result.reviewEvidence.some((item) => item.itemId === 'key-alignment')).toBe(true);
+  });
+  it('withholds hand-settling while a question still waits for a person', async () => {
+    const useCase = new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => events.slice(0, 3)), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async () => null) },
+      reviewQueue: { listForSession: vi.fn(async () => [{ itemId: 'q1', verdict: null }, { itemId: 'q2', verdict: 'correct' }]) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+    });
+    const out = await useCase.execute({ sessionId: 'ses_illinois' });
+    expect(out.capabilities).toMatchObject({ manualSettlement: false, pendingReview: 1 });
+  });
+  // A key-alignment row is not a question: grading never waits on it, so it
+  // must not hold hand-settling back either.
+  it('does not count a synthetic key-alignment row as waiting', async () => {
+    const useCase = new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => events.slice(0, 3)), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async () => null) },
+      reviewQueue: { listForSession: vi.fn(async () => [{ itemId: 'k1', reason: KEY_ALIGNMENT_SUSPECTED_REASON, verdict: null }]) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+    });
+    const out = await useCase.execute({ sessionId: 'ses_illinois' });
+    expect(out.capabilities).toMatchObject({ manualSettlement: true, pendingReview: 0 });
   });
   it('says a worksheet is reprintable only while the paper is still out', async () => {
     const build = (evts) => new GetTeacherSession({

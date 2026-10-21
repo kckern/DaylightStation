@@ -325,6 +325,21 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByRole('heading', { name: 'Atoms' })).toBeTruthy();
   });
 
+  // Settling with answers still unmarked is refused as `awaiting_review`
+  // after the PIN; the inspector sends the teacher to mark them instead.
+  it('points at the queue instead of offering a hand-settle while answers wait for a mark', async () => {
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v5', sessionId: 's1', state: { state: 'submitted', learnerId: 'user_4' },
+      capabilities: { manualSettlement: false, pendingReview: 2 }, taxonomy: {},
+    } });
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/s1');
+    render(<TeacherConsole />);
+    const link = await screen.findByRole('link', { name: /Mark them in the action queue/ });
+    expect(link).toHaveAttribute('href', '/school/teacher/queue');
+    expect(screen.getByText(/2 answers are waiting for your mark/)).toBeTruthy();
+    expect(screen.queryByText('Settle this by hand')).toBeNull();
+  });
+
   it('shows an immutable worksheet and its recorded answers rather than generic assessments', async () => {
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v3', sessionId: 'ses_2', revision: 1,

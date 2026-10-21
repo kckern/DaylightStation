@@ -80,6 +80,9 @@ export class GetTeacherSession {
       const card = await this.#allocations?.describeCard?.(cardId, { expectedLearnerId: state.learnerId });
       if (card) answerSheets.push(card);
     }
+    // Synthetic key-alignment rows are not questions; grading never waits on them.
+    const pendingReview = reviewEvidence
+      .filter((item) => !isSyntheticReviewItem(item) && item.verdict == null).length;
     const progressUnits = courseUnits.map((candidate) => ({ unitId: candidate.unitId, title: candidate.title,
       module: candidate.module ?? null,
       status: progressStatus(candidate.unitId, state.learnerId, completedIds, exceptions) }));
@@ -104,8 +107,11 @@ export class GetTeacherSession {
         companionRecovery: Boolean(unit?.companion?.enabled !== false
           && unit?.companion?.participation === 'required'),
         offerRetake: state.outcome?.result === 'needs_remediation' && !state.remediation,
+        // A question still waiting on a person: settling now is refused as
+        // `awaiting_review` AFTER the step-up PIN, so it is not offered.
         manualSettlement: ['submitted', 'graded', 'outcome_recorded'].includes(state.state)
-          && state.terminal !== true,
+          && state.terminal !== true && pendingReview === 0,
+        pendingReview,
       },
       scores: {
         machine: state.machineGrade,
