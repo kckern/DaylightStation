@@ -73,6 +73,31 @@ describe('EconomyService coins-changed', () => {
     expect(events.facts.map((f) => f.reason)).toEqual(['pass-bought', 'pass-consumed']);
   });
 
+  it('says so after the per-user lock is released, never inside it', async () => {
+    const datastore = new YamlEconomyDatastore({ configService });
+    let held = 0;
+    const lock = datastore.withUserLock.bind(datastore);
+    datastore.withUserLock = (id, fn) => lock(id, async () => { held += 1; try { return await fn(); } finally { held -= 1; } });
+    const heldWhenTold = [];
+    const svc = new EconomyService({
+      datastore, configProjection: new EconomyConfigProjection({ configService }), logger: quiet(), clock: () => now,
+      events: { coinsChanged: () => heldWhenTold.push(held) },
+    });
+    await svc.deposit(USER, { amount: 10 });
+    await svc.mint(USER, { amount: 2, ref: 'line:1' });
+    const { pass } = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    await svc.consumePass(USER, { passId: pass.passId });
+    expect(heldWhenTold).toEqual([0, 0, 0, 0]);
+  });
+
+  it('a subscriber that writes the same ledger in reply does not deadlock', async () => {
+    let svc;
+    let replied = null;
+    svc = make({ coinsChanged: ({ reason }) => { if (reason === 'mint') replied = svc.deposit(USER, { amount: 1 }); } });
+    await svc.mint(USER, { amount: 2, ref: 'line:1' });
+    await expect(replied).resolves.toMatchObject({ balance: 3 });
+  });
+
   it('a listener that throws never fails the write', async () => {
     const svc = make({ coinsChanged: () => { throw new Error('bus down'); } });
     await expect(svc.mint(USER, { amount: 2, ref: 'line:1' })).resolves.toMatchObject({ minted: 2 });
@@ -80,6 +105,17 @@ describe('EconomyService coins-changed', () => {
 
   it('with no events port, writes as before', async () => {
     await expect(make(null).mint(USER, { amount: 2, ref: 'line:1' })).resolves.toMatchObject({ minted: 2 });
+  });
+
+  it('a bus with no publish gets nothing (never broadcast), logged once', async () => {
+    const bus = { broadcast: vi.fn() };
+    const logger = quiet();
+    const events = new EventBusEconomyEvents({ eventBus: bus, logger });
+    events.coinsChanged({ userId: USER, reason: 'mint' });
+    events.coinsChanged({ userId: USER, reason: 'mint' });
+    expect(bus.broadcast).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('economy.coins-changed.no-publish', { topic: 'economy.coins-changed' });
   });
 
   it('publishes economy.coins-changed {userId} on the bus (internal publish)', async () => {

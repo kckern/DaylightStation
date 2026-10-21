@@ -1,15 +1,17 @@
 /**
- * BankStrip — each kid's silver this week and the next sheet they can earn it
- * with, on the locked Portal (school economy slice 1, Task C2).
+ * BankStrip — the silver in each kid's bank and the next sheet they can earn
+ * more with, on the locked Portal (school economy slice 1, Task C2).
  *
  * One chip per kid, IN ROSTER ORDER. Never sorted by silver, never ranked,
  * never a "top earner": the strip is each child's own bank, not a race.
  *
  * WHAT THE CHIP SAYS
  *
- *   - Silver: `balances.silver` from the economy bank. The week close
- *     converts the WHOLE silver balance to gold, so the silver balance is
- *     this week's unspent silver; a pass bought today shows as silver gone.
+ *   - Silver IN THE BANK: `balances.silver` from the economy bank, captioned
+ *     "in the bank". The week close converts the WHOLE silver balance to
+ *     gold, so this is this week's unspent silver; a pass bought today shows
+ *     as silver gone. The day board's silver is different on purpose: it is
+ *     what the week's work EARNED (the earnings preview), named so.
  *   - A gem when `balances.gems > 0`. Gems never convert, so this is "has
  *     gems", not "earned gems this week": the bank does not say which week a
  *     gem came from.
@@ -26,14 +28,21 @@
  * is not paper. Print posts `print-next`; the button is disabled while the
  * request is in flight, and the reply's own sentence is the toast.
  *
+ * NOTHING HERE MOVES THE BOARD. The chip line and the next line keep a fixed
+ * height whether they hold a number, "bank is napping" or nothing, and the
+ * toast overlays rather than takes a row. The live region is always in the
+ * tree, so a screen reader hears the first toast too.
+ *
  * EVERY READ SETTLES ON ITS OWN. Each kid's bank and next item are separate
  * requests, fired and never awaited by anything else, so a slow economy
  * cannot hold up the day board beside it and one kid's failure is that kid's
  * alone.
  *
  * REFRESH: the `school` topic's refresh events for that kid (including
- * `coins-changed`, which arrives in bursts during a payout and is coalesced),
- * a five-minute poll, and the printing kid right after a print.
+ * `coins-changed`, which arrives in bursts during a payout and is coalesced,
+ * at most 3 s late), a five-minute poll, and the printing kid right after a
+ * print. Each read carries a per-kid sequence number, so an older reply that
+ * lands late never overwrites a newer one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -42,7 +51,8 @@ import { TouchButton } from "../../../../../frontend/src/lib/ui/index.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { schoolApi } from "../schoolApi.js";
-import { SCHOOL_REFRESH_EVENTS, COINS_COALESCE_MS } from "../status/schoolRefreshEvents.js";
+import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
+import { useCoinColor } from "../shared/useCoinColor.js";
 import './BankStrip.scss';
 
 export const REFRESH_MS = 5 * 60_000;
@@ -53,8 +63,6 @@ export const SNEAK_PRIVILEGE = 'piano.games';
 export const PRINT_FALLBACK = "Can't print right now. Ask a grown-up.";
 /** The Portal's own name for itself when the screen has none. */
 export const DEFAULT_DEVICE_ID = 'portal';
-/** CoinIcon's silver (see CoinIcon's header): there is no token for it. */
-const SILVER = '#c0c0c0';
 
 /** Below this width the board pane is hidden (School.scss), so the strip moves to the keypad column. */
 export const NARROW_QUERY = '(max-width: 820px)';
@@ -103,60 +111,71 @@ export function nextLabel(next) {
 export default function BankStrip({ kids = [], deviceId = null, className = '' }) {
   const log = useMemo(() => getLogger().child({ component: 'school-bank-strip' }), []);
   const device = deviceId || DEFAULT_DEVICE_ID;
-  // learnerId -> { status: 'loading'|'ok'|'unavailable', chip }
+  const [silverColor, silverRef] = useCoinColor('silver');
+  // learnerId -> { status: 'ok'|'unavailable', chip }; absent until the first read lands
   const [banks, setBanks] = useState({});
   // learnerId -> the `/next` payload, or null
   const [nexts, setNexts] = useState({});
   const [printing, setPrinting] = useState({});
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState('');
   const aliveRef = useRef(true);
-  const timersRef = useRef(new Map());
+  const burstsRef = useRef(new Map());
   const toastTimerRef = useRef(null);
+  // `${kind}:${learnerId}` -> the latest request's number; a reply that is
+  // not the latest is dropped.
+  const seqRef = useRef(new Map());
   const rosterIds = useMemo(() => new Set(kids.map((kid) => kid.id)), [kids]);
 
   useEffect(() => {
     aliveRef.current = true;
-    const timers = timersRef.current;
+    const bursts = burstsRef.current;
     return () => {
       aliveRef.current = false;
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      for (const burst of bursts.values()) burst.cancel();
+      bursts.clear();
       clearTimeout(toastTimerRef.current);
     };
   }, []);
 
-  const loadBank = useCallback((learnerId) => {
-    Promise.resolve().then(() => schoolApi.economyBank(learnerId))
-      .then((res) => {
-        if (!aliveRef.current) return;
-        const chip = res?.ok ? chipFromBank(res.data) : null;
-        if (!chip) {
-          log.warn('economy.balance.unavailable', { learnerId, status: res?.status ?? null });
-          setBanks((current) => ({ ...current, [learnerId]: { status: 'unavailable', chip: null } }));
-          return;
-        }
-        setBanks((current) => ({ ...current, [learnerId]: { status: 'ok', chip } }));
-      })
-      .catch((error) => {
-        if (!aliveRef.current) return;
-        log.warn('economy.balance.unavailable', { learnerId, error: error?.message ?? String(error) });
-        setBanks((current) => ({ ...current, [learnerId]: { status: 'unavailable', chip: null } }));
-      });
-  }, [log]);
-
-  const loadNext = useCallback((learnerId) => {
-    Promise.resolve().then(() => schoolApi.nextItem(learnerId))
-      .then((res) => {
-        if (!aliveRef.current) return;
-        // A failed read shows no next item rather than a stale one.
-        setNexts((current) => ({ ...current, [learnerId]: res?.ok ? (res.data ?? null) : null }));
-      })
-      .catch(() => {
-        if (aliveRef.current) setNexts((current) => ({ ...current, [learnerId]: null }));
-      });
+  /** Number this request; `isLatest()` says whether it is still the newest for that kid. */
+  const ticket = useCallback((kind, learnerId) => {
+    const key = `${kind}:${learnerId}`;
+    const n = (seqRef.current.get(key) ?? 0) + 1;
+    seqRef.current.set(key, n);
+    return () => aliveRef.current && seqRef.current.get(key) === n;
   }, []);
 
+  const loadBank = useCallback((learnerId) => {
+    const isLatest = ticket('bank', learnerId);
+    const napping = (detail) => {
+      if (!isLatest()) return;
+      log.warn('economy.balance.unavailable', { learnerId, ...detail });
+      setBanks((current) => ({ ...current, [learnerId]: { status: 'unavailable', chip: null } }));
+    };
+    Promise.resolve().then(() => schoolApi.economyBank(learnerId))
+      .then((res) => {
+        const chip = res?.ok ? chipFromBank(res.data) : null;
+        if (!chip) { napping({ status: res?.status ?? null }); return; }
+        if (isLatest()) setBanks((current) => ({ ...current, [learnerId]: { status: 'ok', chip } }));
+      })
+      .catch((error) => napping({ error: error?.message ?? String(error) }));
+  }, [log, ticket]);
+
+  const loadNext = useCallback((learnerId) => {
+    const isLatest = ticket('next', learnerId);
+    Promise.resolve().then(() => schoolApi.nextItem(learnerId))
+      .then((res) => {
+        // A failed read shows no next item rather than a stale one.
+        if (isLatest()) setNexts((current) => ({ ...current, [learnerId]: res?.ok ? (res.data ?? null) : null }));
+      })
+      .catch(() => {
+        if (isLatest()) setNexts((current) => ({ ...current, [learnerId]: null }));
+      });
+  }, [ticket]);
+
   const loadKid = useCallback((learnerId) => { loadBank(learnerId); loadNext(learnerId); }, [loadBank, loadNext]);
+  const loadKidRef = useRef(loadKid);
+  loadKidRef.current = loadKid;
 
   // First read for every kid, and again when the roster changes.
   useEffect(() => {
@@ -172,28 +191,33 @@ export default function BankStrip({ kids = [], deviceId = null, className = '' }
     return () => clearInterval(timer);
   }, [kids, loadKid]);
 
-  // One re-read per kid per burst: a payout mints line by line.
+  // One re-read per kid per burst: a payout mints line by line. Events that
+  // are not `coins-changed` re-read the bank too, on purpose: a graded sheet
+  // or a print is what moves silver and the next sheet, and the payout that
+  // follows may not have published yet.
   const onSchool = useCallback((payload) => {
     const event = payload?.event;
     if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
     const learnerId = payload?.learnerId ?? null;
     if (!learnerId || !rosterIds.has(learnerId)) return;
-    const timers = timersRef.current;
-    clearTimeout(timers.get(learnerId));
-    timers.set(learnerId, setTimeout(() => {
-      timers.delete(learnerId);
-      if (aliveRef.current) loadKid(learnerId);
-    }, COINS_COALESCE_MS));
-  }, [rosterIds, loadKid]);
+    const bursts = burstsRef.current;
+    if (!bursts.has(learnerId)) {
+      bursts.set(learnerId, coalescer(() => { if (aliveRef.current) loadKidRef.current(learnerId); }));
+    }
+    bursts.get(learnerId).poke();
+  }, [rosterIds]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const showToast = useCallback((text) => {
     clearTimeout(toastTimerRef.current);
     setToast(text);
-    toastTimerRef.current = setTimeout(() => { if (aliveRef.current) setToast(null); }, TOAST_MS);
+    toastTimerRef.current = setTimeout(() => { if (aliveRef.current) setToast(''); }, TOAST_MS);
   }, []);
 
   const print = useCallback(async (learnerId) => {
+    // `printing` is this mount's only guard; a remounted strip's second tap is
+    // debounced server-side (IssueSubjectNext, per learnerId:subject, 20 s),
+    // with IssueDocument's per-session print cooldown behind it.
     const subject = nexts[learnerId]?.subject ?? null;
     log.info('economy.strip.print-tapped', { learnerId, subject, deviceId: device });
     setPrinting((current) => ({ ...current, [learnerId]: true }));
@@ -212,25 +236,31 @@ export default function BankStrip({ kids = [], deviceId = null, className = '' }
 
   if (!kids.length) return null;
   return (
-    <section className={`school-bank-strip${className ? ` ${className}` : ''}`} aria-label="Silver this week">
+    <section className={`school-bank-strip${className ? ` ${className}` : ''}`} aria-label="Silver in the bank" ref={silverRef}>
       <ul className="school-bank-strip__kids">
         {kids.map((kid) => {
           const bank = banks[kid.id];
           const chip = bank?.status === 'ok' ? bank.chip : null;
           const label = nextLabel(nexts[kid.id]);
+          const name = kid.name ?? kid.id;
           return (
             <li key={kid.id} className="school-bank-strip__kid" data-testid="bank-chip" data-learner={kid.id}>
               <div className="school-bank-strip__chip">
-                <span className="school-bank-strip__name">{kid.name ?? kid.id}</span>
+                <span className="school-bank-strip__name">{name}</span>
                 {chip && (
                   <span className="school-bank-strip__coins">
-                    <CoinIcon className="school-bank-strip__coin" color={SILVER} />
-                    <span className="school-bank-strip__silver" role="img" aria-label={`${chip.silver} silver this week`}>{chip.silver}</span>
+                    <CoinIcon className="school-bank-strip__coin" color={silverColor} />
+                    <span className="school-bank-strip__silver" aria-hidden="true">{chip.silver}</span>
+                    <span className="school-bank-strip__caption" aria-hidden="true">in the bank</span>
+                    <span className="school-bank-strip__sr">{`${chip.silver} silver in the bank`}</span>
                     {chip.gems > 0 && (
                       <GemIcon className="school-bank-strip__gem" label={`${chip.gems} gem${chip.gems === 1 ? '' : 's'}`} />
                     )}
                     {chip.sneakUsed && (
-                      <span className="school-bank-strip__sneak" role="img" aria-label="Sneak used today">✓</span>
+                      <>
+                        <span className="school-bank-strip__sneak" aria-hidden="true">✓</span>
+                        <span className="school-bank-strip__sr">Sneak used today</span>
+                      </>
                     )}
                   </span>
                 )}
@@ -238,25 +268,29 @@ export default function BankStrip({ kids = [], deviceId = null, className = '' }
                   <span className="school-bank-strip__napping">bank is napping</span>
                 )}
               </div>
-              {label && (
-                <div className="school-bank-strip__next">
-                  <span className="school-bank-strip__label">{label}</span>
-                  <TouchButton
-                    variant="secondary"
-                    className="school-bank-strip__print"
-                    disabled={printing[kid.id] === true}
-                    aria-label={`Print ${label} for ${kid.name ?? kid.id}`}
-                    onClick={() => print(kid.id)}
-                  >
-                    Print
-                  </TouchButton>
-                </div>
-              )}
+              <div className="school-bank-strip__next" data-testid="bank-next">
+                {label && (
+                  <>
+                    <span className="school-bank-strip__label">{label}</span>
+                    <TouchButton
+                      variant="secondary"
+                      className="school-bank-strip__print"
+                      disabled={printing[kid.id] === true}
+                      aria-label={`Print ${label} for ${name}`}
+                      onClick={() => print(kid.id)}
+                    >
+                      Print
+                    </TouchButton>
+                  </>
+                )}
+              </div>
             </li>
           );
         })}
       </ul>
-      {toast && <p className="school-bank-strip__toast" role="status">{toast}</p>}
+      {/* Always in the tree, so the live region exists before its first
+          words; empty, it is hidden and takes no room. */}
+      <p className={`school-bank-strip__toast${toast ? '' : ' school-bank-strip__toast--empty'}`} role="status" data-testid="bank-toast">{toast}</p>
     </section>
   );
 }

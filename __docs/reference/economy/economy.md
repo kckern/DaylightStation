@@ -239,8 +239,12 @@ The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
 
 **Coins changed.** With an `eventBus` (from `createEconomyApi`), every write
 that moves a balance or a pass publishes `economy.coins-changed {userId, reason}`
-on the internal bus (`publish`, not `broadcast`), through the `IEconomyEvents`
-port (`adapters/eventbus/EventBusEconomyEvents.mjs`). `reason` is `deposit`,
+on the internal bus through the `IEconomyEvents` port
+(`adapters/eventbus/EventBusEconomyEvents.mjs`). It uses `publish` only, never
+`broadcast`, so the topic never reaches WebSocket clients; a bus with no
+`publish` gets nothing (`economy.coins-changed.no-publish`, logged once). It
+fires after the write's per-user lock is released: a subscriber that writes the
+same user's ledger in reply would otherwise wait on the lock its caller holds. `reason` is `deposit`,
 `adjust`, `earn`, `mint`, `convert`, `pass-bought`, `pass-consumed` or
 `pass-refunded`. A dry run, a duplicate, a zero grant or a refusal publishes
 nothing. Metered sessions do not publish. A listener that throws is logged

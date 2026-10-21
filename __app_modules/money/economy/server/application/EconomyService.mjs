@@ -80,6 +80,19 @@ export class EconomyService {
   }
 
   /**
+   * Await a locked write, then say what it changed (`reasonFor(result)`, or
+   * nothing for a duplicate or a no-op). AFTER the lock, never inside it: a
+   * subscriber that writes this user's ledger would otherwise queue behind
+   * the very lock it was called from.
+   */
+  async #tellAfter(userId, write, reasonFor) {
+    const out = await write;
+    const reason = reasonFor(out);
+    if (reason) this.#coinsChanged(userId, reason);
+    return out;
+  }
+
+  /**
    * Say that `userId`'s coins changed. Called after the write landed; a
    * listener that throws is logged and never fails the write, which is done.
    */
@@ -168,13 +181,12 @@ export class EconomyService {
   async deposit(userId, { amount, note = null, source = 'admin' }) {
     this.#assertUser(userId);
     if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('deposit amount must be a positive integer');
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note, at: this.#now() }));
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-deposit', { userId, amount, balance: wallet.balance });
-      this.#coinsChanged(userId, 'deposit');
       return { userId, balance: wallet.balance };
-    });
+    }), () => 'deposit');
   }
 
   /**
@@ -187,7 +199,7 @@ export class EconomyService {
     if (!Number.isInteger(delta)) throw new ValidationError('adjust delta must be an integer');
     if (typeof source !== 'string' || !source.trim()) throw new ValidationError('adjust source is required');
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('adjust ref is required');
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       // Strict: a shard that does not parse could hold this very ref.
       const existing = this.#ds.readAllTransactions(userId, { strict: true }).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
       if (existing) {
@@ -205,9 +217,8 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
-      this.#coinsChanged(userId, 'adjust');
       return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
-    });
+    }), (out) => (out.adjusted !== 0 ? 'adjust' : null));
   }
 
   /**
@@ -249,7 +260,7 @@ export class EconomyService {
     const cap = policy.daily_cap ?? Infinity;
     // NOTE: cap accounting is UTC-day (matches how txn.at is stamped). Blackout
     // windows are local-time; the split is intentional (see openSession).
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       const today = now.slice(0, 10);
       const todaysEarns = this.#ds.readLedgerDay(userId, today)
         .filter((t) => t.kind === 'earn' && t.action === action);
@@ -274,9 +285,8 @@ export class EconomyService {
       }
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
-      if (grant > 0) this.#coinsChanged(userId, 'earn');
       return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
-    });
+    }), (out) => (out.earned > 0 ? 'earn' : null));
   }
 
   /**
@@ -310,7 +320,7 @@ export class EconomyService {
     if (!['earn', 'prize'].includes(kind)) throw new ValidationError(`mint kind must be earn or prize, got ${kind}`);
     if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('mint amount must be a positive integer');
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('mint ref is required');
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       // One all-time read per mint, under the lock: the authoritative check.
       const paid = this.#ds.readAllTransactions(userId, { strict: true })
         .filter((t) => PAID_KINDS.has(t.kind) && t.ref === ref && (t.currency ?? 'silver') === currency)
@@ -324,9 +334,8 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });
-      this.#coinsChanged(userId, 'mint');
       return { userId, minted: owed, duplicate: false, paid, txnId: txn.id, balance: wallet.balance, balances: wallet.balances };
-    });
+    }), (out) => (out.minted > 0 ? 'mint' : null));
   }
 
   /**
@@ -371,7 +380,7 @@ export class EconomyService {
     }
     if (!isRate(rate)) throw new ValidationError(`convert rate must be a positive number, got ${rate}`);
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('convert ref is required');
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       const txns = this.#ds.readAllTransactions(userId, { strict: true });
       const isHalf = (t, r, c) => t.kind === 'convert' && t.ref === r && (t.currency ?? 'silver') === c;
       const result = (status, spent, got, { rate: r = rate, to: c = to, txnIds = [] } = {}) => ({ userId, status, spent, got, rate: r, to: c, txnIds });
@@ -396,7 +405,6 @@ export class EconomyService {
         const txn = half(original.to, original.got, toRef, original);
         await this.#appendThenSnapshot(userId, txn, ref);
         this.#logger.debug?.('economy.convert.repaired', { userId, ref, from, ...original });
-        this.#coinsChanged(userId, 'convert');
         return result('repaired', original.spent, original.got, { ...opts, txnIds: [txn.id] });
       }
       const toRef = `${ref}:${to}`;
@@ -419,9 +427,8 @@ export class EconomyService {
       await this.#ds.appendTransaction(userId, out);
       await this.#appendThenSnapshot(userId, back, ref);
       this.#logger.debug?.('economy.convert', { userId, ref, from, to, rate, spent, got });
-      this.#coinsChanged(userId, 'convert');
       return result('converted', spent, got, { txnIds: [out.id, back.id] });
-    });
+    }), (out) => (out.status === 'converted' || out.status === 'repaired' ? 'convert' : null));
   }
 
   /**
@@ -502,7 +509,7 @@ export class EconomyService {
     if (price == null) throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', `${found.key} is not sold in ${coin}`);
     const cap = readCap(found.def.cap);
     if (!cap) throw this.#passRefusal(userId, privilege, coin, price, 'PASS_NOT_SOLD', `${found.key} has a cap this economy cannot honour`);
-    return this.#ds.withUserLock(userId, async () => {
+    return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       const date = this.#clock();
       const at = date.toISOString();
       const studyDay = this.currentStudyDay(date);
@@ -535,10 +542,9 @@ export class EconomyService {
         throw err;
       }
       this.#logger.info('economy.pass.bought', { learnerId: userId, privilege, coin, price, passId: id });
-      this.#coinsChanged(userId, 'pass-bought');
       const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay }).find((p) => p.passId === id);
       return { userId, pass, balances: wallet?.balances ?? foldBalances([...txns, spend]) };
-    });
+    }), () => 'pass-bought');
   }
 
   /**
@@ -596,7 +602,7 @@ export class EconomyService {
    */
   async consumePass(userId, { passId, playedMs = null } = {}) {
     if (playedMs != null && !isPlayedMs(playedMs)) throw new ValidationError('playedMs must be a non-negative number', { field: 'playedMs' });
-    return this.#withPass(userId, passId, async (pass, txns) => {
+    return this.#tellAfter(userId, this.#withPass(userId, passId, async (pass, txns) => {
       if (pass.state === 'consumed') return { userId, pass, duplicate: true };
       if (pass.state !== 'active') throw this.#notActive(pass, 'consumed');
       const marker = createTransaction({ id: this.#newTransactionId(), kind: 'pass', delta: 0, currency: pass.coin ?? 'silver',
@@ -604,9 +610,8 @@ export class EconomyService {
         meta: { pass: pass.pass, privilege: pass.privilege, state: 'consumed', playedMs } });
       await this.#ds.appendTransaction(userId, marker);
       this.#logger.info('economy.pass.consumed', { learnerId: userId, privilege: pass.privilege, coin: pass.coin, price: pass.price, passId, playedMs });
-      this.#coinsChanged(userId, 'pass-consumed');
       return { userId, pass: this.#stateAfter(txns, marker, userId, passId), duplicate: false };
-    });
+    }), (out) => (out.duplicate ? null : 'pass-consumed'));
   }
 
   #stateAfter(txns, added, userId, passId) {
@@ -627,7 +632,7 @@ export class EconomyService {
   async refundPass(userId, { passId, playedMs, reason = null } = {}) {
     if (!isPlayedMs(playedMs)) throw new ValidationError('playedMs must be a non-negative number', { field: 'playedMs' });
     const why = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 80) : null;
-    return this.#withPass(userId, passId, async (pass, txns, parsed) => {
+    return this.#tellAfter(userId, this.#withPass(userId, passId, async (pass, txns, parsed) => {
       const log = { learnerId: userId, privilege: pass.privilege, coin: pass.coin, price: pass.price, passId };
       const markerFor = () => createTransaction({ id: this.#newTransactionId(), kind: 'pass', delta: 0, currency: pass.coin ?? 'silver',
         action: pass.pass ?? 'pass', source: 'pass', ref: refundedRef(passId), evidenceRef: passId, at: this.#now(),
@@ -664,9 +669,8 @@ export class EconomyService {
       writes.push(markerFor());
       const wallet = await this.#appendThenSnapshot(userId, writes, passId, 'economy.pass.snapshot-failed');
       this.#logger.info('economy.pass.refunded', { ...log, refunded: owed, playedMs, reason: why });
-      this.#coinsChanged(userId, 'pass-refunded');
       return { userId, pass: this.#stateAfter(txns, writes, userId, passId), refunded: owed, duplicate: false, balances: wallet?.balances ?? foldBalances([...txns, ...writes]) };
-    });
+    }), (out) => (out.duplicate ? null : 'pass-refunded'));
   }
 
   async openSession(userId, { action, source }) {

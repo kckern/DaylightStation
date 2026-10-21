@@ -1717,7 +1717,8 @@ same agenda-preview + teacher-day models the teacher console uses.
 
 **The bank strip** (`__app_modules/learning/school/browser/bank/BankStrip.jsx`)
 sits between the board header and the board: one chip per kid, in roster
-order, never sorted or ranked. Each chip shows the kid's silver, a gem when
+order, never sorted or ranked. Each chip shows the kid's silver captioned "in
+the bank" (read out as "12 silver in the bank"), a gem when
 they have gems, and a "sneak used" tick when today's `piano.games` pass is
 active or consumed or its cap is used. Under it is the next sheet they can earn
 with ("+2 silver · Math 4-02", or just the unit title while `reward` is null)
@@ -1729,6 +1730,14 @@ board pane that take a tap; the strip sets `pointer-events: auto` itself.
   this week's unspent silver. A pass bought today shows as silver spent. The gem
   is `balances.gems > 0`. Gems never convert, so the gem means the kid has
   gems, not that they earned one this week.
+- **Two silvers, two names.** The board's silver is what the week's work
+  *earned* (the earnings preview), read out as "N silver earned this week".
+  The strip's is what is *in the bank* (the ledger, less what was spent). They
+  differ after a pass purchase or before a payout lands, which is why each is
+  named. Both coin colours come from School tokens (`--school-coin-silver`,
+  `--school-coin-gold`), read for `CoinIcon` by `shared/useCoinColor.js`.
+- **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
+  field is the silver figure, never gold.
 - **A failed bank read** shows "bank is napping" and no number, for that kid
   only (`economy.balance.unavailable`, warn). No figure ever comes from the
   board's cache. A pass `state: 'unknown'` shows no tick.
@@ -1740,17 +1749,29 @@ board pane that take a tap; the strip sets `pointer-events: auto` itself.
   `sentence` is shown as a toast; a 404, a 400 or no network shows "Can't print
   right now. Ask a grown-up." That kid's bank and next item are then read again.
   Each tap logs `economy.strip.print-tapped` under component `school-bank-strip`.
+  A remounted strip has no memory of a tap in flight; the server's 20-second
+  debounce per learner and subject catches the repeat.
+- **Nothing moves the board.** The `role="status"` toast element is always in
+  the tree (hidden when empty) and overlays the top of the board when it
+  speaks, taking no room. Each chip's balance line and next-item line keep a
+  fixed height whether they hold a number, "bank is napping" or nothing.
 - **Reads never wait on the board.** Each kid's bank and next item are separate
-  requests, fired and never awaited by the board's reads.
+  requests, fired and never awaited by the board's reads. Each carries a
+  per-kid sequence number, so an older reply that lands late is dropped.
 - **Refresh:** the board's `school` topic events (`status/schoolRefreshEvents.js`)
-  for that kid, coalesced over 750 ms, plus a five-minute poll.
+  for that kid, coalesced over 750 ms of quiet but never more than 3 s after a
+  burst's first event, plus a five-minute poll. Events other than
+  `coins-changed` re-read the bank too, on purpose: graded work is what a
+  payout follows.
   `coins-changed` is one of those events. The economy publishes
   `economy.coins-changed {userId, reason}` on the internal bus after every
   write that moves coins or a pass: deposit, adjust, earn, mint, convert, and a
-  pass bought, consumed or refunded. A dry run, a duplicate or a refusal
-  publishes nothing. `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started
-  by `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
-  learnerId}`. A payout run mints entry by entry, so the events come in bursts.
+  pass bought, consumed or refunded, once the write's user lock is released. A
+  dry run, a duplicate or a refusal publishes nothing.
+  `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started by
+  `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
+  learnerId}`. The lifecycle returns it as `coinsChangedRelay` (`{stop}`, null
+  when there is no subscribable bus), and `app.mjs` stops it on SIGTERM. A payout run mints entry by entry, so the events come in bursts.
   The board re-reads only its coin figures on it, also coalesced.
 - **Below 820 px** the board pane is hidden, so the strip renders under the
   keypad instead. It is mounted once, in one place or the other (`useNarrowPortal`).

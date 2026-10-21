@@ -654,6 +654,29 @@ describe('a scan updates the board immediately', () => {
     expect(schoolApi.teacherDay.mock.calls.length).toBe(plans);
   });
 
+  it('a coins-changed stream that never pauses still re-reads the coins within 3 s', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [], entries: [] } });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(schoolApi.earningsRoster).toHaveBeenCalled());
+    vi.useFakeTimers();
+    try {
+      const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+      const coins = schoolApi.earningsRoster.mock.calls.length;
+      for (let t = 0; t < 2_500; t += 500) {
+        act(() => { school.cb({ event: 'coins-changed', learnerId: 'learner1' }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      }
+      expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins);
+      act(() => { school.cb({ event: 'coins-changed', learnerId: 'learner1' }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ignores story events outside the displayed roster, from another study day, and unrelated traffic', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
@@ -1343,7 +1366,7 @@ describe('earningsByLearner', () => {
   });
 });
 
-describe('AgendaStatusBoard silver this week', () => {
+describe('AgendaStatusBoard silver earned this week', () => {
   const DAY = '2026-10-20';
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1353,7 +1376,7 @@ describe('AgendaStatusBoard silver this week', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
   });
-  const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver this week$`));
+  const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver earned this week$`));
 
   it('shows each learner\'s silver once the read lands, and nothing before it', async () => {
     let land;
@@ -1364,7 +1387,7 @@ describe('AgendaStatusBoard silver this week', () => {
     await act(async () => land(roster(priced('learner1', 21))));
     expect(silverOf('21')).toBeTruthy();
     // learner2 was not priced: no number is invented for them.
-    expect(screen.getAllByLabelText(/silver this week$/).length).toBe(1);
+    expect(screen.getAllByLabelText(/silver earned this week$/).length).toBe(1);
     expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
   });
 
@@ -1376,18 +1399,18 @@ describe('AgendaStatusBoard silver this week', () => {
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     const [one, two] = await waitFor(() => {
       const cells = screen.getAllByTestId('board-coins');
-      expect(within(cells[0]).getByRole('img', { name: '23 silver this week, 5 more possible' })).toBeTruthy();
+      expect(within(cells[0]).getByRole('img', { name: '23 silver earned this week, 5 more possible' })).toBeTruthy();
       return cells;
     });
     // Pending is part of the figure's ONE spoken name; the visible "+5" is
     // decoration, hidden from the accessibility tree.
-    const silver = within(one).getByRole('img', { name: '23 silver this week, 5 more possible' });
+    const silver = within(one).getByRole('img', { name: '23 silver earned this week, 5 more possible' });
     const plus = silver.querySelector('.school-status-board__more');
     expect(plus.textContent).toBe('+5');
     expect(plus).toHaveAttribute('aria-hidden', 'true');
     const gems = within(one).getByRole('img', { name: '0 gems this week, 1 more possible' });
     expect(gems.querySelector('.school-status-board__more').textContent).toBe('+1');
-    expect(within(two).getByRole('img', { name: '10 silver this week' })).toBeTruthy();
+    expect(within(two).getByRole('img', { name: '10 silver earned this week' })).toBeTruthy();
     expect(within(two).getByRole('img', { name: '2 gems this week' })).toBeTruthy();
     expect(within(two).queryByRole('img', { name: /more possible$/ })).toBeNull();
     // No visible captions anywhere in the cell.
@@ -1402,7 +1425,7 @@ describe('AgendaStatusBoard silver this week', () => {
     const cell = screen.getAllByTestId('board-coins')[0];
     const grid = cell.querySelector('.school-status-board__coin-grid');
     const names = [...grid.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label'));
-    expect(names.slice(0, 2)).toEqual(['21 silver this week', '0 gold']);
+    expect(names.slice(0, 2)).toEqual(['21 silver earned this week', '0 gold']);
     // Each figure is an icon cell followed by a number cell: the grid aligns them.
     expect(grid.children.length % 2).toBe(0);
   });

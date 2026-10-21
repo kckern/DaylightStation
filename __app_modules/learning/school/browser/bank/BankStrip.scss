@@ -6,6 +6,7 @@
 .school-bank-strip {
   pointer-events: auto;
   user-select: none;
+  position: relative; // the toast overlays from here
   flex: 0 0 auto;
   display: flex; flex-direction: column; gap: .5rem;
   min-width: 0;
@@ -24,23 +25,37 @@
   background: var(--school-surface);
 }
 
+// FIXED HEIGHTS: a number, "bank is napping" or nothing all take the same
+// room, so a chip turning napping (or a next item vanishing) never moves the
+// strip, and with it the board below.
 .school-bank-strip__chip {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   min-width: 0;
+  height: 2.1rem;
 }
 .school-bank-strip__name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-weight: 700; font-size: 1.05rem;
 }
-.school-bank-strip__coins { display: inline-flex; align-items: center; gap: .3rem; font-size: 1.35rem; font-weight: 700; }
+.school-bank-strip__coins { display: inline-flex; align-items: center; gap: .3rem; font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
+.school-bank-strip__caption { color: var(--school-muted); font-size: .7em; font-weight: 600; }
 .school-bank-strip__coin, .school-bank-strip__gem { width: 1.1em; height: 1.1em; }
 .school-bank-strip__gem { width: .85em; height: .85em; }
 .school-bank-strip__sneak { color: var(--school-board-done); font-size: .9em; }
-.school-bank-strip__napping { color: var(--school-muted); font-size: .95rem; font-style: italic; }
+.school-bank-strip__napping {
+  color: var(--school-muted); font-size: .95rem; font-style: italic;
+  line-height: 2.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+// Read by a screen reader, not seen.
+.school-bank-strip__sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 .school-bank-strip__next {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   min-width: 0;
+  height: 2.9rem; // the Print button's height, held when there is no item
 }
 .school-bank-strip__label {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -55,11 +70,21 @@
   border-color: var(--school-border); color: var(--school-fg);
 }
 
+// AN OVERLAY, NOT A ROW: it hangs just under the strip, over the top of the
+// board, and takes no room, so neither the strip nor the board moves when it
+// comes and goes. It never takes a tap.
 .school-bank-strip__toast {
-  margin: 0; padding: .5rem .85rem;
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 5;
+  margin: .4rem 0 0; padding: .5rem .85rem;
+  pointer-events: none;
   border: 1px solid var(--school-border); border-radius: 12px;
   background: var(--school-surface-2); color: var(--school-fg);
   font-size: 1.05rem;
+}
+// Empty, it stays in the tree as the live region and is not seen.
+.school-bank-strip__toast--empty {
+  padding: 0; border: 0; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
 }
 
 // Narrow mounts hide the board pane, so the strip rides in the keypad column,

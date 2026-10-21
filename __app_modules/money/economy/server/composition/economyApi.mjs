@@ -46,7 +46,7 @@ export function createEconomyApi({ configService, logger = console, clock = () =
     configProjection,
     clock,
     ...studyCalendar,
-    events: eventBus ? new EventBusEconomyEvents({ eventBus }) : null,
+    events: eventBus ? new EventBusEconomyEvents({ eventBus, logger }) : null,
     logger,
   });
   // The household earn rules (weekly earnings preview; the future payout).

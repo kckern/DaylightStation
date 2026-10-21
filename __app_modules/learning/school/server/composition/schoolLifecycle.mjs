@@ -322,7 +322,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null, selfServiceRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {}, launchers: new Map(),
-      donowSchoolBridge: null, grownUps: null, teacherGate: null, passOverrides: null,
+      donowSchoolBridge: null, coinsChangedRelay: null, grownUps: null, teacherGate: null, passOverrides: null,
     };
   };
 
@@ -1291,8 +1291,13 @@ export async function createSchoolLifecycle({
 
   // The Portal's bank strip hears about coins on the `school` topic it already
   // subscribes to: the economy publishes `economy.coins-changed` internally
-  // and this forwards it. A topic string, not an import.
-  if (realtimeSubscriptionsAvailable) schoolRealtime?.relayCoinsChanged?.();
+  // and this forwards it. A topic string, not an import. `{stop}` is returned
+  // below so app.mjs can unsubscribe it on shutdown; null when unwired.
+  let coinsChangedRelay = null;
+  if (realtimeSubscriptionsAvailable && typeof schoolRealtime?.relayCoinsChanged === 'function') {
+    const unsubscribe = schoolRealtime.relayCoinsChanged();
+    coinsChangedRelay = { stop: () => { if (typeof unsubscribe === 'function') unsubscribe(); } };
+  }
 
   // The two parent-only writes. They are use cases rather than raw store calls
   // because the router may not be the place a child's sign-off is checked.
@@ -1708,6 +1713,8 @@ export async function createSchoolLifecycle({
     bookLogLauncher,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
+    // The economy's coins-changed forwarded to the Portal; null when unwired.
+    coinsChangedRelay,
     // The story-time launcher by name, for the living-room reading session.
     // Exposed rather than reached for through `launchers` because two callers
     // need DIFFERENT things off it and both must have the SAME instance: the

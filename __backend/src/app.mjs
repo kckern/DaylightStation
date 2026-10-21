@@ -4311,6 +4311,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   }
 
+  // Graceful shutdown: stop forwarding the economy's coins-changed to the Portal.
+  if (schoolLifecycle.coinsChangedRelay) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.coinsChangedRelay.stop();
+        rootLogger.info?.('school.coins-changed-relay.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.coins-changed-relay.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
   if (schoolStateGatesProducer) {
     process.on('SIGTERM', () => {
       schoolStateGatesProducer.stop();

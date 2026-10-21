@@ -45,6 +45,10 @@
   // non-interactive board look tappable. Naming the pair also means "done" and
   // "not yet" are one edit each instead of four literals scattered downfile.
   --school-board-ink: #efe9dc;
+  // The two coins. CoinIcon derives its tint ladder from a hex, so the
+  // components read these with getComputedStyle (`useCoinColor`).
+  --school-coin-silver: #c0c0c0;
+  --school-coin-gold: #e2c15a;
   --school-board-done: #7fb069;
   // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
   // is the one pairing on this board with no contrast to spare.
@@ -3393,7 +3397,7 @@
   // hangs after THAT number rather than at the end of the column.
   &__figure { position: relative; justify-self: start; }
   &__figure--silver { font-size: var(--silver); }
-  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #e2c15a; }
+  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gold); }
   &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
   // Hangs off the end of its number, so it never moves the column.
   &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.15em; font-size: 0.5em; opacity: 0.45; }
