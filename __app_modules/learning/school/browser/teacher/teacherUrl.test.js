@@ -143,6 +143,25 @@ describe('consoleLinkTarget', () => {
     expect(consoleLinkTarget(click(anchor('/school/teacherish')))).toBeNull();
     expect(consoleLinkTarget(click(anchor('https://example.com/school/teacher')))).toBeNull();
   });
+  it('leaves a same-page hash link to the browser so it can scroll', () => {
+    window.history.pushState({}, '', '/school/teacher/queue?x=1');
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue?x=1#prints')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('#prints')))).toBeNull();
+    window.history.pushState({}, '', '/');
+  });
+  it('keeps the hash on a link to another console page', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue#prints')))).toBe('/school/teacher/queue#prints');
+  });
+  it('routes an SVG anchor, whose href is not a string', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const a = document.createElementNS('http://www.w3.org/2000/svg', 'a');
+    a.setAttribute('href', '/school/teacher/students/a/day');
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    a.appendChild(shape);
+    svg.appendChild(a);
+    document.body.appendChild(svg);
+    expect(consoleLinkTarget(click(shape))).toBe('/school/teacher/students/a/day');
+  });
   it('ignores clicks that are not inside an anchor', () => {
     expect(consoleLinkTarget(click(document.createElement('div')))).toBeNull();
   });

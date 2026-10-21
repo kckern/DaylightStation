@@ -25,11 +25,16 @@ export function consoleLinkTarget(event) {
   if (!anchor) return null;
   const target = anchor.getAttribute('target');
   if ((target && target !== '_self') || anchor.hasAttribute('download')) return null;
+  // The attribute, not `anchor.href`: an SVG `<a>`'s href is an
+  // SVGAnimatedString, not a URL string.
   let url;
-  try { url = new URL(anchor.href, globalThis.location?.href); } catch { return null; }
+  try { url = new URL(anchor.getAttribute('href'), globalThis.location?.href); } catch { return null; }
   if (url.origin !== globalThis.location?.origin) return null;
   if (url.pathname !== TEACHER_BASE && !url.pathname.startsWith(`${TEACHER_BASE}/`)) return null;
-  return `${url.pathname}${url.search}`;
+  // A hash on this same page is a scroll, which only the browser does; a hash
+  // on another console page rides along with the route.
+  if (url.hash && url.pathname === globalThis.location?.pathname && url.search === globalThis.location?.search) return null;
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'coins', 'operations'];

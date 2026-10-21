@@ -56,6 +56,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   artifactOriginal: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   bookReaders: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  readingDetail: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   readingShelf: vi.fn(async () => ({ ok: true, status: 200, data: {
     learnerId: 'user_4', studyDay: '2026-09-06', earliestFinishDay: '2026-08-23',
     obligation: { label: '4 of 7 days', per: 'week', met: false, actual: 4, target: 7, metric: 'checkins', incompatibleBooks: [] },
@@ -174,6 +175,22 @@ describe('TeacherConsole workspace', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(window.location.pathname).toBe('/school/teacher/students/user_2/history');
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_2 workspace' })).toBeTruthy());
+  });
+
+  it('re-reads the open reading when an in-console link changes only the query', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/reading?reading=itm_1');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(document.querySelector('.teacher-reading-detail')).toBeTruthy());
+    const probe = document.createElement('a');
+    probe.href = '/school/teacher/students/user_4/reading';
+    probe.textContent = 'shelf link';
+    document.querySelector('.teacher-workspace__main').appendChild(probe);
+    act(() => { probe.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })); });
+    expect(window.location.search).toBe('');
+    // Same path, so the shell's route is unchanged; the view must still
+    // notice the query moved and close the detail.
+    await waitFor(() => expect(document.querySelector('.teacher-reading-detail')).toBeNull());
+    expect(screen.getByText('User_4’s shelf')).toBeTruthy();
   });
 
   it('returns a lesson opened from the dashboard to the dashboard with its learner open', async () => {

@@ -76,8 +76,17 @@ function TeacherShell({ PianoProgramsPanel }) {
   };
 
   const navigate = useCallback((path, replace = false) => {
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
-    const next = parseTeacherPath(new URL(path, window.location.origin).pathname);
+    const before = { pathname: window.location.pathname, search: window.location.search };
+    if (`${before.pathname}${before.search}${window.location.hash}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    const target = new URL(path, window.location.origin);
+    // Same page, different query (`?reading=`, `?open=`): the route below does
+    // not change, so nothing re-renders. Views that keep query state already
+    // resync on popstate, so tell them. The shell's own popstate listener
+    // re-parses the same pathname and sets an equivalent route — harmless.
+    if (target.pathname === before.pathname && target.search !== before.search) {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    const next = parseTeacherPath(target.pathname);
     setRoute(next);
     setRailOpen(false);
     // A new page starts at its top; a replace (a canonicalized URL) does not move.

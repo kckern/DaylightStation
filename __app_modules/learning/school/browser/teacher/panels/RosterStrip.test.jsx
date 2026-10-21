@@ -323,3 +323,16 @@ describe('RosterStrip — teacher hold (remediation cap)', () => {
     expect(screen.queryByTestId('attention')).toBeNull();
   });
 });
+
+describe('RosterStrip — the open card follows the URL', () => {
+  it('re-reads `?open=` on popstate, so back/forward and same-page links move it', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    window.history.replaceState({}, '', `${window.location.pathname}?open=user_4`);
+    render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" />);
+    const card = await screen.findByRole('button', { name: /User_4/ });
+    expect(card).toHaveAttribute('aria-expanded', 'true');
+    window.history.pushState({}, '', window.location.pathname);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await waitFor(() => expect(card).toHaveAttribute('aria-expanded', 'false'));
+  });
+});

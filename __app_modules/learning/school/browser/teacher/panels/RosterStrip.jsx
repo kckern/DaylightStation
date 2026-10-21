@@ -823,6 +823,13 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
   // Which learner is open lives in the URL (`?open=`), so the trip to a
   // lesson and back — or a refresh — returns to the same open card.
   const [openId, setOpenId] = useState(() => new URLSearchParams(globalThis.location?.search ?? '').get('open'));
+  // Back/forward, or an in-console link that changes only `?open=` (the shell
+  // announces those as popstate), must move the open card with the URL.
+  useEffect(() => {
+    const onPop = () => setOpenId(new URLSearchParams(window.location.search).get('open'));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const toggle = (learnerId) => {
     const next = openId === learnerId ? null : learnerId;
     setOpenId(next);
