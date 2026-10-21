@@ -179,7 +179,9 @@ function TeacherShell({ PianoProgramsPanel }) {
       words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
       coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
-      operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
+      // Keyed by the query: a different `?reason/unit/day` is a different
+      // repair context, and the panels below seed from it only on mount.
+      operations: <LearnerOperationsView key={`${learner.id}${window.location.search}`} learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };
     view = views[route.section] ?? views.day;
   } else {
@@ -188,7 +190,7 @@ function TeacherShell({ PianoProgramsPanel }) {
       queue: <QueueView kids={kids} onChanged={backlog.refresh} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
-      operations: <OperationsView kids={kids} />,
+      operations: <OperationsView key={window.location.search} kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;
   }

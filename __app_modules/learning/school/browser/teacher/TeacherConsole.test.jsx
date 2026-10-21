@@ -458,6 +458,25 @@ describe('TeacherConsole workspace', () => {
     }
   });
 
+  // Reopening Operations without a query is a different repair context: the
+  // panels seed from the query only on mount, so the view must remount.
+  it('drops a preselected repair when Operations is reopened without one', async () => {
+    const units = schoolApi.curriculumUnits.getMockImplementation();
+    schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
+    try {
+      window.history.pushState({}, '', '/school/teacher/students/user_4/operations?reason=program_unavailable&unit=unit-a');
+      render(<TeacherConsole />);
+      await waitFor(() => expect(screen.getByLabelText('Unit to attest').value).toBe('unit-a'));
+      // The learner tab strip's Operations (the rail has a school-wide one too).
+      const learnerNav = document.querySelector('.teacher-workspace__learner-nav');
+      act(() => fireEvent.click(within(learnerNav).getByRole('button', { name: 'Operations' })));
+      expect(window.location.search).toBe('');
+      await waitFor(() => expect(screen.queryByLabelText('Unit to attest')).toBeNull());
+    } finally {
+      schoolApi.curriculumUnits.mockImplementation(units);
+    }
+  });
+
   // Sent from a child's "excuse or pause this lesson for everyone" link: the
   // exception form opens on that lesson, its course and that child.
   it('school operations preselects the lesson and learner it was sent for', async () => {
