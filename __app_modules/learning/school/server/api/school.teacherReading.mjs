@@ -8,6 +8,9 @@
  * vocabularies already differ and one more split inside a router would be a
  * second convention to remember.
  *
+ * Also mounts the cross-learner `GET /teacher/books/:isbn/readers` that the
+ * quick-log sheet reads.
+ *
  * A thin shell, and deliberately so. Every gate, every reason requirement,
  * every stale-save refusal and every note to a child lives in the use case, so
  * a second caller (a CLI, a test, a future surface) cannot reach the shelf
@@ -47,7 +50,7 @@ export function mountTeacherReadingRoutes({
   getBookShelf = null, getLearnerReadings = null, updateReading = null,
   addReadingEntry = null, updateReadingEntry = null, deleteReadingEntry = null,
   addReadingForLearner = null, moveReading = null, deleteReading = null,
-  undoReadingRevision = null,
+  undoReadingRevision = null, getBookReaders = null,
 }) {
   const BASE = '/teacher/learners/:learnerId/reading';
 
@@ -119,7 +122,12 @@ export function mountTeacherReadingRoutes({
     send(res, 200, result);
   }));
 
-  /** A day they read that never got logged. */
+  /**
+   * A day they read that never got logged. Answers with the reading's
+   * `revisionCount` after the write, so a caller chaining a finish onto it
+   * carries the served count rather than assuming one. A repeat of the same
+   * `Idempotency-Key` returns the first entry and appends nothing.
+   */
   router.post(`${BASE}/:readingId/entries`, wrap(async (req, res) => {
     const body = req.body ?? {};
     const result = await need(addReadingEntry, 'teacher reading edit').execute({
@@ -193,6 +201,20 @@ export function mountTeacherReadingRoutes({
   router.delete(`${BASE}/:readingId`, wrap(async (req, res) => {
     const result = await need(deleteReading, 'teacher reading deletion').execute({
       ...base(req), readingId: req.params.readingId,
+    });
+    send(res, 200, result);
+  }));
+
+  /**
+   * One book, every enrolled learner (quick-log design, 2026-10-20): logged
+   * today, the open reading a check-in or finish must land on, and the mode a
+   * new reading defaults to. Read-only. Its gate is in the use case, because
+   * the answer spans every child's shelf at once.
+   */
+  router.get('/teacher/books/:isbn/readers', wrap(async (req, res) => {
+    const { by, pin } = actor(req);
+    const result = await need(getBookReaders, 'teacher book readers').execute({
+      isbn: req.params.isbn, by, pin,
     });
     send(res, 200, result);
   }));

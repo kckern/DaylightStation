@@ -85,9 +85,28 @@ The shelf carries one write of its own: **Add a book**
 (`teacherWorkspaceApi.addReadingForLearner`), offered on an `ok` shelf and on an
 EMPTY one — that is when a grown-up adds the first book — and on neither of the
 other three states. It asks for an ISBN and the child's own three doors
-(starting / partway with a page / finished on a day), judges the number with
-the panel's `checkIsbn` before the network, and is idempotent on a key the
-client mints.
+(starting / partway with a page / finished on a day, blank meaning today),
+judges the number with the panel's `checkIsbn` before the network, and is
+idempotent on a key the client mints. It looks the number up by itself
+(`useBookFacts`; a ten-digit number once typing settles), defaults a tracking
+toggle (check-ins / pages) from the server's suggestion, offers partway in page
+mode only, and warns without blocking when the child already logged the book
+today or is reading it now. Its body is `logBookPlan.js#newReadingBody`, the
+same one the "Log a book" sheet sends.
+
+**Log a book** (`panels/LogBookSheet.jsx`) is the console-wide quick log: one
+book, several children, today. It scans through the shared
+`frontend/src/lib/camera/useBarcodeScanner.js` (typed number always offered),
+then reads `useBookFacts`: the lookup first and the readers
+(`teacherWorkspaceApi.bookReaders`, `GET /books/:isbn/readers`) second,
+because the readers view takes the book's length from the cache the lookup
+fills. A reload re-reads the readers only and keeps the last answer on screen,
+and a rejected call is a failed read. What each child's save does is
+`panels/logBookPlan.js`: `planFor` decides new / open / done / skip from the
+server's row, and `performPlan` chains the entry and the finish on the served
+revision count. The batch is one `useTeacherWrite` run (`awaitClaim`, so a
+save waiting on the teacher picker stays one save). Each book is its own
+remounted step, so nothing carries over to the next book.
 
 The **detail** a row opens is a second read and nine writes, all under the same
 prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /

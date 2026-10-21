@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import TeacherConsoleView from "./TeacherConsole.jsx";
 import PianoProgramsPanel from "../../../piano/browser/teacher-programs.mjs";
 
@@ -54,6 +55,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   retractGradeAdjustment: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactOriginal: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  bookReaders: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   readingShelf: vi.fn(async () => ({ ok: true, status: 200, data: {
     learnerId: 'user_4', studyDay: '2026-09-06', earliestFinishDay: '2026-08-23',
     obligation: { label: '4 of 7 days', per: 'week', met: false, actual: 4, target: 7, metric: 'checkins', incompatibleBooks: [] },
@@ -76,6 +78,91 @@ const ready = async () => {
 };
 
 describe('TeacherConsole workspace', () => {
+  describe('"Log a book"', () => {
+    // No camera in the test browser: the typed number is the way in.
+    let mediaDevices;
+    beforeEach(() => {
+      mediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
+    });
+    afterEach(() => {
+      if (mediaDevices) Object.defineProperty(navigator, 'mediaDevices', mediaDevices);
+      else delete navigator.mediaDevices;
+    });
+
+    const stubPhone = (phone) => {
+      window.matchMedia = vi.fn((query) => ({
+        matches: phone && query.includes('max-width'), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+      }));
+    };
+    let matchMedia;
+    beforeEach(() => { matchMedia = window.matchMedia; });
+    afterEach(() => { window.matchMedia = matchMedia; });
+
+    it('is on the rail and on the phone bar, and opens over any page', async () => {
+      stubPhone(true);
+      await ready();
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      expect(within(rail).getByRole('button', { name: 'Log a book' })).toBeTruthy();
+      // The tab's visible word and its name agree.
+      const tab = within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('button', { name: 'Log book' });
+      expect(tab.textContent).toBe('Log book');
+      fireEvent.click(tab);
+      const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
+      expect(await within(sheet).findByLabelText('ISBN')).toBeTruthy();
+      // An action, not a section: the page underneath does not change.
+      expect(window.location.pathname).toBe('/school/teacher');
+      fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
+      expect(document.activeElement).toBe(tab);
+    });
+
+    it('opened from the phone rail, closes the rail first, and gives focus to the menu button it came through', async () => {
+      stubPhone(true);
+      await ready();
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      expect(rail.className).toMatch(/is-open/);
+      const entry = within(rail).getByRole('button', { name: 'Log a book' });
+      fireEvent.click(entry);
+      expect(rail.className).not.toMatch(/is-open/);
+      expect(screen.queryByRole('button', { name: 'Close navigation' })).toBeNull();
+      const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
+      fireEvent.keyDown(sheet, { key: 'Escape' });
+      expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
+      // The rail is closed off-screen; the menu button is what is on screen.
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open navigation' }));
+    });
+
+    it('opened from the desk rail, gives focus back to the rail control', async () => {
+      stubPhone(false);
+      await ready();
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      const entry = within(rail).getByRole('button', { name: 'Log a book' });
+      fireEvent.click(entry);
+      fireEvent.keyDown(await screen.findByRole('dialog', { name: 'Log a book' }), { key: 'Escape' });
+      expect(document.activeElement).toBe(entry);
+    });
+  });
+
+  it('sizes the phone tab bar to its item count rather than a fixed four', () => {
+    const scss = readFileSync(new URL('./Teacher.scss', import.meta.url), 'utf8');
+    const start = scss.indexOf('.teacher-workspace__mobile-nav {');
+    expect(start).toBeGreaterThan(-1);
+    // The whole rule, to its matching brace.
+    let depth = 0;
+    let end = start;
+    for (let i = scss.indexOf('{', start); i < scss.length; i += 1) {
+      if (scss[i] === '{') depth += 1;
+      if (scss[i] === '}') depth -= 1;
+      if (depth === 0) { end = i + 1; break; }
+    }
+    const rule = scss.slice(start, end);
+    expect(rule.endsWith('}')).toBe(true);
+    expect(rule).not.toMatch(/repeat\(\d+,\s*1fr\)/);
+    expect(rule).toMatch(/grid-auto-flow: column/);
+  });
+
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the

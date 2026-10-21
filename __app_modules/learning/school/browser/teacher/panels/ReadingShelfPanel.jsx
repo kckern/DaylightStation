@@ -24,9 +24,10 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
-import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
+import { useBookFacts } from "../useBookFacts.js";
+import { HAPPENED, newReadingBody } from "./logBookPlan.js";
 import { teacherLog } from "../teacherLog.js";
 import PanelFrame from "./PanelFrame.jsx";
 import BookCover from "../../books/BookCover.jsx";
@@ -42,15 +43,18 @@ const PANEL = 'reading-shelf';
  * "I'm partway through", a grown-up answers "partway through".
  */
 const DOORS = [
-  { where: 'starting', label: 'Just starting it' },
-  { where: 'partway', label: 'Partway through' },
-  { where: 'finished', label: 'Already finished it' },
+  { where: 'starting', label: 'Just starting it', happened: HAPPENED.STARTED },
+  { where: 'partway', label: 'Partway through', happened: HAPPENED.PARTWAY },
+  { where: 'finished', label: 'Already finished it', happened: HAPPENED.FINISHED },
 ];
 
 const wholeNumber = (value) => {
   const n = Number.parseInt(String(value ?? '').trim(), 10);
   return Number.isInteger(n) && n > 0 ? n : null;
 };
+
+/** How long a pause in typing counts as "done typing". */
+const SETTLE_MS = 500;
 
 const mintKey = () => `teacher-add-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -62,62 +66,81 @@ const mintKey = () => `teacher-add-${Date.now()}-${Math.random().toString(36).sl
  * smaller. The child is told nothing; a book appearing on their shelf is their
  * record getting bigger.
  *
- * It asks what the child's own add flow asks, in one call: the number off the
- * back, and where they are with it. The page count is NOT asked for — the
- * server resolves the book's length, the same way the panel's own open does.
+ * It sends what the console's "Log a book" sheet sends for a child with no
+ * open reading — the body comes from the same `newReadingBody` — plus a
+ * finish day only when the grown-up gives one. A finish with no day is today:
+ * the household's study day, which the server supplies.
+ *
+ * It reads what the sheet reads first, through `useBookFacts`: the book,
+ * looked up as soon as the number is a book number, and the server's readers
+ * view — the tracking mode it suggests (check-ins when it cannot say), and
+ * whether THIS child already logged the book today or has it open. Both are
+ * warnings, never blocks. When the readers view cannot be read, "reading it
+ * now" still comes from the shelf already in hand (its projected status);
+ * "logged today" has no server answer there and is not guessed.
  *
  * The number is judged before the network by the SAME `checkIsbn` the panel
- * uses (`submit: true`, because a grown-up typing stops when they stop), so a
- * malformed ISBN never costs a round trip.
+ * uses, so a malformed ISBN never costs a round trip.
  */
-function AddBookForLearner({ learnerId, onAdded }) {
+function AddBookForLearner({ learnerId, items = [], onAdded }) {
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const [open, setOpen] = useState(false);
   const [isbn, setIsbn] = useState('');
   const [where, setWhere] = useState('starting');
   const [page, setPage] = useState('');
   const [finishedOn, setFinishedOn] = useState('');
-  const [lookup, setLookup] = useState(null); // { book } | { fault }
+  const [modeChoice, setModeChoice] = useState(null);
   // Minted before the write, not during it: a double tap and a retry carry the
   // same key, so the book lands on the shelf once.
   const keyRef = useRef(mintKey());
 
+  // What the grown-up has stopped typing: the field after a pause or on
+  // leaving it. A ten-digit ISBN ending in a digit looks exactly like the
+  // first ten of thirteen, so only a settled number is judged as finished.
+  const [settled, setSettled] = useState('');
+  useEffect(() => {
+    if (isbn === settled) return undefined;
+    const timer = setTimeout(() => setSettled(isbn), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [isbn, settled]);
+  const done = settled === isbn;
+
   const check = checkIsbn(isbn, { submit: true });
-  const ready = check.state === 'valid'
-    && (where !== 'partway' || wholeNumber(page) !== null)
-    && (where !== 'finished' || Boolean(finishedOn));
+  // The lookup fires at once on a number finished by its shape (thirteen
+  // digits, or ten ending in X), and on any other book number once settled.
+  const live = checkIsbn(isbn);
+  const lookupIsbn = live.state === 'valid' ? live.isbn13 : (done && check.state === 'valid' ? check.isbn13 : null);
+  const facts = useBookFacts(open ? lookupIsbn : null);
+  const view = facts.readersStatus === 'ok' ? facts.readers : null;
+  const mode = modeChoice ?? view?.suggestedMode ?? 'check';
+  const door = DOORS.find((candidate) => candidate.where === where) ?? DOORS[0];
+  // Partway is page mode; switching to check-ins takes it away.
+  const shownWhere = door.where === 'partway' && mode !== 'page' ? 'starting' : door.where;
+  const shownDoor = DOORS.find((candidate) => candidate.where === shownWhere);
+  const body = check.state === 'valid'
+    ? newReadingBody({ isbn: check.isbn13, happened: shownDoor.happened, page: wholeNumber(page), mode })
+    : null;
+  const ready = body !== null;
+
+  const me = view?.readers?.find((reader) => reader.learnerId === learnerId) ?? null;
+  const target = check.state === 'valid' ? check.isbn13 : null;
+  const readingNow = me
+    ? Boolean(me.openReadingId)
+    : Boolean(target) && items.some((item) => item.bookId === target && ['reading', 'unread'].includes(statusOf(item)));
 
   const close = () => {
     setOpen(false);
-    setIsbn(''); setWhere('starting'); setPage(''); setFinishedOn(''); setLookup(null);
+    setIsbn(''); setSettled(''); setWhere('starting'); setPage(''); setFinishedOn(''); setModeChoice(null);
     keyRef.current = mintKey();
   };
 
-  const relookup = async () => {
-    if (check.state !== 'valid') return;
-    setLookup(null);
-    teacherLog.read('reading-add-lookup', { learnerId, isbn: check.isbn13 });
-    const response = await schoolApi.books.resolve(check.isbn13);
-    if (response.ok && response.data?.status === 'ok' && response.data.book) {
-      setLookup({ book: response.data.book });
-      return;
-    }
-    // A provider miss is not evidence the book in the grown-up's hand does not
-    // exist, so it never blocks the add — it just stays unnamed for now.
-    setLookup({ fault: response.data?.status === 'not-found'
-      ? 'No book answers to that number. You can still add it.'
-      : 'That number couldn’t be looked up just now. You can still add it.' });
-  };
-
   const submit = () => run('add-book', ({ actorId }) => teacherWorkspaceApi.addReadingForLearner(learnerId, {
-    isbn: check.isbn13,
-    where,
-    page: where === 'partway' ? wholeNumber(page) : null,
-    finishedOn: where === 'finished' ? finishedOn : null,
+    ...body,
+    ...(shownWhere === 'finished' && finishedOn ? { finishedOn } : {}),
     by: actorId,
   }, keyRef.current), {
     onSuccess: () => {
-      teacherLog.write('saved', { panel: PANEL, learnerId, action: 'reading.add', where });
+      teacherLog.write('saved', { panel: PANEL, learnerId, action: 'reading.add', where: shownWhere, mode: body?.progressMode });
       close();
       onAdded?.();
     },
@@ -133,6 +156,9 @@ function AddBookForLearner({ learnerId, onAdded }) {
     );
   }
 
+  const book = facts.book ? presentBook(facts.book) : null;
+  const pages = Number.isInteger(facts.book?.pageCount) && facts.book.pageCount > 0 ? `${facts.book.pageCount} pages` : null;
+
   return (
     <div className="teacher-reading__add">
       <div className="teacher-reading__add-field">
@@ -141,28 +167,38 @@ function AddBookForLearner({ learnerId, onAdded }) {
           id="add-reading-isbn"
           inputMode="numeric"
           value={isbn}
-          onChange={(event) => { setIsbn(event.target.value); setLookup(null); }}
+          onChange={(event) => setIsbn(event.target.value)}
+          onBlur={() => setSettled(isbn)}
         />
-        <button type="button" disabled={check.state !== 'valid'} onClick={relookup}>Look it up</button>
       </div>
-      {hintFor(check) && <p className="teacher-reading__add-note">{hintFor(check)}</p>}
-      {lookup?.book && <p className="teacher-reading__add-note">{presentBook(lookup.book).title}</p>}
-      {lookup?.fault && <p className="teacher-reading__add-note">{lookup.fault}</p>}
+      {done && hintFor(check) && <p className="teacher-reading__add-note">{hintFor(check)}</p>}
+      {facts.bookStatus === 'loading' && <p className="teacher-reading__add-note">Looking it up…</p>}
+      {book && <p className="teacher-reading__add-note">{[book.title, book.author, pages].filter(Boolean).join(' · ')}</p>}
+      {facts.bookStatus === 'not-found' && <p className="teacher-reading__add-note">No book answers to that number. You can still add it.</p>}
+      {facts.bookStatus === 'unavailable' && <p className="teacher-reading__add-note">That number couldn’t be looked up just now. You can still add it.</p>}
+      {me?.today && <p className="teacher-reading__add-note">Already logged today. Adding it again makes a second record.</p>}
+      {readingNow && <p className="teacher-reading__add-note">Already reading this. Log today from its row instead of adding it again.</p>}
+
+      <div className="teacher-reading__add-mode" role="group" aria-label="Tracking">
+        <span>Tracking:</span>
+        <button type="button" aria-pressed={mode === 'check'} onClick={() => setModeChoice('check')}>Check-ins</button>
+        <button type="button" aria-pressed={mode === 'page'} onClick={() => setModeChoice('page')}>Pages</button>
+      </div>
 
       <div className="teacher-reading__add-doors" role="group" aria-label="Where they are with it">
-        {DOORS.map((door) => (
+        {DOORS.filter((candidate) => candidate.where !== 'partway' || mode === 'page').map((candidate) => (
           <button
-            key={door.where}
+            key={candidate.where}
             type="button"
-            aria-pressed={where === door.where}
-            onClick={() => setWhere(door.where)}
+            aria-pressed={shownWhere === candidate.where}
+            onClick={() => setWhere(candidate.where)}
           >
-            {door.label}
+            {candidate.label}
           </button>
         ))}
       </div>
 
-      {where === 'partway' && (
+      {shownWhere === 'partway' && (
         <div className="teacher-reading__add-field">
           <label htmlFor="add-reading-page">Page they are on</label>
           <input
@@ -173,7 +209,7 @@ function AddBookForLearner({ learnerId, onAdded }) {
           />
         </div>
       )}
-      {where === 'finished' && (
+      {shownWhere === 'finished' && (
         <div className="teacher-reading__add-field">
           <label htmlFor="add-reading-finished">Day they finished it</label>
           <input
@@ -182,6 +218,7 @@ function AddBookForLearner({ learnerId, onAdded }) {
             value={finishedOn}
             onChange={(event) => setFinishedOn(event.target.value)}
           />
+          <span className="teacher-reading__add-note">Leave blank for today.</span>
         </div>
       )}
 
@@ -426,7 +463,7 @@ export default function ReadingShelfPanel({
         * `ok`. A shelf that could not be READ still offers nothing — a damaged
         * year of evidence gets no control that writes to it. */}
       {onAdded && (state === 'ok' || state === 'empty') && (
-        <AddBookForLearner learnerId={learnerId} onAdded={onAdded} />
+        <AddBookForLearner learnerId={learnerId} items={items} onAdded={onAdded} />
       )}
     </>
   );
