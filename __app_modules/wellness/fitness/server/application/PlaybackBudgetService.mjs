@@ -4,10 +4,10 @@ import { hasGovernedLabel } from '../../shared/governedContent.mjs';
 
 /** Durable, serialized allowance owner. The browser may spend only returned grants. */
 export class PlaybackBudgetService {
-  #store; #config; #catalog; #clock; #calendar; #devices; #logger; #queues = new Map(); #content = new Map();
-  constructor({ store, policyConfig, contentCatalog, clock, calendar, deviceDirectory, logger }) {
+  #store; #config; #catalog; #clock; #calendar; #devices; #users; #logger; #queues = new Map(); #content = new Map();
+  constructor({ store, policyConfig, contentCatalog, clock, calendar, deviceDirectory, userDirectory, logger }) {
     this.#store=store; this.#config=policyConfig; this.#catalog=contentCatalog;
-    this.#clock=clock; this.#calendar=calendar; this.#devices=deviceDirectory; this.#logger=logger;
+    this.#clock=clock; this.#calendar=calendar; this.#devices=deviceDirectory; this.#users=userDirectory; this.#logger=logger;
   }
   #serial(householdId, work) {
     const prior=this.#queues.get(householdId)??Promise.resolve();
@@ -105,12 +105,16 @@ export class PlaybackBudgetService {
       // settle existing grants, but cannot remove supervision or refill time.
       value.activeStreamId = streamId;
       const {supervised}=classifySupervision({participantIds,supervisorIds:setup.config.governance?.superusers??[]});
-      const governed=!supervised && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
+      // No governed child on the roster is NOT `supervised`: supervised resets the day's budget.
+      const exempt=(setup.config.governance?.exemptions??[]).map(v=>String(v).toLowerCase());
+      const supers=(setup.config.governance?.superusers??[]).map(v=>String(v).toLowerCase());
+      const hasSubject=participantIds.some(id=>!exempt.includes(String(id).toLowerCase())&&!supers.includes(String(id).toLowerCase())&&!!this.#users?.(id));
+      const governed=!supervised && hasSubject && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
       for(const policy of setup.policies) {
         const prior=Object.hasOwn(value.policies,policy.id)?value.policies[policy.id]:null;
         let bucket=reconcileBudget(prior,policy,{localDate:setup.localDate,supervised});
         if(prior&&bucket.generation!==prior.generation)this.#logger?.info?.('fitness.playback_budget.reset',{deviceId:setup.deviceId,policyId:policy.id,generation:bucket.generation,reason:supervised?'supervisor_join':'local_day'});
-        if(governed&&!supervised&&request.requestGrant!==false) {
+        if(governed&&!supervised&&hasSubject&&request.requestGrant!==false) {
           const result=reserveBudget(bucket,policy,{id:`${setup.localDate}/${bucket.generation}/${streamId}/${sequence}/${policy.id}`,streamId,nowMs:setup.nowMs,nextResetAtMs:setup.nextResetAt});
           bucket=result.record;grants[policy.id]=result.grant;
         }

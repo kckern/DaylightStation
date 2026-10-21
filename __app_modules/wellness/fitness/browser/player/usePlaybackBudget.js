@@ -7,7 +7,7 @@ import { PlaybackBudgetController } from './PlaybackBudgetController.js';
 
 const INACTIVE = { blocked: false, status: 'inactive', remainingMs: 0 };
 /** Provider-owned observer survives Player closing, so roster joins still reset. */
-export function usePlaybackBudget({ deviceId, policies, supervisorIds, participantRoster, currentMedia, governanceState, mediaRef, externalHold }) {
+export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds, participantRoster, currentMedia, governanceState, mediaRef, externalHold }) {
   const [state, setState] = useState(INACTIVE);
   const controller = useRef(null);
   const resumeTask = useRef(null);
@@ -17,8 +17,14 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, participa
   const latest = useRef(null);
   const participantIds = (participantRoster ?? []).filter(p => p.isActive !== false).map(p => p.id).filter(Boolean);
   const { supervised } = classifySupervision({ participantIds, supervisorIds });
+  const norm = (list) => new Set((list ?? []).map((v) => String(v).trim().toLowerCase()));
+  const exempt = norm(exemptIds);
+  const supervisorSet = norm(supervisorIds);
+  // No governed child (only supervisors, guests or exempt riders): nothing to meter.
+  const hasSubject = (participantRoster ?? []).some((p) => p.isActive !== false && p.id && !p.isGuest
+    && !exempt.has(String(p.id).trim().toLowerCase()) && !supervisorSet.has(String(p.id).trim().toLowerCase()));
   latest.current = {
-    participantIds, supervised, contentId: currentMedia ? resolveContentId(currentMedia) : null,
+    participantIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
     matching: Boolean(currentMedia && governanceState?.isGoverned),
     canPlay: !governanceState?.videoLocked && !externalHold,
   };

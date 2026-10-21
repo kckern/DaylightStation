@@ -17,7 +17,7 @@ export class PlaybackBudgetController {
     this.retry = null; this.view = null; this.disposed = false; this.holding = false;
     this.nextPoll = 0; this.expectedPauses = 0;
   }
-  eligible() { return !!this.input.matching && !this.input.supervised; }
+  eligible() { return !!this.input.matching && !this.input.supervised && this.input.hasSubject !== false; }
   valid() { return this.grants.length > 0 && this.grants.length === (this.requiredGrants ?? this.grants.length) && this.grants.every(g => this.used < g.ms && this.now() < g.deadline); }
   state() {
     const eligible = this.eligible();
@@ -76,7 +76,7 @@ export class PlaybackBudgetController {
   update(input) {
     this.account();
     const changed = this.input.contentId !== input.contentId || this.input.media !== input.media;
-    const policyChanged = this.input.supervised !== input.supervised || this.input.canPlay !== input.canPlay
+    const policyChanged = this.input.supervised !== input.supervised || this.input.hasSubject !== input.hasSubject || this.input.canPlay !== input.canPlay
       || this.input.matching !== input.matching || JSON.stringify(this.input.participantIds) !== JSON.stringify(input.participantIds);
     const mediaChanged = this.input.media !== input.media;
     this.input = input;
