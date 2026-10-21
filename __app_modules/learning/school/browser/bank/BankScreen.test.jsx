@@ -318,3 +318,13 @@ describe('BankScreen', () => {
     expect(silver).not.toHaveTextContent('3');
   });
 });
+
+describe('BankScreen coins', () => {
+  it('the balances draw the standard silver and gold coins', async () => {
+    await renderScreen();
+    const balances = screen.getByTestId('bank-balances');
+    expect(balances.querySelectorAll('svg.coin-icon[data-metal="silver"]')).toHaveLength(1);
+    expect(balances.querySelectorAll('svg.coin-icon[data-metal="gold"]')).toHaveLength(1);
+    expect(balances.querySelectorAll('svg.gem-icon')).toHaveLength(1);
+  });
+});

@@ -1471,6 +1471,17 @@ describe('AgendaStatusBoard silver earned this week', () => {
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     expect(silverOf('17')).toBeTruthy();
   });
+
+  it('draws the standard coin: silver beside the week, gold beside the bank', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0, balances: { silver: 0, gold: 3, gems: 0 } } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    const cell = screen.getAllByTestId('board-coins')[0];
+    await waitFor(() => expect(cell.querySelectorAll('svg.coin-icon[data-metal="gold"]')).toHaveLength(1));
+    expect(cell.querySelectorAll('svg.coin-icon[data-metal="silver"]')).toHaveLength(1);
+    expect(cell.querySelector('svg.coin-icon').getAttribute('viewBox')).toBe('0 0 36 36');
+  });
 });
 
 describe('AgendaStatusBoard gold', () => {

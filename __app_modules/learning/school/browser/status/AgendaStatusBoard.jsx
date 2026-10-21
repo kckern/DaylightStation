@@ -61,7 +61,6 @@ import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
 import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
-import { useCoinColor } from "../shared/useCoinColor.js";
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -289,9 +288,6 @@ function RestDayStatus({ restDay, pinned }) {
  * read lands, and nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
-  const [silverColor, silverRef] = useCoinColor('silver');
-  // The gold icon and the gold figure share --school-coin-gold.
-  const [goldColor, goldRef] = useCoinColor('gold');
   const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
   const hasGold = Number.isFinite(gold);
@@ -300,10 +296,10 @@ function Coins({ figure, gold, studyDay }) {
   const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
   const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
   return (
-    <div className="school-status-board__coin-grid" ref={(el) => { silverRef(el); goldRef(el); }}>
+    <div className="school-status-board__coin-grid">
       {inWeek && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color={silverColor} />
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" metal="silver" />
           <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver earned this week`, figure.pendingSilver)}>
             {figure.silver}{more(figure.pendingSilver)}
           </span>
@@ -311,7 +307,7 @@ function Coins({ figure, gold, studyDay }) {
       )}
       {hasGold && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" color={goldColor} />
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" metal="gold" />
           <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
         </>
       )}

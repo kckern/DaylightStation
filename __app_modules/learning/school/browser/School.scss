@@ -45,8 +45,8 @@
   // non-interactive board look tappable. Naming the pair also means "done" and
   // "not yet" are one edit each instead of four literals scattered downfile.
   --school-board-ink: #efe9dc;
-  // The two coins. CoinIcon derives its tint ladder from a hex, so the
-  // components read these with getComputedStyle (`useCoinColor`).
+  // The two coins' FIGURE colours (the numbers beside the icons). The coin
+  // icon itself carries its own palette: lib/icons/CoinIcon.jsx COIN_PALETTES.
   --school-coin-silver: #c0c0c0;
   --school-coin-gold: #e2c15a;
   --school-board-done: #7fb069;

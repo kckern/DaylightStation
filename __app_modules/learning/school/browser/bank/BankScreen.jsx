@@ -39,7 +39,6 @@ import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvata
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
-import { useCoinColor } from "../shared/useCoinColor.js";
 import { earnItems, goldCountdown, historyByDay, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
 import './BankScreen.scss';
 
@@ -58,16 +57,14 @@ function Identity({ learner }) {
   );
 }
 
-// `ref` reads a coin token off the label itself (`useCoinColor`).
-const coinLabel = (Icon, color, text, ref = undefined) => (
-  <span className="school-bank-screen__stat-label" ref={ref}><Icon className="school-bank-screen__stat-icon" color={color} />{text}</span>
+// A balance's label: the standard icon, then the word.
+const coinLabel = (icon, text) => (
+  <span className="school-bank-screen__stat-label">{icon}{text}</span>
 );
 
 export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, now = null }) {
   const learnerId = learner?.id ?? null;
   const log = useMemo(() => getLogger().child({ component: 'school-bank-screen' }), []);
-  const [silverColor, silverRef] = useCoinColor('silver');
-  const [goldColor, goldRef] = useCoinColor('gold');
   // { status: 'loading'|'ok'|'unavailable', data }
   const [bank, setBank] = useState({ status: 'loading', data: null });
   const [agenda, setAgenda] = useState(null);
@@ -146,7 +143,6 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
     <section
       className="school-bank-screen"
       data-testid="bank-screen"
-      ref={silverRef}
       onPointerDownCapture={noteActivity}
       onKeyDownCapture={noteActivity}
     >
@@ -169,17 +165,17 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
             <section className="school-bank-screen__section school-bank-screen__balances" aria-label="Balances" data-testid="bank-balances">
               <StatCard
                 emphasis
-                label={coinLabel(CoinIcon, silverColor, 'Silver')}
+                label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="silver" />, 'Silver')}
                 value={data.balances.silver}
                 trend={goldCountdown({ weekEndsOn: data.weekEndsOn, studyDay: data.studyDay, weekEndsAt: data.weekEndsAt, now: at })}
               />
               <StatCard
-                label={coinLabel(CoinIcon, goldColor, 'Gold', goldRef)}
+                label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="gold" />, 'Gold')}
                 value={Number.isFinite(data.balances.gold) ? data.balances.gold : 0}
                 trend="yours for good"
               />
               <StatCard
-                label={coinLabel(GemIcon, undefined, 'Gems')}
+                label={coinLabel(<GemIcon className="school-bank-screen__stat-icon" />, 'Gems')}
                 value={Number.isFinite(data.balances.gems) ? data.balances.gems : 0}
                 trend="yours for good"
               />

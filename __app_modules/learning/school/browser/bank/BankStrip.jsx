@@ -55,7 +55,6 @@ import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
-import { useCoinColor } from "../shared/useCoinColor.js";
 import './BankStrip.scss';
 
 export const REFRESH_MS = 5 * 60_000;
@@ -136,7 +135,6 @@ function ChipBox({ className, onOpen, label, describedBy, children }) {
 export default function BankStrip({ kids = [], deviceId = null, className = '', onOpen = null }) {
   const log = useMemo(() => getLogger().child({ component: 'school-bank-strip' }), []);
   const device = deviceId || DEFAULT_DEVICE_ID;
-  const [silverColor, silverRef] = useCoinColor('silver');
   // learnerId -> { status: 'ok'|'unavailable', chip }; absent until the first read lands
   const [banks, setBanks] = useState({});
   // learnerId -> the `/next` payload, or null
@@ -261,7 +259,7 @@ export default function BankStrip({ kids = [], deviceId = null, className = '', 
 
   if (!kids.length) return null;
   return (
-    <section className={`school-bank-strip${className ? ` ${className}` : ''}`} aria-label="Silver in the bank" ref={silverRef}>
+    <section className={`school-bank-strip${className ? ` ${className}` : ''}`} aria-label="Silver in the bank">
       <ul className="school-bank-strip__kids">
         {kids.map((kid) => {
           const bank = banks[kid.id];
@@ -282,7 +280,7 @@ export default function BankStrip({ kids = [], deviceId = null, className = '', 
                 )}
                 {chip && !chip.soon && (
                   <span className="school-bank-strip__coins" id={`school-bank-chip-${kid.id}`}>
-                    <CoinIcon className="school-bank-strip__coin" color={silverColor} />
+                    <CoinIcon className="school-bank-strip__coin" metal="silver" />
                     <span className="school-bank-strip__silver" aria-hidden="true">{chip.silver}</span>
                     <span className="school-bank-strip__caption" aria-hidden="true">in the bank</span>
                     <span className="school-bank-strip__sr">{`${chip.silver} silver in the bank`}</span>

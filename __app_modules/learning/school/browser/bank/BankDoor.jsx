@@ -30,7 +30,6 @@ import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { schoolApi } from "../schoolApi.js";
 import LearnerChoice from "../books/LearnerChoice.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
-import { useCoinColor } from "../shared/useCoinColor.js";
 
 export const OPEN_FAILED = 'Could not open the bank. Try again.';
 
@@ -119,16 +118,14 @@ export function useBankDoor({ screenId = null, onLaunch }) {
  * focus has somewhere to go back to when the sheet closes.
  */
 export function BankDoorButton({ door }) {
-  const [gold, goldRef] = useCoinColor('gold');
   return (
     <button
       type="button"
-      ref={goldRef}
       className="school-book-door school-bank-door"
       data-testid="bank-door"
       onClick={door.ask}
     >
-      <CoinIcon className="school-bank-door__icon" color={gold} />
+      <CoinIcon className="school-bank-door__icon" metal="gold" />
       <span className="school-book-door__label">My bank</span>
     </button>
   );

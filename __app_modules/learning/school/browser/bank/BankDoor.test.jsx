@@ -119,4 +119,9 @@ describe('BankDoor', () => {
       vi.useRealTimers();
     }
   });
+
+  it('the coin button draws the standard gold coin', () => {
+    render(<Harness />);
+    expect(screen.getByTestId('bank-door').querySelector('svg.coin-icon')).toHaveAttribute('data-metal', 'gold');
+  });
 });
