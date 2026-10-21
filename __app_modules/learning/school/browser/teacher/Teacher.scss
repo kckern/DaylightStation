@@ -2875,8 +2875,8 @@
     color: var(--ds-text-mid);
     font-size: 13px;
     button {
-      min-height: 36px;
-      padding: 0 10px;
+      min-height: 44px;
+      padding: 0 12px;
       border: 1px solid var(--ds-border);
       border-radius: 999px;
       background: var(--ds-surface);
@@ -2910,7 +2910,7 @@
 
   &__retry {
     align-self: flex-start;
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 14px;
     border: 1px solid var(--ds-border);
     border-radius: 8px;

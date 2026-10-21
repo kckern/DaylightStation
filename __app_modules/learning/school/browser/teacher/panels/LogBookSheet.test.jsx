@@ -30,6 +30,7 @@ const ISBN = '9780000000002';
 const DAY = '2026-09-06';
 const ok = (data, status = 200) => ({ ok: true, status, data });
 const fail = (error, status = 500) => ({ ok: false, status, data: { error } });
+const LOST = { ok: false, status: 0, data: null };
 const row = (learnerId, name, over = {}) => ({
   learnerId, name, suggestedMode: 'check', today: false, openReadingId: null, openReading: null,
   finishedTodayIds: [], unreadable: false, ...over,
@@ -44,16 +45,24 @@ const READERS = view([
   row('learner_c', 'Learner C'),
 ]);
 
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+};
 const scan = async (value = ISBN) => {
   await act(async () => { scanner.args.onDecode(value); });
 };
 const face = (name) => screen.getByRole('button', { name: new RegExp(`^${name}`) });
+const summary = () => screen.getByRole('status').textContent;
+const sheet = () => <LogBookSheet open onClose={vi.fn()} />;
 
 beforeEach(() => {
   vi.clearAllMocks();
   scanner.args = null;
   scanner.cameraState = 'live';
   profile.currentTeacher = { id: 'test-user', name: 'test-user' };
+  profile.authorization = { active: true };
   profile.openPinPrompt = vi.fn(async () => ({ ok: true }));
   profile.openPicker = vi.fn();
   profile.requestAuthorization = vi.fn(async () => ({ ok: true, grantToken: null }));
@@ -67,7 +76,7 @@ beforeEach(() => {
 
 describe('LogBookSheet — scan', () => {
   it('opens on the camera, with "Type the number" always offered', () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     expect(screen.getByRole('dialog', { name: 'Log a book' })).toBeTruthy();
     expect(scanner.args.active).toBe(true);
     expect(screen.getByRole('button', { name: 'Type the number' })).toBeTruthy();
@@ -81,14 +90,14 @@ describe('LogBookSheet — scan', () => {
 
   it('falls back to typing when the camera is denied', () => {
     scanner.cameraState = 'denied';
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     expect(screen.getByText(/camera isn’t available/i)).toBeTruthy();
     expect(screen.getByLabelText('ISBN')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Type the number' })).toBeNull();
   });
 
   it('takes a typed number only when it is a book number', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     fireEvent.click(screen.getByRole('button', { name: 'Type the number' }));
     expect(scanner.args.active).toBe(false);
     const input = screen.getByLabelText('ISBN');
@@ -101,7 +110,7 @@ describe('LogBookSheet — scan', () => {
   });
 
   it('a scanned code that is not an ISBN says so and scans again', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     const before = scanner.args.restartKey;
     await scan('012345678905');
     expect(screen.getByRole('alert').textContent).toMatch(/not a book number/i);
@@ -110,9 +119,40 @@ describe('LogBookSheet — scan', () => {
   });
 });
 
+describe('LogBookSheet — a real dialog', () => {
+  it('focus lands inside on open and goes back where it was on close', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const { rerender } = render(sheet());
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
+    rerender(<LogBookSheet open={false} onClose={vi.fn()} />);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('Escape closes it', () => {
+    const onClose = vi.fn();
+    render(<LogBookSheet open onClose={onClose} />);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Tab wraps inside the sheet', () => {
+    render(sheet());
+    const close = screen.getByRole('button', { name: 'Close' });
+    const last = screen.getByRole('button', { name: 'Type the number' });
+    last.focus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+});
+
 describe('LogBookSheet — the book and the readers', () => {
   it('looks the book up, then asks who has it', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     expect(await screen.findByText('A Borrowed Title', { selector: 'strong' })).toBeTruthy();
     await screen.findByRole('button', { name: /^Learner A/ });
@@ -125,39 +165,40 @@ describe('LogBookSheet — the book and the readers', () => {
 
   it('a failed lookup shows the number and the flow carries on', async () => {
     schoolApi.books.resolve.mockResolvedValue({ ok: false, status: 404, data: { status: 'not-found' } });
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     expect(await screen.findByRole('button', { name: /^Learner C/ })).toBeTruthy();
     expect(screen.getByText(`ISBN ${ISBN}`)).toBeTruthy();
-    expect(screen.getByText(/You can still log it/)).toBeTruthy();
+    expect(screen.getByText(/We couldn’t find a book with that number\. You can still log it/)).toBeTruthy();
   });
 
-  it('every face carries the server’s badges, and none is preselected', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+  it('every face carries the server’s badges, named for a screen reader, and none is preselected', async () => {
+    render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner A/ });
     expect(within(face('Learner A')).getByText('Logged today')).toBeTruthy();
     expect(within(face('Learner B')).getByText('Reading now')).toBeTruthy();
-    expect(within(face('Learner C')).queryByText('Logged today')).toBeNull();
-    expect(within(face('Learner C')).queryByText('Reading now')).toBeNull();
+    expect(face('Learner A').getAttribute('aria-label')).toBe('Learner A, logged today');
+    expect(face('Learner B').getAttribute('aria-label')).toBe('Learner B, reading now');
+    expect(face('Learner C').getAttribute('aria-label')).toBe('Learner C');
     for (const name of ['Learner A', 'Learner B', 'Learner C']) expect(face(name).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: 'Save' }).disabled).toBe(true);
   });
 
-  it('a child whose shelf could not be read cannot be chosen, and the sheet says why', async () => {
+  it('a child whose shelf could not be read cannot be chosen, and the face says why', async () => {
     teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(view([
       row('learner_a', 'Learner A', { unreadable: true }), row('learner_c', 'Learner C'),
     ])));
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
     expect(face('Learner A').disabled).toBe(true);
-    expect(within(face('Learner A')).getByText('Shelf unreadable')).toBeTruthy();
-    expect(screen.getByText(/couldn’t be read/)).toBeTruthy();
+    expect(screen.getAllByText(/unreadable/i)).toHaveLength(1);
+    expect(face('Learner A').getAttribute('aria-label')).toBe('Learner A, shelf unreadable');
   });
 
   it('warns when a child who logged it today is chosen, but allows it', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     fireEvent.click(await screen.findByRole('button', { name: /^Learner A/ }));
     expect(face('Learner A').getAttribute('aria-pressed')).toBe('true');
@@ -166,41 +207,47 @@ describe('LogBookSheet — the book and the readers', () => {
   });
 
   it('defaults to Finished today and the server’s tracking; Partway only in page mode', async () => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
     expect(screen.getByRole('button', { name: 'Finished today' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Started today' }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('button', { name: '✓ check' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Check-ins' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByRole('button', { name: 'Partway' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'page' }));
-    expect(screen.getByRole('button', { name: 'page' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Pages' }));
+    expect(screen.getByRole('button', { name: 'Pages' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Partway' })).toBeTruthy();
   });
 
   it('takes the server’s page-mode suggestion for a long book', async () => {
     teacherWorkspaceApi.bookReaders.mockResolvedValue(ok({ ...view([row('learner_c', 'Learner C')]), pageCount: 200, suggestedMode: 'page' }));
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
-    expect(screen.getByRole('button', { name: 'page' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Pages' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Partway' })).toBeTruthy();
   });
 
-  it('a locked console says so, offers to unlock, and reads the readers again once unlocked', async () => {
+  it('a locked console says so and unlocks; the unlock itself reads the readers again, once', async () => {
+    profile.authorization = { active: false };
     teacherWorkspaceApi.bookReaders.mockResolvedValueOnce({ ok: false, status: 403, data: { error: 'The teacher PIN is missing or wrong.' } });
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    const { rerender } = render(sheet());
     await scan();
     expect(await screen.findByText(/locked/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     expect(profile.openPinPrompt).toHaveBeenCalled();
+    await act(async () => {});
+    expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledTimes(1);
+    profile.authorization = { active: true };
+    rerender(sheet());
     expect(await screen.findByRole('button', { name: /^Learner C/ })).toBeTruthy();
+    expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledTimes(2);
   });
 
   it('a locked console with no teacher chosen asks who is here first', async () => {
     profile.currentTeacher = null;
     teacherWorkspaceApi.bookReaders.mockResolvedValue({ ok: false, status: 403, data: {} });
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     fireEvent.click(await screen.findByRole('button', { name: 'Unlock' }));
     expect(profile.openPicker).toHaveBeenCalled();
@@ -210,10 +257,11 @@ describe('LogBookSheet — the book and the readers', () => {
 
 describe('LogBookSheet — save', () => {
   const ready = async (...names) => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    const utils = render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
     for (const name of names) fireEvent.click(face(name));
+    return utils;
   };
   const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -225,13 +273,14 @@ describe('LogBookSheet — save', () => {
     expect(learnerId).toBe('learner_c');
     expect(body).toEqual({ isbn: ISBN, progressMode: 'check', where: 'finished', by: 'test-user' });
     expect(typeof key).toBe('string');
-    expect(await screen.findByText(/Learner C ✓/)).toBeTruthy();
+    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'));
+    expect(face('Learner C').getAttribute('aria-label')).toBe('Learner C, saved');
   });
 
   it('started today opens a reading in the chosen mode', async () => {
     await ready('Learner C');
     fireEvent.click(screen.getByRole('button', { name: 'Started today' }));
-    fireEvent.click(screen.getByRole('button', { name: 'page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pages' }));
     save();
     await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
     expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
@@ -249,12 +298,12 @@ describe('LogBookSheet — save', () => {
       'learner_b', 'rdg_b', { status: 'finished', finishedOn: DAY, baseRevisionCount: 3 },
     );
     expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Learner B ✓/)).toBeTruthy();
+    await waitFor(() => expect(summary()).toMatch(/Learner B ✓/));
   });
 
   it('partway asks for the page and will not save without one', async () => {
     await ready('Learner C');
-    fireEvent.click(screen.getByRole('button', { name: 'page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Partway' }));
     expect(screen.getByRole('button', { name: 'Save' }).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Page they are on'), { target: { value: '40' } });
@@ -264,6 +313,14 @@ describe('LogBookSheet — save', () => {
       .toMatchObject({ progressMode: 'page', where: 'partway', page: 40 });
   });
 
+  it('a double tap on Save sends one batch', async () => {
+    await ready('Learner C');
+    save();
+    save();
+    await waitFor(() => expect(summary()).toMatch(/Learner C ✓/));
+    expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
+  });
+
   it('offers "Log another book", which reopens the camera', async () => {
     await ready('Learner C');
     save();
@@ -271,11 +328,63 @@ describe('LogBookSheet — save', () => {
     expect(screen.getByRole('button', { name: 'Type the number' })).toBeTruthy();
     expect(scanner.args.active).toBe(true);
   });
+
+  it('while a save is running, Close, Escape and Log another book wait for it', async () => {
+    const pending = deferred();
+    teacherWorkspaceApi.addReadingForLearner.mockImplementation((learnerId) => (learnerId === 'learner_c'
+      ? pending.promise : Promise.resolve(ok({ created: true }, 201))));
+    const onClose = vi.fn();
+    render(<LogBookSheet open onClose={onClose} />);
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    fireEvent.click(face('Learner A'));
+    fireEvent.click(face('Learner C'));
+    save();
+    await waitFor(() => expect(summary()).toMatch(/Learner A ✓/));
+    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Log another book' }).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { pending.resolve(ok({ created: true }, 201)); });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false));
+  });
+
+  it('a sheet closed mid-save stops that batch, and the next book starts clean', async () => {
+    const pending = deferred();
+    teacherWorkspaceApi.addReadingForLearner.mockImplementation((learnerId) => (learnerId === 'learner_a'
+      ? pending.promise : Promise.resolve(ok({ created: true }, 201))));
+    const { rerender } = await ready('Learner A', 'Learner C');
+    save();
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1));
+    rerender(<LogBookSheet open={false} onClose={vi.fn()} />);
+    await act(async () => { pending.resolve(ok({ created: true }, 201)); });
+    await act(async () => {});
+    expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
+
+    rerender(sheet());
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    expect(face('Learner A').disabled).toBe(false);
+    expect(face('Learner A').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the last book’s write error does not follow the grown-up to the next book', async () => {
+    profile.requestAuthorization = vi.fn(async () => ({ ok: false, message: 'That PIN is not right.' }));
+    await ready('Learner C');
+    save();
+    expect(await screen.findByText('That PIN is not right.')).toBeTruthy();
+    expect(summary()).toBe('Learner C – not sent');
+    fireEvent.click(screen.getByRole('button', { name: 'Log another book' }));
+    await scan();
+    await screen.findByRole('button', { name: /^Learner C/ });
+    expect(screen.queryByText('That PIN is not right.')).toBeNull();
+  });
 });
 
 describe('LogBookSheet — partial failure and retry', () => {
   const ready = async (...names) => {
-    render(<LogBookSheet open onClose={vi.fn()} />);
+    render(sheet());
     await scan();
     await screen.findByRole('button', { name: /^Learner C/ });
     for (const name of names) fireEvent.click(face(name));
@@ -289,7 +398,7 @@ describe('LogBookSheet — partial failure and retry', () => {
     await ready('Learner A', 'Learner C');
     save();
     expect(await screen.findByText('The shelf could not be written.')).toBeTruthy();
-    expect(screen.getByText(/Learner A ✗ · Learner C ✓/)).toBeTruthy();
+    expect(summary()).toBe('Learner A ✗ didn’t save · Learner C ✓ saved');
     expect(face('Learner C').disabled).toBe(true);
     const [, firstBody, firstKey] = teacherWorkspaceApi.addReadingForLearner.mock.calls.find(([id]) => id === 'learner_a');
 
@@ -298,28 +407,41 @@ describe('LogBookSheet — partial failure and retry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry Learner A' }));
     await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1));
     expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0]).toEqual(['learner_a', firstBody, firstKey]);
-    expect(await screen.findByText(/Learner A ✓ · Learner C ✓/)).toBeTruthy();
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'));
   });
 
   it('Save again after a failure resends only the children not yet saved', async () => {
     teacherWorkspaceApi.addReadingForLearner.mockImplementation(async (learnerId) => (learnerId === 'learner_a'
-      ? fail('The shelf could not be written.')
+      ? fail('The shelf could not be written.', 422)
       : ok({ created: true }, 201)));
     await ready('Learner A', 'Learner C');
     save();
-    await screen.findByText(/Learner A ✗ · Learner C ✓/);
+    await waitFor(() => expect(summary()).toMatch(/Learner A ✗.* · Learner C ✓/));
     teacherWorkspaceApi.addReadingForLearner.mockReset();
     teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(ok({ created: true }, 201));
     save();
-    await screen.findByText(/Learner A ✓ · Learner C ✓/);
+    await waitFor(() => expect(summary()).toMatch(/Learner A ✓.* · Learner C ✓/));
     expect(teacherWorkspaceApi.addReadingForLearner.mock.calls.map(([id]) => id)).toEqual(['learner_a']);
   });
 
-  it('changing what happened after a failure mints a new key for that child', async () => {
-    teacherWorkspaceApi.addReadingForLearner.mockResolvedValueOnce(fail('The shelf could not be written.'));
+  it('a deselected child who failed stays in the summary with their Retry', async () => {
+    teacherWorkspaceApi.addReadingForLearner.mockImplementation(async (learnerId) => (learnerId === 'learner_a'
+      ? fail('The shelf could not be written.', 422)
+      : ok({ created: true }, 201)));
+    await ready('Learner A', 'Learner C');
+    save();
+    await waitFor(() => expect(summary()).toMatch(/Learner A ✗/));
+    fireEvent.click(face('Learner A'));
+    expect(face('Learner A').getAttribute('aria-pressed')).toBe('false');
+    expect(summary()).toMatch(/Learner A ✗.* · Learner C ✓/);
+    expect(screen.getByRole('button', { name: 'Retry Learner A' })).toBeTruthy();
+  });
+
+  it('a clear refusal, then a new choice: a new key for that child', async () => {
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValueOnce(fail('That book can’t be logged that way.', 422));
     await ready('Learner C');
     save();
-    await screen.findByText('The shelf could not be written.');
+    await screen.findByText('That book can’t be logged that way.');
     const firstKey = teacherWorkspaceApi.addReadingForLearner.mock.calls[0][2];
 
     fireEvent.click(screen.getByRole('button', { name: 'Started today' }));
@@ -330,17 +452,57 @@ describe('LogBookSheet — partial failure and retry', () => {
     expect(key).not.toBe(firstKey);
   });
 
+  it('an unknown outcome freezes that child: a new choice still resends the first request on the first key', async () => {
+    teacherWorkspaceApi.addReadingForLearner.mockResolvedValueOnce(LOST);
+    await ready('Learner C');
+    save();
+    expect(await screen.findByText(/Retry sends what you chose first\. Fix it on their shelf afterwards if needed\./)).toBeTruthy();
+    const [, firstBody, firstKey] = teacherWorkspaceApi.addReadingForLearner.mock.calls[0];
+
+    fireEvent.click(screen.getByRole('button', { name: 'Started today' }));
+    save();
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[1]).toEqual(['learner_c', firstBody, firstKey]);
+    expect(firstBody.where).toBe('finished');
+  });
+
+  it('an open reading’s entry refused outright: Retry keeps the same key', async () => {
+    teacherWorkspaceApi.addReadingEntry.mockResolvedValueOnce(fail('Someone else just changed this reading.', 409));
+    await ready('Learner B');
+    save();
+    await screen.findByText('Someone else just changed this reading.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledTimes(2));
+    const keys = teacherWorkspaceApi.addReadingEntry.mock.calls.map((call) => call[3]);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('an open reading’s entry whose answer was lost: Retry resends it on the same key, even after a new choice', async () => {
+    teacherWorkspaceApi.addReadingEntry.mockResolvedValueOnce(LOST);
+    await ready('Learner B');
+    save();
+    await screen.findByText(/Retry sends what you chose first/);
+    fireEvent.click(screen.getByRole('button', { name: 'Started today' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledTimes(2));
+    const [first, second] = teacherWorkspaceApi.addReadingEntry.mock.calls;
+    expect(second[3]).toBe(first[3]);
+    expect(second[2]).toEqual(first[2]);
+    // Still the first choice, Finished: the finish follows the entry.
+    await waitFor(() => expect(teacherWorkspaceApi.updateReading).toHaveBeenCalled());
+  });
+
   it('an open reading whose finish failed: Retry re-reads, sends only the finish, on the served count', async () => {
     teacherWorkspaceApi.updateReading.mockResolvedValueOnce(fail('Someone else just changed this reading.', 409));
     await ready('Learner B');
     save();
     await screen.findByText('Someone else just changed this reading.');
-    expect(screen.getByText(/Learner B ✗/)).toBeTruthy();
+    expect(summary()).toMatch(/Learner B ✗/);
 
     teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(view([openRow(5), row('learner_c', 'Learner C')])));
     const readsBefore = teacherWorkspaceApi.bookReaders.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
-    await screen.findByText(/Learner B ✓/);
+    await waitFor(() => expect(summary()).toMatch(/Learner B ✓/));
     expect(teacherWorkspaceApi.bookReaders.mock.calls.length).toBeGreaterThan(readsBefore);
     expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledTimes(1);
     expect(teacherWorkspaceApi.updateReading).toHaveBeenLastCalledWith(
@@ -349,10 +511,10 @@ describe('LogBookSheet — partial failure and retry', () => {
   });
 
   it('an open reading whose finish landed but whose answer was lost: Retry shows ✓ and writes nothing', async () => {
-    teacherWorkspaceApi.updateReading.mockResolvedValueOnce({ ok: false, status: 0, data: null });
+    teacherWorkspaceApi.updateReading.mockResolvedValueOnce(LOST);
     await ready('Learner B');
     save();
-    await screen.findByText(/Learner B ✗/);
+    await waitFor(() => expect(summary()).toMatch(/Learner B ✗/));
 
     teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(view([
       row('learner_b', 'Learner B', { today: true, finishedTodayIds: ['rdg_b'] }), row('learner_c', 'Learner C'),
@@ -360,7 +522,7 @@ describe('LogBookSheet — partial failure and retry', () => {
     teacherWorkspaceApi.addReadingEntry.mockClear();
     teacherWorkspaceApi.updateReading.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
-    await screen.findByText(/Learner B ✓/);
+    await waitFor(() => expect(summary()).toMatch(/Learner B ✓/));
     expect(teacherWorkspaceApi.addReadingEntry).not.toHaveBeenCalled();
     expect(teacherWorkspaceApi.updateReading).not.toHaveBeenCalled();
     expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
@@ -390,7 +552,7 @@ describe('LogBookSheet — partial failure and retry', () => {
     });
     await ready('Learner A', 'Learner C');
     save();
-    await screen.findByText(/Learner A ✓ · Learner C ✓/);
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'));
     const calls = teacherWorkspaceApi.addReadingForLearner.mock.calls;
     expect(calls.filter(([id]) => id === 'learner_a')).toHaveLength(1);
     const forC = calls.filter(([id]) => id === 'learner_c');
@@ -398,5 +560,15 @@ describe('LogBookSheet — partial failure and retry', () => {
     expect(forC[1][2]).toBe(forC[0][2]);
     expect(profile.invalidateAuthorization).toHaveBeenCalledTimes(1);
     expect(profile.requestAuthorization).toHaveBeenCalledTimes(2);
+  });
+
+  it('a second 403 stops the batch, and a child it never reached reads "not sent"', async () => {
+    teacherWorkspaceApi.addReadingForLearner.mockImplementation(async (learnerId) => (learnerId === 'learner_c'
+      ? fail('The teacher PIN is missing or wrong.', 403)
+      : ok({ created: true }, 201)));
+    await ready('Learner A', 'Learner C');
+    save();
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C – not sent'));
+    expect(screen.getByRole('button', { name: 'Retry Learner C' })).toBeTruthy();
   });
 });
