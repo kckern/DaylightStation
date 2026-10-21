@@ -921,6 +921,12 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
   const events = useMemo(() => session?.events ?? sessionState?.events ?? sessionState?.history ?? [], [session, sessionState]);
   const updatedAt = dateOf(session) ?? session?.updatedAt ?? events.at(-1)?.at ?? null;
   const previewSubject = session?.taxonomy?.subject ?? sessionState?.subject ?? null;
+  // The study day a reassign should open on. `updatedAt` is last ACTIVITY —
+  // a lesson rescanned on Friday would file Monday's work under Friday — so
+  // the fallback is when the session was opened, and with neither, no day.
+  const createdAt = events.find((event) => event.type === 'created')?.at ?? null;
+  const sessionDay = sessionState?.studyDay
+    ?? (createdAt && !Number.isNaN(Date.parse(createdAt)) ? localDay(new Date(createdAt)) : null);
 
   return (
     <div className="teacher-view teacher-session-inspector">
@@ -963,7 +969,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
                 <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { unit: sessionState?.unitId ?? null })}>
                   Give credit for work completed offline →
                 </a>
-                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { day: sessionState?.studyDay ?? (Number.isNaN(Date.parse(updatedAt ?? '')) ? null : localDay(new Date(updatedAt))) })}>
+                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { day: sessionDay })}>
                   This was another child’s work →
                 </a>
               </>}

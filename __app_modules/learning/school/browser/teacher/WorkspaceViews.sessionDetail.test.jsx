@@ -175,6 +175,18 @@ describe('SessionInspector detail coherence', () => {
       .toHaveAttribute('href', '/school/teacher/students/user_2/operations?day=2026-10-20');
   });
 
+  // `updatedAt` is last activity: a lesson rescanned days later must not file
+  // its reassign under the rescan day. The `created` event is the fallback.
+  it('opens another-child on the day the lesson was opened, not last touched', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, updatedAt: '2026-10-24T15:00:00.000Z',
+      events: [{ type: 'created', at: '2026-10-20T15:00:00.000Z' }, { type: 'submitted', at: '2026-10-24T15:00:00.000Z' }],
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const link = await screen.findByRole('link', { name: /another child’s work/ });
+    expect(new URL(link.getAttribute('href'), 'http://x').searchParams.get('day')).toBe('2026-10-20');
+  });
+
   it('puts the reprint control inside the card it reprints', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
