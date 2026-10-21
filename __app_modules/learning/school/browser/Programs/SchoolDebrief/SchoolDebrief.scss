@@ -1,0 +1,20 @@
+// Colours only via --ds-* (school pack). Buttons are TouchButton; no button CSS here.
+// Sized for the 1280x800 Portal; rem-based so the stage scales.
+.sd-program { display: grid; grid-template-rows: auto 1fr; min-height: 100%; padding: 1.5rem 2.5rem; background: var(--ds-background); color: var(--ds-text-high); }
+.sd-header { display: flex; gap: 1rem; align-items: baseline; font-size: 1.1rem; color: var(--ds-text-mid);
+  &__title { font-weight: 700; color: var(--ds-text-high); }
+  &__late { padding: 0.1rem 0.6rem; border-radius: 999px; background: var(--ds-warning); color: var(--ds-background); font-weight: 700; }
+  &__step { margin-left: auto; } }
+.sd-item { display: flex; flex-direction: column; gap: 1.25rem; max-width: 60rem; margin: 1.5rem auto 0; width: 100%; }
+.sd-prompt__text { font-size: 2.2rem; line-height: 1.25; margin: 0; }
+.sd-prompt__field { font-size: 1.6rem; line-height: 1.4; padding: 0.9rem 1rem; border-radius: 12px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); resize: none; }
+.sd-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.sd-choice__letter { font-weight: 800; margin-right: 0.5rem; }
+.sd-result { font-size: 1.6rem; &.is-right { color: var(--ds-success); } &.is-wrong { color: var(--ds-text-high); } }
+.sd-controls { display: flex; gap: 1rem; justify-content: flex-end; &--stack { flex-direction: column; align-items: stretch; } }
+.sd-notice, .sd-nudge { font-size: 1.3rem; color: var(--ds-warning); }
+.sd-thinking { font-size: 1.8rem; text-align: center; margin-top: 6rem; color: var(--ds-text-mid); }
+.sd-summary__quote { font-size: 1.6rem; border-left: 4px solid var(--ds-accent); padding-left: 1rem; margin: 0; }
+.sd-summary__earned { list-style: none; padding: 0; font-size: 1.4rem; }
+.sd-summary__week { font-weight: 700; margin-top: 0.5rem; }
+.sd-summary__soon { font-size: 1.3rem; color: var(--ds-text-mid); }
