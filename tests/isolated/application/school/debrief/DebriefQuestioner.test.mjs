@@ -33,6 +33,8 @@ describe('DebriefQuestioner', () => {
     expect(messages[0].content).not.toContain('photosynthesis');
     expect(JSON.parse(messages[1].content).entries.learned).toContain('photosynthesis');
     expect(opts).toMatchObject({ model: 'm', timeout: 100 });
+    expect(opts).toMatchObject({ model: 'm', timeout: 100, reasoningEffort: 'low' });
+    expect(opts).not.toHaveProperty('temperature');
   });
   it('retries once on a bad shape, then falls back', async () => {
     const chatStructured = vi.fn(async () => ({ substance: 99 }));

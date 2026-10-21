@@ -69,7 +69,7 @@ export class DebriefQuestioner {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       let reply;
       try {
-        reply = await this.#ai.chatStructured(messages, { model: this.#model ?? undefined, maxTokens: 1200, temperature: 0.4, timeout: this.#timeoutMs });
+        reply = await this.#ai.chatStructured(messages, { model: this.#model ?? undefined, maxTokens: 2000, reasoningEffort: 'low', timeout: this.#timeoutMs });
       } catch (err) { return fallback(`error:${err?.message ?? err}`); }
       const checked = validateQuestionerReply(reply);
       if (checked.ok) {

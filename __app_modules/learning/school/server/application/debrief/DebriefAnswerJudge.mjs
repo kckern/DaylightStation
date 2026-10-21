@@ -30,7 +30,7 @@ export class DebriefAnswerJudge {
     try {
       const reply = await this.#ai.chatStructured(
         [{ role: 'system', content: SYSTEM }, { role: 'user', content: JSON.stringify(data) }],
-        { model: this.#model ?? undefined, maxTokens: 120, temperature: 0, timeout: this.#timeoutMs },
+        { model: this.#model ?? undefined, reasoningEffort: 'minimal', timeout: this.#timeoutMs },
       );
       if (!Number.isInteger(reply?.score) || reply.score < 1 || reply.score > 10) throw new Error('bad shape');
       this.#shadow(data, reply.score); // fire-and-forget, after the LLM so the log pairs the same answer

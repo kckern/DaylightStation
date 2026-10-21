@@ -17,6 +17,13 @@ describe('DebriefAnswerJudge', () => {
     const j = new DebriefAnswerJudge({ aiGateway: { chatStructured: async () => ({ score: 6, reason: 'close' }) }, logger: silent });
     expect(await j.grade(short, 'light makes food')).toEqual({ correct: true, grade: 6, reason: 'close' });
   });
+  it('judge call options: reasoningEffort minimal, no temperature', async () => {
+    const chatStructured = vi.fn(async () => ({ score: 6, reason: 'ok' }));
+    await new DebriefAnswerJudge({ aiGateway: { chatStructured }, model: 'jm', logger: silent }).grade(short, 'x');
+    const [, opts] = chatStructured.mock.calls[0];
+    expect(opts).toMatchObject({ model: 'jm', reasoningEffort: 'minimal' });
+    expect(opts).not.toHaveProperty('temperature');
+  });
   it('an empty short answer is wrong without a call', async () => {
     const chatStructured = vi.fn();
     expect(await new DebriefAnswerJudge({ aiGateway: { chatStructured }, logger: silent }).grade(short, '  ')).toMatchObject({ correct: false });
