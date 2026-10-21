@@ -293,7 +293,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
   useEffect(() => {
     if (!learnerId || form.learnerId) return;
     if (kids.some((kid) => kid.id === learnerId)) setForm((current) => ({ ...current, learnerId }));
-  }, [kids.length, learnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kids, learnerId]); // eslint-disable-line react-hooks/exhaustive-deps
   // A preselected lesson's course comes from the catalog, which a user pick
   // (`change('targetId')`) would otherwise have filled.
   useEffect(() => {

@@ -618,6 +618,28 @@ describe('TeacherConsole workspace', () => {
     }
   });
 
+  // The form seeds from the link only on mount. Opening Operations from the
+  // rail is a fresh visit, so the repair the link preselected must not linger.
+  it('school operations drops the preselected repair when reopened from the rail', async () => {
+    const units = schoolApi.curriculumUnits.getMockImplementation();
+    schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
+    try {
+      window.history.pushState({}, '', '/school/teacher/operations?unit=unit-a&learner=user_4');
+      render(<TeacherConsole />);
+      const field = (label) => [...document.querySelectorAll('#curriculum-exceptions label')]
+        .find((node) => node.firstChild?.textContent === label)?.querySelector('select');
+      await waitFor(() => expect(field('Lesson')?.value).toBe('unit-a'));
+      expect(field('Student').value).toBe('user_4');
+      const workspace = screen.getByRole('navigation', { name: 'Workspace' });
+      fireEvent.click(within(workspace).getByRole('button', { name: 'Operations' }));
+      await waitFor(() => expect(window.location.search).toBe(''));
+      await waitFor(() => expect(field('Lesson')?.value).toBe(''));
+      expect(field('Student').value).toBe('');
+    } finally {
+      schoolApi.curriculumUnits.mockImplementation(units);
+    }
+  });
+
   it('previews a bounded systematic regrade before a protected apply', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts
