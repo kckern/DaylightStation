@@ -19,6 +19,8 @@ let curfewConfig;
 let gateState;
 let currentUser;
 let activityResponse;
+let schoolAccess;
+const UNLOCKED = { status: 'ready', state: 'complete', unlocked: true };
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
@@ -40,7 +42,7 @@ vi.mock('./PianoMidiContext.jsx', () => ({
 }));
 vi.mock('./LiveKeyboard.jsx', () => ({ default: () => createElement('div', { 'data-testid': 'live-keyboard' }) }));
 vi.mock('./useSchoolGameAccess.js', () => ({
-  default: () => ({ status: 'ready', state: 'complete', unlocked: true }),
+  default: () => schoolAccess,
 }));
 vi.mock('./usePianoLessonGate.js', async () => ({
   ...(await vi.importActual('./usePianoLessonGate.js')),
@@ -96,6 +98,7 @@ beforeEach(() => {
   gateState = NOT_GATED;
   currentUser = 'learner2';
   activityResponse = ACTIVITY;
+  schoolAccess = UNLOCKED;
   __clearPianoListCache();
   localStorage.clear();
   atClock(14);
@@ -229,5 +232,68 @@ describe('PianoMenu while the lesson verdict is still outstanding', () => {
     expect(tiles().every((t) => t.disabled)).toBe(true);
     expect(screen.getByText(/the piano is still on/i)).toBeTruthy();
     expect(screen.queryByText(PENDING_CAPTION)).toBeNull();
+  });
+});
+
+// The early pass (school economy slice 1, C5). The school-locked Games tile
+// stays live while today's pass cap is unused, affordable or not, so a child
+// with no silver can still reach the lock's Print button. A used cap or an
+// unreadable ledger shuts it, as it always was.
+describe('PianoMenu Games tile and the early pass', () => {
+  const gamesTile = () => screen.getByText('Games').closest('button');
+  const locked = (pass, offers = []) => ({
+    status: 'ready', state: 'incomplete', unlocked: false,
+    pass: { passId: null, state: 'none', capUsed: false, ...pass }, offers,
+  });
+
+  it('is enabled while locked when an affordable offer exists', () => {
+    schoolAccess = locked({}, [{ coin: 'silver', price: 3, affordable: true }]);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(false);
+    expect(gamesTile().textContent).toContain('buy one game');
+  });
+
+  it('is enabled when the offer is not affordable, so Print is reachable', () => {
+    schoolAccess = locked({}, [{ coin: 'silver', price: 3, affordable: false }]);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(false);
+    expect(gamesTile().textContent).toContain('Finish school to unlock');
+  });
+
+  it('is enabled when nothing is for sale (the shipped prices are 0)', () => {
+    schoolAccess = locked({}, []);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(false);
+  });
+
+  it('stays disabled when the bank could not be read at all', () => {
+    schoolAccess = { status: 'ready', state: 'incomplete', unlocked: false, pass: null, offers: [] };
+    renderMenu();
+    expect(gamesTile().disabled).toBe(true);
+  });
+
+  it('stays disabled when the day is indeterminate', () => {
+    schoolAccess = { ...locked({}, []), state: 'indeterminate' };
+    renderMenu();
+    expect(gamesTile().disabled).toBe(true);
+  });
+
+  it('stays disabled once the cap is used', () => {
+    schoolAccess = locked({ state: 'consumed', capUsed: true }, [{ coin: 'silver', price: 3, affordable: true }]);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(true);
+  });
+
+  it('stays disabled when the ledger could not be read', () => {
+    schoolAccess = locked({ state: 'unknown', capUsed: null }, [{ coin: 'silver', price: 3, affordable: true }]);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(true);
+  });
+
+  it('is enabled while a bought pass waits to be played', () => {
+    schoolAccess = { status: 'ready', state: 'incomplete', unlocked: true, via: 'pass', pass: { passId: 'p1', state: 'active', capUsed: true }, offers: [] };
+    renderMenu();
+    expect(gamesTile().disabled).toBe(false);
+    expect(gamesTile().textContent).toContain('One game today');
   });
 });

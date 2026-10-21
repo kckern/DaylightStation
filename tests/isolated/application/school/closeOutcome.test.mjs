@@ -24,7 +24,7 @@ const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
   passOverrides = null, teacherGate = null, realtime = null,
   receiptCapture = null, receiptArtifactPrinter = null,
-  assignments: assignmentsOverride = null,
+  assignments: assignmentsOverride = null, logger = silentLogger,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -49,7 +49,7 @@ const build = ({
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
     realtime,
-    clock: clock.now, rng: seededRng(5), logger: silentLogger,
+    clock: clock.now, rng: seededRng(5), logger,
   });
   remediate = new OpenRemediation({
     curriculum, sessions, clock: clock.now, newSessionId: sequentialIds('ses_r'), logger: silentLogger,
@@ -257,6 +257,27 @@ describe('school.session.outcome-recorded publish', () => {
     expect(published[0].topic).toBe('school.session.outcome-recorded');
     expect(published[0].payload).toMatchObject({ sessionId: SID, unitId: WORKSHEET_UNIT, result: 'passed', learnerId: 'kid1' });
     expect(typeof published[0].payload.at).toBe('string');
+    expect(published[0].payload).not.toHaveProperty('studyDay');
+  });
+
+  it('names the session\'s study day when it has one (a payout settles that week)', async () => {
+    const published = [];
+    build({ realtime: { sessionOutcomeRecorded: (payload) => published.push(payload) } });
+    await sessions.appendEvent(SID, {
+      type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT, studyDay: '2026-09-14',
+    });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 90 });
+    await close.execute({ sessionId: SID });
+    expect(published[0]).toMatchObject({ learnerId: 'kid1', sessionId: SID, studyDay: '2026-09-14' });
+    // A resettle of the same (old-week) session brings no new evidence: no studyDay,
+    // so a payout settles the current week rather than re-pricing the old one.
+    const again = await close.execute({ sessionId: SID });
+    expect(again.status).toBe('already_settled');
+    expect(published).toHaveLength(2);
+    expect(published[1]).toMatchObject({ learnerId: 'kid1', sessionId: SID });
+    expect(published[1]).not.toHaveProperty('studyDay');
   });
 
   it('does not throw when no realtime gateway is supplied (the default)', async () => {
@@ -691,13 +712,15 @@ describe('OpenRemediation', () => {
   it('cycles within the variants the unit actually authored', async () => {
     await failed();
     await remediate.execute({ sessionId: SID });
-    // Fail the retry too, and the third form comes out — then it wraps.
-    for (const [from, expected] of [['ses_r1', 2], ['ses_r2', 0]]) {
+    // Fail the retry too, and the third form comes out — then it wraps. The
+    // wrap is a third round, past the child's cap of two, so a grown-up opens
+    // it (`openedBy`); the cap itself is covered in OpenRemediation.test.mjs.
+    for (const [from, expected, openedBy] of [['ses_r1', 2, null], ['ses_r2', 0, 'parent1']]) {
       await sessions.appendEvent(from, { type: 'issued', at: clock.iso(), sessionId: from, artifactId: `art_${from}` });
       await sessions.appendEvent(from, { type: 'submitted', at: clock.iso(), sessionId: from, transport: 'paper' });
       await sessions.appendEvent(from, { type: 'graded', at: clock.iso(), sessionId: from, attemptIds: ['att_z'], percent: 10 });
       await close.execute({ sessionId: from });
-      expect(await remediate.execute({ sessionId: from })).toMatchObject({ variant: expected });
+      expect(await remediate.execute({ sessionId: from, openedBy })).toMatchObject({ variant: expected });
     }
   });
 
@@ -818,5 +841,63 @@ describe('TeacherGate on the coin sign-off lane (readiness punch 2)', () => {
     expect(result.result).toBe('passed');
     expect(result.reward).toMatchObject({ skipReason: 'awaiting_signoff' });
     expect(teacherGate.assert).not.toHaveBeenCalled();
+  });
+});
+
+describe('remediation cap: no retry ticket past two rounds', () => {
+  /** A failed round already behind `SID`: created → issued → … → needs_remediation → retry opened. */
+  const priorFailure = async (sessionId, remediationOf, next) => {
+    await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), sessionId, learnerId: 'kid1', unitId: WORKSHEET_UNIT,
+      ...(remediationOf ? { remediationOf } : {}) });
+    await sessions.appendEvent(sessionId, { type: 'issued', at: clock.iso(), sessionId, artifactId: `art_${sessionId}` });
+    await sessions.appendEvent(sessionId, { type: 'submitted', at: clock.iso(), sessionId, transport: 'paper' });
+    await sessions.appendEvent(sessionId, { type: 'graded', at: clock.iso(), sessionId, attemptIds: [`att_${sessionId}`], percent: 17 });
+    await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: clock.iso(), sessionId, outcomeId: `out:${sessionId}`, result: 'needs_remediation' });
+    await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: clock.iso(), sessionId, newSessionId: next, variant: 1 });
+  };
+  const failRetry = async (remediationOf) => {
+    await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT, remediationOf });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 17 });
+  };
+
+  it('the second retry failing prints no retry ticket', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'settled', result: 'needs_remediation', retryToken: null });
+    expect(thermal.lastTranscript()).not.toMatch(/Try again|before you retry/i);
+    expect(thermal.lastTranscript()).toContain('A GROWN-UP WILL HELP');
+    expect(thermal.lastTranscript()).toContain('After 2 retries, a grown-up will sit down with you on this one.');
+  });
+
+  it('counts the real retries when a grown-up opened one past the cap', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', 'ses_c');
+    await priorFailure('ses_c', 'ses_b', SID);
+    await failRetry('ses_c');
+    await close.execute({ sessionId: SID });
+    expect(thermal.lastTranscript()).toContain('After 3 retries, a grown-up will sit down with you on this one.');
+  });
+
+  it('logs the hold as it forms, once, at settle', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    build({ logger });
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    await close.execute({ sessionId: SID });
+    expect(logger.info).toHaveBeenCalledWith('school.remediation.held', {
+      learnerId: 'kid1', unitId: WORKSHEET_UNIT, sessionId: SID, depth: 2, reason: 'cap',
+    });
+  });
+
+  it('the first retry failing still prints one', async () => {
+    await priorFailure('ses_a', null, SID);
+    await failRetry('ses_a');
+    const result = await close.execute({ sessionId: SID });
+    expect(result.retryToken).toEqual(expect.any(String));
   });
 });

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetTeacherToday } from "./GetTeacherToday.mjs";
 import { schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { PlanProjection } from "../PlanProjection.mjs";
+import { FakeSessionRepository } from "../../../../../../tests/_lib/school/lifecycleFakes.mjs";
 
 const events = [
   { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_learner4', seq: 1,
@@ -217,5 +219,103 @@ describe('GetTeacherToday reviewStatus', () => {
       { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_t', seq: 3, transport: 'paper' },
     ]).execute({ studyDay: '2026-08-24', version: 'v2' });
     expect(result.learners[0].sessions[0].reviewStatus).toBe('complete');
+  });
+});
+
+describe('GetTeacherToday — remediation holds', () => {
+  // A REAL PlanProjection over the shared session fake: the attention list is
+  // read off the plan, so the planner's own rules (newest open session per
+  // unit, nothing held once passed, school-day idle count) are what is tested.
+  const UNIT = { unitId: 'lesson-1', title: 'Lesson One', subject: 'math', courseId: 'course-1', sequence: 1, module: 'unit-a' };
+
+  async function round(sessions, sessionId, { remediationOf = null, next = null, day, percent = 16.67 }) {
+    await sessions.appendEvent(sessionId, { type: 'created', at: `${day}T15:00:00.000Z`, learnerId: 'learner4', unitId: 'lesson-1',
+      ...(remediationOf ? { remediationOf } : {}) });
+    await sessions.appendEvent(sessionId, { type: 'issued', at: `${day}T15:01:00.000Z`, artifactId: `art_${sessionId}` });
+    await sessions.appendEvent(sessionId, { type: 'submitted', at: `${day}T16:00:00.000Z`, transport: 'paper' });
+    await sessions.appendEvent(sessionId, { type: 'graded', at: `${day}T16:01:00.000Z`,
+      attemptIds: [`att_${sessionId}`], percent, passingPercent: 80, correctCount: percent >= 80 ? 6 : 1, totalCount: 6 });
+    await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: `${day}T16:02:00.000Z`, outcomeId: `out_${sessionId}`,
+      result: percent >= 80 ? 'passed' : 'needs_remediation' });
+    if (next) await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: `${day}T16:03:00.000Z`, newSessionId: next, variant: 1 });
+  }
+
+  function harness({ now = '2026-10-02T18:00:00.000Z', remediationMaxRounds = null } = {}) {
+    const sessions = new FakeSessionRepository();
+    const clock = () => new Date(now);
+    const curriculum = { listUnits: async () => [UNIT], listWorks: async () => [] };
+    const planProjection = new PlanProjection({
+      curriculum, sessions, clock, timezone: 'UTC', remediationMaxRounds, logger: { info() {}, warn() {}, debug() {} },
+      assignments: { get: async () => ({ courses: [{ courseId: 'course-1', enrollment: { schedule: { daysOfWeek: [1, 2, 3, 4, 5] } } }] }) },
+    });
+    return {
+      sessions,
+      useCase: useCase({ sessions, curriculum, clock, planProjection }),
+    };
+  }
+
+  it('lists a unit two retries deep as remediation-cap', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-10-01', next: 'ses_1' });
+    await round(sessions, 'ses_1', { day: '2026-10-01', remediationOf: 'ses_0', next: 'ses_2' });
+    await round(sessions, 'ses_2', { day: '2026-10-01', remediationOf: 'ses_1' });
+    const digest = await teacherDay.execute({ version: 'v2' });
+    expect(digest.learners[0].attention).toEqual([{
+      kind: 'remediation-cap', learnerId: 'learner4', sessionId: 'ses_2',
+      unitId: 'lesson-1', unitTitle: 'Lesson One', depth: 2, maxRounds: 2, idleStudyDays: 0,
+      lastScore: { percent: 16.67, correctCount: 1, totalCount: 6 },
+      since: '2026-10-01T16:02:00.000Z',
+    }]);
+  });
+
+  it('lists the 9/26 shape — a depth-0 failure never retried — as remediation-stale', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-09-26' }); // a Saturday in UTC; Mon–Thu pass after it
+    const [item] = (await teacherDay.execute({ version: 'v2' })).learners[0].attention;
+    expect(item).toMatchObject({ kind: 'remediation-stale', sessionId: 'ses_0', depth: 0, idleStudyDays: 4 });
+  });
+
+  it('says nothing while the child still has a retry coming', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-10-01', next: 'ses_1' });
+    await round(sessions, 'ses_1', { day: '2026-10-01', remediationOf: 'ses_0' });
+    expect((await teacherDay.execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('skips a unit that has since been passed', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-09-22' }); // stale, still open
+    await round(sessions, 'ses_pass', { day: '2026-10-01', percent: 100 });
+    expect((await teacherDay.execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('judges only the newest open session on a unit', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_old', { day: '2026-09-22' }); // stale on its own
+    await round(sessions, 'ses_new', { day: '2026-10-01' }); // fresh
+    expect((await teacherDay.execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('honours a configured cap', async () => {
+    const { sessions, useCase: teacherDay } = harness({ remediationMaxRounds: 3 });
+    await round(sessions, 'ses_0', { day: '2026-10-01', next: 'ses_1' });
+    await round(sessions, 'ses_1', { day: '2026-10-01', remediationOf: 'ses_0', next: 'ses_2' });
+    await round(sessions, 'ses_2', { day: '2026-10-01', remediationOf: 'ses_1' });
+    expect((await teacherDay.execute({ version: 'v2' })).learners[0].attention).toEqual([]);
+  });
+
+  it('a past study day reads holds as of that day, not as of now', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-09-22' }); // stale by 10/02
+    expect((await teacherDay.execute({ studyDay: '2026-09-23' })).learners[0].attention).toEqual([]);
+    expect((await teacherDay.execute({ studyDay: '2026-09-28' })).learners[0].attention)
+      .toEqual([expect.objectContaining({ kind: 'remediation-stale', idleStudyDays: 3 })]);
+  });
+
+  it('rides on the v1 rows too, and is empty without a projection', async () => {
+    const { sessions, useCase: teacherDay } = harness();
+    await round(sessions, 'ses_0', { day: '2026-09-22' });
+    expect((await teacherDay.execute())[0].attention).toHaveLength(1);
+    expect((await useCase().execute())[0].attention).toEqual([]);
   });
 });

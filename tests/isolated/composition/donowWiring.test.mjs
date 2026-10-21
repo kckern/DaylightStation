@@ -291,4 +291,47 @@ describe('createSchoolLifecycle — school.yml `programs:` + donow (Task 13)', (
     expect(result.wired).toBe(true);
     expect(result.donowSchoolBridge).toBeNull();
   });
+
+  it("forwards the economy's coins-changed to the Portal's school topic", async () => {
+    const handlers = new Map();
+    const sent = [];
+    const lifecycle = await createSchoolLifecycle({
+      configService: {
+        getHouseholdAppConfig: () => ({ lifecycle: { enabled: true }, printing: { host: 'printer.local' } }),
+        getDataDir: () => dataDir,
+        getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
+        getDeviceConfig: () => null,
+        getTimezone: () => null,
+      },
+      schoolService: { listBanks: () => [], getBank: () => null, activeSittings: async () => [] },
+      eventBus: {
+        broadcast(topic, payload) { sent.push({ topic, payload }); },
+        onClientMessage() {},
+        subscribe(topic, handler) { handlers.set(topic, handler); return () => handlers.delete(topic); },
+      },
+      logger: silent,
+    });
+    handlers.get('economy.coins-changed')({ userId: 'kid1', reason: 'mint' });
+    expect(sent).toContainEqual({ topic: 'school', payload: { event: 'coins-changed', learnerId: 'kid1' } });
+    // Shutdown unsubscribes it, safely twice.
+    lifecycle.coinsChangedRelay.stop();
+    lifecycle.coinsChangedRelay.stop();
+    expect(handlers.has('economy.coins-changed')).toBe(false);
+  });
+
+  it('with no subscribable bus there is no coins-changed relay', async () => {
+    const lifecycle = await createSchoolLifecycle({
+      configService: {
+        getHouseholdAppConfig: () => ({ lifecycle: { enabled: true }, printing: { host: 'printer.local' } }),
+        getDataDir: () => dataDir,
+        getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
+        getDeviceConfig: () => null,
+        getTimezone: () => null,
+      },
+      schoolService: { listBanks: () => [], getBank: () => null, activeSittings: async () => [] },
+      eventBus: { broadcast() {} },
+      logger: silent,
+    });
+    expect(lifecycle.coinsChangedRelay).toBeNull();
+  });
 });

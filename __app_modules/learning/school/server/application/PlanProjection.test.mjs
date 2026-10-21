@@ -41,6 +41,7 @@ function build({
   curriculumExceptions = null,
   launchers = new Map(),
   logger = silentLogger,
+  remediationMaxRounds = null, logHolds = undefined,
 } = {}) {
   const clock = fakeClock();
   const catalog = new FakeCatalog({
@@ -55,7 +56,8 @@ function build({
   const sessions = new FakeSessionRepository();
   const projection = new PlanProjection({
     curriculum, assignments, sessions, attestations, curriculumExceptions,
-    launchers, clock: clock.now, logger,
+    launchers, clock: clock.now, logger, remediationMaxRounds,
+    ...(logHolds === undefined ? {} : { logHolds }),
   });
   return { projection, clock, curriculum, catalog, sessions, assignments };
 }
@@ -214,4 +216,112 @@ it('finishes the current linked daily goal without requiring future lessons toda
   });
   const result = await projection.project({ learnerId: 'test-learner' });
   expect(result.sections.find((s) => s.subject === 'language').obligation).toEqual({ state: 'served', reason: null });
+});
+
+describe('PlanProjection — remediation cap', () => {
+  /**
+   * Three failed sheets on one unit: the original and two retries, the newest
+   * still open. Written through the shared fake, whose `listForLearner` rows do
+   * NOT carry `remediationOf` — the store shape the lineage fallback exists for.
+   */
+  async function failThreeTimes(sessions) {
+    const fail = async (sessionId, remediationOf, { link = null } = {}) => {
+      const at = (minute) => `2026-07-2${sessionId.at(-1)}T09:0${minute}:00.000Z`;
+      await sessions.appendEvent(sessionId, { type: 'created', at: at(0), learnerId: LEARNER, unitId: MEDIA_UNIT,
+        ...(remediationOf ? { remediationOf } : {}) });
+      await sessions.appendEvent(sessionId, { type: 'launch_dispatched', at: at(1), surface: 'portal' });
+      await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: at(2), outcomeId: `out_${sessionId}`, result: 'needs_remediation' });
+      if (link) await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: at(3), newSessionId: link, variant: 1 });
+    };
+    await fail('ses_4', null, { link: 'ses_5' });
+    await fail('ses_5', 'ses_4', { link: 'ses_6' });
+    await fail('ses_6', 'ses_5');
+  }
+
+  it('reads lineage the store left out from events, and holds the unit past two rounds', async () => {
+    const { projection, sessions } = build({ attestations: null });
+    await failThreeTimes(sessions);
+    expect((await sessions.listForLearner(LEARNER))[0]).not.toHaveProperty('remediationOf');
+    const { plan, sections } = await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT)).toMatchObject({
+      status: 'in_progress', sessionId: 'ses_6', remediation: { depth: 2, maxRounds: 2, held: true },
+    });
+    expect(sections.find((section) => section.subject === 'math').obligation)
+      .toEqual({ state: 'excused', reason: 'teacher_hold' });
+  });
+
+  it('honours a configured cap', async () => {
+    const { projection, sessions } = build({ attestations: null, remediationMaxRounds: 3 });
+    await failThreeTimes(sessions);
+    const { plan } = await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT).remediation).toMatchObject({ depth: 2, maxRounds: 3, held: false, reason: null });
+  });
+});
+
+describe('PlanProjection — stale remediation holds are logged as they form', () => {
+  /** One failure a week before the fake clock (2026-07-27), never retried. */
+  async function failLongAgo(sessions) {
+    await sessions.appendEvent('ses_old', { type: 'created', at: '2026-07-20T16:00:00.000Z', learnerId: LEARNER, unitId: MEDIA_UNIT });
+    await sessions.appendEvent('ses_old', { type: 'launch_dispatched', at: '2026-07-20T16:01:00.000Z', surface: 'portal' });
+    await sessions.appendEvent('ses_old', { type: 'outcome_recorded', at: '2026-07-20T16:02:00.000Z', outcomeId: 'out_old', result: 'needs_remediation' });
+  }
+  const spyLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
+  const heldCalls = (logger) => logger.info.mock.calls.filter(([event]) => event === 'school.remediation.held');
+
+  it('holds the unit as stale, and logs it once per session per study day however often it is projected', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger });
+    await failLongAgo(sessions);
+    const { plan, sections } = await projection.project({ learnerId: LEARNER });
+    await projection.project({ learnerId: LEARNER });
+    expect(entryFor(plan, MEDIA_UNIT).remediation).toMatchObject({ depth: 0, held: true, reason: 'stale' });
+    expect(sections.find((section) => section.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(heldCalls(logger)).toEqual([['school.remediation.held', {
+      learnerId: LEARNER, unitId: MEDIA_UNIT, sessionId: 'ses_old', depth: 0, reason: 'stale', idleStudyDays: 6,
+    }]]);
+  });
+
+  it('a replay of a past day never logs', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger });
+    await failLongAgo(sessions);
+    await projection.project({ learnerId: LEARNER, historyUntil: '2026-07-26T11:00:00.000Z', now: '2026-07-25T19:00:00.000Z' });
+    expect(heldCalls(logger)).toEqual([]);
+  });
+
+  it('a projection built not to log (the dry-run preview) does not', async () => {
+    const logger = spyLogger();
+    const { projection, sessions } = build({ attestations: null, logger, logHolds: false });
+    await failLongAgo(sessions);
+    await projection.project({ learnerId: LEARNER });
+    expect(heldCalls(logger)).toEqual([]);
+  });
+});
+
+describe('PlanProjection — a practice-gated pass is not a stale failure', () => {
+  it('a passed sheet still at outcome_recorded, rewritten for unfinished card practice, is never held or logged', async () => {
+    const clock = fakeClock();
+    const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
+    const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+    const assignments = new FakeAssignmentStore([{
+      learnerId: LEARNER, courses: ['math-fractions'],
+      programs: [{ programId: 'flashcards', linkedUnitId: MEDIA_UNIT, deckId: 'deck-1' }],
+    }]);
+    const sessions = new FakeSessionRepository();
+    // Passed a week before the fake clock, coins still awaiting sign-off: the
+    // session never left `outcome_recorded`.
+    await sessions.appendEvent('ses_pass', { type: 'created', at: '2026-07-20T16:00:00.000Z', learnerId: LEARNER, unitId: MEDIA_UNIT });
+    await sessions.appendEvent('ses_pass', { type: 'launch_dispatched', at: '2026-07-20T16:01:00.000Z', surface: 'portal' });
+    await sessions.appendEvent('ses_pass', { type: 'outcome_recorded', at: '2026-07-20T16:02:00.000Z', outcomeId: 'out_pass', result: 'passed' });
+    const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    const projection = new PlanProjection({
+      curriculum, assignments, sessions, clock: clock.now, logger,
+      practiceAssessments: { evaluate: async () => ({ stage: 'review' }) },
+    });
+    const { plan } = await projection.project({ learnerId: LEARNER, assignedPrograms: false, programStatuses: {} });
+    const entry = entryFor(plan, MEDIA_UNIT);
+    expect(entry.status).toBe('in_progress'); // the rewrite still gates the plan
+    expect(entry.remediation).toBeNull();
+    expect(logger.info.mock.calls.filter(([event]) => event === 'school.remediation.held')).toEqual([]);
+  });
 });

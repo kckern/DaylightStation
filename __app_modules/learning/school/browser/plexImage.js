@@ -64,6 +64,7 @@ export const ART_BOX = {
   launchPoster: [248, 372], // .school-selfservice-card__poster (art column caps at 15.5rem)
   launchStill: [248, 140],  // .school-selfservice-card__still, aspect-ratio 16/9, same column
   readingShelf: [205, 205], // .reading-session__recent-card cover, aspect-ratio 1 (square sleeves)
+  readingSuggestion: [260, 260], // .reading-session__suggestion-cover, 24vh square on the 1080-tall panel
 };
 
 export default sizedPlexImage;

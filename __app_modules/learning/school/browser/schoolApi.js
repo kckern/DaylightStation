@@ -73,7 +73,7 @@ export const schoolApi = {
   earningsRoster: (week = null) => reqAbsolute(
     `/api/v1/earnings/preview${week ? `?${new URLSearchParams({ week })}` : ''}`,
   ),
-  // A learner's lasting coin balance (gold) on the economy ledger.
+  // A learner's wallet: `balances.gold` is the lasting coin; `balance` is the silver figure.
   wallet: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/wallet`),
   earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
   putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
@@ -378,6 +378,26 @@ export const schoolApi = {
   // question, never a precondition for it, and a broken status check must
   // leave a child exactly where they were.
   selfServicePrinterStatus: () => req('/self-service/printer-status'),
+
+  // The Portal's bank strip (school economy slice 1). `economyBank` because
+  // `bank` above is a QUESTION bank: one kid's coins in one read, from the
+  // economy (`{ balances, history, pass, offers, weekEndsAt, weekEndsOn, studyDay }`).
+  economyBank: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/bank`),
+  // The bank screen's panel door (C3): `{screenId, learnerId}` in, an
+  // `economy-bank` launch target out, no grant (see
+  // `OpenBankAtPanel`). A refusal carries `{ error: '<sentence>' }`.
+  bankOpen: (body) => req('/bank/open', body),
+  // The dry run behind the strip's Print label: `{ subject, unit, printable,
+  // reward }`. Opens nothing.
+  nextItem: (learnerId, subject = null) => req(
+    `/self-service/learners/${encodeURIComponent(learnerId)}/next${subject ? `?${new URLSearchParams({ subject })}` : ''}`,
+  ),
+  // "Print my next sheet", no code. Always a kid-facing `sentence` on a 200;
+  // a 404 is an unknown learner or self-service off, a 400 a bad subject.
+  printNext: (learnerId, subject = null, deviceId = null) => req(
+    `/self-service/learners/${encodeURIComponent(learnerId)}/print-next`,
+    { ...(subject ? { subject } : {}), ...(deviceId ? { deviceId } : {}) },
+  ),
   // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
   // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
   // Different base to BASE, hence the raw fetch — same never-throws contract.

@@ -187,3 +187,40 @@ describe('TermVerdictService.rebuild', () => {
     expect(cache.writes).toBe(3); // 25 days → 10 + 10 + 5
   });
 });
+
+describe('TermVerdictService.dayRow', () => {
+  const cachedDoc = (days) => ({ version: VERDICT_VERSION, computedAt: NOW, days });
+
+  it('reads a day before yesterday from the cache, without a replay', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-03': { state: 'none', reason: null, served: 0, asked: 2, computedAt: NOW } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'none', served: 0, asked: 2 });
+    expect(completion.asked).toEqual([]);
+  });
+
+  it('replays a missing older day once and keeps it in the cache', async () => {
+    const { service, completion, cache } = build();
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    await settle();
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-03']);
+    expect((await cache.read('kid', '2026-fall')).days['2026-09-03']).toMatchObject({ state: 'met' });
+  });
+
+  it('recomputes yesterday and today even when cached', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-08': { state: 'none', served: 0, asked: 1, computedAt: NOW } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-08')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-08']);
+  });
+
+  it('replays a cached unknown whose retry is due', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-03': { state: 'unknown', reason: 'replay_failed', served: 0, asked: 0, retryAfter: '2026-09-05T00:00:00.000Z' } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-03']);
+  });
+});

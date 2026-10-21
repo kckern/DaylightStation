@@ -6,11 +6,32 @@ const TTL = 5 * 60_000;
 // with the book after the shelf opens; it is short because a pass left behind
 // should not become a way to re-add the book all evening.
 const PASS_TTL = 30 * 60_000;
+// After a failed wake, scans for that screen within this window report the
+// same failure instead of knocking on the kiosk again (2026-10-18: seven scans
+// in ~5s fired seven wakes, every one failed).
+const WAKE_COOLDOWN = 10_000;
+const WAKE_FAILED = 'The screen could not wake. Open the Portal or rescan.';
+// Shown for a scan that lands inside the cooldown: a rescan right now would
+// not wake anything, so the child is told to give it a moment instead.
+const WAKE_WAITING = 'The screen is waking up — wait a moment, then scan again.';
+// A wake result can carry adapter error strings; keep them short and strip
+// anything that looks like a credential before they reach the log store.
+const safeError = (value) => (value == null ? null : String(value)
+  .replace(/(password|token|key)=[^&\s]*/gi, '$1=***').slice(0, 200));
+const stepSummary = (part) => (part && typeof part === 'object' ? {
+  ok: part.ok ?? null,
+  ...(part.step ? { step: part.step } : {}),
+  ...(part.skipped ? { skipped: true } : {}),
+  ...(part.error ? { error: safeError(part.error) } : {}),
+} : null);
 const refuse = (status, message) => { const error = new Error(message); error.status = status; throw error; };
 
 /** Short-lived household kiosk intentions. No reading store or progress writer is a dependency. */
 export class PrepareBookScan {
   #deps; #records = new Map(); #events = new Map(); #passes = new Map();
+  // Per screen: the wake in flight (shared by every scan that arrives while it
+  // runs) and, after a failure, until when no new wake is attempted.
+  #wakes = new Map(); #wakeCooldowns = new Map();
   constructor({ resolveBook, roster, issueLaunchTarget, wake, notifications, target,
     clock = Date.now, mintId, logger = {} }) {
     if (typeof mintId !== 'function') throw new TypeError('PrepareBookScan requires a secure intent id generator');
@@ -70,19 +91,56 @@ export class PrepareBookScan {
     return { status: 'pending', intentId: record.id };
   }
   #wake(record) {
-    const { wake, target, logger } = this.#deps;
+    const { target, clock, logger } = this.#deps;
     record.wakeFailed = false;
     if (record.error?.startsWith('The screen')) record.error = null;
-    void Promise.resolve().then(() => wake({ target: target.deviceId })).then(result => {
-      if (result?.ok === false) throw new Error('Wake refused');
-      if (this.#live(record)) this.#notify(record);
-    }).catch(() => {
-      logger.warn?.('school.book-scan.wake-failed', { screenId: target.screenId });
-      if (this.#live(record)) { record.wakeFailed = true; record.error ??= 'The screen could not wake. Open the Portal or rescan.'; this.#notify(record); }
+    const cooldownUntil = this.#wakeCooldowns.get(target.screenId) ?? 0;
+    if (!this.#wakes.has(target.screenId) && cooldownUntil > clock()) {
+      logger.info?.('school.book-scan.wake-skipped', { screenId: target.screenId, reason: 'cooldown' });
+      this.#wakeFailedFor(record, WAKE_WAITING);
+      return;
+    }
+    void this.#wakeScreen(target).then(ok => {
+      if (ok) { if (this.#live(record)) this.#notify(record); return; }
+      this.#wakeFailedFor(record);
     });
   }
+  #wakeFailedFor(record, message = WAKE_FAILED) {
+    if (!this.#live(record)) return;
+    record.wakeFailed = true; record.wakeMessage = message; record.error ??= message; this.#notify(record);
+  }
+  /** One wake per screen at a time; resolves true/false and never rejects. */
+  #wakeScreen(target) {
+    const { wake, clock, logger } = this.#deps;
+    const { screenId } = target;
+    const inFlight = this.#wakes.get(screenId);
+    if (inFlight) return inFlight;
+    const attempt = Promise.resolve()
+      .then(() => wake({ target: target.deviceId }))
+      .then(result => (result?.ok === false ? { failed: true, result } : { failed: false }),
+        error => ({ failed: true, thrown: error }))
+      .then(({ failed, result, thrown }) => {
+        if (!failed) { this.#wakeCooldowns.delete(screenId); return true; }
+        this.#wakeCooldowns.set(screenId, clock() + WAKE_COOLDOWN);
+        const power = stepSummary(result?.power);
+        const foreground = stepSummary(result?.foreground);
+        logger.warn?.('school.book-scan.wake-failed', {
+          screenId,
+          step: result?.step ?? foreground?.step ?? power?.step
+            ?? (power?.ok === false ? 'power' : foreground?.ok === false ? 'foreground' : thrown ? 'wake-threw' : null),
+          power,
+          foreground,
+          error: safeError(result?.error ?? foreground?.error ?? power?.error ?? thrown?.message ?? (thrown ? String(thrown) : null)),
+          cooldownMs: WAKE_COOLDOWN,
+        });
+        return false;
+      })
+      .finally(() => { this.#wakes.delete(screenId); });
+    this.#wakes.set(screenId, attempt);
+    return attempt;
+  }
   #resolve(record) {
-    record.status = 'loading'; record.error = record.wakeFailed ? 'The screen could not wake. Open the Portal or rescan.' : null;
+    record.status = 'loading'; record.error = record.wakeFailed ? record.wakeMessage ?? WAKE_FAILED : null;
     this.#notify(record);
     void Promise.resolve().then(() => this.#deps.resolveBook.execute(record.isbn13)).then(result => {
       if (!this.#live(record)) return;

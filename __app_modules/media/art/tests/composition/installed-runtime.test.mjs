@@ -25,7 +25,7 @@ describe('Art installed assembly', () => {
     expect(args.axios.get).not.toHaveBeenCalled();
     expect(args.contentRegistry.register).toHaveBeenCalledTimes(1);
     expect(args.contentRegistry.register.mock.calls[0][0].prefixes).toEqual([{ prefix: 'art' }]);
-    expect(events).toEqual(['config:null:art', 'household:', 'logger:art-adapter', 'logger:art-content', 'register:art:art', 'household:', 'logger:art-catalog', 'logger:art-api']);
+    expect(events).toEqual(['config:null:art', 'household:', 'logger:art-adapter', 'logger:art-content', 'register:art:art', 'household:', 'logger:ambiance-catalog', 'household:', 'logger:ambiance-history', 'logger:ambiance', 'household:', 'logger:art-catalog', 'logger:art-api']);
     expect(typeof runtime.artAdapter.getThumbnailUrl).toBe('function');
     expect(runtime.artRouter.stack.some(layer => layer.route?.path === '/preset/:key')).toBe(true);
   });
@@ -36,7 +36,7 @@ describe('Art installed assembly', () => {
     args.contentRegistry = {};
     const runtime = await createArtContentRuntime(args);
     expect(args.axios.get).not.toHaveBeenCalled();
-    expect(events).toEqual(['config:null:art', 'logger:art-immich', 'household:', 'logger:art-adapter', 'household:', 'logger:art-catalog', 'logger:art-api']);
+    expect(events).toEqual(['config:null:art', 'logger:art-immich', 'household:', 'logger:art-adapter', 'household:', 'logger:ambiance-catalog', 'household:', 'logger:ambiance-history', 'logger:ambiance', 'household:', 'logger:art-catalog', 'logger:art-api']);
     expect(runtime.artRouter.stack.length).toBeGreaterThan(0);
   });
 

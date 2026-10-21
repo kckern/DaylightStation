@@ -43,6 +43,8 @@ import { RetainedReceiptPrinter } from "../adapters/documents/RetainedReceiptPri
 import { ReceiptPngArtifactRenderer } from "../adapters/documents/ReceiptPngArtifactRenderer.mjs";
 import { UnavailableSchoolMediaDispatcher } from "../adapters/UnavailableSchoolMediaDispatcher.mjs";
 import { SchoolServiceBankReader } from "../adapters/SchoolServiceBankReader.mjs";
+import { NodeApplicationScheduler } from "#adapters/scheduling/NodeApplicationScheduler.mjs";
+import { createAgendaEconomyPort } from "./agendaEconomy.mjs";
 import { SchoolTeacherConfigSource } from "../adapters/SchoolTeacherConfigSource.mjs";
 import { HouseholdSchoolRoster } from "../adapters/HouseholdSchoolRoster.mjs";
 import { YamlCurriculumDatastore } from "../adapters/persistence/YamlCurriculumDatastore.mjs";
@@ -132,6 +134,7 @@ import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.m
 import { ResolveAccessCode } from "../application/usecases/ResolveAccessCode.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
 import { RunSelfServiceAction } from "../application/usecases/RunSelfServiceAction.mjs";
+import { IssueSubjectNext } from "../application/usecases/IssueSubjectNext.mjs";
 import { RecordLessonCompanionProgress } from "../application/usecases/RecordLessonCompanionProgress.mjs";
 import { GetCompanionFinishCode } from "../application/usecases/GetCompanionFinishCode.mjs";
 import { ReadPrinterHealth } from "../application/usecases/ReadPrinterHealth.mjs";
@@ -165,6 +168,7 @@ import { GetLearnerTerm } from "../application/usecases/GetLearnerTerm.mjs";
 import { RebuildLearnerTerm } from "../application/usecases/RebuildLearnerTerm.mjs";
 import { studentDisplayName } from "./studentNames.mjs";
 import { vendorFontDirFor, setDefaultVendorFontDir } from "../rendering/documents/vendorFonts.mjs";
+import { remediationHoldAfterStudyDays, remediationMaxRounds } from "../domain/sessions/remediationLineage.mjs";
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -185,7 +189,12 @@ function cryptoRng(crypto) {
  * @param {object} deps.configService
  * @param {string|null} [deps.householdId]
  * @param {object} deps.schoolService - the existing grading engine + bank reader
- * @param {object} [deps.economyService]
+ * @param {object} [deps.economyService] - also the source of the agenda's
+ *   economy line: `peekBalance(userId).silver`, the unspent silver in the
+ *   bank, read without writing (`agendaEconomy.mjs`). Read through duck typing
+ *   only; School imports no economy code.
+ * @param {(() => string)|null} [deps.economyMode] - the economy catalog's mode,
+ *   read per print: the agenda's economy line prints only while it is `live`.
  * @param {object} [deps.userService]
  * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
  *   Present means the `language` program is a live launcher, reachable from a
@@ -244,9 +253,12 @@ function cryptoRng(crypto) {
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   attemptDatastore = null,
-  economyService = null, userService = null, eventBus = null, realtime = null,
+  economyService = null, economyMode = null, userService = null, eventBus = null, realtime = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   startReadingSession = null,
+  // The household's story books, `() => [{contentId, title}] | null` — what a
+  // refused story-time book suggests instead. Null: the learner's history.
+  storyCorpus = null,
   languageStudyService = null,
   studyGrants = null,
   languageReelService = null,
@@ -292,6 +304,10 @@ export async function createSchoolLifecycle({
   // app.mjs). The term grid's term IS one of these; null leaves the term
   // read model unwired rather than inventing a calendar of its own.
   academicPeriods = null,
+  // `({learnerId, unit}) => Promise<{silver?, gems?}|null>` — the reward label
+  // for "print my next sheet" (`GET .../next`). Owned by the economy, injected
+  // so School never imports it. Null shows no reward; a throw is swallowed.
+  rewardFor = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const schoolRealtime = realtime ?? (eventBus ? new EventBusSchoolRealtimeAdapter({ eventBus }) : null);
@@ -299,6 +315,12 @@ export async function createSchoolLifecycle({
   const realtimeSubscriptionsAvailable = realtime != null || typeof eventBus?.subscribe === 'function';
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
+  // Failure policy: how many fresh sheets a child may be handed for one unit,
+  // and how many school days a failure may sit unretried, before it becomes a
+  // teacher hold. Read once, here; every surface that decides (planner, scan,
+  // panel, receipt, teacher dashboard) gets these values.
+  const remediationRounds = remediationMaxRounds(lifecycleCfg.remediation?.maxRounds ?? 2);
+  const remediationHoldAfter = remediationHoldAfterStudyDays(lifecycleCfg.remediation?.holdAfterStudyDays ?? 3);
   const dataDir = configService.getDataDir();
 
   const inert = (reason) => {
@@ -307,7 +329,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null, selfServiceRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {}, launchers: new Map(),
-      donowSchoolBridge: null, grownUps: null, teacherGate: null, passOverrides: null,
+      donowSchoolBridge: null, coinsChangedRelay: null, grownUps: null, teacherGate: null, passOverrides: null,
     };
   };
 
@@ -688,7 +710,7 @@ export async function createSchoolLifecycle({
   // before the `school.yml` `programs:` loop for the same reason piano-course
   // is: a config entry reusing the id must trip that loop's collision check.
   launchers.set(STORY_TIME_PROGRAM_ID, new StoryTimeProgramLauncher({
-    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession,
+    readingLog: stores.readingLog, assignments: stores.assignments, timezone, clock, logger, startReadingSession, storyCorpus,
   }));
 
   // The reading shelf. Unconditional like story-time: an enrollment with no
@@ -860,11 +882,24 @@ export async function createSchoolLifecycle({
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
     declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore, practiceAssessments,
+    remediationMaxRounds: remediationRounds, remediationHoldAfterStudyDays: remediationHoldAfter,
   });
 
   practiceAssessments?.configureProjection?.(planProjection);
 
   // --- use cases -------------------------------------------------------------
+  // The agenda's economy line ("In the bank: 7 silver · Next: Math"), printed
+  // only while the economy mode is live; see `agendaEconomy.mjs`. `issueSubjectNext` is composed further down, so the
+  // thunk reads it when an agenda prints, never here.
+  const agendaEconomy = createAgendaEconomyPort({
+    economyService,
+    economyMode,
+    previewNext: (learnerId) => issueSubjectNext.preview({ learnerId }),
+    logger,
+  });
+  // Bounds the economy line's read (2 s, BuildAgenda's default): the
+  // application layer holds no timers of its own.
+  const agendaScheduler = new NodeApplicationScheduler();
   const buildAgenda = new BuildAgenda({
     planProjection,
     attestations, teacherNotes,
@@ -882,6 +917,7 @@ export async function createSchoolLifecycle({
     // absent) means BuildAgenda mints no panel codes and the receipt is exactly
     // what it printed before the feature existed.
     selfService: cfg.selfService,
+    economy: agendaEconomy, scheduler: agendaScheduler,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     planProjection,
@@ -918,7 +954,11 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, householdSchedule, dayBypasses: programDayBypassStore,
-    practiceAssessments,
+    practiceAssessments, remediationMaxRounds: remediationRounds,
+    remediationHoldAfterStudyDays: remediationHoldAfter,
+    // The live projection already logs a hold as it forms; a dry run must not
+    // report the same one a second time.
+    logHolds: false,
     planErrorEvent: 'school.agenda.plan-errors',
     launcherFailedEvent: 'school.agenda.launcher-failed',
     logger: logger.child ? logger.child({ preview: true }) : logger,
@@ -942,6 +982,10 @@ export async function createSchoolLifecycle({
     // Teacher planning is a non-recording view.  Its document must not carry
     // a token or panel code that resembles an issued agenda ticket.
     previewOnly: true,
+    // Read-only, like the review queue: `peekBalance` writes no wallet and the
+    // next-item preview opens no session. A preview without the line the real
+    // print carries would show a parent a different sheet.
+    economy: agendaEconomy, scheduler: agendaScheduler,
     curriculumExceptions: curriculumExceptionStore,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
@@ -1139,6 +1183,7 @@ export async function createSchoolLifecycle({
     // below — optional, so an install with no eventBus settles exactly as
     // it did before that feature existed.
     realtime: schoolRealtime,
+    remediationMaxRounds: remediationRounds,
     clock, rng: draw, logger,
   });
   const closeLanguageDay = languageStudyService && schoolRealtime
@@ -1148,7 +1193,7 @@ export async function createSchoolLifecycle({
     })
     : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, practiceAssessments,
-    curriculumExceptions: curriculumExceptionStore, clock, logger });
+    curriculumExceptions: curriculumExceptionStore, remediationMaxRounds: remediationRounds, clock, logger });
   practiceAssessments?.configurePrinting({ issueDocument, openRemediation, printDocuments });
   const replaceRemediation = new ReplaceRemediation({
     curriculum, sessions: stores.sessions, teacherGate, clock, newSessionId, logger,
@@ -1268,6 +1313,16 @@ export async function createSchoolLifecycle({
     logger.warn?.('school.lifecycle.completion-bridge-unwired', { reason: 'no eventBus' });
   }
 
+  // The Portal's bank strip hears about coins on the `school` topic it already
+  // subscribes to: the economy publishes `economy.coins-changed` internally
+  // and this forwards it. A topic string, not an import. `{stop}` is returned
+  // below so app.mjs can unsubscribe it on shutdown; null when unwired.
+  let coinsChangedRelay = null;
+  if (realtimeSubscriptionsAvailable && typeof schoolRealtime?.relayCoinsChanged === 'function') {
+    const unsubscribe = schoolRealtime.relayCoinsChanged();
+    coinsChangedRelay = { stop: () => { if (typeof unsubscribe === 'function') unsubscribe(); } };
+  }
+
   // The two parent-only writes. They are use cases rather than raw store calls
   // because the router may not be the place a child's sign-off is checked.
   const resolveReviewItem = new ResolveReviewItem({
@@ -1278,8 +1333,9 @@ export async function createSchoolLifecycle({
     // child's finished work hostage to an out-of-band actor.
     gradeSubmission, closeSessionOutcome,
   });
-  // Stale-sweep roster (admin advocacy A5): the same students: list the rest
-  // of the lifecycle serves — enough identity for listStale, no directory dep.
+  // Stale-sweep roster (admin advocacy A5): the School learner directory the
+  // runtime injects. Null here means listStale sees nobody and the nightly
+  // sweep closes nothing — `lifecycle-runtime.mjs` must pass it.
   // OMR card hygiene: vacates windows a failed attempt left behind (nightly,
   // and the moment a session is abandoned) so the child's card has no gaps.
   const sweepAnswerSheets = new SweepAnswerSheets({
@@ -1419,6 +1475,23 @@ export async function createSchoolLifecycle({
     clock,
     logger,
   });
+  // "Print my next sheet" with no code — the Portal bank strip and the piano
+  // kiosk. The SAME resolver the scan path asks, the SAME projection, and the
+  // SAME `issueDocument` the keypad's `print` button reaches through the
+  // shared `printSessionSheet` helper, so a sheet printed from here is the
+  // sheet a scanned subject ticket would have printed.
+  const issueSubjectNext = new IssueSubjectNext({
+    resolveSubjectNext,
+    getLearnerDayCompletion,
+    issueDocument,
+    // A failed attempt's "Print a fresh sheet" opens its retry through the
+    // SAME instance the keypad and the scan path use.
+    openRemediation,
+    roster: () => schoolRoster.list(),
+    rewardFor,
+    clock,
+    logger,
+  });
   const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
   // The escape hatch for a companion whose media is broken: a grown-up reads
   // the finish code out. Built HERE because the code store and `householdId`
@@ -1504,7 +1577,7 @@ export async function createSchoolLifecycle({
     setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, sweepAnswerSheets, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     invalidateSessionEvidence, recoverMisattributedWorksheet,
-    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, issueSubjectNext, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch, issueSubjectCode,
     getLearnerTerm, rebuildLearnerTerm,
@@ -1556,6 +1629,9 @@ export async function createSchoolLifecycle({
       recordLessonCompanionProgress,
       readPrinterHealth,
       curriculum,
+      // "Print my next sheet" lives on the panel's sanctioned surface, so the
+      // locked panel still never calls /lifecycle.
+      issueSubjectNext,
     })
     : null;
   if (!selfServiceEnabled) {
@@ -1584,6 +1660,10 @@ export async function createSchoolLifecycle({
 
   return {
     wired: true,
+    // The live plan projection, for consumers composed outside this module:
+    // the teacher day digest (`lifecycle-runtime.mjs`) reads teacher holds off
+    // the same plan the agenda prints from.
+    planProjection,
     // The thermal notice printer, for the scan consumer's per-feed slips
     // (`app.mjs` wires that consumer against this module's own stores).
     receipts,
@@ -1657,6 +1737,8 @@ export async function createSchoolLifecycle({
     bookLogLauncher,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
+    // The economy's coins-changed forwarded to the Portal; null when unwired.
+    coinsChangedRelay,
     // The story-time launcher by name, for the living-room reading session.
     // Exposed rather than reached for through `launchers` because two callers
     // need DIFFERENT things off it and both must have the SAME instance: the

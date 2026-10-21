@@ -17,9 +17,10 @@
  * A rule that pays twice is two rules: there is no `bonus`.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { CURRENCIES } from '../entities/Transaction.mjs';
 
+export { CURRENCIES };
 export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest']);
-export const CURRENCIES = Object.freeze(['silver', 'gems']);
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -62,7 +63,11 @@ function nonNegativeInt(value, field) {
 export function normalizeReward(reward, field = 'reward') {
   if (typeof reward === 'number') return { silver: nonNegativeInt(reward, field), gems: 0 };
   if (!reward || typeof reward !== 'object' || Array.isArray(reward)) fail(`${field} must be a number or {silver, gems}`, field);
-  for (const key of Object.keys(reward)) if (!CURRENCIES.includes(key)) fail(`${field} has an unknown currency "${key}"`, field);
+  for (const key of Object.keys(reward)) {
+    if (!CURRENCIES.includes(key)) fail(`${field} has an unknown currency "${key}"`, field);
+    // Gold is minted only by the week close, never by a rule.
+    if (key === 'gold') fail(`${field} cannot pay gold: rules pay silver and gems`, field);
+  }
   return { silver: nonNegativeInt(reward.silver ?? 0, `${field}.silver`), gems: nonNegativeInt(reward.gems ?? 0, `${field}.gems`) };
 }
 

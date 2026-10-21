@@ -194,6 +194,8 @@ function seedDataDir(dataDir) {
  * @param {Array<{id:string,name:string,birthyear:number}>} [options.roster]
  * @param {boolean} [options.economyEnabled] - household coin switch (spec A5: off by default)
  * @param {number} [options.economyReward] - coins the configured earn action pays
+ * @param {string} [options.economyMode] - the economy catalog's mode; the
+ *   agenda's economy line prints only while it is `live`
  * @param {number} [options.graceSec] - media stall grace window
  * @param {number} [options.tokenTtlHours]
  * @param {object} [options.languageStudyService] - present makes the
@@ -226,6 +228,7 @@ export async function createLifecycleHarness({
   ],
   economyEnabled = true,
   economyReward = 5,
+  economyMode = 'live',
   graceSec = 600,
   tokenTtlHours = 48,
   languageStudyService = null,
@@ -387,6 +390,7 @@ export async function createLifecycleHarness({
     householdId: null,
     schoolService,
     economyService: countingEconomy,
+    economyMode: () => economyMode,
     userService,
     eventBus,
     languageStudyService,

@@ -86,6 +86,27 @@ describe('School keypad refusal animation (NONONO)', () => {
   });
 });
 
+describe('School keypad refusal that a child can act on', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows the sentence under the slots, keeps the animation, offers no retry', async () => {
+    const sentence = "That sheet is from Sunday. Tap your card for today's.";
+    const onSubmit = vi.fn().mockResolvedValue({ resolved: false, sentence, degraded: false });
+    render(<Keypad onSubmit={onSubmit} message={sentence} onRetry={vi.fn()} />);
+    typeCode('123456');
+    await act(async () => { await vi.advanceTimersByTimeAsync(PAST_SETTLE_MS + 1200); });
+    expect(entryText()).toBe(REJECT_WORD);
+    const line = screen.getByText(sentence, { selector: '.school-selfservice__message' });
+    expect(line).not.toHaveClass('is-degraded');
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('lets a two-line refusal wrap inside the reserved band', () => {
+    expect(styleRule('.school-selfservice__message.is-refusal')).toContain('white-space: normal');
+  });
+});
+
 describe('School keypad outage layout', () => {
   it('keeps the outage band under the keys, so the code boxes sit on the pad', () => {
     const { container } = render(<Keypad onSubmit={vi.fn()} message="Server is down" degraded onRetry={vi.fn()} />);

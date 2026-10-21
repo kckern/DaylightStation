@@ -530,6 +530,70 @@ function appendNoteLines(blocks, noteLines) {
 }
 
 /**
+ * The longest economy line, in characters (code points). The canvas receipt
+ * draws body text in 24px Roboto Condensed across a 530px content width, and a
+ * line of this shape in Latin text measures about 10px a character (55
+ * characters came to 516-559px), so 50 keeps it on one row. Wider scripts
+ * (Hangul, emoji) run wider per character; the renderer wraps a longer line
+ * rather than losing it, so a miss costs a second row, never the text. Only
+ * the title is shortened to fit: the silver and the reward are the point of
+ * the line.
+ */
+const ECONOMY_LINE_MAX_CHARS = 50;
+
+/** Silver worth printing: a whole number of coins, 0 or more. */
+const isPrintableSilver = (n) => Number.isSafeInteger(n) && n >= 0;
+
+/**
+ * The one economy line at the top of the agenda: `In the bank: 7 silver ·
+ * Next: Math +2`. Pure: the caller fetches the figures. The silver is the
+ * UNSPENT silver in the bank (what the week close converts on Sunday), not the
+ * week's mints, so the line says "in the bank" rather than "this week".
+ *
+ * - Silver that is not a whole number of 0 or more is NO line, even when there
+ *   is a next item. Absent or unreadable, a "0 silver" line would tell a child
+ *   their week was wasted. A negative is ruled out too: the ledger fold floors
+ *   at 0, so a negative figure means something upstream is wrong, and the tape
+ *   is no place to show it.
+ * - No next item (or a blank title) prints the silver alone.
+ * - ` +N` only when the reward pays silver (`reward.silver` a whole number > 0).
+ * - The `·` is the separator the rest of the agenda already prints (the focus
+ *   heading, the taxonomy rows), so the receipt font is known to carry it.
+ *
+ * @param {{silver?: number|null, next?: {title?: string, reward?: {silver?: number}|null}|null}|null} summary
+ * @returns {string|null}
+ */
+export function agendaEconomyLine(summary) {
+  const silver = summary?.silver;
+  if (!isPrintableSilver(silver)) return null;
+  const head = `In the bank: ${silver} silver`;
+  const title = isNonEmptyString(summary?.next?.title) ? summary.next.title.trim() : null;
+  if (!title) return head;
+  const pays = summary.next.reward?.silver;
+  const tail = Number.isSafeInteger(pays) && pays > 0 ? ` +${pays}` : '';
+  const stem = `${head} · Next: `;
+  const room = ECONOMY_LINE_MAX_CHARS - Array.from(stem).length - Array.from(tail).length;
+  const chars = Array.from(title);
+  if (chars.length <= room) return `${stem}${title}${tail}`;
+  // Too little room for a word worth reading: say the silver and stop.
+  if (room < 4) return head;
+  return `${stem}${shorten(chars, room)}${tail}`;
+}
+
+/**
+ * A title's code points cut to `room`, ellipsis included, at a word if one is
+ * near. Code points, so an emoji's surrogate pair is never split.
+ */
+function shorten(chars, room) {
+  const keep = room - 1;
+  // The last space at or before the cut: a cut landing just after a word
+  // (the next character is a space) keeps that word whole.
+  const space = chars.lastIndexOf(' ', keep);
+  const cut = space >= room / 2 ? chars.slice(0, space) : chars.slice(0, keep);
+  return `${cut.join('').trimEnd()}…`;
+}
+
+/**
  * The agenda: what this learner can do right now, one subject section at a
  * time (spec §6.2 v2 — sectioned by subject rather than a flat list of unit
  * entries).
@@ -595,6 +659,10 @@ function appendNoteLines(blocks, noteLines) {
  *   the gutter glyph and the breadcrumb. An enrollment may place it anywhere,
  *   so this is never hardcoded to English.
  * @param {string} [args.footer]
+ * @param {string|null} [args.economyLine] the week's silver and the next item
+ *   (`agendaEconomyLine`), printed centred as the FIRST block, above the work
+ *   and on the "nothing assigned" sheet too. Absent or blank, the receipt is
+ *   byte-identical to one built before the line existed.
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
@@ -604,7 +672,7 @@ export function agendaDocument({
   bulkToken = null, bulkAccessCode = null, bulkSubjects = null,
   readingToken = null, readingAccessCode = null,
   readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
-  footer = null, notes = [],
+  footer = null, notes = [], economyLine = null,
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -618,6 +686,9 @@ export function agendaDocument({
   // stray receipt up later, not when reading the top of a fresh one. At the
   // top it was the first thing between the child's name and their work.
   const printedAt = formatPrintedAt(generatedAt, timeZone);
+  // Pushed before the empty-plan return, so a day with nothing assigned still
+  // shows what the week has earned.
+  if (isNonEmptyString(economyLine)) blocks.push({ ...text(economyLine.trim()), align: 'center' });
 
   const noteLines = (Array.isArray(notes) ? notes : []).filter(isNonEmptyString);
   const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
@@ -919,6 +990,10 @@ export function agendaDocument({
  *   [args.companionGate] set ONLY when the finish-code row — not the score —
  *   is what stopped this sheet passing (`companionVetoStatus`, Task 10). See
  *   `companionGateLines` for why this earns two lines of its own.
+ * @param {{retries: number}|null} [args.teacherHold] a failure past the
+ *   remediation cap, with how many retries are already behind it. No retry is
+ *   coming, so the sheet must not say TRY AGAIN or "before you retry": it says
+ *   a grown-up will help instead.
  * @returns {object}
  */
 export function resultDocument({
@@ -929,12 +1004,14 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false, companionGate = null,
+  dayComplete = false, companionGate = null, teacherHold = null,
 } = {}) {
   const passed = result === 'passed';
+  const held = !passed && Boolean(teacherHold);
+  const retryHeading = held ? 'GO OVER THESE WITH A GROWN-UP' : 'REVIEW BEFORE YOU RETRY';
   const blocks = [{
     type: 'result_summary',
-    headline: passed ? 'PASSED' : 'TRY AGAIN',
+    headline: passed ? 'PASSED' : held ? 'A GROWN-UP WILL HELP' : 'TRY AGAIN',
     title: unitTitle || 'Your work',
     ...(typeof percent === 'number' && Number.isFinite(percent) ? { percent } : {}),
     ...(typeof passingPercent === 'number' && Number.isFinite(passingPercent) ? { passingPercent } : {}),
@@ -960,7 +1037,7 @@ export function resultDocument({
         reviewHints: hints.filter(isNonEmptyString),
         // A pass is not a retry. "Before you retry" would be a false
         // instruction on a sheet whose next action is the NEXT lesson.
-        reviewHeading: passed ? 'WORTH A SECOND LOOK' : 'REVIEW BEFORE YOU RETRY',
+        reviewHeading: passed ? 'WORTH A SECOND LOOK' : retryHeading,
       }
       : {}),
   }];
@@ -970,9 +1047,15 @@ export function resultDocument({
   // questions this child did not get wrong. Nothing prints for an ungated
   // sheet, or for one that failed on its score.
   if (!passed) companionGateLines(companionGate).forEach((line) => blocks.push(text(line)));
+  if (held) {
+    const retries = Number.isInteger(teacherHold.retries) ? teacherHold.retries : null;
+    blocks.push(text(retries
+      ? `After ${retries} ${retries === 1 ? 'retry' : 'retries'}, a grown-up will sit down with you on this one.`
+      : 'A grown-up will sit down with you on this one.'));
+  }
   if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
       && Array.isArray(objectives) && objectives.length) {
-    blocks.push(text('## REVIEW BEFORE YOU RETRY'));
+    blocks.push(text(`## ${retryHeading}`));
     objectives.filter(isNonEmptyString).forEach((o) => blocks.push(text(`- ${o}`)));
   }
   appendNoteLines(blocks, (Array.isArray(notes) ? notes : []).filter(isNonEmptyString));

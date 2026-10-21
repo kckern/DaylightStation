@@ -153,6 +153,11 @@ hallway screen is worth nothing by the time anyone finds it. The other bound is
 the roster: the server, not the client, decides that the learner named is one
 of today's.
 
+The coin bank has a door of the same kind beside this one ("My bank",
+`BankDoor`, `OpenBankAtPanel`): the same roster and panel checks, but no grant.
+The bank read is unauthenticated in slice 1, so that door is the roster check
+plus the face tap and nothing more. See the bank screen in the School README.
+
 The door stands wherever the School panel does, the browser mount included —
 the same place the printed-code keypad already opens a shelf. It briefly also
 required the request to name the configured panel, which was theatre: the
@@ -238,6 +243,20 @@ What it changes:
 The shelf read carries `entry: {manual}` so the panel and the server read the
 same flag. The flag is read per request from the in-memory config, so flipping
 it needs a config reload or restart, not a rebuild.
+
+**Waking the Portal for a scan.** Every scan asks the Portal to wake
+(`wakeScreenForBroadcast`: power on, then Fully Kiosk to the foreground).
+`PrepareBookScan` runs one wake per screen at a time: scans that arrive while a
+wake is in flight share it. After a failed wake, scans for that screen within
+10 seconds do not wake again; the panel tells the child "The screen is waking
+up — wait a moment, then scan again." (distinct from the "could not wake"
+message the failed scan itself shows) and the scan logs `school.book-scan.wake-skipped {screenId, reason: cooldown}`.
+The failure itself is logged once per wake as `school.book-scan.wake-failed`
+with `step` (`screenOn`/`toForeground` from the kiosk adapter, or `power`,
+`foreground`, `wake-threw`), `power` and `foreground` (each `{ok, step?,
+error?}`), and `error`, credential-shaped text redacted. Before 2026-10-19 the
+line carried only `screenId`, and on 10/18 seven scans in about five seconds
+fired seven wakes that all failed with no recorded cause.
 
 ### What the shelf looks like
 

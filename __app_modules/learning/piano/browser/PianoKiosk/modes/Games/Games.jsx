@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useContext, useEffect, useState, Suspense } from 'react';
+import { useMemo, useCallback, useContext, useEffect, useRef, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
@@ -22,6 +22,8 @@ import { gameSubRouteTarget } from './gameSubRoute.js';
 import usePianoChallengeProfile from '../../../ask/usePianoChallengeProfile.js';
 import { creditPianoChallengeGameTime } from '../../../ask/pianoChallengeEarnedTime.js';
 import useBoardGameDay from './useBoardGameDay.js';
+import SchoolLock, { RelockScreen } from './SchoolLock.jsx';
+import useEarlyPassSession from './useEarlyPassSession.js';
 import { addressingPolicyFor } from '../../../game-platform/addressing/addressingPolicy.js';
 
 
@@ -41,16 +43,18 @@ import { addressingPolicyFor } from '../../../game-platform/addressing/addressin
  * when the game is genuinely on screen rather than when the host decided to
  * render one. `key` is the match, so a rematch is a new mount and says so.
  */
-function GameMountWitness({ gameId, matchId, learnerId, logger }) {
+function GameMountWitness({ gameId, matchId, learnerId, logger, onMount = null }) {
   useEffect(() => {
     const startedAt = Date.now();
+    // The early pass's clock starts here, at the game, not at the lock.
+    onMount?.();
     logger.info('game.mount', { game: gameId, matchId, learnerId: learnerId ?? 'guest' });
     return () => {
       logger.info('game.unmount', {
         game: gameId, matchId, learnerId: learnerId ?? 'guest', playedMs: Date.now() - startedAt,
       });
     };
-  }, [gameId, learnerId, logger, matchId]);
+  }, [gameId, learnerId, logger, matchId, onMount]);
   return null;
 }
 
@@ -80,9 +84,19 @@ export function Games() {
   // gets back `indeterminate`, and is told to finish schoolwork they never
   // had (2026-09-02 incident, repeated here because this one call site
   // omitted the option the hook was already built to consume).
-  const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null, {
+  const learnerId = pianoUser?.currentUser ?? null;
+  // True while a pass game is on screen: the hook must not re-read the bank
+  // then, or the game's own consume would read back as a lock under it.
+  const passGameRef = useRef(false);
+  const gameAccess = useSchoolGameAccess(learnerId, {
     schoolLearner: (pianoUser?.users || []).find((u) => u.id === pianoUser?.currentUser)?.schoolLearner,
+    pauseBankReads: passGameRef,
   });
+  // The early pass (school economy slice 1): one game before school is done.
+  // Held here, above the routes, because it outlives the game host.
+  const earlyPass = useEarlyPassSession({ learnerId, access: gameAccess });
+  passGameRef.current = earlyPass.started;
+  const deviceId = useMemo(() => readKioskDeviceId(), []);
 
   // BEFORE the school lock, and it is not a lock. A player games are not
   // offered to is told that, plainly, with no route to unlock and no
@@ -99,29 +113,27 @@ export function Games() {
     );
   }
 
-  if (!gameAccess.unlocked) {
-    const message = gameAccess.status === 'error'
-      ? 'School status is unavailable. Games stay locked until it can be checked.'
-      : gameAccess.state === 'indeterminate'
-        ? 'School could not determine today’s plan. Ask a grown-up for help.'
-        : gameAccess.status === 'locked'
-          ? 'Choose your own profile, then finish today’s schoolwork to unlock Games.'
-      : gameAccess.status === 'loading'
-        ? 'Checking today’s schoolwork…'
-        : 'Finish today’s schoolwork to unlock Games.';
-    return (
-      <section className="piano-mode__placeholder piano-games__school-lock" role="status">
-        <h2>Games are locked</h2>
-        <p>{message}</p>
-      </section>
-    );
+  // The early-pass game is over. No rematch and no picker: the next game is
+  // school's to open. Unless school itself has opened Games since, in which
+  // case there is nothing to relock.
+  if (earlyPass.relocked && !(gameAccess.unlocked && gameAccess.via !== 'pass')) {
+    return <RelockScreen learnerId={learnerId} deviceId={deviceId} outcome={earlyPass.outcome} played={earlyPass.played} />;
   }
 
+  // `holding`: a pass is open — live from access until the game mounts, then
+  // latched. A latched game's consume refreshes access to locked before the
+  // child has finished reading the result, and the lock must wait for the
+  // game to end rather than cut it off.
+  if (!gameAccess.unlocked && !earlyPass.holding) {
+    return <SchoolLock access={gameAccess} learnerId={learnerId} deviceId={deviceId} />;
+  }
+
+  const session = earlyPass.holding ? earlyPass : null;
   return (
     <Routes>
       <Route index element={<GamePicker />} />
-      <Route path=":gameId" element={<GameHost />} />
-      <Route path=":gameId/:subRoute" element={<GameHost />} />
+      <Route path=":gameId" element={<GameHost earlyPass={session} />} />
+      <Route path=":gameId/:subRoute" element={<GameHost earlyPass={session} />} />
     </Routes>
   );
 }
@@ -191,7 +203,7 @@ function BudgetLock({ kind }) {
  * Game host — resolves the game entry from the URL param, wires MIDI, and
  * renders the game fullscreen. Back navigates up (relative).
  */
-function GameHost() {
+function GameHost({ earlyPass = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const { gameId, subRoute } = useParams();
   const navigate = useNavigate();
@@ -260,6 +272,40 @@ function GameHost() {
   // would make the gate a toll on nothing.
   const [matchId, setMatchId] = useState(1);
 
+  // The early pass, while one is open (`via: 'pass'`). Read through a ref in
+  // the callbacks below so a re-render never leaves one holding a stale
+  // session.
+  const passSession = earlyPass?.holding ? earlyPass : null;
+  const passRef = useRef(passSession);
+  passRef.current = passSession;
+  // Leaving the host before the game ended, by any route the host does not
+  // see (the breadcrumb, a profile switch, the school lock). Deferred one
+  // microtask and cancelled by a remount, so StrictMode cannot spend it.
+  useEffect(() => {
+    passRef.current?.stay();
+    return () => { passRef.current?.leave('unmount'); };
+  }, []);
+  // The session can also change under a host that stays mounted: an access
+  // answer that switches player without a loading frame, or one player's
+  // pass giving way to another's. Keyed on the pass id. Whenever it changes,
+  // the PREVIOUS pass ends: force-consumed as a switch when another pass
+  // takes its place (it was played, by its owner), by play time when the
+  // pass simply went away. A new pass also gets a fresh match, so its clock
+  // starts at its own game's mount rather than inheriting nothing.
+  const passKey = passSession?.passId ?? null;
+  const lastPassRef = useRef(null);
+  useEffect(() => {
+    const last = lastPassRef.current;
+    lastPassRef.current = passKey ? { session: passRef.current, pass: passRef.current?.pass ?? null } : null;
+    if (!last?.pass || last.pass.passId === passKey) return;
+    if (passKey) {
+      last.session.end('force-consume', 'switch', last.pass);
+      setMatchId((value) => value + 1);
+    } else {
+      last.session.end('by-play-time', 'session-lost', last.pass);
+    }
+  }, [passKey]);
+
   // Re-arm when the game itself changes under a mounted host. `:gameId` and
   // `:gameId/:subRoute` render the SAME element, so React preserves this
   // component instance across a params change and the initial `useState` read
@@ -298,7 +344,9 @@ function GameHost() {
    */
   const requestRematch = useCallback(() => {
     const proceed = () => {
-      logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled });
+      logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled, ...(passRef.current ? { via: 'pass' } : {}) });
+      // One game was bought, and this was it.
+      if (passRef.current) { passRef.current.end('by-play-time', 'rematch'); return; }
       if (gateEnabled) { setGatePending(true); return; }
       setMatchId((value) => value + 1);
     };
@@ -307,10 +355,35 @@ function GameHost() {
     else proceed();
   }, [boardGameDay, gameId, gateEnabled, logger]);
 
+  // A board game's durable result is the pass's completion. Marked
+  // synchronously (so an exit a moment later consumes rather than refunds),
+  // then consumed once the save settles, whatever the play time. It consumes
+  // even when the save FAILS: the game was played to its end, and a failed
+  // board-game-day write is not the child's refund. The relock waits for the
+  // child to ask for the next match, so the result screen stays up.
+  const registerCompletion = useCallback((request) => {
+    const session = passRef.current;
+    session?.complete();
+    const settled = boardGameDay.registerCompletion(request);
+    if (session) Promise.resolve(settled).catch(() => null).then(() => session.settle('force-consume', 'completion'));
+    return settled;
+  }, [boardGameDay.registerCompletion]);
+
+  // Armed while a pass is open, so a game's "play again" comes back here
+  // instead of restarting itself.
+  const passOpen = Boolean(passSession);
   const matchGate = useMemo(
-    () => ({ armed: gateEnabled, requestRematch, registerCompletion: boardGameDay.registerCompletion }),
-    [boardGameDay.registerCompletion, gateEnabled, requestRematch],
+    () => ({ armed: gateEnabled || passOpen, requestRematch, registerCompletion }),
+    [gateEnabled, passOpen, registerCompletion, requestRematch],
   );
+
+  const onGameMount = useCallback(() => { passRef.current?.markStarted(); }, []);
+  const onCrash = useCallback(({ gameId: crashed }) => {
+    const session = passRef.current;
+    if (!session) return;
+    logger.info('piano.early-pass.crash', { game: crashed });
+    session.end('by-play-time', 'crash');
+  }, [logger]);
 
   /**
    * The gate resolved in the child's favour — a genuine pass, or an
@@ -341,7 +414,8 @@ function GameHost() {
   usePianoBreadcrumb(useMemo(() => [{ label: entry?.label ?? gameId }], [entry?.label, gameId]));
 
   const exit = () => {
-    logger.info('piano.game-exit', { game: gameId });
+    logger.info('piano.game-exit', { game: gameId, ...(passRef.current ? { via: 'pass' } : {}) });
+    if (passRef.current) { passRef.current.end('by-play-time', 'exit'); return; }
     navigate(subRoute ? '../..' : '..', { relative: 'path' });
   };
 
@@ -414,6 +488,7 @@ function GameHost() {
         gameId={gameId}
         label={entry.label ?? 'This game'}
         onExit={exit}
+        onCrash={onCrash}
       >
         <Suspense fallback={<SkeletonStage />}>
           {/* The game announces match boundaries through this context and the
@@ -422,7 +497,7 @@ function GameHost() {
               else (the office screen has no provider) read null and restart
               themselves exactly as they always have. */}
           <MatchGateContext.Provider value={matchGate}>
-            <GameMountWitness gameId={gameId} matchId={matchId} learnerId={learnerId} logger={logger} />
+            <GameMountWitness gameId={gameId} matchId={matchId} learnerId={learnerId} logger={logger} onMount={onGameMount} />
             <entry.LazyComponent
               key={matchId}
               activeNotes={activeNotes}

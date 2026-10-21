@@ -1478,6 +1478,31 @@ be handed to another child while its paper is still in a hand.
 
 **The reading code is uncapped**, deliberately — see "The reading log" below.
 
+**An old sheet says which day it is from.** A code still dies at the 4am
+rollover — it re-plans live per subject, so yesterday's digits would open
+today's next thing rather than what the paper says. What it no longer does is
+die as a typo. The registry keeps a code's index entry until its token is
+pruned, a week later, and `lookupAccessCode(code, {now})` hands back
+`{record, live}` instead of applying the verdict: an expired, unrevoked record
+comes back with `live: false`, while a revoked, unknown or malformed code comes
+back with no record. `ResolveAccessCode` turns the expired case into
+`reason: 'expired'` with the sentence *"That sheet is from Sunday. Tap your card
+for today's."*, the weekday being the study day the code belonged to (the instant
+before its `accessCodeExpiresAt`, in the household timezone). A sheet six days
+old or more says "last Monday", so a weekday can never read as today. The panel
+keeps the NONONO animation and prints that sentence under the slots until the
+first digit of the next code, which clears it for good (backspacing to an empty
+pad does not bring it back);
+a plain wrong code still gets the animation alone. An expired code spends **no**
+throttle allowance — the child is reading paper, not guessing — though it still
+counts as kiosk friction. `getByAccessCode` is unchanged and is still the only
+lookup that opens anything.
+
+Every refusal logs `school.selfservice.code.rejected` with a `reason`
+(`expired`, `no-live-record`, `unscoped-record`, `used_up`) and `learnerId` when
+the record names one; an expired code also carries `issuedAt` and `ageHours`.
+The digits themselves are never logged.
+
 **Wrong codes are throttled, per device.** Only a *rejected* code spends
 allowance, so a child working through several of their own codes is never
 slowed; a device producing nothing but misses is asked to pause, and a `warn` is
@@ -1503,6 +1528,84 @@ that sibling's history. `ResolveAccessCode` computes `nextMove` against a
 synthetic `created` state instead and hands `/act` a `SYNTHETIC_SESSION_ID` that
 must never reach a use case. `/act` is where a real session is opened, because by
 then the child has pressed a button.
+
+#### Print my next sheet (no code)
+
+The Portal's bank strip and the piano kiosk's lock screen print a child's next
+worksheet without a code, through `IssueSubjectNext`
+(`application/usecases/IssueSubjectNext.mjs`):
+
+These routes are on the self-service router, the locked panel's sanctioned
+surface, so the locked panel still never calls `/lifecycle`. They mount only
+when `selfService.enabled` is true.
+
+- `POST /api/v1/school/self-service/learners/:learnerId/print-next {subject?, deviceId?}`
+  prints. The body is read for `subject` and `deviceId` and nothing else; a
+  learner off the roster is a `404`, a subject that is not one of that learner's
+  sections today is a `400`. Everything else, printer failures included, is a
+  `200` carrying `{status, outcome, sentence, subject, unit: {unitId, title,
+  subject}, sessionId}`. Surfaces show `sentence`.
+- `GET /api/v1/school/self-service/learners/:learnerId/next?subject=` is the dry
+  run for the button's label: `{subject, unit, printable, reward}`. It opens no
+  session. `reward` (`{silver, gems}` or null) comes from the optional
+  `rewardFor({learnerId, unit})` port that `createSchoolLifecycle` accepts. The
+  app wires it to the economy (`economyApi.rewardFor`, late-bound because the
+  earnings runtime is built after School): an amount only while the economy is
+  `live` and one earn rule prices this sheet, such as a `section-day` rule for
+  the subject that today's section has not earned yet. The amount is what the
+  sheet adds if passed, at the learner's own rate. Dry-run and off answer
+  null, as does anything the economy cannot price with certainty (see the
+  economy reference, "Integration points", "School: what a sheet is worth (`rewardFor`)"). It is also
+  null when the port is not wired, returns nothing or throws.
+
+**It can only print the learner's own next sheet.** With no subject named, the
+candidates come from `GetLearnerDayCompletion`: obligated sections first, then
+electives (excused and not yet served), in plan order. Each candidate is looked
+at with `ResolveSubjectNext.peek`, the same resolution as `execute` with no
+session opened (a sessionless entry is judged against a synthetic `created`
+state). The first whose self-service card (`offeredActions`) offers paper wins,
+so a program or a video at the top of the plan does not take the button.
+Paper is `print`, or a paper `retry` ("Print a fresh sheet" after a failed
+attempt). The completion view is narrower than the resolver's projection (no
+attested passes or exceptions), so the two can disagree at the edges; the
+resolver has the last word and nothing prints from the completion view alone.
+
+**A tap that will not print opens no session.** When the peek is not paper,
+the answer comes from the peek. Served, locked and empty answer with the card's
+sentence. A program or another non-paper move answers with the card's button
+label as a sentence ("Open Math Facts.", "Play the video."). Only a paper peek
+goes on to `ResolveSubjectNext.execute`, which ensures the session; the card is
+judged again there, and the sheet prints. A retry opens the remediation session
+through `OpenRemediation` and prints that one ("Printing a fresh sheet to try
+again."); a refused remediation, such as the retry cap, answers with
+`OpenRemediation`'s own sentence, prints nothing, and names no session.
+
+**The print step is shared with the keypad.** `printSessionSheet.mjs` holds
+`PRINT_RESULTS`, the `IssueDocument` call that `RunSelfServiceAction`'s
+`print` button uses, and `printFreshSheet`, the open-remediation-then-print step
+behind its `retry` button. Both surfaces say the same thing about the same
+printer ("The printer did not answer. Try that again in a minute."). Rows can be
+reworded per surface: the Portal and the kiosk have no code to type, so their
+`already_done` reads "That one is finished. Tap again to see what is next."
+
+**A 20-second debounce per learner and subject** (`learnerId:subject`), armed
+after validation, so a foreign subject is always a `400` and Math then Reading
+a moment apart both print. It is separate from `IssueDocument`'s per-session
+`printCooldownMinutes` and catches one child tapping the strip and the kiosk,
+or one button twice, for the same sheet.
+
+- A tap that lands while a print for that key is running awaits it. It answers
+  "It's already on its way — give it a minute." only if that print went out,
+  and otherwise returns the same failure.
+- A tap within 20 seconds of a print that went out is debounced. A failed or
+  refused tap stamps nothing, so a failed print can be retried straight away.
+  A clock that steps backwards counts as expired.
+- Both live in process memory, so a backend restart clears them;
+  `IssueDocument`'s session cooldown is the durable backstop.
+
+Events: `school.subject-next.printed`, `.debounced`, `.failed` (warn) and
+`.refused`, each with `{learnerId, subject, unitId, status, deviceId}`. A use
+case that threw logs `school.subject-next.threw`.
 
 #### The reading log
 
@@ -1618,6 +1721,151 @@ activity for screen-off, and the two panes swap sides every 90 seconds for
 burn-in without losing a half-typed code. The board component lives at
 `frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
 same agenda-preview + teacher-day models the teacher console uses.
+
+**The bank strip** (`__app_modules/learning/school/browser/bank/BankStrip.jsx`)
+sits between the board header and the board: one chip per kid, in roster
+order, never sorted or ranked. Each chip shows the kid's silver captioned "in
+the bank" (read out as "12 silver in the bank"), a gem when
+they have gems, and a "sneak used" tick when today's `piano.games` pass is
+active or consumed or its cap is used. Under it is the next sheet they can earn
+with ("+2 silver · Math 4-02", or just the unit title when `reward` is null)
+and a **Print** button. The strip and the header's two doors (bank and books)
+are the only things in the board pane that take a tap; the strip sets `pointer-events: auto` itself.
+
+- **Silver** is `balances.silver` from `GET /api/v1/economy/users/:id/bank`.
+  The week close converts the whole silver balance to gold, so the balance is
+  this week's unspent silver. A pass bought today shows as silver spent. The gem
+  is `balances.gems > 0`. Gems never convert, so the gem means the kid has
+  gems, not that they earned one this week.
+- **Two silvers, two names.** The board's silver is what the week's work
+  *earned* (the earnings preview), read out as "N silver earned this week".
+  The strip's is what is *in the bank* (the ledger, less what was spent). They
+  differ after a pass purchase or before a payout lands, which is why each is
+  named. Both coin colours come from School tokens (`--school-coin-silver`,
+  `--school-coin-gold`), read for `CoinIcon` by `shared/useCoinColor.js`.
+- **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
+  field is the silver figure, never gold.
+- **Before coins are live** (the bank's `mode` is not `live`) the chip says
+  "Coins start soon" with no number, gem or tick: every bank reads 0 until
+  then. The next item and Print still show.
+- **A failed bank read** shows "bank is napping" and no number, for that kid
+  only (`economy.balance.unavailable`, warn). No figure ever comes from the
+  board's cache. A pass `state: 'unknown'` shows no tick.
+- **The next item** is `GET /self-service/learners/:id/next`. No unit, or a unit
+  that is not paper, shows nothing and no button.
+- **Print** posts `print-next {subject, deviceId}`, with the subject from the
+  preview and the device set to the panel's screen id (`portal` when there is
+  none). The button is disabled while the request is in flight. The reply's
+  `sentence` is shown as a toast; a 404, a 400 or no network shows "Can't print
+  right now. Ask a grown-up." That kid's bank and next item are then read again.
+  Each tap logs `economy.strip.print-tapped` under component `school-bank-strip`.
+  A remounted strip has no memory of a tap in flight; the server's 20-second
+  debounce per learner and subject catches the repeat.
+- **Nothing moves the board.** The `role="status"` toast element is always in
+  the tree (hidden when empty) and overlays the top of the board when it
+  speaks, taking no room. Each chip's balance line and next-item line keep a
+  fixed height whether they hold a number, "bank is napping" or nothing.
+- **Reads never wait on the board.** Each kid's bank and next item are separate
+  requests, fired and never awaited by the board's reads. Each carries a
+  per-kid sequence number, so an older reply that lands late is dropped.
+- **Refresh:** the board's `school` topic events (`status/schoolRefreshEvents.js`)
+  for that kid, coalesced over 750 ms of quiet but never more than 3 s after a
+  burst's first event, plus a five-minute poll. Events other than
+  `coins-changed` re-read the bank too, on purpose: graded work is what a
+  payout follows.
+  `coins-changed` is one of those events. The economy publishes
+  `economy.coins-changed {userId, reason}` on the internal bus after every
+  write that moves coins or a pass: deposit, adjust, earn, mint, convert, and a
+  pass bought, consumed or refunded, once the write's user lock is released. A
+  dry run, a duplicate or a refusal publishes nothing.
+  `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started by
+  `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
+  learnerId}`. The lifecycle returns it as `coinsChangedRelay` (`{stop}`, null
+  when there is no subscribable bus), and `app.mjs` stops it on SIGTERM. A payout run mints entry by entry, so the events come in bursts.
+  The board re-reads only its coin figures on it, also coalesced.
+- **Below 820 px** the board pane is hidden, so the strip renders under the
+  keypad instead. It is mounted once, in one place or the other (`useNarrowPortal`).
+- **A chip is a door.** Its name-and-coins line is a button ("Open Ay's bank",
+  with the coins as its description) into that kid's bank screen (below),
+  through the same bank door as the header's coin button. Print stays its own
+  button.
+
+**The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
+kid's bank, full screen over the locked panel.
+
+- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. A
+  coin button ("My bank") sits beside "Log a book" in the board header and asks
+  "Whose bank?" with the shelf's own face grid (`LearnerChoice`). A tap on a
+  strip chip already names the kid, so it skips the faces and sends the same
+  request. Both post `POST /api/v1/school/bank/open {screenId, learnerId}`
+  (`OpenBankAtPanel`): the learner must be on the current roster and a School
+  panel must be configured (`resolveBookScanTarget`), or it refuses with 400 /
+  403 / 503 and a kid-readable `error` (any other failure reads "Could not open
+  the bank. Try again."). It answers
+  `{ launchTarget: { kind: 'program', program: 'economy-bank', learnerId } }`.
+  The "Whose bank?" screen is drawn by the panel, outside the board header,
+  because below 820 px the board pane is hidden and a chip in the keypad column
+  can still need it to show a refusal. It takes focus on its Back button, hands
+  focus back to the coin button or chip when it closes, closes itself after the
+  panel's idle time, and is closed by `goHome` and whenever the panel leaves
+  its resting keypad-and-board view, so a refusal never waits for the next
+  child. Logs: `school.bank.panel-opened {screenId, learnerId}` on the server;
+  `economy.bank.door-opened {learnerId, via}` / `economy.bank.door-open-failed`
+  under component `school-bank-door` in the browser.
+- **No grant, and no lock.** The door is the roster check plus the face tap.
+  The bank data comes from `GET /api/v1/economy/users/:id/bank`, which is
+  unauthenticated in slice 1 (decided): anyone at the panel could read any
+  kid's bank. The door makes the ordinary path a kid opening their own bank;
+  it protects nothing, so it mints nothing that would look like it does.
+  SchoolApp mounts the screen for an `economy-bank` target naming one learner
+  (refused as `economy-bank-refused` when there is none or it differs from the
+  learner launched for) and shows it only while that learner is the current one.
+- **Memory only.** `section: 'bank'` has no path, so a reload or the back button
+  never reopens a kid's bank. `goHome` clears it, an identity lapse closes it,
+  and the panel's idle knob (`lock.idleTimeoutSeconds`) sends it home. The
+  screen carries its own Back, so the locked panel's Done overlay stays off it.
+- **Balances.** Three `StatCard`s, silver emphasized: silver "becomes gold in N
+  days"; gold and gems "yours for good". N is the difference between two dates
+  the bank sends, `studyDay` (today) and `weekEndsOn` (the study day the close
+  belongs to, computed by `BankService` in the household timezone with its
+  4 am boundary), by pure date arithmetic, so a panel whose clock is in another
+  zone says the same thing: "tonight" on the close's day, "tomorrow night" the
+  day before, "in 7 days" between the close and 4 am. `weekEndsAt` (the
+  instant) is read only to say "becoming gold now" once it has passed.
+- **History.** The bank's plain-words lines, newest first, grouped by the
+  panel's local calendar day (split at local midnight, not the 4 am study
+  boundary) under Today, Yesterday or the date.
+- **Ways to spend.** Each privilege the bank quotes for sale, with its price in
+  each coin and "can buy at the piano" or "N more silver" (or gold). The
+  server's `affordable` decides; the local balance only fills in a row without
+  one, and a server "no" over a balance that looks enough reads "not enough
+  yet". The item says instead "after school is done" once today's early pass
+  is used (`capUsed`, or consumed / refunded), "Your early game is waiting at
+  the piano." for an active pass, "Open now: school is done." on a complete
+  day, and "Can't check today's pass right now." for `state: 'unknown'` (never
+  used, never available). Whether school is done comes from the agenda
+  preview's per-section `obligation` (nothing `obligated`; unknown on a
+  `faulted` section or plan errors), the same field
+  `/lifecycle/learners/:id/completion` folds, so one read serves this and Ways
+  to earn. Nothing on sale (every price 0, the shipped config) says "Nothing to
+  spend on yet." There is no buy button: buying is at the piano kiosk.
+- **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
+  then every agenda section still `obligated`, by title. A reward shows only
+  when the economy prices it (`reward` is null unless the economy is `live`).
+- **Coins start soon.** Before the economy is live (the bank's `mode` is not
+  `live`) the screen shows "Coins start soon." in place of the balances,
+  history and prices, so no "0 silver" is ever shown. Ways to earn still shows.
+- **Napping.** A failed bank read shows "The bank is napping. Try again soon."
+  and no numbers: no balances, history or prices, and no cache or earlier read
+  (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
+  so it still shows.
+- **Refresh** is the strip's: the `school` topic's events for that kid,
+  coalesced; a read that lands after a newer one is dropped. Opening logs
+  `economy.bank.opened {learnerId}` under component `school-bank-screen`.
+- **Contract test:** `npm run test:bank-ui`
+  (`tests/live/flow/school/bank-strip-contract.runtime.test.mjs`, a Vite dev
+  server with every `/api/v1/**` call stubbed): strip, chip, door, bank screen,
+  back.
 
 A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
 only screen in the house that mounts School, so ignoring them would break the
@@ -1894,6 +2142,49 @@ locked, the lock's own remedy) with a QR beside it. "Served today" comes from
 either a **passing** curriculum outcome recorded this study day, or a program
 unit's own `doneToday` — a *failed* attempt never serves the subject, because
 the section is the retry's only way back in.
+
+**The first line under the name is the silver in the bank.** When the economy
+is wired and its mode is `live`, the tape opens with one centred line: `In the
+bank: 7 silver · Next: Math`, with ` +2` appended when the next item's reward pays silver. The silver
+is the *unspent* silver in the bank, not the week's mints: the figure the
+Portal strip shows and the week close converts on Sunday. It is read with
+`EconomyService.peekBalance(id).silver`, a pure ledger fold that writes no
+wallet and reaps no session, at print time, so a morning tape shows the bank
+before that day's payouts. "Next" is the title `IssueSubjectNext.preview`
+answers for `GET /self-service/learners/:id/next`. Its `reward` is null unless
+the economy is `live` and prices that sheet; a null reward prints no `+N`. The line is capped
+at 50 code points, which keeps Latin text on one row of the tape's 530px
+content width; only the title is shortened, at a word where it can be, with an
+ellipsis, and never through the middle of an emoji. The rules:
+
+- No next item: `In the bank: 7 silver`.
+- The economy mode is not `live` (read per print through the `economyMode`
+  reader `createSchoolLifecycle` is handed; none means not live): no line, and
+  the balance is not read. Before coins are live every bank reads 0, and a
+  "0 silver" on the tape would tell a child the work was worth nothing.
+- Silver must be a whole number of 0 or more, or there is no line at all, even
+  when there is a next item. The tape never prints a 0 it did not read. A
+  negative is refused too: the ledger fold floors at 0, so a negative means
+  something upstream is wrong.
+- A learner the economy does not know (`hasUser` false) gets no line, logged
+  once per learner per process at info (`school.agenda.economy-unknown-user`).
+- A failed preview still prints the silver, and logs
+  `school.agenda.economy-next-failed` at warn.
+- The bank gets 2 s (`economyTimeoutMs`, enforced by the injected scheduler's
+  `withDeadline`; the use case holds no timers). A throw or a timeout logs
+  `school.agenda.economy-failed` at warn and the agenda prints without the line.
+- No economy wired: the agenda is byte-identical to one printed before the line
+  existed (pinned against a fixture captured at the parent commit).
+
+Wiring: `BuildAgenda` takes an optional `economy` port,
+`{ bankSummary(learnerId) → { silver, next: { title, reward } | null } | null }`,
+and formats the text with the pure `agendaEconomyLine` in `receipts.mjs`;
+`agendaDocument({ economyLine })` prints it. `createAgendaEconomyPort`
+(`composition/agendaEconomy.mjs`) builds the port from the `economyService`
+`createSchoolLifecycle` is already handed (duck-typed, so School imports no
+economy code) and its own `issueSubjectNext`. Both the printing agenda and the
+agenda preview get it; both reads are side-effect free, so the preview stays
+read-only.
 
 **The study day is 4am→4am**, the same boundary the language ladder already
 uses — one shared implementation, so the agenda's "today" and the ladder's

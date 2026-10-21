@@ -45,6 +45,10 @@
   // non-interactive board look tappable. Naming the pair also means "done" and
   // "not yet" are one edit each instead of four literals scattered downfile.
   --school-board-ink: #efe9dc;
+  // The two coins. CoinIcon derives its tint ladder from a hex, so the
+  // components read these with getComputedStyle (`useCoinColor`).
+  --school-coin-silver: #c0c0c0;
+  --school-coin-gold: #e2c15a;
   --school-board-done: #7fb069;
   // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
   // is the one pairing on this board with no contrast to spare.
@@ -1870,6 +1874,9 @@
   color: var(--school-warn); text-align: center;
   line-height: 1.2; white-space: nowrap;
   &.is-degraded { color: var(--school-danger); }
+  // An old sheet or a spent code is a whole sentence with an instruction in
+  // it, and never shares the band with a retry button — two lines fit.
+  &.is-refusal { white-space: normal; }
 }
 .school-selfservice__retry {
   flex: 0 0 52px; min-height: 52px; padding: 0 1.6rem; border: 1px solid var(--school-border);
@@ -3041,6 +3048,9 @@
   cursor: pointer; touch-action: manipulation; white-space: nowrap;
 }
 .school-book-door__icon { font-size: 1.75rem; line-height: 1; }
+// The header's doors side by side: the coin bank, then the book shelf.
+.school-board-header__doors { flex: 0 0 auto; display: flex; align-items: center; gap: .6rem; }
+.school-bank-door__icon { width: 1.75rem; height: 1.75rem; flex: 0 0 auto; }
 .school-book-door__label { font-size: 1rem; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
 // No reserved lane any more: "Turn off screen" used to be pinned to the
@@ -3390,7 +3400,7 @@
   // hangs after THAT number rather than at the end of the column.
   &__figure { position: relative; justify-self: start; }
   &__figure--silver { font-size: var(--silver); }
-  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #e2c15a; }
+  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gold); }
   &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
   // Hangs off the end of its number, so it never moves the column.
   &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.15em; font-size: 0.5em; opacity: 0.45; }

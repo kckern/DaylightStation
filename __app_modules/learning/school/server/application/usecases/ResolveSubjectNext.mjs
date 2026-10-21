@@ -14,9 +14,15 @@
  * today are two copies, and the day one of them is edited is the day a child
  * scans a ticket for work the panel then refuses.
  *
- * This use case COMPUTES; it never prints. `ResolveScanAction#subjectNext` is
- * the only caller and is the only place a physical outcome (a worksheet, a
- * dispatch, a slip) gets made from the answer here.
+ * This use case COMPUTES; it never prints. Its callers (`ResolveScanAction
+ * #subjectNext`, `IssueSubjectNext`) are where a physical outcome (a
+ * worksheet, a dispatch, a slip) gets made from the answer here.
+ *
+ * `peek` is the same resolution with no session opened: a sessionless entry
+ * is judged against a synthetic `created` state (`SYNTHETIC_SESSION_ID`, the
+ * keypad's `/resolve` rule) and `sessionId` comes back null. It runs the SAME
+ * private path as `execute` — one recipe, two modes — so "what would print"
+ * and "what prints" cannot drift.
  *
  * A `launch:` unit at `created` surfaces as `move.kind === 'launch'` (Task 12,
  * spec §6) — `ResolveScanAction` routes it through `DoNowService.dispatch`
@@ -32,7 +38,9 @@
  */
 import { programStatusFor } from "../../domain/agenda.mjs";
 import { PlanProjection } from "../PlanProjection.mjs";
-import { ensureSession, nextMove } from "./offerSession.mjs";
+import { ensureSession, nextMove, remediationOptionsFor } from "./offerSession.mjs";
+import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.mjs";
+import { SYNTHETIC_SESSION_ID } from "./ResolveAccessCode.mjs";
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { projectProgramEntry } from "../assignedProgramPlan.mjs";
 import { findContinuationEntry, findReopenableProgramEntry } from "./continuationEntry.mjs";
@@ -103,9 +111,24 @@ export class ResolveSubjectNext {
    *   { kind: 'move', move: object, sessionId: string, state: object, unit: object|null, entry: object }
    * >}
    */
-  async execute({
+  async execute(args = {}) {
+    return this.#resolve(args, { open: true });
+  }
+
+  /**
+   * `execute` without the session: the same resolution shape, read-only.
+   * A `move` carries `sessionId: null` when the entry has no session yet, and
+   * its `state` is then a synthetic `created` state. Never writes.
+   *
+   * @param {object} args - as `execute`
+   */
+  async peek(args = {}) {
+    return this.#resolve(args, { open: false });
+  }
+
+  async #resolve({
     learnerId, subject, continueToday = false, program = null,
-  } = {}) {
+  } = {}, { open }) {
     // BuildAgenda's recipe, not a copy of it. The ticket names a learner and a
     // subject rather than a moment, so "what's next" is recomputed on every
     // scan — and it must be recomputed the same WAY the paper was printed, or
@@ -180,14 +203,28 @@ export class ResolveSubjectNext {
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
     if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };
 
-    const { sessionId, state } = await ensureSession({
-      entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
-      timezone: this.#timezone,
-    });
-    const move = nextMove(unit ?? {}, state);
+    const { sessionId, state } = open
+      ? await ensureSession({
+        entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+        timezone: this.#timezone,
+      })
+      : await this.#readState({ entry, learnerId, nowIso });
+    const move = nextMove(unit ?? {}, state, remediationOptionsFor(entry));
     return {
       kind: 'move', move, sessionId, state, unit, entry,
     };
+  }
+
+  /** `peek`'s stand-in for `ensureSession`: the real state, or a synthetic fresh one. */
+  async #readState({ entry, learnerId, nowIso }) {
+    if (entry.sessionId) {
+      return { sessionId: entry.sessionId, state: reduceSession(await this.#sessions.readEvents(entry.sessionId)) };
+    }
+    const { errors, event } = createEvent({
+      type: 'created', at: nowIso, sessionId: SYNTHETIC_SESSION_ID, learnerId, unitId: entry.unitId,
+    });
+    if (errors.length) throw new Error(`ResolveSubjectNext: could not model a fresh session: ${errors.join('; ')}`);
+    return { sessionId: null, state: reduceSession([{ ...event, seq: 1 }]) };
   }
 
 }

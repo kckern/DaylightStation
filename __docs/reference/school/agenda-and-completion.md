@@ -55,6 +55,19 @@ lifecycle validates once and hands to every surface that asks whether anyone was
 asked to work that day — the agenda, the term grid, and the reading streak
 wall — so none of them can judge Christmas differently.
 
+**Teacher hold.** A unit whose open failure is past the retry cap, or has sat
+unretried for three school days (see the
+[failure policy](./failure-policy.md#a-childs-failed-work-two-retries-or-three-idle-days-then-a-grown-up)),
+is never owed. It is still the work in hand, so it keeps blocking its successors,
+but it is offered only when nothing else in its subject is, and then only as a
+named line ("a grown-up will help with this one") with nothing printable behind
+it. A section whose only open item is a hold is `excused · teacher_hold`. That
+reason is checked ahead of the lock reasons, because the successors are locked
+*because of* the hold. Other open or available work in the same subject is
+still offered first and still obligates. Completion and the term grid read the
+excuse like any other, so a held subject cannot keep the day, or Piano Games,
+shut.
+
 `not_a_school_day` is applied as an override after the ladder, so it never
 downgrades a section that was already `served`, and the diagnostics below it
 keep firing on a day that is off. The section still offers a `next`: the
@@ -195,9 +208,11 @@ done"). A rest day keeps "No school today".
 **Coins.** A fixed-width column so the figures line up down every card. Silver
 is the big figure: the learner's earnings so far this week from the roster
 earnings preview (`GET /api/v1/earnings/preview`; see
-`__docs/reference/economy/economy.md`). It is a preview; nothing is paid until
-payday. Gold is smaller beneath it: the economy wallet balance
-(`GET /api/v1/economy/users/:id/wallet`), which reads 0 until payouts exist.
+`__docs/reference/economy/economy.md`). It is a preview: PayoutService mints
+its earned lines into the ledger only while the economy catalog is `live`.
+Gold is smaller beneath it: the wallet's `balances.gold`
+(`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
+close converts unspent silver.
 Gems are a third line only once earned or pending. A faded `+N` hangs after a
 number for what is still possible; it is decoration only, and the figure's one
 spoken name carries it ("27 silver this week, 5 more possible"). There are no

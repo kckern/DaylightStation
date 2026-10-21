@@ -13,6 +13,8 @@
  *
  * @see tests/_lib/school/lifecycleHarness.mjs
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createLifecycleHarness, fixtureBank,
@@ -822,5 +824,46 @@ describe('the artifacts a child is handed', () => {
     const text = printed.pdf.toString('latin1');
     expect(text.startsWith('%PDF-')).toBe(true);
     expect(text).toContain('%%EOF');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The economy line (School Economy Slice 1, C4): the composed port reads the
+// real wallet and School's own "next" preview, and the line opens the tape.
+// ---------------------------------------------------------------------------
+
+describe('the agenda opens with the week\'s silver', () => {
+  it('prints the bank figure and the next item first, under the name', async () => {
+    const card = await h.scanCard();
+    expect(card.printed).toBe(true);
+    const lines = h.lastReceiptText().split('\n').map((l) => l.trim()).filter(Boolean);
+    // The tape's first line under the name. The wallet is real and empty
+    // (0 is a figure the bank answered, not a guess), and the title is the
+    // preview's, shortened at a word to keep the line on one row.
+    expect(lines[0]).toBe('TEST LEARNER');
+    expect(lines[1]).toBe('In the bank: 0 silver · Next: Equivalent…');
+  });
+
+  it('before coins are live there is no line at all, never "0 silver"', async () => {
+    const dry = await createLifecycleHarness({ economyMode: 'dry-run' });
+    try {
+      await dry.assign();
+      const { document } = await dry.useCases.previewAgenda.execute({ learnerId: DEFAULT_LEARNER });
+      expect(document.blocks.some((b) => /silver/.test(b.md ?? ''))).toBe(false);
+    } finally {
+      dry.dispose();
+    }
+  });
+
+  it('the agenda preview carries the same line and writes no wallet', async () => {
+    const economyDir = path.join(h.dataDir, 'users', DEFAULT_LEARNER, 'apps', 'economy');
+    const before = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
+    const { document } = await h.useCases.previewAgenda.execute({ learnerId: DEFAULT_LEARNER });
+    expect(document.blocks[0]).toEqual({
+      type: 'rich_text', md: 'In the bank: 0 silver · Next: Equivalent…', align: 'center',
+    });
+    const after = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
+    expect(after).toEqual(before);
+    expect(after.some((f) => /wallet/.test(String(f)))).toBe(false);
   });
 });

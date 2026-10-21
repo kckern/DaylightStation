@@ -52,6 +52,9 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   coaching:         'coaching/config',
   concierge:        'agents/concierge',
   donow:            'donow/config',
+  // Payout mode, week close, passes, digest, and the legacy keyed earn/spend
+  // maps. The earn RULES are a separate file beside it (economy/earn-rules).
+  economy:          'economy/config',
   entropy:          'entropy/config',
   finance:          'finance/config',
   fitness:          'fitness/config',

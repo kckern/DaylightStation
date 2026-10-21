@@ -52,12 +52,14 @@ import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
 import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
+import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
+import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
   #courseRecovery = new Map();
-  #selfService; #realtime; #planProjection; #practiceAssessments;
+  #selfService; #realtime; #planProjection; #practiceAssessments; #remediationMaxRounds;
 
   /**
    * @param {object} deps
@@ -110,6 +112,9 @@ export class CloseSessionOutcome {
     // The shared assembler. This use case asks it for a DELIBERATELY narrower
     // projection than the agenda does — see `#projectPlan`.
     planProjection = null, practiceAssessments = null,
+    // Retries a child may open (`school.yml → lifecycle.remediation.maxRounds`).
+    // Past it the failed receipt carries no retry ticket — see `#settle`.
+    remediationMaxRounds: maxRounds = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -117,6 +122,7 @@ export class CloseSessionOutcome {
     }
     if (!grownUps) throw new Error('CloseSessionOutcome requires grownUps (a GrownUpGate)');
     this.#practiceAssessments = practiceAssessments;
+    this.#remediationMaxRounds = remediationMaxRounds(maxRounds);
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#tokens = tokens;
@@ -378,8 +384,13 @@ export class CloseSessionOutcome {
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
     // transition (design 2026-08-23-student-completion-state-machine, §5).
+    // `studyDay` (when the session has one) lets a payout settle the week
+    // the work belongs to, not the week the grade landed in. Only on a FIRST
+    // settle: a resettle (a retried close, a late sign-off) brings no new
+    // evidence, and naming an old week would re-price it at today's rates.
     this.#realtime?.sessionOutcomeRecorded?.({
       learnerId: state.learnerId, sessionId, unitId: state.unitId, result: outcome.result, at: nowIso,
+      ...(state.studyDay && !resettling ? { studyDay: state.studyDay } : {}),
     });
     const passed = outcome.result === 'passed';
     const reward = passed
@@ -402,7 +413,26 @@ export class CloseSessionOutcome {
     // forward, and the retry ticket IS that way forward.
     const companionVeto = companionVetoStatus(outcome.reason ?? null);
     const repairableOnThisSheet = companionVeto === 'blank' || companionVeto === 'wrong';
-    const retryToken = (passed || repairableOnThisSheet)
+    // TWO ROUNDS, THEN A GROWN-UP. A failure already two retries deep gets no
+    // ticket: `OpenRemediation` would refuse it, so it could only be a "try
+    // again" card that leads nowhere. The receipt still reports the score and
+    // says a grown-up will help; the agenda excuses the hold and the teacher
+    // dashboard surfaces it.
+    const depth = passed || repairableOnThisSheet ? 0
+      : await remediationDepthOf(state.remediationOf, this.#sessions, {
+        limit: this.#remediationMaxRounds + REMEDIATION_COUNT_HEADROOM,
+      });
+    const teacherHold = !passed && !repairableOnThisSheet && depth >= this.#remediationMaxRounds;
+    // The hold forms HERE, at the moment this result settles — the one place
+    // the cap reason is ever first known — so this is where it is logged.
+    // A plain re-settle (the reprint path) does not log again; a superseding
+    // gate verdict on the same sheet is a new settle and may.
+    if (teacherHold && !resettling) {
+      this.#logger.info?.('school.remediation.held', {
+        learnerId: state.learnerId, unitId: state.unitId, sessionId, depth, reason: 'cap',
+      });
+    }
+    const retryToken = (passed || repairableOnThisSheet || teacherHold)
       ? null
       : await this.#mintRetryToken({ sessionId, state, nowIso });
     // ONE projection for both of the receipt's forward-looking lines. They used
@@ -564,6 +594,7 @@ export class CloseSessionOutcome {
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.
       // "Read Along") and the reading names the actual thing to go and play.
+      teacherHold: teacherHold ? { retries: depth } : null,
       companionGate: companionVeto
         ? {
           status: companionVeto,

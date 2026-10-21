@@ -271,3 +271,51 @@ describe('RosterStrip — a copy-gap never renders blank (drift safety net)', ()
     warn.mockRestore();
   });
 });
+
+describe('RosterStrip — teacher hold (remediation cap)', () => {
+  it('teacher_hold says a grown-up is needed and links to the learner\'s History', async () => {
+    const grid = await mountExpanded(section({ state: 'excused', reason: 'teacher_hold' }));
+    const card = grid.getByTestId('lesson-card');
+    expect(card.className).not.toMatch(/--faulted/);
+    expect(grid.getByText('Stuck on a failed lesson — this one needs you.')).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'Open History' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/history');
+    expect(grid.queryByText('teacher_hold')).toBeNull();
+  });
+
+  it('names each remediation-cap item on the card, linked to the session that can offer another try', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    const row = { ...ROW, attention: [{
+      kind: 'remediation-cap', learnerId: 'user_4', sessionId: 'ses_2', unitId: 'math.01', unitTitle: 'Place Value',
+      depth: 2, maxRounds: 2, lastScore: { percent: 16.67, correctCount: 1, totalCount: 6 }, since: '2026-09-30T16:02:00.000Z',
+    }] };
+    render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-10-02" />);
+    const list = await screen.findByTestId('attention');
+    const link = within(list).getByRole('link', { name: /Place Value/ });
+    expect(link).toHaveTextContent('Place Value — 2 retries, last 17% →');
+    expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/history/sessions/ses_2?from=today');
+  });
+
+  it('words a stale hold by the school days it has sat unretried', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    const row = { ...ROW, attention: [{
+      kind: 'remediation-stale', learnerId: 'user_4', sessionId: 'ses_0', unitId: 'math.03', unitTitle: 'Mastery Quiz',
+      depth: 0, maxRounds: 2, idleStudyDays: 4, lastScore: { percent: 16.67, correctCount: 1, totalCount: 6 }, since: null,
+    }, {
+      kind: 'remediation-cap', learnerId: 'user_4', sessionId: 'ses_9', unitId: 'math.04', unitTitle: 'Fractions',
+      depth: 1, maxRounds: 1, idleStudyDays: 0, lastScore: null, since: null,
+    }] };
+    render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-10-02" />);
+    const list = await screen.findByTestId('attention');
+    expect(within(list).getByRole('link', { name: /Mastery Quiz/ }))
+      .toHaveTextContent('Mastery Quiz — not retried in 4 school days, last 17% →');
+    expect(within(list).getByRole('link', { name: /Fractions/ })).toHaveTextContent('Fractions — 1 retry →');
+  });
+
+  it('renders no attention list when there is nothing waiting', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    render(<RosterStrip rows={[{ ...ROW, attention: [] }]} kids={KIDS} studyDay="2026-10-02" />);
+    await screen.findByRole('button', { name: /User_4/ });
+    expect(screen.queryByTestId('attention')).toBeNull();
+  });
+});

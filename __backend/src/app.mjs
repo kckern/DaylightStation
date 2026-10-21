@@ -11,7 +11,7 @@ import { configureLifelogArchive } from "../../__app_modules/personal/lifelog/se
 import { createLifelogWeightService } from "../../__app_modules/wellness/health/server/composition/lifelog-weight.mjs";
 import { registerFeedHeadlineHarvester } from "../../__app_modules/media/feed/server/composition/harvester.mjs";
 import { installAutomotiveRelay } from "../../__app_modules/household/auto/server/composition/ingress.mjs";
-import {createEconomyEarningsRuntime} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
+import {createEconomyEarningsRuntime,startEconomyPayouts,startWeekClose} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
 import {studyDayFor,isInWindow} from "../../__app_modules/learning/school/server/study-calendar.mjs";
 import {createChessRuntime} from "../../__app_modules/games/chess/server/composition/runtime.mjs";
 import {createEmulatorRuntime} from "../../__app_modules/games/emulator/server/composition/runtime.mjs";
@@ -1094,6 +1094,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // router itself is mounted below where the other v1Routers are assembled.
   const economyApi = createEconomyApi({
     configService,
+    // The same setting the weekly measures read; the earnings preview takes
+    // its study calendar from here, so passes and the preview share "today".
+    timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
+    // Writes that move coins publish `economy.coins-changed`; School forwards
+    // it to the Portal's bank strip.
+    eventBus,
     logger: rootLogger.child({ module: 'economy-api' })
   });
 
@@ -2555,6 +2561,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // "no reader declares anything".
   let triggerNfcLocations = null;
   const nfcLocationsForReachability = () => triggerNfcLocations;
+  // The trigger owner's content-tag query, so a refused story-time book can
+  // suggest the other stickered books. Null until the trigger API is composed
+  // below.
+  let triggerContentTags = null;
+  const contentTagsForStoryTime = () => triggerContentTags?.() ?? null;
 
   let schoolLifecycle = {
     wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
@@ -2588,7 +2599,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // one repository and one resolver.
   const books = createBooksModule({ configService, logger: rootLogger });
 
-  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
+  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -2777,7 +2788,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService, triggerConfig, contentTags: triggerContentTagsQuery } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -2809,6 +2820,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // The school reachability check can now answer for real (it has been
   // returning "could not tell" for every projection until this line).
   triggerNfcLocations = triggerConfig?.nfc?.locations ?? null;
+  triggerContentTags = triggerContentTagsQuery ?? null;
   reportUnreachableSchoolPrograms({
     launchers: schoolLifecycle?.launchers ?? null,
     declared: declaredEntryActions(triggerNfcLocations),
@@ -2890,7 +2902,15 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  v1Routers.earnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  // A failure here must not stop School booting: without it there is no
+  // earnings preview, no payouts and no week close, and it says so.
+  let economyEarnings = { router: null, payoutService: null, weekCloseService: null };
+  try {
+    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  } catch (error) {
+    rootLogger.error('economy.earnings.unavailable', { error: error.message });
+  }
+  v1Routers.earnings = economyEarnings.router;
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
@@ -3326,6 +3346,42 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     rootLogger.error('nutrition.cleanup.unavailable', { error: error.message });
   }
 
+  // Weekly earnings payouts (economy B3): mint what the earnings preview
+  // says was earned. Settles on school outcomes and piano lessons (debounced
+  // per learner and week) and in the hourly reconcile. Gated like the other
+  // scheduled jobs; inert while economy/config.yml reads `mode: off`, and
+  // `dry-run` only logs. School's own per-unit reward
+  // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
+  // Skipped when the earnings runtime did not build (economy.earnings.unavailable).
+  if (economyEarnings.payoutService && economyEarnings.weekCloseService) {
+    try {
+      startEconomyPayouts({
+        payoutService: economyEarnings.payoutService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        eventBus,
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-payout' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'payouts' });
+    }
+    // Sunday week close (economy B4): settle the week once more, then unspent
+    // silver converts to gold on `week_close.cron` (read at boot; a change needs
+    // a restart). Same gate and modes as the payouts.
+    try {
+      startWeekClose({
+        weekCloseService: economyEarnings.weekCloseService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-week-close' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'week-close' });
+    }
+  }
+
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all
   // users with a life plan. CeremonyScheduler gates each ceremony to its
   // household-local delivery hour (plan.ceremonies[type].at or per-type
@@ -3378,6 +3434,39 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
       }
     });
+  }
+
+  // Parent digest (school economy C6): one push to each teacher at the
+  // economy catalog's `digest.cron` (read here, at boot: a change needs a
+  // restart; null registers nothing) summing each child's school day, plus a
+  // `zero-days` alert after `digest.zero_days_alert` study days in a row with
+  // work asked and none done. A push held by quiet hours is resent by an
+  // hourly retry tick. Gated like the economy payouts.
+  if (agentsServices.scheduler && notificationStack?.notificationService
+      && schoolLifecycle.useCases?.getLearnerDayCompletion) {
+    try {
+      const { createSchoolParentDigest } = await import("../../__app_modules/learning/school/server/composition-parent-digest.mjs");
+      createSchoolParentDigest({
+        economyConfig: economyApi.configProjection,
+        economyService: economyApi.economyService,
+        // One zone and 4 am boundary for both School's day and the economy's
+        // (getHouseholdTimezone || 'UTC', set where economyApi is built).
+        studyCalendar: economyApi.studyCalendar,
+        roster: () => schoolLearnerDirectory.listLearners(),
+        learnerName: learnerDisplayName,
+        getLearnerDayCompletion: schoolLifecycle.useCases.getLearnerDayCompletion,
+        termVerdicts: schoolLifecycle.useCases.termVerdicts ?? null,
+        sessions: schoolLifecycle.stores?.sessions ?? null,
+        notificationService: notificationStack.notificationService,
+        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
+        logsDir: path.join(configService.getMediaDir(), 'logs'),
+        scheduler: agentsServices.scheduler,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        logger: rootLogger.child({ module: 'school-parent-digest' }),
+      });
+    } catch (err) {
+      rootLogger.error('school.parent-digest.unavailable', { error: err.message });
+    }
   }
 
   // Relay staleness watchdog — the hardware relays are pass-throughs that keep
@@ -4269,6 +4358,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
         rootLogger.info?.('school.completion-bridge.shutdown.complete');
       } catch (err) {
         rootLogger.error?.('school.completion-bridge.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
+  // Graceful shutdown: stop forwarding the economy's coins-changed to the Portal.
+  if (schoolLifecycle.coinsChangedRelay) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.coinsChangedRelay.stop();
+        rootLogger.info?.('school.coins-changed-relay.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.coins-changed-relay.shutdown.error', { error: err?.message });
       }
     });
   }

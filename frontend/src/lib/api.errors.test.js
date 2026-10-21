@@ -41,6 +41,26 @@ describe('DaylightAPI failures', () => {
     expect(err.transient).toBe(false);
   });
 
+  it('attaches a JSON error body as `body`, leaving the message as it was', async () => {
+    fetchMock.mockResolvedValue(response({ status: 402, statusText: 'Payment Required', body: '{"code":"PASS_UNAFFORDABLE","shortfall":2}' }));
+    const err = await failure();
+    expect(err.body).toEqual({ code: 'PASS_UNAFFORDABLE', shortfall: 2 });
+    expect(err.message).toBe('HTTP 402: Payment Required - {"code":"PASS_UNAFFORDABLE","shortfall":2}');
+  });
+
+  it('leaves a large JSON body off `error.body`, so a logged error stays small', async () => {
+    const big = JSON.stringify({ code: 'X', detail: 'y'.repeat(5000) });
+    fetchMock.mockResolvedValue(response({ status: 400, statusText: 'Bad Request', body: big }));
+    expect((await failure()).body).toBeUndefined();
+  });
+
+  it('leaves `body` unset when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValue(response({ status: 502, statusText: 'Bad Gateway', body: NGINX_502 }));
+    expect((await failure()).body).toBeUndefined();
+    fetchMock.mockResolvedValue(response({ status: 500, statusText: 'Internal Server Error', body: 'plain words' }));
+    expect((await failure()).body).toBeUndefined();
+  });
+
   it('caps a long plain-text body', async () => {
     fetchMock.mockResolvedValue(response({ status: 500, statusText: 'Internal Server Error', body: 'x'.repeat(5000) }));
     expect((await failure()).message.length).toBeLessThan(400);

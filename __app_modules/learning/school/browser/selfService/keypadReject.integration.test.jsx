@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import Keypad, { REJECT_WORD } from "./Keypad.jsx";
 import { useSelfService } from "./useSelfService.js";
+import { schoolLog } from "../schoolLog.js";
 
 vi.mock("../../../../../frontend/src/lib/fkb.js", () => ({ screenOff: vi.fn() }));
 vi.mock("../schoolLog.js", () => ({
@@ -25,6 +26,7 @@ function Panel() {
       degraded={s.degraded}
       onRetry={s.retry}
       onReload={s.reload}
+      onEntryStart={s.startEntry}
     />
   );
 }
@@ -118,6 +120,68 @@ describe('unknown code → NONONO, through the real hook', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(300 + 1200); });
     expect(screen.getByTestId('selfservice-entry')).toHaveAttribute('data-state', 'rejected');
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('an OLD SHEET is refused with the day it is from, and no retry', async () => {
+    // A code dies at the 4am rollover. Before this, yesterday's agenda got the
+    // same "Try again." as a typo, and retyping the same digits is the one
+    // thing that cannot help — so the slots refuse it and the words say why.
+    const sentence = "That sheet is from Sunday. Tap your card for today's.";
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: false, reason: 'expired', learner: null, subject: null, title: null,
+        sentence, actions: [],
+      }),
+    });
+    render(<Panel />);
+    typeCode('123456');
+    await act(async () => { await vi.advanceTimersByTimeAsync(300 + 1200); });
+    expect(screen.getByTestId('selfservice-entry')).toHaveAttribute('data-state', 'rejected');
+    expect(screen.getByText(sentence, { selector: '.school-selfservice__message' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(screen.queryByText("The school computer isn't answering. Tell a grown-up.")).toBeNull();
+  });
+
+  it('puts the old-sheet words away once the next code is started', async () => {
+    const sentence = "That sheet is from Sunday. Tap your card for today's.";
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: false, reason: 'expired', learner: null, subject: null, title: null,
+        sentence, actions: [],
+      }),
+    });
+    render(<Panel />);
+    typeCode('123456');
+    await act(async () => { await vi.advanceTimersByTimeAsync(300 + 2400); });
+    jab('7');
+    expect(screen.queryByText(sentence, { selector: '.school-selfservice__message' })).toBeNull();
+    // Backspacing to empty is still the NEXT attempt, not the old one.
+    jab('Backspace');
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(entryText()).toBe('');
+    expect(screen.queryByText(sentence, { selector: '.school-selfservice__message' })).toBeNull();
+  });
+
+  it('logs the refusal reason, never the digits', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: false, reason: 'expired', learner: null, subject: null, title: null,
+        sentence: "That sheet is from Sunday. Tap your card for today's.", actions: [],
+      }),
+    });
+    schoolLog.selfService.mockClear();
+    render(<Panel />);
+    typeCode('123456');
+    await act(async () => { await vi.advanceTimersByTimeAsync(300 + 1200); });
+    const rejected = schoolLog.selfService.mock.calls.filter(([event]) => event === 'code.rejected');
+    expect(rejected).toEqual([['code.rejected', { status: 200, reason: 'expired' }]]);
+    expect(JSON.stringify(rejected)).not.toContain('123456');
   });
 
   it('a backend outage gets words and a retry, never the animation', async () => {

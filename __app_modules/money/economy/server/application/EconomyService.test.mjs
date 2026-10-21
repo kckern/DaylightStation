@@ -2,12 +2,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
+import yaml from 'js-yaml';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyService } from "./EconomyService.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
+import { createTransaction, isPayoutEntry } from "../domain/index.mjs";
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const USER = 'test-user';
-const USER_DIR = path.join(os.tmpdir(),'econ-svc-test-user');
+// A fresh directory per test: a fixed tmp path is shared with concurrent runs in other worktrees.
+let USER_DIR;
 const ECONOMY_CONFIG = {
   currency: { name: 'coins' },
   earn: { 'piano-lesson-complete': { reward: 5, per: 'completion', daily_cap: 10 } },
@@ -19,14 +23,14 @@ const configService = {
   getUserDir: () => USER_DIR,
   getHouseholdAppConfig: () => ECONOMY_CONFIG,
 };
-const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }); } catch {} };
+const clean = () => { if (USER_DIR) fs.rmSync(USER_DIR, { recursive: true, force: true }); };
 const makeService = () => new EconomyService({
   datastore: new YamlEconomyDatastore({ configService }),
   configProjection: new EconomyConfigProjection({ configService }),
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
 });
 
-beforeEach(clean);
+beforeEach(() => { USER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'econ-svc-')); });
 afterEach(clean);
 
 describe('EconomyService', () => {
@@ -85,13 +89,26 @@ describe('EconomyService', () => {
   it('earn no-ops (does not throw) when the install has no economy config', async () => {
     const svc = new EconomyService({
       datastore: new YamlEconomyDatastore({ configService }),
-      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => null } }), // no economy.yml
+      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => null } }), // no economy/config.yml
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     });
     const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
     expect(res.earned).toBe(0);
     expect(res.skipped).toBe(true);
+    expect(res.reason).toBe('no-catalog');
     expect(res.balance).toBe(0);
+  });
+  // The catalog file ships `earn: {}` (prices live in earn-rules.yml now), and
+  // `{}` is truthy: the always-on piano hook must still skip, not throw.
+  it('earn skips an action an empty earn map does not price', async () => {
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService: { ...configService, getHouseholdAppConfig: () => ({ mode: 'dry-run', earn: {}, spend: {} }) } }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(res).toMatchObject({ earned: 0, skipped: true, reason: 'not-priced', txnId: null, balance: 0 });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toEqual([]);
   });
   it('earn dedups a replayed ref within the day (pays out once)', async () => {
     const svc = makeService();
@@ -118,6 +135,305 @@ describe('EconomyService', () => {
     expect((await svc.adjust(USER, { delta: -7, source: 'school-grade', ref: 'adjustment:one' })).duplicate).toBe(true);
     expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later' })).balance).toBe(0);
     expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later-2' })).balance).toBe(3);
+  });
+});
+
+describe('multi-currency balances', () => {
+  const ledgerDir = () => path.join(USER_DIR, 'apps', 'economy', 'ledger');
+  const writeDay = (day, txns) => {
+    fs.mkdirSync(ledgerDir(), { recursive: true });
+    fs.writeFileSync(path.join(ledgerDir(), `${day}.yml`), yaml.dump(txns));
+  };
+
+  it('getBalance returns balances alongside the silver balance', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 4 });
+    const res = await svc.getBalance(USER);
+    expect(res).toMatchObject({ userId: USER, balance: 4, balances: { silver: 4, gold: 0, gems: 0 }, session: null });
+  });
+
+  // A pure read for surfaces that must not write (the agenda tape and its
+  // preview): the ledger folded, no wallet snapshot, no session reaped.
+  it('peekBalance folds the ledger and writes nothing', async () => {
+    const svc = makeService();
+    const walletFile = () => fs.readdirSync(USER_DIR, { recursive: true }).filter((f) => /wallet/.test(String(f)));
+    expect(await svc.peekBalance(USER)).toEqual({ silver: 0, gold: 0, gems: 0 });
+    expect(walletFile()).toEqual([]);
+    await svc.deposit(USER, { amount: 4 });
+    const [file] = walletFile();
+    const before = fs.statSync(path.join(USER_DIR, file)).mtimeMs;
+    const bytes = fs.readFileSync(path.join(USER_DIR, file), 'utf8');
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(await svc.peekBalance(USER)).toEqual({ silver: 4, gold: 0, gems: 0 });
+    expect(fs.statSync(path.join(USER_DIR, file)).mtimeMs).toBe(before);
+    expect(fs.readFileSync(path.join(USER_DIR, file), 'utf8')).toBe(bytes);
+  });
+
+  it('peekBalance refuses an unknown user', async () => {
+    await expect(makeService().peekBalance('nobody')).rejects.toThrow(/unknown user/);
+  });
+
+  it('legacy entries without a currency count as silver', async () => {
+    writeDay('2026-07-17', [
+      { id: 'txn_old', at: '2026-07-17T10:00:00.000Z', kind: 'deposit', delta: 10, action: 'parent-deposit', source: 'admin', ref: null },
+      { id: 'txn_gold', at: '2026-07-17T11:00:00.000Z', kind: 'convert', delta: 3, action: 'week-close', source: 'economy', ref: null, currency: 'gold' },
+    ]);
+    const res = await makeService().getBalance(USER);
+    expect(res.balance).toBe(10);
+    expect(res.balances).toEqual({ silver: 10, gold: 3, gems: 0 });
+  });
+
+  it('the wallet snapshot carries balances, stamped by the injected clock', async () => {
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date('2026-10-19T15:00:00.000Z'),
+    });
+    await svc.deposit(USER, { amount: 6 });
+    const wallet = new YamlEconomyDatastore({ configService }).readWallet(USER);
+    expect(wallet).toEqual({ balance: 6, balances: { silver: 6, gold: 0, gems: 0 }, as_of: '2026-10-19T15:00:00.000Z', session: null });
+    expect(fs.existsSync(path.join(ledgerDir(), '2026-10-19.yml'))).toBe(true);
+  });
+
+  it('getHistory lists entries newest first, optionally since a time, legacy ones as silver', async () => {
+    writeDay('2026-10-17', [{ id: 'txn_1', at: '2026-10-17T10:00:00.000Z', kind: 'deposit', delta: 2, action: 'parent-deposit', source: 'admin', ref: null }]);
+    writeDay('2026-10-18', [
+      { id: 'txn_2', at: '2026-10-18T09:00:00.000Z', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null, currency: 'silver' },
+      { id: 'txn_3', at: '2026-10-18T12:00:00.000Z', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null, currency: 'gems' },
+    ]);
+    const svc = makeService();
+    const all = await svc.getHistory(USER);
+    expect(all.map((t) => t.id)).toEqual(['txn_3', 'txn_2', 'txn_1']);
+    expect(all[2].currency).toBe('silver');
+    expect((await svc.getHistory(USER, { since: '2026-10-18T09:00:00.000Z' })).map((t) => t.id)).toEqual(['txn_3', 'txn_2']);
+    await expect(svc.getHistory('nobody')).rejects.toThrow();
+    await expect(svc.getHistory(USER, { since: 'not a date' })).rejects.toThrow(/since/);
+  });
+
+  it('getHistory keeps same-timestamp entries newest-appended first and keeps an unreadable time, logged', async () => {
+    const at = '2026-10-18T09:00:00.000Z';
+    writeDay('2026-10-18', [
+      { id: 'txn_a', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_b', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_bad', at: 'garbled', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_c', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+    ]);
+    const warn = vi.fn();
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn, error: () => {}, debug: () => {} },
+    });
+    expect((await svc.getHistory(USER)).map((t) => t.id)).toEqual(['txn_c', 'txn_b', 'txn_a', 'txn_bad']);
+    expect(warn).toHaveBeenCalledWith('economy.history.unreadable-at', expect.objectContaining({ userId: USER, txnId: 'txn_bad' }));
+  });
+});
+
+describe('read-check-write under the user lock', () => {
+  const holdQueue = () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const held = new YamlEconomyDatastore({ configService }).withUserLock(USER, () => gate);
+    return { release, held };
+  };
+
+  it('two concurrent earns with one ref pay once', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const a = svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    const b = svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.map((r) => r.earned).sort()).toEqual([0, 5]);
+    expect(results.filter((r) => r.duplicate)).toHaveLength(1);
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toHaveLength(1);
+  });
+
+  it('concurrent earns respect the daily cap', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const runs = ['plex:1', 'plex:2', 'plex:3'].map((ref) => svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref }));
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await held;
+    const results = await Promise.all(runs);
+    expect(results.reduce((s, r) => s + r.earned, 0)).toBe(10);
+    expect((await svc.getBalance(USER)).balance).toBe(10);
+  });
+
+  it('concurrent adjusts with one ref apply once', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const a = svc.adjust(USER, { delta: 4, source: 'school-grade', ref: 'adj:1' });
+    const b = svc.adjust(USER, { delta: 4, source: 'school-grade', ref: 'adj:1' });
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.filter((r) => r.duplicate)).toHaveLength(1);
+    expect((await svc.getBalance(USER)).balance).toBe(4);
+  });
+
+  it('concurrent settles with one cumulative charge once', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    const { release, held } = holdQueue();
+    const a = svc.settleSession(USER, { sessionId: s.sessionId, coins: 3 });
+    const b = svc.settleSession(USER, { sessionId: s.sessionId, coins: 3 });
+    release();
+    await held;
+    await Promise.all([a, b]);
+    expect((await svc.getBalance(USER)).balance).toBe(7);
+  });
+
+  it('earn stamps the cap day and the ledger shard from one clock read', async () => {
+    const ticks = ['2026-10-19T23:59:59.999Z', '2026-10-20T00:00:00.001Z'];
+    let i = 0;
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date(ticks[Math.min(i++, 1)]),
+    });
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(res.earned).toBe(5);
+    const txns = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txns[0].at).toBe(ticks[0]);
+  });
+});
+
+describe('mint (payouts)', () => {
+  const REF = 'earn:test-user:korean:2026-09-21:on-time';
+  const mintArgs = (over = {}) => ({ currency: 'silver', amount: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout', ...over });
+
+  it('writes one entry carrying the rule, the timeliness and the evidence ref', async () => {
+    const svc = makeService();
+    const res = await svc.mint(USER, mintArgs());
+    expect(res).toMatchObject({ userId: USER, minted: 4, duplicate: false, balances: { silver: 4, gold: 0, gems: 0 } });
+    const [txn] = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txn).toMatchObject({ kind: 'earn', currency: 'silver', delta: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout', action: 'payout:korean' });
+    expect(res.txnId).toBe(txn.id);
+  });
+
+  it('is idempotent on ref across the whole ledger, not just today', async () => {
+    let now = '2026-09-21T18:00:00.000Z';
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date(now),
+    });
+    await svc.mint(USER, mintArgs());
+    now = '2026-09-25T18:00:00.000Z';
+    const again = await svc.mint(USER, mintArgs());
+    expect(again).toMatchObject({ minted: 0, duplicate: true });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toHaveLength(1);
+  });
+
+  // A week line grows as the week goes (one green day, then two): its ref
+  // pays the shortfall, so the ledger's sum on a ref is never more than the
+  // line says, and never less once the line has been settled.
+  it('amount is what the ref is worth in total: a grown line pays only the difference', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 2 }));
+    const grown = await svc.mint(USER, mintArgs({ amount: 5 }));
+    expect(grown).toMatchObject({ minted: 3, duplicate: false, balances: { silver: 5 } });
+    const shrunk = await svc.mint(USER, mintArgs({ amount: 1 }));
+    expect(shrunk).toMatchObject({ minted: 0, duplicate: true, paid: 5 });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER).map((t) => t.delta)).toEqual([2, 3]);
+  });
+
+  it('counts a ref per currency', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ currency: 'gems', amount: 1, ref: `${REF}:gems` }));
+    const silver = await svc.mint(USER, mintArgs());
+    expect(silver).toMatchObject({ minted: 4, balances: { silver: 4, gems: 1 } });
+  });
+
+  it('a prize is its own kind', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ kind: 'prize', ruleId: 'contest' }));
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)[0].kind).toBe('prize');
+  });
+
+  it('rejects a bad amount, a missing ref, a kind other than earn or prize, and an unknown user', async () => {
+    const svc = makeService();
+    await expect(svc.mint(USER, mintArgs({ amount: 0 }))).rejects.toThrow(/amount/);
+    await expect(svc.mint(USER, mintArgs({ amount: 1.5 }))).rejects.toThrow(/amount/);
+    await expect(svc.mint(USER, mintArgs({ ref: '' }))).rejects.toThrow(/ref/);
+    await expect(svc.mint(USER, mintArgs({ kind: 'deposit' }))).rejects.toThrow(/kind/);
+    await expect(svc.mint(USER, mintArgs({ currency: 'copper' }))).rejects.toThrow(/currency/);
+    await expect(svc.mint('nobody', mintArgs())).rejects.toThrow(/unknown user/);
+  });
+
+  // A payout's `action` is namespaced so earn()'s per-action daily cap
+  // (which sums today's earns by action) can never count payout coins.
+  it('stamps action payout:<ruleId>, or payout:<kind> without a rule', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ ruleId: null, kind: 'prize' }));
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)[0].action).toBe('payout:prize');
+  });
+
+  // Clawbacks are adjusts under their OWN ref: paid counts earn and prize
+  // entries only, so a correction never makes the payout mint again.
+  it('a clawback adjust under its own ref leaves the payout paid: no re-mint, balance net of it', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 10 }));
+    await svc.adjust(USER, { delta: -5, source: 'parent', ref: `${REF}:clawback` });
+    const again = await svc.mint(USER, mintArgs({ amount: 10 }));
+    expect(again).toMatchObject({ minted: 0, duplicate: true, paid: 10 });
+    expect((await svc.getBalance(USER)).balance).toBe(5);
+  });
+
+  it('an adjust that reuses the line\'s ref is not counted as paid either (decision: only earn/prize count)', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 10 }));
+    await svc.adjust(USER, { delta: -5, source: 'parent', ref: REF });
+    const again = await svc.mint(USER, mintArgs({ amount: 10 }));
+    // paid is the earn entries' 10, not 10 − 5: the adjust is not a refund to re-pay.
+    expect(again).toMatchObject({ minted: 0, duplicate: true, paid: 10 });
+    expect((await svc.getBalance(USER)).balance).toBe(5);
+  });
+
+  it('fails closed on a corrupt past shard: rejects and writes nothing', async () => {
+    const svc = makeService();
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2026-01-05.yml'), '- id: txn_old\n  delta: [unclosed\n');
+    await expect(svc.mint(USER, mintArgs())).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(fs.readdirSync(dir)).toEqual(['2026-01-05.yml']);
+  });
+
+  it('adjust fails closed on a corrupt past shard too', async () => {
+    const svc = makeService();
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '2026-01-05.yml'), 'id: not-a-list\n');
+    await expect(svc.adjust(USER, { delta: 2, source: 'parent', ref: 'adj:x' })).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(fs.readdirSync(dir)).toEqual(['2026-01-05.yml']);
+  });
+
+  it('hasUser says whether the household knows the user', () => {
+    const svc = makeService();
+    expect(svc.hasUser(USER)).toBe(true);
+    expect(svc.hasUser('nobody')).toBe(false);
+  });
+
+  it('two concurrent mints of one ref pay once', async () => {
+    const svc = makeService();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const held = new YamlEconomyDatastore({ configService }).withUserLock(USER, () => gate);
+    const a = svc.mint(USER, mintArgs());
+    const b = svc.mint(USER, mintArgs());
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.map((r) => r.minted).sort()).toEqual([0, 4]);
+    expect((await svc.getBalance(USER)).balance).toBe(4);
   });
 });
 
@@ -212,5 +528,151 @@ describe('metered sessions', () => {
       vi.setSystemTime(new Date(Date.now() + 6 * 60 * 1000));
       expect((await svc.getBalance(USER)).session).toBeNull();
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('convert', () => {
+  const REF = 'close:test-user:2026-09-21';
+  const ds = () => new YamlEconomyDatastore({ configService });
+  const converts = () => ds().readAllTransactions(USER).filter((t) => t.kind === 'convert');
+  const fund = (svc, amount, ref = 'earn:seed') => svc.mint(USER, { currency: 'silver', amount, ref });
+  // A half as convert() writes it, for crafting a torn or tampered pair.
+  const half = (over) => createTransaction({ id: `txn_${Math.random().toString(36).slice(2)}`, kind: 'convert', action: 'week-close', source: 'week-close',
+    at: '2026-09-27T23:30:00.000Z', evidenceRef: REF, ...over });
+  const outHalf = (meta = {}, delta = -12) => half({ currency: 'silver', delta, ref: REF, meta: { from: 'silver', to: 'gold', rate: 1, spent: -delta, got: 12, ...meta } });
+  const args = (over = {}) => ({ from: 'silver', to: 'gold', rate: 1, ref: REF, ...over });
+
+  it('converted: writes the pair and returns its figures', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    const res = await svc.convert(USER, args());
+    expect(res).toMatchObject({ status: 'converted', spent: 12, got: 12, rate: 1 });
+    expect(res.txnIds).toHaveLength(2);
+    expect(converts().map((t) => [t.ref, t.currency, t.delta])).toEqual([[REF, 'silver', -12], [`${REF}:gold`, 'gold', 12]]);
+  });
+  it('already-converted: a second call writes nothing', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await svc.convert(USER, args());
+    expect(await svc.convert(USER, args())).toMatchObject({ status: 'already-converted', spent: 12, got: 12 });
+    expect(converts()).toHaveLength(2);
+  });
+  it('nothing: no balance; below-rate: too little for one coin', async () => {
+    const svc = makeService();
+    expect((await svc.convert(USER, args())).status).toBe('nothing');
+    await fund(svc, 3);
+    expect(await svc.convert(USER, args({ rate: 0.25 }))).toMatchObject({ status: 'below-rate', balance: 3 });
+    expect(converts()).toEqual([]);
+  });
+  it('would-convert (dry run) writes nothing', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    expect(await svc.convert(USER, args({ dryRun: true }))).toMatchObject({ status: 'would-convert', spent: 12, got: 12 });
+    expect(converts()).toEqual([]);
+  });
+  it('requireEntry: no matching entry is not-an-earner; one payout is enough', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 20 });
+    expect((await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).status).toBe('not-an-earner');
+    expect(converts()).toEqual([]);
+    await fund(svc, 5);
+    expect(await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).toMatchObject({ status: 'converted', spent: 25 });
+  });
+  it('a deposit claiming source payout is still not a payout entry', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 20, source: 'payout' });
+    expect((await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).status).toBe('not-an-earner');
+  });
+  it('an orphan to half refuses with ORPHAN_CONVERT_HALF; a tampered first half with BAD_CONVERT_HALF', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await ds().appendTransaction(USER, half({ currency: 'gold', delta: 12, ref: `${REF}:gold` }));
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'ORPHAN_CONVERT_HALF' });
+    await expect(svc.convert(USER, args({ ref: 'close:other' }))).resolves.toMatchObject({ status: 'converted' });
+    await ds().appendTransaction(USER, outHalf({ got: 99 }, -3));
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'BAD_CONVERT_HALF' });
+  });
+  it('when the append and the snapshot both throw, the caller sees the append error', async () => {
+    const quiet = { info: () => {}, warn: () => {}, error: vi.fn(), debug: () => {} };
+    const datastore = new YamlEconomyDatastore({ configService });
+    const svc = new EconomyService({ datastore, configProjection: new EconomyConfigProjection({ configService }), logger: quiet });
+    await fund(svc, 12);
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'convert' && txn.currency === 'gold') throw Object.assign(new Error('disk full'), { code: 'DISK_FULL' });
+      return append(userId, txn);
+    };
+    datastore.writeWallet = () => { throw new Error('wallet unwritable'); };
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ message: 'disk full', code: 'DISK_FULL' });
+    // The repair path: same rule.
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'DISK_FULL' });
+    expect(quiet.error.mock.calls.filter(([e]) => e === 'economy.convert.snapshot-failed')).toHaveLength(2);
+  });
+  it('a to half without its from half throws', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await ds().appendTransaction(USER, half({ currency: 'gold', delta: 12, ref: `${REF}:gold` }));
+    await expect(svc.convert(USER, args())).rejects.toThrow(ValidationError);
+  });
+  it('would-repair (dry run) reports the missing half and writes nothing', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf());
+    expect(await svc.convert(USER, args({ dryRun: true }))).toMatchObject({ status: 'would-repair', spent: 12, got: 12 });
+    expect(converts()).toHaveLength(1);
+  });
+  it('repair after a rate change uses the first half\'s rate and got', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf({ rate: 0.5, got: 6 }));
+    const res = await svc.convert(USER, args({ rate: 2 }));
+    expect(res).toMatchObject({ status: 'repaired', spent: 12, got: 6, rate: 0.5 });
+    expect(converts()[1]).toMatchObject({ currency: 'gold', delta: 6, ref: `${REF}:gold`, meta: expect.objectContaining({ rate: 0.5, got: 6 }) });
+  });
+  it('repair goes to the first half\'s target currency even if the rule changed', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf({ to: 'gems' }));
+    const res = await svc.convert(USER, args({ to: 'gold' }));
+    expect(res).toMatchObject({ status: 'repaired', to: 'gems', got: 12 });
+    expect(converts()[1]).toMatchObject({ currency: 'gems', ref: `${REF}:gems`, delta: 12 });
+    expect((await svc.convert(USER, args({ to: 'gold' }))).status).toBe('already-converted');
+  });
+  it.each([
+    ['a positive from half', outHalf({}, 12)],
+    ['no meta', half({ currency: 'silver', delta: -12, ref: REF })],
+    ['got above what the rate gives', outHalf({ got: 13 })],
+    ['a fractional got', outHalf({ got: 1.5 })],
+    ['a zero got', outHalf({ got: 0 })],
+    ['a meta.from that is not the call\'s from', outHalf({ from: 'gems' })],
+    ['a meta.to that is not a currency', outHalf({ to: 'platinum' })],
+    ['a meta.to equal to from', outHalf({ to: 'silver' })],
+    ['a bad meta.rate', outHalf({ rate: -1 })],
+  ])('repair refuses a first half with %s', async (_label, txn) => {
+    const svc = makeService();
+    // A positive "from half" is still a convert entry the createTransaction accepts.
+    await ds().appendTransaction(USER, txn);
+    await expect(svc.convert(USER, args())).rejects.toThrow(ValidationError);
+    expect(converts()).toHaveLength(1);
+  });
+  it.each([
+    ['the same currency', { to: 'silver' }],
+    ['an unknown currency', { from: 'copper' }],
+    ['a zero rate', { rate: 0 }],
+    ['a NaN rate', { rate: NaN }],
+    ['a string rate', { rate: '1' }],
+    ['a blank ref', { ref: '  ' }],
+  ])('rejects %s', async (_label, over) => {
+    await expect(makeService().convert(USER, args(over))).rejects.toThrow(ValidationError);
+  });
+  it('a failed second half still leaves wallet.yml matching the ledger', async () => {
+    const datastore = new YamlEconomyDatastore({ configService });
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'convert' && txn.currency === 'gold') throw new Error('disk full');
+      return append(userId, txn);
+    };
+    const svc = new EconomyService({ datastore, configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } });
+    await fund(svc, 12);
+    await expect(svc.convert(USER, args())).rejects.toThrow('disk full');
+    expect(ds().readWallet(USER).balances).toEqual({ silver: 0, gold: 0, gems: 0 });
   });
 });

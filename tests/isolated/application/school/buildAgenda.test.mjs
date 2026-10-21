@@ -4,6 +4,7 @@ import { CurriculumAccess } from "../../../../__app_modules/learning/school/serv
 import { validateDocument } from "../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
 import { isSchoolToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 import { studyDayWindow } from "../../../../__app_modules/learning/school/server/domain/studyDay.mjs";
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { BOOK_LOG_PROGRAM_ID } from "../../../../__app_modules/learning/school/server/domain/bookLog.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
@@ -38,7 +39,7 @@ const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
   timezone = null, schoolCalcStudies = null, schoolCalcMode = 'off',
   selfService = null, subjectTokenTtlHours, rng = seededRng(7), tokenRegistry = null,
-  logger = silentLogger,
+  logger = silentLogger, economy = undefined, economyTimeoutMs = undefined, scheduler = undefined,
 } = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -54,6 +55,9 @@ const build = ({
     schoolCalcStudies, schoolCalcMode, selfService,
     ...(subjectTokenTtlHours === undefined ? {} : { subjectTokenTtlHours }),
     clock: clock.now, rng, newSessionId: sequentialIds(),
+    ...(economy === undefined ? {} : { economy }),
+    ...(economyTimeoutMs === undefined ? {} : { economyTimeoutMs }),
+    ...(scheduler === undefined ? {} : { scheduler }),
     logger,
   });
 };
@@ -934,5 +938,134 @@ describe('the featured book on the agenda card', () => {
     expect(card.progress).toContainEqual(
       expect.objectContaining({ completed: 7, total: 7 }),
     );
+  });
+});
+
+describe('remediation cap: two rounds, then a grown-up', () => {
+  /** A settled failure on MEDIA_UNIT, optionally a retry of `remediationOf`, optionally already retried. */
+  const fail = async (sessionId, remediationOf = null, next = null) => {
+    await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), learnerId: 'kid1', unitId: MEDIA_UNIT,
+      ...(remediationOf ? { remediationOf } : {}) });
+    await sessions.appendEvent(sessionId, { type: 'launch_dispatched', at: clock.iso(), surface: 'portal' });
+    await sessions.appendEvent(sessionId, { type: 'outcome_recorded', at: clock.iso(), outcomeId: `out_${sessionId}`, result: 'needs_remediation' });
+    if (next) await sessions.appendEvent(sessionId, { type: 'remediation_opened', at: clock.iso(), newSessionId: next, variant: 1 });
+  };
+
+  it('still offers a fresh sheet after one retry', async () => {
+    await fail('ses_a', null, 'ses_b');
+    await fail('ses_b', 'ses_a');
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'math').label).toContain('try again with a fresh sheet');
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('after two retries names a grown-up, prints nothing to retry, and excuses the subject', async () => {
+    await fail('ses_a', null, 'ses_b');
+    await fail('ses_b', 'ses_a', 'ses_c');
+    await fail('ses_c', 'ses_b');
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const offer = offerFor(result, 'math');
+    expect(offer.label).toContain('a grown-up will help with this one');
+    expect(offer.label).not.toMatch(/try again/i);
+    expect(offer.printable).toBe(false);
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+    expect(tokens.ofClass('remediation')).toEqual([]);
+  });
+
+  it('a failure left unretried for three school days is held the same way, at depth 0', async () => {
+    await fail('ses_a');
+    clock.advanceDays(5); // fake clock starts Mon 7/27; Tue–Fri have passed by Sat 8/1
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'math').label).toContain('a grown-up will help with this one');
+    expect(offerFor(result, 'math').printable).toBe(false);
+    expect(sectionFor(result, 'math').obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+  });
+
+  it('a failure two school days old is still the child\'s to retry', async () => {
+    await fail('ses_a');
+    clock.advanceDays(3);
+    expect(offerFor(await useCase.execute({ learnerId: 'kid1' }), 'math').label).toContain('try again with a fresh sheet');
+  });
+});
+
+// The economy line (School Economy Slice 1, C4): the week's silver and the
+// next item, printed first. It is decoration on a sheet whose job is the work,
+// so nothing about it may cost a child their paper.
+describe('the economy line', () => {
+  const recordingLogger = () => {
+    const warnings = [];
+    return { warnings, logger: { ...silentLogger, warn: (event, data) => warnings.push({ event, data }) } };
+  };
+
+  it('opens the agenda with the week\'s silver and the next item', async () => {
+    const asked = [];
+    build({ economy: { bankSummary: async (id) => { asked.push(id); return { silver: 7, next: { title: 'Math', reward: null } }; } } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(asked).toEqual(['kid1']);
+    expect(document.blocks[0]).toEqual({ type: 'rich_text', md: 'In the bank: 7 silver · Next: Math', align: 'center' });
+    expect(validateDocument(document).errors).toEqual([]);
+  });
+
+  it('adds the reward when the next item pays silver', async () => {
+    build({ economy: { bankSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks[0].md).toBe('In the bank: 7 silver · Next: Math +2');
+  });
+
+  it('prints the silver alone when there is no next item', async () => {
+    build({ economy: { bankSummary: async () => ({ silver: 7, next: null }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks[0].md).toBe('In the bank: 7 silver');
+  });
+
+  it('prints no line when the silver is unknown', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    build({ economy: { bankSummary: async () => ({ silver: null, next: { title: 'Math', reward: null } }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document).toEqual(without.document);
+  });
+
+  it('a throwing economy means no line, no throw, and a warning', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    const { warnings, logger } = recordingLogger();
+    build({ logger, economy: { bankSummary: async () => { throw new Error('bank is down'); } } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document).toEqual(without.document);
+    expect(warnings).toContainEqual({
+      event: 'school.agenda.economy-failed', data: { learnerId: 'kid1', error: 'bank is down' },
+    });
+  });
+
+  it('a slow economy is not waited for: no line, and a warning', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    const { warnings, logger } = recordingLogger();
+    build({
+      logger, economyTimeoutMs: 20, scheduler: new NodeApplicationScheduler(),
+      economy: { bankSummary: () => new Promise(() => {}) },
+    });
+    const started = Date.now();
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(document).toEqual(without.document);
+    expect(warnings.map((w) => w.event)).toContain('school.agenda.economy-failed');
+    expect(warnings.find((w) => w.event === 'school.agenda.economy-failed').data.error).toMatch(/timed out after 20 ms/);
+  });
+
+  it('hands the call to the injected scheduler with the configured deadline', async () => {
+    const deadlines = [];
+    const scheduler = { withDeadline: (work, opts) => { deadlines.push(opts.milliseconds); return work; } };
+    build({ scheduler, economy: { bankSummary: async () => ({ silver: 3, next: null }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(deadlines).toEqual([2000]);
+    expect(document.blocks[0].md).toBe('In the bank: 3 silver');
+  });
+
+  it('without the port, the agenda carries no line', async () => {
+    build();
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks.some((b) => /In the bank:/.test(b.md ?? ''))).toBe(false);
   });
 });

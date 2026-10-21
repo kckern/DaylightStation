@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import SchoolApp from "./SchoolApp.jsx";
 import { schoolApi } from "./schoolApi.js";
 import { HmacSchoolBookGrantIssuer } from "../server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
@@ -89,11 +89,17 @@ vi.mock("./schoolApi.js", () => ({
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
     directLaunch: (...a) => directLaunchMock(...a),
+    // The coin bank door and screen (economy slice 1, C3), and the strip.
+    bankOpen: (...a) => bankOpenMock(...a),
+    economyBank: (...a) => economyBankMock(...a),
+    nextItem: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     // The live FSRS flashcards mount; a /test door must never reach it.
     flashcardDeck: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   },
 }));
 const directLaunchMock = vi.fn();
+const bankOpenMock = vi.fn();
+const economyBankMock = vi.fn(async () => ({ ok: false, status: 503, data: null }));
 const resolveMock = vi.fn();
 const actMock = vi.fn();
 
@@ -555,6 +561,123 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     expect(screen.queryByRole('heading', { name: 'Reading' })).toBeNull();
     expect(document.querySelector('.school-books')).toBeNull();
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+});
+
+// The coin bank (economy slice 1, C3): the panel's bank door mints a grant,
+// the target lands in `onPortalLaunch`, and the bank screen mounts over the
+// locked panel with its own Back. Memory only, and it closes on a lapse.
+describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel', () => {
+  const BANK_TARGET = { kind: 'program', program: 'economy-bank', learnerId: 'kid1' };
+  beforeEach(() => {
+    bankOpenMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { launchTarget: BANK_TARGET } });
+    economyBankMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {
+      mode: 'live', balances: { silver: 6, gold: 3, gems: 0 }, history: [], pass: {}, offers: {},
+      weekEndsAt: null, weekEndsOn: null, studyDay: '2026-09-07',
+    } });
+    window.history.replaceState({}, '', '/');
+  });
+
+  async function openBankFromDoor() {
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    fireEvent.click(screen.getByTestId('bank-door'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
+    return screen.findByTestId('bank-screen');
+  }
+
+  it('door → face → the kid\'s bank, with no Done overlay and no path of its own', async () => {
+    const path = window.location.pathname;
+    const bank = await openBankFromDoor();
+    expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
+    expect(bank).toHaveTextContent('Alpha');
+    expect(await screen.findByTestId('bank-balances')).toHaveTextContent('6');
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+    expect(screen.queryByTestId('selfservice-section-exit')).toBeNull();
+    expect(window.location.pathname).toBe(path);
+
+    fireEvent.click(within(bank).getByTestId('screen-header-back'));
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('a strip chip opens that kid\'s bank straight through the same door', async () => {
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    const open = await screen.findByTestId('bank-chip-open');
+    await act(async () => fireEvent.click(open));
+    expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
+    expect(await screen.findByTestId('bank-screen')).toBeInTheDocument();
+  });
+
+  it('an identity lapse closes the bank: the keypad, never someone\'s coins', async () => {
+    await openBankFromDoor();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);
+    try {
+      await act(async () => { fireEvent.pointerDown(window); });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('a bank target for one kid launched as another answers false and mounts nothing', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+    let mounted;
+    await act(async () => {
+      launchHook.claim('kid1');
+      mounted = await launchHook.onLaunch({ kind: 'program', program: 'economy-bank', learnerId: 'kid2' }, 'kid1');
+    });
+    expect(mounted).toBe(false);
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(bankLogMock).toHaveBeenCalledWith('economy-bank-refused', { reason: 'learner-mismatch' });
+  });
+
+  it('a refusal sheet does not outlive the resting view: a runner and home again leave no sheet', async () => {
+    bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    await act(async () => fireEvent.click(await screen.findByTestId('bank-chip-open')));
+    expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
+
+    // Something else takes the panel (a reading shelf, here), then goes home.
+    await act(async () => {
+      launchHook.claim('kid1');
+      await launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'g' }, 'kid1');
+    });
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    await act(async () => { bookShelfProps.mock.calls.at(-1)[0].onExit('done'); });
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    expect(screen.queryByText('Choose a current School learner.')).toBeNull();
+  });
+
+  it('a code typed under a refusal sheet takes the panel, and the sheet is gone when it returns', async () => {
+    bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: {
+      ok: true, learner: 'kid1', subject: 'math', title: 'Math', sentence: null,
+      schema: 'school.self-service-card/v2',
+      context: { learner: { id: 'kid1', displayName: 'Alpha' }, taxonomy: { subject: { id: 'math', label: 'Math' } }, trail: [], progress: [] },
+      presentation: { status: 'ready', message: null },
+      actions: [{ kind: 'print', label: 'Print it', role: 'primary' }, { kind: 'exit', label: 'Go back', role: 'secondary' }],
+    } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    await act(async () => fireEvent.click(await screen.findByTestId('bank-chip-open')));
+    expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
+    for (const d of '123456') {
+      const key = screen.getByRole('button', { name: d });
+      fireEvent.pointerDown(key);
+      fireEvent.click(key);
+    }
+    await waitFor(() => expect(screen.queryByTestId('selfservice-keypad')).toBeNull());
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Go back' })));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
   });
 });
 

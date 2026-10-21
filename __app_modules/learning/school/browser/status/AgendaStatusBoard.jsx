@@ -60,16 +60,10 @@ import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
+import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
+import { useCoinColor } from "../shared/useCoinColor.js";
 
 const REFRESH_MS = 5 * 60_000;
-const SCHOOL_REFRESH_EVENTS = new Set([
-  'session-issued',
-  'session-grade-changed',
-  'story-read',
-  'book-log-changed',
-  'piano-lesson-complete',
-  'program-day-bypass-changed',
-]);
 
 // The subject wall's own icon set, addressed by subject id (icons/MANIFEST.md:
 // "filenames are the subject ids"), so the board and the wall say the same
@@ -282,16 +276,22 @@ function RestDayStatus({ restDay, pinned }) {
  *   flag this component could be handed by mistake.
  */
 /**
- * THE COINS: silver (this week, big), gold (lasting, smaller) and gems (only
- * when earned or pending), as a two-column grid - icon cell, number cell - so
+ * THE COINS: silver (EARNED this week, from the earnings preview, big), gold
+ * (lasting, smaller) and gems (only when earned or pending). This silver is
+ * not the bank: the Portal's bank strip shows what is IN the bank (the ledger
+ * balance, less anything spent), so the two may differ and each is named for
+ * what it is. as a two-column grid - icon cell, number cell - so
  * the coins centre on one line and the numbers start at one edge, down every
  * card. A faded +N hangs after a number without moving it. No captions: the
  * icon is the label; the words are for a screen reader — each figure is ONE
- * image whose name carries its pending too ("27 silver this week, 5 more
+ * image whose name carries its pending too ("27 silver earned this week, 5 more
  * possible"), and the visible +N is hidden from that tree. Nothing until a
  * read lands, and nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
+  const [silverColor, silverRef] = useCoinColor('silver');
+  // The gold icon and the gold figure share --school-coin-gold.
+  const [goldColor, goldRef] = useCoinColor('gold');
   const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
   const hasGold = Number.isFinite(gold);
@@ -300,18 +300,18 @@ function Coins({ figure, gold, studyDay }) {
   const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
   const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
   return (
-    <div className="school-status-board__coin-grid">
+    <div className="school-status-board__coin-grid" ref={(el) => { silverRef(el); goldRef(el); }}>
       {inWeek && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color="#c0c0c0" />
-          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver this week`, figure.pendingSilver)}>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color={silverColor} />
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver earned this week`, figure.pendingSilver)}>
             {figure.silver}{more(figure.pendingSilver)}
           </span>
         </>
       )}
       {hasGold && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" color={goldColor} />
           <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
         </>
       )}
@@ -460,8 +460,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
             schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
             return;
           }
-          if (!res?.ok || !Number.isFinite(res.data?.balance)) return;
-          setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
+          // `balance` is the SILVER figure; gold is `balances.gold`. A wallet
+          // with no `balances` shows no gold rather than the silver number.
+          const goldBalance = res?.ok ? res.data?.balances?.gold : undefined;
+          if (!Number.isFinite(goldBalance)) return;
+          setGold((current) => ({ ...current, [kid.id]: goldBalance }));
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
@@ -632,11 +635,23 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
+  // Coins moved on the ledger (gold after a convert): the coin figures only,
+  // once per burst (at most 3 s late), since a payout run mints entry by
+  // entry. The timer calls the LATEST refreshCoins through a ref, so a roster
+  // change mid-burst is not read stale.
+  const refreshCoinsRef = useRef(refreshCoins);
+  refreshCoinsRef.current = refreshCoins;
+  const coinsBurst = useMemo(() => coalescer(() => { if (aliveRef.current) refreshCoinsRef.current(); }), []);
+  useEffect(() => () => coinsBurst.cancel(), [coinsBurst]);
   const onSchool = useCallback((payload) => {
     const event = payload?.event;
     if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
     const learnerId = payload?.learnerId ?? null;
     if (!learnerId || !rosterIds.has(learnerId)) return;
+    if (event === COINS_CHANGED) {
+      coinsBurst.poke();
+      return;
+    }
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
     if (event === 'story-read' && eventStudyDay && eventStudyDay !== studyDay) return;
@@ -646,7 +661,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     });
     refresh([learnerId]);
     refreshCoins();
-  }, [studyDay, rosterIds, refresh, refreshCoins]);
+  }, [studyDay, rosterIds, refresh, refreshCoins, coinsBurst]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {

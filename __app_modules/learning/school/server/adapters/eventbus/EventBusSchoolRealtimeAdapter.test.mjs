@@ -74,9 +74,23 @@ it('broadcasts authoritative assessment invalidations and subscribes completion 
   expect(bus.sent).toContainEqual({ topic: 'school', payload: { event: 'assessment-changed', learnerId: 'kid', unitId: 'lesson', sessionId: 'session' } });
   gateway.sessionGradeChanged({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session' });
   expect(bus.sent.filter(x => x.payload.event === 'assessment-changed')).toHaveLength(2);
+  expect(bus.sent).toContainEqual({ topic: 'school.session.outcome-recorded', payload: { learnerId: 'kid', sessionId: 'session' } });
+  gateway.sessionGradeChanged({ learnerId: 'kid', unitId: 'lesson', sessionId: 'session', studyDay: '2026-10-07' });
+  expect(bus.sent).toContainEqual({ topic: 'school.session.outcome-recorded', payload: { learnerId: 'kid', sessionId: 'session', studyDay: '2026-10-07' } });
   const fact = { learnerId: 'kid', package: 'ko', deckId: 'deck', studyDay: '2026-10-07', doneAt: 'stamp', evidenceId: 'stable' };
   gateway.cardPracticeDayCompleted(fact);
   expect(bus.sent).toContainEqual({ topic: 'school.card-ladder.day-complete', payload: fact });
   await bus.handlers.get('school.card-ladder.day-complete')(fact);
   expect(change).toHaveBeenCalledWith(fact);
+});
+
+it("forwards the economy's coins-changed to the Portal's school topic, learner by learner", async () => {
+  const bus = busDouble();
+  const gateway = new EventBusSchoolRealtimeAdapter({ eventBus: bus });
+  const unsubscribe = gateway.relayCoinsChanged();
+  await bus.handlers.get('economy.coins-changed')({ userId: 'kid1', reason: 'mint' });
+  await bus.handlers.get('economy.coins-changed')({ reason: 'mint' });
+  expect(bus.sent).toEqual([{ topic: 'school', payload: { event: 'coins-changed', learnerId: 'kid1' } }]);
+  unsubscribe();
+  expect(bus.handlers.has('economy.coins-changed')).toBe(false);
 });

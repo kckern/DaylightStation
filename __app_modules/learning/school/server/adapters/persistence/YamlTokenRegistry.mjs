@@ -45,7 +45,7 @@ import path from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import yaml from 'js-yaml';
 import { ITokenRegistry } from "../../application/ports/ITokenRegistry.mjs";
-import { TOKEN_PREFIX, isAccessCodeLive } from "../../domain/sessions/tokens.mjs";
+import { TOKEN_PREFIX, isAccessCodeLive, isAccessCodeExpired } from "../../domain/sessions/tokens.mjs";
 import { normalizeAccessCode } from "../../domain/sessions/accessCode.mjs";
 import {
   deleteFileStrictAsync, ensureDirAsync, readDirectoryAsync, readTextFromPathAsync, writeTextFileAsync,
@@ -364,8 +364,11 @@ export class YamlTokenRegistry extends ITokenRegistry {
     }
   }
 
-  /** @inheritdoc */
-  async getByAccessCode(code) {
+  /**
+   * The record a panel code points at, liveness NOT applied. Null for junk, an
+   * unknown code, or a file that no longer carries it.
+   */
+  async #findByAccessCode(code) {
     // What six digits means is `accessCode.mjs`'s rule, not this adapter's — but
     // a keypad never dead-ends, so its ValidationError becomes a null here and
     // a mistyped code costs no directory walk.
@@ -385,12 +388,31 @@ export class YamlTokenRegistry extends ITokenRegistry {
       await this.#rebuildIndex({ force: knewIt });
       record = await this.#readIndexed(code);
     }
+    return record;
+  }
+
+  /** @inheritdoc */
+  async getByAccessCode(code) {
+    const record = await this.#findByAccessCode(code);
     if (!record) return null;
 
     // Expiry and revocation are the domain's rule, not the adapter's: the code
     // dies at the study-day rollover while its token — and the QR printed
     // beside it — lives on. Reading `expiresAt` here would fuse the two clocks.
     return isAccessCodeLive(record, { now: this.#nowIso() }) ? record : null;
+  }
+
+  /** @inheritdoc */
+  async lookupAccessCode(code, { now } = {}) {
+    const record = await this.#findByAccessCode(code);
+    const at = now ?? this.#nowIso();
+    if (isAccessCodeLive(record, { now: at })) return { record, live: true };
+    // The index keeps an expired code until its token is pruned, a week on,
+    // which is exactly the window in which yesterday's paper is still on the
+    // fridge. Anything else not live (revoked, malformed) is no record at all.
+    return isAccessCodeExpired(record, { now: at })
+      ? { record, live: false }
+      : { record: null, live: false };
   }
 
   /** @inheritdoc */

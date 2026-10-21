@@ -176,6 +176,14 @@ describe('a learner card while a RECENTLY READ book is playing', () => {
     expect(r.sent.find((m) => m.event === 'book-refused')).toMatchObject({ reason: 'read-recently', lastReadOn: '2026-09-28' });
     expect(r.logs.some((l) => l.event === 'school.reading.adoption-skipped')).toBe(true);
   });
+  it('the adoption-path refusal carries the suggestions and logs school.story-time.refused', async () => {
+    const suggestions = [{ contentId: 'plex:9', title: 'Moon', lastReadOn: null }];
+    const r = rig({ repeatCheck: async () => ({ refuse: true, lastReadOn: '2026-09-28', today: '2026-09-30', noRepeatDays: 4, suggestions }) });
+    r.bookPlayed();
+    await r.tap();
+    expect(r.sent.find((m) => m.event === 'book-refused').suggestions).toEqual(suggestions);
+    expect(r.logs.find((l) => l.event === 'school.story-time.refused')).toMatchObject({ data: { suggestions: 1 } });
+  });
   it('adopts normally when the check allows or throws (fail open)', async () => {
     const ok = rig({ repeatCheck: async () => ({ refuse: false }) });
     ok.bookPlayed();

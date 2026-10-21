@@ -42,6 +42,14 @@ describe('AdjustSessionGrade', () => {
     await adjust.execute({ ...args, apply: true });
     expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1', unitId: 'math' });
   });
+  it('names the session\'s study day on the grade-changed fact when it has one', async () => {
+    const f = fixture();
+    f.events[0].studyDay = '2026-07-31';
+    const realtime = { sessionGradeChanged: vi.fn(async () => {}) };
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate, realtime });
+    await adjust.execute({ sessionId: 'ses_1', percent: 100, reason: 'scan fault', adjustedBy: 'parent', apply: true });
+    expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1', unitId: 'math', studyDay: '2026-07-31' });
+  });
   it('stamps the course passing rule when correcting an older grade without a threshold', async () => {
     const f = fixture();
     delete f.events.find(e => e.type === 'graded').passingPercent;

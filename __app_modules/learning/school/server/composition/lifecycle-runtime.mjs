@@ -1,9 +1,11 @@
 /** Existing school lifecycle runtime assembly; preserves construction order. */
 import { declaredEntryActions as declaredEntryActions } from "../domain/reachability.mjs";
 import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScans.mjs";
+import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
+import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
 import { TeacherCapabilitySessions as TeacherCapabilitySessions } from "../application/TeacherCapabilitySessions.mjs";
 import { renderSessionResultPng as renderSessionResultPng } from "../rendering/documents/SessionResultRenderer.mjs";
 import { studyDayForInstant as studyDayForInstant } from "../domain/studyDay.mjs";
@@ -56,6 +58,11 @@ try {
       academicPeriods: schoolAcademicPeriods,
       attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
+      // The agenda's economy line prints only while coins are live.
+      economyMode: () => economyApi.configProjection?.catalog?.().mode ?? 'off',
+      // What "print my next sheet" is worth (`GET .../next`). A late-bound
+      // thunk: the earnings runtime that answers it is built after School.
+      rewardFor: economyApi.rewardFor ?? null,
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,
@@ -70,6 +77,10 @@ try {
       // a screen that a mounted widget is about to be told something on.
       wakeScreen: wakeScreenForBroadcast,
       startReadingSession: (args) => dependencies.startReadingSession?.(args) ?? { status: 'reading_session_failed', message: 'Story time is still starting up.' },
+      // The NFC book stickers, asked of the trigger owner on every refusal so
+      // a sticker added after boot is suggested without a restart. Null until
+      // the trigger API exists.
+      storyCorpus: () => storyBooksFromContentTags(dependencies.contentTagsForStoryTime?.() ?? null),
       languageStudyService,
       studyGrants: dependencies.schoolStudyGrants,
       languageReelService,
@@ -83,6 +94,10 @@ try {
       fitnessPlayableService,
       fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
       learningEvidenceRepository: schoolLearningEvidence,
+      // The stale sweep's roster. Without it `MarkSessionAbandoned.listStale`
+      // sees no learners, and the nightly `school-stale-sweep` job reports
+      // `swept: 0` while issued-and-never-graded work reprints forever.
+      learnerDirectory: schoolLearnerDirectory,
       // Same adapter class the grading hook uses, pointed at its own
       // `school.yml` block. Guarded on the HA gateway exactly as the grading
       // hook is: no Home Assistant means the Portal banner still fires and
@@ -152,6 +167,20 @@ try {
       grants: Boolean(dependencies.schoolBookPanelGrants),
       target: Boolean(bookScanTarget),
     });
+  }
+
+  // The coin bank's door on the same panel (economy slice 1, C3): the shelf
+  // door's two checks (roster, a configured panel) and nothing minted. The
+  // bank is a screen, not a program run, so it needs no lifecycle launcher.
+  const openBankAtPanel = bookScanTarget
+    ? new OpenBankAtPanel({
+      roster: () => schoolLearnerDirectory.listLearners(),
+      target: bookScanTarget,
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  if (!openBankAtPanel) {
+    schoolLifecycleLogger.warn('school.bank.panel-door-unavailable', { target: false });
   }
 
   if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.realtime && dependencies.schoolLifecycle.getLearnerDayCompletion) {
@@ -355,6 +384,7 @@ try {
             .listSessionsInRange(from, to, householdId),
         },
         timezone: configService.getTimezone?.() || null,
+        planProjection: dependencies.schoolLifecycle.planProjection ?? null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
     } catch (err) {
@@ -585,6 +615,7 @@ try {
 
   v1Routers.school = createSchoolRouter(createSchoolApiServices({
     schoolErrors,
+    openBankAtPanel,
     schoolService,
     flashcardStudy,
     cardLadderStudy,

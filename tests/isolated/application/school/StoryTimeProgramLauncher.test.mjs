@@ -230,10 +230,10 @@ describe('StoryTimeProgramLauncher', () => {
 describe('StoryTimeProgramLauncher.repeatCheck', () => {
   const BOOK = 'plex:621568';
   const NOW = '2026-10-09T18:00:00.000Z'; // study day 2026-10-09
-  const make = ({ byDay = {}, program = {}, listForDay, enrolled = true } = {}) => new StoryTimeProgramLauncher({
+  const make = ({ byDay = {}, program = {}, listForDay, enrolled = true, storyCorpus, logger = silent } = {}) => new StoryTimeProgramLauncher({
     readingLog: { listForDay: listForDay ?? (async (_u, day) => byDay[day] ?? []) },
     assignments: { get: async () => ({ programs: enrolled ? [{ programId: 'story-time', target: 2, ...program }] : [] }) },
-    timezone: 'America/Los_Angeles', clock: at(NOW), logger: silent,
+    timezone: 'America/Los_Angeles', clock: at(NOW), logger, storyCorpus,
   });
   const ask = (l, contentId = BOOK) => l.repeatCheck({ userId: 'user_5', contentId });
 
@@ -266,5 +266,87 @@ describe('StoryTimeProgramLauncher.repeatCheck', () => {
   it('fails open when history cannot be read', async () => {
     const l = make({ listForDay: async (_u, day) => { if (day !== '2026-10-09') throw new Error('disk'); return []; } });
     expect((await ask(l)).refuse).toBe(false);
+  });
+
+  describe('suggestions on a refusal', () => {
+    const corpus = [
+      { contentId: BOOK, title: 'Eyes shut' },
+      { contentId: 'plex:a', title: 'Ant' },
+      { contentId: 'plex:b', title: 'Bear' },
+      { contentId: 'plex:c', title: 'Cat' },
+      { contentId: 'plex:d', title: 'Dog' },
+      { contentId: 'plex:e', title: 'Eel' },
+    ];
+    const ids = (r) => r.suggestions.map((s) => s.contentId);
+
+    it('offers three books not read in the window, never-read first, then least recently read', async () => {
+      const byDay = {
+        '2026-10-08': [{ contentId: BOOK }, { contentId: 'plex:a' }], // both in the window
+        '2026-10-01': [{ contentId: 'plex:b', title: 'Bear and the Moon' }],
+        '2026-09-20': [{ contentId: 'plex:c' }],
+      };
+      const r = await ask(make({ byDay, storyCorpus: () => corpus }));
+      expect(r.refuse).toBe(true);
+      // never-read d and e (in the day's rotation), then c, the oldest read
+      expect(ids(r).slice(0, 2).sort()).toEqual(['plex:d', 'plex:e']);
+      expect(ids(r)[2]).toBe('plex:c');
+      const many = await ask(make({ byDay: { '2026-10-08': [{ contentId: BOOK }] }, storyCorpus: () => corpus }));
+      expect(many.suggestions).toHaveLength(3);
+    });
+
+    it('reads back four weeks, so an older read still ranks, and the log title wins', async () => {
+      const byDay = {
+        '2026-10-09': [{ contentId: BOOK }],
+        '2026-09-12': [{ contentId: 'plex:a', title: 'The Ant Book' }],
+      };
+      const small = [{ contentId: BOOK }, { contentId: 'plex:a', title: 'Ant' }, { contentId: 'plex:b', title: 'Bear' }];
+      const r = await ask(make({ byDay, storyCorpus: async () => small }));
+      expect(r.suggestions).toEqual([
+        { contentId: 'plex:b', title: 'Bear', lastReadOn: null },
+        { contentId: 'plex:a', title: 'The Ant Book', lastReadOn: '2026-09-12' },
+      ]);
+    });
+
+    it('looks four weeks PAST the window, so a long window still ranks older reads', async () => {
+      // noRepeatDays 40: the window is 08-31..10-09. A read on 08-15 is outside
+      // it, so it is allowed — and it must rank AFTER the never-read book.
+      const asked = [];
+      const byDay = { '2026-10-09': [{ contentId: BOOK }], '2026-08-15': [{ contentId: 'plex:a', title: 'Ant' }] };
+      const l = make({
+        program: { noRepeatDays: 40 },
+        listForDay: async (_u, day) => { asked.push(day); return byDay[day] ?? []; },
+        storyCorpus: () => [{ contentId: BOOK }, { contentId: 'plex:a' }, { contentId: 'plex:b', title: 'Bear' }],
+      });
+      const r = await ask(l);
+      expect(r.suggestions.map((s) => s.contentId)).toEqual(['plex:b', 'plex:a']);
+      expect(r.suggestions[1].lastReadOn).toBe('2026-08-15');
+      expect(asked).toContain('2026-08-03'); // 40 + 28 - 1 days back
+      expect(asked).not.toContain('2026-08-02');
+    });
+
+    it('an empty corpus suggests nothing', async () => {
+      const r = await ask(make({ byDay: { '2026-10-09': [{ contentId: BOOK }] }, storyCorpus: () => [] }));
+      expect(r).toMatchObject({ refuse: true, suggestions: [] });
+    });
+
+    it('without a corpus, suggests from the learner\'s own history', async () => {
+      const byDay = { '2026-10-09': [{ contentId: BOOK }], '2026-10-01': [{ contentId: 'plex:z', title: 'Zoo' }] };
+      expect(ids(await ask(make({ byDay })))).toEqual(['plex:z']);
+    });
+
+    it('a corpus that throws still refuses, with no suggestions and a warn', async () => {
+      const warns = [];
+      const logger = { ...silent, warn: (e, d) => warns.push([e, d]) };
+      const r = await ask(make({ byDay: { '2026-10-09': [{ contentId: BOOK }] }, storyCorpus: () => { throw new Error('boom'); }, logger }));
+      expect(r).toMatchObject({ refuse: true, suggestions: [] });
+      expect(warns.map(([e]) => e)).toContain('school.story-time.suggestions-failed');
+    });
+
+    it('an allowed book carries no suggestions and does not ask the corpus', async () => {
+      let asked = false;
+      const r = await ask(make({ storyCorpus: () => { asked = true; return corpus; } }));
+      expect(r).toMatchObject({ refuse: false, suggestions: [] });
+      expect(asked).toBe(false);
+    });
   });
 });

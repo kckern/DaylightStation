@@ -90,14 +90,52 @@ function uniqueAttempts(attempts) {
   });
 }
 
+/**
+ * Units a child can no longer move on alone — a TEACHER HOLD, either because
+ * the open failure is past the remediation cap (`remediation-cap`) or because
+ * it has sat unretried for days (`remediation-stale`). The agenda has stopped
+ * owing it; nothing else puts it in front of a grown-up, so it is named here,
+ * on the screen the grown-up actually reads.
+ *
+ * Read off the PLAN, not re-derived: the planner already keeps only the
+ * newest open session per unit, never holds a unit that is `completed`, and
+ * counts idle days by the learner's own school calendar. Asking it is the one
+ * way this list cannot disagree with the paper the child is holding.
+ */
+function remediationHoldItems(entries, { learnerId, statesById }) {
+  return (entries ?? [])
+    .filter((entry) => entry?.remediation?.held === true)
+    .map((entry) => {
+      const hold = entry.remediation;
+      const state = statesById.get(entry.sessionId) ?? null;
+      return {
+        kind: hold.reason === 'cap' ? 'remediation-cap' : 'remediation-stale',
+        learnerId,
+        sessionId: entry.sessionId,
+        unitId: entry.unitId,
+        unitTitle: entry.title ?? entry.unitId,
+        depth: hold.depth,
+        maxRounds: hold.maxRounds,
+        idleStudyDays: hold.idleStudyDays ?? null,
+        lastScore: state?.gradedPercent == null ? null : {
+          percent: state.gradedPercent, correctCount: state.gradedCorrectCount, totalCount: state.gradedTotalCount,
+        },
+        since: state?.outcome?.at ?? null,
+      };
+    });
+}
+
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger;
+  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger; #planProjection;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
     curriculum = null, bookLog = null, fitnessSessions = null,
     timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
+    // The agenda's own `PlanProjection`, asked for teacher holds. Null: the
+    // digest carries an empty `attention` list.
+    planProjection = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -113,6 +151,7 @@ export class GetTeacherToday {
     this.#fitnessSessions = fitnessSessions;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
+    this.#planProjection = planProjection;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -168,12 +207,14 @@ export class GetTeacherToday {
         .filter((attempt) => withinStudyWindow(attempt.processedAt ?? attempt.at, window)));
       const sessions = [];
       const processedToday = [];
+      const reduced = [];
 
       for (const row of indexRows) {
         // eslint-disable-next-line no-await-in-loop
         const events = await this.#sessions.readEvents(row.sessionId);
         if (!events.length) continue;
         const state = reduceSession(events);
+        reduced.push(state);
         const createdAt = events.find((event) => event.type === 'created')?.at ?? null;
         const originalAt = state.firstIssuedAt ?? createdAt ?? row.updatedAt ?? null;
         const originalStudyDay = state.studyDay ?? studyDayForInstant(Date.parse(originalAt), {
@@ -285,11 +326,38 @@ export class GetTeacherToday {
           }),
         };
       }
+      let attention = [];
+      if (this.#planProjection) {
+        try {
+          // Curriculum only, no launchers: holds live on curriculum units, and
+          // a teacher screen must not fan out to every program's status.
+          // A named study day is read AS OF that day — evidence before its
+          // window closes, idle days counted to its midpoint — so a past
+          // board never shows a hold that only formed later.
+          // eslint-disable-next-line no-await-in-loop
+          const { plan } = await this.#planProjection.project({
+            learnerId: learner.id, assignedPrograms: false, programStatuses: {},
+            ...(studyDay ? {
+              now: new Date((window.startAtMs + window.endAtMs) / 2).toISOString(),
+              historyUntil: new Date(window.endAtMs).toISOString(),
+            } : {}),
+          });
+          attention = remediationHoldItems(plan?.entries, {
+            learnerId: learner.id, statesById: new Map(reduced.map((state) => [state.sessionId, state])),
+          });
+        } catch (error) {
+          this.#logger.warn?.('school.teacher-day.holds-failed', { learnerId: learner.id, error: error?.message });
+        }
+      }
       rows.push({
         learnerId: learner.id,
         learnerName: learner.name ?? learner.id,
         sessions,
         processedToday,
+        // The holds standing on the day viewed (today, unless a study day was
+        // named): a hold stays listed until a grown-up opens another round or
+        // the work is settled some other way.
+        attention,
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,

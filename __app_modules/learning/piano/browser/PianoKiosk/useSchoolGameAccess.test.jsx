@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   response: null, stateGatesHandler: null,
+  // The economy bank, read only after a real `incomplete`. A function so a
+  // test can make it throw.
+  bank: () => ({ pass: {}, offers: {} }),
   // STABLE spies, not a fresh pair per call: a logger double rebuilt on every
   // `getLogger()` cannot be asserted against, which is how "was the verdict
   // even recorded?" stayed an unanswerable question.
@@ -21,7 +24,7 @@ function entitlement({ decision = 'denied', basisState = 'unsatisfied', learnerI
 }
 
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({
-  DaylightAPI: vi.fn(async () => h.response),
+  DaylightAPI: vi.fn(async (path) => (String(path).includes('/economy/') ? h.bank() : h.response)),
 }));
 vi.mock('../../../../../frontend/src/hooks/useWebSocket.js', () => ({
   useWebSocketSubscription: (topic, handler) => {
@@ -42,6 +45,7 @@ import useSchoolGameAccess, { completionAllowsGames, activePianoGamesDecision } 
 
 beforeEach(() => {
   h.response = entitlement();
+  h.bank = () => ({ pass: {}, offers: {} });
   h.stateGatesHandler = null;
   DaylightAPI.mockClear();
   h.log.warn.mockClear();
@@ -229,4 +233,152 @@ it('selects the school day when a fitness week starts at the same time', () => {
   const week = { ...day, period: { ...day.period, id: 'fitness-week:2026-08-30:2026-09-05' }, decision: 'denied', basisState: 'indeterminate' };
   expect(activePianoGamesDecision({ items: [week, day] })).toBe(day);
   expect(activePianoGamesDecision({ items: [week] })).toBeNull();
+});
+
+describe('useSchoolGameAccess and the early pass', () => {
+  const PASS_ID = 'pass:kid-one:2026-08-30';
+  const bankWith = (pass, offers = []) => () => ({
+    pass: { 'piano.games': { passId: pass.state === 'none' ? null : PASS_ID, capUsed: false, ...pass } },
+    offers: { 'piano.games': offers },
+  });
+  const bankCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('/economy/'));
+
+  it('unlocks with via: "pass" while today\'s pass is active', async () => {
+    h.bank = bankWith({ state: 'active', capUsed: true, coin: 'silver', paid: 3, refundWithinMs: 120000 });
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.unlocked).toBe(true));
+    expect(result.current).toMatchObject({
+      status: 'ready', state: 'incomplete', unlocked: true, via: 'pass',
+      // The server's refund window rides along for the session's settle.
+      pass: expect.objectContaining({ passId: PASS_ID, state: 'active', refundWithinMs: 120000 }),
+    });
+    expect(bankCalls()[0][0]).toBe('api/v1/economy/users/kid-one/bank');
+    expect(h.log.info).toHaveBeenCalledWith(
+      'piano.school-access.pass-active', expect.objectContaining({ learnerId: 'kid-one', passId: PASS_ID }),
+    );
+  });
+
+  it('logs pass-active once, not on every refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    h.bank = bankWith({ state: 'active', capUsed: true });
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(h.log.info.mock.calls.filter(([e]) => e === 'piano.school-access.pass-active')).toHaveLength(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(45_000); });
+    expect(h.log.info.mock.calls.filter(([e]) => e === 'piano.school-access.pass-active')).toHaveLength(1);
+  });
+
+  it('carries the offers and the pass on a locked result, so the lock can sell', async () => {
+    const offers = [{ coin: 'silver', price: 3, affordable: true }, { coin: 'gold', price: 1, affordable: false }];
+    h.bank = bankWith({ state: 'none' }, offers);
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.offers).toHaveLength(2));
+    expect(result.current).toMatchObject({ state: 'incomplete', unlocked: false, offers, pass: { state: 'none', capUsed: false } });
+    expect(result.current.via).toBeUndefined();
+  });
+
+  it('stays locked, as it was, when the pass read fails', async () => {
+    h.bank = () => { throw new Error('economy down'); };
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(bankCalls()).toHaveLength(1));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({ state: 'incomplete', unlocked: false, pass: null, offers: [] });
+    expect(h.log.warn).toHaveBeenCalledWith('piano.school-access.pass-read-failed', expect.objectContaining({ learnerId: 'kid-one' }));
+  });
+
+  it('offers nothing when the ledger could not be read', async () => {
+    h.bank = bankWith({ state: 'unknown', capUsed: null }, [{ coin: 'silver', price: 3, affordable: true }]);
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.pass?.state).toBe('unknown'));
+    expect(result.current).toMatchObject({ unlocked: false, offers: [] });
+  });
+
+  it('never consults the pass when the day is indeterminate', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'indeterminate' });
+    h.bank = bankWith({ state: 'active' });
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({ state: 'indeterminate', unlocked: false });
+    expect(bankCalls()).toHaveLength(0);
+  });
+
+  it('never consults the pass when the entitlement read failed', async () => {
+    DaylightAPI.mockRejectedValueOnce(new Error('offline'));
+    h.bank = bankWith({ state: 'active' });
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.unlocked).toBe(false);
+    expect(bankCalls()).toHaveLength(0);
+  });
+
+  it('never consults the pass when school is done', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await waitFor(() => expect(result.current.unlocked).toBe(true));
+    expect(result.current.via).toBeUndefined();
+    expect(bankCalls()).toHaveLength(0);
+  });
+});
+
+describe('useSchoolGameAccess bank cadence', () => {
+  const PASS_ID = 'pass:kid-one:2026-08-30';
+  const bankCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('/economy/'));
+  const entitlementCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('entitlements'));
+  const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    h.bank = () => ({ pass: { 'piano.games': { passId: null, state: 'none', capUsed: false } }, offers: { 'piano.games': [] } });
+  });
+
+  it('keeps the 15 s entitlement poll but reads the bank only on the edge and the slow timer', async () => {
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    await tick(45_000);
+    expect(entitlementCalls().length).toBeGreaterThanOrEqual(4);
+    expect(bankCalls()).toHaveLength(1);
+    await tick(15_000);
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('reads the bank on the edge into incomplete', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(0);
+    h.response = entitlement();
+    await tick(15_000);
+    expect(bankCalls()).toHaveLength(1);
+  });
+
+  it('reads the bank when the tab becomes visible again', async () => {
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('reads the bank on an explicit refresh()', async () => {
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    await act(async () => { await result.current.refresh(); });
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('never reads the bank while a pass game is held, and keeps the pass it had', async () => {
+    h.bank = () => ({ pass: { 'piano.games': { passId: PASS_ID, state: 'active', capUsed: true } }, offers: { 'piano.games': [] } });
+    const paused = { current: false };
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one', { pauseBankReads: paused }));
+    await tick(0);
+    expect(result.current).toMatchObject({ unlocked: true, via: 'pass' });
+    paused.current = true;
+    await tick(120_000);
+    await act(async () => { await result.current.refresh(); });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    expect(result.current).toMatchObject({ unlocked: true, via: 'pass' });
+  });
 });

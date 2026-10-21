@@ -932,6 +932,24 @@ describe('ReadingSessionInterceptor — read-recently (no-repeat)', () => {
     expect(sessions.current('livingroom')).toMatchObject({ state: 'confirm', pick: { contentId: 'plex:999' } });
   });
 
+  it('the refusal carries the suggestions, and logs school.story-time.refused with their count', async () => {
+    const suggestions = [{ contentId: 'plex:1', title: 'Ant', lastReadOn: null }, { contentId: 'plex:2', title: 'Bear', lastReadOn: '2026-09-30' }];
+    const logger = recordingLogger();
+    const { interceptor, sessions, sent } = build({ storyTime: repeating({ suggestions }), logger });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    await interceptor.claim(bookTap());
+    expect(sent.find((m) => m.payload.event === 'book-refused').payload.suggestions).toEqual(suggestions);
+    expect(logger.lines.find((l) => l.event === 'school.story-time.refused').data)
+      .toMatchObject({ learnerId: 'user_5', bookId: 'plex:620681', suggestions: 2 });
+  });
+
+  it('a verdict with no suggestions sends an empty list', async () => {
+    const { interceptor, sessions, sent } = build({ storyTime: repeating() });
+    sessions.open({ location: 'livingroom', learnerId: 'user_5' });
+    await interceptor.claim(bookTap());
+    expect(sent.find((m) => m.payload.event === 'book-refused').payload.suggestions).toEqual([]);
+  });
+
   it('keeps an existing pick when a repeat is tapped during the countdown', async () => {
     const { interceptor, sessions } = build({ storyTime: repeating() });
     sessions.open({ location: 'livingroom', learnerId: 'user_5' });

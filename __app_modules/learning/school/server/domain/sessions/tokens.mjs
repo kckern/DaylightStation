@@ -340,6 +340,27 @@ export function isAccessCodeLive(record, { now } = {}) {
 }
 
 /**
+ * A code that WAS live and is dead only because its study day ended.
+ *
+ * Narrower than `!isAccessCodeLive`: revoked, mis-classed and malformed records
+ * are not expired, they are nothing a child could have been handed. The panel
+ * names the sheet's day for an expired code and says "Try again." for the rest,
+ * so this has to be every live condition except the clock, with the clock past.
+ *
+ * @param {object} record the registry record
+ * @param {{ now: string }} opts ISO "now"
+ * @returns {boolean}
+ */
+export function isAccessCodeExpired(record, { now } = {}) {
+  if (!isIsoTimestamp(record?.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
+  if (Date.parse(now) < Date.parse(record.accessCodeExpiresAt)) return false;
+  // Live at the instant before it died — the same checks, minus the clock.
+  return isAccessCodeLive(record, {
+    now: new Date(Date.parse(record.accessCodeExpiresAt) - 1).toISOString(),
+  });
+}
+
+/**
  * Per-class resolution against the session's derived state.
  *
  * `actionable(state)` is the set of states in which the class's action still

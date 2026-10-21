@@ -38,7 +38,7 @@ import { resolveAdoptablePlayback } from "./adoptForeignPlayback.js";
 import { playScanCeremonyTone } from "../selfService/scanCeremonySound.js";
 import { useReadingSession, DEFAULT_CONFIRM_MS } from "./useReadingSession.js";
 import { readingLog } from "./readingLog.js";
-import { bookCover } from "./bookCovers.js";
+import { bookCover, bookInfo } from "./bookCovers.js";
 import ReadingPips from "./ReadingPips.jsx";
 import StreakWall from "./StreakWall.jsx";
 import { useMediaClockState } from "../../../../../__capabilities/playback/browser/player-support/useMediaClock.js";
@@ -474,12 +474,63 @@ export function Ceremony({ tier, name, learner, pick, summary }) {
   );
 }
 
-function Notice({ notice }) {
+/**
+ * One book a refusal suggests instead. Same `/info` lookup and the same
+ * fixed-box-then-image behaviour as the Recent shelf, so the card does not
+ * jump when the cover lands.
+ *
+ * THE TITLE IS PLEX'S once it arrives. The server only knows a never-read
+ * book by its sticker's hand-typed note ("Eyes shuts"); the lookup that brings
+ * the cover brings the real title in the same response, so it replaces the
+ * note. The note shows until then, and stays if Plex has no title.
+ */
+function SuggestedBook({ book }) {
+  const [info, setInfo] = useState({ cover: null, title: null });
+  const contentId = book?.contentId ?? null;
+
+  useEffect(() => {
+    if (!contentId) return undefined;
+    let live = true;
+    bookInfo(contentId).then((next) => { if (live) setInfo(next); });
+    return () => { live = false; };
+  }, [contentId]);
+
+  const title = info.title ?? book.title ?? null;
+  return (
+    <li className="reading-session__suggestion" data-testid="reading-suggestion">
+      <div className="reading-session__suggestion-cover">
+        {info.cover
+          ? <img src={info.cover} alt="" />
+          : <div className="reading-session__recent-spine" aria-hidden="true" />}
+      </div>
+      {title ? <span className="reading-session__suggestion-title">{title}</span> : null}
+    </li>
+  );
+}
+
+/**
+ * `compact` is the idle frame: a refusal drawn over content that is still
+ * playing (the D12 adoption path), where a row of 24vh covers would bury the
+ * story the child is watching.
+ */
+function Notice({ notice, compact = false }) {
   if (!notice) return null;
+  const suggestions = Array.isArray(notice.suggestions) ? notice.suggestions : [];
   return (
     <div className={`reading-session__notice reading-session__notice--${notice.tone}`} role="status" data-testid="reading-notice">
       <strong>{notice.title}</strong>
       {notice.detail ? <span>{notice.detail}</span> : null}
+      {/* A refused book offers the ones that WOULD be read — as covers, because
+          the child choosing cannot read the titles. */}
+      {suggestions.length ? (
+        <ul
+          className={`reading-session__suggestions${compact ? ' reading-session__suggestions--compact' : ''}`}
+          data-testid="reading-suggestions"
+          aria-label="Try one of these"
+        >
+          {suggestions.map((book) => <SuggestedBook key={book.contentId} book={book} />)}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -701,7 +752,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     if (!notice) return null;
     return (
       <div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
-        <Notice notice={notice} />
+        <Notice notice={notice} compact />
       </div>
     );
   }

@@ -1,4 +1,4 @@
-// policy.mjs — pure functions over the economy.yml config shape. No I/O.
+// policy.mjs — pure functions over the economy/config.yml earn/spend shape. No I/O.
 export function resolvePolicy(config, userId, action) {
   const base = config?.earn?.[action] || config?.spend?.[action] || null;
   if (!base) return null;

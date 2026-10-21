@@ -23,6 +23,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { IssueDocument } from "./IssueDocument.mjs";
 import { YamlCompanionCodeStore } from "../../adapters/persistence/YamlCompanionCodeStore.mjs";
+import { YamlIssuedArtifactStore } from "../../adapters/persistence/YamlIssuedArtifactStore.mjs";
 import {
   FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore, seededRng, silentLogger,
 } from "../../../../../../tests/_lib/school/lifecycleFakes.mjs";
@@ -245,6 +246,47 @@ describe('IssueDocument — a required companion binds its finish code before th
     expect(cardRequests.every((request) => request.automaticCard === true)).toBe(true);
     expect([...instances.values()][0].omr).toMatchObject({ cardId: '7654321', recordId: 'rec-2' });
     expect(cards.get('7654321')[0]).toMatchObject({ deliveryState: 'delivered' });
+  });
+
+  it('retries a print that timed out, even though the failed attempt already retained its recipe', async () => {
+    // 2026-10-06: a printer timeout released the card, and every retry after it
+    // was refused with "issued artifact … is immutable" — the retry draws a new
+    // card under the same session-derived id. A fake store that overwrites
+    // freely hid it; this one is the real store.
+    const issuedArtifacts = new YamlIssuedArtifactStore({
+      configService: { getHouseholdPath: (rel) => path.join(dir, rel) },
+    });
+    let dispatch = 0;
+    const printer = {
+      jobs: [],
+      async printPdf(bytes, options) {
+        dispatch += 1;
+        if (dispatch === 1) throw new Error('The operation was aborted due to timeout');
+        this.jobs.push({ bytes, options });
+        return { confirmed: true };
+      },
+    };
+    const renderAllocation = (attempt) => ({
+      cardId: attempt === 1 ? '1234567' : '7654321', recordId: `rec-${attempt}`, rowRange: { start: 1, end: 8 },
+    });
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, instances } = issuer({
+      companionCodes: codeStore(), units: [unit], printer, issuedArtifacts, renderAllocation,
+      allocationStore: { async release() { return []; }, async markDelivered() { return null; } },
+    });
+    await seedSession(sessions, { sessionId: 'ses-timeout', learnerId: 'kid1', unitId: unit.unitId });
+
+    await expect(issueDocument.execute({ sessionId: 'ses-timeout' }))
+      .resolves.toMatchObject({ status: 'print_failed' });
+    await expect(issueDocument.execute({ sessionId: 'ses-timeout' }))
+      .resolves.toMatchObject({ status: 'issued', allocation: { cardId: '7654321' } });
+    expect(printer.jobs).toHaveLength(1);
+    const artifactId = [...instances.values()][0].id;
+    const { manifest } = await issuedArtifacts.get(artifactId);
+    expect(manifest.allocation).toMatchObject({ cardId: '7654321' });
+    expect(manifest.supersedes).toEqual([expect.objectContaining({
+      renderInputSha256: expect.any(String), allocation: expect.objectContaining({ cardId: '1234567' }),
+    })]);
   });
 
   it('leaves an OPTIONAL companion exactly as it was: no finish code, no codeRef, no record', async () => {

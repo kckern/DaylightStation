@@ -54,8 +54,13 @@ const build = async ({
   programIds = [],
   launchers = new Map(),
   roster = { displayName: (id) => ({ kid1: 'Kid One', kid2: 'Kid Two' })[id] ?? null },
+  timezone = null,
+  clockIso,
+  logger = silentLogger,
+  attemptLimiter = null,
+  kioskFrictionTracker = null,
 } = {}) => {
-  clock = fakeClock();
+  clock = fakeClock(clockIso);
   appended = [];
   bankAsked = [];
   const catalog = new FakeCatalog({
@@ -97,8 +102,11 @@ const build = async ({
     },
     roster,
     selfService: { mediaSurface },
+    timezone,
+    attemptLimiter,
+    kioskFrictionTracker,
     clock: clock.now,
-    logger: silentLogger,
+    logger,
   });
 };
 
@@ -288,11 +296,128 @@ describe('a code that does not work', () => {
     expect(card.actions).toEqual([]);
   });
 
-  it('answers try again for a code whose study day has rolled over', async () => {
+  it('says which day the sheet is from when its study day has rolled over', async () => {
     await build({ codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }] });
     const card = await useCase.execute({ code: CODE });
     expect(card.ok).toBe(false);
+    expect(card.reason).toBe('expired');
+    // Expired at 2026-07-27T04:00Z, so it belonged to Sunday the 26th.
+    expect(card.sentence).toBe("That sheet is from Sunday. Tap your card for today's.");
+    expect(card.actions).toEqual([]);
+  });
+
+  it('names the sheet day in the household timezone, not UTC', async () => {
+    // 04:00 America/Los_Angeles on Mon 2026-07-27 is 11:00Z; the code lived
+    // through Sunday local, though 11:00Z minus a moment is still Monday UTC.
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: '2026-07-27T11:00:00.000Z' }],
+      timezone: 'America/Los_Angeles',
+      clockIso: '2026-07-27T18:00:00.000Z',
+    });
+    const card = await useCase.execute({ code: CODE });
+    expect(card.sentence).toBe("That sheet is from Sunday. Tap your card for today's.");
+  });
+
+  it('logs who typed the old sheet and how old it was, never the digits', async () => {
+    const events = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      logger: { ...silentLogger, info: (event, data) => events.push([event, data]) },
+    });
+    await useCase.execute({ code: CODE });
+    const rejected = events.filter(([event]) => event === 'school.selfservice.code.rejected');
+    expect(rejected).toHaveLength(1);
+    const [, data] = rejected[0];
+    expect(data).toMatchObject({ reason: 'expired', learnerId: 'kid1' });
+    // The fake clock mints and reads at the same instant, so the paper is 0h old.
+    expect(data.issuedAt).toBe('2026-07-27T09:00:00.000Z');
+    expect(data.ageHours).toBe(0);
+    expect(JSON.stringify(data)).not.toContain(CODE);
+  });
+
+  it('rounds the age to a tenth of an hour', async () => {
+    const events = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: '2026-07-27T09:30:00.000Z' }],
+      logger: { ...silentLogger, info: (event, data) => events.push([event, data]) },
+    });
+    clock.advanceMs(26 * 3_600_000 + 7 * 60_000);
+    await useCase.execute({ code: CODE });
+    const [, data] = events.find(([event]) => event === 'school.selfservice.code.rejected');
+    expect(data.reason).toBe('expired');
+    expect(data.ageHours).toBe(26.1);
+  });
+
+  it('still counts an old sheet as kiosk friction', async () => {
+    const calls = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      kioskFrictionTracker: { recordFriction: async (call) => { calls.push(call); } },
+    });
+    await useCase.execute({ code: CODE, deviceId: 'panel-1' });
+    expect(calls).toEqual([{ deviceId: 'panel-1', kind: 'code-rejected' }]);
+  });
+
+  it('falls back to a plain try again when the explaining lookup throws', async () => {
+    const warns = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      logger: { ...silentLogger, warn: (event, data) => warns.push([event, data]) },
+    });
+    tokens.lookupAccessCode = async () => { throw new Error('index on fire'); };
+    const card = await useCase.execute({ code: CODE });
+    expect(card.reason).toBe('unknown_code');
     expect(card.sentence).toBe('Try again.');
+    expect(warns).toEqual([['school.selfservice.code.lookup-failed', { error: 'index on fire' }]]);
+  });
+
+  it('says "last" for a sheet six days old or more, so a weekday cannot mean today', async () => {
+    // Minted Mon 2026-07-27 09:00Z, read the next Monday: "Monday" alone would
+    // name the day the child is standing in.
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: TOMORROW }],
+    });
+    clock.advanceDays(7);
+    const card = await useCase.execute({ code: CODE });
+    expect(card.reason).toBe('expired');
+    expect(card.sentence).toBe("That sheet is from last Monday. Tap your card for today's.");
+  });
+
+  it('keeps the bare weekday just under six days', async () => {
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: TOMORROW }],
+    });
+    clock.advanceHours(143.9);
+    const card = await useCase.execute({ code: CODE });
+    expect(card.sentence).toBe("That sheet is from Monday. Tap your card for today's.");
+  });
+
+  it('never throttles an old sheet, however many times it is typed', async () => {
+    const takes = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      attemptLimiter: { take: (key) => { takes.push(key); return { allow: false }; } },
+    });
+    for (let i = 0; i < 12; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const card = await useCase.execute({ code: CODE, deviceId: 'panel-1' });
+      expect(card.reason).toBe('expired');
+    }
+    // The child is not guessing; spending their allowance would turn the
+    // next real typo into "slow down".
+    expect(takes).toEqual([]);
+  });
+
+  it('still answers try again, and still throttles, for a code that never existed', async () => {
+    const takes = [];
+    await build({
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
+      attemptLimiter: { take: (key) => { takes.push(key); return { allow: true }; } },
+    });
+    const card = await useCase.execute({ code: '000000', deviceId: 'panel-1' });
+    expect(card.reason).toBe('unknown_code');
+    expect(card.sentence).toBe('Try again.');
+    expect(takes).toEqual(['panel-1']);
   });
 
   it('answers try again for a revoked token', async () => {
