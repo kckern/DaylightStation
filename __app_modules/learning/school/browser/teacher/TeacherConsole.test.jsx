@@ -508,6 +508,27 @@ describe('TeacherConsole workspace', () => {
     }
   });
 
+  // An id that is not on the roster would satisfy the form behind a Student
+  // select that names nobody; it must not count as a pick.
+  it('does not count an unknown learner in the link as a pick', async () => {
+    const units = schoolApi.curriculumUnits.getMockImplementation();
+    schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
+    try {
+      window.history.pushState({}, '', '/school/teacher/operations?unit=unit-a&learner=nobody');
+      render(<TeacherConsole />);
+      const control = (label, tag = 'select') => [...document.querySelectorAll('#curriculum-exceptions label')]
+        .find((node) => node.firstChild?.textContent === label)?.querySelector(tag);
+      await waitFor(() => expect(control('Lesson')?.value).toBe('unit-a'));
+      fireEvent.change(control('Decision'), { target: { value: 'excused' } });
+      fireEvent.change(control('Reason', 'input'), { target: { value: 'Covered in class' } });
+      fireEvent.change(control('Lesson'), { target: { value: 'unit-a' } });
+      expect(control('Student').value).toBe('');
+      expect(screen.getByRole('button', { name: 'Preview exception' }).disabled).toBe(true);
+    } finally {
+      schoolApi.curriculumUnits.mockImplementation(units);
+    }
+  });
+
   it('previews a bounded systematic regrade before a protected apply', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts

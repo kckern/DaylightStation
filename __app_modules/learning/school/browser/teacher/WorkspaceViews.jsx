@@ -284,8 +284,16 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
   const modules = [...new Set(units.map((unit) => unit.module).filter(Boolean))];
   // Neutral by default: the most drastic decision and a preselected reason
   // must never be the zero-interaction path.
-  const [form, setForm] = useState({ kind: '', learnerId, targetType: 'lesson',
+  // A `?learner` seeds the Student pick only if that learner is on the roster;
+  // an unknown id would satisfy `valid` behind a select that names nobody.
+  const seededLearner = kids.some((kid) => kid.id === learnerId) ? learnerId : '';
+  const [form, setForm] = useState({ kind: '', learnerId: seededLearner, targetType: 'lesson',
     targetId: lessonId, courseId, replacementLessonId: '', reason: '' });
+  // The roster can land after mount: seed once it does, and never overwrite a pick.
+  useEffect(() => {
+    if (!learnerId || form.learnerId) return;
+    if (kids.some((kid) => kid.id === learnerId)) setForm((current) => ({ ...current, learnerId }));
+  }, [kids.length, learnerId]); // eslint-disable-line react-hooks/exhaustive-deps
   // A preselected lesson's course comes from the catalog, which a user pick
   // (`change('targetId')`) would otherwise have filled.
   useEffect(() => {
