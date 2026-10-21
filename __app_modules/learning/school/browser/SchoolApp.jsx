@@ -33,6 +33,7 @@ import FlashcardDeckBrowser from "./Programs/Flashcards/FlashcardDeckBrowser.jsx
 import CardLadderProgram from "./Programs/Flashcards/CardLadder/CardLadderProgram.jsx";
 import { isCardLadderPolicy } from "./Programs/Flashcards/CardLadder/cardLadderMode.js";
 import RubiksCubeProgram from "./Programs/RubiksCube/RubiksCubeProgram.jsx";
+import SchoolDebriefProgram from "./Programs/SchoolDebrief/SchoolDebriefProgram.jsx";
 import BookShelf from "./books/BookShelf.jsx";
 import BookScanEntry from "./books/BookScanEntry.jsx";
 import BookShelfDoor from "./books/BookShelfDoor.jsx";
@@ -264,6 +265,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [studyLaunch, setStudyLaunch] = useState(null);
   const [reelLaunch, setReelLaunch] = useState(null);
   const [cubeLaunch, setCubeLaunch] = useState(null);
+  const [debriefLaunch, setDebriefLaunch] = useState(null);
   const [bookLaunch, setBookLaunch] = useState(null);
   // The coin bank screen (economy slice 1, C3): `{ learnerId }`
   // from the panel's bank door. Memory only: no path names it, so a reload
@@ -513,6 +515,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       if (!target.courseId || !target.cubeGrant || !learnerId) return false;
       setCubeLaunch({ learnerId, courseId: target.courseId, cubeGrant: target.cubeGrant });
       openSection('rubiks-cube');
+      return true;
+    }
+    if (target?.kind === 'program' && target.program === 'school-debrief') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.debriefGrant || !learnerId) { schoolLog.bank('program-unavailable', { program: target.program }); return false; }
+      setDebriefLaunch({ learnerId, debriefGrant: target.debriefGrant, lateDay: target.lateDay ?? null, today: target.today ?? null });
+      openSection('school-debrief');
       return true;
     }
     // The reading shelf (book-shelf UI design §2): the grant is the shelf's
@@ -943,6 +952,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
                   : section === 'rubiks-cube' ? 'Rubik’s Cube'
+                  : section === 'school-debrief' ? 'After-school debrief'
                   : section === 'book-shelf' ? 'Reading'
                   : section === 'bank' ? 'Bank'
                   : launchPreviewLink ? 'Launch card preview'
@@ -1384,6 +1394,19 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             reelId={reelLaunch.reelId}
             reelGrant={reelLaunch.reelGrant}
             onExit={goHome}
+          />
+        )}
+        {/* The debrief sits out here with the reels: the Portal mounts it from
+            the agenda code, LOCKED, so the `!lock.locked` wrapper never paints.
+            With no launch (a grown-up opening it from /school) it shows its
+            own no-grant state; a launch claimed by another learner never paints. */}
+        {section === 'school-debrief' && (!debriefLaunch || debriefLaunch.learnerId === currentUser?.id) && (
+          <SchoolDebriefProgram
+            learnerId={debriefLaunch?.learnerId ?? null}
+            debriefGrant={debriefLaunch?.debriefGrant ?? null}
+            lateDay={debriefLaunch?.lateDay ?? null}
+            today={debriefLaunch?.today ?? null}
+            onExit={() => { setDebriefLaunch(null); goHome(); }}
           />
         )}
         {/* The reading shelf sits out here with the ladder and the reels, not

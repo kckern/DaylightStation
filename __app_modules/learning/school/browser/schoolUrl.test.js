@@ -114,3 +114,11 @@ describe('geography section', () => {
     expect(parseSchoolPath(BASE).section).toBe('geography');
   });
 });
+
+describe('school-debrief section', () => {
+  it('round-trips the debrief section', () => {
+    at('/school/school-debrief');
+    expect(parseSchoolPath('/school')).toMatchObject({ section: 'school-debrief' });
+    expect(schoolPathFor('/school', 'school-debrief', [])).toBe('/school/school-debrief');
+  });
+});

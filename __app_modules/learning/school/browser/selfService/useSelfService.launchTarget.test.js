@@ -126,6 +126,12 @@ describe('useSelfService: reels and cube effects keep their grants', () => {
     await drive({ effect: { kind: 'program', program: 'rubiks-cube', programId: 'rubiks-cube', courseId: 'cube-101', cubeGrant: 'signed-cube', learnerId: 'kid1' }, onLaunch });
     expect(onLaunch.mock.calls[0][0]).toMatchObject({ program: 'rubiks-cube', courseId: 'cube-101', cubeGrant: 'signed-cube' });
   });
+
+  it('school-debrief keeps debriefGrant, today and lateDay', async () => {
+    const onLaunch = vi.fn(async () => true);
+    await drive({ effect: { kind: 'program', program: 'school-debrief', programId: 'school-debrief', unitId: 'school-debrief:daily', debriefGrant: 'signed-debrief', today: '2026-10-21', lateDay: '2026-10-20', learnerId: 'kid1' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toMatchObject({ program: 'school-debrief', debriefGrant: 'signed-debrief', today: '2026-10-21', lateDay: '2026-10-20' });
+  });
 });
 
 

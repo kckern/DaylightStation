@@ -28,7 +28,10 @@ import EmptyState from "./EmptyState.jsx";
 // — which is what happened to Geography when the `history` shelf was renamed to
 // `civilization` and this map was left behind.
 const SUBJECT_PROGRAMS = {
-  writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
+  writing: [
+    { id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' },
+    { id: 'school-debrief', label: 'After-school debrief', hint: 'Tell about your school day', section: 'school-debrief' },
+  ],
   civilization: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
   arts: [
     { id: 'chess', label: 'Chess', hint: 'Learn the game, one unit at a time', section: 'chess' },
