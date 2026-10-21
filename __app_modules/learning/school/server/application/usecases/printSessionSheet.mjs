@@ -104,11 +104,23 @@ export function threwAnswer({ action, sessionId, error, logger = console, events
  * @param {string} args.sessionId - a REAL session id
  * @param {object} [args.logger]
  * @param {object} [args.events] - event names; the keypad's by default
+ * @param {Object<string, string>} [args.sentences] - per-status sentence
+ *   overrides for a surface whose wording differs (the Portal has no code to
+ *   "type again"); every other row keeps `PRINT_RESULTS`
  * @returns {Promise<{outcome: string, sentence: string, sessionId: string,
  *                    effect: object|null, transition: string}>}
  */
+/** `PRINT_RESULTS` with some rows' sentences replaced; the outcomes never change. */
+function printResultsWith(sentences) {
+  if (!sentences) return PRINT_RESULTS;
+  return Object.fromEntries(Object.entries(PRINT_RESULTS).map(([status, row]) => [
+    status,
+    typeof sentences[status] === 'string' ? { ...row, sentence: sentences[status] } : row,
+  ]));
+}
+
 export async function printSessionSheet({
-  issueDocument, sessionId, logger = console, events = SELF_SERVICE_EVENTS,
+  issueDocument, sessionId, logger = console, events = SELF_SERVICE_EVENTS, sentences = null,
 }) {
   if (!issueDocument) return unwiredAnswer({ action: 'print', sessionId, logger, events });
   let result;
@@ -119,7 +131,7 @@ export async function printSessionSheet({
   }
   return reportUseCaseResult({
     action: 'print',
-    table: PRINT_RESULTS,
+    table: printResultsWith(sentences),
     result,
     sessionId,
     effect: {
@@ -195,14 +207,14 @@ export function retryAnswer({ result, sessionId, opened, operation }) {
  */
 export async function printFreshSheet({
   openRemediation, issueDocument, sessionId, refusedSentence = TELL_A_GROWN_UP,
-  logger = console, events = SELF_SERVICE_EVENTS,
+  logger = console, events = SELF_SERVICE_EVENTS, sentences = null,
 }) {
   const { answer, opened } = await openRemediationSession({
     openRemediation, sessionId, refusedSentence, logger, events,
   });
   if (answer) return answer;
   const result = await printSessionSheet({
-    issueDocument, sessionId: opened.newSessionId, logger, events,
+    issueDocument, sessionId: opened.newSessionId, logger, events, sentences,
   });
   return retryAnswer({ result, sessionId, opened, operation: 'print' });
 }

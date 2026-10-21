@@ -19,11 +19,12 @@ import {
   fakeClock, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, WORKSHEET_UNIT, fixtureUnit,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, WORKSHEET_UNIT, MEDIA_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const LANGUAGE_UNIT = 'language-daily';
 const SCIENCE_UNIT = 'sample-science.01';
+const LAUNCH_UNIT = 'garage-launch.01';
 const PRINT_FAILED = 'The printer did not answer. Try that again in a minute.';
 const ON_ITS_WAY = "It's already on its way — give it a minute.";
 
@@ -41,11 +42,14 @@ const recordingLogger = () => {
 /** A recording `IssueDocument`: scripted statuses, one per call, last repeats. */
 const issueSpy = (...statuses) => {
   const calls = [];
-  return {
+  const spy = {
     calls,
+    /** Set to a promise to hold the next print open until it resolves. */
+    gate: null,
     canIssueBank: () => false,
     async execute({ sessionId }) {
       calls.push(sessionId);
+      if (spy.gate) await spy.gate;
       const status = statuses[Math.min(calls.length - 1, statuses.length - 1)] ?? 'issued';
       return {
         status, sessionId, artifactId: 'art_1', pageCount: 1,
@@ -53,6 +57,14 @@ const issueSpy = (...statuses) => {
       };
     },
   };
+  return spy;
+};
+
+/** A promise and the function that settles it. */
+const deferred = () => {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+  return { promise, release };
 };
 
 let clock, sessions, issue, logger, useCase;
@@ -64,6 +76,7 @@ const build = ({
   roster = [{ id: 'kid1' }, { id: 'grownup1' }],
   rewardFor = null,
   remediationMaxRounds = 2,
+  remediation = null,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({
@@ -71,6 +84,7 @@ const build = ({
   });
   const curriculum = new CurriculumAccess({
     catalog, bankIds: () => BANK_IDS, programIds: () => ['language'],
+    surfaceValidators: () => new Map([['garage-fitness', () => []]]),
     clock: clock.epoch, logger: silentLogger,
   });
   sessions = new FakeSessionRepository();
@@ -92,10 +106,8 @@ const build = ({
     getLearnerDayCompletion: completion ?? new GetLearnerDayCompletion({
       planProjection, curriculum, assignments, sessions, launchers, clock: clock.now, logger: silentLogger,
     }),
-    planProjection,
-    sessions,
     issueDocument: issue,
-    openRemediation: new OpenRemediation({
+    openRemediation: remediation ?? new OpenRemediation({
       curriculum, sessions, clock: clock.now, newSessionId, remediationMaxRounds, logger: silentLogger,
     }),
     roster: () => roster,
@@ -308,6 +320,93 @@ const failSession = async (sessionId) => {
   }
 };
 
+describe('review fixes', () => {
+  it('already_done speaks for a surface with no code', async () => {
+    build({ statuses: ['already_done'] });
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(result).toMatchObject({
+      status: 'already_done', sentence: 'That one is finished. Tap again to see what is next.',
+    });
+  });
+
+  it('a tap during an in-flight print that FAILS gets that failure, not "on its way"', async () => {
+    build({ statuses: ['print_failed'] });
+    const hold = deferred();
+    issue.gate = hold.promise;
+    const a = useCase.execute({ learnerId: 'kid1' });
+    await new Promise((r) => setTimeout(r, 5));
+    const b = useCase.execute({ learnerId: 'kid1' });
+    await new Promise((r) => setTimeout(r, 5));
+    hold.release();
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra).toMatchObject({ status: 'print_failed', sentence: PRINT_FAILED });
+    expect(rb).toMatchObject({ status: 'print_failed', outcome: 'failed', sentence: PRINT_FAILED });
+    expect(issue.calls).toHaveLength(1);
+  });
+
+  it('a tap during an in-flight print that succeeds is debounced', async () => {
+    const hold = deferred();
+    issue.gate = hold.promise;
+    const a = useCase.execute({ learnerId: 'kid1' });
+    await new Promise((r) => setTimeout(r, 5));
+    const b = useCase.execute({ learnerId: 'kid1' });
+    await new Promise((r) => setTimeout(r, 5));
+    hold.release();
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra.status).toBe('issued');
+    expect(rb).toMatchObject({ status: 'debounced', sentence: ON_ITS_WAY });
+    expect(issue.calls).toHaveLength(1);
+  });
+
+  it('an explicit video subject prints nothing and opens no session', async () => {
+    build({ units: [MEDIA_UNIT] });
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(result).toMatchObject({ status: 'no_sheet', outcome: 'refused', sessionId: null, unit: { unitId: MEDIA_UNIT } });
+    expect(result.sentence).toMatch(/^[A-Z].*\.$/);
+    expect(result.sentence).not.toMatch(/no sheet/i);
+    expect(issue.calls).toHaveLength(0);
+    expect(await sessions.listForLearner('kid1')).toEqual([]);
+  });
+
+  it('an explicit launch subject prints nothing and opens no session', async () => {
+    build({ units: [LAUNCH_UNIT] });
+    const result = await useCase.execute({ learnerId: 'kid1', subject: fixtureUnit(LAUNCH_UNIT).subject });
+    expect(result).toMatchObject({ outcome: 'refused', sessionId: null });
+    expect(issue.calls).toHaveLength(0);
+    expect(await sessions.listForLearner('kid1')).toEqual([]);
+  });
+
+  it('with no subject and nothing paper, answers from the peek and opens no session', async () => {
+    build({ units: [MEDIA_UNIT, LANGUAGE_UNIT] });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(result.outcome).toBe('refused');
+    expect(issue.calls).toHaveLength(0);
+    expect(await sessions.listForLearner('kid1')).toEqual([]);
+  });
+
+  it('the debounce is per subject: math then science inside 20 s both print', async () => {
+    build({ units: [WORKSHEET_UNIT, SCIENCE_UNIT] });
+    expect((await useCase.execute({ learnerId: 'kid1', subject: 'math' })).status).toBe('issued');
+    clock.advanceMs(5_000);
+    expect((await useCase.execute({ learnerId: 'kid1', subject: 'science' })).status).toBe('issued');
+    expect(issue.calls).toHaveLength(2);
+  });
+
+  it('a clock that goes backwards does not hold a tap forever', async () => {
+    await useCase.execute({ learnerId: 'kid1' });
+    clock.advanceMs(-60_000);
+    expect((await useCase.execute({ learnerId: 'kid1' })).status).toBe('issued');
+  });
+
+  it('logs a failed print as failed (warn), not refused', async () => {
+    build({ statuses: ['print_failed'] });
+    await useCase.execute({ learnerId: 'kid1', deviceId: 'portal' });
+    const failed = logger.calls.find((c) => c.event === 'school.subject-next.failed');
+    expect(failed).toMatchObject({ level: 'warn', data: { status: 'print_failed', deviceId: 'portal' } });
+    expect(logger.calls.find((c) => c.event === 'school.subject-next.refused')).toBeUndefined();
+  });
+});
+
 describe('a failed attempt (needs_remediation)', () => {
   const failFirstSheet = async () => {
     const first = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
@@ -349,6 +448,15 @@ describe('a failed attempt (needs_remediation)', () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
     expect(result).toMatchObject({ status: 'issued', subject: 'math', sentence: 'Printing a fresh sheet to try again.' });
     expect(issue.calls).toHaveLength(1);
+  });
+
+  it('a remediation that throws answers in words with no session named', async () => {
+    build({ remediation: { execute: async () => { throw new Error('store down'); } } });
+    await failFirstSheet();
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(result).toMatchObject({ outcome: 'failed', sessionId: null });
+    expect(result.sentence).toBeTruthy();
+    expect(issue.calls).toHaveLength(0);
   });
 
   it('a capped retry answers with the remediation\'s own sentence and prints nothing', async () => {

@@ -1552,40 +1552,53 @@ when `selfService.enabled` is true.
   returns nothing or throws.
 
 **It can only print the learner's own next sheet.** With no subject named, the
-subject comes from `GetLearnerDayCompletion`: obligated sections first, then
-electives (excused and not yet served), in plan order. Within each tier the
-first section whose next move is paper wins, so a program or a video at the top
-of the plan does not take the button. `ResolveSubjectNext` then resolves that
-subject exactly as for a scanned subject ticket, and ensures the session. The
-sheet prints only when the self-service card for that resolution would offer
-`print` (`offeredActions`), or a paper `retry` ("Print a fresh sheet" after a
-failed attempt). A retry counts as paper when the subject is chosen, opens the
-remediation session through `OpenRemediation` and prints that one ("Printing a
-fresh sheet to try again."). A refused remediation, such as the retry cap,
-answers with `OpenRemediation`'s own sentence and prints nothing. Served,
-locked and empty answer with the card's sentence. A program or another
-non-paper move answers with the card's button label as a sentence ("Open Math
-Facts.", "Play the video.") and prints nothing.
+candidates come from `GetLearnerDayCompletion`: obligated sections first, then
+electives (excused and not yet served), in plan order. Each candidate is looked
+at with `ResolveSubjectNext.peek`, the same resolution as `execute` with no
+session opened (a sessionless entry is judged against a synthetic `created`
+state). The first whose self-service card (`offeredActions`) offers paper wins,
+so a program or a video at the top of the plan does not take the button.
+Paper is `print`, or a paper `retry` ("Print a fresh sheet" after a failed
+attempt). The completion view is narrower than the resolver's projection (no
+attested passes or exceptions), so the two can disagree at the edges; the
+resolver has the last word and nothing prints from the completion view alone.
+
+**A tap that will not print opens no session.** When the peek is not paper,
+the answer comes from the peek. Served, locked and empty answer with the card's
+sentence. A program or another non-paper move answers with the card's button
+label as a sentence ("Open Math Facts.", "Play the video."). Only a paper peek
+goes on to `ResolveSubjectNext.execute`, which ensures the session; the card is
+judged again there, and the sheet prints. A retry opens the remediation session
+through `OpenRemediation` and prints that one ("Printing a fresh sheet to try
+again."); a refused remediation, such as the retry cap, answers with
+`OpenRemediation`'s own sentence, prints nothing, and names no session.
 
 **The print step is shared with the keypad.** `printSessionSheet.mjs` holds
 `PRINT_RESULTS`, the `IssueDocument` call that `RunSelfServiceAction`'s
 `print` button uses, and `printFreshSheet`, the open-remediation-then-print step
-behind its `retry` button. The two surfaces say the same thing about the same printer
-("The printer did not answer. Try that again in a minute."), and only the event
-names differ.
+behind its `retry` button. Both surfaces say the same thing about the same
+printer ("The printer did not answer. Try that again in a minute."). Rows can be
+reworded per surface: the Portal and the kiosk have no code to type, so their
+`already_done` reads "That one is finished. Tap again to see what is next."
 
-**A 20-second per-learner debounce sits in front of resolving.** It is armed
-after validation (roster and subject), so a foreign subject is always a `400`.
-It is separate from `IssueDocument`'s per-session `printCooldownMinutes`. It catches
-one child tapping the strip and the kiosk, or one button twice, a moment apart:
-"It's already on its way — give it a minute." The check and the stamp have
-no await between them, so two requests in flight together still print once. It is
-released whenever the tap printed nothing (a refusal, a printer failure, the
-session cooldown), so a failed print can be retried straight away. The stamp
-lives in process memory, so a backend restart clears it.
+**A 20-second debounce per learner and subject** (`learnerId:subject`), armed
+after validation, so a foreign subject is always a `400` and Math then Reading
+a moment apart both print. It is separate from `IssueDocument`'s per-session
+`printCooldownMinutes` and catches one child tapping the strip and the kiosk,
+or one button twice, for the same sheet.
 
-Events: `school.subject-next.printed`, `.refused` (warn when a print failed)
-and `.debounced`, each with `{learnerId, subject, unitId, status, deviceId}`.
+- A tap that lands while a print for that key is running awaits it. It answers
+  "It's already on its way — give it a minute." only if that print went out,
+  and otherwise returns the same failure.
+- A tap within 20 seconds of a print that went out is debounced. A failed or
+  refused tap stamps nothing, so a failed print can be retried straight away.
+  A clock that steps backwards counts as expired.
+- Both live in process memory, so a backend restart clears them;
+  `IssueDocument`'s session cooldown is the durable backstop.
+
+Events: `school.subject-next.printed`, `.debounced`, `.failed` (warn) and
+`.refused`, each with `{learnerId, subject, unitId, status, deviceId}`. A use
+case that threw logs `school.subject-next.threw`.
 
 #### The reading log
 

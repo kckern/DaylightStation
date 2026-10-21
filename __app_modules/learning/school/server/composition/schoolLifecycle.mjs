@@ -1449,8 +1449,6 @@ export async function createSchoolLifecycle({
   const issueSubjectNext = new IssueSubjectNext({
     resolveSubjectNext,
     getLearnerDayCompletion,
-    planProjection,
-    sessions: stores.sessions,
     issueDocument,
     // A failed attempt's "Print a fresh sheet" opens its retry through the
     // SAME instance the keypad and the scan path use.

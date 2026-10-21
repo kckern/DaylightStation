@@ -14,43 +14,42 @@
  *
  * THE STEPS
  *
- *   1. With no subject named, the subject is chosen from the day's verdict
- *      (`GetLearnerDayCompletion`): obligated sections first, in plan order,
- *      then electives (excused, not yet served). Within a tier the first one
- *      whose next move is PAPER wins, so a program or a video sitting first
- *      does not swallow the button; with no paper anywhere, the first
- *      candidate answers with its own sentence.
- *   2. `ResolveSubjectNext` resolves that subject — and ensures the session,
- *      exactly as for a scanned ticket.
- *   3. When the card for that resolution offers `print`, the sheet goes out
- *      through `printSessionSheet`, the helper the keypad's `print` button
- *      uses. When it offers a paper `retry` ("Print a fresh sheet" after a
- *      failed attempt), `printFreshSheet` opens the remediation session and
- *      prints that, as the keypad's retry button does. Anything else
- *      (served, locked, empty, a program, a video) gets the card's sentence,
- *      or its button label as one ("Open Math Facts."), and nothing prints.
+ *   1. Validate: the learner is on the roster, and a named subject is one of
+ *      that learner's sections today (`GetLearnerDayCompletion`). A foreign
+ *      subject is always a 400, never "it's already on its way".
+ *   2. Look before writing. `ResolveSubjectNext.peek` resolves without opening
+ *      a session. With no subject named, the candidates are obligated sections
+ *      first, then electives (excused, not yet served), in plan order; the
+ *      first whose card offers PAPER wins, so a program or a video at the top
+ *      does not swallow the button. When nothing is paper, the answer comes
+ *      straight from the peek — the card's sentence, or its button label as
+ *      one ("Open Math Facts.") — and no session is opened.
+ *   3. Paper: `ResolveSubjectNext.execute` ensures the session, and the sheet
+ *      goes out through `printSessionSheet` (the keypad's `print` step), or,
+ *      for a failed attempt's paper `retry`, `printFreshSheet` (the keypad's
+ *      retry step: open the remediation, print the fresh session).
  *
- * THE DEBOUNCE IS PER LEARNER, AND IT COMES BEFORE RESOLVING. `IssueDocument`
- * already refuses a reprint of one SESSION inside `printCooldownMinutes`; this
- * is a different guard, against one child tapping the strip and the kiosk (or
- * one button twice) a moment apart. It is armed after validation (roster, and
- * the subject being in the learner's plan, so a foreign subject is always a
- * 400) and before anything is resolved. The check and the stamp have no await
- * between them, so two requests in flight together still print once. It
- * is RELEASED when the tap printed nothing — a refusal, a failure, the
- * session cooldown — because "it's already on its way" must never be said
- * about a sheet that is not; a printer that failed must be retryable at once
- * (Phase A's heal-on-retry).
+ * THE DEBOUNCE IS PER LEARNER AND SUBJECT (`learnerId:subject`), so Math then
+ * Reading a moment apart both print, while the strip and the kiosk tapped for
+ * the same sheet print once. Two parts:
+ *
+ *   - IN FLIGHT. The print promise is kept per key. A tap that lands while it
+ *     is running awaits it: if it put a sheet in the tray the tap is answered
+ *     "It's already on its way", otherwise with that same failure. A
+ *     debounced tap never claims a sheet that is not coming.
+ *   - AFTER. A print that went out stamps the key; a tap within 20 s of it is
+ *     debounced. Elapsed time below zero (a clock stepped backwards) counts as
+ *     expired rather than holding the key indefinitely.
+ *
+ * Both live in process memory only: a restart forgets them. `IssueDocument`'s
+ * per-session `printCooldownMinutes` is the durable backstop.
  *
  * `preview` is the dry run behind `GET /next`: which subject and unit the
- * button would print, read WITHOUT opening a session, plus an optional reward
+ * button would print, read through the same peek, plus an optional reward
  * label from an injected port.
  */
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.mjs";
 import { offeredCard } from "../../domain/selfService/offeredActions.mjs";
-import { nextMove, remediationOptionsFor } from "./offerSession.mjs";
-import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { SYNTHETIC_SESSION_ID } from "./ResolveAccessCode.mjs";
 import {
   PRINT_RESULTS, TELL_A_GROWN_UP, printSessionSheet, printFreshSheet,
@@ -64,11 +63,30 @@ const ON_ITS_WAY = PRINT_RESULTS.debounced.sentence;
 /** The bulk card's own words for "nothing left today" (`ResolveAccessCode#bulkAllDone`). */
 const ALL_DONE = "You're all done for today!";
 
+/**
+ * `PRINT_RESULTS` rows reworded for a surface with no code. The keypad's
+ * "Type your code again" is an instruction the Portal and the kiosk cannot
+ * follow.
+ */
+const SENTENCES = Object.freeze({
+  already_done: 'That one is finished. Tap again to see what is next.',
+});
+
+/**
+ * Event names. The first four are the shared print helper's (`failed` there
+ * means "a use case threw"); the rest are this file's own, including the one
+ * line logged per tap.
+ */
 const EVENTS = Object.freeze({
-  failed: 'school.subject-next.failed',
+  failed: 'school.subject-next.threw',
   unwired: 'school.subject-next.unwired',
   unknownStatus: 'school.subject-next.unknown-status',
   useCaseFailed: 'school.subject-next.use-case-failed',
+  noSession: 'school.subject-next.no-session',
+  printed: 'school.subject-next.printed',
+  debounced: 'school.subject-next.debounced',
+  refused: 'school.subject-next.refused',
+  outcomeFailed: 'school.subject-next.failed',
 });
 
 const capitalise = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
@@ -97,19 +115,18 @@ const unitView = (unit, fallbackSubject) => (unit ? {
 } : null);
 
 export class IssueSubjectNext {
-  #resolver; #completion; #projection; #sessions; #issue; #remediation; #roster; #rewardFor;
+  #resolver; #completion; #issue; #remediation; #roster; #rewardFor;
   #debounceMs; #clock; #logger;
-  /** learnerId -> epoch ms of the last tap still counted as on its way. */
-  #taps = new Map();
+  /** `learnerId:subject` -> epoch ms a sheet last went out. */
+  #stamps = new Map();
+  /** `learnerId:subject` -> the print running now. */
+  #inflight = new Map();
 
   /**
    * @param {object} deps
    * @param {import('./ResolveSubjectNext.mjs').ResolveSubjectNext} deps.resolveSubjectNext
+   *   `peek` to look, `execute` to open the session for a print
    * @param {import('../GetLearnerDayCompletion.mjs').GetLearnerDayCompletion} deps.getLearnerDayCompletion
-   * @param {import('../PlanProjection.mjs').PlanProjection} deps.planProjection
-   *   the SAME projection `ResolveSubjectNext` plans from; read here only to
-   *   look ahead without opening a session
-   * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {import('./IssueDocument.mjs').IssueDocument} [deps.issueDocument]
    * @param {import('./OpenRemediation.mjs').OpenRemediation} [deps.openRemediation]
    *   opens the fresh session behind a failed attempt's "Print a fresh sheet"
@@ -122,17 +139,16 @@ export class IssueSubjectNext {
    * @param {object} [deps.logger]
    */
   constructor({
-    resolveSubjectNext, getLearnerDayCompletion, planProjection, sessions,
+    resolveSubjectNext, getLearnerDayCompletion,
     issueDocument = null, openRemediation = null, roster = null, rewardFor = null,
     debounceMs = DEFAULT_DEBOUNCE_MS, clock = () => new Date(), logger = console,
   } = {}) {
-    if (!resolveSubjectNext || !getLearnerDayCompletion || !planProjection || !sessions) {
-      throw new Error('IssueSubjectNext requires resolveSubjectNext, getLearnerDayCompletion, planProjection and sessions');
+    if (typeof resolveSubjectNext?.peek !== 'function' || typeof resolveSubjectNext?.execute !== 'function'
+      || !getLearnerDayCompletion) {
+      throw new Error('IssueSubjectNext requires resolveSubjectNext (peek + execute) and getLearnerDayCompletion');
     }
     this.#resolver = resolveSubjectNext;
     this.#completion = getLearnerDayCompletion;
-    this.#projection = planProjection;
-    this.#sessions = sessions;
     this.#issue = issueDocument;
     this.#remediation = openRemediation;
     this.#roster = roster;
@@ -155,27 +171,11 @@ export class IssueSubjectNext {
     this.#assertLearner(learnerId);
     const wanted = this.#subjectArg(subject);
     const device = typeof deviceId === 'string' && DEVICE_RE.test(deviceId) ? deviceId : null;
-    // Validation comes BEFORE the debounce: a foreign subject is always a 400,
-    // never "it's already on its way".
     const sections = await this.#sections(learnerId, wanted);
-
-    // Checked and armed with no await in between: two taps in flight together
-    // cannot both get past this line.
-    const now = this.#clock().getTime();
-    const last = this.#taps.get(learnerId);
-    if (last !== undefined && now - last < this.#debounceMs) {
-      const answer = {
-        status: 'debounced', outcome: 'debounced', sentence: ON_ITS_WAY,
-        subject: wanted, unit: null, sessionId: null,
-      };
-      this.#log(answer, { learnerId, deviceId: device });
-      return answer;
-    }
-    this.#taps.set(learnerId, now);
 
     let answer;
     try {
-      answer = await this.#run({ learnerId, subject: wanted, sections });
+      answer = await this.#tap({ learnerId, wanted, sections });
     } catch (error) {
       this.#logger.error?.(EVENTS.failed, {
         stage: 'run', learnerId, subject: wanted, error: error?.message ?? String(error),
@@ -185,8 +185,6 @@ export class IssueSubjectNext {
         subject: wanted, unit: null, sessionId: null,
       };
     }
-    // Only a sheet that really went out stays "on its way".
-    if (answer.outcome !== 'done') this.#release(learnerId, now);
     this.#log(answer, { learnerId, deviceId: device });
     return answer;
   }
@@ -203,81 +201,147 @@ export class IssueSubjectNext {
     this.#assertLearner(learnerId);
     const wanted = this.#subjectArg(subject);
     const sections = await this.#sections(learnerId, wanted);
-    const look = await this.#lookahead(learnerId);
     // The SAME choice `execute` makes, so the label names what will print.
-    const chosen = wanted ?? await this.#choose(sections, look);
-    const peek = chosen ? look(chosen) : null;
-    const unit = peek?.unit ?? null;
-    const printable = (await peek?.printable) === true;
+    const look = wanted ? await this.#look(learnerId, wanted) : await this.#choose(learnerId, sections);
+    const unit = look?.unit ?? null;
     return {
-      subject: chosen ?? null,
+      subject: look?.subject ?? null,
       unit,
-      printable,
+      printable: look?.paper === true,
       reward: unit ? await this.#reward({ learnerId, unit }) : null,
     };
   }
 
-  async #run({ learnerId, subject, sections }) {
-    let chosen = subject;
-    if (!chosen) {
-      const look = await this.#lookahead(learnerId);
-      chosen = await this.#choose(sections, look);
-      if (!chosen) {
-        const allServed = sections.length > 0 && sections.every((s) => s.state === 'served');
-        return {
-          status: allServed ? 'served' : 'empty',
-          outcome: 'refused',
-          sentence: allServed ? ALL_DONE : TELL_A_GROWN_UP,
-          subject: null, unit: null, sessionId: null,
-        };
-      }
-    }
-
-    const resolution = await this.#resolver.execute({ learnerId, subject: chosen });
-    const unit = unitView(resolution?.unit ?? resolution?.entry ?? null, chosen);
-    const card = offeredCard(resolution, {
-      ...this.#bankOptions(resolution?.unit), now: this.#clock(),
-    });
-    const work = card.actions.find((a) => a.kind !== 'exit') ?? null;
-
-    if (resolution?.kind !== 'move' || !isPaper(work)) {
+  async #tap({ learnerId, wanted, sections }) {
+    const look = wanted ? await this.#look(learnerId, wanted) : await this.#choose(learnerId, sections);
+    if (!look) {
+      const allServed = sections.length > 0 && sections.every((s) => s.state === 'served');
       return {
-        status: resolution?.kind === 'move' ? 'no_sheet' : (resolution?.kind ?? 'empty'),
+        status: allServed ? 'served' : 'empty',
         outcome: 'refused',
-        sentence: card.sentence ?? labelSentence(work),
-        subject: chosen, unit, sessionId: null,
+        sentence: allServed ? ALL_DONE : TELL_A_GROWN_UP,
+        subject: null, unit: null, sessionId: null,
       };
     }
+    // Not paper: answered from the peek. No session is opened for a tap that
+    // will not print.
+    if (!look.paper) return this.#fromCard(look);
 
-    // `ResolveSubjectNext` ensured the session; the id handed to
-    // `IssueDocument` is checked to be a real one all the same.
+    const key = `${learnerId}:${look.subject}`;
+    // From here to `#inflight.set` there is no await: two taps cannot both
+    // find the key empty.
+    const running = this.#inflight.get(key);
+    if (running) {
+      const first = await running;
+      return first.outcome === 'done' ? this.#debounced(look) : { ...first };
+    }
+    const now = this.#clock().getTime();
+    const stamped = this.#stamps.get(key);
+    if (stamped !== undefined) {
+      const elapsed = now - stamped;
+      if (elapsed >= 0 && elapsed < this.#debounceMs) return this.#debounced(look);
+      this.#stamps.delete(key);
+    }
+
+    const pending = this.#print({ learnerId, subject: look.subject, fallback: look })
+      .catch((error) => {
+        this.#logger.error?.(EVENTS.failed, {
+          stage: 'print', learnerId, subject: look.subject, error: error?.message ?? String(error),
+        });
+        return {
+          status: 'error', outcome: 'failed', sentence: TELL_A_GROWN_UP,
+          subject: look.subject, unit: look.unit, sessionId: null,
+        };
+      });
+    this.#inflight.set(key, pending);
+    try {
+      const answer = await pending;
+      if (answer.outcome === 'done') this.#stamps.set(key, this.#clock().getTime());
+      return answer;
+    } finally {
+      this.#inflight.delete(key);
+    }
+  }
+
+  /** Open the session and print. Only reached when the peek said paper. */
+  async #print({ learnerId, subject, fallback }) {
+    const resolution = await this.#resolver.execute({ learnerId, subject });
+    const look = this.#judge(resolution, subject);
+    // The state moved between the peek and now (a sibling's scan, a grade
+    // landing): answer from what is true now rather than print stale work.
+    if (!look.paper) return this.#fromCard(look);
+
     const { sessionId } = resolution;
     if (typeof sessionId !== 'string' || !sessionId || sessionId === SYNTHETIC_SESSION_ID) {
-      this.#logger.error?.('school.subject-next.no-session', { learnerId, subject: chosen, sessionId: sessionId ?? null });
+      this.#logger.error?.(EVENTS.noSession, { learnerId, subject, sessionId: sessionId ?? null });
       return {
-        status: 'error', outcome: 'failed', sentence: TELL_A_GROWN_UP, subject: chosen, unit, sessionId: null,
+        status: 'error', outcome: 'failed', sentence: TELL_A_GROWN_UP,
+        subject, unit: look.unit ?? fallback.unit, sessionId: null,
       };
     }
 
+    const retry = look.work.kind === 'retry';
     // A failed attempt prints a FRESH sheet on a new session, through the
     // same open-then-print step the keypad's retry button takes.
-    const printed = work.kind === 'retry'
+    const printed = retry
       ? await printFreshSheet({
         openRemediation: this.#remediation, issueDocument: this.#issue, sessionId,
-        logger: this.#logger, events: EVENTS,
+        logger: this.#logger, events: EVENTS, sentences: SENTENCES,
       })
       : await printSessionSheet({
-        issueDocument: this.#issue, sessionId, logger: this.#logger, events: EVENTS,
+        issueDocument: this.#issue, sessionId, logger: this.#logger, events: EVENTS, sentences: SENTENCES,
       });
+    // A retry names a session only when a fresh one was actually opened
+    // (`retryAnswer` stamps `remediationOf`); an unwired, throwing or refused
+    // remediation opened nothing.
+    const openedFresh = retry ? printed.effect?.remediationOf === sessionId : true;
     return {
       status: printed.effect?.status ?? 'error',
       outcome: printed.outcome,
       sentence: printed.sentence,
-      subject: chosen,
-      unit,
-      // The session a sheet went to (the fresh one, for a retry); null when
-      // the remediation was refused and nothing was attempted.
-      sessionId: printed.outcome === 'refused' ? null : (printed.sessionId ?? null),
+      subject,
+      unit: look.unit,
+      sessionId: openedFresh ? (printed.sessionId ?? null) : null,
+    };
+  }
+
+  /** One subject, peeked and judged. */
+  async #look(learnerId, subject) {
+    return this.#judge(await this.#resolver.peek({ learnerId, subject }), subject);
+  }
+
+  /** A resolution -> its card, its one work action, and whether that is paper. */
+  #judge(resolution, subject) {
+    const card = offeredCard(resolution, {
+      ...this.#bankOptions(resolution?.unit), now: this.#clock(),
+    });
+    const work = card.actions.find((a) => a.kind !== 'exit') ?? null;
+    return {
+      subject,
+      resolution,
+      card,
+      work,
+      paper: resolution?.kind === 'move' && isPaper(work),
+      unit: unitView(resolution?.unit ?? resolution?.entry ?? null, subject),
+    };
+  }
+
+  #fromCard(look) {
+    const kind = look.resolution?.kind ?? 'empty';
+    return {
+      status: kind === 'move' ? 'no_sheet' : kind,
+      outcome: 'refused',
+      sentence: look.card.sentence ?? labelSentence(look.work),
+      subject: look.subject,
+      unit: look.unit,
+      sessionId: null,
+    };
+  }
+
+  #debounced(look) {
+    return {
+      status: 'debounced', outcome: 'debounced', sentence: ON_ITS_WAY,
+      subject: look.subject, unit: look.unit, sessionId: null,
     };
   }
 
@@ -291,7 +355,17 @@ export class IssueSubjectNext {
     return sections;
   }
 
-  /** Obligated first, then electives; plan order inside each tier. */
+  /**
+   * Obligated first, then electives; plan order inside each tier.
+   *
+   * The tiers come from the completion view, which is narrower than the
+   * projection `ResolveSubjectNext` resolves against (no attested passes, no
+   * curriculum exceptions). At the edges the two can disagree: a section the
+   * verdict calls obligated may resolve as served or locked once an
+   * attestation or a pause is applied. That is safe because the resolver has
+   * the last word: a candidate that is not paper there is passed over, and
+   * nothing prints from the completion view alone.
+   */
   #candidates(sections) {
     return [
       ...sections.filter((s) => s.state === 'obligated'),
@@ -299,67 +373,24 @@ export class IssueSubjectNext {
     ].map((s) => s.subject);
   }
 
-  async #choose(sections, look) {
-    const candidates = this.#candidates(sections);
-    for (const subject of candidates) {
-      // eslint-disable-next-line no-await-in-loop
-      if (await look(subject).printable) return subject;
-    }
-    return candidates[0] ?? null;
-  }
-
-  /**
-   * One projection read, then a per-subject look at the next move WITHOUT
-   * ensuring a session: a sessionless entry is judged against a synthetic
-   * `created` state, the way `ResolveAccessCode` judges a card before a
-   * button is pressed. Only paper vs not-paper is decided here; the real
-   * resolution is `ResolveSubjectNext`'s.
-   */
-  async #lookahead(learnerId) {
-    const { sections, activeExceptions, projection } = await this.#projection.project({
-      learnerId,
-      planErrorEvent: 'school.subject-next.plan-errors',
-      launcherFailedEvent: 'school.subject-next.launcher-failed',
-    });
-    const unitsById = new Map((projection?.units ?? []).map((u) => [u.unitId, u]));
-    const nowIso = projection?.nowIso ?? this.#clock().toISOString();
-    const cache = new Map();
-    const peek = (subject) => {
-      const section = (sections ?? []).find((s) => s.subject === subject);
-      const entry = section && !section.servedToday ? section.next ?? null : null;
-      if (!entry) return { unit: null, printable: false };
-      const unit = unitsById.get(entry.unitId) ?? null;
-      const view = unitView(unit ?? entry, subject);
-      if (entry.program || pausedExceptionFor(activeExceptions, entry.unitId)) {
-        return { unit: view, printable: false };
-      }
-      const printable = this.#readState({ entry, learnerId, nowIso }).then((state) => {
-        const resolution = {
-          kind: 'move', move: nextMove(unit ?? {}, state, remediationOptionsFor(entry)), state, unit, entry,
-        };
-        return offeredCard(resolution, { ...this.#bankOptions(unit), now: this.#clock() })
-          .actions.some(isPaper);
-      }).catch((error) => {
+  /** The first candidate that is paper; else the first candidate; else null. */
+  async #choose(learnerId, sections) {
+    let first = null;
+    for (const subject of this.#candidates(sections)) {
+      let look;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        look = await this.#look(learnerId, subject);
+      } catch (error) {
         this.#logger.warn?.('school.subject-next.lookahead-failed', {
           learnerId, subject, error: error?.message ?? String(error),
         });
-        return false;
-      });
-      return { unit: view, printable };
-    };
-    return (subject) => {
-      if (!cache.has(subject)) cache.set(subject, peek(subject));
-      return cache.get(subject);
-    };
-  }
-
-  async #readState({ entry, learnerId, nowIso }) {
-    if (entry.sessionId) return reduceSession(await this.#sessions.readEvents(entry.sessionId));
-    const { errors, event } = createEvent({
-      type: 'created', at: nowIso, sessionId: SYNTHETIC_SESSION_ID, learnerId, unitId: entry.unitId,
-    });
-    if (errors.length) throw new Error(`IssueSubjectNext: could not model a fresh session: ${errors.join('; ')}`);
-    return reduceSession([{ ...event, seq: 1 }]);
+        continue;
+      }
+      if (look.paper) return look;
+      first ??= look;
+    }
+    return first;
   }
 
   /** `ResolveAccessCode#bankOptions`'s rule: is this bank paper today? */
@@ -409,16 +440,14 @@ export class IssueSubjectNext {
     return subject;
   }
 
-  /** Drop the stamp — but only our own, never a newer tap's. */
-  #release(learnerId, stampedAt) {
-    if (this.#taps.get(learnerId) === stampedAt) this.#taps.delete(learnerId);
-  }
-
+  /** One line per tap: printed | debounced | failed (warn) | refused. */
   #log(answer, { learnerId, deviceId }) {
-    const event = answer.outcome === 'done' ? 'printed'
-      : (answer.outcome === 'debounced' ? 'debounced' : 'refused');
-    const level = answer.outcome === 'failed' ? 'warn' : 'info';
-    this.#logger[level]?.(`school.subject-next.${event}`, {
+    const { event, level } = {
+      done: { event: EVENTS.printed, level: 'info' },
+      debounced: { event: EVENTS.debounced, level: 'info' },
+      failed: { event: EVENTS.outcomeFailed, level: 'warn' },
+    }[answer.outcome] ?? { event: EVENTS.refused, level: 'info' };
+    this.#logger[level]?.(event, {
       learnerId,
       subject: answer.subject ?? null,
       unitId: answer.unit?.unitId ?? null,
