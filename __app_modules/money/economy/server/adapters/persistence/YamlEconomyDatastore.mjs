@@ -8,21 +8,38 @@
  * Appends are serialized per user and written atomically (staged, then
  * renamed). `withUserLock` runs a read-check-write on the same per-user queue;
  * an append made inside it writes straight through instead of queueing behind
- * the lock it is already holding.
+ * the lock it is already holding. "Inside" means while the lock's body is
+ * running: a timer it started that fires after the lock released queues
+ * like any other caller.
+ *
+ * A day shard that exists but does not parse is never appended to: treating
+ * it as empty would replace that day's history with one entry.
  */
 import path from 'path';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { dirExists, listEntries, loadYamlSafe, saveYaml, saveYamlToPathAtomic, ensureDir } from '#system/utils/FileIO.mjs';
+import { dirExists, fileExists, listEntries, loadYaml, loadYamlSafe, saveYaml, saveYamlToPathAtomic, ensureDir } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // One queue per user ledger, shared by every datastore instance in the
 // process (the ledger is one set of files however many instances read it).
 const queues = new Map(); // ledger key → tail promise
-const held = new AsyncLocalStorage(); // Set of ledger keys the current async context holds
+// The lock the current async context runs under: { key, live, parent }.
+// `live` turns false when that lock's body settles, so work it left behind
+// (a timer, an un-awaited promise) stops counting as inside it.
+const held = new AsyncLocalStorage();
+
+function holds(key) {
+  for (let t = held.getStore(); t; t = t.parent) if (t.live && t.key === key) return true;
+  return false;
+}
 
 function enqueue(key, fn) {
-  const run = (queues.get(key) ?? Promise.resolve())
-    .then(() => held.run(new Set([...(held.getStore() ?? []), key]), fn));
+  const run = (queues.get(key) ?? Promise.resolve()).then(() => {
+    const token = { key, live: true, parent: held.getStore() };
+    return held.run(token, async () => {
+      try { return await fn(); } finally { token.live = false; }
+    });
+  });
   const tail = run.catch(() => {});
   queues.set(key, tail);
   tail.then(() => { if (queues.get(key) === tail) queues.delete(key); });
@@ -30,7 +47,7 @@ function enqueue(key, fn) {
 }
 
 function withKey(key, fn) {
-  return held.getStore()?.has(key) ? Promise.resolve().then(fn) : enqueue(key, fn);
+  return holds(key) ? Promise.resolve().then(fn) : enqueue(key, fn);
 }
 
 export class YamlEconomyDatastore {
@@ -56,11 +73,24 @@ export class YamlEconomyDatastore {
     if (!dir) return null;
     return withKey(dir, () => {
       const base = path.join(dir, 'ledger', String(txn.at).slice(0, 10));
-      const list = loadYamlSafe(base) || [];
+      const list = this.#loadShardForAppend(`${base}.yml`);
       list.push(txn);
       saveYamlToPathAtomic(`${base}.yml`, list, { noRefs: true });
       return txn;
     });
+  }
+
+  #loadShardForAppend(file) {
+    if (!fileExists(file)) return [];
+    let list;
+    try {
+      list = loadYaml(file);
+    } catch (err) {
+      throw new InfrastructureError(`economy ledger shard is unreadable: ${file}`, { code: 'CORRUPT_LEDGER', file, cause: err.message });
+    }
+    if (list == null) return [];
+    if (!Array.isArray(list)) throw new InfrastructureError(`economy ledger shard is not a list: ${file}`, { code: 'CORRUPT_LEDGER', file });
+    return list;
   }
 
   /**
@@ -81,13 +111,15 @@ export class YamlEconomyDatastore {
     return loadYamlSafe(path.join(dir, 'ledger', day)) || [];
   }
 
-  readAllTransactions(userId) {
+  /** Every ledger entry, oldest shard first. `fromDay` (YYYY-MM-DD) skips earlier shards. */
+  readAllTransactions(userId, { fromDay = null } = {}) {
     const dir = this.#economyDir(userId);
     if (!dir) return [];
     const ledgerDir = path.join(dir, 'ledger');
     if (!dirExists(ledgerDir)) return [];
     return listEntries(ledgerDir)
       .filter((f) => /^\d{4}-\d{2}-\d{2}\.yml$/.test(f))
+      .filter((f) => fromDay == null || f.slice(0, 10) >= fromDay)
       .sort()
       .flatMap((f) => loadYamlSafe(path.join(ledgerDir, f.replace(/\.yml$/, ''))) || []);
   }

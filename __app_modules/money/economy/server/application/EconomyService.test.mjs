@@ -173,6 +173,99 @@ describe('multi-currency balances', () => {
     await expect(svc.getHistory('nobody')).rejects.toThrow();
     await expect(svc.getHistory(USER, { since: 'not a date' })).rejects.toThrow(/since/);
   });
+
+  it('getHistory keeps same-timestamp entries newest-appended first and keeps an unreadable time, logged', async () => {
+    const at = '2026-10-18T09:00:00.000Z';
+    writeDay('2026-10-18', [
+      { id: 'txn_a', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_b', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_bad', at: 'garbled', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+      { id: 'txn_c', at, kind: 'earn', delta: 1, action: 'x', source: 't', ref: null },
+    ]);
+    const warn = vi.fn();
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn, error: () => {}, debug: () => {} },
+    });
+    expect((await svc.getHistory(USER)).map((t) => t.id)).toEqual(['txn_c', 'txn_b', 'txn_a', 'txn_bad']);
+    expect(warn).toHaveBeenCalledWith('economy.history.unreadable-at', expect.objectContaining({ userId: USER, txnId: 'txn_bad' }));
+  });
+});
+
+describe('read-check-write under the user lock', () => {
+  const holdQueue = () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const held = new YamlEconomyDatastore({ configService }).withUserLock(USER, () => gate);
+    return { release, held };
+  };
+
+  it('two concurrent earns with one ref pay once', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const a = svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    const b = svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.map((r) => r.earned).sort()).toEqual([0, 5]);
+    expect(results.filter((r) => r.duplicate)).toHaveLength(1);
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toHaveLength(1);
+  });
+
+  it('concurrent earns respect the daily cap', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const runs = ['plex:1', 'plex:2', 'plex:3'].map((ref) => svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref }));
+    await new Promise((r) => setTimeout(r, 10));
+    release();
+    await held;
+    const results = await Promise.all(runs);
+    expect(results.reduce((s, r) => s + r.earned, 0)).toBe(10);
+    expect((await svc.getBalance(USER)).balance).toBe(10);
+  });
+
+  it('concurrent adjusts with one ref apply once', async () => {
+    const svc = makeService();
+    const { release, held } = holdQueue();
+    const a = svc.adjust(USER, { delta: 4, source: 'school-grade', ref: 'adj:1' });
+    const b = svc.adjust(USER, { delta: 4, source: 'school-grade', ref: 'adj:1' });
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.filter((r) => r.duplicate)).toHaveLength(1);
+    expect((await svc.getBalance(USER)).balance).toBe(4);
+  });
+
+  it('concurrent settles with one cumulative charge once', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    const { release, held } = holdQueue();
+    const a = svc.settleSession(USER, { sessionId: s.sessionId, coins: 3 });
+    const b = svc.settleSession(USER, { sessionId: s.sessionId, coins: 3 });
+    release();
+    await held;
+    await Promise.all([a, b]);
+    expect((await svc.getBalance(USER)).balance).toBe(7);
+  });
+
+  it('earn stamps the cap day and the ledger shard from one clock read', async () => {
+    const ticks = ['2026-10-19T23:59:59.999Z', '2026-10-20T00:00:00.001Z'];
+    let i = 0;
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date(ticks[Math.min(i++, 1)]),
+    });
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(res.earned).toBe(5);
+    const txns = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txns[0].at).toBe(ticks[0]);
+  });
 });
 
 describe('metered sessions', () => {

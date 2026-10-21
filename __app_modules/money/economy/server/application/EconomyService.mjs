@@ -3,6 +3,10 @@
  * enforcement; the datastore is dumb storage; the router is a thin shell.
  * Balances (silver, gold, gems) are derived by folding the append-only ledger;
  * wallet.yml is a cache. `balance` is always the silver figure.
+ *
+ * Every read-check-append (dedup, cap, balance clamp) runs inside the
+ * datastore's per-user lock: an append awaits the user's queue, so without
+ * the lock a second call could pass the same check before the first lands.
  */
 import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
@@ -59,7 +63,10 @@ export class EconomyService {
   }
 
   /**
-   * Every ledger entry, newest first. A pre-currency entry reads as silver.
+   * Every ledger entry, newest first; entries sharing a timestamp come
+   * last-appended first. A pre-currency entry reads as silver. An entry whose
+   * `at` does not parse is kept (sorted last, never dropped by `since`) and
+   * logged, so a bad row shows up instead of disappearing from the history.
    * @param {string} userId
    * @param {{since?: string|null}} [opts] - ISO time; keeps entries at or after it
    */
@@ -67,19 +74,28 @@ export class EconomyService {
     this.#assertUser(userId);
     const from = since == null ? -Infinity : Date.parse(since);
     if (Number.isNaN(from)) throw new ValidationError(`since must be an ISO timestamp, got ${since}`);
-    return this.#ds.readAllTransactions(userId)
-      .filter((t) => Date.parse(t.at) >= from)
-      .map((t) => ({ ...t, currency: t.currency ?? 'silver' }))
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const fromDay = since == null ? null : new Date(from).toISOString().slice(0, 10);
+    const rows = [];
+    for (const t of this.#ds.readAllTransactions(userId, { fromDay })) {
+      const ms = Date.parse(t.at);
+      if (Number.isNaN(ms)) this.#logger.warn('economy.history.unreadable-at', { userId, txnId: t.id ?? null, at: t.at ?? null });
+      else if (ms < from) continue;
+      rows.push({ txn: { ...t, currency: t.currency ?? 'silver' }, ms: Number.isNaN(ms) ? -Infinity : ms });
+    }
+    // Ledger order is append order; reversing first lets the stable sort keep
+    // the latest-appended entry ahead of an earlier one with the same time.
+    return rows.reverse().sort((x, y) => (y.ms > x.ms) - (y.ms < x.ms)).map((r) => r.txn);
   }
 
   async deposit(userId, { amount, note = null, source = 'admin' }) {
     this.#assertUser(userId);
     if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('deposit amount must be a positive integer');
-    await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note, at: this.#now() }));
-    const wallet = this.#snapshot(userId);
-    this.#logger.info('economy-deposit', { userId, amount, balance: wallet.balance });
-    return { userId, balance: wallet.balance };
+    return this.#ds.withUserLock(userId, async () => {
+      await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'deposit', delta: amount, action: 'parent-deposit', source, ref: note, at: this.#now() }));
+      const wallet = this.#snapshot(userId);
+      this.#logger.info('economy-deposit', { userId, amount, balance: wallet.balance });
+      return { userId, balance: wallet.balance };
+    });
   }
 
   /**
@@ -92,23 +108,25 @@ export class EconomyService {
     if (!Number.isInteger(delta)) throw new ValidationError('adjust delta must be an integer');
     if (typeof source !== 'string' || !source.trim()) throw new ValidationError('adjust source is required');
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('adjust ref is required');
-    const existing = this.#ds.readAllTransactions(userId).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
-    if (existing) {
-      if (existing.delta !== delta || existing.source !== source) {
-        throw new ValidationError(`adjust ref was already used: ${ref}`);
+    return this.#ds.withUserLock(userId, async () => {
+      const existing = this.#ds.readAllTransactions(userId).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
+      if (existing) {
+        if (existing.delta !== delta || existing.source !== source) {
+          throw new ValidationError(`adjust ref was already used: ${ref}`);
+        }
+        const wallet = this.#snapshot(userId);
+        return { userId, adjusted: 0, duplicate: true, txnId: existing.id, balance: wallet.balance };
       }
+      if (delta === 0) {
+        const wallet = this.#snapshot(userId);
+        return { userId, adjusted: 0, duplicate: false, txnId: null, balance: wallet.balance };
+      }
+      const txn = createTransaction({ id: this.#newTransactionId(), kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note, at: this.#now() });
+      await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
-      return { userId, adjusted: 0, duplicate: true, txnId: existing.id, balance: wallet.balance };
-    }
-    if (delta === 0) {
-      const wallet = this.#snapshot(userId);
-      return { userId, adjusted: 0, duplicate: false, txnId: null, balance: wallet.balance };
-    }
-    const txn = createTransaction({ id: this.#newTransactionId(), kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note, at: this.#now() });
-    await this.#ds.appendTransaction(userId, txn);
-    const wallet = this.#snapshot(userId);
-    this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
-    return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
+      this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
+      return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
+    });
   }
 
   /**
@@ -126,6 +144,8 @@ export class EconomyService {
    */
   async earn(userId, { action, source, ref = null, amount = null }) {
     this.#assertUser(userId);
+    // One clock read: the cap day and the shard the earn lands in must agree.
+    const now = this.#now();
     const config = this.#config();
     // Feature-off no-op: on an install with no economy policy at all (no
     // economy.yml → no `earn` catalog), silently skip rather than throw. Keeps
@@ -142,31 +162,33 @@ export class EconomyService {
     const cap = policy.daily_cap ?? Infinity;
     // NOTE: cap accounting is UTC-day (matches how txn.at is stamped). Blackout
     // windows are local-time; the split is intentional (see openSession).
-    const today = this.#now().slice(0, 10);
-    const todaysEarns = this.#ds.readLedgerDay(userId, today)
-      .filter((t) => t.kind === 'earn' && t.action === action);
-    // Replay guard: a completion event carrying a ref only ever pays out once
-    // per day. Bounds the damage of a retried/duplicated earn (coins cash out).
-    if (ref != null && todaysEarns.some((t) => t.ref === ref)) {
+    return this.#ds.withUserLock(userId, async () => {
+      const today = now.slice(0, 10);
+      const todaysEarns = this.#ds.readLedgerDay(userId, today)
+        .filter((t) => t.kind === 'earn' && t.action === action);
+      // Replay guard: a completion event carrying a ref only ever pays out once
+      // per day. Bounds the damage of a retried/duplicated earn (coins cash out).
+      if (ref != null && todaysEarns.some((t) => t.ref === ref)) {
+        const wallet = this.#snapshot(userId);
+        this.#logger.info('economy-earn-duplicate', { userId, action, ref, balance: wallet.balance });
+        // The already-paid transaction, so a caller holding a durable record of
+        // its own (School's work sessions) can store the same id on a retry
+        // instead of recording "paid, id unknown".
+        const existing = todaysEarns.find((t) => t.ref === ref);
+        return { userId, earned: 0, capped: false, duplicate: true, txnId: existing?.id ?? null, balance: wallet.balance };
+      }
+      const earnedToday = todaysEarns.reduce((s, t) => s + t.delta, 0);
+      const grant = Math.max(0, Math.min(reward, cap - earnedToday));
+      let txnId = null;
+      if (grant > 0) {
+        const txn = createTransaction({ id: this.#newTransactionId(), kind: 'earn', delta: grant, action, source, ref, at: now });
+        await this.#ds.appendTransaction(userId, txn);
+        txnId = txn.id ?? null;
+      }
       const wallet = this.#snapshot(userId);
-      this.#logger.info('economy-earn-duplicate', { userId, action, ref, balance: wallet.balance });
-      // The already-paid transaction, so a caller holding a durable record of
-      // its own (School's work sessions) can store the same id on a retry
-      // instead of recording "paid, id unknown".
-      const existing = todaysEarns.find((t) => t.ref === ref);
-      return { userId, earned: 0, capped: false, duplicate: true, txnId: existing?.id ?? null, balance: wallet.balance };
-    }
-    const earnedToday = todaysEarns.reduce((s, t) => s + t.delta, 0);
-    const grant = Math.max(0, Math.min(reward, cap - earnedToday));
-    let txnId = null;
-    if (grant > 0) {
-      const txn = createTransaction({ id: this.#newTransactionId(), kind: 'earn', delta: grant, action, source, ref, at: this.#now() });
-      await this.#ds.appendTransaction(userId, txn);
-      txnId = txn.id ?? null;
-    }
-    const wallet = this.#snapshot(userId);
-    this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
-    return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
+      this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
+      return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
+    });
   }
 
   async openSession(userId, { action, source }) {
@@ -199,34 +221,39 @@ export class EconomyService {
    */
   async settleSession(userId, { sessionId, coins }) {
     this.#assertUser(userId);
-    const wallet = this.#ds.readWallet(userId);
-    const session = wallet?.session;
-    if (!session || session.id !== sessionId) throw new ValidationError(`no open session ${sessionId}`);
-    const cumulative = Math.max(0, Math.floor(coins || 0));
-    const newlyConsumed = Math.max(0, cumulative - session.settled_coins);
-    const spend = Math.min(newlyConsumed, wallet.balance);
-    if (spend > 0) {
-      await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId, at: this.#now() }));
-    }
-    const updated = { ...session, last_settled_at: this.#now(), settled_coins: session.settled_coins + spend };
-    const next = this.#snapshot(userId, updated);
-    this.#logger.debug?.('economy-session-settle', { userId, sessionId, cumulative, spend, balance: next.balance });
-    return { userId, balance: next.balance, depleted: next.balance <= 0 };
+    return this.#ds.withUserLock(userId, async () => {
+      const wallet = this.#ds.readWallet(userId);
+      const session = wallet?.session;
+      if (!session || session.id !== sessionId) throw new ValidationError(`no open session ${sessionId}`);
+      const cumulative = Math.max(0, Math.floor(coins || 0));
+      const newlyConsumed = Math.max(0, cumulative - session.settled_coins);
+      const spend = Math.min(newlyConsumed, wallet.balance);
+      if (spend > 0) {
+        await this.#ds.appendTransaction(userId, createTransaction({ id: this.#newTransactionId(), kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId, at: this.#now() }));
+      }
+      const updated = { ...session, last_settled_at: this.#now(), settled_coins: session.settled_coins + spend };
+      const next = this.#snapshot(userId, updated);
+      this.#logger.debug?.('economy-session-settle', { userId, sessionId, cumulative, spend, balance: next.balance });
+      return { userId, balance: next.balance, depleted: next.balance <= 0 };
+    });
   }
 
   async closeSession(userId, { sessionId, coins = 0 }) {
     // Tolerate a session that was already stale-reaped (normal cleanup after a
     // crash): treat as a no-op success rather than surfacing an error.
-    const wallet = this.#ds.readWallet(userId);
-    if (!wallet?.session || wallet.session.id !== sessionId) {
-      const fresh = this.#snapshot(userId);
-      this.#logger.info('economy-session-close-noop', { userId, sessionId, balance: fresh.balance });
-      return { userId, balance: fresh.balance };
-    }
-    await this.settleSession(userId, { sessionId, coins });
-    const next = this.#snapshot(userId, null);
-    this.#logger.info('economy-session-close', { userId, sessionId, balance: next.balance });
-    return { userId, balance: next.balance };
+    // Locked so the tail settle and the session clear land as one step.
+    return this.#ds.withUserLock(userId, async () => {
+      const wallet = this.#ds.readWallet(userId);
+      if (!wallet?.session || wallet.session.id !== sessionId) {
+        const fresh = this.#snapshot(userId);
+        this.#logger.info('economy-session-close-noop', { userId, sessionId, balance: fresh.balance });
+        return { userId, balance: fresh.balance };
+      }
+      await this.settleSession(userId, { sessionId, coins });
+      const next = this.#snapshot(userId, null);
+      this.#logger.info('economy-session-close', { userId, sessionId, balance: next.balance });
+      return { userId, balance: next.balance };
+    });
   }
 
   #reapStale(userId) {

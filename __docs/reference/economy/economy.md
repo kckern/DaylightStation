@@ -34,7 +34,12 @@ Writes to a user's ledger are serialized through one per-user queue and land
 atomically (staged file, then rename), so concurrent appends never lose an entry
 or leave a half-written day file. `withUserLock(userId, fn)` holds that queue for
 a read-check-write (a purchase that checks a balance before it debits); an append
-made inside the lock writes straight through rather than waiting on itself.
+made inside the lock writes straight through rather than waiting on itself, but
+only while the lock's body is running: a timer it left behind queues normally.
+`earn`, `adjust`, `deposit`, `settleSession` and `closeSession` each run their
+whole check-and-append inside the lock, so a retried earn with the same ref
+cannot pay twice. A day file that exists but does not parse is never appended
+to: the append fails (`CORRUPT_LEDGER`) and the file stays as it was.
 
 Household policy lives at `data/household/config/economy.yml` (auto-loaded as the
 `economy` household app config).
@@ -65,10 +70,10 @@ Household policy lives at `data/household/config/economy.yml` (auto-loaded as th
 | `deposit`, `earn` | > 0 | parent deposit; rewards |
 | `spend`, `withdraw` | < 0 | arcade drain; cash-out |
 | `adjust` | ≠ 0, either sign | auditable reconciliation (may push the ledger below zero) |
-| `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry |
+| `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry. The ledger does not enforce the pairing; the week close writes both halves under the user lock |
 | `pass` | exactly 0 | voucher marker; the coin it cost is a separate `spend` |
 
-## Transaction types
+## Discrete vs metered entries
 
 - **Discrete** — one atomic entry: parent deposit, piano lesson reward.
 - **Metered** — arcade play. Uses **hold-and-settle**: `openSession` places a

@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
 import { YamlEconomyDatastore } from "./YamlEconomyDatastore.mjs";
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const USER = 'test-user';
 let USER_DIR;
@@ -12,6 +13,7 @@ const configService = {
   getUserDir: () => USER_DIR,
 };
 const makeStore = () => new YamlEconomyDatastore({ configService });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const txn = (n, over = {}) => ({ id: `txn_${n}`, at: '2026-10-19T10:00:00.000Z', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null, currency: 'silver', ...over });
 
 beforeEach(() => { USER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'econ-ds-')); });
@@ -54,9 +56,8 @@ describe('YamlEconomyDatastore', () => {
 });
 
 describe('serialized, atomic appends', () => {
-  it('20 concurrent appends all land in one valid file', async () => {
+  it('writes atomically: 20 appends from two instances leave one valid file and no staging file', async () => {
     const ds = makeStore();
-    // Two instances share nothing but the file: the queue is per user, not per instance.
     const other = makeStore();
     await Promise.all(Array.from({ length: 20 }, (_, i) => (i % 2 ? ds : other).appendTransaction(USER, txn(i))));
     const file = path.join(USER_DIR, 'apps', 'economy', 'ledger', '2026-10-19.yml');
@@ -99,5 +100,47 @@ describe('serialized, atomic appends', () => {
     await expect(ds.withUserLock(USER, async () => { throw new Error('boom'); })).rejects.toThrow('boom');
     await ds.appendTransaction(USER, txn('after'));
     expect(ds.readAllTransactions(USER).map((t) => t.id)).toEqual(['txn_after']);
+  });
+
+  it('an append from a timer that outlives its lock goes through the queue', async () => {
+    const ds = makeStore();
+    let late;
+    await ds.withUserLock(USER, () => {
+      late = new Promise((resolve, reject) => {
+        setTimeout(() => ds.appendTransaction(USER, txn('late')).then(resolve, reject), 10);
+      });
+    });
+    // A second lock, taken after the first released, holds the queue past the timer.
+    let seenAtEnd;
+    const second = ds.withUserLock(USER, async () => {
+      await sleep(40);
+      seenAtEnd = ds.readAllTransactions(USER).length;
+    });
+    await second;
+    await late;
+    expect(seenAtEnd).toBe(0);
+    expect(ds.readAllTransactions(USER).map((t) => t.id)).toEqual(['txn_late']);
+  });
+});
+
+describe('a corrupt day shard', () => {
+  it('refuses the append and leaves the file as it was', async () => {
+    const ds = makeStore();
+    const dir = path.join(USER_DIR, 'apps', 'economy', 'ledger');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, '2026-10-19.yml');
+    const broken = '- id: txn_old\n  delta: [unclosed\n';
+    fs.writeFileSync(file, broken);
+    await expect(ds.appendTransaction(USER, txn('new'))).rejects.toThrow(InfrastructureError);
+    expect(fs.readFileSync(file, 'utf8')).toBe(broken);
+  });
+});
+
+describe('readAllTransactions', () => {
+  it('skips shards before fromDay', async () => {
+    const ds = makeStore();
+    await ds.appendTransaction(USER, txn('old', { at: '2026-10-17T10:00:00.000Z' }));
+    await ds.appendTransaction(USER, txn('new', { at: '2026-10-18T10:00:00.000Z' }));
+    expect(ds.readAllTransactions(USER, { fromDay: '2026-10-18' }).map((t) => t.id)).toEqual(['txn_new']);
   });
 });
