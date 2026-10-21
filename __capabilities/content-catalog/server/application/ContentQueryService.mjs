@@ -281,6 +281,14 @@ export class ContentQueryService extends IContentQueryPort {
       return;
     }
 
+    // Direct id reference ("plex:123", bare digits => plex, UUID => immich),
+    // detected on the ORIGINAL text before any alias prefix is stripped. Same
+    // shared parser search() uses; the lookup runs alongside the text search.
+    const idMatch = this.#contentCatalog.parseDirectReference(query.text);
+    if (idMatch) {
+      this.#logger.info?.('content-query.searchStream.direct-id', { text: query.text, source: idMatch.source, id: idMatch.id });
+    }
+
     // Parse prefix from query text (e.g., "music:beethoven" -> { prefix: 'music', term: 'beethoven' })
     const { prefix, term } = this.#parseContentQuery(query.text);
 
@@ -345,6 +353,16 @@ export class ContentQueryService extends IContentQueryPort {
       }
     });
 
+    // Direct id lookup rides the same race. It is not an adapter, so it never
+    // touches `pending`; its item is scored as an exact id match (leads the
+    // list) and is deduped against the adapter's own copy via emittedIds.
+    if (idMatch) {
+      adapterPromises.push((async () => {
+        const item = await this.#lookupById(idMatch.source, idMatch.id, warnings);
+        return { idLookup: true, item };
+      })());
+    }
+
     // Race all promises and yield results as they complete
     const remaining = [...adapterPromises];
     while (remaining.length > 0) {
@@ -354,6 +372,24 @@ export class ContentQueryService extends IContentQueryPort {
 
       // Remove completed promise
       remaining.splice(winner.index, 1);
+
+      if (winner.result.idLookup) {
+        const { item } = winner.result;
+        if (item) {
+          const key = `${item.source ?? idMatch.source}|${item.id}`;
+          if (!emittedIds.has(key)) {
+            emittedIds.add(key);
+            const { _idMatch, ...visible } = item;
+            yield {
+              event: 'results',
+              source: item.source ?? idMatch.source,
+              items: [{ ...visible, score: RelevanceScoringService.score(item, query.text) }],
+              pending: [...pending]
+            };
+          }
+        }
+        continue;
+      }
 
       const { source, result, skipped, error } = winner.result;
       pending.delete(source);

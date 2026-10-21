@@ -285,6 +285,15 @@ literal text: `pending` with no sources, then `complete` with a warning
 (`GET …/search` answers the same warning with no items). Text such as
 `mission:impossible` still searches everywhere.
 
+Id-shaped text is also looked up directly, alongside the text search (the
+same shared parser `GET …/search` uses): `plex:697495` and a bare number
+`697495` (digits mean a Plex rating key; the endpoint's 2-character minimum is
+the only length floor) and a bare UUID (Immich). The resolved item streams as
+an extra `results` event for its source, scored as an exact id match so it
+leads the list, with `matchReason: "id-lookup"`; if the text search returns the
+same id it is not repeated. A missing id adds nothing. Logged as
+`content-query.searchStream.direct-id`.
+
 **App behavior requirement:** the app MUST use `/stream` for live search.
 
 #### `GET /api/v1/media/config`
