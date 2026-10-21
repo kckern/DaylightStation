@@ -6,6 +6,7 @@
  */
 
 import { STORY_TIME_PROGRAM_ID } from "../domain/storyTime.mjs";
+import { SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE } from "../domain/schoolDebrief.mjs";
 import {
   BOOK_LOG_PROGRAM_ID, DEFAULT_BOOK_LOG_SUBJECT, DEFAULT_BOOK_LOG_TITLE, BOOK_LOG_SHELF_UNIT_ID,
 } from "../domain/bookLog.mjs";
@@ -120,6 +121,21 @@ export function appendAssignedProgramEntries(plan, assignment) {
         title: enrollment.title ?? 'Story time',
         subject: enrollment.subject ?? 'english',
         program: STORY_TIME_PROGRAM_ID,
+        programInstance: 'daily',
+        schedule: enrollment.schedule,
+        cadence: cadenceOf(enrollment),
+        elective: enrollment.elective === true,
+      }));
+    }
+    if (enrollment?.programId === SCHOOL_DEBRIEF_PROGRAM_ID) {
+      // One debrief a day per learner (`corpusId: null` is the dedupe key).
+      // Without this entry the agenda never asks the launcher, so an
+      // enrolment validates and then shows no card and no panel code.
+      plan.entries.push(baseEntry({
+        unitId: SCHOOL_DEBRIEF_UNIT_ID,
+        title: enrollment.title ?? SCHOOL_DEBRIEF_TITLE,
+        subject: enrollment.subject ?? 'writing',
+        program: SCHOOL_DEBRIEF_PROGRAM_ID,
         programInstance: 'daily',
         schedule: enrollment.schedule,
         cadence: cadenceOf(enrollment),

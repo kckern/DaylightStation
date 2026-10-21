@@ -77,3 +77,20 @@ describe('appendAssignedProgramEntries — optional programs', () => {
     ]);
   });
 });
+
+describe('appendAssignedProgramEntries — the after-school debrief', () => {
+  // Found live 2026-10-21 at rollout: the enrolment validated and the launcher
+  // registered, but with no branch here the agenda never consulted it — no
+  // card, no panel code. The same gap the sentence ladder hit on 2026-09-09.
+  it('turns a school-debrief enrolment into one daily program entry', () => {
+    const schedule = { daysOfWeek: [1, 2, 3, 4, 5], except: [{ from: '2026-11-11', to: '2026-11-11' }] };
+    const out = appendAssignedProgramEntries(plan(), {
+      programs: [{ programId: 'school-debrief', corpusId: null, subject: 'writing', title: 'After-school debrief', schedule }],
+    });
+    expect(out.entries).toHaveLength(1);
+    expect(out.entries[0]).toMatchObject({
+      unitId: 'school-debrief:daily', program: 'school-debrief', programInstance: 'daily',
+      subject: 'writing', title: 'After-school debrief', schedule,
+    });
+  });
+});
