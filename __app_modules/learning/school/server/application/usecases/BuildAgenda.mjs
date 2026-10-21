@@ -32,7 +32,7 @@
 import { PlanProjection } from "../PlanProjection.mjs";
 import { mintToken } from "../../domain/sessions/tokens.mjs";
 import { mintAccessCode } from "../../domain/sessions/accessCode.mjs";
-import { agendaDocument, noticeDocument, reviewNoteLines } from "../../domain/documents/receipts.mjs";
+import { agendaDocument, agendaEconomyLine, noticeDocument, reviewNoteLines } from "../../domain/documents/receipts.mjs";
 import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from "../../domain/studyDay.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { ensureSession, nextMove, remediationOptionsFor } from "./offerSession.mjs";
@@ -50,6 +50,13 @@ const HOUR_MS = 3_600_000;
 // calls it without one (its own default) — kept in step so "yesterday's
 // note" and "served today" roll over on the exact same instant.
 const BOUNDARY_HOUR = 4;
+
+/**
+ * How long the agenda waits for the economy line. The line is decoration on a
+ * sheet whose job is the work: a bank that is slow to answer costs the line,
+ * never the child's morning paper.
+ */
+const DEFAULT_ECONOMY_TIMEOUT_MS = 2_000;
 
 /**
  * How many times a printed reading code may be typed before it is spent.
@@ -98,6 +105,7 @@ export class BuildAgenda {
   #sessions; #tokens; #launchers; #timezone; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
   #selfService; #languageReelService; #previewOnly; #planProjection; #accessCodeMaxUses;
+  #economy; #economyTimeoutMs; #scheduler;
 
   /**
    * @param {object} deps
@@ -126,6 +134,16 @@ export class BuildAgenda {
    *   for the "Notes for you" section (spec R7): a grown-up's resolved-item
    *   notes for this learner, from the current or previous study day.
    *   Optional — absent, the agenda simply carries no notes section.
+   * @param {{weekSummary: (learnerId: string) => Promise<{silver: number,
+   *   next: {title: string, reward: {silver?: number}|null}|null}|null>}|null} [deps.economy]
+   *   source of the economy line at the top of the paper (`agendaEconomyLine`).
+   *   Optional: absent, the agenda is byte-identical to one built before the
+   *   line existed. A throw, a timeout or an unknown silver figure all mean no
+   *   line, logged at warn as `school.agenda.economy-failed` for the first two.
+   * @param {number} [deps.economyTimeoutMs] - how long to wait for it (2 s)
+   * @param {{withDeadline: Function}|null} [deps.scheduler] - bounds the
+   *   economy call (this layer holds no timers of its own). Composition always
+   *   passes one; without it the call is awaited unbounded.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -148,6 +166,7 @@ export class BuildAgenda {
     // agree); defaulted so no caller is obliged to build one, and none of them
     // can quietly go back to hand-assembling the inputs.
     planProjection = null,
+    economy = null, economyTimeoutMs = DEFAULT_ECONOMY_TIMEOUT_MS, scheduler = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -164,6 +183,9 @@ export class BuildAgenda {
     this.#reviewQueue = reviewQueue;
     this.#logger = logger;
     this.#teacherNotes = teacherNotes;
+    this.#economy = typeof economy?.weekSummary === 'function' ? economy : null;
+    this.#economyTimeoutMs = economyTimeoutMs;
+    this.#scheduler = typeof scheduler?.withDeadline === 'function' ? scheduler : null;
     if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
       throw new Error('BuildAgenda schoolCalcMode must be off, issue, or preview');
     }
@@ -749,7 +771,10 @@ export class BuildAgenda {
       } };
     });
 
-    const notes = await this.#collectNotes(learnerId, now.getTime());
+    const [notes, economyLine] = await Promise.all([
+      this.#collectNotes(learnerId, now.getTime()),
+      this.#economyLine(learnerId),
+    ]);
 
     return {
       learnerId,
@@ -769,6 +794,7 @@ export class BuildAgenda {
         bulkSubjects: bulkToken ? offers.filter(offer => offer.printable).map(offer => offer.subject) : null,
         readingToken, readingAccessCode, readingFeature, readingSubject,
         notes,
+        ...(economyLine ? { economyLine } : {}),
       }),
     };
   }
@@ -846,6 +872,31 @@ export class BuildAgenda {
     } catch (err) {
       this.#logger.warn?.('school.agenda.notes-failed', { learnerId, error: err?.message ?? String(err) });
       return [];
+    }
+  }
+
+  /**
+   * The economy line: this week's silver and the next item. Never blocks the
+   * agenda, the same degrade as `#collectNotes`, plus a deadline: the injected
+   * scheduler races the call against `economyTimeoutMs`, and a timeout is
+   * reported exactly like a throw. An unknown silver figure prints nothing rather than a zero.
+   */
+  async #economyLine(learnerId) {
+    if (!this.#economy) return null;
+    try {
+      const asked = Promise.resolve().then(() => this.#economy.weekSummary(learnerId));
+      const ms = this.#economyTimeoutMs;
+      const summary = await (this.#scheduler
+        ? this.#scheduler.withDeadline(asked, {
+          milliseconds: ms,
+          description: 'economy summary',
+          errorFactory: () => new Error(`economy summary timed out after ${ms} ms`),
+        })
+        : asked);
+      return agendaEconomyLine(summary);
+    } catch (err) {
+      this.#logger.warn?.('school.agenda.economy-failed', { learnerId, error: err?.message ?? String(err) });
+      return null;
     }
   }
 

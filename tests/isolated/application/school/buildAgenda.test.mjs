@@ -4,6 +4,7 @@ import { CurriculumAccess } from "../../../../__app_modules/learning/school/serv
 import { validateDocument } from "../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
 import { isSchoolToken } from "../../../../__app_modules/learning/school/server/domain/sessions/tokens.mjs";
 import { studyDayWindow } from "../../../../__app_modules/learning/school/server/domain/studyDay.mjs";
+import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { BOOK_LOG_PROGRAM_ID } from "../../../../__app_modules/learning/school/server/domain/bookLog.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
@@ -38,7 +39,7 @@ const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
   timezone = null, schoolCalcStudies = null, schoolCalcMode = 'off',
   selfService = null, subjectTokenTtlHours, rng = seededRng(7), tokenRegistry = null,
-  logger = silentLogger,
+  logger = silentLogger, economy = undefined, economyTimeoutMs = undefined, scheduler = undefined,
 } = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -54,6 +55,9 @@ const build = ({
     schoolCalcStudies, schoolCalcMode, selfService,
     ...(subjectTokenTtlHours === undefined ? {} : { subjectTokenTtlHours }),
     clock: clock.now, rng, newSessionId: sequentialIds(),
+    ...(economy === undefined ? {} : { economy }),
+    ...(economyTimeoutMs === undefined ? {} : { economyTimeoutMs }),
+    ...(scheduler === undefined ? {} : { scheduler }),
     logger,
   });
 };
@@ -981,5 +985,87 @@ describe('remediation cap: two rounds, then a grown-up', () => {
     await fail('ses_a');
     clock.advanceDays(3);
     expect(offerFor(await useCase.execute({ learnerId: 'kid1' }), 'math').label).toContain('try again with a fresh sheet');
+  });
+});
+
+// The economy line (School Economy Slice 1, C4): the week's silver and the
+// next item, printed first. It is decoration on a sheet whose job is the work,
+// so nothing about it may cost a child their paper.
+describe('the economy line', () => {
+  const recordingLogger = () => {
+    const warnings = [];
+    return { warnings, logger: { ...silentLogger, warn: (event, data) => warnings.push({ event, data }) } };
+  };
+
+  it('opens the agenda with the week\'s silver and the next item', async () => {
+    const asked = [];
+    build({ economy: { weekSummary: async (id) => { asked.push(id); return { silver: 7, next: { title: 'Math', reward: null } }; } } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(asked).toEqual(['kid1']);
+    expect(document.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
+    expect(validateDocument(document).errors).toEqual([]);
+  });
+
+  it('adds the reward when the next item pays silver', async () => {
+    build({ economy: { weekSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks[0].md).toBe('This week: 7 silver · Next: Math +2');
+  });
+
+  it('prints the silver alone when there is no next item', async () => {
+    build({ economy: { weekSummary: async () => ({ silver: 7, next: null }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks[0].md).toBe('This week: 7 silver');
+  });
+
+  it('prints no line when the silver is unknown', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    build({ economy: { weekSummary: async () => ({ silver: null, next: { title: 'Math', reward: null } }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document).toEqual(without.document);
+  });
+
+  it('a throwing economy means no line, no throw, and a warning', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    const { warnings, logger } = recordingLogger();
+    build({ logger, economy: { weekSummary: async () => { throw new Error('bank is down'); } } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document).toEqual(without.document);
+    expect(warnings).toContainEqual({
+      event: 'school.agenda.economy-failed', data: { learnerId: 'kid1', error: 'bank is down' },
+    });
+  });
+
+  it('a slow economy is not waited for: no line, and a warning', async () => {
+    build();
+    const without = await useCase.execute({ learnerId: 'kid1' });
+    const { warnings, logger } = recordingLogger();
+    build({
+      logger, economyTimeoutMs: 20, scheduler: new NodeApplicationScheduler(),
+      economy: { weekSummary: () => new Promise(() => {}) },
+    });
+    const started = Date.now();
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(document).toEqual(without.document);
+    expect(warnings.map((w) => w.event)).toContain('school.agenda.economy-failed');
+    expect(warnings.find((w) => w.event === 'school.agenda.economy-failed').data.error).toMatch(/timed out after 20 ms/);
+  });
+
+  it('hands the call to the injected scheduler with the configured deadline', async () => {
+    const deadlines = [];
+    const scheduler = { withDeadline: (work, opts) => { deadlines.push(opts.milliseconds); return work; } };
+    build({ scheduler, economy: { weekSummary: async () => ({ silver: 3, next: null }) } });
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(deadlines).toEqual([2000]);
+    expect(document.blocks[0].md).toBe('This week: 3 silver');
+  });
+
+  it('without the port, the agenda carries no line', async () => {
+    build();
+    const { document } = await useCase.execute({ learnerId: 'kid1' });
+    expect(document.blocks.some((b) => /This week:/.test(b.md ?? ''))).toBe(false);
   });
 });

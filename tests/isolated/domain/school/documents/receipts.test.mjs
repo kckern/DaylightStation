@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { agendaDocument, resultDocument, noticeDocument, slugify } from "../../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
+import { agendaDocument, agendaEconomyLine, resultDocument, noticeDocument, slugify } from "../../../../../__app_modules/learning/school/server/domain/documents/receipts.mjs";
 import { validateDocument } from "../../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
+import { readFileSync } from 'node:fs';
 
 const valid = (doc) => {
   const { errors } = validateDocument(doc);
@@ -506,5 +507,82 @@ describe('noticeDocument', () => {
   it('carries a recovery action when one is offered', () => {
     const doc = noticeDocument({ id: 'print-failed', headline: 'The printer is not answering', actions: [{ token: 'sch:REC', label: 'Try printing again' }] });
     expect(actionsOf(doc)).toHaveLength(1);
+  });
+});
+
+// The economy line (School Economy Slice 1, C4). A household without the
+// economy wired gets exactly the paper it got before the line existed, so the
+// "absent" half of these tests compares against output captured at the parent
+// commit, not against today's code with the argument switched off.
+describe('agendaDocument — the economy line', () => {
+  const baseline = JSON.parse(readFileSync(new URL('./fixtures/agenda-before-economy-line.json', import.meta.url), 'utf8'));
+
+  it.each(baseline.cases.map((c) => [c.name, c]))('without it, prints exactly what it printed before (%s)', (_name, c) => {
+    expect(agendaDocument(c.args)).toEqual(c.document);
+    expect(JSON.stringify(agendaDocument({ ...c.args, economyLine: null }))).toBe(JSON.stringify(c.document));
+  });
+
+  it('with it, the line is the first block, centred', () => {
+    const c = baseline.cases[2];
+    const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver · Next: Math' }));
+    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
+    expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
+  });
+
+  it('opens the "nothing assigned" sheet too', () => {
+    const c = baseline.cases[1];
+    const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver' }));
+    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver', align: 'center' });
+    expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
+  });
+
+  it('a blank line is no line', () => {
+    const c = baseline.cases[2];
+    expect(agendaDocument({ ...c.args, economyLine: '   ' })).toEqual(c.document);
+  });
+});
+
+describe('agendaEconomyLine', () => {
+  it('names the silver and the next item', () => {
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: null } })).toBe('This week: 7 silver · Next: Math');
+  });
+
+  it('adds the reward only when it pays silver', () => {
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } })).toBe('This week: 7 silver · Next: Math +2');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 0 } } })).toBe('This week: 7 silver · Next: Math');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: {} } })).toBe('This week: 7 silver · Next: Math');
+  });
+
+  it('prints the silver alone when there is no next item', () => {
+    expect(agendaEconomyLine({ silver: 7, next: null })).toBe('This week: 7 silver');
+    expect(agendaEconomyLine({ silver: 0 })).toBe('This week: 0 silver');
+    expect(agendaEconomyLine({ silver: 7, next: { title: '  ', reward: { silver: 2 } } })).toBe('This week: 7 silver');
+  });
+
+  it('prints nothing when the silver is unknown, never a made-up zero', () => {
+    expect(agendaEconomyLine({ silver: null, next: { title: 'Math', reward: null } })).toBeNull();
+    expect(agendaEconomyLine({ silver: undefined })).toBeNull();
+    expect(agendaEconomyLine({ silver: Number.NaN })).toBeNull();
+    expect(agendaEconomyLine({ silver: '7' })).toBeNull();
+    expect(agendaEconomyLine(null)).toBeNull();
+  });
+
+  it('shortens a long title with an ellipsis so the line stays on one row', () => {
+    const line = agendaEconomyLine({
+      silver: 120, next: { title: 'Adding and Subtracting Fractions with Unlike Denominators', reward: { silver: 12 } },
+    });
+    expect(line).toBe('This week: 120 silver · Next: Adding and… +12');
+    expect(line.length).toBeLessThanOrEqual(50);
+  });
+
+  it('cuts a title with no break in it mid-word', () => {
+    const line = agendaEconomyLine({ silver: 7, next: { title: 'Supercalifragilisticexpialidocious', reward: null } });
+    expect(line).toBe('This week: 7 silver · Next: Supercalifragilistice…');
+    expect(line.length).toBe(50);
+  });
+
+  it('drops the next item rather than print a stub of it', () => {
+    expect(agendaEconomyLine({ silver: 10 ** 18, next: { title: 'Equivalent Fractions', reward: { silver: 999999 } } }))
+      .toBe(`This week: ${10 ** 18} silver`);
   });
 });

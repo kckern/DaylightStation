@@ -824,3 +824,21 @@ describe('the artifacts a child is handed', () => {
     expect(text).toContain('%%EOF');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The economy line (School Economy Slice 1, C4): the composed port reads the
+// real wallet and School's own "next" preview, and the line opens the tape.
+// ---------------------------------------------------------------------------
+
+describe('the agenda opens with the week\'s silver', () => {
+  it('prints the bank figure and the next item first, under the name', async () => {
+    const card = await h.scanCard();
+    expect(card.printed).toBe(true);
+    const lines = h.lastReceiptText().split('\n').map((l) => l.trim()).filter(Boolean);
+    // The tape's first line under the name. The wallet is real and empty
+    // (0 is a figure the bank answered, not a guess), and the title is the
+    // preview's, shortened at a word to keep the line on one row.
+    expect(lines[0]).toBe('TEST LEARNER');
+    expect(lines[1]).toBe('This week: 0 silver · Next: Equivalent Fractions…');
+  });
+});

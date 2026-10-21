@@ -369,6 +369,14 @@ coin, price, reason }` (the refusal code as `reason`).
   `CloseSessionOutcome` stays off (`lifecycle.economy.enabled: false` in
   `school.yml`): school work is paid by PayoutService only, and turning both on
   would pay a unit twice.
+- **Read (school agenda tape):** the morning agenda opens with `This week: 7
+  silver · Next: Math`. School's composition builds a `weekSummary(learnerId)`
+  port over `economyService.getBalance(id).balances.silver` (the figure the
+  Portal bank strip shows and the week close converts) and School's own "next"
+  preview; it imports no economy code. Read at print time with a 2 s bound. An
+  economy failure, a timeout or an unknown figure prints no line and never
+  delays or breaks the tape. See the school reference, "The first line under
+  the name is the week's silver".
 - **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
   session and drains coins as the timer runs, surfacing the balance in the
   EmulatorConsole overlay (`session.coins`) and its `depleted` state

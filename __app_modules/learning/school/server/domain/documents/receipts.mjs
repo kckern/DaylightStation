@@ -530,6 +530,53 @@ function appendNoteLines(blocks, noteLines) {
 }
 
 /**
+ * The longest economy line, in characters. The canvas receipt draws body text
+ * in 24px Roboto Condensed across 530px, and a line of this shape measures
+ * about 10px a character (55 characters came to 516-559px), so 50 keeps it on
+ * one row. Only the title is shortened to fit: the silver and the reward are
+ * the point of the line. The renderer wraps a longer line rather than losing
+ * it, so a miss costs a second row, never the text.
+ */
+const ECONOMY_LINE_MAX_CHARS = 50;
+
+/**
+ * The one economy line at the top of the agenda: `This week: 7 silver · Next:
+ * Math +2`. Pure: the caller fetches the figures.
+ *
+ * - Unknown silver (absent, not a finite number) is NO line, even when there
+ *   is a next item. A line that read "0 silver" because the bank did not
+ *   answer would tell a child their week was wasted.
+ * - No next item (or a blank title) prints the silver alone.
+ * - ` +N` only when the reward pays silver (`reward.silver > 0`).
+ * - The `·` is the separator the rest of the agenda already prints (the focus
+ *   heading, the taxonomy rows), so the receipt font is known to carry it.
+ *
+ * @param {{silver?: number|null, next?: {title?: string, reward?: {silver?: number}|null}|null}|null} summary
+ * @returns {string|null}
+ */
+export function agendaEconomyLine(summary) {
+  const silver = summary?.silver;
+  if (typeof silver !== 'number' || !Number.isFinite(silver)) return null;
+  const head = `This week: ${silver} silver`;
+  const title = isNonEmptyString(summary?.next?.title) ? summary.next.title.trim() : null;
+  if (!title) return head;
+  const pays = summary.next.reward?.silver;
+  const tail = typeof pays === 'number' && Number.isFinite(pays) && pays > 0 ? ` +${pays}` : '';
+  const stem = `${head} · Next: `;
+  const room = ECONOMY_LINE_MAX_CHARS - stem.length - tail.length;
+  // Too little room for a word worth reading: say the silver and stop.
+  if (room < 4) return head;
+  return `${stem}${title.length <= room ? title : shorten(title, room)}${tail}`;
+}
+
+/** `title` cut to `room` characters, ellipsis included, at a word if one is near. */
+function shorten(title, room) {
+  const cut = title.slice(0, room - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space >= room / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/**
  * The agenda: what this learner can do right now, one subject section at a
  * time (spec §6.2 v2 — sectioned by subject rather than a flat list of unit
  * entries).
@@ -595,6 +642,10 @@ function appendNoteLines(blocks, noteLines) {
  *   the gutter glyph and the breadcrumb. An enrollment may place it anywhere,
  *   so this is never hardcoded to English.
  * @param {string} [args.footer]
+ * @param {string|null} [args.economyLine] the week's silver and the next item
+ *   (`agendaEconomyLine`), printed centred as the FIRST block, above the work
+ *   and on the "nothing assigned" sheet too. Absent or blank, the receipt is
+ *   byte-identical to one built before the line existed.
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
@@ -604,7 +655,7 @@ export function agendaDocument({
   bulkToken = null, bulkAccessCode = null, bulkSubjects = null,
   readingToken = null, readingAccessCode = null,
   readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
-  footer = null, notes = [],
+  footer = null, notes = [], economyLine = null,
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -618,6 +669,9 @@ export function agendaDocument({
   // stray receipt up later, not when reading the top of a fresh one. At the
   // top it was the first thing between the child's name and their work.
   const printedAt = formatPrintedAt(generatedAt, timeZone);
+  // Pushed before the empty-plan return, so a day with nothing assigned still
+  // shows what the week has earned.
+  if (isNonEmptyString(economyLine)) blocks.push({ ...text(economyLine.trim()), align: 'center' });
 
   const noteLines = (Array.isArray(notes) ? notes : []).filter(isNonEmptyString);
   const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');

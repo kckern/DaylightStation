@@ -43,6 +43,7 @@ import { RetainedReceiptPrinter } from "../adapters/documents/RetainedReceiptPri
 import { ReceiptPngArtifactRenderer } from "../adapters/documents/ReceiptPngArtifactRenderer.mjs";
 import { UnavailableSchoolMediaDispatcher } from "../adapters/UnavailableSchoolMediaDispatcher.mjs";
 import { SchoolServiceBankReader } from "../adapters/SchoolServiceBankReader.mjs";
+import { NodeApplicationScheduler } from "#adapters/scheduling/NodeApplicationScheduler.mjs";
 import { SchoolTeacherConfigSource } from "../adapters/SchoolTeacherConfigSource.mjs";
 import { HouseholdSchoolRoster } from "../adapters/HouseholdSchoolRoster.mjs";
 import { YamlCurriculumDatastore } from "../adapters/persistence/YamlCurriculumDatastore.mjs";
@@ -187,7 +188,9 @@ function cryptoRng(crypto) {
  * @param {object} deps.configService
  * @param {string|null} [deps.householdId]
  * @param {object} deps.schoolService - the existing grading engine + bank reader
- * @param {object} [deps.economyService]
+ * @param {object} [deps.economyService] - also the source of the agenda's
+ *   economy line: its `getBalance(userId).balances.silver` is the week's silver.
+ *   Read through duck typing only; School imports no economy code.
  * @param {object} [deps.userService]
  * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
  *   Present means the `language` program is a live launcher, reachable from a
@@ -881,6 +884,32 @@ export async function createSchoolLifecycle({
   practiceAssessments?.configureProjection?.(planProjection);
 
   // --- use cases -------------------------------------------------------------
+  // The agenda's economy line ("This week: 7 silver · Next: Math"). Silver is
+  // the bank figure the Portal strip shows; "next" is the same dry-run preview
+  // `GET /self-service/learners/:id/next` answers. `issueSubjectNext` is
+  // composed further down, so it is read when an agenda prints, never here. A
+  // failed preview still prints the silver; a failed balance prints no line
+  // (BuildAgenda catches it). No `getBalance`, no port, no line.
+  const agendaEconomy = typeof economyService?.getBalance === 'function' ? {
+    weekSummary: async (learnerId) => {
+      const [wallet, next] = await Promise.all([
+        economyService.getBalance(learnerId),
+        Promise.resolve()
+          .then(() => issueSubjectNext.preview({ learnerId }))
+          .then((preview) => (preview?.unit?.title
+            ? { title: preview.unit.title, reward: preview.reward ?? null }
+            : null))
+          .catch((error) => {
+            logger.warn?.('school.agenda.economy-next-failed', { learnerId, error: error?.message ?? String(error) });
+            return null;
+          }),
+      ]);
+      return { silver: wallet?.balances?.silver ?? null, next };
+    },
+  } : null;
+  // Bounds the economy line's read (2 s, BuildAgenda's default): the
+  // application layer holds no timers of its own.
+  const agendaScheduler = new NodeApplicationScheduler();
   const buildAgenda = new BuildAgenda({
     planProjection,
     attestations, teacherNotes,
@@ -898,6 +927,7 @@ export async function createSchoolLifecycle({
     // absent) means BuildAgenda mints no panel codes and the receipt is exactly
     // what it printed before the feature existed.
     selfService: cfg.selfService,
+    economy: agendaEconomy, scheduler: agendaScheduler,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     planProjection,
@@ -962,6 +992,9 @@ export async function createSchoolLifecycle({
     // Teacher planning is a non-recording view.  Its document must not carry
     // a token or panel code that resembles an issued agenda ticket.
     previewOnly: true,
+    // Read-only, like the review queue: a preview without the line the real
+    // print carries would show a parent a different sheet.
+    economy: agendaEconomy, scheduler: agendaScheduler,
     curriculumExceptions: curriculumExceptionStore,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
