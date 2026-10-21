@@ -34,6 +34,12 @@ import { RUBIKS_CUBE_REVISION as RUBIKS_CUBE_REVISION } from "../application/rub
 import { createSchoolBookScansRouter as createSchoolBookScansRouter } from "../api/schoolBookScans.mjs";
 import { createSchoolBooksRouter as createSchoolBooksRouter } from "../api/schoolBooks.mjs";
 import { BookEntryPolicy as BookEntryPolicy } from "../application/BookEntryPolicy.mjs";
+import { SchoolDebriefService } from "../application/debrief/SchoolDebriefService.mjs";
+import { DebriefQuestioner } from "../application/debrief/DebriefQuestioner.mjs";
+import { DebriefAnswerJudge } from "../application/debrief/DebriefAnswerJudge.mjs";
+import { debriefConfigOf } from "../domain/schoolDebrief.mjs";
+import { createSchoolDebriefRouter } from "../api/schoolDebrief.mjs";
+import { FilesystemDebriefAudio } from "../adapters/debrief/FilesystemDebriefAudio.mjs";
 
 export async function createSchoolLifecycleRuntime(dependencies) {
   const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
@@ -880,6 +886,26 @@ try {
       }),
       logger: rootLogger.child({ module: 'school-books-api' }),
     }));
+  }
+
+  // After-school debrief (spec 2026-10-21-school-debrief-design).
+  const debriefLauncher = dependencies.schoolLifecycle.debriefLauncher ?? null;
+  if (dependencies.schoolLifecycle.wired && debriefLauncher && dependencies.schoolDebriefGrants) {
+    const debriefConfig = dependencies.schoolLifecycle.debriefConfig ?? debriefConfigOf(configService.getHouseholdAppConfig(null, 'school') || {});
+    const debriefAi = dependencies.scopedGateway?.(dependencies.sharedAiGateway, { app: 'school', feature: 'debrief' }) ?? null;
+    if (!debriefAi?.chatStructured) rootLogger.warn('school.debrief.ai-unavailable', {});
+    const debriefLogger = rootLogger.child({ module: 'school-debrief' });
+    const debriefAudio = new FilesystemDebriefAudio({ rootDir: path.join(configService.getMediaDir(), 'school/debriefs') });
+    const debriefService = new SchoolDebriefService({
+      debriefs: dependencies.schoolLifecycle.debriefStore,
+      launcher: debriefLauncher,
+      questioner: new DebriefQuestioner({ aiGateway: debriefAi, model: debriefConfig.questioner.model, timeoutMs: debriefConfig.questioner.timeoutMs, logger: debriefLogger }),
+      judge: new DebriefAnswerJudge({ aiGateway: debriefAi, decisionGateway: dependencies.decisionGateway ?? null, model: debriefConfig.judge.model, timeoutMs: debriefConfig.judge.timeoutMs, logger: debriefLogger }),
+      transcribe: debriefAi?.transcribe ? (buffer, opts) => debriefAi.transcribe(buffer, opts) : null,
+      saveAudio: (args) => debriefAudio.save(args), // served by GET /debrief/teacher/:learnerId/audio/:file
+      config: debriefConfig, logger: debriefLogger,
+    });
+    v1Routers.school.use('/debrief', createSchoolDebriefRouter({ service: debriefService, grants: dependencies.schoolDebriefGrants, teacherGate: dependencies.schoolTeacherGate, audioStore: debriefAudio, logger: debriefLogger }));
   }
 
   if (dependencies.schoolLifecycle.router) {
