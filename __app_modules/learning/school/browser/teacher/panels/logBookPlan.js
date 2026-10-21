@@ -39,6 +39,19 @@ const FALLBACK_FAILURE = 'That didn’t save. Try again.';
 const isPage = (page) => Number.isInteger(page) && page > 0;
 
 /**
+ * The body of `POST …/reading` for a NEW reading, shared by this sheet and
+ * the per-child "Add a book" form so the two cannot drift. Partway is page
+ * mode, with the page; a finish sends no day, and the server supplies the
+ * household's study day. Null when partway has no page.
+ */
+export function newReadingBody({ isbn, happened, page = null, mode = 'check' }) {
+  if (happened === HAPPENED.PARTWAY) {
+    return isPage(page) ? { isbn, progressMode: 'page', where: 'partway', page } : null;
+  }
+  return { isbn, progressMode: mode, where: happened === HAPPENED.FINISHED ? 'finished' : 'starting' };
+}
+
+/**
  * @param {object|null} reader - one row of the readers view
  * @param {{isbn: string, happened: string, page?: number|null, mode?: 'page'|'check', studyDay: string}} choice
  * @param {{previousReadingId?: string|null}} [retry] - on a retry, the reading
@@ -56,14 +69,8 @@ export function planFor(reader, { isbn, happened, page = null, mode = 'check', s
   }
 
   if (!open) {
-    if (happened === HAPPENED.PARTWAY) {
-      if (!isPage(page)) return skip(SKIP.NEEDS_PAGE);
-      return { kind: 'new', body: { isbn, progressMode: 'page', where: 'partway', page } };
-    }
-    return {
-      kind: 'new',
-      body: { isbn, progressMode: mode, where: happened === HAPPENED.FINISHED ? 'finished' : 'starting' },
-    };
+    const body = newReadingBody({ isbn, happened, page, mode });
+    return body ? { kind: 'new', body } : skip(SKIP.NEEDS_PAGE);
   }
 
   const base = { kind: 'open', readingId: open.id, baseRevisionCount: open.revisionCount ?? 0 };

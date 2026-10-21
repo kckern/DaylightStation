@@ -188,3 +188,16 @@ describe('performPlan', () => {
     expect(failureMessage({ ok: false, message: '' })).toBe('That didn’t save. Try again.');
   });
 });
+
+describe('newReadingBody — what both add surfaces send for a new reading', () => {
+  it('starting and finished carry the chosen mode and no day; partway is page mode with its page', async () => {
+    const { newReadingBody } = await import("./logBookPlan.js");
+    expect(newReadingBody({ isbn: ISBN, happened: HAPPENED.STARTED, mode: 'page' }))
+      .toEqual({ isbn: ISBN, progressMode: 'page', where: 'starting' });
+    expect(newReadingBody({ isbn: ISBN, happened: HAPPENED.FINISHED, mode: 'check' }))
+      .toEqual({ isbn: ISBN, progressMode: 'check', where: 'finished' });
+    expect(newReadingBody({ isbn: ISBN, happened: HAPPENED.PARTWAY, page: 40, mode: 'check' }))
+      .toEqual({ isbn: ISBN, progressMode: 'page', where: 'partway', page: 40 });
+    expect(newReadingBody({ isbn: ISBN, happened: HAPPENED.PARTWAY, page: null })).toBeNull();
+  });
+});

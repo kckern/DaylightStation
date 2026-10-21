@@ -2093,6 +2093,29 @@
     }
   }
 
+  /* How the book is tracked, defaulted from the server's suggestion. */
+  &-mode {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--ds-text-mid);
+
+    button {
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid var(--ds-border);
+      border-radius: 999px;
+      background: var(--ds-surface);
+      color: var(--ds-text-mid);
+      font: inherit;
+      cursor: pointer;
+
+      &[aria-pressed='true'] { border-color: var(--ds-accent); color: var(--ds-text-high); font-weight: 700; }
+    }
+  }
+
   &-note { margin: 0; font-size: 13px; color: var(--ds-text-mid); }
 }
 
