@@ -29,14 +29,22 @@ function isAbandonable(state) {
 }
 
 export class MarkSessionAbandoned {
-  #sessions; #teacherGate; #learnerDirectory; #clock; #logger;
+  #sessions; #teacherGate; #learnerDirectory; #answerSheets; #clock; #logger;
 
-  constructor({ sessions, teacherGate, learnerDirectory = null, clock = () => new Date(), logger = console } = {}) {
+  /**
+   * `answerSheets` (`SweepAnswerSheets`-shaped, optional) frees the session's
+   * card windows that never reached paper the moment it is abandoned, so the
+   * child's next sheet lands on those rows instead of past them.
+   */
+  constructor({
+    sessions, teacherGate, learnerDirectory = null, answerSheets = null, clock = () => new Date(), logger = console,
+  } = {}) {
     if (!sessions) throw new Error('MarkSessionAbandoned requires sessions');
     if (!teacherGate) throw new Error('MarkSessionAbandoned requires teacherGate');
     this.#sessions = sessions;
     this.#teacherGate = teacherGate;
     this.#learnerDirectory = learnerDirectory;
+    this.#answerSheets = answerSheets;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -68,6 +76,7 @@ export class MarkSessionAbandoned {
       decidedBy,
     });
     this.#logger.info?.('school.session.abandoned', { sessionId, learnerId, decidedBy, reason: reason.trim() });
+    await this.#answerSheets?.vacateSession({ sessionId, unitId: row.unitId ?? null, reason: 'abandoned' });
     return { sessionId, state: 'abandoned' };
   }
 
@@ -178,6 +187,8 @@ export class MarkSessionAbandoned {
           decidedBy: 'system:stale-sweep',
         });
         swept.push({ ...row, ageDays });
+        // eslint-disable-next-line no-await-in-loop
+        await this.#answerSheets?.vacateSession({ sessionId: row.sessionId, unitId: row.unitId ?? null, reason: 'abandoned' });
         this.#logger.info?.('school.session.swept', {
           sessionId: row.sessionId, learnerId: row.learnerId, state: row.state, ageDays,
         });

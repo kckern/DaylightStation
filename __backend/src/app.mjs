@@ -3761,6 +3761,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     const { SchoolMaintenanceExecutor } = await import("../../__app_modules/learning/school/server/application-school-maintenance-executor.mjs");
     schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
       markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
+      sweepAnswerSheets: schoolLifecycle.useCases.sweepAnswerSheets ?? null,
       logger: rootLogger.child({ module: 'school-maintenance' }),
     });
   }

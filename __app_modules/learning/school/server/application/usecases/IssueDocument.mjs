@@ -836,6 +836,7 @@ export class IssueDocument {
         learnerName,
         date: issueDate,
         sessionId,
+        unitId: state.unitId,
         passPercent,
       };
     let rendered;
@@ -883,13 +884,21 @@ export class IssueDocument {
     // artifact was recorded under, with no separate id-reconciliation needed.
     const artifactId = replacementArtifactId ?? instance.id;
 
-    rendered.pdf = await this.#retainIssuedPdf({
-      artifactId, rendered, nowIso, sessionId, state,
-      worksheetInstanceId: instance.id, allocation: rendered.allocation,
-      document: publishedDocument,
-      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
-      captureKind: replacementArtifactId ? 'replacement' : 'original',
+    const retained = await this.#retainOrRecordFailure({
+      retain: {
+        artifactId, rendered, nowIso, sessionId, state,
+        worksheetInstanceId: instance.id, allocation: rendered.allocation,
+        document: publishedDocument,
+        renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
+        captureKind: replacementArtifactId ? 'replacement' : 'original',
+      },
+      // Only a window this attempt allocated is ours to release; a reused
+      // instance binding belongs to a sheet already on paper.
+      allocation: mustPersistOmrBinding ? rendered.allocation : null,
+      sessionId, nowIso, state,
     });
+    if (retained.failure) return retained.failure;
+    rendered.pdf = retained.pdf;
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -1285,6 +1294,7 @@ export class IssueDocument {
       freshCard: true,
       learnerId: state.learnerId ?? null,
       sessionId,
+      unitId: state.unitId,
       tokens,
       ...(state.practiceAssessment ? { assessmentItemIds: state.practiceAssessment.questionIds } : {}),
     };
@@ -1322,12 +1332,17 @@ export class IssueDocument {
       });
     }
 
-    rendered.pdf = await this.#retainIssuedPdf({
-      artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
-      document: renderedDocument,
-      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
-      captureKind: replacementArtifactId ? 'replacement' : 'original',
+    const retained = await this.#retainOrRecordFailure({
+      retain: {
+        artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
+        document: renderedDocument,
+        renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
+        captureKind: replacementArtifactId ? 'replacement' : 'original',
+      },
+      allocation: rendered.allocation, sessionId, nowIso, state,
     });
+    if (retained.failure) return retained.failure;
+    rendered.pdf = retained.pdf;
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -1397,13 +1412,21 @@ export class IssueDocument {
     };
   }
 
-  /** Persist the semantic render recipe before dispatch; keep PDF bytes in memory only. */
+  /**
+   * Persist the semantic render recipe before dispatch; keep PDF bytes in memory only.
+   *
+   * An `original` capture runs only for a session with no `issued` event, so
+   * any recipe already under this id came from an attempt that never reached
+   * paper (2026-10-10: a print timeout froze one, and every retry after it
+   * failed ARTIFACT_IMMUTABLE). Those may be superseded. A `replacement`
+   * re-creates a sheet that DID print, so its recipe stays first-wins.
+   */
   async #retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state,
     worksheetInstanceId = null, allocation = null, document = null,
     renderContext = null, captureKind = 'original' }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
-    await this.#issuedArtifacts.put({
+    const saved = await this.#issuedArtifacts.put({
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
       captureKind, worksheetInstanceId, allocation,
@@ -1413,8 +1436,33 @@ export class IssueDocument {
         variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
         duplex: rendered.duplex ?? null,
       },
+      supersedeUnissued: captureKind === 'original',
     });
+    if (saved?.superseded) {
+      this.#logger.warn?.('school.issue.artifact-superseded', {
+        sessionId, artifactId,
+        previousCardId: saved.superseded.allocation?.cardId ?? null,
+        previousRecordId: saved.superseded.allocation?.recordId ?? null,
+        previousIssuedAt: saved.superseded.issuedAt,
+      });
+    }
     return renderedBytes;
+  }
+
+  /**
+   * `#retainIssuedPdf` for the paths that allocate card rows before it runs.
+   * A failure here would otherwise escape with the rows still `live`, leaking
+   * a fresh card window on every retry.
+   */
+  async #retainOrRecordFailure({ retain, allocation, sessionId, nowIso, state }) {
+    try {
+      return { pdf: await this.#retainIssuedPdf(retain) };
+    } catch (err) {
+      await this.#orphanAllocation(allocation, { sessionId, unitId: state.unitId, stage: 'retain' });
+      return {
+        failure: await this.#recordFailure({ sessionId, stage: 'retain', reason: err.message, nowIso, state, cause: 'render' }),
+      };
+    }
   }
 
   /**
@@ -1431,12 +1479,31 @@ export class IssueDocument {
    * unreachable) is itself logged, never thrown — this runs from inside an
    * already-failed issue attempt, and a SECOND failure here must not replace
    * the FIRST one in what gets reported back to the child.
+   *
+   * A store that can `vacate` holds the window for this unit instead of
+   * releasing it, so the retry (or a later session for the same unit) lands
+   * back on these rows rather than leaving a blank stripe on the card.
    */
   async #orphanAllocation(allocation, { sessionId, unitId, stage }) {
     if (!allocation) return;
     this.#logger.warn?.('school.issue.allocation-orphaned', {
       sessionId, unitId, stage, cardId: allocation.cardId, recordId: allocation.recordId, rowRange: allocation.rowRange,
     });
+    if (typeof this.#allocationStore?.vacate === 'function') {
+      try {
+        const vacated = await this.#allocationStore.vacate({
+          cardId: allocation.cardId, recordId: allocation.recordId, unitId, reason: stage,
+        });
+        this.#logger.warn?.('school.issue.allocation-vacated', {
+          sessionId, unitId, cardId: allocation.cardId, recordId: allocation.recordId, vacated: Boolean(vacated),
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.issue.allocation-release-failed', {
+          sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
+        });
+      }
+      return;
+    }
     if (typeof this.#allocationStore?.release !== 'function') return;
     try {
       const released = await this.#allocationStore.release({ cardId: allocation.cardId, rows: allocation.rowRange });

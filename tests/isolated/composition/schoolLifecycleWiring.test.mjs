@@ -128,7 +128,7 @@ describe('fail closed', () => {
       'rebuildLearnerTerm', 'recordLessonCompanionProgress', 'recordMediaCompletion', 'recoverMisattributedWorksheet', 'replaceLostAnswerSheet', 'replaceRemediation',
       'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolveCardScan', 'resolvePersonalCard',
       'resolveReviewItem', 'resolveScanAction', 'reviewHeldCardScan', 'runSelfServiceAction', 'setAssignments',
-      'submitPaperWork', 'teacherAgendaDispatch', 'unenrollLearner',
+      'submitPaperWork', 'sweepAnswerSheets', 'teacherAgendaDispatch', 'unenrollLearner',
     ]);
   });
 

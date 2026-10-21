@@ -178,6 +178,7 @@ export class YamlAllocationStore {
         variant: request.variant ?? 0,
         ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
         ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+        ...(request.unitId != null ? { unitId: request.unitId } : {}),
         ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
         ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
         // Optional immutable lesson ownership for a composed worksheet. It
@@ -285,8 +286,13 @@ export class YamlAllocationStore {
             localDateKey(record.renderedAt, this.#timeZone)
               === localDateKey(this.#now(), this.#timeZone)
           )));
-      const canReuse = policyAllowsReuse && head && !cardHasIssuedSuccessor(head)
-        && head.occupiedThrough + rowsNeeded <= capacity;
+      const headOpen = policyAllowsReuse && head && !cardHasIssuedSuccessor(head);
+      // A vacated window of exactly this size goes first: this unit's own
+      // (a regeneration), else one whose unit is written off. It may sit
+      // below later sheets, which is the whole point — appending past it
+      // would leave it a permanent gap.
+      const reclaim = headOpen ? reclaimableWindow(head.records, request, rowsNeeded) : null;
+      const canReuse = headOpen && (reclaim || head.occupiedThrough + rowsNeeded <= capacity);
       let cardId;
       let existing;
       let startRow;
@@ -296,7 +302,7 @@ export class YamlAllocationStore {
 
       if (canReuse) {
         ({ cardId, records: existing } = head);
-        startRow = head.occupiedThrough + 1;
+        startRow = reclaim ? reclaim.record.rowRange.start : head.occupiedThrough + 1;
         generation = Math.max(1, head.generation);
         predecessorCardId = cardMetadata(existing).predecessorCardId ?? null;
       } else {
@@ -345,7 +351,20 @@ export class YamlAllocationStore {
       ));
       if (rearmIndex >= 0) existing[rearmIndex] = { ...existing[rearmIndex], ...record };
       else existing.push(record);
+      // Every vacated window under the new rows is now spent: the reclaimed
+      // one, or a tail window an ordinary append started inside.
+      existing.forEach((entry, index) => {
+        if (entry.status === 'vacated' && rangesOverlap(entry.rowRange, record.rowRange)) {
+          existing[index] = { ...entry, status: 'superseded', supersededBy: record.recordId };
+        }
+      });
       this.#save(cardId, existing);
+      if (reclaim) {
+        this.#logger?.info?.('school.answer-sheet.window-reclaimed', {
+          learnerId, cardId, rows: record.rowRange, recordId: record.recordId,
+          reclaimedRecordId: reclaim.record.recordId, reason: reclaim.reason,
+        });
+      }
       if (firstUse) {
         this.#logger?.info?.('school.answer-sheet.rollover', {
           learnerId,
@@ -359,7 +378,10 @@ export class YamlAllocationStore {
           rows: record.rowRange,
         });
       }
-      return { record: structuredClone(record), firstUse, duplicate: false };
+      return {
+        record: structuredClone(record), firstUse, duplicate: false,
+        ...(reclaim ? { reclaimed: { recordId: reclaim.record.recordId, reason: reclaim.reason } } : {}),
+      };
     });
   }
 
@@ -700,6 +722,18 @@ export class YamlAllocationStore {
   }
 
   /**
+   * The card `allocateNext` would put this learner's next sheet on, or null.
+   * Only that card can ever reclaim a vacated window; one left on any other
+   * card is stranded.
+   */
+  async currentCardIdFor(learnerId) {
+    const cards = (await this.listCardIds()).map((cardId) => ({ cardId, records: this.#load(cardId) }));
+    const head = monotonicHead(cards.filter(({ records }) => !cardRetired(records)
+      && records.some((record) => record.learnerId === learnerId && record.deliveryState !== 'cancelled')));
+    return head?.cardId ?? null;
+  }
+
+  /**
    * @param {{cardId:string, recordId:string, status:string}} args
    * @returns {Promise<object>} the updated record
    */
@@ -748,6 +782,55 @@ export class YamlAllocationStore {
       });
       if (releasedIds.size > 0) this.#save(cardId, updated);
       return structuredClone(updated.filter((record) => releasedIds.has(record.recordId)));
+    });
+  }
+
+  /**
+   * A failed attempt gives its window back WITHOUT giving it away. Unlike
+   * `release` (a grown-up's "throw it away"), a vacated window stays reserved
+   * for its unit: `allocateNext` puts that unit's regeneration back on these
+   * exact rows, so a stuck print never leaves a blank stripe on the card.
+   * Only a `live`, never-delivered record can be vacated; delivered rows have
+   * bubbles on paper. `unitId` back-fills records written before allocations
+   * carried one. Returns the vacated record, or null when there was nothing
+   * to vacate.
+   */
+  async vacate({ cardId, recordId, unitId = null, reason, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('vacate requires reason');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const index = records.findIndex((record) => record.recordId === recordId);
+      const record = records[index];
+      if (!record || record.status !== 'live' || record.deliveryState !== 'pending') return null;
+      records[index] = {
+        ...record,
+        ...(record.unitId == null && unitId != null ? { unitId } : {}),
+        status: 'vacated',
+        deliveryState: 'cancelled',
+        vacatedAt: at,
+        vacatedReason: reason,
+      };
+      this.#save(cardId, records);
+      return structuredClone(records[index]);
+    });
+  }
+
+  /**
+   * The vacated window's unit is never coming back (passed elsewhere), so a
+   * different sheet of exactly the same size may now fill it.
+   */
+  async writeOff({ cardId, recordId, reason, at = this.#now() } = {}) {
+    assertCardId(cardId);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('writeOff requires reason');
+    return this.#enqueue(async () => {
+      const records = this.#load(cardId);
+      const index = records.findIndex((record) => record.recordId === recordId);
+      const record = records[index];
+      if (!record || record.status !== 'vacated' || record.writtenOffAt) return null;
+      records[index] = { ...record, writtenOffAt: at, writtenOffReason: reason };
+      this.#save(cardId, records);
+      return structuredClone(records[index]);
     });
   }
 
@@ -870,6 +953,31 @@ function monotonicHead(cards) {
 }
 
 /**
+ * The vacated window `request` should land on, if any: exactly `rowsNeeded`
+ * rows (never a partial fill that splits a gap), the learner's own, and
+ * either this unit's (matched by session for windows that predate `unitId`)
+ * or written off. Lowest rows first. A window under anything that could be on
+ * paper, or under an open quarantine, is skipped.
+ */
+function reclaimableWindow(records, request, rowsNeeded) {
+  const blocked = records.filter((record) => record.deliveryState !== 'cancelled');
+  const quarantines = (records[0]?.rowQuarantines ?? []).filter((entry) => !(entry.clearances?.length > 0));
+  const free = (window) => !blocked.some((record) => rangesOverlap(record.rowRange, window))
+    && !quarantines.some((entry) => entry.rows && rangesOverlap(entry.rows, window));
+  const sameUnit = (record) => (record.unitId != null && request.unitId != null
+    ? record.unitId === request.unitId
+    : record.sessionId != null && record.sessionId === request.sessionId);
+  const candidates = records
+    .filter((record) => record.status === 'vacated' && record.learnerId === request.learnerId
+      && record.rowRange.end - record.rowRange.start + 1 === rowsNeeded && free(record.rowRange))
+    .sort((left, right) => left.rowRange.start - right.rowRange.start);
+  const own = candidates.find(sameUnit);
+  if (own) return { record: own, reason: 'same-unit' };
+  const spare = candidates.find((record) => record.writtenOffAt);
+  return spare ? { record: spare, reason: 'written-off' } : null;
+}
+
+/**
  * The highest row anything on this card could have put graphite on.
  *
  * A record whose delivery was CANCELLED never reached paper — the issue path
@@ -951,6 +1059,7 @@ function allocationRecord({
     variant: request.variant ?? 0,
     learnerId: request.learnerId,
     ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
+    ...(request.unitId != null ? { unitId: request.unitId } : {}),
     ...(request.assessmentItemIds ? { assessmentItemIds: [...request.assessmentItemIds] } : {}),
     ...(Array.isArray(request.rowItems) ? { rowItems: structuredClone(request.rowItems) } : {}),
     ...(Array.isArray(request.sections) ? { sections: structuredClone(request.sections) } : {}),

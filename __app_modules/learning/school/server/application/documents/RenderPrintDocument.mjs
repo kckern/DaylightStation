@@ -1210,7 +1210,7 @@ export class RenderPrintDocument {
    */
   #resolveCardContext(context) {
     const {
-      cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId,
+      cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, unitId,
       sectionAttribution, historicalCard, historicalFirstUse, reprintFirstUse,
     } = context;
     if (cardId === undefined && freshCard !== true && automaticCard !== true) return null;
@@ -1238,6 +1238,10 @@ export class RenderPrintDocument {
       // artifact a scan resolves — can carry the link back to the session a
       // graded scan must advance. Absent for every other caller.
       sessionId: sessionId ?? null,
+      // The curriculum unit this sheet serves. A failed attempt's vacated
+      // window is matched back to its unit by this, so a regeneration under a
+      // NEW session still lands on the old rows.
+      unitId: unitId ?? null,
       // A composed worksheet has one physical allocation but several
       // independently completable lesson sections. The composer supplies
       // its immutable item ownership here; allocation converts it to row
@@ -1264,7 +1268,7 @@ export class RenderPrintDocument {
    * even for a worksheet with gaps between row-consuming questions.
    */
   async #allocateCard(document, bank, {
-    cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, sectionAttribution,
+    cardId, freshCard, automaticCard, answerSheetPolicy, startRow, learnerId, sessionId, unitId, sectionAttribution,
     reprintFirstUse, assessmentItemIds,
   }) {
     if (!this.#allocationStore) {
@@ -1328,6 +1332,7 @@ export class RenderPrintDocument {
       rowRange,
       ...(learnerId != null ? { learnerId } : {}),
       ...(sessionId != null ? { sessionId } : {}),
+      ...(unitId != null ? { unitId } : {}),
       ...(sections ? { sections } : {}),
       // F4 (bank-select scan integrity vs mutable external banks): the row->
       // item mapping `planRows` JUST resolved, straight off THIS document/bank
