@@ -841,7 +841,18 @@ describe('the agenda opens with the week\'s silver', () => {
     // (0 is a figure the bank answered, not a guess), and the title is the
     // preview's, shortened at a word to keep the line on one row.
     expect(lines[0]).toBe('TEST LEARNER');
-    expect(lines[1]).toBe('This week: 0 silver · Next: Equivalent Fractions…');
+    expect(lines[1]).toBe('In the bank: 0 silver · Next: Equivalent…');
+  });
+
+  it('before coins are live there is no line at all, never "0 silver"', async () => {
+    const dry = await createLifecycleHarness({ economyMode: 'dry-run' });
+    try {
+      await dry.assign();
+      const { document } = await dry.useCases.previewAgenda.execute({ learnerId: DEFAULT_LEARNER });
+      expect(document.blocks.some((b) => /silver/.test(b.md ?? ''))).toBe(false);
+    } finally {
+      dry.dispose();
+    }
   });
 
   it('the agenda preview carries the same line and writes no wallet', async () => {
@@ -849,7 +860,7 @@ describe('the agenda opens with the week\'s silver', () => {
     const before = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
     const { document } = await h.useCases.previewAgenda.execute({ learnerId: DEFAULT_LEARNER });
     expect(document.blocks[0]).toEqual({
-      type: 'rich_text', md: 'This week: 0 silver · Next: Equivalent Fractions…', align: 'center',
+      type: 'rich_text', md: 'In the bank: 0 silver · Next: Equivalent…', align: 'center',
     });
     const after = fs.existsSync(economyDir) ? fs.readdirSync(economyDir, { recursive: true }) : [];
     expect(after).toEqual(before);

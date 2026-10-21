@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import BankScreen, { NAPPING, NOTHING_TO_SPEND } from "./BankScreen.jsx";
+import BankScreen, { NAPPING, NOTHING_TO_SPEND, COINS_SOON } from "./BankScreen.jsx";
 import { earnItems, goldCountdown, historyByDay, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
 
 vi.mock("../schoolApi.js", () => ({
@@ -30,7 +30,7 @@ const KID = { id: 'kid', name: 'Kay' };
 const none = { passId: null, state: 'none', capUsed: false };
 
 const bankData = (over = {}) => ({
-  userId: 'kid', studyDay: '2026-10-21',
+  userId: 'kid', mode: 'live', studyDay: '2026-10-21',
   balances: { silver: 7, gold: 12, gems: 1 },
   history: [
     { text: '+2 silver · Math 4-02 passed', at: new Date(2026, 9, 21, 9, 0).toISOString(), kind: 'earn', ids: ['a'] },
@@ -229,6 +229,19 @@ describe('BankScreen', () => {
     await renderScreen();
     expect(screen.getByTestId('bank-offer')).toHaveTextContent('after school is done');
     expect(screen.getByTestId('bank-offer')).not.toHaveTextContent('can buy');
+  });
+
+  it.each([['dry-run'], ['off'], [undefined]])('before coins are live (%s): coins start soon, no balance, still ways to earn', async (mode) => {
+    schoolApi.economyBank.mockResolvedValue(ok(bankData({ mode, balances: { silver: 0, gold: 0, gems: 0 } })));
+    await renderScreen();
+    expect(screen.getByTestId('bank-soon')).toHaveTextContent(COINS_SOON);
+    expect(screen.queryByTestId('bank-balances')).toBeNull();
+    expect(screen.queryByTestId('bank-history')).toBeNull();
+    expect(screen.queryByTestId('bank-spend')).toBeNull();
+    const body = screen.getByTestId('bank-screen').querySelector('.school-bank-screen__body').textContent;
+    expect(body.replace(screen.getByTestId('bank-earn').textContent, '')).not.toMatch(/\d/);
+    expect(body).not.toMatch(/in the bank/);
+    expect(screen.getByTestId('bank-earn')).toHaveTextContent('Fractions 4-03');
   });
 
   it('a failed bank read naps: the sentence, no numbers, no cache', async () => {

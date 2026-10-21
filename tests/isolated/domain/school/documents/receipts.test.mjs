@@ -531,15 +531,15 @@ describe('agendaDocument — the economy line', () => {
 
   it('with it, the line is the first block, centred', () => {
     const c = fixture(FULL);
-    const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver · Next: Math' }));
-    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
+    const doc = valid(agendaDocument({ ...c.args, economyLine: 'In the bank: 7 silver · Next: Math' }));
+    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'In the bank: 7 silver · Next: Math', align: 'center' });
     expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
   });
 
   it('opens the "nothing assigned" sheet too', () => {
     const c = fixture(EMPTY);
-    const doc = valid(agendaDocument({ ...c.args, economyLine: 'This week: 7 silver' }));
-    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver', align: 'center' });
+    const doc = valid(agendaDocument({ ...c.args, economyLine: 'In the bank: 7 silver' }));
+    expect(doc.blocks[0]).toEqual({ type: 'rich_text', md: 'In the bank: 7 silver', align: 'center' });
     expect(doc.blocks.slice(1)).toEqual(c.document.blocks);
   });
 
@@ -551,19 +551,19 @@ describe('agendaDocument — the economy line', () => {
 
 describe('agendaEconomyLine', () => {
   it('names the silver and the next item', () => {
-    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: null } })).toBe('This week: 7 silver · Next: Math');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: null } })).toBe('In the bank: 7 silver · Next: Math');
   });
 
   it('adds the reward only when it pays silver', () => {
-    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } })).toBe('This week: 7 silver · Next: Math +2');
-    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 0 } } })).toBe('This week: 7 silver · Next: Math');
-    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: {} } })).toBe('This week: 7 silver · Next: Math');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } })).toBe('In the bank: 7 silver · Next: Math +2');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 0 } } })).toBe('In the bank: 7 silver · Next: Math');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: {} } })).toBe('In the bank: 7 silver · Next: Math');
   });
 
   it('prints the silver alone when there is no next item', () => {
-    expect(agendaEconomyLine({ silver: 7, next: null })).toBe('This week: 7 silver');
-    expect(agendaEconomyLine({ silver: 0 })).toBe('This week: 0 silver');
-    expect(agendaEconomyLine({ silver: 7, next: { title: '  ', reward: { silver: 2 } } })).toBe('This week: 7 silver');
+    expect(agendaEconomyLine({ silver: 7, next: null })).toBe('In the bank: 7 silver');
+    expect(agendaEconomyLine({ silver: 0 })).toBe('In the bank: 0 silver');
+    expect(agendaEconomyLine({ silver: 7, next: { title: '  ', reward: { silver: 2 } } })).toBe('In the bank: 7 silver');
   });
 
   it('prints nothing when the silver is unknown, never a made-up zero', () => {
@@ -579,49 +579,49 @@ describe('agendaEconomyLine', () => {
     expect(agendaEconomyLine({ silver: -3 })).toBeNull();
     expect(agendaEconomyLine({ silver: Infinity })).toBeNull();
     expect(agendaEconomyLine({ silver: 2 ** 53 })).toBeNull();
-    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2.5 } } })).toBe('This week: 7 silver · Next: Math');
+    expect(agendaEconomyLine({ silver: 7, next: { title: 'Math', reward: { silver: 2.5 } } })).toBe('In the bank: 7 silver · Next: Math');
   });
 
   it('shortens a long title with an ellipsis so the line stays on one row', () => {
     const line = agendaEconomyLine({
       silver: 120, next: { title: 'Adding and Subtracting Fractions with Unlike Denominators', reward: { silver: 12 } },
     });
-    expect(line).toBe('This week: 120 silver · Next: Adding and… +12');
+    expect(line).toBe('In the bank: 120 silver · Next: Adding and… +12');
     expect(line.length).toBeLessThanOrEqual(50);
   });
 
   it('keeps a word whose end lands exactly on the cut', () => {
-    const line = agendaEconomyLine({ silver: 7, next: { title: 'Adding Mixed Numbers1 Review', reward: null } });
-    expect(line).toBe('This week: 7 silver · Next: Adding Mixed Numbers1…');
+    const line = agendaEconomyLine({ silver: 7, next: { title: 'Adding Mixed Number Review', reward: null } });
+    expect(line).toBe('In the bank: 7 silver · Next: Adding Mixed Number…');
     expect(line.length).toBe(50);
   });
 
   it('prints a title that fits, however little room is left', () => {
-    // 16-digit silver and a 4-character reward leave 3 characters of room.
-    expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Go', reward: { silver: 99 } } }))
-      .toBe(`This week: ${10 ** 15} silver · Next: Go +99`);
-    expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Gone', reward: { silver: 99 } } }))
-      .toBe(`This week: ${10 ** 15} silver`);
+    // 14-digit silver and a 4-character reward leave 3 characters of room.
+    expect(agendaEconomyLine({ silver: 10 ** 13, next: { title: 'Go', reward: { silver: 99 } } }))
+      .toBe(`In the bank: ${10 ** 13} silver · Next: Go +99`);
+    expect(agendaEconomyLine({ silver: 10 ** 13, next: { title: 'Gone', reward: { silver: 99 } } }))
+      .toBe(`In the bank: ${10 ** 13} silver`);
   });
 
   it('counts and cuts by code point, never splitting an emoji', () => {
     const line = agendaEconomyLine({ silver: 7, next: { title: `Fractions${'🍕'.repeat(15)}`, reward: null } });
     expect(Array.from(line)).toHaveLength(50);
-    expect(line).toBe(`This week: 7 silver · Next: Fractions${'🍕'.repeat(12)}…`);
+    expect(line).toBe(`In the bank: 7 silver · Next: Fractions${'🍕'.repeat(10)}…`);
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(line)).toBe(false);
     // A title that fits by code point is not cut, though its UTF-16 length is longer.
-    expect(agendaEconomyLine({ silver: 7, next: { title: '🍕'.repeat(22), reward: null } }))
-      .toBe(`This week: 7 silver · Next: ${'🍕'.repeat(22)}`);
+    expect(agendaEconomyLine({ silver: 7, next: { title: '🍕'.repeat(20), reward: null } }))
+      .toBe(`In the bank: 7 silver · Next: ${'🍕'.repeat(20)}`);
   });
 
   it('cuts a title with no break in it mid-word', () => {
     const line = agendaEconomyLine({ silver: 7, next: { title: 'Supercalifragilisticexpialidocious', reward: null } });
-    expect(line).toBe('This week: 7 silver · Next: Supercalifragilistice…');
+    expect(line).toBe('In the bank: 7 silver · Next: Supercalifragilisti…');
     expect(line.length).toBe(50);
   });
 
   it('drops the next item rather than print a stub of it', () => {
     expect(agendaEconomyLine({ silver: 10 ** 15, next: { title: 'Equivalent Fractions', reward: { silver: 999999 } } }))
-      .toBe(`This week: ${10 ** 15} silver`);
+      .toBe(`In the bank: ${10 ** 15} silver`);
   });
 });

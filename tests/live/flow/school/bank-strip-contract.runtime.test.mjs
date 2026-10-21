@@ -31,6 +31,7 @@ const ROSTER = [
 
 const bankFor = (learnerId) => ({
   userId: learnerId,
+  mode: 'live',
   studyDay: STUDY_DAY,
   balances: learnerId === 'learner_a' ? { silver: 7, gold: 12, gems: 1 } : { silver: 2, gold: 0, gems: 0 },
   history: [

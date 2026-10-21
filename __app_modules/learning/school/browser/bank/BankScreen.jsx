@@ -15,6 +15,11 @@
  *   4. Ways to earn. Today's remaining work: the next sheet (`/next`) and the
  *      agenda's still-owed sections. Titles only unless the economy prices one.
  *
+ * COINS START SOON. Before the economy is live (the bank's `mode` is not
+ * `live`), the screen says "Coins start soon." in place of the balances,
+ * history and prices: every bank reads 0 until then, and a kid must not be
+ * shown "0 silver" for a day's work. Ways to earn still shows.
+ *
  * NAPPING. A bank read that fails shows "The bank is napping. Try again soon."
  * and NO numbers: no balance, no history, no prices. Nothing falls back to an
  * earlier read or a cache. Ways to earn does not come from the bank, so it
@@ -40,6 +45,7 @@ import './BankScreen.scss';
 
 export const NAPPING = 'The bank is napping. Try again soon.';
 export const NOTHING_TO_SPEND = 'Nothing to spend on yet.';
+export const COINS_SOON = 'Coins start soon.';
 
 function Identity({ learner }) {
   if (!learner) return null;
@@ -129,7 +135,8 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
   useEffect(() => { noteActivity(); return () => clearTimeout(idleRef.current); }, [noteActivity]);
 
   const at = now ?? Date.now();
-  const data = bank.status === 'ok' ? bank.data : null;
+  const soon = bank.status === 'ok' && bank.data?.mode !== 'live';
+  const data = bank.status === 'ok' && !soon ? bank.data : null;
   const schoolDone = schoolDoneFrom(agenda);
   const spend = data ? spendItems({ offers: data.offers, pass: data.pass, balances: data.balances, schoolDone }) : null;
   const earn = earnItems({ agenda, next });
@@ -153,6 +160,9 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
         {bank.status === 'loading' && <p className="school-bank-screen__quiet" role="status">Opening your bank…</p>}
         {bank.status === 'unavailable' && (
           <p className="school-bank-screen__napping" role="status" data-testid="bank-napping">{NAPPING}</p>
+        )}
+        {soon && (
+          <p className="school-bank-screen__soon" role="status" data-testid="bank-soon">{COINS_SOON}</p>
         )}
         {data && (
           <>

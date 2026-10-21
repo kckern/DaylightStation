@@ -193,6 +193,8 @@ function cryptoRng(crypto) {
  *   economy line: `peekBalance(userId).silver`, the unspent silver in the
  *   bank, read without writing (`agendaEconomy.mjs`). Read through duck typing
  *   only; School imports no economy code.
+ * @param {(() => string)|null} [deps.economyMode] - the economy catalog's mode,
+ *   read per print: the agenda's economy line prints only while it is `live`.
  * @param {object} [deps.userService]
  * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
  *   Present means the `language` program is a live launcher, reachable from a
@@ -251,7 +253,7 @@ function cryptoRng(crypto) {
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   attemptDatastore = null,
-  economyService = null, userService = null, eventBus = null, realtime = null,
+  economyService = null, economyMode = null, userService = null, eventBus = null, realtime = null,
   thermalPrinterRegistry = null, playbackAdapter = null, wakeScreen = null,
   startReadingSession = null,
   // The household's story books, `() => [{contentId, title}] | null` — what a
@@ -886,11 +888,12 @@ export async function createSchoolLifecycle({
   practiceAssessments?.configureProjection?.(planProjection);
 
   // --- use cases -------------------------------------------------------------
-  // The agenda's economy line ("This week: 7 silver · Next: Math"); see
-  // `agendaEconomy.mjs`. `issueSubjectNext` is composed further down, so the
+  // The agenda's economy line ("In the bank: 7 silver · Next: Math"), printed
+  // only while the economy mode is live; see `agendaEconomy.mjs`. `issueSubjectNext` is composed further down, so the
   // thunk reads it when an agenda prints, never here.
   const agendaEconomy = createAgendaEconomyPort({
     economyService,
+    economyMode,
     previewNext: (learnerId) => issueSubjectNext.preview({ learnerId }),
     logger,
   });

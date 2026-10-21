@@ -206,7 +206,7 @@ Each section's reader:
 
 | Section | Read by | See |
 |---|---|---|
-| `mode` | PayoutService (every settle), WeekCloseService (every close), `rewardFor`, the parent digest (every run), `buyPass` and the bank's `offers`/`mode` | [Payouts](#payouts), [Week close](#week-close) |
+| `mode` | PayoutService (every settle), WeekCloseService (every close), `rewardFor`, the parent digest (every run), `buyPass` and the bank's `offers`/`mode`, School's agenda line | [Payouts](#payouts), [Week close](#week-close) |
 | `week_close` | WeekCloseService; BankService for `weekEndsAt` | [Week close](#week-close) |
 | `passes` | `EconomyService` pass methods, BankService offers | [Early passes](#early-passes) |
 | `digest` | School's parent digest | [Integration points](#integration-points) |
@@ -617,7 +617,8 @@ from the same ledger read as the history, never the wallet snapshot, so an offer
 says what `buyPass` will decide. `offers` maps each privilege a pass opens to
 its quote: `[{ coin, price, affordable }]`, one row per coin the pass is sold
 in, so `[]` means not for sale. Unless the catalog mode is `live`, `offers`
-is `{}`. `mode` is the catalog mode.
+is `{}`. `mode` is the catalog mode, so the Portal shows a neutral bank
+("Coins start soon", no balance number) until coins are live.
 
 **Pass, keyed by privilege.** `pass['piano.games']` is that privilege's latest
 pass today, or the "none" shape (`passId: null, state: 'none'`, the same keys a
@@ -711,7 +712,9 @@ built from `economyApi` (`composition/economyApi.mjs`).
     cache means a section finished a moment ago can still show its `+N` for up
     to a minute.
 - **School: the agenda tape's economy line.** The morning agenda opens with
-  `This week: 7 silver · Next: Math`. School's composition (`agendaEconomy.mjs`)
+  `In the bank: 7 silver · Next: Math`, only while the catalog mode is `live`
+  (an `economyMode` reader, `() => configProjection.catalog().mode`, is handed
+  to `createSchoolLifecycle`). School's composition (`agendaEconomy.mjs`)
   builds a `bankSummary(learnerId)` port over `economyService.peekBalance(id).silver`:
   the *unspent* silver in the bank (the figure the Portal bank strip shows and
   the week close converts), not the week's mints. `peekBalance` is the pure
@@ -855,6 +858,8 @@ the old snapshot when the file is missing.
    `economy.week-close.would-convert`, `rewardFor` answers null (no `+N` on any
    surface), and the digest ends `Coins not live yet`. No balance moves. No pass
    can be bought before live (`PASS_NOT_SOLD`) and the bank offers nothing.
+   The kid surfaces show no silver figure: the agenda prints no economy line,
+   and the Portal bank strip and bank screen say "Coins start soon".
    With `passes` in the catalog, a school-locked kid's piano Games tile is
    enabled and opens SchoolLock (today's progress and the Print button). That
    is intended, not the gate failing open: SchoolLock sells nothing until live.

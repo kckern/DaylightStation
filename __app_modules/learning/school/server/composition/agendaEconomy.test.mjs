@@ -27,12 +27,13 @@ const fakeEconomy = ({ known = ['kid1'], silver = 7 } = {}) => {
     getBalance: async (id) => { asked.push(['getBalance', id]); throw new Error('getBalance writes; must not be called'); },
   };
 };
+const live = () => 'live';
 const preview = async () => ({ subject: 'math', unit: { unitId: 'u1', title: 'Math', subject: 'math' }, printable: true, reward: null });
 
 describe('createAgendaEconomyPort', () => {
   it('answers the unspent silver and the next item, through peekBalance only', async () => {
     const economy = fakeEconomy();
-    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, logger: recorder().logger });
+    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, economyMode: live, logger: recorder().logger });
     expect(await port.bankSummary('kid1')).toEqual({ silver: 7, next: { title: 'Math', reward: null } });
     expect(economy.asked).toEqual([['peekBalance', 'kid1']]);
   });
@@ -40,7 +41,7 @@ describe('createAgendaEconomyPort', () => {
   it('a throwing preview still answers the silver, and warns', async () => {
     const { calls, logger } = recorder();
     const port = createAgendaEconomyPort({
-      economyService: fakeEconomy(), logger,
+      economyService: fakeEconomy(), logger, economyMode: live,
       previewNext: () => { throw new Error('planner is down'); },
     });
     expect(await port.bankSummary('kid1')).toEqual({ silver: 7, next: null });
@@ -52,7 +53,7 @@ describe('createAgendaEconomyPort', () => {
   it('an unknown economy user gets no line, no warn, and one info per learner', async () => {
     const { calls, logger } = recorder();
     const economy = fakeEconomy({ known: [] });
-    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, logger });
+    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, economyMode: live, logger });
     expect(await port.bankSummary('stranger')).toBeNull();
     expect(await port.bankSummary('stranger')).toBeNull();
     expect(await port.bankSummary('other')).toBeNull();
@@ -65,8 +66,28 @@ describe('createAgendaEconomyPort', () => {
 
   it('a failing balance read throws, for BuildAgenda to catch and warn', async () => {
     const economy = { hasUser: () => true, peekBalance: async () => { throw new Error('ledger unreadable'); } };
-    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, logger: recorder().logger });
+    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, economyMode: live, logger: recorder().logger });
     await expect(port.bankSummary('kid1')).rejects.toThrow('ledger unreadable');
+  });
+
+  it.each([['dry-run'], ['off'], [undefined]])('before live (%s) there is no line, and the balance is not read', async (mode) => {
+    const economy = fakeEconomy();
+    const port = createAgendaEconomyPort({ economyService: economy, previewNext: preview, economyMode: () => mode, logger: recorder().logger });
+    expect(await port.bankSummary('kid1')).toBeNull();
+    expect(economy.asked).toEqual([]);
+  });
+
+  it('no mode reader means no line: a "0 silver" must never print before coins are live', async () => {
+    const port = createAgendaEconomyPort({ economyService: fakeEconomy(), previewNext: preview, logger: recorder().logger });
+    expect(await port.bankSummary('kid1')).toBeNull();
+  });
+
+  it('reads the mode on every print, so a reload to live takes effect', async () => {
+    let mode = 'dry-run';
+    const port = createAgendaEconomyPort({ economyService: fakeEconomy(), previewNext: preview, economyMode: () => mode, logger: recorder().logger });
+    expect(await port.bankSummary('kid1')).toBeNull();
+    mode = 'live';
+    expect(await port.bankSummary('kid1')).toEqual({ silver: 7, next: { title: 'Math', reward: null } });
   });
 
   it('is absent without peekBalance, so the agenda prints as before', () => {
@@ -90,7 +111,7 @@ describe('createAgendaEconomyPort', () => {
         configProjection: new EconomyConfigProjection({ configService }),
         logger: recorder().logger,
       });
-      const port = createAgendaEconomyPort({ economyService, previewNext: preview, logger: recorder().logger });
+      const port = createAgendaEconomyPort({ economyService, previewNext: preview, economyMode: live, logger: recorder().logger });
       expect(await port.bankSummary('kid1')).toEqual({ silver: 0, next: { title: 'Math', reward: null } });
       expect(fs.readdirSync(dir, { recursive: true })).toEqual([]);
     });

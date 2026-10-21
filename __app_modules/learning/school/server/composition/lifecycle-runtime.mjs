@@ -58,6 +58,8 @@ try {
       academicPeriods: schoolAcademicPeriods,
       attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
+      // The agenda's economy line prints only while coins are live.
+      economyMode: () => economyApi.configProjection?.catalog?.().mode ?? 'off',
       // What "print my next sheet" is worth (`GET .../next`). A late-bound
       // thunk: the earnings runtime that answers it is built after School.
       rewardFor: economyApi.rewardFor ?? null,

@@ -25,9 +25,9 @@ import { schoolApi } from "../schoolApi.js";
 
 const KIDS = [{ id: 'kid-b', name: 'Bee' }, { id: 'kid-a', name: 'Ay' }, { id: 'kid-c', name: 'Cee' }];
 const none = { passId: null, state: 'none', capUsed: false };
-const bank = (silver, { gems = 0, pass = none } = {}) => ({
+const bank = (silver, { gems = 0, pass = none, mode = 'live' } = {}) => ({
   ok: true, status: 200,
-  data: { balances: { silver, gold: 0, gems }, history: [], pass: { 'piano.games': pass }, offers: {}, weekEndsAt: null, studyDay: '2026-10-21' },
+  data: { mode, balances: { silver, gold: 0, gems }, history: [], pass: { 'piano.games': pass }, offers: {}, weekEndsAt: null, studyDay: '2026-10-21' },
 });
 const next = (title, { printable = true, reward = null, subject = 'math' } = {}) => ({
   ok: true, status: 200, data: { subject, unit: { unitId: `u-${title}`, title, subject }, printable, reward },
@@ -52,7 +52,10 @@ describe('BankStrip model', () => {
     expect(chipFromBank(bank(1, { pass: { state: 'active', capUsed: false } }).data).sneakUsed).toBe(true);
     expect(chipFromBank(bank(1, { pass: { state: 'refunded', capUsed: true } }).data).sneakUsed).toBe(true);
     expect(chipFromBank(bank(1, { pass: { state: 'unknown', capUsed: null } }).data).sneakUsed).toBe(false);
-    expect(chipFromBank({ balances: {} })).toBeNull();
+    expect(chipFromBank({ mode: 'live', balances: {} })).toBeNull();
+    // Before live: no figures at all, only that coins start soon.
+    expect(chipFromBank(bank(0, { mode: 'dry-run' }).data)).toEqual({ soon: true });
+    expect(chipFromBank({ balances: { silver: 0 } })).toEqual({ soon: true });
     expect(chipFromBank(null)).toBeNull();
   });
 
@@ -106,6 +109,19 @@ describe('BankStrip', () => {
     await waitFor(() => expect(screen.getAllByText('3 silver in the bank')).toHaveLength(3));
     expect(screen.getAllByText('Sneak used today')).toHaveLength(1);
     expect(within(chips()[0]).getByText('Sneak used today')).toBeTruthy();
+  });
+
+  it('before coins are live, says "Coins start soon" with no number, and still offers Print', async () => {
+    schoolApi.economyBank.mockImplementation(async () => bank(0, { mode: 'dry-run', gems: 1, pass: { state: 'consumed', capUsed: true } }));
+    schoolApi.nextItem.mockResolvedValue(next('Math 4-02'));
+    render(<BankStrip kids={[KIDS[0]]} />);
+    await waitFor(() => expect(screen.getByText('Coins start soon')).toBeTruthy());
+    const chip = chips()[0].querySelector('.school-bank-strip__chip');
+    expect(chip.textContent).toBe('BeeCoins start soon');
+    expect(within(chip).queryByText(/in the bank/)).toBeNull();
+    expect(within(chip).queryByText('Sneak used today')).toBeNull();
+    expect(screen.queryByRole('img', { name: /gem/ })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Print Math 4-02 for Bee' })).toBeTruthy();
   });
 
   it('shows a gem only when there are gems', async () => {

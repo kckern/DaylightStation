@@ -43,7 +43,8 @@
 
 .school-bank-screen__heading { margin: 0; font-size: 1.25rem; font-weight: 800; }
 .school-bank-screen__quiet { margin: 0; color: var(--school-muted); font-size: 1.05rem; }
-.school-bank-screen__napping {
+.school-bank-screen__napping,
+.school-bank-screen__soon {
   grid-column: 1 / -1;
   margin: 2rem 0 0; text-align: center;
   color: var(--school-muted); font-size: clamp(1.3rem, 3vh, 1.8rem); font-weight: 700;

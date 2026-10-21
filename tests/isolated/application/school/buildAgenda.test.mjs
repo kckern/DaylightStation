@@ -1002,20 +1002,20 @@ describe('the economy line', () => {
     build({ economy: { bankSummary: async (id) => { asked.push(id); return { silver: 7, next: { title: 'Math', reward: null } }; } } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(asked).toEqual(['kid1']);
-    expect(document.blocks[0]).toEqual({ type: 'rich_text', md: 'This week: 7 silver · Next: Math', align: 'center' });
+    expect(document.blocks[0]).toEqual({ type: 'rich_text', md: 'In the bank: 7 silver · Next: Math', align: 'center' });
     expect(validateDocument(document).errors).toEqual([]);
   });
 
   it('adds the reward when the next item pays silver', async () => {
     build({ economy: { bankSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
-    expect(document.blocks[0].md).toBe('This week: 7 silver · Next: Math +2');
+    expect(document.blocks[0].md).toBe('In the bank: 7 silver · Next: Math +2');
   });
 
   it('prints the silver alone when there is no next item', async () => {
     build({ economy: { bankSummary: async () => ({ silver: 7, next: null }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
-    expect(document.blocks[0].md).toBe('This week: 7 silver');
+    expect(document.blocks[0].md).toBe('In the bank: 7 silver');
   });
 
   it('prints no line when the silver is unknown', async () => {
@@ -1060,12 +1060,12 @@ describe('the economy line', () => {
     build({ scheduler, economy: { bankSummary: async () => ({ silver: 3, next: null }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(deadlines).toEqual([2000]);
-    expect(document.blocks[0].md).toBe('This week: 3 silver');
+    expect(document.blocks[0].md).toBe('In the bank: 3 silver');
   });
 
   it('without the port, the agenda carries no line', async () => {
     build();
     const { document } = await useCase.execute({ learnerId: 'kid1' });
-    expect(document.blocks.some((b) => /This week:/.test(b.md ?? ''))).toBe(false);
+    expect(document.blocks.some((b) => /In the bank:/.test(b.md ?? ''))).toBe(false);
   });
 });

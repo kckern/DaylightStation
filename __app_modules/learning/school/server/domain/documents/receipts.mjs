@@ -545,10 +545,10 @@ const ECONOMY_LINE_MAX_CHARS = 50;
 const isPrintableSilver = (n) => Number.isSafeInteger(n) && n >= 0;
 
 /**
- * The one economy line at the top of the agenda: `This week: 7 silver · Next:
- * Math +2`. Pure: the caller fetches the figures. The silver is the UNSPENT
- * silver in the bank (what the week close converts on Sunday), not the week's
- * mints.
+ * The one economy line at the top of the agenda: `In the bank: 7 silver ·
+ * Next: Math +2`. Pure: the caller fetches the figures. The silver is the
+ * UNSPENT silver in the bank (what the week close converts on Sunday), not the
+ * week's mints, so the line says "in the bank" rather than "this week".
  *
  * - Silver that is not a whole number of 0 or more is NO line, even when there
  *   is a next item. Absent or unreadable, a "0 silver" line would tell a child
@@ -566,7 +566,7 @@ const isPrintableSilver = (n) => Number.isSafeInteger(n) && n >= 0;
 export function agendaEconomyLine(summary) {
   const silver = summary?.silver;
   if (!isPrintableSilver(silver)) return null;
-  const head = `This week: ${silver} silver`;
+  const head = `In the bank: ${silver} silver`;
   const title = isNonEmptyString(summary?.next?.title) ? summary.next.title.trim() : null;
   if (!title) return head;
   const pays = summary.next.reward?.silver;

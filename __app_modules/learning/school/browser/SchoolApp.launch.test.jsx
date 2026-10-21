@@ -572,7 +572,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
   beforeEach(() => {
     bankOpenMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { launchTarget: BANK_TARGET } });
     economyBankMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {
-      balances: { silver: 6, gold: 3, gems: 0 }, history: [], pass: {}, offers: {},
+      mode: 'live', balances: { silver: 6, gold: 3, gems: 0 }, history: [], pass: {}, offers: {},
       weekEndsAt: null, weekEndsOn: null, studyDay: '2026-09-07',
     } });
     window.history.replaceState({}, '', '/');

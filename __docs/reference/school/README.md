@@ -1745,6 +1745,9 @@ are the only things in the board pane that take a tap; the strip sets `pointer-e
   `--school-coin-gold`), read for `CoinIcon` by `shared/useCoinColor.js`.
 - **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
   field is the silver figure, never gold.
+- **Before coins are live** (the bank's `mode` is not `live`) the chip says
+  "Coins start soon" with no number, gem or tick: every bank reads 0 until
+  then. The next item and Print still show.
 - **A failed bank read** shows "bank is napping" and no number, for that kid
   only (`economy.balance.unavailable`, warn). No figure ever comes from the
   board's cache. A pass `state: 'unknown'` shows no tick.
@@ -1849,6 +1852,9 @@ kid's bank, full screen over the locked panel.
 - **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
   then every agenda section still `obligated`, by title. A reward shows only
   when the economy prices it (`reward` is null unless the economy is `live`).
+- **Coins start soon.** Before the economy is live (the bank's `mode` is not
+  `live`) the screen shows "Coins start soon." in place of the balances,
+  history and prices, so no "0 silver" is ever shown. Ways to earn still shows.
 - **Napping.** A failed bank read shows "The bank is napping. Try again soon."
   and no numbers: no balances, history or prices, and no cache or earlier read
   (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
@@ -2137,9 +2143,9 @@ either a **passing** curriculum outcome recorded this study day, or a program
 unit's own `doneToday` — a *failed* attempt never serves the subject, because
 the section is the retry's only way back in.
 
-**The first line under the name is the week's silver.** When the economy is
-wired, the tape opens with one centred line: `This week: 7 silver · Next:
-Math`, with ` +2` appended when the next item's reward pays silver. The silver
+**The first line under the name is the silver in the bank.** When the economy
+is wired and its mode is `live`, the tape opens with one centred line: `In the
+bank: 7 silver · Next: Math`, with ` +2` appended when the next item's reward pays silver. The silver
 is the *unspent* silver in the bank, not the week's mints: the figure the
 Portal strip shows and the week close converts on Sunday. It is read with
 `EconomyService.peekBalance(id).silver`, a pure ledger fold that writes no
@@ -2151,7 +2157,11 @@ at 50 code points, which keeps Latin text on one row of the tape's 530px
 content width; only the title is shortened, at a word where it can be, with an
 ellipsis, and never through the middle of an emoji. The rules:
 
-- No next item: `This week: 7 silver`.
+- No next item: `In the bank: 7 silver`.
+- The economy mode is not `live` (read per print through the `economyMode`
+  reader `createSchoolLifecycle` is handed; none means not live): no line, and
+  the balance is not read. Before coins are live every bank reads 0, and a
+  "0 silver" on the tape would tell a child the work was worth nothing.
 - Silver must be a whole number of 0 or more, or there is no line at all, even
   when there is a next item. The tape never prints a 0 it did not read. A
   negative is refused too: the ledger fold floors at 0, so a negative means

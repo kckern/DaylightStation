@@ -18,6 +18,9 @@
  *   - A "sneak used" tick when today's `piano.games` pass is active or
  *     consumed, or its cap is used. `state: 'unknown'` (the ledger could not
  *     be read) shows no tick: can't tell is not "unused" and not "used".
+ *   - Before coins are live (the bank's `mode` is not `live`), "Coins start
+ *     soon" and NO number, gem or tick: every bank reads 0 until then, and
+ *     "0 in the bank" would tell a kid their work was worth nothing.
  *   - A failed bank read shows "bank is napping" and NO number. Numbers come
  *     only from a bank read that landed; never from the board's cache or any
  *     earlier figure.
@@ -84,10 +87,14 @@ export function useNarrowPortal() {
   return narrow;
 }
 
-/** The chip's figures from a bank payload, or null when it cannot say. */
+/** What the chip says before coins are live. */
+export const COINS_SOON = 'Coins start soon';
+
+/** The chip's figures from a bank payload, `{soon: true}` before live, or null when it cannot say. */
 export function chipFromBank(data) {
   const silver = data?.balances?.silver;
   if (!Number.isFinite(silver)) return null;
+  if (data.mode !== 'live') return { soon: true };
   const gems = Number.isFinite(data.balances.gems) ? data.balances.gems : 0;
   const pass = data.pass?.[SNEAK_PRIVILEGE] ?? null;
   const sneakUsed = Boolean(pass) && pass.state !== 'unknown'
@@ -270,7 +277,10 @@ export default function BankStrip({ kids = [], deviceId = null, className = '', 
                 describedBy={`school-bank-chip-${kid.id}`}
               >
                 <span className="school-bank-strip__name">{name}</span>
-                {chip && (
+                {chip?.soon && (
+                  <span className="school-bank-strip__soon" id={`school-bank-chip-${kid.id}`}>{COINS_SOON}</span>
+                )}
+                {chip && !chip.soon && (
                   <span className="school-bank-strip__coins" id={`school-bank-chip-${kid.id}`}>
                     <CoinIcon className="school-bank-strip__coin" color={silverColor} />
                     <span className="school-bank-strip__silver" aria-hidden="true">{chip.silver}</span>
