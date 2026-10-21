@@ -573,6 +573,29 @@ than through the API, so it works with no server running — which is when a
 parent is most likely to need it. Because there is no event bus, it records the
 read without the on-screen ceremony a real living-room finish gets.
 
+## School debrief — a daily account of an outside school
+
+`school-debrief` is the second plain-daily program after story time, for a
+learner who attends a school outside the household system. One obligation a day:
+tell what you did and learned (typed or spoken), answer two to four frozen
+AI-written follow-ups, finish. Enrollment:
+
+```yaml
+- programId: school-debrief
+  corpusId: null
+  subject: writing
+  title: After-school debrief
+  schedule:
+    daysOfWeek: [1, 2, 3, 4, 5]
+    except:
+      - { from: '<yyyy-mm-dd>', to: '<yyyy-mm-dd>', label: <label> }
+```
+
+`SchoolDebriefProgramLauncher` reports `doneToday`, `obligationProgress` and
+`servedWork` like every launcher, and mints a learner-and-day-bound
+`debriefGrant` for its writes. Coins are preview only; kid surfaces show "Coins
+start soon". Full reference: [School debrief](./school-debrief.md).
+
 ## Operations CLI
 
 The complete operational contract is in [School operations](./operations.md).

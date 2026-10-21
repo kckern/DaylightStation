@@ -30,11 +30,16 @@ export default function PromptItem({ prompt, initial = '', onSubmit, onBack = nu
       else setNotice("We saved your recording but couldn't read it — please type it too.");
     }, [onTake, prompt.id]),
   });
+  // Keyed on the verdict alone: the recorder keeps its last verdict until the
+  // next take starts, so depending on prompt.id too would repaint a refused
+  // take's notice on every later prompt.
+  const promptIdRef = useRef(prompt.id);
+  promptIdRef.current = prompt.id;
   useEffect(() => {
     if (!recorder.verdict) return;
-    schoolDebriefLog.takeRefused({ promptId: prompt.id, verdict: recorder.verdict });
+    schoolDebriefLog.takeRefused({ promptId: promptIdRef.current, verdict: recorder.verdict });
     setNotice(recorder.verdict === 'too-quiet' ? "We didn't hear that — speak up and try again." : 'That was too quick — say a bit more.');
-  }, [recorder.verdict, prompt.id]);
+  }, [recorder.verdict]);
 
   const recording = recorder.phase === 'recording';
   const canSubmit = !parentBusy && !busy && !recording && (!prompt.required || text.trim().length > 0);

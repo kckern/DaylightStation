@@ -247,6 +247,8 @@ defaults. Every write archives the replaced revision under
 | `week-met` | a green week: every study day green AND the weekly row satisfied |
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
+| `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, score at or above the threshold, not a fallback day) or `quiz-passed` |
+| `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused; pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
 
 Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
 pays twice is two rules. Per-learner overrides live under `users.<id>`:
