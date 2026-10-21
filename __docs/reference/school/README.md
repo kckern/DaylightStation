@@ -1552,7 +1552,8 @@ when `selfService.enabled` is true.
   app wires it to the economy (`economyApi.rewardFor`, late-bound because the
   earnings runtime is built after School): an amount only while the economy is
   `live` and one earn rule prices this sheet, such as a `section-day` rule for
-  the subject that today's section has not earned yet. Dry-run and off answer
+  the subject that today's section has not earned yet. The amount is what the
+  sheet adds if passed, at the learner's own rate. Dry-run and off answer
   null, as does anything the economy cannot price with certainty (see the
   economy reference, "Read (`rewardFor`, what a sheet is worth)"). It is also
   null when the port is not wired, returns nothing or throws.

@@ -2,7 +2,7 @@ import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
 import { sheetReward } from "../domain/earnings/index.mjs";
 
-const LABEL_CACHE_TTL_MS = 60_000;
+const WEEK_PREVIEW_TTL_MS = 60_000;
 
 /**
  * The current week's preview for one learner, cached per learner and week for
@@ -17,7 +17,7 @@ const LABEL_CACHE_TTL_MS = 60_000;
  * @param {number} [deps.ttlMs]
  * @returns {(learnerId: string) => Promise<object|null>}
  */
-export function cachedWeekPreview({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS }) {
+export function cachedWeekPreview({ preview, now = () => Date.now(), ttlMs = WEEK_PREVIEW_TTL_MS }) {
   const cache = new Map(); // `${learnerId}|${monday}` → { at, promise }
   const load = async (learnerId) => {
     try {
@@ -51,7 +51,7 @@ export function cachedWeekPreview({ preview, now = () => Date.now(), ttlMs = LAB
  * @param {() => number} [deps.now]
  * @param {number} [deps.ttlMs]
  */
-export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS, weeks = null }) {
+export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = WEEK_PREVIEW_TTL_MS, weeks = null }) {
   const week = weeks ?? cachedWeekPreview({ preview, now, ttlMs });
   const built = new WeakMap(); // one Map per cached week, so a cache hit is the same Map
   return async (learnerId) => {
@@ -91,7 +91,7 @@ export function cachedSheetRewards({ weeks, config, logger = console }) {
   };
 }
 
-export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,labelCacheNow = () => Date.now()}) {
+export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,previewCacheNow = () => Date.now()}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
@@ -131,7 +131,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     // ring standings. The bank names a payout by the preview line it paid for
     // (ref → label); School's "print my next sheet" says what the sheet is
     // worth (`economyApi.rewardFor`, handed to School before this runtime exists).
-    const weeks = cachedWeekPreview({ preview: earningsPreview, now: labelCacheNow });
+    const weeks = cachedWeekPreview({ preview: earningsPreview, now: previewCacheNow });
     economyApi.useEvidenceLabels?.(cachedEvidenceLabels({ weeks }));
     economyApi.useSheetRewards?.(cachedSheetRewards({
       weeks, config: economyApi.configProjection, logger: rootLogger.child({ module: 'economy-sheet-reward' }),

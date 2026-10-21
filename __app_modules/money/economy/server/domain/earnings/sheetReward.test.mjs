@@ -51,8 +51,9 @@ describe('sheetReward', () => {
     expect(sheetReward({ week: week(rs, noRowToday), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
   });
 
-  it('carries gems, and the learner\'s multiplier, as the payout would price one day', () => {
+  it('carries gems, and the learner\'s multiplier, as the payout would price one more day', () => {
     const rs = ruleset([{ ...KOREAN, reward: { silver: 3, gems: 1 } }], { kid: { multiplier: 1.5 } });
+    // Two days served: round(13.5) − round(9) = 14 − 9 = 5.
     expect(sheetReward({ week: week(rs, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 5, gems: 1 });
   });
 
@@ -75,14 +76,62 @@ describe('sheetReward', () => {
     expect(sheetReward({ week: w, unit: { unitId: 'math.4-02', title: 'Math 4-02', subject: 'math' }, mode: 'live' })).toBeNull();
   });
 
-  it('ambiguity is null: two rules for one subject, an overridden rule, an unknown subject or course', () => {
+  it('ambiguity is null: two rules for one subject, an unknown subject or course', () => {
     const two = ruleset([KOREAN, { id: 'korean-unit', kind: 'unit', match: { subject: 'language' }, reward: { silver: 1 } }]);
     expect(sheetReward({ week: week(two, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
-    const overridden = ruleset([KOREAN], { kid: { rules: { 'korean-daily': { reward: { silver: 4 } } } } });
-    expect(sheetReward({ week: week(overridden, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
     expect(sheetReward({ week: week(ruleset([KOREAN]), todayOpen()), unit: { unitId: 'x', subject: null }, mode: 'live' })).toBeNull();
     const byCourse = ruleset([{ id: 'course-unit', kind: 'unit', match: { courseId: 'korean-1' }, reward: { silver: 1 } }]);
     expect(sheetReward({ week: week(byCourse, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
+  });
+
+  it('a learner override: the overridden price, as the payout prices it', () => {
+    const overridden = ruleset([KOREAN], { kid: { rules: { 'korean-daily': { reward: { silver: 4 } } } } });
+    expect(sheetReward({ week: week(overridden, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 4, gems: 0 });
+  });
+
+  it('a fractional multiplier: what the rounded week TOTAL gains, not one rounded day', () => {
+    const oneServed = {
+      days: days([['2026-09-22', 'met'], [WEDNESDAY, 'partial']]),
+      sectionDays: sections('language', [['2026-09-22', 'served'], [WEDNESDAY, 'obligated']]),
+    };
+    const s1 = ruleset([{ ...KOREAN, reward: { silver: 1 } }], { kid: { multiplier: 1.5 } });
+    // round(1.5) = 2 paid; round(3) = 3 → this sheet adds 1, not round(1.5) = 2.
+    expect(sheetReward({ week: week(s1, oneServed), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 1, gems: 0 });
+    // 0.5: round(0.5) = 1 paid; round(1.0) = 1 → adds nothing: null, never "+0".
+    const half = ruleset([{ ...KOREAN, reward: { silver: 1 } }], { kid: { multiplier: 0.5 } });
+    expect(sheetReward({ week: week(half, oneServed), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
+    // 0.5 with nothing served yet: round(0.5) = 1 → +1.
+    const noneServed = { days: days([[WEDNESDAY, 'partial']]), sectionDays: sections('language', [[WEDNESDAY, 'obligated']]) };
+    expect(sheetReward({ week: week(half, noneServed), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 1, gems: 0 });
+    // Gems ride along even when the silver diff is 0.
+    const gems = ruleset([{ ...KOREAN, reward: { silver: 1, gems: 1 } }], { kid: { multiplier: 0.5 } });
+    expect(sheetReward({ week: week(gems, oneServed), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 0, gems: 1 });
+  });
+
+  it('a unit rule outside its effective dates today is null', () => {
+    const unit = { unitId: 'math.4-02', subject: 'math' };
+    const ended = ruleset([{ id: 'math-sheets', kind: 'unit', match: { subject: 'math' }, reward: 1, effective: { to: '2026-09-22' } }]);
+    expect(sheetReward({ week: week(ended, todayOpen('math')), unit, mode: 'live' })).toBeNull();
+    const notYet = ruleset([{ id: 'math-sheets', kind: 'unit', match: { subject: 'math' }, reward: 1, effective: { from: '2026-09-24' } }]);
+    expect(sheetReward({ week: week(notYet, todayOpen('math')), unit, mode: 'live' })).toBeNull();
+    const now = ruleset([{ id: 'math-sheets', kind: 'unit', match: { subject: 'math' }, reward: 1, effective: { from: '2026-09-23', to: '2026-09-23' } }]);
+    expect(sheetReward({ week: week(now, todayOpen('math')), unit, mode: 'live' })).toEqual({ silver: 1, gems: 0 });
+  });
+
+  it('section rules match on subject only, as the evaluator does', () => {
+    const byCourse = ruleset([{ ...KOREAN, match: { subject: 'language', courseId: 'korean-1' } }]);
+    expect(sheetReward({ week: week(byCourse, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toEqual({ silver: 2, gems: 0 });
+    // A section rule's unitId is ignored too: with a unit rule beside it, two candidates.
+    const two = ruleset([
+      { ...KOREAN, match: { subject: 'language', unitId: 'other.' } },
+      { id: 'korean-unit', kind: 'unit', match: { subject: 'language' }, reward: 1 },
+    ]);
+    expect(sheetReward({ week: week(two, todayOpen()), unit: LANGUAGE_UNIT, mode: 'live' })).toBeNull();
+  });
+
+  it('a unit marked elective is null: the amount assumes required work, passed', () => {
+    const w = week(ruleset([KOREAN]), todayOpen());
+    expect(sheetReward({ week: w, unit: { ...LANGUAGE_UNIT, elective: true }, mode: 'live' })).toBeNull();
   });
 
   it('a rule switched off for this learner is not a match', () => {
@@ -114,6 +163,24 @@ describe('sheetReward', () => {
     expect(sheetReward({ week: through(FRIDAY, 'obligated', 'obligated'), unit, mode: 'live' })).toBeNull();
     // Today already done: nothing left for a sheet to finish.
     expect(sheetReward({ week: through(FRIDAY, 'served'), unit, mode: 'live' })).toBeNull();
+    // Saturday with a Saturday obligation still open: this sheet finishes it.
+    const SATURDAY = '2026-09-26';
+    const sat = (satState) => {
+      const rows = [['2026-09-21', 'served'], ['2026-09-22', 'served'], ['2026-09-25', 'served'], [SATURDAY, satState]];
+      return week(rs, { days: days(rows.map(([d]) => [d, 'met'])), sectionDays: sections('scripture', rows) }, { today: SATURDAY });
+    };
+    expect(sat('obligated').lines[0].status).toBe('pending');
+    expect(sheetReward({ week: sat('obligated'), unit, mode: 'live' })).toEqual({ silver: 5, gems: 0 });
+    // Saturday with everything served: the line is earned, not pending — nothing to add.
+    expect(sat('served').lines[0].status).toBe('earned');
+    expect(sheetReward({ week: sat('served'), unit, mode: 'live' })).toBeNull();
+    // Not pending (a faulted day makes it indeterminate): null even on Friday.
+    const faulted = week(rs, {
+      days: days([['2026-09-24', 'met'], [FRIDAY, 'partial']]),
+      sectionDays: sections('scripture', [['2026-09-24', 'faulted'], [FRIDAY, 'obligated']]),
+    }, { today: FRIDAY });
+    expect(faulted.lines[0].status).toBe('indeterminate');
+    expect(sheetReward({ week: faulted, unit, mode: 'live' })).toBeNull();
   });
 
   it('school evidence unavailable or outside the term: null', () => {

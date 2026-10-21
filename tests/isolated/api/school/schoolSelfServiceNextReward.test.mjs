@@ -67,15 +67,16 @@ function school({ rewardFor }) {
   });
 }
 
-async function economy({ mode, mathToday }) {
+const MATH_DAILY = { id: 'math-daily', label: 'Math (each day done)', kind: 'section-day', match: { subject: 'math' }, reward: { silver: 2, gems: 0 } };
+const GREEN_DAY = { id: 'green-day', label: 'Green day', kind: 'day-met', match: {}, reward: { silver: 1, gems: 0 } };
+
+async function economy({ mode, mathToday, rules }) {
+  if (dir) fs.rmSync(dir, { recursive: true, force: true });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'next-reward-'));
   fs.mkdirSync(path.join(dir, 'economy'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'economy', 'earn-rules.yml'), yaml.dump({
     revision: 1, currency: 'silver', users: {},
-    rules: [
-      { id: 'math-daily', label: 'Math (each day done)', kind: 'section-day', match: { subject: 'math' }, reward: { silver: 2, gems: 0 } },
-      { id: 'green-day', label: 'Green day', kind: 'day-met', match: {}, reward: { silver: 1, gems: 0 } },
-    ],
+    rules,
   }));
   const configService = {
     getUserProfile: (id) => (id === 'kid1' ? { id } : null),
@@ -98,10 +99,10 @@ async function economy({ mode, mathToday }) {
   return { economyApi, schoolLifecycle };
 }
 
-async function getNext({ mode = 'live', mathToday = 'obligated' } = {}) {
+async function getNext({ mode = 'live', mathToday = 'obligated', rules = [MATH_DAILY, GREEN_DAY] } = {}) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(NOW));
-  const { economyApi, schoolLifecycle } = await economy({ mode, mathToday });
+  const { economyApi, schoolLifecycle } = await economy({ mode, mathToday, rules });
   // School first, holding the late-bound port — the app's order.
   const issueSubjectNext = school({ rewardFor: economyApi.rewardFor });
   await createEconomyEarningsRuntime({
@@ -129,6 +130,17 @@ describe('GET /learners/:learnerId/next, economy wired', () => {
     const response = await getNext({ mathToday: 'served' });
     expect(response.status).toBe(200);
     expect(response.body.reward).toBeNull();
+  });
+
+  it('a unit rule matched on the unit id School\'s unitView reports: its per-unit price', async () => {
+    const prefix = WORKSHEET_UNIT.split('.')[0];
+    const rules = [GREEN_DAY, { id: 'fraction-sheets', label: 'Fraction sheets', kind: 'unit', match: { subject: 'math', unitId: prefix }, reward: { silver: 1, gems: 1 } }];
+    const response = await getNext({ rules });
+    expect(response.status).toBe(200);
+    expect(response.body.reward).toEqual({ silver: 1, gems: 1 });
+    // The same rule keyed by a course: the unit view names none, so no amount.
+    const byCourse = [GREEN_DAY, { ...rules[1], match: { courseId: prefix } }];
+    expect((await getNext({ rules: byCourse })).body.reward).toBeNull();
   });
 
   it('dry-run: no amount, the coins are not real yet', async () => {

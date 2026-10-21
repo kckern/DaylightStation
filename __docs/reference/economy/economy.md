@@ -407,20 +407,28 @@ coin, price, reason }` (the refusal code as `reason`).
   learner's current-week preview, from the same 60 s cache as the bank's labels.
   An amount only when the catalog is `live` (off and dry-run are null, without
   running a preview: dry-run coins are not real, and the digest says so), the
-  school evidence is `ok`, and exactly one sheet-kind rule matches the unit
-  (subject, unit id prefix, course):
-  - `section-day`: one day's price at the learner's rate, while today's section
-    is `obligated`; null once it is `served` (another sheet adds nothing), and
-    for an elective, a faulted day or no row today.
-  - `section-week`: the week's price only when this sheet finishes the week:
-    Friday or later, the line `pending`, every earlier day served or excused,
-    today obligated, nothing obligated after today, no day unworked.
-  - `unit`: the per-unit price (a unit rule keyed by `courseId` is null: the
-    sheet does not carry its course).
+  school evidence is `ok`, and exactly one sheet-kind rule matches the unit.
+  The amount assumes the sheet is required work and is passed; a unit marked
+  `elective` is null. It is what one more occurrence adds to the line's rounded
+  total, `round((n+1)·s·m) − round(n·s·m)` at the learner's (possibly
+  overridden) reward `s` and multiplier `m`, because a payout mints
+  `round(total) − paid`: at ×1.5 a 1-silver day with one day served adds 1, not 2.
+  - `section-day` (matched on subject only, as the evaluator does): one more
+    day while today's section is `obligated`; null once it is `served`
+    (another sheet adds nothing), and for an elective, a faulted day or no row
+    today.
+  - `section-week` (subject only): the week's price only when this sheet
+    finishes the week: Friday or later, the line `pending`, every earlier day
+    served or excused, today obligated, nothing obligated after today, no day
+    unworked.
+  - `unit` (subject, unit-id prefix, course, as `matchesUnit`): the per-unit
+    price while the rule's `effective` dates include today. A unit rule keyed
+    by `courseId` is null: the sheet does not carry its course.
   - `day-met`, `week-met`, `ring-threshold`, `ring-contest`: never credited to a
     sheet, and they do not count as a match.
-  Two matching rules, a matched rule with a learner override, a unit with no
-  subject or a zero price are null too. A failure (preview or catalog) is null
+  Two matching rules, a unit with no subject, or one more occurrence that adds
+  no silver and no gems are null too. A learner override is priced, not
+  refused. A failure (preview or catalog) is null
   and warns `economy.sheet-reward.failed` once per learner until a read for
   that learner works again; a learner off the roster is null, unwarned. The
   cache means a section finished a moment ago can still show its `+N` for up to
