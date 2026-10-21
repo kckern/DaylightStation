@@ -1,6 +1,7 @@
 // __backend/src/domains/content/entities/MediaProgress.mjs
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { isWatchComplete } from '#shared/contracts/media/watchCompletion.mjs';
 
 /**
  * @typedef {Object} MediaProgressProps
@@ -67,11 +68,13 @@ export class MediaProgress {
   }
 
   /**
-   * Check if item is considered fully watched (>= 90%)
+   * Check if item is considered fully watched — the default (movie-mode) rule in
+   * shared/contracts/media/watchCompletion.mjs. Library overrides apply where the
+   * namespace is known (RecordPlaybackProgress, Fitness show views).
    * @returns {boolean}
    */
   isWatched() {
-    return this.percent >= 90;
+    return isWatchComplete({ percent: this.percent, playhead: this.playhead, duration: this.duration });
   }
 
   /**

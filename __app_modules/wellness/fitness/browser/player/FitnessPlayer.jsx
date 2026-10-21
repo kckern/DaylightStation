@@ -1174,14 +1174,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // Check if currently stalled (3C fix)
     const isStalled = Boolean(resilienceState?.stalled || resilienceState?.waitingToPlay);
 
+    // Completion is the backend's call (the library's watch_completion rule);
+    // this only reports a natural end as finished.
     let status = 'none';
-    if (durationSeconds < 30 && naturalEnd && !isStalled) {
-      status = 'completed';
-    } else if ((naturalEnd || (percent != null && percent >= 90)) && !isStalled) {
-      // Only mark completed if not stalled (3C fix)
+    if (naturalEnd && !isStalled) {
       status = 'completed';
     } else if (percent != null && percent >= 90 && isStalled) {
-      // Near end but stalled - don't mark as completed (3C fix)
+      // Near the end but stalled - don't post at all (3C fix)
       status = 'stalled_near_end';
     } else if (percent != null && percent >= 10) {
       status = 'in_progress';

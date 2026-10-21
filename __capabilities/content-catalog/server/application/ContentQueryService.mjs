@@ -852,9 +852,19 @@ export class ContentQueryService extends IContentQueryPort {
 
     // If no progress found and we're using fallback, scan all library files
     // This handles the case when the source is offline (e.g., Plex unreachable)
+    // Each record's own namespace when loaded across the source: the bare
+    // source would send every item to the default completion rule, so a
+    // Fitness longplay at 94% would read as watched while Plex is down.
+    let namespaceById = null;
     if (allProgress.length === 0 && (usesFallback || progressNamespace === source)) {
       // Try loading across all namespaces owned by the source.
-      if (typeof this.#mediaProgressMemory.listSourceProgress === 'function') {
+      const sourcePrefix = `${source || 'plex'}/`;
+      if (typeof this.#mediaProgressMemory.listAllProgress === 'function') {
+        const entries = (await this.#mediaProgressMemory.listAllProgress())
+          .filter((entry) => entry?.namespaceId?.startsWith(sourcePrefix) && entry.progress);
+        allProgress = entries.map((entry) => entry.progress);
+        namespaceById = new Map(entries.map((entry) => [entry.progress.contentId, entry.namespaceId]));
+      } else if (typeof this.#mediaProgressMemory.listSourceProgress === 'function') {
         allProgress = await this.#mediaProgressMemory.listSourceProgress(source || 'plex');
       }
     }
@@ -887,6 +897,9 @@ export class ContentQueryService extends IContentQueryPort {
         watchTime: progress.watchTime > 0 ? progress.watchTime : undefined,
         lastPlayed: progress.lastPlayed ?? null,
         completedAt: progress.completedAt ?? null,
+        // Which library's completion rule applies (watch_completion): the
+        // container's, or the record's own when loaded across the source.
+        progressNamespace: namespaceById?.get(item.id) ?? progressNamespace,
         watched: percent >= 90,
         // Set priority to in_progress if partially watched (unless already set)
         priority: isInProgress && !item.priority ? 'in_progress' : item.priority

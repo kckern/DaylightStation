@@ -1,4 +1,5 @@
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
+import { isWatchComplete, DEFAULT_RULE } from "#shared/contracts/media/watchCompletion.mjs";
 
 const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
 
@@ -26,6 +27,9 @@ export class RecordPlaybackProgress {
     // (deviceId) => boolean. Composition answers from devices.yml for fleet
     // ids; absent = every well-formed id is accepted.
     isKnownSpotDevice = null,
+    // { ruleFor(namespace, duration) } from household media config (watch_completion).
+    // Absent = the default movie-mode rule for every library.
+    completionRules = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -42,6 +46,7 @@ export class RecordPlaybackProgress {
     this.reportPlaybackSession = reportPlaybackSession;
     this.playLedger = playLedger;
     this.isKnownSpotDevice = isKnownSpotDevice;
+    this.completionRules = completionRules;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
@@ -110,8 +115,29 @@ export class RecordPlaybackProgress {
     const statePercent = estimatedDuration > 0
       ? Math.round((normalizedSeconds / estimatedDuration) * 100)
       : 0;
+    // The library's completion rule (watch_completion in household media config)
+    // decides both the completedAt stamp and the media-server report below.
+    const rule = this.completionRules?.ruleFor?.(progressNamespace, estimatedDuration) ?? DEFAULT_RULE;
+    const watchComplete = naturalEnd === true || isWatchComplete({
+      percent: statePercent, playhead: normalizedSeconds, duration: estimatedDuration, watchTime: newWatchTime,
+    }, rule);
+    const remainingSec = estimatedDuration > 0 ? estimatedDuration - normalizedSeconds : null;
+    // Heartbeats on an already-finished item decide nothing; skip their line.
+    const stillOpen = !existingState?.completedAt || status === 'completed' || naturalEnd === true;
+    if (stillOpen && statePercent >= rule.minPercent) {
+      this.logger.debug?.('play.log.completion_judged', {
+        assetId: compoundId, namespace: progressNamespace, rule: rule.source ?? 'default', tier: rule.tier ?? 0,
+        percent: statePercent, remainingSec, complete: watchComplete,
+      });
+    }
+    if (status === 'completed' && !watchComplete) {
+      this.logger.info?.('play.log.completed_claim_rejected', {
+        assetId: compoundId, namespace: progressNamespace, rule: rule.source ?? 'default',
+        percent: statePercent, remainingSec,
+      });
+    }
     const completedAt = existingState?.completedAt
-      || (statePercent >= 90 ? this.nowTimestamp() : null);
+      || (watchComplete ? this.nowTimestamp() : null);
     const lastPlayed = this.nowTimestamp();
     const spotFields = spotDevice
       ? {
@@ -162,7 +188,10 @@ export class RecordPlaybackProgress {
           contentId: compoundId,
           positionMs: Math.round(normalizedSeconds * 1000),
           durationMs: Math.round(estimatedDuration * 1000),
-          completed: naturalEnd === true || status === 'completed',
+          // A client's `completed` status is a claim, not a verdict: it marks
+          // the item watched on the media server and clears its resume point,
+          // so it must pass the library's rule, as completedAt does.
+          completed: naturalEnd === true || (status === 'completed' && watchComplete),
           at: this.nowEpoch(),
         });
       } catch (error) {

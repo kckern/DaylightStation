@@ -65,9 +65,9 @@ plex:12345:
   carries the stored `spots`/`lastDevice` over (undefined = untouched). An
   explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
   them; a record with an empty spots map is judged by its single playhead.
-- Unfinished / finished rules for a spot: `__backend/src/2_domains/content/services/mediaSpots.mjs`
-  (≥ 5 min or ≥ 5% to count as unfinished; finished at the same 90% line as
-  `isWatched`).
+- Unfinished / finished rules for a spot: `__capabilities/playback/server/domain/services/mediaSpots.mjs`
+  (≥ 5 min or ≥ 5% to count as unfinished; finished at the default rule —
+  see [Default Classifier](#default-classifier)).
 
 ### Watched / unwatched marks
 
@@ -94,17 +94,63 @@ Classifiers determine when content transitions between states (unwatched, in-pro
 | `0 < percent < 90` | in-progress |
 | `percent >= 90` | watched |
 
-### Custom Classifiers
+This is "movie mode": 90% played, no cap on what is left, read as "the credits
+have started" (credits run ~4-10% of a modern feature). It is `DEFAULT_RULE` /
+`isWatchComplete` in `shared/contracts/media/watchCompletion.mjs`. A natural
+end always counts as watched.
 
-Source instances or household configuration can override classifier thresholds. For example, fitness content might use a stricter threshold:
+### Per-library rule (`watch_completion`)
 
-| Condition | State |
-|-----------|-------|
-| `percent === 0` | unwatched |
-| `0 < percent < 95` | in-progress |
-| `percent >= 95` | watched |
+A percentage scales with length. The last 10% of a 30-minute class is a
+cooldown; the last 10% of a 5-hour racing longplay is half an hour of riding.
+So a library can replace the default in the household media config
+(`household/media/config.yml`):
 
-Classifiers are config-defined, not hardcoded per content type.
+```yaml
+watch_completion:
+  default:                 # every library not listed
+    min_percent: 90
+  libraries:
+    plex/14_fitness:       # key = progress namespace (plex/<sectionId>_<slug>)
+      min_watch_sec: 30    # too little recorded watch time never counts
+      tiers:               # first tier whose max_duration_sec fits wins
+        - max_duration_sec: 2700
+          min_percent: 50
+        - min_percent: 95
+          max_remaining_sec: 300
+```
+
+- The key is the item's progress namespace, already resolved on every write and
+  read. A tier inherits the entry-level fields; the last tier must have no
+  `max_duration_sec` (catch-all) and bounds must ascend.
+- With no known duration the cap is skipped and the last tier applies.
+- `min_watch_sec` is a weak floor: recorded watch time includes forward seeks.
+- Missing or malformed config falls back to the coded default. A bad library
+  entry is dropped (that library uses the default) with a
+  `media.watch_completion.rule_invalid` warn; the rest still load. A config read
+  that throws logs `media.watch_completion.read_failed` once per outage.
+- Config is re-read on every judgement, so a household config reload takes
+  effect without a restart.
+- Two composition roots compile the rule (play/log's and the Fitness playable
+  module's), so a bad entry's `media.watch_completion.rule_invalid` warn
+  appears twice per config change.
+
+**Where the library rule applies:** the `completedAt` stamp in
+`RecordPlaybackProgress` (`play/log`), the media-server scrobble gate, and
+Fitness show checkmarks (`FitnessPlayableService`, which also serves Piano and
+School courses — those live in the Lectures library and get the default).
+
+**Where only the default applies:** `MediaProgress.isWatched`, per-screen
+spots (`mediaSpots`), the queue skip and remote progress sync. These do not
+carry the namespace, so a Fitness longplay at 94% may still read as finished in
+the household Media list.
+
+A client's `status: 'completed'` on `play/log` is a claim, not a verdict. It
+scrobbles the item on the media server (marking it watched there and clearing
+the server's resume point) only when the library rule agrees; otherwise the
+backend logs `play.log.completed_claim_rejected`. Browsers do not judge
+completion themselves: the Fitness player reports `completed` only on a
+natural end.
 
 ---
 

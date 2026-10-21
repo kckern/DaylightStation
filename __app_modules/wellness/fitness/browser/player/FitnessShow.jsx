@@ -593,7 +593,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
   const isEpisodeWatched = useCallback((episode) => {
     // Trust backend-computed isWatched (SSOT)
-    // See: FitnessProgressClassifier for threshold logic
+    // Judged by the library's rule: watch_completion in household media config
     return episode?.isWatched ?? false;
   }, []);
 

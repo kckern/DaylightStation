@@ -119,10 +119,11 @@ Episode cards report wall-clock elapsed time (`elapsedMs`) and each participant'
 | **AmbientLedAdapter** | `__backend/src/1_adapters/fitness/AmbientLedAdapter.mjs` | Controls ambient LED strips via Home Assistant scenes (rate-limited, circuit-breaker protected) |
 | **VoiceMemoTranscription** | `__backend/src/1_adapters/fitness/VoiceMemoTranscriptionService.mjs` | Two-stage transcription: Whisper (with fitness context hints) → GPT-4o cleanup |
 | **ScreenshotService** | `__backend/src/3_applications/fitness/services/ScreenshotService.mjs` | Saves session screenshots (base64 decode → file storage) |
-| **FitnessProgressClassifier** | `__backend/src/2_domains/fitness/services/FitnessProgressClassifier.mjs` | Classifies workout viewing progress (50% for short, 95% for long workouts) |
-
-> **Shared watch state.** Workout progress is the household media memory (`media/memory/**`), which the Media app can also write: **marking an item unwatched there sets its playhead to 0 and clears `completedAt`**, which fitness reads (episode `completedAt` and watched state in show views). Marking watched sets 100% and keeps or stamps `completedAt`. See [content-progress.md](../content/content-progress.md#watched--unwatched-marks).
 | **FitnessAPI** | `__backend/src/4_api/v1/routers/fitness.mjs` | REST endpoints (see API Reference below) |
+
+> **Shared watch state.** Workout progress is the household media memory (`media/memory/**`), which the Media app can also write: **marking an item unwatched there sets its playhead to 0 and clears `completedAt`**, which fitness reads (episode `completedAt` and watched state in show views). Marking watched sets 100% and keeps or stamps `completedAt`. See [content-progress.md](../content/content-progress.md#watched--unwatched-marks). Once an episode has a `completedAt` or a Plex `viewCount` ≥ 1, show views treat it as watched for good (the sequential lock never re-closes on a replay), overriding the library rule. Both marks are written only by the library's completion rule (or a natural end), so a long video stopped with real content left keeps its resume point.
+
+> **When a workout counts as watched.** Show checkmarks and `completedAt` use the per-library `watch_completion` rule in the household media config (`household/media/config.yml`), under `watch_completion.libraries.plex/14_fitness`: up to 45 min, 50% played; longer, 95% played **and** at most 5 min left; never with under 30 s of recorded watch time. Each item is judged by its own library, so Piano and School courses served by `FitnessPlayableService` (Lectures library) use the default 90%. Without the block, Fitness falls back to the default. The Fitness player does not judge completion; it reports `completed` only on a natural end. See [content-progress.md](../content/content-progress.md#per-library-rule-watch_completion).
 
 ### Frontend — Session Layer (`frontend/src/hooks/fitness/`)
 
@@ -1138,12 +1139,9 @@ equipment:
     name: Exercise Bike
     type: bike
     cadence_device: "54321"
-
-progressClassification:
-  shortThresholdPercent: 50              # Short workouts (<45 min): 50% = watched
-  longThresholdPercent: 95               # Long workouts (>45 min): 95% = watched
-  longDurationSeconds: 2700              # 45 minutes
 ```
+
+When a workout counts as watched is not Fitness config: see `watch_completion` in the household media config.
 
 ---
 
@@ -1171,9 +1169,8 @@ progressClassification:
 | `__backend/src/2_domains/fitness/services/ZoneService.mjs` | Domain | Zone resolution, group zone, threshold defaults |
 | `__backend/src/2_domains/fitness/services/SessionStatsService.mjs` | Domain | Participant stats (peak/avg HR, coins, zone durations) |
 | `__backend/src/2_domains/fitness/services/TimelineService.mjs` | Domain | Delta encoding/decoding for timeline series |
-| `__backend/src/2_domains/fitness/services/FitnessProgressClassifier.mjs` | Domain | Media progress classification (50%/95% thresholds) |
 | `__backend/src/3_applications/fitness/FitnessConfigService.mjs` | Application | Config loading, playlist enrichment, member names |
-| `__backend/src/3_applications/fitness/FitnessPlayableService.mjs` | Application | Content resolution with watch state |
+| `__backend/src/3_applications/fitness/FitnessPlayableService.mjs` | Application | Content resolution with watch state; watched judged by the item's library rule |
 | `__backend/src/3_applications/fitness/services/ScreenshotService.mjs` | Application | Screenshot persistence (base64 → file) |
 | `__backend/src/3_applications/fitness/ports/ISessionDatastore.mjs` | Port | Session persistence contract |
 | `__backend/src/3_applications/fitness/ports/IZoneLedController.mjs` | Port | Ambient LED control contract |

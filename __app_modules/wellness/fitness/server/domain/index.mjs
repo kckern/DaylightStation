@@ -23,4 +23,3 @@ export {
 
 // Services
 export { ZoneService } from "./services/ZoneService.mjs";
-export { FitnessProgressClassifier } from "./services/FitnessProgressClassifier.mjs";

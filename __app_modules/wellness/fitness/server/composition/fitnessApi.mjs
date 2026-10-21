@@ -62,7 +62,7 @@ import { SaveDebugVoiceMemo } from "../application/usecases/SaveDebugVoiceMemo.m
 import { ManageAccess } from "../application/usecases/ManageAccess.mjs";
 import { RecapSweep } from "../application/usecases/RecapSweep.mjs";
 import { TrashRetentionSweep } from "../application/usecases/TrashRetentionSweep.mjs";
-import { FitnessProgressClassifier } from "../domain/index.mjs";
+import { createWatchCompletionRules } from "#shared/contracts/media/watchCompletion.mjs";
 import { TimelapseFrameMapper } from "../domain/services/TimelapseFrameMapper.mjs";
 import { makeDeviceColorResolver } from "../domain/strapColors.mjs";
 import { createTimelapseFrameRenderer } from "../rendering/TimelapseFrameRenderer.mjs";
@@ -494,9 +494,13 @@ export function createFitnessPlayableModule({
     })
     : null;
   const fitnessPlayableService = new FitnessPlayableService({
-    fitnessConfigService,
     contentCatalog: fitnessContentCatalog,
-    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    // Show checkmarks use the same per-library rule as play/log's completedAt
+    // (household media config `watch_completion`), re-read per judgement.
+    completionRules: createWatchCompletionRules({
+      readConfig: () => configService?.getHouseholdAppConfig?.(null, 'media')?.watch_completion,
+      logger,
+    }),
     logger,
   });
 

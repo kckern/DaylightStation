@@ -8,16 +8,15 @@ import { compileFitnessCourse, FITNESS_COURSE_SCHEMA } from "../domain/fitnessCo
 const DEFAULT_TTL_MS = 15_000;
 
 export class FitnessCourseCurriculumCatalog {
-  #base; #source; #snapshots; #householdId; #clock; #ttlMs; #logger;
+  #base; #source; #snapshots; #clock; #ttlMs; #logger;
   #snapshot = null; #loading = null;
 
-  constructor({ baseCatalog, sourceProvider, projectionStore = null, householdId = null,
+  constructor({ baseCatalog, sourceProvider, projectionStore = null,
     clock = () => Date.now(), ttlMs = DEFAULT_TTL_MS, logger = console } = {}) {
     if (!baseCatalog) throw new Error('FitnessCourseCurriculumCatalog requires baseCatalog');
     this.#base = baseCatalog;
     this.#source = sourceProvider;
     this.#snapshots = projectionStore;
-    this.#householdId = householdId;
     this.#clock = clock;
     this.#ttlMs = ttlMs;
     this.#logger = logger;
@@ -37,7 +36,7 @@ export class FitnessCourseCurriculumCatalog {
       try {
         if (!this.#source?.getPlayableEpisodes) throw new Error('Fitness playable source is unavailable');
         // eslint-disable-next-line no-await-in-loop
-        const source = await this.#source.getPlayableEpisodes(String(entry.raw.source?.showId ?? ''), this.#householdId);
+        const source = await this.#source.getPlayableEpisodes(String(entry.raw.source?.showId ?? ''));
         const compiled = compileFitnessCourse(entry.raw, source, { subject: entry.subject, work: entry.work });
         if (compiled.errors.length) throw new Error(compiled.errors.join('; '));
         projection = compiled.projection;
