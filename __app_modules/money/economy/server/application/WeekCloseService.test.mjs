@@ -8,7 +8,9 @@ import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProject
 import { EconomyService } from "./EconomyService.mjs";
 import { WeekCloseService, closingWeekFor } from "./WeekCloseService.mjs";
 
-const LEARNERS = ['learner-a', 'learner-b'];
+const LEARNERS = ['learner-a', 'learner-b']; // the school roster
+// Household users: the roster, a parent (deposits, arcade) and a kid who left the roster.
+const USERS = [...LEARNERS, 'parent-a', 'leaver'];
 const WEEK = '2026-09-21'; // Monday
 const SUNDAY = '2026-09-27';
 const SILVER_TO_GOLD = [{ from: 'silver', to: 'gold', rate: 1 }];
@@ -37,11 +39,13 @@ const setup = ({ mode = 'live', convert = SILVER_TO_GOLD, today = SUNDAY, roster
     async settleAll({ week }) {
       state.settles.push(week);
       if (settleAll) return settleAll({ week });
-      return { mode: state.mode, learners: roster.map((learnerId) => ({ learnerId, minted: [], skipped: 0, held: 0, mode: state.mode })) };
+      // As PayoutService reports it: a roster learner with no wallet is `not-a-user`.
+      return { mode: state.mode, learners: roster.map((learnerId) => ({ learnerId, minted: [], skipped: 0, held: 0, mode: state.mode,
+        ...(USERS.includes(learnerId) ? {} : { reason: 'not-a-user' }) })) };
     },
   };
   const config = { catalog: () => ({ mode: state.mode, week_close: { cron: '30 23 * * 0', convert: state.convert } }) };
-  const service = new WeekCloseService({ payout, economy, config, logger: log.logger });
+  const service = new WeekCloseService({ payout, economy, config, listUsers: () => USERS, logger: log.logger });
   return { state, log, service, economy, ledger: (id) => new YamlEconomyDatastore({ configService }).readAllTransactions(id) };
 };
 
@@ -51,7 +55,7 @@ const converts = (ledger) => ledger.filter((t) => t.kind === 'convert');
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'economy-week-close-'));
   configService = {
-    getUserProfile: (id) => (LEARNERS.includes(id) ? { id } : null),
+    getUserProfile: (id) => (USERS.includes(id) ? { id } : null),
     getUserDir: (id) => path.join(root, id),
     getHouseholdAppConfig: () => ({}),
   };
@@ -107,14 +111,15 @@ describe('WeekCloseService.close', () => {
     const again = await service.close({ weekId: WEEK });
     expect(converts(ledger('learner-a'))).toHaveLength(2);
     expect((await economy.getBalance('learner-a')).balances).toEqual({ silver: 3, gold: 12, gems: 0 });
-    expect(again.learners.find((l) => l.learnerId === 'learner-a').results[0].status).toBe('already-closed');
+    expect(again.learners.find((l) => l.learnerId === 'learner-a').results[0].status).toBe('already-converted');
   });
 
   it('late silver converts at the next week\'s close', async () => {
-    const { service, economy, ledger } = setup();
+    const { service, state, economy, ledger } = setup();
     await fund(economy, 'learner-a', 12);
     await service.close({ weekId: WEEK });
     await fund(economy, 'learner-a', 3, 'earn:learner-a:late');
+    state.today = '2026-10-04';
     await service.close({ weekId: '2026-09-28' });
     expect(converts(ledger('learner-a')).map((t) => [t.ref, t.delta])).toEqual([
       [`close:learner-a:${WEEK}`, -12], [`close:learner-a:${WEEK}:gold`, 12],
@@ -168,6 +173,8 @@ describe('WeekCloseService.close', () => {
     expect(converts(ledger('learner-a')).map((t) => t.currency)).toEqual(['silver']);
     expect(first.learners.find((l) => l.learnerId === 'learner-a').results[0].error).toBe('disk full');
     expect(log.of('economy.week-close.failed')).toHaveLength(1);
+    // The out half landed, so the wallet cache says so too.
+    expect(new YamlEconomyDatastore({ configService }).readWallet('learner-a').balances).toEqual({ silver: 0, gold: 0, gems: 0 });
 
     failGold = false;
     await fund(economy, 'learner-a', 4, 'earn:learner-a:late'); // must not change the repaired amount
@@ -251,11 +258,11 @@ describe('WeekCloseService.close', () => {
     expect((await service.close({ weekId: '2026-09-24' })).weekId).toBe(WEEK);
   });
 
-  it('a learner without a wallet is skipped and said once per process', async () => {
+  it('a roster learner without a wallet (PayoutService said so) is skipped without a failure', async () => {
     const { service, log } = setup({ roster: ['learner-a', 'stranger'] });
-    await service.close({ weekId: WEEK });
-    await service.close({ weekId: WEEK });
-    expect(log.of('economy.week-close.not-a-user')).toHaveLength(1);
+    const res = await service.close({ weekId: WEEK });
+    expect(res.learners.map((l) => l.learnerId)).not.toContain('stranger');
+    expect(log.of('economy.week-close.failed')).toEqual([]);
   });
 
   it('a settle failure for one learner does not block that learner\'s close', async () => {
@@ -267,11 +274,66 @@ describe('WeekCloseService.close', () => {
     expect(converts(ledger('learner-a')).map((t) => t.delta)).toEqual([-12, 12]);
   });
 
-  it('a roster failure logs failed and converts nothing (the balance converts next week)', async () => {
+  it('a week-wide settle failure logs settle-failed and still converts the payout earners', async () => {
     const { service, economy, ledger, log } = setup({ settleAll: async () => { throw new Error('roster down'); } });
     await fund(economy, 'learner-a', 12);
-    await expect(service.close({ weekId: WEEK })).rejects.toThrow('roster down');
+    await economy.deposit('learner-b', { amount: 9 }); // a roster kid with no payout: unreachable without the roster
+    await service.close({ weekId: WEEK });
+    expect(converts(ledger('learner-a')).map((t) => t.delta)).toEqual([-12, 12]);
+    expect(converts(ledger('learner-b'))).toEqual([]);
+    expect(log.of('economy.week-close.settle-failed')).toEqual([
+      expect.objectContaining({ level: 'warn', data: expect.objectContaining({ weekId: WEEK, error: 'roster down' }) }),
+    ]);
+  });
+
+  it('a corrupt ledger in the week-wide settle logs settle-failed at error', async () => {
+    const corrupt = Object.assign(new Error('shard is not a list'), { code: 'CORRUPT_LEDGER' });
+    const { service, log } = setup({ settleAll: async () => { throw corrupt; } });
+    await service.close({ weekId: WEEK });
+    expect(log.of('economy.week-close.settle-failed')).toEqual([expect.objectContaining({ level: 'error' })]);
+  });
+
+  it('an off-roster user with a payout entry converts', async () => {
+    const { service, economy, ledger } = setup();
+    await fund(economy, 'leaver', 8);
+    await economy.deposit('leaver', { amount: 2 });
+    const res = await service.close({ weekId: WEEK });
+    expect(converts(ledger('leaver')).map((t) => t.delta)).toEqual([-10, 10]);
+    expect(res.learners.map((l) => l.learnerId)).toEqual(['learner-a', 'learner-b', 'parent-a', 'leaver']);
+  });
+
+  it('a household user with only deposit silver never converts', async () => {
+    const { service, economy, ledger } = setup();
+    await economy.deposit('parent-a', { amount: 40 });
+    const res = await service.close({ weekId: WEEK });
+    expect(converts(ledger('parent-a'))).toEqual([]);
+    expect((await economy.getBalance('parent-a')).balances.silver).toBe(40);
+    expect(res.learners.find((l) => l.learnerId === 'parent-a').results[0].status).toBe('not-an-earner');
+  });
+
+  it('a roster learner is closed even without a payout entry', async () => {
+    const { service, economy, ledger } = setup();
+    await economy.deposit('learner-b', { amount: 4 });
+    await service.close({ weekId: WEEK });
+    expect(converts(ledger('learner-b')).map((t) => t.delta)).toEqual([-4, 4]);
+  });
+
+  it('refuses a week that has not ended, before any settle', async () => {
+    const { service, state, economy, ledger, log } = setup({ today: '2026-09-26' }); // Saturday
+    await fund(economy, 'learner-a', 12);
+    await expect(service.close({ weekId: WEEK })).rejects.toMatchObject({ name: 'ValidationError', code: 'WEEK_NOT_ENDED' });
+    expect(state.settles).toEqual([]);
     expect(converts(ledger('learner-a'))).toEqual([]);
+    expect(log.of('economy.week-close.refused')).toEqual([
+      expect.objectContaining({ level: 'warn', data: { weekId: WEEK, today: '2026-09-26', reason: 'week-not-ended' } }),
+    ]);
+  });
+
+  it('a skipped learner logs one skipped event at debug', async () => {
+    const { service, log } = setup();
+    await service.close({ weekId: WEEK });
+    expect(log.of('economy.week-close.skipped').map((e) => [e.level, e.data.status])).toContainEqual(['debug', 'nothing']);
+    expect(log.entries.filter((e) => e.event === 'economy.week-close.nothing')).toEqual([]);
   });
 
   it('live logs every conversion at info and a summary', async () => {

@@ -234,13 +234,11 @@ describe('startWeekClose', () => {
     expect(logger.warn).toHaveBeenCalledWith('economy.week-close.failed', expect.objectContaining({ error: 'bad yaml' }));
   });
 
-  it('registers even while off, so a reload to live needs no restart; off skips the close', async () => {
-    const { state, tasks, weekCloseService } = setupClose({ mode: 'off' });
+  it('registers even while off, so a reload to live needs no restart; the close itself reads the mode', async () => {
+    const { tasks, scheduler, weekCloseService } = setupClose({ mode: 'off' });
+    expect(scheduler.registerTask).toHaveBeenCalledWith('economy:week-close', '30 23 * * 0', expect.any(Function));
     await tasks.get('economy:week-close').fn();
-    expect(weekCloseService.close).not.toHaveBeenCalled();
-    state.mode = 'live';
-    await tasks.get('economy:week-close').fn();
-    expect(weekCloseService.close).toHaveBeenCalledTimes(1);
+    expect(weekCloseService.close).toHaveBeenCalledWith({});
   });
 
   it('a failing close is logged, never thrown into the scheduler; a corrupt ledger is error', async () => {

@@ -20,6 +20,27 @@ export function convertedAmount(amount, rate) {
   return Math.floor(amount * rate + 1e-9);
 }
 
+const isRate = (rate) => typeof rate === 'number' && Number.isFinite(rate) && rate > 0;
+
+/**
+ * What a lone first half of a conversion says the pair is, checked: a
+ * negative delta, `meta.from` matching, a real `meta.to`, a positive rate
+ * and a whole `got` no more than that rate gives. Anything else is refused,
+ * since repairing from it would mint coins nobody can account for.
+ */
+function repairFigures(fromHalf, from, ref) {
+  const m = fromHalf.meta;
+  const refuse = (why) => { throw new ValidationError(`convert ${ref}: cannot repair, ${why}`, { code: 'BAD_CONVERT_HALF' }); };
+  if (!Number.isInteger(fromHalf.delta) || fromHalf.delta >= 0) refuse(`the ${from} half has delta ${fromHalf.delta}`);
+  if (m == null || typeof m !== 'object') refuse('the first half has no meta');
+  if (m.from !== from) refuse(`meta.from is ${m.from}, not ${from}`);
+  if (!CURRENCIES.includes(m.to) || m.to === from) refuse(`meta.to is ${m.to}`);
+  if (!isRate(m.rate)) refuse(`meta.rate is ${m.rate}`);
+  const spent = -fromHalf.delta;
+  if (!Number.isInteger(m.got) || m.got <= 0 || m.got > convertedAmount(spent, m.rate)) refuse(`meta.got is ${m.got}`);
+  return { to: m.to, rate: m.rate, spent, got: m.got };
+}
+
 export class EconomyService {
   #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId;
 
@@ -268,69 +289,90 @@ export class EconomyService {
    * The balance read (strict, all-time), the idempotency check and both
    * appends run in one user-lock body, so a mint or spend cannot land between
    * them. `ref` converts once:
-   *   both halves present   `already-closed`, nothing written
+   *   both halves present   `already-converted`, nothing written
    *   only the `from` half  a crash between the appends; writes the missing
-   *                         `to` half from the first half's own figures
-   *                         (`repaired`), never re-reading the balance
+   *                         half from the first half's own `meta` (its `to`,
+   *                         `rate` and `got`, even if the caller's rule has
+   *                         changed since), never re-reading the balance
+   *                         (`repaired`). A first half whose figures do not
+   *                         add up is refused (ValidationError).
    *   only the `to` half    refuses (ValidationError): this method never
    *                         writes that, so a person should look
-   *   neither               `nothing` (balance ≤ 0), `below-rate` (balance
-   *                         too small for one whole `to` coin: nothing is
-   *                         spent for nothing), or `converted`
+   *   neither               `nothing` (balance ≤ 0), `not-an-earner` (with
+   *                         `requireSource`: no ledger entry has that
+   *                         `source`), `below-rate` (balance too small for
+   *                         one whole `to` coin: nothing is spent for
+   *                         nothing), or `converted`
    * `dryRun` gives the same answer (`would-convert`, `would-repair`) and
-   * writes nothing, not even the wallet snapshot.
-   * @returns {Promise<{userId: string, status: string, spent: number, got: number, rate: number, txnIds: string[]}>}
+   * writes nothing, not even the wallet snapshot. Once the first half has
+   * landed the wallet snapshot is written even if the second half throws.
+   * @param {string|null} [args.requireSource] - convert only a wallet with at
+   *   least one entry from this source (the week close: `payout`)
+   * @returns {Promise<{userId: string, status: string, spent: number, got: number, rate: number, to: string, txnIds: string[]}>}
    */
-  async convert(userId, { from, to, rate, ref, action = 'convert', source = 'convert', meta = null, dryRun = false }) {
+  async convert(userId, { from, to, rate, ref, action = 'convert', source = 'convert', meta = null, dryRun = false, requireSource = null }) {
     this.#assertUser(userId);
     if (!CURRENCIES.includes(from) || !CURRENCIES.includes(to) || from === to) {
       throw new ValidationError(`convert needs two different currencies, got ${from} → ${to}`);
     }
-    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) throw new ValidationError(`convert rate must be a positive number, got ${rate}`);
+    if (!isRate(rate)) throw new ValidationError(`convert rate must be a positive number, got ${rate}`);
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('convert ref is required');
-    const toRef = `${ref}:${to}`;
     return this.#ds.withUserLock(userId, async () => {
       const txns = this.#ds.readAllTransactions(userId, { strict: true });
       const isHalf = (t, r, c) => t.kind === 'convert' && t.ref === r && (t.currency ?? 'silver') === c;
-      const fromHalf = txns.find((t) => isHalf(t, ref, from));
-      const toHalf = txns.find((t) => isHalf(t, toRef, to));
-      const result = (status, spent, got, rateUsed = rate, txnIds = []) => ({ userId, status, spent, got, rate: rateUsed, txnIds });
-      if (fromHalf && toHalf) return result('already-closed', -fromHalf.delta, toHalf.delta, fromHalf.meta?.rate ?? rate);
-      if (toHalf) throw new ValidationError(`convert ${ref}: the ${to} half exists without the ${from} half`);
-
+      const result = (status, spent, got, { rate: r = rate, to: c = to, txnIds = [] } = {}) => ({ userId, status, spent, got, rate: r, to: c, txnIds });
       const at = this.#now();
-      const half = (currency, delta, halfRef, spent, got, rateUsed) => createTransaction({
+      const half = (currency, delta, halfRef, figures) => createTransaction({
         id: this.#newTransactionId(), kind: 'convert', currency, delta, action, source, ref: halfRef,
-        evidenceRef: ref, meta: { ...(meta ?? {}), from, to, rate: rateUsed, spent, got }, at,
+        evidenceRef: ref, meta: { ...(meta ?? {}), from, ...figures }, at,
       });
 
+      const fromHalf = txns.find((t) => isHalf(t, ref, from));
       if (fromHalf) {
-        // Repair from what the first half recorded, not today's balance or rate.
-        const spent = -fromHalf.delta;
-        const rateUsed = fromHalf.meta?.rate ?? rate;
-        const got = fromHalf.meta?.got ?? convertedAmount(spent, rateUsed);
-        if (dryRun) return result('would-repair', spent, got, rateUsed);
-        const txn = half(to, got, toRef, spent, got, rateUsed);
-        await this.#ds.appendTransaction(userId, txn);
-        this.#snapshot(userId);
-        this.#logger.warn('economy.convert.repaired', { userId, ref, from, to, spent, got });
-        return result('repaired', spent, got, rateUsed, [txn.id]);
+        // The first half says what the pair is; today's rule does not.
+        const original = repairFigures(fromHalf, from, ref);
+        const toRef = `${ref}:${original.to}`;
+        const toHalf = txns.find((t) => isHalf(t, toRef, original.to));
+        const opts = { rate: original.rate, to: original.to };
+        if (toHalf) return result('already-converted', original.spent, toHalf.delta, opts);
+        if (dryRun) return result('would-repair', original.spent, original.got, opts);
+        if (original.to !== to) {
+          this.#logger.warn('economy.convert.repair-original-target', { userId, ref, from, to: original.to, ruleTo: to });
+        }
+        const txn = half(original.to, original.got, toRef, original);
+        try {
+          await this.#ds.appendTransaction(userId, txn);
+        } finally {
+          this.#snapshot(userId);
+        }
+        this.#logger.debug?.('economy.convert.repaired', { userId, ref, from, ...original });
+        return result('repaired', original.spent, original.got, { ...opts, txnIds: [txn.id] });
+      }
+      const toRef = `${ref}:${to}`;
+      if (txns.some((t) => isHalf(t, toRef, to))) {
+        throw new ValidationError(`convert ${ref}: the ${to} half exists without the ${from} half`);
       }
 
       const spent = foldBalances(txns)[from];
       if (spent <= 0) return result('nothing', 0, 0);
+      if (requireSource != null && !txns.some((t) => t.source === requireSource)) return result('not-an-earner', 0, 0);
       const got = convertedAmount(spent, rate);
       if (got <= 0) return { ...result('below-rate', 0, 0), balance: spent };
       if (dryRun) return result('would-convert', spent, got);
-      const out = half(from, -spent, ref, spent, got, rate);
-      const back = half(to, got, toRef, spent, got, rate);
+      const figures = { to, rate, spent, got };
+      const out = half(from, -spent, ref, figures);
+      const back = half(to, got, toRef, figures);
       // `from` first: a crash between leaves coins owed (repaired next run),
-      // never coins minted from nothing.
+      // never coins minted from nothing. The snapshot follows the ledger
+      // either way.
       await this.#ds.appendTransaction(userId, out);
-      await this.#ds.appendTransaction(userId, back);
-      this.#snapshot(userId);
-      this.#logger.info('economy.convert', { userId, ref, from, to, rate, spent, got });
-      return result('converted', spent, got, rate, [out.id, back.id]);
+      try {
+        await this.#ds.appendTransaction(userId, back);
+      } finally {
+        this.#snapshot(userId);
+      }
+      this.#logger.debug?.('economy.convert', { userId, ref, from, to, rate, spent, got });
+      return result('converted', spent, got, { txnIds: [out.id, back.id] });
     });
   }
 

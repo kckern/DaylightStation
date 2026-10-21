@@ -6,6 +6,8 @@ import yaml from 'js-yaml';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyService } from "./EconomyService.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
+import { createTransaction } from "../domain/index.mjs";
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const USER = 'test-user';
 const USER_DIR = path.join(os.tmpdir(),'econ-svc-test-user');
@@ -504,5 +506,121 @@ describe('metered sessions', () => {
       vi.setSystemTime(new Date(Date.now() + 6 * 60 * 1000));
       expect((await svc.getBalance(USER)).session).toBeNull();
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('convert', () => {
+  const REF = 'close:test-user:2026-09-21';
+  const ds = () => new YamlEconomyDatastore({ configService });
+  const converts = () => ds().readAllTransactions(USER).filter((t) => t.kind === 'convert');
+  const fund = (svc, amount, ref = 'earn:seed') => svc.mint(USER, { currency: 'silver', amount, ref });
+  // A half as convert() writes it, for crafting a torn or tampered pair.
+  const half = (over) => createTransaction({ id: `txn_${Math.random().toString(36).slice(2)}`, kind: 'convert', action: 'week-close', source: 'week-close',
+    at: '2026-09-27T23:30:00.000Z', evidenceRef: REF, ...over });
+  const outHalf = (meta = {}, delta = -12) => half({ currency: 'silver', delta, ref: REF, meta: { from: 'silver', to: 'gold', rate: 1, spent: -delta, got: 12, ...meta } });
+  const args = (over = {}) => ({ from: 'silver', to: 'gold', rate: 1, ref: REF, ...over });
+
+  it('converted: writes the pair and returns its figures', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    const res = await svc.convert(USER, args());
+    expect(res).toMatchObject({ status: 'converted', spent: 12, got: 12, rate: 1 });
+    expect(res.txnIds).toHaveLength(2);
+    expect(converts().map((t) => [t.ref, t.currency, t.delta])).toEqual([[REF, 'silver', -12], [`${REF}:gold`, 'gold', 12]]);
+  });
+  it('already-converted: a second call writes nothing', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await svc.convert(USER, args());
+    expect(await svc.convert(USER, args())).toMatchObject({ status: 'already-converted', spent: 12, got: 12 });
+    expect(converts()).toHaveLength(2);
+  });
+  it('nothing: no balance; below-rate: too little for one coin', async () => {
+    const svc = makeService();
+    expect((await svc.convert(USER, args())).status).toBe('nothing');
+    await fund(svc, 3);
+    expect(await svc.convert(USER, args({ rate: 0.25 }))).toMatchObject({ status: 'below-rate', balance: 3 });
+    expect(converts()).toEqual([]);
+  });
+  it('would-convert (dry run) writes nothing', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    expect(await svc.convert(USER, args({ dryRun: true }))).toMatchObject({ status: 'would-convert', spent: 12, got: 12 });
+    expect(converts()).toEqual([]);
+  });
+  it('requireSource: no entry from that source is not-an-earner; one is enough', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 20 });
+    expect((await svc.convert(USER, args({ requireSource: 'payout' }))).status).toBe('not-an-earner');
+    expect(converts()).toEqual([]);
+    await fund(svc, 5);
+    expect(await svc.convert(USER, args({ requireSource: 'payout' }))).toMatchObject({ status: 'converted', spent: 25 });
+  });
+  it('a to half without its from half throws', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await ds().appendTransaction(USER, half({ currency: 'gold', delta: 12, ref: `${REF}:gold` }));
+    await expect(svc.convert(USER, args())).rejects.toThrow(ValidationError);
+  });
+  it('would-repair (dry run) reports the missing half and writes nothing', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf());
+    expect(await svc.convert(USER, args({ dryRun: true }))).toMatchObject({ status: 'would-repair', spent: 12, got: 12 });
+    expect(converts()).toHaveLength(1);
+  });
+  it('repair after a rate change uses the first half\'s rate and got', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf({ rate: 0.5, got: 6 }));
+    const res = await svc.convert(USER, args({ rate: 2 }));
+    expect(res).toMatchObject({ status: 'repaired', spent: 12, got: 6, rate: 0.5 });
+    expect(converts()[1]).toMatchObject({ currency: 'gold', delta: 6, ref: `${REF}:gold`, meta: expect.objectContaining({ rate: 0.5, got: 6 }) });
+  });
+  it('repair goes to the first half\'s target currency even if the rule changed', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf({ to: 'gems' }));
+    const res = await svc.convert(USER, args({ to: 'gold' }));
+    expect(res).toMatchObject({ status: 'repaired', to: 'gems', got: 12 });
+    expect(converts()[1]).toMatchObject({ currency: 'gems', ref: `${REF}:gems`, delta: 12 });
+    expect((await svc.convert(USER, args({ to: 'gold' }))).status).toBe('already-converted');
+  });
+  it.each([
+    ['a positive from half', outHalf({}, 12)],
+    ['no meta', half({ currency: 'silver', delta: -12, ref: REF })],
+    ['got above what the rate gives', outHalf({ got: 13 })],
+    ['a fractional got', outHalf({ got: 1.5 })],
+    ['a zero got', outHalf({ got: 0 })],
+    ['a meta.from that is not the call\'s from', outHalf({ from: 'gems' })],
+    ['a meta.to that is not a currency', outHalf({ to: 'platinum' })],
+    ['a meta.to equal to from', outHalf({ to: 'silver' })],
+    ['a bad meta.rate', outHalf({ rate: -1 })],
+  ])('repair refuses a first half with %s', async (_label, txn) => {
+    const svc = makeService();
+    // A positive "from half" is still a convert entry the createTransaction accepts.
+    await ds().appendTransaction(USER, txn);
+    await expect(svc.convert(USER, args())).rejects.toThrow(ValidationError);
+    expect(converts()).toHaveLength(1);
+  });
+  it.each([
+    ['the same currency', { to: 'silver' }],
+    ['an unknown currency', { from: 'copper' }],
+    ['a zero rate', { rate: 0 }],
+    ['a NaN rate', { rate: NaN }],
+    ['a string rate', { rate: '1' }],
+    ['a blank ref', { ref: '  ' }],
+  ])('rejects %s', async (_label, over) => {
+    await expect(makeService().convert(USER, args(over))).rejects.toThrow(ValidationError);
+  });
+  it('a failed second half still leaves wallet.yml matching the ledger', async () => {
+    const datastore = new YamlEconomyDatastore({ configService });
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'convert' && txn.currency === 'gold') throw new Error('disk full');
+      return append(userId, txn);
+    };
+    const svc = new EconomyService({ datastore, configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } });
+    await fund(svc, 12);
+    await expect(svc.convert(USER, args())).rejects.toThrow('disk full');
+    expect(ds().readWallet(USER).balances).toEqual({ silver: 0, gold: 0, gems: 0 });
   });
 });

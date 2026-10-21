@@ -319,15 +319,28 @@ Per close, `catalog()` is read once (mode and rules):
 
 - **Which week.** The week whose Sunday is today's study day or has most
   recently passed (`closingWeekFor`, from the preview's `currentStudyDay()`).
-  At Sunday 23:30 that is the current week; a manual run on Monday to Saturday
-  closes the previous week, never one still in progress. The scheduler has no
-  catch-up: a close missed while the backend was down waits for next Sunday,
-  which converts the whole balance anyway.
+  At Sunday 23:30 that is the current week. The only other entry point is a
+  direct `WeekCloseService.close()` call from code (no route or CLI runs it,
+  and `scheduler.trigger` runs agent assignments, not tasks); with no week, a
+  call on Monday to Saturday closes the previous week. A week whose Sunday is
+  still ahead is refused: `economy.week-close.refused { weekId, today,
+  reason: week-not-ended }` and a `ValidationError` with code `WEEK_NOT_ENDED`.
+  The scheduler has no catch-up: a close missed while the backend was down
+  waits for next Sunday, which converts the whole balance anyway.
 - **Settle first.** `PayoutService.settleAll({ week })` once more, for the
-  last-minute contest and day-met lines; its roster is the close's roster. One
-  learner's failed settle is logged by the payout and does not block that
-  learner's close. A roster failure fails the close (nothing converts; next
-  week's close picks the balance up).
+  last-minute contest and day-met lines. One learner's failed settle is logged
+  by the payout and does not block that learner's close. A week-wide failure
+  (the roster read) logs `economy.week-close.settle-failed` (warn; error for
+  `CORRUPT_LEDGER`) and the close goes on without the roster.
+- **Whose wallets.** Every roster learner from that settle (a roster learner
+  the payout reports `not-a-user` has no wallet and is skipped), plus every
+  other household user (`EconomyConfigProjection.users()`) who has at least
+  one ledger entry with `source: payout`: a kid who left the roster, a
+  piano-only earner. That check runs inside the convert lock
+  (`convert({ requireSource: 'payout' })`, status `not-an-earner`). Parents'
+  and legacy-deposit silver never converts: arcade metered spend runs on
+  silver, and a wallet that never had a payout keeps it. Without a roster only
+  the payout earners close.
 - **What converts.** The wallet's whole silver balance at close time (the fold of
   the whole ledger), not the week's earnings. Gold = floor(silver × rate). A
   balance too small for one gold (a fractional rate) converts nothing and logs
@@ -352,19 +365,28 @@ Per close, `catalog()` is read once (mode and rules):
   | in | `close:<learner>:<week>:gold` | gold | +floor(balance × rate) |
 
 - **Idempotent.** The out half's ref means the week is closed: a second close
-  writes nothing (`already-closed`). The out half is written first, so a crash
-  between the appends leaves gold owed, never gold from nothing; the next close
-  of that week writes the missing in half from the out half's own `meta`
-  (`economy.week-close.repaired`, warn) without re-reading the balance. An in
-  half without its out half is refused. A corrupt shard throws `CORRUPT_LEDGER`
-  and nothing is written (logged `economy.week-close.failed` at error).
+  writes nothing (`already-converted`). The out half is written first, so a
+  crash between the appends leaves gold owed, never gold from nothing, and
+  `wallet.yml` is rewritten from the ledger even when the in half throws. The
+  next close of that week writes the missing in half from the out half's own
+  `meta` (`economy.week-close.repaired`, warn) without re-reading the balance:
+  its `to`, `rate` and `got`, even if the rule has changed since (a different
+  target logs `economy.convert.repair-original-target`). An out half whose
+  figures do not add up (delta not negative, `meta.from` not the rule's
+  `from`, a bad `meta.to` or `meta.rate`, or `meta.got` not a whole number
+  from 1 to floor(spent × rate)) is refused, as is an in half without its out
+  half. A corrupt shard throws `CORRUPT_LEDGER` and nothing is written (logged
+  `economy.week-close.failed` at error).
 - **Modes.** `off`: nothing (no settle, no read). `dry-run`: logs
   `economy.week-close.would-convert { learnerId, weekId, silver, gold, rate }`
   and writes nothing. `live`: writes and logs `economy.week-close.converted` per
-  learner at info. Every run ends with `economy.week-close.closed` (counts).
-- A learner who is not a household user logs `economy.week-close.not-a-user`
-  once per process (or was already reported by the payout) and is skipped. Only
-  roster learners are closed.
+  learner at info (the one info line per conversion; `EconomyService` logs
+  `economy.convert` at debug). A wallet with nothing to do logs
+  `economy.week-close.skipped { status }` at debug. Every run ends with
+  `economy.week-close.closed` (counts).
+- A metered session open at close time spends 0 for the rest of its run: the
+  silver it was drawing on has become gold, and a settle never charges more
+  than the silver balance.
 
 ### API
 

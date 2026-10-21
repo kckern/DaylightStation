@@ -53,4 +53,7 @@ export class EconomyConfigProjection {
   }
 
   hasUser(userId) { return !!this.configService.getUserProfile?.(userId); }
+
+  /** The household's users that have a profile, so a wallet (the week close's off-roster pass). */
+  users() { return (this.configService.getHouseholdUsers?.() ?? []).filter((id) => this.hasUser(id)); }
 }

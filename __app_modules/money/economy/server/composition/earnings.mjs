@@ -49,6 +49,8 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       payout: payoutService,
       economy: economyApi.economyService,
       config: economyApi.configProjection,
+      // Off-roster payout earners close too (a kid who left the roster).
+      listUsers: () => economyApi.configProjection.users(),
       logger: rootLogger.child({ module: 'economy-week-close' }),
     });
     const router = createEarningsRouter({
@@ -193,7 +195,7 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
  * the week whose Sunday is today or has passed (the preview's study day).
  *
  * Same gate as the payouts (`enabled`). Registered whatever the mode, so a
- * reload from `off` needs no restart; while the catalog reads `off` the task
+ * reload from `off` needs no restart; while the catalog reads `off`, `close`
  * returns before any settle. A failure is logged (`economy.week-close.failed`,
  * error for CORRUPT_LEDGER) and never reaches the scheduler loop. The
  * scheduler has no catch-up: a close missed while the backend was down waits
@@ -230,7 +232,8 @@ export function startWeekClose({ weekCloseService, config, enabled = true, sched
   scheduler?.registerTask?.('economy:week-close', cron.trim(), async () => {
     if (stopped) return;
     try {
-      if (config.catalog().mode === 'off') return;
+      // `close` reads the mode itself, per run: that read governs the
+      // conversion (off returns before any settle).
       await weekCloseService.close({});
     } catch (err) {
       fail(err);

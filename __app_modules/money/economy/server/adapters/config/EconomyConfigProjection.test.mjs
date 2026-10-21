@@ -135,3 +135,19 @@ describe('EconomyConfigProjection.catalog', () => {
     expect(projection.catalog().mode).toBe('live');
   });
 });
+
+describe('EconomyConfigProjection.users', () => {
+  it('lists the household users that have a profile (so a wallet)', () => {
+    const projection = new EconomyConfigProjection({
+      configService: {
+        getHouseholdUsers: () => ['kid-a', 'ghost', 'parent-a'],
+        getUserProfile: (id) => (id === 'ghost' ? null : { id }),
+      },
+      logger: quietLogger(),
+    });
+    expect(projection.users()).toEqual(['kid-a', 'parent-a']);
+  });
+  it('no household users reads as none', () => {
+    expect(new EconomyConfigProjection({ configService: {}, logger: quietLogger() }).users()).toEqual([]);
+  });
+});
