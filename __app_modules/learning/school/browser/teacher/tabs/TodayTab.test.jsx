@@ -51,6 +51,9 @@ const mount = (ui) => render(
 
 beforeEach(() => {
   sessionStorage.clear();
+  // The open roster card lives in the URL (`?open=`); a test that opened one
+  // must not start the next with that learner already open.
+  window.history.replaceState({}, '', window.location.pathname);
   vi.clearAllMocks();
   schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }));
   schoolApi.resolveReview.mockResolvedValue(ok({ verdict: 'correct' }));
@@ -130,6 +133,17 @@ describe('TodayTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const link = await screen.findByRole('link', { name: /Open the full day record/ });
     expect(link.getAttribute('href')).toContain('2026-08-26');
+  });
+
+  it('keeps the open learner in the URL, and reopens it from the URL', async () => {
+    window.history.replaceState({}, '', '/school/teacher/dashboard');
+    const first = mount(<TodayTab kids={KIDS} />);
+    const card = await screen.findByRole('button', { name: /User_4/ });
+    act(() => fireEvent.click(card));
+    expect(new URLSearchParams(window.location.search).get('open')).toBe('user_4');
+    first.unmount();
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ }).getAttribute('aria-expanded')).toBe('true'));
   });
 
   // Both used to sit absolutely positioned in the same corner of the row,

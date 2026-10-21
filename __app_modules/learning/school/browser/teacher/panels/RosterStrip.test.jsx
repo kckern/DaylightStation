@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import RosterStrip from "./RosterStrip.jsx";
 import { teacherLog } from "../teacherLog.js";
@@ -9,6 +9,10 @@ vi.mock("../../schoolApi.js", () => ({ schoolApi: { agendaPreview: vi.fn() } }))
 const { schoolApi } = await import("../../schoolApi.js");
 
 const ok = (data) => ({ ok: true, status: 200, data });
+
+// The open card lives in the URL (`?open=`); a test that expanded a learner
+// must not hand the next one a card that is already open.
+beforeEach(() => { window.history.replaceState({}, '', window.location.pathname); });
 const KIDS = [{ id: 'user_4', name: 'User_4' }];
 const ROW = { learnerId: 'user_4', sessions: [], pendingReview: 0 };
 

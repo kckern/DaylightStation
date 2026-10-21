@@ -176,6 +176,14 @@ describe('TeacherConsole workspace', () => {
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_2 workspace' })).toBeTruthy());
   });
 
+  it('returns a lesson opened from the dashboard to the dashboard with its learner open', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_x?from=today');
+    render(<TeacherConsole />);
+    const back = await screen.findByRole('button', { name: /Back to dashboard/ });
+    act(() => fireEvent.click(back));
+    expect(`${window.location.pathname}${window.location.search}`).toBe('/school/teacher/dashboard?open=user_4');
+  });
+
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the

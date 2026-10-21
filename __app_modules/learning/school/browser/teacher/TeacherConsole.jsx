@@ -158,17 +158,22 @@ function TeacherShell({ PianoProgramsPanel }) {
     view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
   } else if (route.kind === 'session') {
     // Back returns to the view that opened the session (?from=today → the
-    // dashboard digest), not always History.
+    // dashboard digest), not always History. The dashboard return carries the
+    // learner as `?open=`, so the roster card the lesson came from is open again.
     const origin = new URLSearchParams(window.location.search);
     const from = origin.get('from');
     const originDay = origin.get('studyDay');
-    const backToDay = from === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '');
-    const backLabel = backToDay ? `Back to ${humanDate(originDay)}`
-      : from === 'today' || !route.learnerId ? 'Back to dashboard' : 'Back to history';
+    const dashboardBack = () => navigate(`${teacherSectionPath('dashboard', route.base)}${route.learnerId ? `?open=${encodeURIComponent(route.learnerId)}` : ''}`);
+    // Where Back goes, by the view that opened the session (`?from=`).
+    const ORIGINS = {
+      day: /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '') ? [`Back to ${humanDate(originDay)}`, () => goDay(originDay)] : null,
+      today: ['Back to dashboard', dashboardBack],
+    };
+    // Own keys only: `?from=constructor` must not reach Object.prototype.
+    const [backLabel, onBack] = (Object.hasOwn(ORIGINS, from ?? '') ? ORIGINS[from] : null)
+      ?? (route.learnerId ? ['Back to history', () => goLearner(route.learnerId, 'history')] : ['Back to dashboard', dashboardBack]);
     view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
-      backLabel={backLabel}
-      onBack={() => (backToDay ? goDay(originDay)
-        : (from === 'today' || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history')))} />;
+      backLabel={backLabel} onBack={onBack} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
       day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}

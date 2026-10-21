@@ -820,7 +820,16 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
 }
 
 export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownUp = null }) {
-  const [openId, setOpenId] = useState(null);
+  // Which learner is open lives in the URL (`?open=`), so the trip to a
+  // lesson and back — or a refresh — returns to the same open card.
+  const [openId, setOpenId] = useState(() => new URLSearchParams(globalThis.location?.search ?? '').get('open'));
+  const toggle = (learnerId) => {
+    const next = openId === learnerId ? null : learnerId;
+    setOpenId(next);
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set('open', next); else url.searchParams.delete('open');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+  };
   // One small tally, keyed by learner, built entirely from what each entry
   // already fetched for its own agenda preview (plan 3.4) — never a second
   // fetch just to count what the roster already knows. `reportGrownUp` is
@@ -871,7 +880,7 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
           kids={kids}
           studyDay={studyDay}
           open={openId === row.learnerId}
-          onToggle={() => setOpenId((cur) => (cur === row.learnerId ? null : row.learnerId))}
+          onToggle={() => toggle(row.learnerId)}
           onNeedsGrownUp={reportGrownUp}
         />
       ))}
