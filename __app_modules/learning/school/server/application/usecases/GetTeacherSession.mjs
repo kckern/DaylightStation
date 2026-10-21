@@ -13,11 +13,14 @@ const RECEIPT_KINDS = ['result-receipt', 'result-correction'];
 
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
-  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions; #printDocuments;
+  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions; #printDocuments; #receiptReprints;
   constructor({
     sessions, curriculum = null, issuedArtifacts = null, reviewQueue = null,
     allocationStore = null, worksheetInstances = null, curriculumExceptions = null,
     printDocuments = null,
+    // False where composition built no ReprintResultReceiptArtifact (no
+    // receipt printer wired): the reprint would answer reprint_unconfigured.
+    receiptReprints = true,
   } = {}) {
     if (!sessions) throw new Error('GetTeacherSession requires sessions');
     this.#sessions = sessions;
@@ -28,6 +31,7 @@ export class GetTeacherSession {
     this.#worksheets = worksheetInstances;
     this.#exceptions = curriculumExceptions;
     this.#printDocuments = printDocuments;
+    this.#receiptReprints = receiptReprints !== false;
   }
 
   async execute({ sessionId } = {}) {
@@ -58,7 +62,8 @@ export class GetTeacherSession {
           // Mirrors ReprintResultReceiptArtifact: it reads the manifest's own
           // session and refuses a receipt that session does not list. A manifest
           // with no session reads no events there, so it is refused too.
-          reprintable: RECEIPT_KINDS.includes(artifact.manifest.kind)
+          reprintable: this.#receiptReprints
+            && RECEIPT_KINDS.includes(artifact.manifest.kind)
             && artifact.manifest.representation?.mediaType === 'image/png'
             && artifact.manifest.sessionId === sessionId,
           originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),

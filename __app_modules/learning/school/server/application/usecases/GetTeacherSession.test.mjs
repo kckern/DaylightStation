@@ -140,7 +140,8 @@ describe('GetTeacherSession artifact read-through', () => {
     // No session on the manifest: the server reads no events and refuses.
     'rcpt-nosession': { artifactId: 'rcpt-nosession', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
   };
-  const withReceipt = (receiptId) => new GetTeacherSession({
+  const withReceipt = (receiptId, options = {}) => new GetTeacherSession({
+    ...options,
     sessions: { readEvents: vi.fn(async () => [...events, { ...receiptEvent, artifactId: receiptId }]), listForLearner: vi.fn(async () => []) },
     curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
     worksheetInstances: { findBySession: vi.fn(async () => null) },
@@ -162,6 +163,12 @@ describe('GetTeacherSession artifact read-through', () => {
   it('offers a receipt reprint only from the session its manifest names', async () => {
     expect(receiptRow(await withReceipt('rcpt-other').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
     expect(receiptRow(await withReceipt('rcpt-nosession').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+  });
+  // Composition builds ReprintResultReceiptArtifact only when a receipt printer
+  // is wired; without one the reprint answers reprint_unconfigured (404).
+  it('offers no receipt reprint where no receipt printer is wired', async () => {
+    const out = await withReceipt('rcpt-1', { receiptReprints: false }).execute({ sessionId: 'ses_illinois' });
+    expect(receiptRow(out).reprintable).toBe(false);
   });
   // `ReprintIssuedArtifact` refuses CURRICULUM_PAUSED before it looks at state.
   it('withholds a worksheet reprint while its lesson is paused', async () => {
