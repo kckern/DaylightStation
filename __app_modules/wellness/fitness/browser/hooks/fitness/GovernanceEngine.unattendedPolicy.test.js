@@ -179,3 +179,22 @@ describe('GovernanceEngine — cyclic selection after an infeasible skip', () =>
     expect(engine.challengeState.activeChallenge).toMatchObject({ zone: 'warm', status: 'pending' });
   });
 });
+
+describe('GovernanceEngine — no eligible child', () => {
+  it('an exempt rider alone gets the normal policy, not the hot start gate', () => {
+    const h = harness();
+    h.engine.config.exemptions = ['exempt-rider'];
+    h.evaluate({ 'exempt-rider': 'active' });
+    const reqs = h.engine.requirementSummary.requirements;
+    expect(reqs.some((r) => r.type === 'unattended_startup')).toBe(false);
+    // Normal base requirement (active), not the hot start gate. An exempt rider
+    // alone cannot satisfy it (non_exempt_contributor_required), so it stays pending.
+    expect(reqs).toEqual(expect.arrayContaining([expect.objectContaining({ zone: 'active' })]));
+    expect(reqs.some((r) => r.zone === 'hot')).toBe(false);
+  });
+  it('a guest alone gets the normal policy', () => {
+    const h = harness();
+    h.evaluate({ visitor: 'active' }, ['visitor']);
+    expect(h.engine.phase).toBe('unlocked');
+  });
+});

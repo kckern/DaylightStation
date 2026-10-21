@@ -2951,7 +2951,14 @@ export class GovernanceEngine {
     const superusers = new Set((this.config?.superusers || []).map(normalizeName));
     const enabled = settings.enabled !== false && superusers.size > 0;
     const adminPresent = classifySupervision({ participantIds: activeParticipants, supervisorIds: [...superusers] }).supervised;
-    const shouldApply = enabled && !adminPresent;
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
+    const eligibleChildren = activeParticipants.filter((id) =>
+      !guestIds.has(id)
+      && !superusers.has(normalizeName(id))
+      && !exemptUsers.has(normalizeName(id))
+    );
+    const shouldApply = enabled && !adminPresent && eligibleChildren.length > 0;
     const state = this._unattendedPolicyState || {
       mediaId: this.media?.id ?? null,
       active: false,
@@ -2962,7 +2969,7 @@ export class GovernanceEngine {
       if (state.active) {
         getLogger().info('governance.unattended.stood_down', {
           contentId: this.media?.id ?? null,
-          reason: adminPresent ? 'admin_present' : 'disabled',
+          reason: adminPresent ? 'admin_present' : (eligibleChildren.length === 0 ? 'no_eligible_child' : 'disabled'),
         });
         this.challengeState.activeChallenge = null;
         this.challengeState.nextChallenge = null;
@@ -2997,13 +3004,6 @@ export class GovernanceEngine {
 
     const startupZone = String(settings.startup_zone || 'hot').toLowerCase();
     const startupRank = this._getZoneRank(startupZone);
-    const guestIds = new Set(this._latestInputs?.guestIds || []);
-    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
-    const eligibleChildren = activeParticipants.filter((id) =>
-      !guestIds.has(id)
-      && !superusers.has(normalizeName(id))
-      && !exemptUsers.has(normalizeName(id))
-    );
     if (!state.startupSatisfied && Number.isFinite(startupRank)) {
       const achiever = eligibleChildren.find((id) => {
         const rank = this._getZoneRank(userZoneMap?.[id]);
