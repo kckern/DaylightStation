@@ -806,7 +806,7 @@ Portal's `school` topic as `{event: 'coins-changed', learnerId}`.
 
 | Area | Events |
 |---|---|
-| Catalog and boot | `economy.catalog.unknown-mode` (warn), `economy.timezone-mismatch` (warn) |
+| Catalog and boot | `economy.catalog.unknown-mode` (warn), `economy.timezone-mismatch` (warn), `economy.earnings.unavailable` (error: the earnings runtime, the payouts or the week close failed to start; School boots without them) |
 | Earn rules and preview | `economy.earn-rules.revised`, `economy.earn-rules.corrupt` (error), `economy.earnings.school-unavailable` / `rings-unavailable` (warn) |
 | Payouts | `economy.payout.would-mint`, `held`, `bad-amount`, `settled` (debug unless something changed), `off` (debug), `not-a-user`, `unknown-learner` (debug), `failed` (warn; error for `CORRUPT_LEDGER`), `disabled`; `economy.mint` |
 | Week close | `economy.week-close.would-convert`, `converted`, `skipped` (debug), `closed`, `below-rate`, `bad-rule`, `refused`, `repaired` (warn), `settle-failed`, `failed`, `off` (debug), `no-cron`, `disabled`; `economy.convert` (debug), `economy.convert.repaired` (debug), `economy.convert.repair-original-target`, `economy.convert.snapshot-failed` (error) |

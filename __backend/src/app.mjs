@@ -2902,7 +2902,14 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  const economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  // A failure here must not stop School booting: without it there is no
+  // earnings preview, no payouts and no week close, and it says so.
+  let economyEarnings = { router: null, payoutService: null, weekCloseService: null };
+  try {
+    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  } catch (error) {
+    rootLogger.error('economy.earnings.unavailable', { error: error.message });
+  }
   v1Routers.earnings = economyEarnings.router;
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
@@ -3345,24 +3352,35 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // scheduled jobs; inert while economy/config.yml reads `mode: off`, and
   // `dry-run` only logs. School's own per-unit reward
   // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
-  startEconomyPayouts({
-    payoutService: economyEarnings.payoutService,
-    config: economyApi.configProjection,
-    enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
-    eventBus,
-    scheduler: agentsServices.scheduler,
-    logger: rootLogger.child({ module: 'economy-payout' }),
-  });
-  // Sunday week close (economy B4): settle the week once more, then unspent
-  // silver converts to gold on `week_close.cron` (read at boot; a change needs
-  // a restart). Same gate and modes as the payouts.
-  startWeekClose({
-    weekCloseService: economyEarnings.weekCloseService,
-    config: economyApi.configProjection,
-    enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
-    scheduler: agentsServices.scheduler,
-    logger: rootLogger.child({ module: 'economy-week-close' }),
-  });
+  // Skipped when the earnings runtime did not build (economy.earnings.unavailable).
+  if (economyEarnings.payoutService && economyEarnings.weekCloseService) {
+    try {
+      startEconomyPayouts({
+        payoutService: economyEarnings.payoutService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        eventBus,
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-payout' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'payouts' });
+    }
+    // Sunday week close (economy B4): settle the week once more, then unspent
+    // silver converts to gold on `week_close.cron` (read at boot; a change needs
+    // a restart). Same gate and modes as the payouts.
+    try {
+      startWeekClose({
+        weekCloseService: economyEarnings.weekCloseService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-week-close' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'week-close' });
+    }
+  }
 
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all
   // users with a life plan. CeremonyScheduler gates each ceremony to its
