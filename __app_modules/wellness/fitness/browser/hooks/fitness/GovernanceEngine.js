@@ -2419,6 +2419,8 @@ export class GovernanceEngine {
     const zone = String(settings.startup_zone || 'hot').toLowerCase();
     const zoneInfo = this._getZoneInfo(zone);
     const children = {};
+    // state.children keeps departed children too (their start survives a
+    // rejoin), so this is NOT the live roster — consumers key by participant.
     Object.entries(state.children || {}).forEach(([id, child]) => {
       if (!child) return;
       if (child.started) {

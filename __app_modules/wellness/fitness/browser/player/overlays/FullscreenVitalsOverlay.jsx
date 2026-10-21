@@ -53,7 +53,7 @@ const getProfileSlug = (user) => {
   return 'user';
 };
 
-const FullscreenVitalsOverlay = ({ visible = false }) => {
+const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = undefined }) => {
   const fitnessCtx = useFitnessContext();
   const [anchor, setAnchor] = useState('right');
   const overlayRef = useRef(null);
@@ -73,9 +73,14 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   } = fitnessCtx || {};
 
   const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
+  // Start badges follow the player's bypass-aware snapshot when given one
+  // (bypassed → isGoverned:false → no badges); `undefined` falls back to context.
+  const badgeGovernanceState = governanceStateOverride !== undefined
+    ? governanceStateOverride
+    : fitnessCtx?.governanceState;
   const governanceStatuses = useMemo(
-    () => resolveParticipantGovernanceStatuses(fitnessCtx?.governanceState),
-    [fitnessCtx?.governanceState]
+    () => resolveParticipantGovernanceStatuses(badgeGovernanceState),
+    [badgeGovernanceState]
   );
   const boostContributions = (cycleChallenge?.type === 'cycle' && cycleChallenge.boostContributions)
     ? cycleChallenge.boostContributions
@@ -334,7 +339,9 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
 };
 
 FullscreenVitalsOverlay.propTypes = {
-  visible: PropTypes.bool
+  visible: PropTypes.bool,
+  // Bypass-aware governance snapshot from the player; undefined → context.
+  governanceStateOverride: PropTypes.object
 };
 
 export default FullscreenVitalsOverlay;

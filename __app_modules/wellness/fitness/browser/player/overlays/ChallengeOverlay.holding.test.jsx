@@ -21,6 +21,18 @@ describe('challenge overlay — riders mid-hold', () => {
     expect(result.current.current.holdingUsers).toEqual(['child-a']);
   });
 
+  it('drops holds on a paused challenge (same gate as the display resolver)', () => {
+    const governanceState = {
+      challenge: {
+        id: 'c1', status: 'pending', paused: true, zone: 'warm', zoneLabel: 'Warm',
+        requiredCount: 2, actualCount: 0, totalSeconds: 90, remainingSeconds: 80,
+        metUsers: [], missingUsers: ['child-a'], holding: ['child-a'], holdRemainingMs: 6000,
+      },
+    };
+    const { result } = renderHook(() => useChallengeOverlays(governanceState, zones));
+    expect(result.current.current.holdingUsers).toEqual([]);
+  });
+
   it('renders a holding block, not an empty (missing) one', () => {
     const overlay = {
       show: true, variant: 'current', status: 'pending', phase: 'on',

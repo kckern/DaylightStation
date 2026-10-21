@@ -235,7 +235,11 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		const actualCount = Number.isFinite(challenge.actualCount) ? Math.max(0, challenge.actualCount) : 0;
 		const missingUsers = Array.isArray(challenge.missingUsers) ? challenge.missingUsers.filter(Boolean) : [];
 		const metUsers = Array.isArray(challenge.metUsers) ? challenge.metUsers.filter(Boolean) : [];
-		const holdingUsers = Array.isArray(challenge.holding) ? challenge.holding.filter(Boolean) : [];
+		// Same gate as resolveParticipantGovernanceStatuses: holds only mean
+		// something on a live (pending, unpaused) challenge.
+		const holdingUsers = status === 'pending' && !challenge.paused && Array.isArray(challenge.holding)
+			? challenge.holding.filter(Boolean)
+			: [];
 		const zoneLabel = challenge.zoneLabel || challenge.zone || 'Zone';
 		const isStepChallenge = challenge.type === 'step';
 		const zoneInfo = isStepChallenge

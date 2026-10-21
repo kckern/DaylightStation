@@ -111,7 +111,7 @@ const UI_LABELS = CONFIG.uiLabels;
 // Vibration device types that should render VibrationCard instead of the generic inline card
 const VIBRATION_DEVICE_TYPES = new Set(['vibration', 'punching_bag', 'step_platform', 'pull_up_bar']);
 
-const FitnessUsersList = ({ onRequestGuestAssignment }) => {
+const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = undefined }) => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
   
@@ -140,8 +140,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     pressureMatActivities = {},
     assignEquipmentUser,
     disengagePressureMat,
-    governanceState,
+    governanceState: contextGovernanceState,
   } = fitnessContext;
+  // The player passes its bypass-aware snapshot (?nogovern, fingerprint or
+  // per-item bypass → isGoverned:false); the module sidebar has no player and
+  // reads context. `undefined` means "no override".
+  const governanceState = governanceStateOverride !== undefined
+    ? governanceStateOverride
+    : contextGovernanceState;
 
   // D3: unattended children who still have to reach the startup zone once.
   const governanceStatuses = React.useMemo(
