@@ -3431,7 +3431,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       createSchoolParentDigest({
         economyConfig: economyApi.configProjection,
         economyService: economyApi.economyService,
-        studyCalendar: economyApi.studyCalendar ?? {},
+        // One zone and 4 am boundary for both School's day and the economy's
+        // (getHouseholdTimezone || 'UTC', set where economyApi is built).
+        studyCalendar: economyApi.studyCalendar,
         roster: () => schoolLearnerDirectory.listLearners(),
         learnerName: learnerDisplayName,
         getLearnerDayCompletion: schoolLifecycle.useCases.getLearnerDayCompletion,
@@ -3440,7 +3442,6 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
         notificationService: notificationStack.notificationService,
         teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
         logsDir: path.join(configService.getMediaDir(), 'logs'),
-        timezone: configService.getTimezone?.() || null,
         scheduler: agentsServices.scheduler,
         enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
         logger: rootLogger.child({ module: 'school-parent-digest' }),

@@ -23,12 +23,17 @@
  * Failures come from the school ledger (`SchoolLedgerTransport`'s JSONL),
  * read through the injected `ledger.readDay(day)`. A failure belongs to a
  * learner when its `data.learnerId` names them or its `data.sessionId` is one
- * of their sessions; an event naming neither (most `code.rejected` lines carry
- * `learnerId: null`) is nobody's.
+ * of their sessions; an event naming neither is nobody's. A
+ * `code.rejected` names the learner only when the code was known (used up,
+ * expired); a code nobody issued has no owner and is never attributed.
+ *
+ * `timezone` and `boundaryHour` are the household study calendar's, the
+ * same pair the economy port uses, so the digest's day, its ledger window
+ * and the economy's silver window are one window.
  *
  * Delivery follows `cardLadderTuning.mjs`: each teacher through
  * `notifications.send({category: 'school', ...})`, with a per-day
- * `dedupeKey`. A send that comes back `suppressed` (quiet hours, cooldown) is
+ * `dedupeKey`. A send held for quiet hours is
  * held in memory and resent by `retryHeld()` until it is delivered or the
  * next `run` replaces it. A delivered send is remembered for the process, so
  * a second run on the same day sends nothing again. Held and sent state is
@@ -45,6 +50,7 @@ export function failureOf(entry) {
   const name = entry?.event;
   const data = entry?.data ?? {};
   if (name === 'school.issue.failed') return data.stage === 'print' ? 'print_failed' : 'issue_failed';
+  if (name === 'school.selfservice.action.failed' && data.stage === 'print') return 'print_failed';
   if (name === 'school.selfservice.code.rejected') return 'code_rejected';
   if (typeof name === 'string' && name.startsWith('school.') && data.status === 'print_failed') return 'print_failed';
   return null;
@@ -54,7 +60,7 @@ const errorText = (error) => error?.message ?? String(error);
 
 export class SchoolParentDigest {
   #roster; #learnerName; #completion; #termVerdicts; #economyToday; #coinsMode; #zeroDaysAlert;
-  #ledger; #learnerSessionIds; #notifications; #teachers; #today; #timezone; #logger;
+  #ledger; #learnerSessionIds; #notifications; #teachers; #today; #timezone; #boundaryHour; #logger;
   #sent = new Set();
   #held = new Map();
 
@@ -62,7 +68,7 @@ export class SchoolParentDigest {
     roster, learnerName = () => null, getLearnerDayCompletion, termVerdicts = null,
     economyToday = null, coinsMode = () => 'off', zeroDaysAlert = () => null,
     ledger = null, learnerSessionIds = null, notifications, teachers = () => [],
-    today, timezone = null, logger = console,
+    today, timezone = null, boundaryHour = 4, logger = console,
   } = {}) {
     if (!roster || !getLearnerDayCompletion?.execute || !notifications?.send || typeof today !== 'function') {
       throw new Error('SchoolParentDigest requires roster, getLearnerDayCompletion, notifications and today');
@@ -80,6 +86,7 @@ export class SchoolParentDigest {
     this.#teachers = teachers;
     this.#today = today;
     this.#timezone = timezone;
+    this.#boundaryHour = boundaryHour;
     this.#logger = logger;
   }
 
@@ -115,6 +122,7 @@ export class SchoolParentDigest {
       ? await this.#deliver(push, { teachers, dedupeKey: `digest:${day}`, urgency: 'normal', studyDay: day, kind: 'digest' })
       : 'skipped';
     if (status === 'sent') this.#logger.info?.('school.parent-digest.sent', { studyDay: day, learners: rows.length, teachers: teachers.length, coins });
+    else if (status === 'skipped') this.#logger.info?.('school.parent-digest.skipped', { studyDay: day, reason: push ? 'already-sent' : 'nothing-to-say' });
     else if (status === 'suppressed') this.#logger.info?.('school.parent-digest.skipped', { studyDay: day, reason: 'suppressed', held: true });
     else if (status === 'failed') this.#logger.warn?.('school.parent-digest.failed', { studyDay: day, reason: 'not delivered' });
     return { studyDay: day, digest: status, zeroDays };
@@ -134,7 +142,10 @@ export class SchoolParentDigest {
       const status = statusOf(results);
       if (status === 'suppressed') continue;
       this.#held.delete(key);
-      if (status === 'sent') {
+      if (status === 'cooldown') {
+        this.#sent.add(key);
+        this.#logger.info?.('school.parent-digest.skipped', { studyDay: held.studyDay, kind: held.kind, reason: 'already-sent', retried: true });
+      } else if (status === 'sent') {
         this.#sent.add(key);
         sent += 1;
         this.#logger.info?.(held.kind === 'digest' ? 'school.parent-digest.sent' : 'school.zero-days.sent',
@@ -182,7 +193,7 @@ export class SchoolParentDigest {
   /** The study day's failure events, oldest first. Files are named by process-local day, so read the neighbours too. */
   async #failuresOn(day) {
     if (!this.#ledger?.readDay) return [];
-    const window = studyDayWindowForDate(day, { timezone: this.#timezone });
+    const window = studyDayWindowForDate(day, { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
     if (!window) return [];
     const events = [];
     for (const fileDay of [addDays(day, -1), day, addDays(day, 1)]) {
@@ -214,14 +225,18 @@ export class SchoolParentDigest {
     return null;
   }
 
-  /** Today asked and none done, and so did the previous N-1 study days that asked. */
+  /**
+   * The run of empty asking days ending today, measured to its start (a day
+   * with work done), an unknown day, or LOOKBACK_DAYS, so the copy can say
+   * third, fourth. Fires only when the run reaches the threshold.
+   */
   async #alertIfEmptyRun(learnerId, child, verdict, day, today, teachers) {
     let threshold = null;
     try { threshold = this.#zeroDaysAlert(); } catch { threshold = null; }
     if (!Number.isInteger(threshold) || threshold < 2 || !this.#termVerdicts?.computeDay) return false;
     if (verdict?.state !== 'none') return false;
     let empty = 1;
-    for (let back = 1; back <= LOOKBACK_DAYS && empty < threshold; back += 1) {
+    for (let back = 1; back <= LOOKBACK_DAYS; back += 1) {
       const earlier = addDays(day, -back);
       let prior;
       try {
@@ -229,19 +244,20 @@ export class SchoolParentDigest {
         prior = await this.#termVerdicts.computeDay(learnerId, earlier, today);
       } catch (error) {
         this.#logger.warn?.('school.parent-digest.verdict-failed', { learnerId, studyDay: earlier, error: errorText(error) });
-        return false;
+        break;
       }
-      if (prior?.state === 'unknown') return false;
+      if (prior?.state === 'unknown') break;
       if (!(prior?.asked > 0)) continue;
-      if (prior.state !== 'none') return false;
+      if (prior.state !== 'none') break;
       empty += 1;
     }
     if (empty < threshold) return false;
-    const push = composeSchoolPush({ kind: 'zero-days', learnerId, child, days: threshold, studyDay: day });
+    const push = composeSchoolPush({ kind: 'zero-days', learnerId, child, days: empty, studyDay: day });
     const status = await this.#deliver(push, {
       teachers, dedupeKey: `zero:${learnerId}:${day}`, urgency: 'high', studyDay: day, kind: 'zero-days', learnerId,
     });
-    if (status === 'sent') this.#logger.info?.('school.zero-days.sent', { learnerId, studyDay: day, days: threshold });
+    if (status === 'sent') this.#logger.info?.('school.zero-days.sent', { learnerId, studyDay: day, days: empty, threshold });
+    else if (status === 'skipped') this.#logger.info?.('school.parent-digest.skipped', { learnerId, studyDay: day, kind: 'zero-days', reason: 'already-sent' });
     else if (status === 'suppressed') this.#logger.info?.('school.parent-digest.skipped', { learnerId, studyDay: day, kind: 'zero-days', reason: 'suppressed', held: true });
     else if (status === 'failed') this.#logger.warn?.('school.parent-digest.failed', { learnerId, studyDay: day, kind: 'zero-days' });
     return status === 'sent' || status === 'suppressed';
@@ -249,8 +265,11 @@ export class SchoolParentDigest {
 
   /**
    * The cardLadderTuning send: each teacher, one intent each. Sent when any
-   * copy was delivered; suppressed when governance held one (held per teacher
-   * for `retryHeld`); failed otherwise. Already-sent teachers are skipped.
+   * copy was delivered; suppressed when quiet hours held one (held per
+   * teacher for `retryHeld`); failed otherwise. A `cooldown` suppression
+   * means this key already reached that teacher, so it counts as sent and is
+   * never retried (a retry after the cooldown lapses would deliver it twice).
+   * Already-sent teachers are skipped; all of them skipped is `skipped`.
    */
   async #deliver(push, { teachers, dedupeKey, urgency, studyDay, kind, learnerId = null }) {
     const statuses = [];
@@ -275,9 +294,9 @@ export class SchoolParentDigest {
         results = [];
       }
       const status = statusOf(results);
-      if (status === 'sent') this.#sent.add(key);
+      if (status === 'sent' || status === 'cooldown') this.#sent.add(key);
       if (status === 'suppressed') this.#held.set(key, { intent, studyDay, kind, learnerId });
-      statuses.push(status);
+      statuses.push(status === 'cooldown' ? 'already' : status);
     }
     if (statuses.includes('sent')) return 'sent';
     if (statuses.includes('suppressed')) return 'suppressed';
@@ -294,10 +313,12 @@ export class SchoolParentDigest {
   }
 }
 
+/** sent | suppressed (quiet hours: hold and retry) | cooldown (already sent) | failed. */
 function statusOf(results) {
   const rows = Array.isArray(results) ? results : [];
   if (rows.some((row) => row?.delivered)) return 'sent';
-  if (rows.some((row) => row?.suppressed)) return 'suppressed';
+  if (rows.some((row) => row?.suppressed && row.reason === 'quiet_hours')) return 'suppressed';
+  if (rows.some((row) => row?.suppressed && row.reason === 'cooldown')) return 'cooldown';
   return 'failed';
 }
 

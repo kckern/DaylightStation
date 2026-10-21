@@ -50,7 +50,7 @@ describe('createSchoolParentDigest', () => {
       economyConfig: { catalog: () => ({ mode: 'live', digest }) },
       roster: () => [], getLearnerDayCompletion: { execute: async () => ({}) }, termVerdicts: null,
       notificationService: { send: async () => [] }, teachers: () => [],
-      scheduler: { registerTask: (name, cron) => tasks.push([name, cron]) }, enabled: true, timezone: TZ, logger: quiet,
+      scheduler: { registerTask: (name, cron) => tasks.push([name, cron]) }, enabled: true, studyCalendar: { timezone: TZ, boundaryHour: 4 }, logger: quiet,
       ...extra,
     });
     return { wired, tasks };
@@ -66,6 +66,24 @@ describe('createSchoolParentDigest', () => {
     const { wired, tasks } = base({ cron: null, zero_days_alert: null });
     expect(wired.digest).toBeNull();
     expect(tasks).toEqual([]);
+  });
+
+  it('uses the one study calendar for School\'s today and the economy\'s window', async () => {
+    const since = [];
+    const sent = [];
+    const { wired } = base({ cron: '0 18 * * *', zero_days_alert: 2 }, {
+      // 10:30Z: 03:30 in Los Angeles (still the 20th's study day), 10:30 UTC (the 21st's).
+      now: () => Date.parse('2026-10-21T10:30:00.000Z'),
+      studyCalendar: { timezone: TZ, boundaryHour: 4 },
+      roster: () => [{ id: 'learner_a' }],
+      teachers: () => ['parent_a'],
+      economyService: { hasUser: () => true, getHistory: async (id, opts) => { since.push(opts.since); return []; } },
+      notificationService: { send: async (intent) => { sent.push(intent); return [{ delivered: true }]; } },
+    });
+    const result = await wired.digest.run({});
+    expect(result.studyDay).toBe('2026-10-20');
+    expect(since).toEqual(['2026-10-20T11:00:00.000Z']);
+    expect(sent[0].dedupeKey).toBe('digest:2026-10-20');
   });
 
   it('registers nothing when the scheduler gate is off', () => {

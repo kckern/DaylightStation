@@ -12,6 +12,9 @@
  *   boundary). Passes used counts the day's pass purchases (the `pass`
  *   marker whose `ref` is its own pass id) less the ones refunded. A learner
  *   the economy does not know answers null (no silver or pass clause).
+ * - the economy's `studyCalendar` ({timezone, boundaryHour}), the one zone
+ *   and boundary for School's today, the ledger window and the economy port.
+ *   (`GetLearnerDayCompletion` keeps School's own configured zone.)
  * - the catalog's `digest` block. `cron` is read once, at boot: a change
  *   needs a restart, and a null cron registers nothing. `zero_days_alert`
  *   and `mode` are read on every run.
@@ -65,7 +68,7 @@ export function createDigestEconomyPort({ economyService, timezone = null, bound
 export function createSchoolParentDigest({
   economyConfig = null, economyService = null, studyCalendar = {},
   roster, learnerName, getLearnerDayCompletion, termVerdicts, sessions = null,
-  notificationService, teachers, logsDir = null, timezone = null,
+  notificationService, teachers, logsDir = null,
   scheduler = null, enabled = false, now = Date.now, logger = console,
 } = {}) {
   if (!enabled || !scheduler?.registerTask) {
@@ -81,10 +84,14 @@ export function createSchoolParentDigest({
     return { digest: null, stop() {} };
   }
   const catalogDigest = () => economyConfig?.catalog?.()?.digest ?? {};
+  // One study calendar for both sides: School's today, its ledger window and
+  // the economy's silver window are the same window.
+  const timezone = studyCalendar.timezone ?? null;
+  const boundaryHour = Number.isInteger(studyCalendar.boundaryHour) ? studyCalendar.boundaryHour : 4;
   const digest = new SchoolParentDigest({
     roster, learnerName, getLearnerDayCompletion, termVerdicts,
     economyToday: createDigestEconomyPort({
-      economyService, timezone: studyCalendar.timezone ?? timezone, boundaryHour: studyCalendar.boundaryHour ?? 4,
+      economyService, timezone, boundaryHour,
     }),
     coinsMode: () => economyConfig?.catalog?.()?.mode ?? 'off',
     zeroDaysAlert: () => catalogDigest().zero_days_alert ?? null,
@@ -94,8 +101,9 @@ export function createSchoolParentDigest({
       : null,
     notifications: notificationService,
     teachers,
-    today: () => studyDayForInstant(now(), { timezone }),
+    today: () => studyDayForInstant(now(), { timezone, boundaryHour }),
     timezone,
+    boundaryHour,
     logger,
   });
   let stopped = false;

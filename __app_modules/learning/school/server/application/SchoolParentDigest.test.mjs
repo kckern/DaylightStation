@@ -12,8 +12,10 @@ const quiet = { info() {}, warn() {}, debug() {} };
 function makeDigest({
   today = '2026-10-20', learners = ['learner_a'], sections = {}, days = {}, economy = {}, events = {},
   sessions = {}, unreadable = [], coins = 'live', zeroDays = 2, teachers = ['parent_a'], deliveries = null,
+  boundaryHour = 4,
 } = {}) {
   const sent = [];
+  const logs = [];
   const answers = deliveries ? [...deliveries] : null;
   const computed = [];
   const digest = new SchoolParentDigest({
@@ -40,17 +42,18 @@ function makeDigest({
       send: async (raw) => {
         sent.push(new NotificationIntent(raw));
         const answer = answers?.length ? answers.shift() : 'delivered';
-        return answer === 'suppressed'
-          ? [{ delivered: false, suppressed: true, reason: 'quiet_hours', channel: null }]
-          : [{ delivered: true, channel: 'telegram' }];
+        if (answer === 'suppressed') return [{ delivered: false, suppressed: true, reason: 'quiet_hours', channel: null }];
+        if (answer === 'cooldown') return [{ delivered: false, suppressed: true, reason: 'cooldown', channel: null }];
+        return [{ delivered: true, channel: 'telegram' }];
       },
     },
     teachers: () => teachers,
     today: () => today,
     timezone: TZ,
-    logger: quiet,
+    boundaryHour,
+    logger: { ...quiet, info: (event, data) => logs.push([event, data]) },
   });
-  return { digest, sent, computed };
+  return { digest, sent, computed, logs };
 }
 
 const digests = (sent) => sent.filter((i) => i.dedupeKey?.startsWith('digest:'));
@@ -109,6 +112,49 @@ describe('SchoolParentDigest — the digest', () => {
     expect(digests(sent)[0].body.split('\n')).toEqual(["Learner A: couldn't be checked", 'Learner B: 1 of 1 done']);
   });
 
+  it('reads a self-service print failure as a print failure', async () => {
+    const { digest, sent } = makeDigest({
+      sections: { learner_a: [section('obligated')] },
+      sessions: { learner_a: ['ses_a1'] },
+      events: { '2026-10-20': [
+        { ts: '2026-10-20T08:00:00.000-07:00', event: 'school.selfservice.action.failed', data: { stage: 'print', sessionId: 'ses_a1', error: 'immutable' } },
+      ] },
+    });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(digests(sent)[0].body).toBe('Learner A: 0 of 1 done · a print failed');
+  });
+
+  it('names an expired code for its learner, never a code nobody issued', async () => {
+    const { digest, sent } = makeDigest({
+      learners: ['learner_a', 'learner_b'],
+      sections: { learner_a: [section('served')], learner_b: [section('served')] },
+      events: { '2026-10-20': [
+        { ts: '2026-10-20T08:00:00.000-07:00', event: 'school.selfservice.code.rejected', data: { reason: 'no-live-record', learnerId: null } },
+        { ts: '2026-10-20T09:00:00.000-07:00', event: 'school.selfservice.code.rejected', data: { reason: 'expired', learnerId: 'learner_b' } },
+      ] },
+    });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(digests(sent)[0].body.split('\n')).toEqual(['Learner A: 1 of 1 done', 'Learner B: 1 of 1 done · a code was turned away']);
+  });
+
+  it('draws the ledger window on the study calendar boundary it was given', async () => {
+    const at = (hour) => ({ ts: `2026-10-20T0${hour}:30:00.000-07:00`, event: 'school.issue.failed', data: { learnerId: 'learner_a', stage: 'render' } });
+    const early = makeDigest({ boundaryHour: 6, sections: { learner_a: [section('served')] }, events: { '2026-10-20': [at(5)] } });
+    await early.digest.run({ studyDay: '2026-10-20' });
+    expect(early.sent[0].body).toBe('Learner A: 1 of 1 done');
+    const late = makeDigest({ boundaryHour: 4, sections: { learner_a: [section('served')] }, events: { '2026-10-20': [at(5)] } });
+    await late.digest.run({ studyDay: '2026-10-20' });
+    expect(late.sent[0].body).toBe("Learner A: 1 of 1 done · a sheet couldn't be made");
+  });
+
+  it('logs a skip when every teacher already has the day', async () => {
+    const { digest, logs } = makeDigest({ sections: { learner_a: [section('served')] } });
+    await digest.run({});
+    const second = await digest.run({});
+    expect(second.digest).toBe('skipped');
+    expect(logs).toContainEqual(['school.parent-digest.skipped', { studyDay: '2026-10-20', reason: 'already-sent' }]);
+  });
+
   it('sends nothing when no teacher is configured', async () => {
     const { digest, sent } = makeDigest({ teachers: [], sections: { learner_a: [section('served')] } });
     const result = await digest.run({});
@@ -140,6 +186,33 @@ describe('SchoolParentDigest — two empty study days', () => {
       dedupeKey: 'zero:learner_a:2026-10-20', urgency: 'high', category: 'school',
     });
     expect(alert.metadata.pushData).toMatchObject({ channel: 'School needs you' });
+  });
+
+  it('counts the whole run, so a third empty day says third', async () => {
+    const { digest, sent } = makeDigest({
+      sections: { learner_a: nothingDone },
+      days: { learner_a: {
+        '2026-10-19': { state: 'none', served: 0, asked: 2 },
+        '2026-10-18': { state: 'exempt', served: 0, asked: 0 },
+        '2026-10-17': { state: 'none', served: 0, asked: 1 },
+        '2026-10-16': { state: 'met', served: 1, asked: 1 },
+      } },
+    });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(zeros(sent)[0].body).toBe('Nothing done for the third study day in a row');
+  });
+
+  it('ends the run at a day that cannot be judged, and still fires on what it counted', async () => {
+    const { digest, sent } = makeDigest({
+      sections: { learner_a: nothingDone },
+      days: { learner_a: {
+        '2026-10-19': { state: 'none', served: 0, asked: 2 },
+        '2026-10-18': { state: 'unknown', reason: 'replay_failed', served: 0, asked: 0 },
+        '2026-10-17': { state: 'none', served: 0, asked: 1 },
+      } },
+    });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(zeros(sent)[0].body).toBe('Nothing done for the second study day in a row');
   });
 
   it('does not fire on one empty day', async () => {
@@ -203,6 +276,25 @@ describe('SchoolParentDigest — a held push', () => {
     expect(await digest.retryHeld()).toEqual({ sent: 1, held: 0 });
     expect(await digest.retryHeld()).toEqual({ sent: 0, held: 0 });
     expect(digests(sent).map((i) => i.dedupeKey)).toEqual(['digest:2026-10-20', 'digest:2026-10-20', 'digest:2026-10-20']);
+  });
+
+  it('never retries a cooldown: the push already reached that teacher', async () => {
+    const { digest, sent, logs } = makeDigest({ sections: { learner_a: [section('served')] }, deliveries: ['cooldown'] });
+    const result = await digest.run({ studyDay: '2026-10-20' });
+    expect(result.digest).toBe('skipped');
+    expect(await digest.retryHeld()).toEqual({ sent: 0, held: 0 });
+    await digest.run({ studyDay: '2026-10-20' });
+    expect(digests(sent)).toHaveLength(1);
+    expect(logs).toContainEqual(['school.parent-digest.skipped', { studyDay: '2026-10-20', reason: 'already-sent' }]);
+  });
+
+  it('holds per teacher: a quiet-hours hold for one, a cooldown for the other', async () => {
+    const { digest, sent } = makeDigest({
+      teachers: ['parent_a', 'parent_b'], sections: { learner_a: [section('served')] }, deliveries: ['suppressed', 'cooldown', 'delivered'],
+    });
+    expect((await digest.run({ studyDay: '2026-10-20' })).digest).toBe('suppressed');
+    expect(await digest.retryHeld()).toEqual({ sent: 1, held: 0 });
+    expect(digests(sent).map((i) => i.metadata.username)).toEqual(['parent_a', 'parent_b', 'parent_a']);
   });
 
   it('drops a push still held when the next day runs', async () => {

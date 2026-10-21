@@ -86,7 +86,7 @@ clause; it never renders an id.
 `SchoolParentDigest` (`__app_modules/learning/school/server/application/`)
 sends both, composed in `composition/parentDigest.mjs`.
 
-- **When.** The economy catalog's `digest.cron` (`0 18 * * *` here). It is
+- **When.** On the economy catalog's `digest.cron`. It is
   read once at boot, so a change needs a restart; a null cron registers
   nothing. The job runs only where the scheduler runs (production or
   `ENABLE_CRON`).
@@ -104,21 +104,28 @@ sends both, composed in `composition/parentDigest.mjs`.
   `status: print_failed` and `school.issue.failed` at stage `print` read
   `a print failed`, other `school.issue.failed` read `a sheet couldn't be
   made`, `school.selfservice.code.rejected` reads `a code was turned away`.
-  An event is a child's when its `learnerId` names them or its `sessionId`
-  is theirs; one naming neither is left out.
+  `school.selfservice.action.failed` at stage `print` is a print failure
+  too. An event is a child's when its `learnerId` names them or its
+  `sessionId` is theirs; one naming neither is left out. A rejected code
+  names its learner only when the code was known (used up, expired); a code
+  nobody issued is never attributed to anyone.
 - **Length.** A line over 100 characters drops its clauses from the end
   (failure, then passes, then silver). A body over 600 characters keeps the
   first children and ends `+N more in the teacher view`.
 - **`zero-days`.** Title `📭 {Child} — School`, body `Nothing done for the
   second study day in a row`. Sent when today asked for work and none was
   done, and so did the previous study day (`digest.zero_days_alert` days in
-  all, today included). The previous study day is the last earlier day that
-  asked for something: weekends and days off are skipped. A day that cannot
-  be judged stops the check with no alert. Tag `school-{learnerId}-zero-days`.
+  all, today included). The copy counts the whole run (`third`, `fourth`):
+  the look-back goes on to a day with work done, a day that cannot be
+  judged, or 14 days. The previous study day is the last earlier day that
+  asked for something: weekends and days off are skipped. Tag `school-{learnerId}-zero-days`.
 - **Delivery.** Each teacher through `NotificationService` (`category:
   school`), dedupe keys `digest:{day}` and `zero:{learnerId}:{day}`. A send
-  held by quiet hours (`suppressed`) is resent every 15 minutes until it is
-  delivered or the next evening's run replaces it. The hold lives in memory;
+  held by quiet hours (`reason: quiet_hours`) is resent every 15 minutes until
+  it is delivered or the next evening's run replaces it. A `cooldown`
+  suppression means that teacher already has it: it counts as sent and is
+  never resent. The day, the ledger window and the silver window all use the
+  economy's study calendar (household zone, 4 am). The hold lives in memory;
   a restart drops it.
 - **Logs.** `school.parent-digest.sent|skipped|failed`, `school.zero-days.sent`.
 
