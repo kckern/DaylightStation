@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ResolveSubjectNext } from "./ResolveSubjectNext.mjs";
 import { CurriculumAccess } from "../CurriculumAccess.mjs";
+import { appendAssignedProgramEntries } from "../assignedProgramPlan.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore,
   fakeClock, sequentialIds, silentLogger,
@@ -65,5 +66,69 @@ describe('peek', () => {
       .toEqual({ kind: 'locked', remedy: `Finish “${fixtureUnit(MEDIA_UNIT).title}” first` });
     expect(await useCase.peek({ learnerId: 'kid1', subject: 'history' })).toEqual({ kind: 'empty' });
     expect(await sessions.listForLearner('kid1')).toEqual([]);
+  });
+});
+
+describe('peek writes nothing on the continuation branches', () => {
+  // The planner's output stubbed in the shape `ResolveSubjectNext.continueToday
+  // .test.mjs` uses, built by the real `appendAssignedProgramEntries`, with a
+  // session store that records every write.
+  const NOW = '2026-09-01T16:00:00.000Z';
+  const LESSON = { unitId: 'eng-1', title: 'English 1', subject: 'english', status: 'available', program: null, sessionId: null };
+
+  const fixture = ({ served, reopenable = false }) => {
+    const assignment = { learnerId: 'kid1', courses: [], programs: [{ programId: 'book-log', subject: 'english' }] };
+    const plan = appendAssignedProgramEntries({ entries: [{ ...LESSON }], errors: [] }, assignment);
+    const lesson = plan.entries.find((entry) => entry.unitId === LESSON.unitId);
+    const sections = [{
+      subject: 'english', progressRows: [], servedToday: served,
+      next: served ? null : lesson,
+      ...(reopenable ? { reopenUnitId: 'book-log:shelf' } : {}),
+    }];
+    const programStatuses = [{
+      programId: 'book-log', programInstance: 'shelf',
+      status: {
+        enrolled: true, error: false, doneToday: served, terminal: false, progressLabel: null, score: null,
+        ...(reopenable ? { reopenable: true } : {}),
+      },
+    }];
+    const planProjection = { project: async () => ({
+      plan, sections, activeExceptions: [], programStatuses,
+      projection: { assignment, units: [], sessions: [], works: [], nowIso: NOW },
+    }) };
+    const writes = [];
+    const store = {
+      async readEvents() { return []; },
+      async appendEvent(sessionId, event) { writes.push({ sessionId, event }); return { ...event, seq: 1 }; },
+    };
+    const resolver = new ResolveSubjectNext({
+      curriculum: {}, assignments: {}, sessions: store, planProjection,
+      newSessionId: () => 'session-new-1', clock: () => new Date(NOW),
+    });
+    return { resolver, writes };
+  };
+
+  it('continueToday onto a curriculum lesson: execute would open a session, peek does not', async () => {
+    const { resolver, writes } = fixture({ served: true });
+    const peeked = await resolver.peek({ learnerId: 'kid1', subject: 'english', continueToday: true });
+    expect(peeked).toMatchObject({ kind: 'move', sessionId: null, entry: { unitId: 'eng-1' } });
+    expect(writes).toEqual([]);
+
+    await resolver.execute({ learnerId: 'kid1', subject: 'english', continueToday: true });
+    expect(writes).not.toEqual([]);
+  });
+
+  it('a reopenable program on a served subject', async () => {
+    const { resolver, writes } = fixture({ served: true, reopenable: true });
+    const peeked = await resolver.peek({ learnerId: 'kid1', subject: 'english' });
+    expect(peeked).toMatchObject({ kind: 'program', programId: 'book-log' });
+    expect(writes).toEqual([]);
+  });
+
+  it('a token that names a program', async () => {
+    const { resolver, writes } = fixture({ served: false });
+    const peeked = await resolver.peek({ learnerId: 'kid1', subject: 'english', program: 'book-log' });
+    expect(peeked).toMatchObject({ kind: 'program', programId: 'book-log' });
+    expect(writes).toEqual([]);
   });
 });

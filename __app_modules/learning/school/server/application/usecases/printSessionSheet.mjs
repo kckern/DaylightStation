@@ -91,6 +91,15 @@ export function threwAnswer({ action, sessionId, error, logger = console, events
   return { outcome: 'failed', sentence: TELL_A_GROWN_UP, sessionId, effect: null };
 }
 
+/** `PRINT_RESULTS` with some rows' sentences replaced; the outcomes never change. */
+function printResultsWith(sentences) {
+  if (!sentences) return PRINT_RESULTS;
+  return Object.fromEntries(Object.entries(PRINT_RESULTS).map(([status, row]) => [
+    status,
+    typeof sentences[status] === 'string' ? { ...row, sentence: sentences[status] } : row,
+  ]));
+}
+
 /**
  * Print a session's sheet through `IssueDocument`. Never throws.
  *
@@ -110,15 +119,6 @@ export function threwAnswer({ action, sessionId, error, logger = console, events
  * @returns {Promise<{outcome: string, sentence: string, sessionId: string,
  *                    effect: object|null, transition: string}>}
  */
-/** `PRINT_RESULTS` with some rows' sentences replaced; the outcomes never change. */
-function printResultsWith(sentences) {
-  if (!sentences) return PRINT_RESULTS;
-  return Object.fromEntries(Object.entries(PRINT_RESULTS).map(([status, row]) => [
-    status,
-    typeof sentences[status] === 'string' ? { ...row, sentence: sentences[status] } : row,
-  ]));
-}
-
 export async function printSessionSheet({
   issueDocument, sessionId, logger = console, events = SELF_SERVICE_EVENTS, sentences = null,
 }) {
