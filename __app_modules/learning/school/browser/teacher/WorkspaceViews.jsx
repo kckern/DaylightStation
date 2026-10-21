@@ -4,6 +4,7 @@ import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 import { usePanelFetch } from "./usePanelFetch.js";
 import { useTeacherWrite } from "./useTeacherWrite.js";
 import { labelize } from "./labelize.js";
+import DebriefsPanel from "./panels/DebriefsPanel.jsx";
 import PanelFrame from "./panels/PanelFrame.jsx";
 import TodayTab from "./tabs/TodayTab.jsx";
 import RecordsTab from "./tabs/RecordsTab.jsx";
@@ -442,6 +443,15 @@ export function WordsView({ learnerId, learnerName }) {
           <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
         ))}
       </PanelFrame>
+    </div>
+  );
+}
+
+export function DebriefsView({ learnerId, learnerName }) {
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Debriefs</p><h2>{learnerName}’s debriefs</h2><p>What they said they learned, the questions asked, and how they answered.</p></div></div>
+      <DebriefsPanel learnerId={learnerId} learnerName={learnerName} />
     </div>
   );
 }

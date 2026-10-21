@@ -61,7 +61,7 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
 
   it('a week outside every term says so — "outside the term", not an empty week', async () => {
     const evidence = new SchoolEarningEvidence({ termVerdicts: termVerdicts({ term: null, days: [], weeks: [] }), sessions: sessions([]), logger: silent });
-    expect(await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).toEqual({ sectionDays: [], days: [], week: null, units: [], coverage: 'outside-term' });
+    expect(await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).toEqual({ sectionDays: [], days: [], week: null, units: [], debriefs: [], coverage: 'outside-term' });
   });
 
   it('a week before the current term started is outside it too (the grid only reads the term containing today)', async () => {
@@ -96,5 +96,12 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     });
     const out = await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
     expect(out.units[0]).toMatchObject({ unitId: 'x-1', subject: null, courseId: null });
+  });
+  it('passes debrief rows through, [] when not enrolled, unknown on a reader failure', async () => {
+    const rows = [{ day: '2026-09-22', state: 'completed', timeliness: 'on-time', substantive: true, quiz: { right: 2, graded: 2 }, quizPassed: true }];
+    const make = (debriefs) => new SchoolEarningEvidence({ termVerdicts: termVerdicts(TERM), sessions: sessions([]), debriefs, logger: silent });
+    expect((await make({ week: async () => rows }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual(rows);
+    expect((await make({ week: async () => null }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual([]);
+    expect((await make({ week: async () => { throw new Error('x'); } }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual([{ day: WEEK.from, state: 'unknown', timeliness: 'on-time', substantive: false, quiz: { right: 0, graded: 0 }, quizPassed: false }]);
   });
 });

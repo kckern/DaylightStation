@@ -1,24 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { noteKeyEvent } from "./inputVia.js";
+import { keyFromCode } from "../../shared/physicalKey.js";
 
 const TYPING = new Set(['INPUT', 'TEXTAREA']);
-
-/**
- * The map's name for a physical key, from `event.code`. The Bluetooth keyboard
- * may be on a Korean layout, where `event.key` for H is `ㅗ` — the physical
- * key is what the on-screen hint means, so it wins; `key` is the fallback.
- */
-function keyFromCode(code) {
-  if (typeof code !== 'string') return null;
-  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
-  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  if (code === 'Space') return ' ';
-  if (code === 'Enter' || code === 'NumpadEnter') return 'enter';
-  if (code === 'Tab') return 'tab';
-  if (code === 'Backslash') return '\\';
-  if (code === 'ArrowLeft') return 'arrowleft';
-  return null;
-}
 
 /**
  * One keyboard map per screen (spec §6 input map). Never Esc — FKB captures it on the Portal.

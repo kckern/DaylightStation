@@ -8,6 +8,7 @@
  *   days:        [{day, state: met|partial|none|exempt|unknown, reason, timeliness}],
  *   week:        {weekId, state, reason, open} | null,
  *   units:       [{day, unitId, subject, courseId, timeliness}],
+ *   debriefs:    [{day, state: completed|excused|rejected|open|missed|unknown, timeliness, substantive, quiz:{right,graded}, quizPassed}],
  * }
  *
  * IRingEvidence.standings({learnerIds, fromMs, toMs}) → [{learnerId, rings}]

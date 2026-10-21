@@ -1,6 +1,7 @@
 import { validateFlashcardEnrollment } from "../domain/flashcards/index.mjs";
 import { validateStoryTimeEnrollment, STORY_TIME_PROGRAM_ID } from "../domain/storyTime.mjs";
 import { validateBookLogEnrollment, BOOK_LOG_PROGRAM_ID } from "../domain/bookLog.mjs";
+import { SCHOOL_DEBRIEF_PROGRAM_ID, validateSchoolDebriefEnrollment } from "../domain/schoolDebrief.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
 
 const withSchedule = (validator) => async (raw) => {
@@ -44,6 +45,8 @@ export function createSchoolProgramEnrollmentValidators({
     // before a grown-up can enrol a child on it, because an enrollment with no
     // obligation is complete on its own.
     [BOOK_LOG_PROGRAM_ID, validateBookLogEnrollment],
+    // Unconditional too: the debrief needs no service to be enrolled on.
+    [SCHOOL_DEBRIEF_PROGRAM_ID, validateSchoolDebriefEnrollment],
     ...(rubiksCubeService && rubiksCubeCourseId
       ? [['rubiks-cube', (raw) => validateRubiksCubeEnrollment(raw, rubiksCubeCourseId)]]
       : []),

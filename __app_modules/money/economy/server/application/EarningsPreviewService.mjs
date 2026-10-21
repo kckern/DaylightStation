@@ -20,7 +20,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const CONTEST_CLOSE_HOUR = 12; // Saturday noon, local
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
-const EMPTY_SCHOOL = Object.freeze({ sectionDays: [], days: [], week: null, units: [] });
+const EMPTY_SCHOOL = Object.freeze({ sectionDays: [], days: [], week: null, units: [], debriefs: [] });
 
 export class EarningsPreviewService {
   #rules;
@@ -151,7 +151,7 @@ export class EarningsPreviewService {
         rings: Array.isArray(ctx.standings) ? 'ok' : 'unavailable',
       },
       // The week's work, as School reported it — the view draws it beside the prices.
-      work: { days: school.days, sectionDays: school.sectionDays, week: school.week, units: school.units, rings },
+      work: { days: school.days, sectionDays: school.sectionDays, week: school.week, units: school.units, debriefs: school.debriefs, rings },
     };
   }
 }

@@ -93,6 +93,9 @@ import { PreviewSchoolSessionStore, PreviewSchoolTokenRegistry } from "../applic
 import { SyllabusManagementService } from "../application/SyllabusManagementService.mjs";
 import { SurfaceProgramLauncher } from "../application/SurfaceProgramLauncher.mjs";
 import { StoryTimeProgramLauncher } from "../application/StoryTimeProgramLauncher.mjs";
+import { YamlDebriefStore } from "../adapters/persistence/YamlDebriefStore.mjs";
+import { SchoolDebriefProgramLauncher } from "../application/SchoolDebriefProgramLauncher.mjs";
+import { SCHOOL_DEBRIEF_PROGRAM_ID, debriefConfigOf } from "../domain/schoolDebrief.mjs";
 import { BookLogProgramLauncher } from "../application/BookLogProgramLauncher.mjs";
 import { PianoCourseProgramLauncher } from "../application/PianoCourseProgramLauncher.mjs";
 import { PianoLessonCeremonyBridge } from "../application/PianoLessonCeremonyBridge.mjs";
@@ -285,7 +288,7 @@ export async function createSchoolLifecycle({
   // Books domain's resolver and repository come from `booksApi.mjs`. Null for
   // any of them degrades: the launcher still registers (an enrollment with no
   // obligation is complete on its own), only the shelf use cases are skipped.
-  bookGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
+  bookGrants = null, debriefGrants = null, resolveBook = null, bookRepository = null, bookCoverUrlFor = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   // Kiosk unsupervised-input friction tracker (kiosk-friction-detection Task
@@ -587,6 +590,7 @@ export async function createSchoolLifecycle({
     // Story-time evidence: durable `records/`, sharded by the household's own
     // study day so the launcher's "how many today" is one file read.
     readingLog: new YamlReadingLogStore({ configService, logger }),
+    debriefs: new YamlDebriefStore({ configService, logger }),
     // Book-log evidence: the learner-sharded reading shelf (`records/`), one
     // file per learner, read by the launcher for "how much today/this week".
     // The household's study-day rule, so a v1 shelf file read through this
@@ -611,6 +615,15 @@ export async function createSchoolLifecycle({
   // against (`app.mjs`) — one source, so the agenda's "done today" and the
   // program's own idea of "today" can never drift apart.
   const timezone = configService.getTimezone?.() || null;
+  // `school.yml → calendar`: the house's own days off, in the same shape a
+  // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
+  // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
+  // the printed agenda and the term grid can never disagree about a vacation.
+  // Fails open with a warn, like every schedule: a typo must not excuse a term.
+  // Validated once, here, because the debrief launcher needs it at registration
+  // and the agenda/grid read it further down.
+  const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
+  if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
   // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
   // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
   // seams every surface needs exist. This file used to stand up a minimal,
@@ -725,6 +738,12 @@ export async function createSchoolLifecycle({
     bookRepository,
   });
   launchers.set(BOOK_LOG_PROGRAM_ID, bookLogLauncher);
+
+  const debriefLauncher = new SchoolDebriefProgramLauncher({
+    debriefs: stores.debriefs, assignments: stores.assignments, grants: debriefGrants,
+    householdSchedule, timezone, clock, logger, donow,
+  });
+  launchers.set(SCHOOL_DEBRIEF_PROGRAM_ID, debriefLauncher);
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
@@ -862,14 +881,6 @@ export async function createSchoolLifecycle({
   //   - `closeSessionOutcome` keeps its own (built inside the use case): it is
   //     wired with no launchers and defaults `timezone` to UTC rather than
   //     null, and a receipt is not the place to discover that those differ.
-  // `school.yml → calendar`: the house's own days off, in the same shape a
-  // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
-  // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
-  // the printed agenda and the term grid can never disagree about a vacation.
-  // Fails open with a warn, like every schedule: a typo must not excuse a term.
-  const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
-  if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
-
   const practiceAssessments = cardLadderStudyService ? new PracticeAssessmentService({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, cardLadder: cardLadderStudyService, clock, newSessionId,
     attestations, curriculumExceptions: curriculumExceptionStore,
@@ -1735,6 +1746,9 @@ export async function createSchoolLifecycle({
     householdSchedule,
     realtime: schoolRealtime,
     bookLogLauncher,
+    debriefLauncher,
+    debriefStore: stores.debriefs,
+    debriefConfig: debriefConfigOf(cfg),
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
     // The economy's coins-changed forwarded to the Portal; null when unwired.

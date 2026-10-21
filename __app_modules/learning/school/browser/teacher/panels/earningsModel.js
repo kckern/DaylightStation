@@ -64,7 +64,7 @@ export function statusText(status) {
   return STATUS_TEXT[status] ?? status;
 }
 
-const ONCE = new Set(['section-week', 'week-met', 'ring-contest']);
+const ONCE = new Set(['section-week', 'week-met', 'ring-contest', 'debrief-week']);
 
 /** What the inline rate field edits for a line, and how to label its unit. */
 export function editableRate(line) {

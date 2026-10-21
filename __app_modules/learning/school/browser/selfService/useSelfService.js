@@ -241,6 +241,10 @@ function launchTarget(action, effect) {
       cubeGrant: effect.cubeGrant ?? null,
       studyGrant: effect.studyGrant ?? null,
       bookGrant: effect.bookGrant ?? null,
+      // The after-school debrief mounts on its grant and the days it may write.
+      debriefGrant: effect.debriefGrant ?? null,
+      today: effect.today ?? null,
+      lateDay: effect.lateDay ?? null,
       learnerId: effect.learnerId ?? null,
     };
   }
