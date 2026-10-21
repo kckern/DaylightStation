@@ -520,7 +520,7 @@ function OpsFocusNotice({ focus, learnerId, learnerName }) {
       <h3 className="teacher-panel__title">{labelize(focus.subject ?? 'Lesson')}: {action.headline}</h3>
       <ul>
         <li>{learnerName} did the work, but the tech lost it? <strong>Give credit</strong> below{focus.unit ? ' — the lesson is already picked' : ''}.</li>
-        <li>The lesson itself is the problem? <a href={schoolFix}>Excuse or pause this lesson for everyone →</a></li>
+        <li>The lesson itself is the problem? <a href={schoolFix}>Excuse or pause {focus.unit ? 'this' : 'a'} lesson for everyone →</a></li>
       </ul>
     </section>
   );

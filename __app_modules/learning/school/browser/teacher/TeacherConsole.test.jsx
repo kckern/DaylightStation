@@ -458,6 +458,14 @@ describe('TeacherConsole workspace', () => {
     }
   });
 
+  // With no lesson picked, the school-wide repair is for "a" lesson, not "this" one.
+  it('says "a lesson" in the repair notice when no lesson is picked', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/operations?reason=awaiting_grown_up&subject=arts');
+    render(<TeacherConsole />);
+    await screen.findByText(/Excuse or pause a lesson for everyone/);
+    expect(screen.queryByText(/this lesson for everyone/)).toBeNull();
+  });
+
   // Reopening Operations without a query is a different repair context: the
   // panels seed from the query only on mount, so the view must remount.
   it('drops a preselected repair when Operations is reopened without one', async () => {
