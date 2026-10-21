@@ -108,10 +108,16 @@ const labelSentence = (work) => {
  */
 const isPaper = (work) => work?.kind === 'print' || (work?.kind === 'retry' && work.operation === 'print');
 
-const unitView = (unit, fallbackSubject) => (unit ? {
+/**
+ * The unit as surfaces see it. `elective: true` only when known: the
+ * completion view reads the unit's section as `excused` today (an elective),
+ * so the reward port does not price it as required work.
+ */
+const unitView = (unit, fallbackSubject, { elective = false } = {}) => (unit ? {
   unitId: unit.unitId ?? null,
   title: unit.title ?? null,
   subject: unit.subject ?? fallbackSubject ?? null,
+  ...(elective ? { elective: true } : {}),
 } : null);
 
 export class IssueSubjectNext {
@@ -203,7 +209,9 @@ export class IssueSubjectNext {
     const sections = await this.#sections(learnerId, wanted);
     // The SAME choice `execute` makes, so the label names what will print.
     const look = wanted ? await this.#look(learnerId, wanted) : await this.#choose(learnerId, sections);
-    const unit = look?.unit ?? null;
+    // An elective today (the same `excused` tier `#candidates` reads) says so.
+    const elective = sections.find((s) => s.subject === look?.subject)?.state === 'excused';
+    const unit = look?.unit ? unitView(look.unit, look.subject, { elective }) : null;
     return {
       subject: look?.subject ?? null,
       unit,

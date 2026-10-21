@@ -409,7 +409,7 @@ coin, price, reason }` (the refusal code as `reason`).
   running a preview: dry-run coins are not real, and the digest says so), the
   school evidence is `ok`, and exactly one sheet-kind rule matches the unit.
   The amount assumes the sheet is required work and is passed; a unit marked
-  `elective` is null. It is what one more occurrence adds to the line's rounded
+  `elective` is null (School's `unitView` sets it when today's section is `excused`). It is what one more occurrence adds to the line's rounded
   total, `round((n+1)·s·m) − round(n·s·m)` at the learner's (possibly
   overridden) reward `s` and multiplier `m`, because a payout mints
   `round(total) − paid`: at ×1.5 a 1-silver day with one day served adds 1, not 2.

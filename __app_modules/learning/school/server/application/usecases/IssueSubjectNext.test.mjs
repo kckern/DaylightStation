@@ -305,6 +305,31 @@ describe('preview (GET /next)', () => {
     expect(result.reward).toBeNull();
     expect(result.unit?.unitId).toBe(WORKSHEET_UNIT);
   });
+
+  it('marks an elective unit, so the reward port can refuse to price it', async () => {
+    const seen = [];
+    build({
+      units: [SCIENCE_UNIT, WORKSHEET_UNIT],
+      rewardFor: async ({ unit }) => { seen.push(unit); return unit.elective ? null : { silver: 1 }; },
+      completion: {
+        execute: async () => ({
+          sections: [
+            { subject: 'math', state: 'served', reason: null },
+            { subject: 'science', state: 'excused', reason: 'elective_only' },
+          ],
+        }),
+      },
+    });
+    const result = await useCase.preview({ learnerId: 'kid1' });
+    expect(result.unit).toMatchObject({ unitId: SCIENCE_UNIT, subject: 'science', elective: true });
+    expect(seen[0].elective).toBe(true);
+    expect(result.reward).toBeNull();
+  });
+
+  it('an obligated unit carries no elective flag', async () => {
+    const result = await useCase.preview({ learnerId: 'kid1' });
+    expect(result.unit).not.toHaveProperty('elective');
+  });
 });
 
 /** Grade the session `sessionId` as failed, the way the OMR path records it. */

@@ -37,7 +37,15 @@ const quiet = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.f
 let dir;
 afterEach(() => { vi.useRealTimers(); if (dir) fs.rmSync(dir, { recursive: true, force: true }); dir = null; });
 
-function school({ rewardFor }) {
+/** The real completion view, with math read as an elective (`excused`) today when asked. */
+const electiveToday = (completion, on) => (on ? {
+  execute: async (args) => {
+    const view = await completion.execute(args);
+    return { ...view, sections: (view?.sections ?? []).map((s) => (s.subject === 'math' ? { ...s, state: 'excused', reason: 'elective_only' } : s)) };
+  },
+} : completion);
+
+function school({ rewardFor, electiveMath = false }) {
   const clock = fakeClock(NOW);
   const catalog = new FakeCatalog({
     units: rawUnits({ [WORKSHEET_UNIT]: { courseId: undefined, sequence: undefined } }),
@@ -56,9 +64,9 @@ function school({ rewardFor }) {
       planProjection, curriculum, assignments, sessions, launchers,
       clock: clock.now, newSessionId: sequentialIds(), logger: silentLogger,
     }),
-    getLearnerDayCompletion: new GetLearnerDayCompletion({
+    getLearnerDayCompletion: electiveToday(new GetLearnerDayCompletion({
       planProjection, curriculum, assignments, sessions, launchers, clock: clock.now, logger: silentLogger,
-    }),
+    }), electiveMath),
     issueDocument: { canIssueBank: () => false, execute: vi.fn() },
     roster: () => [{ id: 'kid1' }],
     rewardFor,
@@ -99,12 +107,12 @@ async function economy({ mode, mathToday, rules }) {
   return { economyApi, schoolLifecycle };
 }
 
-async function getNext({ mode = 'live', mathToday = 'obligated', rules = [MATH_DAILY, GREEN_DAY] } = {}) {
+async function getNext({ mode = 'live', mathToday = 'obligated', rules = [MATH_DAILY, GREEN_DAY], electiveMath = false } = {}) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(NOW));
   const { economyApi, schoolLifecycle } = await economy({ mode, mathToday, rules });
   // School first, holding the late-bound port — the app's order.
-  const issueSubjectNext = school({ rewardFor: economyApi.rewardFor });
+  const issueSubjectNext = school({ rewardFor: economyApi.rewardFor, electiveMath });
   await createEconomyEarningsRuntime({
     schoolLifecycle, economyApi,
     fitnessRings: { standings: async () => [] },
@@ -141,6 +149,15 @@ describe('GET /learners/:learnerId/next, economy wired', () => {
     // The same rule keyed by a course: the unit view names none, so no amount.
     const byCourse = [GREEN_DAY, { ...rules[1], match: { courseId: prefix } }];
     expect((await getNext({ rules: byCourse })).body.reward).toBeNull();
+  });
+
+  it('an elective unit, through School\'s real unitView: no amount, even under a unit rule', async () => {
+    const prefix = WORKSHEET_UNIT.split('.')[0];
+    const rules = [{ id: 'fraction-sheets', label: 'Fraction sheets', kind: 'unit', match: { subject: 'math', unitId: prefix }, reward: { silver: 1, gems: 0 } }];
+    const response = await getNext({ rules, electiveMath: true });
+    expect(response.status).toBe(200);
+    expect(response.body.unit).toMatchObject({ unitId: WORKSHEET_UNIT, elective: true });
+    expect(response.body.reward).toBeNull();
   });
 
   it('dry-run: no amount, the coins are not real yet', async () => {
