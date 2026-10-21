@@ -58,6 +58,11 @@ export class EarningsPreviewService {
     this.#logger = logger;
   }
 
+  /** Today's study day: what `week: null` resolves to (clock, timezone, boundary hour). */
+  currentStudyDay() {
+    return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+  }
+
   /** One learner's week. `week` is any study day inside it (default: today's). */
   async preview({ learnerId, week = null } = {}) {
     const roster = await this.#roster();
@@ -85,7 +90,7 @@ export class EarningsPreviewService {
 
   #windows(week) {
     const nowMs = this.#clock().getTime();
-    const day = week ?? studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+    const day = week ?? this.currentStudyDay();
     if (!DAY.test(day ?? '')) throw new ValidationError('week must be a study day (YYYY-MM-DD)', { code: 'INVALID_WEEK', field: 'week', value: week });
     const school = weekWindowFor(day);
     const opts = { timezone: this.#timezone };

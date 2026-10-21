@@ -55,6 +55,7 @@ const setup = ({ mode = 'live', weeks = null, rosterError = null } = {}) => {
       if (!state.weeks[learnerId]) throw new Error(`no learner ${learnerId}`);
       return state.weeks[learnerId];
     },
+    currentStudyDay: () => '2026-09-24',
     async roster({ week }) {
       state.previews.push({ roster: true, week });
       if (rosterError) throw rosterError;
@@ -221,6 +222,11 @@ describe('PayoutService.settle', () => {
     expect(a.minted.length + b.minted.length).toBe(5);
     expect(ledger('learner-a')).toHaveLength(5);
     expect((await economy.getBalance('learner-a')).balances).toEqual({ silver: 14, gold: 0, gems: 2 });
+  });
+
+  it('currentStudyDay is the preview\'s', () => {
+    const { payout } = setup();
+    expect(payout.currentStudyDay()).toBe('2026-09-24');
   });
 
   it('a failing preview throws to the caller (the wiring logs it)', async () => {

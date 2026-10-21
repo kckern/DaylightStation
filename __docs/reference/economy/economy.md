@@ -184,11 +184,15 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   `startEconomyPayouts` (`composition/earnings.mjs`): it settles a learner's week
   30 s after the last `school.session.outcome-recorded` (`{learnerId, studyDay?}`;
   a fact with the session's `studyDay` settles that day's week, so a late grade
-  re-prices the week the work belongs to) or `piano.lesson.completed`
+  re-prices the week the work belongs to; only a first settle or a grade
+  correction names it, never a resettle such as a retried close or a late
+  sign-off) or `piano.lesson.completed`
   (`{userId}`, the current week), debounced per learner and week. The hourly
   reconcile (`economy:payout-reconcile`, `0 * * * *`) settles every learner for
   the current week, and for the previous week too while today's study day is
-  Monday, Tuesday or Wednesday. The agents scheduler runs a task at most once per
+  Monday, Tuesday or Wednesday (each in its own try, so one failing does not
+  skip the other). "Today" is the preview's own `currentStudyDay()`, the same
+  clock, timezone and boundary hour `week: null` resolves with. The agents scheduler runs a task at most once per
   clock hour (it dedupes on `<task>:<YYYY-MM-DDTHH>`), so a finer cron would still
   run hourly. Both triggers are gated like the other scheduled jobs (production,
   or `ENABLE_CRON=true`); a backend without cron logs `economy.payout.disabled`

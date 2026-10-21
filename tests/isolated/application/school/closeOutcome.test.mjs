@@ -271,6 +271,13 @@ describe('school.session.outcome-recorded publish', () => {
     await sessions.appendEvent(SID, { type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 90 });
     await close.execute({ sessionId: SID });
     expect(published[0]).toMatchObject({ learnerId: 'kid1', sessionId: SID, studyDay: '2026-09-14' });
+    // A resettle of the same (old-week) session brings no new evidence: no studyDay,
+    // so a payout settles the current week rather than re-pricing the old one.
+    const again = await close.execute({ sessionId: SID });
+    expect(again.status).toBe('already_settled');
+    expect(published).toHaveLength(2);
+    expect(published[1]).toMatchObject({ learnerId: 'kid1', sessionId: SID });
+    expect(published[1]).not.toHaveProperty('studyDay');
   });
 
   it('does not throw when no realtime gateway is supplied (the default)', async () => {

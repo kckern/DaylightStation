@@ -30,9 +30,10 @@ function fakeBus() {
   };
 }
 
-// Wednesday 2026-09-30, noon Pacific: inside the Monday–Wednesday grace window.
-const WEDNESDAY = '2026-09-30T19:00:00.000Z';
-const FRIDAY = '2026-10-02T19:00:00.000Z';
+// The study day the preview calls "today" (PayoutService.currentStudyDay):
+// Wednesday is inside the Monday–Wednesday grace window, Friday is not.
+const WEDNESDAY = '2026-09-30';
+const FRIDAY = '2026-10-02';
 
 function setup({ mode = 'live', settle = async () => ({}), settleAll = async () => ({}), now = WEDNESDAY, enabled = true } = {}) {
   const state = { mode };
@@ -40,11 +41,11 @@ function setup({ mode = 'live', settle = async () => ({}), settleAll = async () 
   const bus = fakeBus();
   const tasks = new Map();
   const scheduler = { registerTask: vi.fn((key, cron, fn) => tasks.set(key, { cron, fn })) };
-  const payoutService = { settle: vi.fn(settle), settleAll: vi.fn(settleAll) };
+  const payoutService = { settle: vi.fn(settle), settleAll: vi.fn(settleAll), currentStudyDay: vi.fn(() => now) };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const wiring = startEconomyPayouts({
     payoutService, config: { catalog: () => ({ mode: state.mode }) }, eventBus: bus, scheduler, logger, enabled,
-    clock: () => new Date(now), timezone: 'America/Los_Angeles', debounceMs: 30_000, timers: clock.timers,
+    debounceMs: 30_000, timers: clock.timers,
   });
   return { state, clock, bus, tasks, scheduler, payoutService, logger, wiring };
 }
@@ -86,6 +87,21 @@ describe('startEconomyPayouts', () => {
   it('the reconcile also settles last week Monday to Wednesday', async () => {
     const { tasks, payoutService } = setup({ now: WEDNESDAY });
     await tasks.get('economy:payout-reconcile').fn();
+    expect(payoutService.settleAll.mock.calls.map(([a]) => a)).toEqual([{ week: null }, { week: '2026-09-21' }]);
+  });
+
+  it('a failing current-week reconcile still settles last week', async () => {
+    let calls = 0;
+    const { tasks, payoutService, logger } = setup({ settleAll: async () => { calls += 1; if (calls === 1) throw new Error('roster down'); return {}; } });
+    await tasks.get('economy:payout-reconcile').fn();
+    expect(payoutService.settleAll.mock.calls.map(([a]) => a)).toEqual([{ week: null }, { week: '2026-09-21' }]);
+    expect(logger.warn).toHaveBeenCalledWith('economy.payout.failed', expect.objectContaining({ error: 'roster down' }));
+  });
+
+  it('"today" is the preview\'s own study day, so the grace window and week: null cannot drift', async () => {
+    const { tasks, payoutService } = setup({ now: '2026-09-28' }); // a Monday by the preview's boundary
+    await tasks.get('economy:payout-reconcile').fn();
+    expect(payoutService.currentStudyDay).toHaveBeenCalled();
     expect(payoutService.settleAll.mock.calls.map(([a]) => a)).toEqual([{ week: null }, { week: '2026-09-21' }]);
   });
 
@@ -143,7 +159,8 @@ describe('startEconomyPayouts', () => {
     await expect(tasks.get('economy:payout-reconcile').fn()).resolves.toBeUndefined();
     expect(logger.warn.mock.calls.map(([event, data]) => [event, data.learnerId, data.error])).toEqual([
       ['economy.payout.failed', 'learner-a', 'ledger unreadable'],
-      ['economy.payout.failed', null, 'ledger unreadable'],
+      ['economy.payout.failed', null, 'ledger unreadable'], // this week
+      ['economy.payout.failed', null, 'ledger unreadable'], // last week (Wednesday: grace window)
     ]);
   });
 

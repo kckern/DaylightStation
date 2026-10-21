@@ -3345,7 +3345,6 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
     eventBus,
     scheduler: agentsServices.scheduler,
-    timezone: measuresTimezone,
     logger: rootLogger.child({ module: 'economy-payout' }),
   });
 

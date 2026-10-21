@@ -40,12 +40,12 @@ export class PayoutService {
 
   /**
    * @param {object} deps
-   * @param {{preview: Function, roster: Function}} deps.preview - EarningsPreviewService
+   * @param {{preview: Function, roster: Function, currentStudyDay: Function}} deps.preview - EarningsPreviewService
    * @param {{mint: Function, getHistory: Function, hasUser?: Function}} deps.economy - EconomyService
    * @param {{catalog: () => {mode: 'off'|'dry-run'|'live'}}} deps.config - EconomyConfigProjection
    */
   constructor({ preview, economy, config, logger = console }) {
-    if (!preview?.preview || !preview?.roster) throw new Error('PayoutService requires preview');
+    if (!preview?.preview || !preview?.roster || !preview?.currentStudyDay) throw new Error('PayoutService requires preview');
     if (!economy?.mint || !economy?.getHistory) throw new Error('PayoutService requires economy');
     if (!config?.catalog) throw new Error('PayoutService requires config');
     this.#preview = preview;
@@ -53,6 +53,12 @@ export class PayoutService {
     this.#config = config;
     this.#logger = logger;
   }
+
+  /**
+   * The preview's "today" (its clock, timezone and study-day boundary), so a
+   * caller choosing weeks agrees with what `week: null` means.
+   */
+  currentStudyDay() { return this.#preview.currentStudyDay(); }
 
   // Per call, so a config reload (dry-run → live) applies without a restart.
   #mode() { return this.#config.catalog().mode; }

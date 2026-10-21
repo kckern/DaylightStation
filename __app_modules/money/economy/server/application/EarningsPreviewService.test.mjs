@@ -53,6 +53,12 @@ describe('EarningsPreviewService.preview', () => {
     expect(out.evidence).toEqual({ school: 'ok', rings: 'ok' });
   });
 
+  it('currentStudyDay is the study day week: null resolves to (4 am boundary)', () => {
+    // 2026-09-28 03:30 PDT is still Sunday's study day under the 4 am boundary.
+    expect(build({ now: '2026-09-28T10:30:00.000Z' }).service.currentStudyDay()).toBe('2026-09-27');
+    expect(build({ now: '2026-09-28T11:30:00.000Z' }).service.currentStudyDay()).toBe('2026-09-28');
+  });
+
   it('defaults to the current study day\'s week', async () => {
     const { service, calls } = build({ now: '2026-09-26T17:00:00.000Z' });
     await service.preview({ learnerId: 'learner-a' });

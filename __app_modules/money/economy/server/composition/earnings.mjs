@@ -1,6 +1,5 @@
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
-import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
 
 export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
@@ -87,21 +86,21 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
  * @param {boolean} [deps.enabled=true]
  * @param {{subscribe: (topic: string, fn: Function) => Function|void}|null} [deps.eventBus]
  * @param {{registerTask: (key: string, cron: string, fn: Function) => void}|null} [deps.scheduler]
- * @param {() => Date} [deps.clock]
- * @param {string|null} [deps.timezone] - for the 4 am study-day boundary
  * @returns {{stop: () => void}} stop() unsubscribes and drops pending debounced
  *   settles; a settle already running is not awaited, and the scheduler (which
  *   has no unregister) keeps calling a task that now returns at once.
  */
 export function startEconomyPayouts({ payoutService, config, enabled = true, eventBus = null, scheduler = null, logger = console,
-  clock = () => new Date(), timezone = null, debounceMs = 30_000, timers = { setTimeout, clearTimeout } }) {
+  debounceMs = 30_000, timers = { setTimeout, clearTimeout } }) {
   if (!enabled) {
     logger.info?.('economy.payout.disabled', { reason: 'scheduler disabled (production or ENABLE_CRON only)' });
     return { stop() {} };
   }
   let stopped = false;
   const off = () => config.catalog().mode === 'off';
-  const today = () => studyDayForInstant(clock().getTime(), { timezone, boundaryHour: 4 });
+  // The preview's own "today" (its clock, timezone and boundary hour), so the
+  // grace window and `week: null` can never disagree about the day.
+  const today = () => payoutService.currentStudyDay();
   const mondayOf = (day) => weekWindowFor(day).from;
   const fail = (learnerId, err) => {
     // Not every piano player is on the school roster; that is not a failure.
@@ -145,9 +144,20 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
     ? PAYOUT_TOPICS.map((topic) => eventBus.subscribe(topic, onEvent))
     : [];
   scheduler?.registerTask?.('economy:payout-reconcile', '0 * * * *', async () => {
+    if (stopped) return;
     try {
-      if (stopped || off()) return;
+      if (off()) return;
+    } catch (err) {
+      fail(null, err);
+      return;
+    }
+    // Separate tries: a current-week failure must not skip last week's grace settle.
+    try {
       await payoutService.settleAll({ week: null });
+    } catch (err) {
+      fail(null, err);
+    }
+    try {
       const day = today();
       if (GRACE_WEEKDAYS.has(weekday(day))) {
         await payoutService.settleAll({ week: addDays(mondayOf(day), -7) });
