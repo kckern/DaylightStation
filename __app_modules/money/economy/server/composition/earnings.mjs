@@ -6,6 +6,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
     const { PayoutService } = await import("../application/PayoutService.mjs");
+    const { WeekCloseService } = await import("../application/WeekCloseService.mjs");
     const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
     const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
     const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
@@ -42,12 +43,20 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       config: economyApi.configProjection,
       logger: rootLogger.child({ module: 'economy-payout' }),
     });
+    // The Sunday close (B4): settle the week once more, then silver → gold.
+    // Started by `startWeekClose`.
+    const weekCloseService = new WeekCloseService({
+      payout: payoutService,
+      economy: economyApi.economyService,
+      config: economyApi.configProjection,
+      logger: rootLogger.child({ module: 'economy-week-close' }),
+    });
     const router = createEarningsRouter({
       earningsPreview,
       earnRules: economyApi.earnRulesService,
       logger: rootLogger.child({ module: 'economy-earnings-api' }),
     });
-    return { router, earningsPreview, payoutService };
+    return { router, earningsPreview, payoutService, weekCloseService };
 }
 
 const PAYOUT_TOPICS = ['school.session.outcome-recorded', 'piano.lesson.completed'];
@@ -174,4 +183,58 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
       pending.clear();
     },
   };
+}
+
+/**
+ * When the week closes: `economy:week-close` on `catalog().week_close.cron`
+ * (Sunday 23:30 local in the shipped catalog), read once at boot, so a cron
+ * change needs a restart. A null or blank cron registers nothing and says so
+ * once. The task asks `WeekCloseService.close()` with no week, which closes
+ * the week whose Sunday is today or has passed (the preview's study day).
+ *
+ * Same gate as the payouts (`enabled`). Registered whatever the mode, so a
+ * reload from `off` needs no restart; while the catalog reads `off` the task
+ * returns before any settle. A failure is logged (`economy.week-close.failed`,
+ * error for CORRUPT_LEDGER) and never reaches the scheduler loop. The
+ * scheduler has no catch-up: a close missed while the backend was down waits
+ * for next Sunday, which converts the whole balance anyway.
+ *
+ * @param {object} deps
+ * @param {import('../application/WeekCloseService.mjs').WeekCloseService} deps.weekCloseService
+ * @param {{catalog: () => {mode: string, week_close: {cron: string|null}}}} deps.config
+ * @param {boolean} [deps.enabled=true]
+ * @param {{registerTask: (key: string, cron: string, fn: Function) => void}|null} [deps.scheduler]
+ * @returns {{stop: () => void}} stop() makes the registered task return at once.
+ */
+export function startWeekClose({ weekCloseService, config, enabled = true, scheduler = null, logger = console }) {
+  if (!enabled) {
+    logger.info?.('economy.week-close.disabled', { reason: 'scheduler disabled (production or ENABLE_CRON only)' });
+    return { stop() {} };
+  }
+  const fail = (err) => {
+    const level = err?.code === 'CORRUPT_LEDGER' ? 'error' : 'warn';
+    logger[level]?.('economy.week-close.failed', { error: err?.message ?? String(err), code: err?.code ?? null });
+  };
+  let cron;
+  try {
+    cron = config.catalog().week_close?.cron;
+  } catch (err) {
+    fail(err);
+    return { stop() {} };
+  }
+  if (typeof cron !== 'string' || !cron.trim()) {
+    logger.info?.('economy.week-close.no-cron', { reason: 'catalog week_close.cron is not set' });
+    return { stop() {} };
+  }
+  let stopped = false;
+  scheduler?.registerTask?.('economy:week-close', cron.trim(), async () => {
+    if (stopped) return;
+    try {
+      if (config.catalog().mode === 'off') return;
+      await weekCloseService.close({});
+    } catch (err) {
+      fail(err);
+    }
+  });
+  return { stop() { stopped = true; } };
 }

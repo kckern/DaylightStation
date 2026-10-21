@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { startEconomyPayouts } from "./earnings.mjs";
+import { startEconomyPayouts, startWeekClose } from "./earnings.mjs";
 
 function fakeTimers() {
   let now = 0;
@@ -193,5 +193,71 @@ describe('startEconomyPayouts', () => {
     await tasks.get('economy:payout-reconcile').fn(); // the scheduler has no unregister
     expect(payoutService.settle).not.toHaveBeenCalled();
     expect(payoutService.settleAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('startWeekClose', () => {
+  function setupClose({ mode = 'live', cron = '30 23 * * 0', close = async () => ({}), enabled = true, catalog = null } = {}) {
+    const state = { mode, cron };
+    const tasks = new Map();
+    const scheduler = { registerTask: vi.fn((key, c, fn) => tasks.set(key, { cron: c, fn })) };
+    const weekCloseService = { close: vi.fn(close) };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const config = { catalog: catalog ?? (() => ({ mode: state.mode, week_close: { cron: state.cron, convert: [] } })) };
+    const wiring = startWeekClose({ weekCloseService, config, scheduler, logger, enabled });
+    return { state, tasks, scheduler, weekCloseService, logger, wiring };
+  }
+
+  it('registers economy:week-close on the catalog cron; the task closes the week the service resolves', async () => {
+    const { scheduler, tasks, weekCloseService } = setupClose();
+    expect(scheduler.registerTask).toHaveBeenCalledWith('economy:week-close', '30 23 * * 0', expect.any(Function));
+    await tasks.get('economy:week-close').fn();
+    expect(weekCloseService.close).toHaveBeenCalledWith({});
+  });
+
+  it.each([['null', null], ['empty', ''], ['blank', '  ']])('a %s cron registers nothing and says so once', (_label, cron) => {
+    const { scheduler, logger } = setupClose({ cron });
+    expect(scheduler.registerTask).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith('economy.week-close.no-cron', expect.any(Object));
+  });
+
+  it('disabled (no cron on this backend): registers nothing, one info line', () => {
+    const { scheduler, logger } = setupClose({ enabled: false });
+    expect(scheduler.registerTask).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('economy.week-close.disabled', expect.any(Object));
+  });
+
+  it('a catalog that cannot be read at boot registers nothing and warns', () => {
+    const { scheduler, logger } = setupClose({ catalog: () => { throw new Error('bad yaml'); } });
+    expect(scheduler.registerTask).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('economy.week-close.failed', expect.objectContaining({ error: 'bad yaml' }));
+  });
+
+  it('registers even while off, so a reload to live needs no restart; off skips the close', async () => {
+    const { state, tasks, weekCloseService } = setupClose({ mode: 'off' });
+    await tasks.get('economy:week-close').fn();
+    expect(weekCloseService.close).not.toHaveBeenCalled();
+    state.mode = 'live';
+    await tasks.get('economy:week-close').fn();
+    expect(weekCloseService.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing close is logged, never thrown into the scheduler; a corrupt ledger is error', async () => {
+    const corrupt = Object.assign(new Error('shard is not a list'), { code: 'CORRUPT_LEDGER' });
+    let err = new Error('roster down');
+    const { tasks, logger } = setupClose({ close: async () => { throw err; } });
+    await expect(tasks.get('economy:week-close').fn()).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith('economy.week-close.failed', expect.objectContaining({ error: 'roster down' }));
+    err = corrupt;
+    await tasks.get('economy:week-close').fn();
+    expect(logger.error).toHaveBeenCalledWith('economy.week-close.failed', expect.objectContaining({ code: 'CORRUPT_LEDGER' }));
+  });
+
+  it('stop() idles the task', async () => {
+    const { tasks, wiring, weekCloseService } = setupClose();
+    wiring.stop();
+    await tasks.get('economy:week-close').fn();
+    expect(weekCloseService.close).not.toHaveBeenCalled();
   });
 });

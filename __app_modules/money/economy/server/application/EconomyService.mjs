@@ -8,12 +8,17 @@
  * datastore's per-user lock: an append awaits the user's queue, so without
  * the lock a second call could pass the same check before the first lands.
  */
-import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond } from "../domain/index.mjs";
+import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 
 const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session considered dead
 const PAID_KINDS = new Set(['earn', 'prize']); // what counts toward a payout ref's "paid"
+
+/** Whole `to` coins for `amount` at `rate`, floored (the epsilon absorbs 0.29 × 100 = 28.999…). */
+export function convertedAmount(amount, rate) {
+  return Math.floor(amount * rate + 1e-9);
+}
 
 export class EconomyService {
   #ds; #configProjection; #logger; #clock; #newTransactionId; #newSessionId;
@@ -250,6 +255,82 @@ export class EconomyService {
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });
       return { userId, minted: owed, duplicate: false, paid, txnId: txn.id, balance: wallet.balance, balances: wallet.balances };
+    });
+  }
+
+  /**
+   * Convert a wallet's whole `from` balance into `to` at `rate` (the week
+   * close: silver → gold). Writes a pair of `convert` entries with one `at`:
+   * −balance in `from` under `ref`, then +convertedAmount(balance, rate) in
+   * `to` under `${ref}:${to}`. Both carry `evidenceRef: ref` and
+   * `meta: { ...meta, from, to, rate, spent, got }`.
+   *
+   * The balance read (strict, all-time), the idempotency check and both
+   * appends run in one user-lock body, so a mint or spend cannot land between
+   * them. `ref` converts once:
+   *   both halves present   `already-closed`, nothing written
+   *   only the `from` half  a crash between the appends; writes the missing
+   *                         `to` half from the first half's own figures
+   *                         (`repaired`), never re-reading the balance
+   *   only the `to` half    refuses (ValidationError): this method never
+   *                         writes that, so a person should look
+   *   neither               `nothing` (balance ≤ 0), `below-rate` (balance
+   *                         too small for one whole `to` coin: nothing is
+   *                         spent for nothing), or `converted`
+   * `dryRun` gives the same answer (`would-convert`, `would-repair`) and
+   * writes nothing, not even the wallet snapshot.
+   * @returns {Promise<{userId: string, status: string, spent: number, got: number, rate: number, txnIds: string[]}>}
+   */
+  async convert(userId, { from, to, rate, ref, action = 'convert', source = 'convert', meta = null, dryRun = false }) {
+    this.#assertUser(userId);
+    if (!CURRENCIES.includes(from) || !CURRENCIES.includes(to) || from === to) {
+      throw new ValidationError(`convert needs two different currencies, got ${from} → ${to}`);
+    }
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) throw new ValidationError(`convert rate must be a positive number, got ${rate}`);
+    if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('convert ref is required');
+    const toRef = `${ref}:${to}`;
+    return this.#ds.withUserLock(userId, async () => {
+      const txns = this.#ds.readAllTransactions(userId, { strict: true });
+      const isHalf = (t, r, c) => t.kind === 'convert' && t.ref === r && (t.currency ?? 'silver') === c;
+      const fromHalf = txns.find((t) => isHalf(t, ref, from));
+      const toHalf = txns.find((t) => isHalf(t, toRef, to));
+      const result = (status, spent, got, rateUsed = rate, txnIds = []) => ({ userId, status, spent, got, rate: rateUsed, txnIds });
+      if (fromHalf && toHalf) return result('already-closed', -fromHalf.delta, toHalf.delta, fromHalf.meta?.rate ?? rate);
+      if (toHalf) throw new ValidationError(`convert ${ref}: the ${to} half exists without the ${from} half`);
+
+      const at = this.#now();
+      const half = (currency, delta, halfRef, spent, got, rateUsed) => createTransaction({
+        id: this.#newTransactionId(), kind: 'convert', currency, delta, action, source, ref: halfRef,
+        evidenceRef: ref, meta: { ...(meta ?? {}), from, to, rate: rateUsed, spent, got }, at,
+      });
+
+      if (fromHalf) {
+        // Repair from what the first half recorded, not today's balance or rate.
+        const spent = -fromHalf.delta;
+        const rateUsed = fromHalf.meta?.rate ?? rate;
+        const got = fromHalf.meta?.got ?? convertedAmount(spent, rateUsed);
+        if (dryRun) return result('would-repair', spent, got, rateUsed);
+        const txn = half(to, got, toRef, spent, got, rateUsed);
+        await this.#ds.appendTransaction(userId, txn);
+        this.#snapshot(userId);
+        this.#logger.warn('economy.convert.repaired', { userId, ref, from, to, spent, got });
+        return result('repaired', spent, got, rateUsed, [txn.id]);
+      }
+
+      const spent = foldBalances(txns)[from];
+      if (spent <= 0) return result('nothing', 0, 0);
+      const got = convertedAmount(spent, rate);
+      if (got <= 0) return { ...result('below-rate', 0, 0), balance: spent };
+      if (dryRun) return result('would-convert', spent, got);
+      const out = half(from, -spent, ref, spent, got, rate);
+      const back = half(to, got, toRef, spent, got, rate);
+      // `from` first: a crash between leaves coins owed (repaired next run),
+      // never coins minted from nothing.
+      await this.#ds.appendTransaction(userId, out);
+      await this.#ds.appendTransaction(userId, back);
+      this.#snapshot(userId);
+      this.#logger.info('economy.convert', { userId, ref, from, to, rate, spent, got });
+      return result('converted', spent, got, rate, [out.id, back.id]);
     });
   }
 

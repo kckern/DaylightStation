@@ -11,7 +11,7 @@ import { configureLifelogArchive } from "../../__app_modules/personal/lifelog/se
 import { createLifelogWeightService } from "../../__app_modules/wellness/health/server/composition/lifelog-weight.mjs";
 import { registerFeedHeadlineHarvester } from "../../__app_modules/media/feed/server/composition/harvester.mjs";
 import { installAutomotiveRelay } from "../../__app_modules/household/auto/server/composition/ingress.mjs";
-import {createEconomyEarningsRuntime,startEconomyPayouts} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
+import {createEconomyEarningsRuntime,startEconomyPayouts,startWeekClose} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
 import {studyDayFor,isInWindow} from "../../__app_modules/learning/school/server/study-calendar.mjs";
 import {createChessRuntime} from "../../__app_modules/games/chess/server/composition/runtime.mjs";
 import {createEmulatorRuntime} from "../../__app_modules/games/emulator/server/composition/runtime.mjs";
@@ -3346,6 +3346,16 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     eventBus,
     scheduler: agentsServices.scheduler,
     logger: rootLogger.child({ module: 'economy-payout' }),
+  });
+  // Sunday week close (economy B4): settle the week once more, then unspent
+  // silver converts to gold on `week_close.cron` (read at boot; a change needs
+  // a restart). Same gate and modes as the payouts.
+  startWeekClose({
+    weekCloseService: economyEarnings.weekCloseService,
+    config: economyApi.configProjection,
+    enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+    scheduler: agentsServices.scheduler,
+    logger: rootLogger.child({ module: 'economy-week-close' }),
   });
 
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all

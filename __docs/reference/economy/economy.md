@@ -305,6 +305,67 @@ boundary).
   week is not paid automatically. Silver minted after Sunday's week close sits
   in the wallet and converts at the next close.
 
+### Week close
+
+`WeekCloseService` (`application/WeekCloseService.mjs`) turns unspent silver into
+gold, which is yours for good. `startWeekClose` (`composition/earnings.mjs`)
+registers `economy:week-close` on `week_close.cron` (`"30 23 * * 0"`, Sunday
+23:30 local), behind the same `enabled` gate as the payouts. The cron is read
+once at boot, so a change needs a restart; a null or blank cron registers
+nothing and logs `economy.week-close.no-cron` once. The task is registered in
+every mode, so a reload from `off` needs no restart.
+
+Per close, `catalog()` is read once (mode and rules):
+
+- **Which week.** The week whose Sunday is today's study day or has most
+  recently passed (`closingWeekFor`, from the preview's `currentStudyDay()`).
+  At Sunday 23:30 that is the current week; a manual run on Monday to Saturday
+  closes the previous week, never one still in progress. The scheduler has no
+  catch-up: a close missed while the backend was down waits for next Sunday,
+  which converts the whole balance anyway.
+- **Settle first.** `PayoutService.settleAll({ week })` once more, for the
+  last-minute contest and day-met lines; its roster is the close's roster. One
+  learner's failed settle is logged by the payout and does not block that
+  learner's close. A roster failure fails the close (nothing converts; next
+  week's close picks the balance up).
+- **What converts.** The wallet's whole silver balance at close time (the fold of
+  the whole ledger), not the week's earnings. Gold = floor(silver × rate). A
+  balance too small for one gold (a fractional rate) converts nothing and logs
+  `economy.week-close.below-rate`: silver is never spent for zero gold. Zero
+  silver writes nothing.
+- **Rules.** Each `week_close.convert` entry needs `from` and `to` in
+  silver/gold/gems and different, and `rate` a positive finite number; a
+  currency may appear in only one rule. A bad entry logs
+  `economy.week-close.bad-rule { rule, reason }` and is skipped. Only listed
+  rules run (today: `silver → gold` at 1).
+- **The pair.** `EconomyService.convert` reads the ledger strictly, checks
+  idempotency and appends both halves inside one user-lock body, so a payout or
+  spend cannot land between the balance read and the pair. Both halves share one
+  `at`, `action: week-close`, `source: week-close`,
+  `evidenceRef: close:<learner>:<week>` and
+  `meta: { weekId, from, to, rate, spent, got }` (enough for the history line
+  "12 silver → 12 gold · Sunday"):
+
+  | Half | `ref` | `currency` | `delta` |
+  |---|---|---|---|
+  | out | `close:<learner>:<week>` | silver | −balance |
+  | in | `close:<learner>:<week>:gold` | gold | +floor(balance × rate) |
+
+- **Idempotent.** The out half's ref means the week is closed: a second close
+  writes nothing (`already-closed`). The out half is written first, so a crash
+  between the appends leaves gold owed, never gold from nothing; the next close
+  of that week writes the missing in half from the out half's own `meta`
+  (`economy.week-close.repaired`, warn) without re-reading the balance. An in
+  half without its out half is refused. A corrupt shard throws `CORRUPT_LEDGER`
+  and nothing is written (logged `economy.week-close.failed` at error).
+- **Modes.** `off`: nothing (no settle, no read). `dry-run`: logs
+  `economy.week-close.would-convert { learnerId, weekId, silver, gold, rate }`
+  and writes nothing. `live`: writes and logs `economy.week-close.converted` per
+  learner at info. Every run ends with `economy.week-close.closed` (counts).
+- A learner who is not a household user logs `economy.week-close.not-a-user`
+  once per process (or was already reported by the payout) and is skipped. Only
+  roster learners are closed.
+
 ### API
 
 | Method / Path | Returns |
@@ -324,7 +385,8 @@ teacher capability cookie is scoped to `/api/v1/school`).
 - `2_domains/economy/earnings/` — `validateRuleset`, `resolveRules`,
   `withUserOverride`, `evaluateEarnings` (pure).
 - `3_applications/economy/EarningsPreviewService.mjs` (windows, contest close,
-  per-source failure handling), `EarnRulesService.mjs` (revisions), ports
+  per-source failure handling), `PayoutService.mjs`, `WeekCloseService.mjs`,
+  `EarnRulesService.mjs` (revisions), ports
   `IEarnRulesStore`, `IEarningEvidenceSource`.
 - Evidence: `3_applications/school/SchoolEarningEvidence.mjs` (term verdicts
   read with `detail: true` for per-subject rows; graded sessions + curriculum
@@ -453,6 +515,6 @@ the price of ordinary responsibility.
 
 ## Not yet built (later phases)
 
-Week close + silver→gold conversion, tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
+Tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
 biometric auth, parent dashboard, deposit admin UI
 (Phase 1 deposits are API-only).
