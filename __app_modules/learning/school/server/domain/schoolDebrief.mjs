@@ -52,7 +52,7 @@ export const TEACHER_EVENTS = Object.freeze(new Set(['excused', 'rejected', 'res
 export function deriveDebriefState(events = []) {
   const s = {
     phase: 'not-started', late: false, entries: {}, clarify: null, questions: null, substance: null,
-    substanceReason: null, questioner: null, answers: {}, next: null, summary: null, completedAt: null,
+    substanceReason: null, questioner: null, questionSource: null, answers: {}, next: null, summary: null, completedAt: null,
   };
   let completed = false; let override = null;
   for (const e of events) {
@@ -66,6 +66,8 @@ export function deriveDebriefState(events = []) {
       s.substance = Number.isInteger(e.substance) ? e.substance : null;
       s.substanceReason = e.substanceReason ?? null;
       s.questioner = e.questioner ?? null;
+      // Where the QUESTIONS came from; old events predate the field, so they default to the questioner.
+      s.questionSource = e.questionSource ?? e.questioner ?? null;
     } else if (e.type === 'answer' && e.questionId && !(e.questionId in s.answers)) {
       s.answers[e.questionId] = { response: e.response ?? null, correct: e.correct ?? null };
     } else if (e.type === 'completed') { completed = true; s.completedAt = e.at ?? null; }
@@ -107,12 +109,13 @@ const FALLBACK_DISTRACTORS = ['Lunch', 'Recess', 'Music', 'Library', 'Gym', 'Art
  * day never earns the quiz bonus (SchoolDebriefProgramLauncher.weekFacts).
  */
 export function fallbackQuestions(entries = {}) {
-  const classes = String(entries.classes?.text ?? '').split(/,|\band\b|\n/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
+  const named = String(entries.classes?.text ?? '').split(/,|\band\b|\n/).map((x) => x.trim()).filter(Boolean);
+  const classes = named.slice(0, 3);
   const learned = String(entries.learned?.text ?? '').trim();
   const qs = [];
   if (classes.length) {
     const h = textHash(entries);
-    const said = new Set(classes.map((c) => c.toLowerCase()));
+    const said = new Set(named.map((c) => c.toLowerCase()));
     const answer = classes[h % classes.length];
     const distractors = FALLBACK_DISTRACTORS.filter((d) => !said.has(d.toLowerCase())).slice(0, 3);
     const options = [answer, ...distractors];

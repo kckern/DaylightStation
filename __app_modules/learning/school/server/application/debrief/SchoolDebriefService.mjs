@@ -109,7 +109,7 @@ export class SchoolDebriefService {
       });
   }
   async #freeze(learnerId, day, out, type) {
-    await this.#append(learnerId, day, { type, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: out.questions, questioner: out.questioner, model: out.model ?? null });
+    await this.#append(learnerId, day, { type, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: out.questions, questioner: out.questioner, questionSource: out.questioner, model: out.model ?? null });
     this.#logger.info?.('school.debrief.questions', { learnerId, day, type, substance: out.substance, count: out.questions.length, questioner: out.questioner, model: out.model, ms: out.ms });
   }
   async clarify(learnerId, day, { text, via = 'typed', audioRef = null }) {
@@ -163,8 +163,10 @@ export class SchoolDebriefService {
     const out = await this.#runQuestioner(learnerId, day, s);
     if (out.questioner !== 'model') throw new DebriefError('The AI is still unavailable.', 503);
     // With answers already given the questions stay; only the score is replaced.
-    const keep = Object.keys(s.answers).length ? s.questions : out.questions;
-    await this.#append(learnerId, day, { type: 'rescored', by: by ?? null, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: keep, questioner: 'model', model: out.model ?? null });
+    // questionSource records that the kept questions are still the fallback's (no quiz bonus).
+    const kept = Object.keys(s.answers).length > 0;
+    const keep = kept ? s.questions : out.questions;
+    await this.#append(learnerId, day, { type: 'rescored', by: by ?? null, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: keep, questioner: 'model', questionSource: kept ? 'fallback' : 'model', model: out.model ?? null });
     this.#logger.info?.('school.debrief.rescored', { learnerId, day, by: by ?? null, substance: out.substance });
     return this.day(learnerId, day);
   }

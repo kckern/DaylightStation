@@ -73,6 +73,20 @@ describe('SchoolDebriefProgramLauncher', () => {
     const [row] = await make({ days }).weekFacts({ learnerId: 'test-learner', week: { from: '2026-10-20', to: '2026-10-20' }, quizPassRatio: 0.67, substantiveScore: 6 });
     expect(row).toMatchObject({ state: 'completed', quiz: { right: 1, graded: 1 }, quizPassed: false, substantive: false });
   });
+  const fq = [{ id: 'f1', kind: 'choice', prompt: 'p', options: ['a', 'b'], answer: 'a' }];
+  const wk = (days) => make({ days }).weekFacts({ learnerId: 'test-learner', week: { from: '2026-10-20', to: '2026-10-20' }, quizPassRatio: 0.67, substantiveScore: 6 });
+  it('weekFacts: a fallback day answered then re-scored can be substantive but never passes the quiz', async () => {
+    const [row] = await wk({ '2026-10-20': [{ type: 'questions', substance: null, questions: fq, questioner: 'fallback', at: 'x' },
+      { type: 'answer', questionId: 'f1', response: 'a', correct: true, at: 'y' }, { type: 'completed', at: 'z' },
+      { type: 'rescored', substance: 8, questions: fq, questioner: 'model', questionSource: 'fallback' }] });
+    expect(row).toMatchObject({ substantive: true, quizPassed: false });
+  });
+  it('weekFacts: a fallback day re-scored before any answer (fresh model questions) can pass the quiz', async () => {
+    const [row] = await wk({ '2026-10-20': [{ type: 'questions', substance: null, questions: fq, questioner: 'fallback', at: 'x' },
+      { type: 'rescored', substance: 8, questions: fq, questioner: 'model', questionSource: 'model' },
+      { type: 'answer', questionId: 'f1', response: 'a', correct: true, at: 'y' }, { type: 'completed', at: 'z' }] });
+    expect(row).toMatchObject({ substantive: true, quizPassed: true });
+  });
   it('owedDays: the owed days in range, never past today; default is the last 14 owed days', async () => {
     const l = make();
     expect(await l.owedDays('test-learner', { from: '2026-10-16', to: '2026-10-30' })).toEqual(['2026-10-16', '2026-10-20', '2026-10-21']); // 17/18 weekend, 19 except

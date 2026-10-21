@@ -105,6 +105,12 @@ describe('fallbackQuestions', () => {
     expect(positions.size).toBeGreaterThan(1);
     expect(at('math', 'beans')).toBe(at('math', 'beans'));
   });
+  it('a 4th named class is excluded from the distractors too', () => {
+    for (let i = 0; i < 6; i += 1) {
+      const f1 = fallbackQuestions({ classes: { text: `math, science, art, Music` }, learned: { text: `thing ${i}` } })[0];
+      expect(f1.options.filter((o) => o.toLowerCase() === 'music')).toEqual([]);
+    }
+  });
   it('no classes: no f1 (nothing to ask), only the reflection', () => {
     expect(fallbackQuestions({ learned: { text: 'fractions' } }).map((q) => q.id)).toEqual(['f3']);
   });

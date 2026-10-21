@@ -44,7 +44,7 @@ export class SchoolDebriefProgramLauncher {
         timeliness: state.late ? 'late' : 'on-time',
         substantive: !state.late && state.questioner === 'model' && Number.isInteger(state.substance) && state.substance >= substantiveScore,
         // A fallback day's questions come from the child's own words: no quiz bonus (substantive is already false).
-        quiz, quizPassed: state.questioner !== 'fallback' && quiz.graded > 0 && quiz.right / quiz.graded >= quizPassRatio,
+        quiz, quizPassed: state.questionSource !== 'fallback' && quiz.graded > 0 && quiz.right / quiz.graded >= quizPassRatio,
       });
     }
     return rows;
