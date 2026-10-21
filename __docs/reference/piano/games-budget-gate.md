@@ -28,6 +28,7 @@ a gate — [Games off](#games-off-gameaccessdisabledfor) — which no player act
 | # | Gate | Opens on | Fails |
 |---|---|---|---|
 | 1 | School completion | the `piano.games` entitlement is `granted` for today's school day (School grants it on `complete` or `no_work_today`), **or the player is not a learner School tracks** | closed |
+| 1a | Early pass | gate 1 said a real `incomplete`, and today's `piano.games` pass is `active` (bought, not yet played) | closed (a failed bank read leaves gate 1's lock as it was) |
 | 2 | Match gate | a played challenge scores at or above the bar | open on infrastructure; the ladder floor cannot fail on verdict |
 | 3 | Budget | minutes remain in the learner's allowance *and* the device's | open |
 
@@ -39,8 +40,8 @@ game ends, refunds if the game ends within the first minute, and expires at the 
 rollover. Everything beyond that pass still needs a green day. The pass is consulted only
 after the entitlement says no; it is not a State Gates assertion. The economy side
 (purchase, cap, price, refund) is in
-[economy.md § Early passes](../economy/economy.md#early-passes); the kiosk's lock-screen
-offer is not wired yet, so today gate 1 behaves as the table says.
+[economy.md § Early passes](../economy/economy.md#early-passes); the kiosk's side is
+[below](#the-early-pass-on-the-tablet).
 
 Gate 3 is two balances checked in series with distinct copy — "you've used your piano
 game time for today" for a learner, "this piano has reached its shared game time" for
@@ -65,6 +66,65 @@ nothing about whether work was done. To tell the two apart, ask School directly:
 per-subject `sections` (`served` = done, `excused` with a reason such as
 `not_a_school_day`). Only today is answerable there; for a past day see
 [State Gates: auditing a past day](../state-gates/integration-and-operations.md#auditing-a-past-day).
+
+### The early pass on the tablet
+
+`useSchoolGameAccess` reads the economy bank (`GET /api/v1/economy/users/:id/bank`) only
+after a real `incomplete`: never on `indeterminate`, a failed entitlement read, Guest, or
+a member School does not track. An active `pass['piano.games']` returns
+`{ unlocked: true, state: 'incomplete', via: 'pass', pass }`. A locked `incomplete`
+result carries `pass` and `offers` (the `piano.games` quote rows) for the lock screen.
+Every other result carries `pass: null, offers: []`. A failed bank read leaves the lock
+as it was and never turns the verdict into `error`. `state: 'unknown'` (the ledger could
+not be read) reads as locked, with no offers.
+
+**The Games tile** (`PianoMenu.jsx`) stays enabled under the school lock only when the
+lock can sell an affordable pass: `state: 'incomplete'`, a pass that is neither `active`
+nor `unknown`, `capUsed === false`, and an offer with `affordable: true`
+(`canBuyPass` in `earlyPass.js`). An active pass already reads as unlocked. A used cap,
+an unreadable ledger, or nothing for sale leaves the tile disabled. The live prices
+are 0, which means nothing is for sale, so the tile behaves as it did before.
+[Games off](#games-off-gameaccessdisabledfor) is checked first and never offers.
+
+**The lock screen** (`SchoolLock.jsx`) keeps each lock reason's copy. In the plain
+incomplete case it adds:
+
+- "School: X of Y done today", from `GET /api/v1/school/lifecycle/learners/:id/completion`
+  (sections `served` against `served` plus `obligated`);
+- one "Spend N silver: one game" / "Spend N gold: one game" button per affordable offer;
+- "Sneak used today — finish school to play more." when the cap is used;
+- "Print my next sheet (Math 4-02)" from School's `GET …/self-service/learners/:id/next`.
+  The "+N silver · " prefix appears only when `reward.silver` is set; production answers
+  `reward: null`. A 404 (self-service off) shows no button.
+
+A buy asks first ("One game, then games lock until school is done"), posts
+`POST …/passes {privilege, coin}`, and re-reads access in a `finally`, success or not,
+because a failed buy can leave an unpaid pass that is real. A 402 shows the shortfall
+("2 more silver to buy a game."), and a 409 `PASS_CAP` shows the cap copy.
+
+**The game.** `Games()` holds the session (`useEarlyPassSession`). While a pass is open:
+
+- the match gate reports `armed: true`, so a game's "play again" returns to the host;
+- `registerCompletion` consumes the pass once the board game's save resolves;
+- a rematch request or an exit shows the relock screen ("Good game! Games lock again
+  until school is done." plus Print). Neither remounts a game or opens the picker;
+- an exit, a rematch, a crash (`GameBoundary`'s `onCrash`), or an unmount the host did not
+  start (the breadcrumb, a profile switch) refunds when `playedMs < 60000` and consumes
+  otherwise. `playedMs` runs from the game's own mount, so a pass that never reached a
+  game played 0 ms.
+
+The session keeps the routes open after the consume, so the access refresh that follows
+it cannot cut off a finished game's result screen.
+
+Exactly one terminal call is made per pass. A ref keyed by pass id is set before the
+request leaves, and the host's unmount is deferred a tick and cancelled by a remount,
+so a StrictMode double effect cannot spend the pass. The server also bounds a refund by
+its own clock. A `PASS_REFUND_CLOSED` refusal therefore consumes once instead, a
+`PASS_NOT_ACTIVE` refusal is only logged, and nothing retries.
+
+The office TV (`PianoVisualizer`) is unchanged. A pass bought on the tablet also opens it
+through the same hook, and its `exitGame('school-locked')` relocks it once the pass
+ends.
 
 ### Games off (`gameAccess.disabledFor`)
 
@@ -990,6 +1050,22 @@ and Chess, Space Invaders, Tetris and the rest logged nothing — which made the
 question anyone asks about a stuck kiosk answerable for two games out of nine. Both
 carry `matchId`, so a rematch is a new mount and a bounce is a short `playedMs`.
 
+### `piano-early-pass`
+
+| Event | Level | Fires when |
+|---|---|---|
+| `piano.early-pass.offered` | info | the lock screen shows a buy button, once per learner and set of offers |
+| `piano.early-pass.bought` | info | `POST …/passes` succeeded |
+| `piano.early-pass.consumed` | info | the pass was consumed, with `playedMs` and `reason` (`completion`, `rematch`, `exit`, `crash`, `unmount`, `switch`) |
+| `piano.early-pass.refunded` | info | the pass was refunded inside the first minute |
+| `piano.early-pass.refused` | warn | a buy, consume or refund was refused or failed, with `action`, `status` and `code` |
+| `piano.early-pass.crash` | info | a pass game crashed; the settle follows |
+| `piano.early-pass.print-next` / `print-next-failed` | info / warn | the lock's Print button answered |
+
+`piano-school-access` adds `piano.school-access.pass-active` (info, edge-triggered on the
+pass id) and `piano.school-access.pass-read-failed` (warn). The verdict line carries
+`via: 'pass'` when the pass opened Games.
+
 ### `piano-game-budget`
 
 | Event | Level | Side | Fires when |
@@ -1035,29 +1111,34 @@ settles across 4am produce two files.
 
 | Concern | Path |
 |---|---|
-| The gate host, config resolution, ladder persistence | `frontend/src/modules/Piano/PianoKiosk/modes/Games/GameGate.jsx` |
-| The repertoire: levels, ordering, floor, rotation (pure) | `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateRepertoire.js` |
-| A level's requirement, and the sentence a child reads (pure) | `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateAsk.js` |
-| Who the gate stands in front of (pure) | `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateScope.js` |
-| Material seam and selection (pure) | `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateMaterial.js` |
-| What a tier makes the run look like — stage, clef, spelling (pure) | `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/runPresentation.js` |
-| The run surface itself | `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.jsx` |
-| The tier 0-1 lit-keyboard ask | `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/KeysAsk.jsx` |
-| The tier-2 sequence staff | `frontend/src/modules/MusicNotation/renderers/SvgSequenceStaff.jsx` |
-| The score passage stage | `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ScorePassage.jsx` |
-| Match-boundary seam between a game and its host | `frontend/src/modules/Piano/PianoKiosk/modes/Games/MatchGateContext.js` · `game-platform/host/useMatchRematch.js` |
-| Gate stack mounting, budget locks, warning banner | `frontend/src/modules/Piano/PianoKiosk/modes/Games/Games.jsx` |
-| The client meter | `frontend/src/modules/Piano/PianoKiosk/useGameBudgetMeter.js` |
-| The shared activity signal | `frontend/src/modules/Piano/PianoKiosk/activitySignal.js` |
-| Kiosk device identity | `frontend/src/modules/Piano/PianoKiosk/kioskDeviceIdentity.js` |
-| Config defaults and projection | `frontend/src/modules/Piano/PianoKiosk/pianoConfigModel.js` |
-| Client study day (the shared 4am boundary) | `frontend/src/modules/Piano/PianoKiosk/clientStudyDate.js` |
-| Budget domain math | `__backend/src/2_domains/piano/gameBudget.mjs` |
-| Budget orchestration | `__backend/src/3_applications/piano/PianoGameBudgetService.mjs` |
-| Day files | `__backend/src/1_adapters/persistence/yaml/YamlPianoGameBudgetStore.mjs` · `data/household/history/piano-games/` |
-| Routes | `__backend/src/4_api/v1/routers/piano.mjs` |
-| Event coverage spec | `frontend/src/modules/Piano/PianoKiosk/modes/Games/gateEvents.test.jsx` |
-| What a child actually sees, measured in a real layout engine | `frontend/src/modules/Piano/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx` |
+| The gate host, config resolution, ladder persistence | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/GameGate.jsx` |
+| The repertoire: levels, ordering, floor, rotation (pure) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/gateRepertoire.js` |
+| A level's requirement, and the sentence a child reads (pure) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/gateAsk.js` |
+| Who the gate stands in front of (pure) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/gateScope.js` |
+| Material seam and selection (pure) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/gateMaterial.js` |
+| What a tier makes the run look like — stage, clef, spelling (pure) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/runPresentation.js` |
+| The run surface itself | `__app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.jsx` |
+| The tier 0-1 lit-keyboard ask | `__app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/KeysAsk.jsx` |
+| The tier-2 sequence staff | `__capabilities/music-notation/browser/renderers/SvgSequenceStaff.jsx` |
+| The score passage stage | `__app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ScorePassage.jsx` |
+| Match-boundary seam between a game and its host | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/MatchGateContext.js` · `__app_modules/learning/piano/browser/game-platform/host/useMatchRematch.js` |
+| Gate stack mounting, budget locks, warning banner | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/Games.jsx` |
+| School lock, early-pass offer, relock screen | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/SchoolLock.jsx` |
+| Early-pass session (exactly-once consume/refund) | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/useEarlyPassSession.js` |
+| Early-pass HTTP seam and shared reads (tile and lock) | `__app_modules/learning/piano/browser/PianoKiosk/earlyPass.js` |
+| School verdict plus the pass | `__app_modules/learning/piano/browser/PianoKiosk/useSchoolGameAccess.js` |
+| Crash boundary (`onCrash`) | `__app_modules/learning/piano/browser/game-platform/host/GameBoundary.jsx` |
+| The client meter | `__app_modules/learning/piano/browser/PianoKiosk/useGameBudgetMeter.js` |
+| The shared activity signal | `__app_modules/learning/piano/browser/PianoKiosk/activitySignal.js` |
+| Kiosk device identity | `__app_modules/learning/piano/browser/PianoKiosk/kioskDeviceIdentity.js` |
+| Config defaults and projection | `__app_modules/learning/piano/browser/PianoKiosk/pianoConfigModel.js` |
+| Client study day (the shared 4am boundary) | `__app_modules/learning/piano/browser/PianoKiosk/clientStudyDate.js` |
+| Budget domain math | `__app_modules/learning/piano/server/domain/gameBudget.mjs` |
+| Budget orchestration | `__app_modules/learning/piano/server/application/PianoGameBudgetService.mjs` |
+| Day files | `__app_modules/learning/piano/server/adapters/persistence/YamlPianoGameBudgetStore.mjs` · `data/household/history/piano-games/` |
+| Routes | `__app_modules/learning/piano/server/api/piano.mjs` |
+| Event coverage spec | `__app_modules/learning/piano/browser/PianoKiosk/modes/Games/gateEvents.test.jsx` |
+| What a child actually sees, measured in a real layout engine | `__app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.measure.test.jsx` |
 
 ---
 

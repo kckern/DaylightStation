@@ -1,0 +1,183 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { TouchButton } from '../../../../../../../frontend/src/lib/ui/index.js';
+import {
+  affordableOffers, buyPass, errorBody, nextSheetLabel, printNextSheet,
+  readCompletion, readNextSheet, schoolProgress, sneakUsed,
+} from '../../earlyPass.js';
+
+/** When print-next answers with no sentence (a 404, a 400, no network). */
+export const PRINT_FALLBACK = 'Can’t print right now. Ask a grown-up.';
+export const SNEAK_USED_COPY = 'Sneak used today — finish school to play more.';
+export const CONFIRM_COPY = 'One game, then games lock until school is done';
+
+function lockMessage(access) {
+  if (access.status === 'error') return 'School status is unavailable. Games stay locked until it can be checked.';
+  if (access.state === 'indeterminate') return 'School could not determine today’s plan. Ask a grown-up for help.';
+  if (access.status === 'locked') return 'Choose your own profile, then finish today’s schoolwork to unlock Games.';
+  if (access.status === 'loading') return 'Checking today’s schoolwork…';
+  return 'Finish today’s schoolwork to unlock Games.';
+}
+
+function buyNotice(error, coin) {
+  const body = errorBody(error);
+  if (error?.status === 402) {
+    const shortfall = Number.isFinite(body?.shortfall) ? body.shortfall : null;
+    return shortfall != null ? `${shortfall} more ${body?.coin ?? coin} to buy a game.` : `Not enough ${coin} yet.`;
+  }
+  if (body?.code === 'PASS_CAP') return SNEAK_USED_COPY;
+  if (body?.code === 'PASS_NOT_SOLD') return 'Games are not for sale right now.';
+  return 'Couldn’t buy a game right now. Try again later.';
+}
+
+/**
+ * "Print my next sheet (Math 4-02)": the one thing on the lock screen that
+ * moves the day forward. Rendered only when School says something would
+ * print; a 404 (self-service off) or any failed read shows nothing. The
+ * reply's own sentence is what the child reads afterwards.
+ */
+export function PrintNextButton({ learnerId, deviceId = null }) {
+  const log = useMemo(() => getLogger().child({ component: 'piano-early-pass' }), []);
+  const [label, setLabel] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sentence, setSentence] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLabel(null);
+    if (!learnerId) return () => {};
+    Promise.resolve().then(() => readNextSheet(learnerId))
+      .then((next) => { if (!cancelled) setLabel(nextSheetLabel(next)); })
+      .catch(() => { if (!cancelled) setLabel(null); });
+    return () => { cancelled = true; };
+  }, [learnerId]);
+
+  if (!label) return null;
+  const print = async () => {
+    setBusy(true);
+    try {
+      const res = await printNextSheet(learnerId, deviceId);
+      setSentence(typeof res?.sentence === 'string' && res.sentence ? res.sentence : PRINT_FALLBACK);
+      log.info('piano.early-pass.print-next', { learnerId, outcome: res?.outcome ?? null });
+    } catch (error) {
+      setSentence(PRINT_FALLBACK);
+      log.warn('piano.early-pass.print-next-failed', { learnerId, status: error?.status ?? null, error: error?.message ?? String(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="piano-games__print-next">
+      <TouchButton variant="secondary" onClick={print} disabled={busy}>{label}</TouchButton>
+      {sentence && <p className="piano-games__print-next-sentence">{sentence}</p>}
+    </div>
+  );
+}
+
+/**
+ * The early-pass offer under the school lock: today's progress, the coins
+ * that buy one game, and the sheet that earns more. Only in the ordinary
+ * incomplete case; every other lock reason keeps its plain copy.
+ */
+function EarlyPassOffer({ access, learnerId, deviceId }) {
+  const log = useMemo(() => getLogger().child({ component: 'piano-early-pass' }), []);
+  const [progress, setProgress] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const offeredRef = useRef(null);
+  const offers = affordableOffers(access);
+  const used = sneakUsed(access);
+  const offerKey = offers.map((o) => `${o.coin}:${o.price}`).join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    setProgress(null);
+    Promise.resolve().then(() => readCompletion(learnerId))
+      .then((completion) => { if (!cancelled) setProgress(schoolProgress(completion)); })
+      .catch(() => { if (!cancelled) setProgress(null); });
+    return () => { cancelled = true; };
+  }, [learnerId]);
+
+  // Edge-triggered: the access hook refreshes every 15s and re-renders this.
+  useEffect(() => {
+    const key = offerKey ? `${learnerId}:${offerKey}` : null;
+    if (offeredRef.current === key) return;
+    offeredRef.current = key;
+    if (key) log.info('piano.early-pass.offered', { learnerId, offers: offers.map(({ coin, price }) => ({ coin, price })) });
+  }, [learnerId, log, offerKey, offers]);
+
+  const buy = async (offer) => {
+    setBusy(true);
+    setNotice('');
+    try {
+      const res = await buyPass(learnerId, offer.coin);
+      log.info('piano.early-pass.bought', { learnerId, coin: offer.coin, price: offer.price, passId: res?.pass?.passId ?? null });
+    } catch (error) {
+      const body = errorBody(error);
+      log.warn('piano.early-pass.refused', {
+        learnerId, action: 'buy', coin: offer.coin, status: error?.status ?? null,
+        code: body?.code ?? null, passId: body?.passId ?? null,
+      });
+      setNotice(buyNotice(error, offer.coin));
+    } finally {
+      // Always, success or not: a failed buy can still leave a real pass
+      // behind (economy.md, "For the kiosk and Portal").
+      setBusy(false);
+      setConfirming(null);
+      try { access.refresh?.(); } catch { /* the lock stands */ }
+    }
+  };
+
+  return (
+    <div className="piano-games__early-pass">
+      {progress && <p className="piano-games__school-progress">{`School: ${progress.done} of ${progress.total} done today`}</p>}
+      {used && <p className="piano-games__sneak-used">{SNEAK_USED_COPY}</p>}
+      {confirming ? (
+        <div className="piano-games__early-pass-confirm">
+          <p>{CONFIRM_COPY}</p>
+          <TouchButton onClick={() => buy(confirming)} disabled={busy}>{`Yes, spend ${confirming.price} ${confirming.coin}`}</TouchButton>
+          <TouchButton variant="secondary" onClick={() => setConfirming(null)} disabled={busy}>Not now</TouchButton>
+        </div>
+      ) : offers.map((offer) => (
+        <TouchButton key={offer.coin} onClick={() => { setNotice(''); setConfirming(offer); }} disabled={busy}>
+          {`Spend ${offer.price} ${offer.coin}: one game`}
+        </TouchButton>
+      ))}
+      {notice && <p className="piano-games__early-pass-notice">{notice}</p>}
+      <PrintNextButton learnerId={learnerId} deviceId={deviceId} />
+    </div>
+  );
+}
+
+/**
+ * Gate 1's lock panel — shown in place of the Games routes while the school
+ * day is not done. Same family as `BudgetLock` (`piano-mode__placeholder`).
+ * The copy per reason is unchanged from the inline lock it replaced; the
+ * plain `incomplete` case adds the early pass.
+ */
+export default function SchoolLock({ access, learnerId, deviceId = null }) {
+  const offerable = access.status === 'ready' && access.state === 'incomplete' && Boolean(learnerId) && learnerId !== 'guest';
+  return (
+    <section className="piano-mode__placeholder piano-games__school-lock" role="status">
+      <h2>Games are locked</h2>
+      <p>{lockMessage(access)}</p>
+      {offerable && <EarlyPassOffer access={access} learnerId={learnerId} deviceId={deviceId} />}
+    </section>
+  );
+}
+
+/**
+ * After the early-pass game: no rematch, no picker. Games lock again until
+ * school is done, and the next sheet is one tap away.
+ */
+export function RelockScreen({ learnerId, deviceId = null, outcome = null }) {
+  return (
+    <section className="piano-mode__placeholder piano-games__relock" role="status">
+      <h2>Good game!</h2>
+      <p>Games lock again until school is done.</p>
+      {outcome === 'refunded' && <p>Your coins are back.</p>}
+      <PrintNextButton learnerId={learnerId} deviceId={deviceId} />
+    </section>
+  );
+}

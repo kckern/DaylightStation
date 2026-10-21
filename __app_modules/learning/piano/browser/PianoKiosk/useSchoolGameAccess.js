@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../../../frontend/src/hooks/useWebSocket.js';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
+import { readBank, passFromBank, offersFromBank } from './earlyPass.js';
 
 const REFRESH_MS = 15000;
 const UNLOCKED_STATES = new Set(['complete', 'no_work_today']);
@@ -34,6 +35,15 @@ function completionStateForDecision(decision) {
  * so this is not a one-shot fetch. It refreshes on State Gates events, while
  * mounted, and when the tab becomes visible. Guest has no roster-backed
  * identity; Guest, a missing identity, and a failed read all stay closed.
+ *
+ * THE EARLY PASS (school economy slice 1). After a real `incomplete` — a
+ * verdict, never `indeterminate` or a failed read — the hook reads the
+ * learner's economy bank. An active `piano.games` pass opens Games for one
+ * game: `{ unlocked: true, via: 'pass', pass }`. A locked `incomplete` result
+ * carries `pass` and `offers` (the `piano.games` quote rows) so the lock
+ * screen can sell one. A failed bank read leaves the lock exactly as it was:
+ * the pass can open the gate, never close it, and never turn a verdict into
+ * an error. Other results carry `pass: null, offers: []`.
  */
 export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
   const guest = learnerId === 'guest';
@@ -57,6 +67,9 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
   // only interesting moment, and it is exactly what a "why were games open?"
   // query needs.
   const lastVerdict = useRef(null);
+  // The pass id the last `pass-active` line named. Edge-triggered like the
+  // verdict, for the same 15s-refresh reason.
+  const lastPassActive = useRef(null);
   const [snapshot, setSnapshot] = useState(() => (notGated
     ? { learnerId, status: 'ready', state: 'not_gated', unlocked: true }
     : { learnerId, status: guest ? 'locked' : 'loading', state: null, unlocked: false }));
@@ -67,8 +80,8 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
   // earned, for a reason that has nothing to do with them. The read outranks
   // the log line. Edge-triggered on (learner, state, unlocked): the hook
   // refreshes every 15s and a line per refresh would be ~240/hour per kiosk.
-  const emitVerdict = useCallback((state, unlocked, basisState) => {
-    const verdict = `${learnerId}:${state}:${unlocked}`;
+  const emitVerdict = useCallback((state, unlocked, basisState, via = null) => {
+    const verdict = `${learnerId}:${state}:${unlocked}:${via}`;
     if (lastVerdict.current === verdict) return;
     lastVerdict.current = verdict;
     try {
@@ -79,9 +92,42 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
         // — School's `no_work_today` never reaches this line (ask School's
         // `/school/lifecycle/learners/:id/completion` for that). `not_gated`
         // says the gate does not cover this person at all.
-        { learnerId, state, unlocked, basisState },
+        { learnerId, state, unlocked, basisState, ...(via ? { via } : {}) },
       );
     } catch { /* never let observability close a gate */ }
+  }, [learnerId]);
+
+  const emitPassActive = useCallback((pass) => {
+    const passId = pass?.passId ?? null;
+    if (lastPassActive.current === passId) return;
+    lastPassActive.current = passId;
+    if (!passId) return;
+    try {
+      getLogger().child({ component: 'piano-school-access' }).info?.(
+        'piano.school-access.pass-active',
+        { learnerId, passId, coin: pass.coin ?? null, paid: pass.paid ?? null },
+      );
+    } catch { /* never let observability close a gate */ }
+  }, [learnerId]);
+
+  // Only ever asked after a real `incomplete`. Returns what the lock needs,
+  // or null when this read is stale. A throw is caught HERE: a failed pass
+  // read must not reach the outer catch, which turns the result into `error`.
+  const readPass = useCallback(async (generation) => {
+    try {
+      const bank = await readBank(learnerId);
+      if (generation !== requestGeneration.current) return null;
+      return { pass: passFromBank(bank), offers: offersFromBank(bank) };
+    } catch (error) {
+      if (generation !== requestGeneration.current) return null;
+      try {
+        getLogger().child({ component: 'piano-school-access' }).warn?.(
+          'piano.school-access.pass-read-failed',
+          { learnerId, error: error?.message ?? String(error) },
+        );
+      } catch { /* the lock stands either way */ }
+      return { pass: null, offers: [] };
+    }
   }, [learnerId]);
 
   const refresh = useCallback(async () => {
@@ -122,8 +168,18 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
       const state = completionStateForDecision(decision);
       const unlocked = decision?.decision === 'granted'
         && decision.degraded !== true && decision.basisState !== 'indeterminate';
-      emitVerdict(state, unlocked, decision?.basisState ?? null);
-      setSnapshot({ learnerId, status: 'ready', state, unlocked });
+      let early = { pass: null, offers: [] };
+      if (state === 'incomplete' && !unlocked) {
+        early = await readPass(generation);
+        if (!early) return;
+      }
+      const viaPass = early.pass?.state === 'active' && Boolean(early.pass.passId);
+      emitVerdict(state, unlocked || viaPass, decision?.basisState ?? null, viaPass ? 'pass' : null);
+      emitPassActive(viaPass ? early.pass : null);
+      setSnapshot({
+        learnerId, status: 'ready', state, unlocked: unlocked || viaPass,
+        ...(viaPass ? { via: 'pass' } : {}), pass: early.pass, offers: early.offers,
+      });
     } catch (error) {
       if (generation !== requestGeneration.current) return;
       getLogger().child({ component: 'piano-school-access' }).warn(
@@ -132,7 +188,7 @@ export default function useSchoolGameAccess(learnerId, { schoolLearner } = {}) {
       );
       setSnapshot({ learnerId, status: 'error', state: null, unlocked: false });
     }
-  }, [learnerId, notGated, emitVerdict]);
+  }, [learnerId, notGated, emitVerdict, emitPassActive, readPass]);
 
   const onStateGates = useCallback((event) => {
     const current = event?.payload?.current;
