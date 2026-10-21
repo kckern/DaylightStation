@@ -208,9 +208,11 @@ done"). A rest day keeps "No school today".
 **Coins.** A fixed-width column so the figures line up down every card. Silver
 is the big figure: the learner's earnings so far this week from the roster
 earnings preview (`GET /api/v1/earnings/preview`; see
-`__docs/reference/economy/economy.md`). It is a preview; nothing is paid until
-payday. Gold is smaller beneath it: the economy wallet balance
-(`GET /api/v1/economy/users/:id/wallet`), which reads 0 until payouts exist.
+`__docs/reference/economy/economy.md`). It is a preview: PayoutService mints
+its earned lines into the ledger only while the economy catalog is `live`.
+Gold is smaller beneath it: the wallet's `balances.gold`
+(`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
+close converts unspent silver.
 Gems are a third line only once earned or pending. A faded `+N` hangs after a
 number for what is still possible; it is decoration only, and the figure's one
 spoken name carries it ("27 silver this week, 5 more possible"). There are no

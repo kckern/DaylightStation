@@ -1555,7 +1555,7 @@ when `selfService.enabled` is true.
   the subject that today's section has not earned yet. The amount is what the
   sheet adds if passed, at the learner's own rate. Dry-run and off answer
   null, as does anything the economy cannot price with certainty (see the
-  economy reference, "Read (`rewardFor`, what a sheet is worth)"). It is also
+  economy reference, "Integration points", "School: what a sheet is worth (`rewardFor`)"). It is also
   null when the port is not wired, returns nothing or throws.
 
 **It can only print the learner's own next sheet.** With no subject named, the
