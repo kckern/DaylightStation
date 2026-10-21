@@ -269,6 +269,46 @@ describe('student-advocacy wave 7', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
+  it('a module with no pass bar still offers Try again — nothing says it was passed', async () => {
+    const onRestart = vi.fn();
+    render(<QuizRunner bank={bank} learning={{ unitId: 'intro', moduleId: 'gate' }}
+      onExit={() => {}} onRestart={onRestart} />);
+    await confirmChoice('Olympia');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await confirmChoice('Salem');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await screen.findByTestId('quiz-summary');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRestart).toHaveBeenCalledWith({ fresh: true });
+  });
+
+  it('a gate that unlocks on a pass offers no Try again once passed', async () => {
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} retakeAfterPass={false}
+      onExit={() => {}} onRestart={vi.fn()} />);
+    await confirmChoice('Olympia');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await confirmChoice('Salem');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/^Passed/);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+  });
+
+  it('a gate that unlocks on a pass still offers Try again after a fail', async () => {
+    answerMock
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
+    const onRestart = vi.fn();
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} retakeAfterPass={false}
+      onExit={() => {}} onRestart={onRestart} />);
+    await confirmChoice('Seattle');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await confirmChoice('Boise');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(onRestart).toHaveBeenCalledWith({ fresh: true });
+  });
+
   it('a passing graded run celebrates', async () => {
     render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
     await confirmChoice('Olympia');

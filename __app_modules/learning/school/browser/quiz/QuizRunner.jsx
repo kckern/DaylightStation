@@ -75,7 +75,14 @@ function TutorOffer({ userId, sessionId, onOpen }) {
   return null;
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpose = null, deckId = null, testPlan = null, fresh = false, onExit, onRestart = null, onReview = null, onTutor = null }) {
+/**
+ * `retakeAfterPass` — whether Try again survives a PASS. True for practice,
+ * where another run is just more practice. False for a gate that unlocks on a
+ * pass (SchoolMaterialPlayer): its bank is fixed for the mount, so Try again
+ * after passing chapter 1 would run chapter 1 again; Done → refetch is the way
+ * on to the next chapter.
+ */
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpose = null, deckId = null, testPlan = null, fresh = false, onExit, onRestart = null, retakeAfterPass = true, onReview = null, onTutor = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -255,11 +262,13 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
         )}
         {learning?.moduleId ? (
           <>
-            {passed === false && onRestart && (
-              // A failed module quiz retakes like any other (2026-10-21): Try
+            {passed !== true && onRestart && (
+              // A module quiz retakes until it is passed (2026-10-21): Try
               // again sits above the reflection prompt, which still closes the
               // module when the child would rather stop. A pass keeps the
-              // prompt alone — the module is done.
+              // prompt alone — the module is done. `!== true`, not `=== false`:
+              // a module with no pass bar leaves `passed` null, and nothing
+              // has said it was passed.
               <div className="school-runner__summary-actions">
                 <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>
               </div>
@@ -273,7 +282,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
           </>
         ) : (
           <div className="school-runner__summary-actions">
-            {onRestart && (
+            {onRestart && (retakeAfterPass || passed !== true) && (
               // A deliberate restart: fresh wipes the persisted sitting so the
               // new run starts at q1 instead of resuming this finished one.
               <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>

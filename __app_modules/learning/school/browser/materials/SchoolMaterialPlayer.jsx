@@ -219,6 +219,9 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
         fresh={quizFresh}
         onExit={exitToDetail}
         onRestart={({ fresh = true } = {}) => { setQuizFresh(fresh); setQuizNonce((n) => n + 1); }}
+        // A pass unlocks the next chapter, which only Done → refetch reaches:
+        // Try again after a pass would replay the chapter just passed.
+        retakeAfterPass={false}
       />
     );
   }
