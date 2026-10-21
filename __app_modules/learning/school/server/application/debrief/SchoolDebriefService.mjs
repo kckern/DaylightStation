@@ -15,6 +15,15 @@ export class SchoolDebriefService {
     this.#debriefs = debriefs; this.#launcher = launcher; this.#questioner = questioner; this.#judge = judge;
     this.#transcribe = transcribe; this.#saveAudio = saveAudio; this.#config = config; this.#clock = clock; this.#logger = logger;
   }
+  #inflight = new Map();
+  // Collapse concurrent identical calls (double Enter) into one: later callers await the first.
+  #once(key, fn) {
+    const running = this.#inflight.get(key);
+    if (running) return running;
+    const p = (async () => { try { return await fn(); } finally { this.#inflight.delete(key); } })();
+    this.#inflight.set(key, p);
+    return p;
+  }
   #now() { return this.#clock().toISOString(); }
   #late(day) { return day !== this.#launcher.studyDay(); }
   async #events(learnerId, day) {
@@ -78,6 +87,7 @@ export class SchoolDebriefService {
     return this.#questioner.ask({ entries: s.entries, clarify: s.clarify, priorPrompts: priorPrompts.slice(-20) });
   }
   async submit(learnerId, day) {
+    return this.#once(`${learnerId}/${day}/questions`, async () => {
     const s = await this.#assertOpen(learnerId, day);
     if (s.questions) return this.day(learnerId, day);
     if (s.clarify && s.clarify.text === null) return this.day(learnerId, day);
@@ -91,20 +101,26 @@ export class SchoolDebriefService {
     }
     await this.#freeze(learnerId, day, out, 'questions');
     return this.day(learnerId, day);
+      });
   }
   async #freeze(learnerId, day, out, type) {
     await this.#append(learnerId, day, { type, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: out.questions, questioner: out.questioner, model: out.model ?? null });
     this.#logger.info?.('school.debrief.questions', { learnerId, day, type, substance: out.substance, count: out.questions.length, questioner: out.questioner, model: out.model, ms: out.ms });
   }
   async clarify(learnerId, day, { text, via = 'typed', audioRef = null }) {
+    return this.#once(`${learnerId}/${day}/questions`, async () => {
     const s = await this.#assertOpen(learnerId, day);
     if (!s.clarify || s.clarify.text !== null) throw new DebriefError('No clarification was asked.', 409);
     await this.#append(learnerId, day, { type: 'clarify', text: String(text ?? '').slice(0, 4000), via, audioRef });
     const after = deriveDebriefState(await this.#events(learnerId, day));
     await this.#freeze(learnerId, day, await this.#runQuestioner(learnerId, day, after), 'questions');
     return this.day(learnerId, day);
+      });
   }
   async answer(learnerId, day, { questionId, response }) {
+    return this.#once(`${learnerId}/${day}/answer/${questionId}`, () => this.#answer(learnerId, day, { questionId, response }));
+  }
+  async #answer(learnerId, day, { questionId, response }) {
     const s = await this.#assertOpen(learnerId, day);
     const q = (s.questions ?? []).find((x) => x.id === questionId);
     if (!q) throw new DebriefError(`unknown question: ${questionId}`, 404);
@@ -116,15 +132,18 @@ export class SchoolDebriefService {
     return { ...graded, ...reveal };
   }
   async complete(learnerId, day) {
+    return this.#once(`${learnerId}/${day}/complete`, async () => {
     const s = await this.#assertOpen(learnerId, day);
     if (!s.questions || s.next?.kind !== 'complete') throw new DebriefError('There are unanswered questions.', 409);
     await this.#append(learnerId, day, { type: 'completed' });
     const v = await this.day(learnerId, day);
     this.#logger.info?.('school.debrief.completed', { learnerId, day, late: v.late, ...v.summary });
     return v;
+      });
   }
   async excuse(learnerId, day, { by, reason = null }) { await this.#append(learnerId, day, { type: 'excused', by: by ?? null, reason }); return this.day(learnerId, day); }
   async reject(learnerId, day, { by, reason = null }) { await this.#append(learnerId, day, { type: 'rejected', by: by ?? null, reason }); return this.day(learnerId, day); }
+  // Deliberately works on completed days too (teacher re-score).
   async rescore(learnerId, day, { by }) {
     const s = deriveDebriefState(await this.#events(learnerId, day));
     if (s.questioner !== 'fallback') throw new DebriefError('Only a fallback day can be re-scored.', 409);

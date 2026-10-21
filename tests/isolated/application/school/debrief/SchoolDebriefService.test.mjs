@@ -100,4 +100,19 @@ describe('SchoolDebriefService', () => {
     const v = await svc.rescore('test-learner', '2026-10-21', { by: 'parent' });
     expect(v.substance ?? v.summary.substance).toBe(7);
   });
+  it('concurrent answers to one question grade and append once', async () => {
+    const { svc, judge, debriefs } = make();
+    await fill(svc); await svc.submit('test-learner', '2026-10-21');
+    const [a, b] = await Promise.all([1, 2].map(() => svc.answer('test-learner', '2026-10-21', { questionId: 'q1', response: 'B' })));
+    expect(judge.grade).toHaveBeenCalledTimes(1);
+    expect(a.correct).toBe(b.correct);
+    expect(debriefs.days['test-learner/2026-10-21'].filter((e) => e.type === 'answer')).toHaveLength(1);
+  });
+  it('concurrent submits ask and freeze questions once', async () => {
+    const { svc, questioner, debriefs } = make();
+    await fill(svc);
+    await Promise.all([1, 2].map(() => svc.submit('test-learner', '2026-10-21')));
+    expect(questioner.ask).toHaveBeenCalledTimes(1);
+    expect(debriefs.days['test-learner/2026-10-21'].filter((e) => e.type === 'questions')).toHaveLength(1);
+  });
 });
