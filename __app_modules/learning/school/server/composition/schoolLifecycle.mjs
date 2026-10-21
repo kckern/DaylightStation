@@ -615,6 +615,15 @@ export async function createSchoolLifecycle({
   // against (`app.mjs`) — one source, so the agenda's "done today" and the
   // program's own idea of "today" can never drift apart.
   const timezone = configService.getTimezone?.() || null;
+  // `school.yml → calendar`: the house's own days off, in the same shape a
+  // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
+  // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
+  // the printed agenda and the term grid can never disagree about a vacation.
+  // Fails open with a warn, like every schedule: a typo must not excuse a term.
+  // Validated once, here, because the debrief launcher needs it at registration
+  // and the agenda/grid read it further down.
+  const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
+  if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
   // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
   // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
   // seams every surface needs exist. This file used to stand up a minimal,
@@ -627,10 +636,6 @@ export async function createSchoolLifecycle({
   // Present only when the caller wired a language-study service: no service,
   // no launcher, and a program-typed unit degrades to "not answering" rather
   // than throwing (CurriculumAccess/ResolveSubjectNext's own try/catch).
-  // The house's days off, validated once; the debrief launcher needs it at
-  // registration and the agenda/grid read it further down.
-  const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
-  if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
   const launchers = new Map();
   if (languageStudyService) {
     const sentenceLadder = new SentenceLadderProgramLauncher({
@@ -876,12 +881,6 @@ export async function createSchoolLifecycle({
   //   - `closeSessionOutcome` keeps its own (built inside the use case): it is
   //     wired with no launchers and defaults `timezone` to UTC rather than
   //     null, and a receipt is not the place to discover that those differ.
-  // `school.yml → calendar`: the house's own days off, in the same shape a
-  // course's `schedule` takes (`except` / `also`; `daysOfWeek` permitted but
-  // absent — weekends are ordinary days). Applied INSIDE `planDailyAgenda`, so
-  // the printed agenda and the term grid can never disagree about a vacation.
-  // Fails open with a warn, like every schedule: a typo must not excuse a term.
-
   const practiceAssessments = cardLadderStudyService ? new PracticeAssessmentService({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, cardLadder: cardLadderStudyService, clock, newSessionId,
     attestations, curriculumExceptions: curriculumExceptionStore,
