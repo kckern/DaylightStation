@@ -15,6 +15,14 @@ const PROFILE_TYPE_MAP = {
   PWR: 'power',
 };
 
+/**
+ * An HR device with no real reading for longer than this reads heartRate null,
+ * even while its packets keep arriving. Straps beat ~4 Hz; a few seconds of no
+ * reading is a strap that is not reading, not a gap between beats.
+ * See __docs/reference/fitness/fitness-system-architecture.md ("No reading: null everywhere")
+ */
+export const DEFAULT_HR_STALE_MS = 5000;
+
 export class Device {
   constructor(data = {}) {
     // Device ID must be explicitly provided - usually from ANT+ device ID
@@ -45,6 +53,12 @@ export class Device {
 
     // Sensor Data
     this.heartRate = Number.isFinite(data.heartRate) ? data.heartRate : null;
+    // Wall-clock of the last REAL heart-rate reading. lastSeen moves on every
+    // packet, including the strap's "no reading" packets, so it cannot say
+    // whether the strap is reading — this can.
+    this.lastHeartRateAt = Number.isFinite(data.lastHeartRateAt)
+      ? data.lastHeartRateAt
+      : (this.heartRate != null ? this.lastSeen : null);
     this.cadence = Number.isFinite(data.cadence) ? data.cadence : null;
     this.power = Number.isFinite(data.power) ? data.power : null;
     this.speed = Number.isFinite(data.speed) ? data.speed : null;
@@ -78,7 +92,15 @@ export class Device {
     if (data.lastSeen) this.lastSeen = data.lastSeen;
     if (data.connectionState) this.connectionState = data.connectionState;
     
-    if (Number.isFinite(data.heartRate)) this.heartRate = data.heartRate;
+    if (Number.isFinite(data.heartRate)) {
+      this.heartRate = data.heartRate;
+      this.lastHeartRateAt = Number.isFinite(data.lastHeartRateAt) ? data.lastHeartRateAt : Date.now();
+    } else if (data.heartRate === null) {
+      // An HR packet without a reading is a real state ("the strap is not
+      // reading"), not "keep the last value". Holding it let a strap that sent
+      // nulls for seven minutes keep earning rings at 144 bpm (2026-10-20).
+      this.heartRate = null;
+    }
     if (Number.isFinite(data.cadence)) this.cadence = data.cadence;
     if (Number.isFinite(data.power)) this.power = data.power;
     if (Number.isFinite(data.speed)) this.speed = data.speed;
@@ -121,6 +143,7 @@ export class Device {
       removalCountdown: this.removalCountdown,
       lastSignificantActivity: this.lastSignificantActivity,
       heartRate: this.heartRate,
+      lastHeartRateAt: this.lastHeartRateAt,
       cadence: this.cadence,
       power: this.power,
       speed: this.speed,
@@ -190,6 +213,16 @@ export class DeviceManager {
         normalized.heartRate = rawData.ComputedHeartRate;
         normalized.type = normalized.type || 'heart_rate';
       }
+    }
+    // A heart-rate packet with no reading (null, missing, out of range) says
+    // the strap has nothing — carry that as an explicit null so the device's
+    // last value is cleared rather than held.
+    const isHrPacket = normalized.type === 'heart_rate'
+      || (!normalized.type && this.devices.get(id)?.type === 'heart_rate');
+    if (isHrPacket && !Number.isFinite(normalized.heartRate)) {
+      normalized.heartRate = null;
+    }
+    if (rawData) {
       if (Number.isFinite(rawData.CalculatedCadence)) {
         normalized.cadence = rawData.CalculatedCadence;
         normalized.type = normalized.type || 'cadence';
@@ -292,7 +325,7 @@ export class DeviceManager {
 
     // Handle legacy signature (timeoutMs) or new config object
     const timeouts = typeof config === 'number' 
-      ? { inactive: config, remove: config * 3, rpmZero: 1200, transportStallMs: 1200 }
+      ? { inactive: config, remove: config * 3, rpmZero: 1200, transportStallMs: 1200, hrStaleMs: DEFAULT_HR_STALE_MS }
       : {
           inactive: config.inactive || 60000,
           remove: config.remove || 180000,
@@ -300,7 +333,8 @@ export class DeviceManager {
           // MUST match rpmZero above: if the stall gate lags the zero gate, a
           // prune tick landing between them zeroes the meter and the hold branch
           // then preserves that zero for the rest of the stall.
-          transportStallMs: config.transportStallMs || 1200
+          transportStallMs: config.transportStallMs || 1200,
+          hrStaleMs: config.hrStaleMs || DEFAULT_HR_STALE_MS
         };
 
     // Pipeline liveness gate. If NO device has delivered recently the link is
@@ -341,8 +375,24 @@ export class DeviceManager {
         }
       }
 
+      // 0b. HR liveness: a strap that keeps sending packets but no reading
+      // must not keep its last reading. Held while the whole pipeline is
+      // stalled — then nobody's silence says anything about their strap.
+      if (device.type === 'heart_rate' && device.heartRate != null && !transportStalled) {
+        const lastReadingAt = Number.isFinite(device.lastHeartRateAt) ? device.lastHeartRateAt : device.lastSeen;
+        if (now - lastReadingAt > timeouts.hrStaleMs) {
+          device.heartRate = null;
+          mutated = true;
+        }
+      }
+
       // 1. Check for Inactivity (Connection Loss OR Stopped Pedaling)
       if (timeSinceActivity > timeouts.inactive) {
+        if (device.heartRate != null) {
+          // An inactive device has no reading — never a held one.
+          device.heartRate = null;
+          mutated = true;
+        }
         if (!device.inactiveSince) {
           device.inactiveSince = now;
           device.removalAt = now + (timeouts.remove - timeouts.inactive);
