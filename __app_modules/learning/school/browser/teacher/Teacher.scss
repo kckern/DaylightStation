@@ -207,6 +207,16 @@
     &[aria-current='page'] { background: #fffaf0; color: #2b2620; box-shadow: inset 3px 0 #9c6c2d; }
     b { margin-left: auto; min-width: 22px; padding: 2px 6px; border-radius: 999px; background: #9a452e; color: white; text-align: center; font-size: 11px; }
   }
+  // An action among the sections: it opens the "Log a book" sheet over the
+  // page, so it carries the learner strip's action weight, not a nav link's.
+  &__global &__log-book {
+    justify-content: center;
+    margin-top: 8px;
+    background: #3d3326;
+    color: #fdfbf6;
+    font-weight: 700;
+    &:hover { background: #2b2620; }
+  }
   &__rail-label { margin: 22px 10px 7px; color: #8a8272; font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
   &__main { min-width: 0; }
   &__learner-nav {

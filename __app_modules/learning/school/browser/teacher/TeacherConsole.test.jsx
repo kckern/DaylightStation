@@ -55,6 +55,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   retractGradeAdjustment: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactOriginal: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  bookReaders: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   readingShelf: vi.fn(async () => ({ ok: true, status: 200, data: {
     learnerId: 'user_4', studyDay: '2026-09-06', earliestFinishDay: '2026-08-23',
     obligation: { label: '4 of 7 days', per: 'week', met: false, actual: 4, target: 7, metric: 'checkins', incompatibleBooks: [] },
@@ -89,10 +90,24 @@ describe('TeacherConsole workspace', () => {
       else delete navigator.mediaDevices;
     });
 
+    const stubPhone = (phone) => {
+      window.matchMedia = vi.fn((query) => ({
+        matches: phone && query.includes('max-width'), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+      }));
+    };
+    let matchMedia;
+    beforeEach(() => { matchMedia = window.matchMedia; });
+    afterEach(() => { window.matchMedia = matchMedia; });
+
     it('is on the rail and on the phone bar, and opens over any page', async () => {
+      stubPhone(true);
       await ready();
-      const entries = screen.getAllByRole('button', { name: 'Log a book' });
-      expect(entries).toHaveLength(2);
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      expect(within(rail).getByRole('button', { name: 'Log a book' })).toBeTruthy();
+      // The tab's visible word and its name agree.
+      const tab = within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('button', { name: 'Log book' });
+      expect(tab.textContent).toBe('Log book');
+      const entries = [null, tab];
       fireEvent.click(entries[1]);
       const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
       expect(await within(sheet).findByLabelText('ISBN')).toBeTruthy();
@@ -103,7 +118,8 @@ describe('TeacherConsole workspace', () => {
       expect(document.activeElement).toBe(entries[1]);
     });
 
-    it('opened from the phone rail, closes the rail first, and gives focus back to its control', async () => {
+    it('opened from the phone rail, closes the rail first, and gives focus to the menu button it came through', async () => {
+      stubPhone(true);
       await ready();
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
       const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
@@ -115,6 +131,17 @@ describe('TeacherConsole workspace', () => {
       const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
       fireEvent.keyDown(sheet, { key: 'Escape' });
       expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
+      // The rail is closed off-screen; the menu button is what is on screen.
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open navigation' }));
+    });
+
+    it('opened from the desk rail, gives focus back to the rail control', async () => {
+      stubPhone(false);
+      await ready();
+      const rail = screen.getByRole('complementary', { name: 'Teacher workspace navigation' });
+      const entry = within(rail).getByRole('button', { name: 'Log a book' });
+      fireEvent.click(entry);
+      fireEvent.keyDown(await screen.findByRole('dialog', { name: 'Log a book' }), { key: 'Escape' });
       expect(document.activeElement).toBe(entry);
     });
   });
@@ -122,7 +149,17 @@ describe('TeacherConsole workspace', () => {
   it('sizes the phone tab bar to its item count rather than a fixed four', () => {
     const scss = readFileSync(new URL('./Teacher.scss', import.meta.url), 'utf8');
     const start = scss.indexOf('.teacher-workspace__mobile-nav {');
-    const rule = scss.slice(start, scss.indexOf('\n', start));
+    expect(start).toBeGreaterThan(-1);
+    // The whole rule, to its matching brace.
+    let depth = 0;
+    let end = start;
+    for (let i = scss.indexOf('{', start); i < scss.length; i += 1) {
+      if (scss[i] === '{') depth += 1;
+      if (scss[i] === '}') depth -= 1;
+      if (depth === 0) { end = i + 1; break; }
+    }
+    const rule = scss.slice(start, end);
+    expect(rule.endsWith('}')).toBe(true);
     expect(rule).not.toMatch(/repeat\(\d+,\s*1fr\)/);
     expect(rule).toMatch(/grid-auto-flow: column/);
   });

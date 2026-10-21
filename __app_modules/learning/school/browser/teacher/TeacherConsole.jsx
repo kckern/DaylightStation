@@ -35,6 +35,8 @@ const GLOBAL_NAV = [
   { id: 'coins', label: 'Coins', short: 'Coins' },
   { id: 'operations', label: 'Operations', short: 'Ops' },
 ];
+/** The phone layout's breakpoint (`Teacher.scss`): the rail becomes a drawer. */
+const PHONE_QUERY = '(max-width: 760px)';
 const LEARNER_NAV = [
   { id: 'day', label: 'Day' },
   { id: 'courses', label: 'Courses' },
@@ -58,12 +60,16 @@ function TeacherShell({ PianoProgramsPanel }) {
   const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
   const [railOpen, setRailOpen] = useState(false);
   const [logBookOpen, setLogBookOpen] = useState(false);
-  // The control that opened "Log a book", so focus goes back to it on close.
+  // Where focus goes when "Log a book" closes: the control that opened it,
+  // or, from the phone rail (closed off-screen by then), the menu button.
   const logBookOpenerRef = useRef(null);
+  const menuRef = useRef(null);
   // An action, not a section: it opens over whatever page is showing. The
   // phone rail (and its scrim) sit above the sheet, so it closes first.
   const openLogBook = (event) => {
-    logBookOpenerRef.current = event.currentTarget;
+    const fromRail = event.currentTarget.dataset.from === 'rail';
+    const phone = typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+    logBookOpenerRef.current = fromRail && phone && menuRef.current ? menuRef.current : event.currentTarget;
     setRailOpen(false);
     setLogBookOpen(true);
     teacherLog.nav('log-book', { from: event.currentTarget.dataset.from });
@@ -183,7 +189,7 @@ function TeacherShell({ PianoProgramsPanel }) {
     <div className="teacher-console-page" data-ime="off">
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
-          <button type="button" className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
+          <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
           <button type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></button>
           <div className="teacher-workspace__context" title={learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}>{learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}</div>
           {noTeachers ? (
@@ -245,7 +251,7 @@ function TeacherShell({ PianoProgramsPanel }) {
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
           {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
-          <button type="button" aria-label="Log a book" data-from="tab-bar" onClick={openLogBook}>Log book</button>
+          <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />
         <PinPrompt />

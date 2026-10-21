@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReadingShelfPanel from "./ReadingShelfPanel.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({
@@ -294,6 +294,34 @@ describe('adding a book on the child’s behalf', () => {
     fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000019' } });
     expect(await screen.findByText(/No book answers to that number/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(false);
+  });
+
+  it('looks up a ten-digit ISBN that ends in a digit once the grown-up leaves the field', async () => {
+    await open();
+    const input = screen.getByLabelText('ISBN');
+    fireEvent.change(input, { target: { value: '0000000000' } });
+    await act(async () => {});
+    expect(schoolApi.books.resolve).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    await waitFor(() => expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002'));
+    expect(await screen.findByText(/A Borrowed Title · Someone/)).toBeTruthy();
+  });
+
+  it('looks it up after a pause in typing, too', async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '0000000000' } });
+    await waitFor(() => expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002'), { timeout: 2000 });
+  });
+
+  it('says a digit is off only once the grown-up has stopped typing', async () => {
+    await open();
+    const input = screen.getByLabelText('ISBN');
+    fireEvent.change(input, { target: { value: '9780000000003' } });
+    expect(screen.queryByText(/one digit is off/)).toBeNull();
+    fireEvent.blur(input);
+    expect(await screen.findByText(/one digit is off/)).toBeTruthy();
+    fireEvent.change(input, { target: { value: '978000000000' } });
+    expect(screen.queryByText(/one digit is off/)).toBeNull();
   });
 
   it('tracks by the server’s suggestion, and the grown-up can change it', async () => {

@@ -69,6 +69,7 @@ beforeEach(() => {
   profile.invalidateAuthorization = vi.fn();
   profile.pickerOpen = false;
   profile.pinPromptOpen = false;
+  profile.teachers = [{ id: 'test-user', name: 'test-user' }];
   schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { isbn13: ISBN, title: 'A Borrowed Title', authors: ['Someone'], pageCount: 32, coverUrl: null } }));
   teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(READERS));
   teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(ok({ reading: { id: 'rdg_new' }, created: true }, 201));
@@ -624,6 +625,17 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     rerender(sheet());
     await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'));
     expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
+  });
+
+  it('with no teacher set up at all, the save ends at once: "not sent", and the sheet can close', async () => {
+    profile.currentTeacher = null;
+    profile.teachers = [];
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(summary()).toBe('Learner C – not sent'));
+    expect(screen.getByText(/No teacher is set up/)).toBeTruthy();
+    expect(profile.openPicker).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
   });
 

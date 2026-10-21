@@ -53,6 +53,9 @@ const wholeNumber = (value) => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
+/** How long a pause in typing counts as "done typing". */
+const SETTLE_MS = 500;
+
 const mintKey = () => `teacher-add-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
@@ -91,11 +94,23 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
   // same key, so the book lands on the shelf once.
   const keyRef = useRef(mintKey());
 
+  // What the grown-up has stopped typing: the field after a pause or on
+  // leaving it. A ten-digit ISBN ending in a digit looks exactly like the
+  // first ten of thirteen, so only a settled number is judged as finished.
+  const [settled, setSettled] = useState('');
+  useEffect(() => {
+    if (isbn === settled) return undefined;
+    const timer = setTimeout(() => setSettled(isbn), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [isbn, settled]);
+  const done = settled === isbn;
+
   const check = checkIsbn(isbn, { submit: true });
-  // The lookup fires on a number finished by its shape (thirteen digits, or
-  // ten ending in X), not on ten digits that may be mid-typing.
+  // The lookup fires at once on a number finished by its shape (thirteen
+  // digits, or ten ending in X), and on any other book number once settled.
   const live = checkIsbn(isbn);
-  const facts = useBookFacts(open && live.state === 'valid' ? live.isbn13 : null);
+  const lookupIsbn = live.state === 'valid' ? live.isbn13 : (done && check.state === 'valid' ? check.isbn13 : null);
+  const facts = useBookFacts(open ? lookupIsbn : null);
   const view = facts.readersStatus === 'ok' ? facts.readers : null;
   const mode = modeChoice ?? view?.suggestedMode ?? 'check';
   const door = DOORS.find((candidate) => candidate.where === where) ?? DOORS[0];
@@ -115,7 +130,7 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
 
   const close = () => {
     setOpen(false);
-    setIsbn(''); setWhere('starting'); setPage(''); setFinishedOn(''); setModeChoice(null);
+    setIsbn(''); setSettled(''); setWhere('starting'); setPage(''); setFinishedOn(''); setModeChoice(null);
     keyRef.current = mintKey();
   };
 
@@ -153,9 +168,10 @@ function AddBookForLearner({ learnerId, items = [], onAdded }) {
           inputMode="numeric"
           value={isbn}
           onChange={(event) => setIsbn(event.target.value)}
+          onBlur={() => setSettled(isbn)}
         />
       </div>
-      {hintFor(check) && <p className="teacher-reading__add-note">{hintFor(check)}</p>}
+      {done && hintFor(check) && <p className="teacher-reading__add-note">{hintFor(check)}</p>}
       {facts.bookStatus === 'loading' && <p className="teacher-reading__add-note">Looking it up…</p>}
       {book && <p className="teacher-reading__add-note">{[book.title, book.author, pages].filter(Boolean).join(' · ')}</p>}
       {facts.bookStatus === 'not-found' && <p className="teacher-reading__add-note">No book answers to that number. You can still add it.</p>}

@@ -16,7 +16,7 @@ const responseMessage = (data, fallback) => (
 
 export function useTeacherWrite({ panel }) {
   const {
-    currentTeacher, openPicker, pickerOpen, requestAuthorization, invalidateAuthorization,
+    currentTeacher, teachers, openPicker, pickerOpen, requestAuthorization, invalidateAuthorization,
   } = useTeacherProfile();
   const [busy, setBusy] = useState(null);
   const [errors, setErrors] = useState({});
@@ -63,6 +63,12 @@ export function useTeacherWrite({ panel }) {
   // blocked run answers false at once, as it always has.
   const run = useCallback(async (key, call, { onSuccess, stepUp = null, awaitClaim = false } = {}) => {
     if (!currentTeacher) {
+      // Waiting on a picker that has nobody in it would wait for ever.
+      if (awaitClaim && Array.isArray(teachers) && teachers.length === 0) {
+        setErrors((value) => ({ ...value, [key]: 'No teacher is set up to sign in, so nothing was saved.' }));
+        teacherLog.writeRefused('no-teachers', { panel, key });
+        return false;
+      }
       pendingClaimRef.current?.settle?.(false); // a newer tap replaces the stash
       let settle = null;
       const settled = awaitClaim ? new Promise((resolve) => { settle = resolve; }) : null;
@@ -72,7 +78,7 @@ export function useTeacherWrite({ panel }) {
       return settled ?? false;
     }
     return attempt(key, call, onSuccess, stepUp);
-  }, [currentTeacher, openPicker, attempt, panel]);
+  }, [currentTeacher, teachers, openPicker, attempt, panel]);
 
   useEffect(() => {
     const pending = pendingClaimRef.current;
@@ -80,13 +86,24 @@ export function useTeacherWrite({ panel }) {
     if (currentTeacher) {
       pendingClaimRef.current = null;
       attempt(pending.key, pending.call, pending.onSuccess, pending.stepUp)
-        .then((result) => pending.settle?.(result), () => pending.settle?.(false));
+        .then((result) => pending.settle?.(result), (error) => {
+          setBusy(null);
+          teacherLog.writeRefused('replay-failed', { panel, key: pending.key, error: error?.message ?? String(error) });
+          pending.settle?.(false);
+        });
     } else if (!pickerOpen) {
       teacherLog.writeRefused('stash-dropped', { panel, key: pending.key });
       pendingClaimRef.current = null;
       pending.settle?.(false);
     }
   }, [currentTeacher, pickerOpen, attempt, panel]);
+
+  // A run still waiting on the picker when its component goes away ends here.
+  useEffect(() => () => {
+    const pending = pendingClaimRef.current;
+    pendingClaimRef.current = null;
+    pending?.settle?.(false);
+  }, []);
 
   return { run, busy, errors };
 }
