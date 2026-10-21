@@ -898,6 +898,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     ));
     setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
     setCubeLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
+    setDebriefLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
     // The shelf is the one section that hides BOTH its runner and the locked
     // panel's Done overlay (it carries its own), so an identity lapse that
     // only nulled the launch would leave `section` on a blank wall with no
