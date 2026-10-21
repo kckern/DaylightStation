@@ -3,9 +3,9 @@
  * Portal's 1280x800: start card -> three prompts -> follow-up questions
  * (2 choice, 1 short) -> summary.
  *
- * Frontend only. The host that runs this is production and the dev backend
- * cannot write school records, so EVERY `/api/v1/**` call is answered in the
- * browser with `page.route()`; nothing here reaches a backend or a ledger. The
+ * Frontend only. It never writes real data: EVERY `/api/v1/**` call is
+ * answered in the browser with `page.route()`, so nothing here reaches a
+ * backend or a ledger, whatever host it runs on. The
  * debrief server is replaced by a tiny in-test state machine that returns the
  * same View shapes `SchoolDebriefService` does (answer keys stripped).
  *
@@ -37,12 +37,13 @@ const QUESTIONS = [
 
 /** The server's View shape for one day, built from the in-test event state. */
 function makeDebrief() {
-  const s = { opened: false, entries: {}, questions: null, answers: {}, completed: false, calls: [] };
+  const s = { opened: false, entries: {}, questions: null, answers: {}, completed: false, rejected: false, calls: [] };
   const strip = (q) => (s.answers[q.id] ? q
     : q.kind === 'choice' ? { id: q.id, kind: q.kind, prompt: q.prompt, options: q.options } : { id: q.id, kind: q.kind, prompt: q.prompt });
   const view = () => {
     let phase = 'not-started'; let next = null;
-    if (s.completed) phase = 'completed';
+    if (s.rejected) phase = 'rejected';
+    else if (s.completed) phase = 'completed';
     else if (s.questions) {
       const open = s.questions.find((q) => !(q.id in s.answers));
       phase = Object.keys(s.answers).length ? 'answering' : 'questions';
@@ -197,4 +198,33 @@ test('debrief: start -> three prompts -> two choices + a short answer -> summary
   await shot(page, 'r11-11-summary');
   expect(world.economyReads.length).toBeGreaterThan(0);
   expect(world.debrief.state.completed).toBe(true);
+});
+
+test('debrief: a rejected day shows "talk to a grown-up" and Enter leaves', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const world = await installWorld(page);
+  Object.assign(world.debrief.state, { opened: true, entries: { learned: { text: 'stuff', via: 'typed' } }, questions: QUESTIONS, completed: true, rejected: true });
+  await page.goto(`${BASE}/school/go/${LEARNER}/school-debrief`);
+  const notice = page.getByRole('region', { name: 'Talk to a grown-up' });
+  await expect(notice).toBeVisible({ timeout: 30_000 });
+  await expect(notice.getByText('A grown-up wants to talk with you about this one.')).toBeVisible();
+  await expect(page.getByText(/Pick up where you left off|Question \d of/)).toHaveCount(0);
+  await shot(page, 'r11-12-rejected-notice');
+  await page.keyboard.press('Enter');
+  await expect(notice).toHaveCount(0, { timeout: 10_000 });
+  expect(world.debrief.state.calls.filter((c) => c !== 'GET ')).toEqual([]);
+});
+
+test('debrief: today already done shows the summary with "Coins start soon" (bank dry-run)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const world = await installWorld(page);
+  Object.assign(world.debrief.state, { opened: true, entries: { learned: { text: 'Plants need light', via: 'typed' } }, questions: QUESTIONS,
+    answers: { q1: { response: QUESTIONS[0].answer, correct: true } }, completed: true });
+  await page.goto(`${BASE}/school/go/${LEARNER}/school-debrief`);
+  const summary = page.getByRole('region', { name: 'Summary' });
+  await expect(summary).toBeVisible({ timeout: 30_000 });
+  await expect(summary.getByText('Coins start soon')).toBeVisible();
+  await expect(summary).not.toContainText(/silver/i);
+  await shot(page, 'r11-13-done-today-summary');
+  expect(world.economyReads.length).toBeGreaterThan(0);
 });

@@ -4,6 +4,7 @@ import { COINS_SOON } from "../../../bank/BankStrip.jsx";
 import { useSchoolDebriefKeys } from "../useSchoolDebriefKeys.js";
 
 /** What they told, how the questions went, on time or late, and what moved in this week's (preview) earnings. */
+/** `coinsLive`: true (bank live), false (show "Coins start soon"), null (bank not read yet: show neither). */
 export default function SummaryItem({ view, earned = null, coinsLive = false, onFinish }) {
   useSchoolDebriefKeys({ enter: onFinish, ' ': onFinish });
   const quiz = view.summary?.quiz ?? { right: 0, graded: 0 };
@@ -12,7 +13,7 @@ export default function SummaryItem({ view, earned = null, coinsLive = false, on
       <h2><Icon name="keep" /> Thanks for telling me about school!</h2>
       {view.entries?.learned?.text && <blockquote className="sd-summary__quote">{view.entries.learned.text}</blockquote>}
       <p>{quiz.graded ? `${quiz.right} of ${quiz.graded} questions right` : 'Questions saved'} · {view.late ? 'Late' : 'On time'}</p>
-      {!coinsLive && <p className="sd-summary__soon">{COINS_SOON}</p>}
+      {coinsLive === false && <p className="sd-summary__soon">{COINS_SOON}</p>}
       {coinsLive && earned && earned.lines.length > 0 && (
         <ul className="sd-summary__earned">
           {earned.lines.map((l) => <li key={l.ruleId}>+{l.silver} silver{l.gems ? ` · +${l.gems} gem` : ''} · {l.label}</li>)}

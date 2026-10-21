@@ -1,5 +1,5 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import SchoolDebriefProgram from "./SchoolDebriefProgram.jsx";
 const api = vi.hoisted(() => ({}));
 vi.mock("./schoolDebriefApi.js", () => ({ createSchoolDebriefApi: () => api }));
@@ -147,6 +147,99 @@ describe('SchoolDebriefProgram start card', () => {
       expect(await screen.findByText('Two')).toBeInTheDocument();
       expect(screen.queryByText('One')).toBeNull();
       expect(api.answer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a rejected day', () => {
+    const rejected = (d) => ok({ studyDay: d, phase: 'rejected', next: null, entries: { learned: { text: 'x' } }, late: false,
+      questions: [{ id: 'q1', kind: 'choice', prompt: 'One', options: ['a', 'b'] }], answers: {}, summary: { substance: 7, substantive: false, quiz: { right: 0, graded: 0 } } });
+    it('shows the talk-to-a-grown-up notice and Enter exits', async () => {
+      api.day = vi.fn(async (d) => rejected(d));
+      const onExit = vi.fn();
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={onExit} />);
+      expect(await screen.findByText('A grown-up wants to talk with you about this one.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /pick up/i })).toBeNull();
+      expect(screen.queryByText(/Question \d of/)).toBeNull();
+      fireEvent.keyDown(window, { code: 'Enter', key: 'Enter' });
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+    it('with a late day offered, the start card offers only yesterday, never a resume of the rejected day', async () => {
+      api.day = vi.fn(async (d) => rejected(d));
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay="2026-10-20" today="2026-10-21" onExit={vi.fn()} />);
+      const buttons = await screen.findAllByRole('button', { name: /debrief|school|pick up/i });
+      expect(buttons.map((b) => b.textContent)).toEqual([expect.stringMatching(/yesterday/i)]);
+    });
+    it('a day rejected mid-flow shows the notice, not a stale question count', async () => {
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: {}, questions: [{ id: 'q1', kind: 'choice', prompt: 'One', options: ['a', 'b'] }], answers: {} }));
+      api.open = vi.fn(async (d) => rejected(d));
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /pick up/i }));
+      expect(await screen.findByText('A grown-up wants to talk with you about this one.')).toBeInTheDocument();
+      expect(screen.queryByText(/Question \d of/)).toBeNull();
+    });
+  });
+
+  describe('today already done when opened', () => {
+    const doneDay = (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false, summary: { substance: 7, substantive: true, quiz: { right: 2, graded: 2 } } });
+    it('dry-run bank: "Coins start soon", no silver', async () => {
+      api.day = vi.fn(async (d) => doneDay(d));
+      school.economyBank.mockReset(); school.earningsPreview.mockReset();
+      school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      expect(await screen.findByText('Coins start soon')).toBeInTheDocument();
+      expect(screen.queryByText(/silver/i)).toBeNull();
+      expect(school.economyBank).toHaveBeenCalledWith('test-learner');
+      expect(school.earningsPreview).not.toHaveBeenCalled();
+    });
+    it('live bank: no "Coins start soon"', async () => {
+      api.day = vi.fn(async (d) => doneDay(d));
+      school.economyBank.mockReset(); school.earningsPreview.mockReset();
+      school.economyBank.mockResolvedValue(ok({ mode: 'live' }));
+      school.earningsPreview.mockResolvedValue(ok({ totals: { silver: 0 }, lines: [] }));
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      await screen.findByText(/2 of 2/);
+      await waitFor(() => expect(school.economyBank).toHaveBeenCalled());
+      await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+      expect(screen.queryByText('Coins start soon')).toBeNull();
+    });
+  });
+
+  describe('inactivity', () => {
+    afterEach(() => { vi.useRealTimers(); });
+    const settle = async () => { for (let i = 0; i < 10; i += 1) await act(async () => { await Promise.resolve(); }); };
+    const mount = async (onExit) => {
+      vi.useFakeTimers();
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'not-started', next: { kind: 'prompt', id: 'classes' }, entries: {} }));
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={onExit} />);
+      await settle();
+      expect(screen.getByRole('button', { name: /tell me about school/i })).toBeInTheDocument();
+    };
+    const nudgeText = /Still there\?/;
+    it('nudges at 45 s on the start card, not before', async () => {
+      await mount(vi.fn());
+      act(() => { vi.advanceTimersByTime(44_000); });
+      expect(screen.queryByText(nudgeText)).toBeNull();
+      act(() => { vi.advanceTimersByTime(1_000); });
+      expect(screen.getByText(nudgeText)).toBeInTheDocument();
+    });
+    it('any input clears the nudge and the exit timer', async () => {
+      const onExit = vi.fn();
+      await mount(onExit);
+      act(() => { vi.advanceTimersByTime(45_000); });
+      expect(screen.getByText(nudgeText)).toBeInTheDocument();
+      act(() => { fireEvent.keyDown(window, { code: 'ShiftLeft', key: 'Shift' }); });
+      expect(screen.queryByText(nudgeText)).toBeNull();
+      act(() => { vi.advanceTimersByTime(5 * 60 * 1000 - 45_000); });
+      expect(onExit).not.toHaveBeenCalled();
+    });
+    it('closes to the keypad 5 minutes after the last input', async () => {
+      const onExit = vi.fn();
+      await mount(onExit);
+      act(() => { vi.advanceTimersByTime(45_000); }); // the nudge renders (its exit timer starts on commit)
+      act(() => { vi.advanceTimersByTime(5 * 60 * 1000 - 45_000 - 1); });
+      expect(onExit).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(onExit).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -9,6 +9,7 @@ import ChoiceItem from "./items/ChoiceItem.jsx";
 import ShortAnswerItem from "./items/ShortAnswerItem.jsx";
 import RetryButton from "./RetryButton.jsx";
 import SummaryItem from "./items/SummaryItem.jsx";
+import TalkToGrownUpItem from "./items/TalkToGrownUpItem.jsx";
 import { schoolApi } from "../../schoolApi.js";
 import "./SchoolDebrief.scss";
 
@@ -17,7 +18,10 @@ const PROMPTS = [
   { id: 'learned', text: 'Tell me one thing you learned.', required: true },
   { id: 'notable', text: 'What was hard, funny, or interesting?', required: false },
 ];
+// "Still there?" at the first stall (45 s, spec §6); close to the keypad 5 minutes after the last input.
+const NUDGE_AT_MS = 45_000;
 const EXIT_AFTER_MS = 5 * 60 * 1000;
+const FINISHED = ['completed', 'excused', 'rejected'];
 const QUOTE_LIMIT_MS = 2000;
 const withLimit = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), QUOTE_LIMIT_MS))]);
 
@@ -47,9 +51,10 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   }, [api, debriefGrant, todayProp, retry]);
   useInputStall(day ? `${day}:${view?.next?.kind}:${view?.next?.id}:${promptIdx}` : 'start', (ms) => {
     schoolDebriefLog.stall({ ms, day });
-    if (ms >= 120_000) setNudge(true);
-  }, { enabled: Boolean(day) });
-  useEffect(() => { if (!nudge) return undefined; const t = setTimeout(() => onExit?.(), EXIT_AFTER_MS - 120_000); return () => clearTimeout(t); }, [nudge, onExit]);
+    if (ms >= NUDGE_AT_MS) setNudge(true);
+  }, { enabled: Boolean(debriefGrant) }); // every screen the program is mounted on with a grant: start card, notice and error too
+  // Any input clears the nudge (below), which cancels this timer.
+  useEffect(() => { if (!nudge) return undefined; const t = setTimeout(() => onExit?.(), EXIT_AFTER_MS - NUDGE_AT_MS); return () => clearTimeout(t); }, [nudge, onExit]);
   useEffect(() => {
     const clear = () => setNudge(false);
     window.addEventListener('keydown', clear); window.addEventListener('pointerdown', clear);
@@ -59,7 +64,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   const apply = (r) => { if (r.ok) { setView(r.data); setError(null); } else setError(r.data?.error ?? 'Something went wrong. Try again.'); return r.ok; };
   // Coins are shown only when the bank is live (house rule: no silver figure
   // before then). Every read is bounded and a failure reads as "no data".
-  const [coinsLive, setCoinsLive] = useState(false);
+  const [coinsLive, setCoinsLive] = useState(null); // null = not read yet: show neither silver nor "Coins start soon"
   const weekSilver = async () => {
     const bank = await withLimit(Promise.resolve().then(() => schoolApi.economyBank(learnerId)).catch(() => null));
     const live = Boolean(bank?.ok && bank.data?.mode === 'live');
@@ -120,7 +125,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   // entries saved lands here too. Ref-guarded like complete.
   const submitting = useRef(false);
   const readyToSubmit = Boolean(day) && Boolean(view) && promptIdx >= PROMPTS.length && !view.questions
-    && !['clarify', 'completed', 'excused'].includes(view.phase) && !busy && !error;
+    && !['clarify', ...FINISHED].includes(view.phase) && !busy && !error;
   useEffect(() => {
     if (!readyToSubmit || submitting.current) return;
     submitting.current = true;
@@ -134,7 +139,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   // Completing is an effect of the server saying "complete is next", never a
   // side effect of rendering. The ref keeps a re-render from completing twice.
   const completing = useRef(false);
-  const readyToComplete = Boolean(day) && view?.next?.kind === 'complete' && !result && !['completed', 'excused'].includes(view?.phase);
+  const readyToComplete = Boolean(day) && view?.next?.kind === 'complete' && !result && !FINISHED.includes(view?.phase);
   useEffect(() => {
     if (!readyToComplete || completing.current) return;
     completing.current = true;
@@ -155,6 +160,10 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     })();
   }, [readyToComplete, retry]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Today already done when the program opens: the summary still obeys the bank gate (R1).
+  const doneOnOpen = !day && !lateDay && ['completed', 'excused'].includes(todayView?.phase);
+  useEffect(() => { if (doneOnOpen) weekSilver(); }, [doneOnOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const tryAgain = () => { setError(null); if (!day && failedStart) start(failedStart); else setRetry((n) => n + 1); };
   const waiting = (text) => (
     <>
@@ -166,11 +175,13 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   let body;
   if (!debriefGrant) body = <p className="sd-notice">Open your debrief with the code on your agenda.</p>;
   else if (error && !view && !todayView) body = <><p className="sd-notice">{error}</p><RetryButton onRetry={tryAgain} /></>;
-  else if (!day && todayView && !lateDay && ['completed', 'excused'].includes(todayView.phase)) body = <SummaryItem view={todayView} earned={null} coinsLive onFinish={onExit} />;
+  else if (doneOnOpen) body = <SummaryItem view={todayView} earned={null} coinsLive={coinsLive} onFinish={onExit} />;
+  else if (!day && todayView?.phase === 'rejected' && !lateDay) body = <TalkToGrownUpItem onFinish={onExit} />;
   else if (!day && error && failedStart) body = <RetryButton onRetry={tryAgain} />;
   else if (!day) body = todayView ? <SchoolDebriefStartCard today={todayView} lateDay={lateDay} onStart={start} /> : <p className="sd-notice">Loading…</p>;
   else if (!view) body = <p className="sd-notice">Loading…</p>;
   else if (['completed', 'excused'].includes(view.phase)) body = <SummaryItem view={view} earned={earned} coinsLive={coinsLive} onFinish={onExit} />;
+  else if (view.phase === 'rejected') body = <TalkToGrownUpItem onFinish={onExit} />;
   else if (promptIdx < PROMPTS.length && !view.questions && view.phase !== 'clarify') {
     const p = PROMPTS[promptIdx];
     body = <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={promptIdx > 0 ? () => setPromptIdx(promptIdx - 1) : null} onSubmit={(b) => submitPrompt(p.id, b)} />;

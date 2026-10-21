@@ -28,7 +28,8 @@ function Loaded({ learnerId, learnerName, actorId }) {
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const act = (day, action) => run(`${day}:${action}`,
     ({ actorId: by, pin }) => schoolApi.teacherDebriefAction(learnerId, day, action, { by, pin, reason: action === 'rescore' ? null : (reason.trim() || null) }),
-    { onSuccess: () => record.retry() });
+    // The reason belongs to the action just taken: clear it so it cannot ride along on the next day's.
+    { onSuccess: () => { setReason(''); record.retry(); } });
   const days = record.data?.days ?? [];
   return (
     <PanelFrame title="Debriefs" state={record.state} retry={record.retry}

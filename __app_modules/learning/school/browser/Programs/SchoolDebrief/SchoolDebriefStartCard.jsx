@@ -6,7 +6,8 @@ import { useSchoolDebriefKeys } from "./useSchoolDebriefKeys.js";
 export default function SchoolDebriefStartCard({ today, lateDay = null, onStart }) {
   const offers = [];
   if (lateDay) offers.push({ key: 'late', day: lateDay, label: "Yesterday's debrief (late)" });
-  if (today && !['completed', 'excused'].includes(today.phase)) {
+  // A rejected day is a grown-up conversation, not something to pick back up.
+  if (today && !['completed', 'excused', 'rejected'].includes(today.phase)) {
     offers.push({ key: 'today', day: today.studyDay, label: today.phase === 'not-started' ? 'Tell me about school today' : 'Pick up where you left off' });
   }
   useSchoolDebriefKeys({ enter: () => offers[0] && onStart(offers[0].day), ...Object.fromEntries(offers.map((o, i) => [String(i + 1), () => onStart(o.day)])) });

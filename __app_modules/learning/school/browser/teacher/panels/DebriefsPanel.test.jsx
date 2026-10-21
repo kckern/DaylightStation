@@ -51,6 +51,19 @@ describe('DebriefsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /excuse/i }));
     await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'excuse', { by: 'parent', pin: null, reason: 'sick' }));
   });
+  it('clears the reason after a successful action, and keeps it after a failed one', async () => {
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    const field = await screen.findByLabelText(/reason/i);
+    api.teacherDebriefAction.mockResolvedValueOnce({ ok: false, status: 500, data: null });
+    fireEvent.change(field, { target: { value: 'sick' } });
+    fireEvent.click(screen.getByRole('button', { name: /excuse/i }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledTimes(1));
+    expect(field).toHaveValue('sick');
+    fireEvent.click(screen.getByRole('button', { name: /excuse/i }));
+    await waitFor(() => expect(field).toHaveValue(''));
+    fireEvent.click(screen.getByRole('button', { name: /^reject$/i }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenLastCalledWith('test-learner', '2026-10-21', 'reject', { by: 'parent', pin: null, reason: null }));
+  });
   it('without a current teacher it asks for one and fires no request', () => {
     profile.current = { currentTeacher: null };
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
