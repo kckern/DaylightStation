@@ -128,8 +128,8 @@ export function schoolProgress(completion) {
  * The Print button's label from `GET .../next`: "Print my next sheet (Math
  * 4-02)", with "+2 silver · " / "+1 gem · " only when the economy prices the
  * unit — the same reward words as the Portal's bank strip. Null when nothing
- * would print. The reward is never made up: `reward: null` (today's
- * production answer) shows no amount.
+ * would print. The reward is never made up: `reward: null` (anything but a
+ * live economy that prices the sheet) shows no amount.
  */
 export function nextSheetLabel(next) {
   const unit = next?.unit;

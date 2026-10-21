@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'fs';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
-import { cachedEvidenceLabels, createEconomyEarningsRuntime } from "./earnings.mjs";
+import { cachedEvidenceLabels, cachedWeekPreview, cachedSheetRewards, createEconomyEarningsRuntime } from "./earnings.mjs";
 import { createEconomyApi } from "./economyApi.mjs";
 
 const quiet = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child() { return this; } });
@@ -73,6 +73,73 @@ describe('cachedEvidenceLabels', () => {
   });
 });
 
+describe('cachedSheetRewards', () => {
+  const TODAY = '2026-10-21';
+  const weekOf = (state = 'obligated') => ({
+    today: TODAY,
+    windows: { school: { from: '2026-10-19', to: '2026-10-25' } },
+    evidence: { school: 'ok', rings: 'ok' },
+    work: { days: [] },
+    lines: [
+      { ruleId: 'korean-daily', kind: 'section-day', match: { subject: 'language' }, status: 'pending', overridden: false,
+        priced: { reward: { silver: 2, gems: 0 }, multiplier: 1 }, evidence: [{ day: TODAY, state }], ref: 'r:1', label: 'Korean' },
+    ],
+  });
+  const UNIT = { unitId: 'language.07', title: 'Korean 7', subject: 'language' };
+  const setup = ({ mode = 'live', fail = null } = {}) => {
+    const state = { mode };
+    const preview = {
+      currentStudyDay: vi.fn(() => TODAY),
+      preview: vi.fn(async ({ learnerId }) => {
+        if (learnerId === 'stranger') throw new EntityNotFoundError('learner', learnerId);
+        if (fail) throw fail;
+        return weekOf();
+      }),
+    };
+    const logger = quiet();
+    const weeks = cachedWeekPreview({ preview, now: () => 0 });
+    const rewardFor = cachedSheetRewards({ weeks, config: { catalog: () => ({ mode: state.mode }) }, logger });
+    return { state, preview, logger, weeks, rewardFor };
+  };
+
+  it('live: the section-day price for a subject still open today', async () => {
+    const { rewardFor } = setup();
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toEqual({ silver: 2, gems: 0 });
+  });
+  it('off and dry-run: null, and no preview is run', async () => {
+    const { state, preview, rewardFor } = setup({ mode: 'off' });
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toBeNull();
+    state.mode = 'dry-run';
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toBeNull();
+    expect(preview.preview).not.toHaveBeenCalled();
+  });
+  it('shares one cached preview with the bank\'s evidence labels', async () => {
+    const { preview, weeks, rewardFor } = setup();
+    const labels = cachedEvidenceLabels({ preview, weeks });
+    await labels('kid');
+    await rewardFor({ learnerId: 'kid', unit: UNIT });
+    await rewardFor({ learnerId: 'kid', unit: UNIT });
+    expect(preview.preview).toHaveBeenCalledTimes(1);
+  });
+  it('a failing preview is null, warned once per learner; off the roster is null, unwarned', async () => {
+    const { rewardFor, logger } = setup({ fail: new Error('rings down') });
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toBeNull();
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toBeNull();
+    expect(await rewardFor({ learnerId: 'stranger', unit: UNIT })).toBeNull();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('economy.sheet-reward.failed', { learnerId: 'kid', error: 'rings down' });
+  });
+  it('a config read that throws is null too, never thrown into the caller', async () => {
+    const preview = { currentStudyDay: () => TODAY, preview: vi.fn() };
+    const logger = quiet();
+    const rewardFor = cachedSheetRewards({
+      weeks: cachedWeekPreview({ preview }), config: { catalog: () => { throw new Error('bad yaml'); } }, logger,
+    });
+    expect(await rewardFor({ learnerId: 'kid', unit: UNIT })).toBeNull();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('createEconomyApi + createEconomyEarningsRuntime', () => {
   let dir;
   afterEach(() => { vi.useRealTimers(); if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
@@ -118,5 +185,15 @@ describe('createEconomyApi + createEconomyEarningsRuntime', () => {
     expect(bind).toHaveBeenCalledTimes(1);
     const labels = bind.mock.calls[0][0];
     expect(await labels('kid')).toBeNull();
+  });
+  it('economyApi.rewardFor is null until the runtime binds the sheet rewards, then asks them', async () => {
+    const { economyApi } = await build();
+    const fresh = createEconomyApi({ configService: { getHouseholdAppConfig: () => ({}), getUserProfile: () => null, getUserDir: () => '/nonexistent', getHouseholdPath: () => '/nonexistent' }, logger: quiet() });
+    expect(await fresh.rewardFor({ learnerId: 'kid', unit: { subject: 'language' } })).toBeNull();
+    const bound = vi.fn(async () => ({ silver: 1, gems: 0 }));
+    fresh.useSheetRewards(bound);
+    expect(await fresh.rewardFor({ learnerId: 'kid', unit: { subject: 'language' } })).toEqual({ silver: 1, gems: 0 });
+    // The real runtime bound one; mode off here, so it answers null.
+    expect(await economyApi.rewardFor({ learnerId: 'kid', unit: { subject: 'language' } })).toBeNull();
   });
 });

@@ -1,27 +1,27 @@
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
+import { sheetReward } from "../domain/earnings/index.mjs";
 
 const LABEL_CACHE_TTL_MS = 60_000;
 
 /**
- * The bank's evidence labels: the current week's preview lines for one
- * learner, as ref → label. Cached per learner and week for `ttlMs`
- * (default 60 s), so per-kid bank polling runs one preview a minute. The
- * in-flight promise is what is cached, so concurrent misses for one key share
- * one preview. A learner the preview does not know (off the school roster)
- * gets null, cached too; any other failure evicts the entry and is thrown,
- * and the bank falls back to rule labels.
+ * The current week's preview for one learner, cached per learner and week for
+ * `ttlMs` (default 60 s), so per-kid polling (the bank, "print my next
+ * sheet") runs one preview a minute between them. The in-flight promise is
+ * what is cached, so concurrent misses for one key share one preview. A
+ * learner the preview does not know (off the school roster) gets null, cached
+ * too; any other failure evicts the entry and is thrown.
  * @param {object} deps
  * @param {{preview: Function, currentStudyDay: () => string}} deps.preview - EarningsPreviewService
  * @param {() => number} [deps.now]
  * @param {number} [deps.ttlMs]
+ * @returns {(learnerId: string) => Promise<object|null>}
  */
-export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS }) {
+export function cachedWeekPreview({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS }) {
   const cache = new Map(); // `${learnerId}|${monday}` → { at, promise }
   const load = async (learnerId) => {
     try {
-      const week = await preview.preview({ learnerId });
-      return new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
+      return await preview.preview({ learnerId });
     } catch (err) {
       if (err instanceof EntityNotFoundError) return null;
       throw err;
@@ -37,6 +37,57 @@ export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = 
     cache.set(key, entry);
     entry.promise.catch(() => { if (cache.get(key) === entry) cache.delete(key); });
     return entry.promise;
+  };
+}
+
+/**
+ * The bank's evidence labels: the current week's preview lines for one
+ * learner, as ref → label, off `cachedWeekPreview` (pass `weeks` to share
+ * one cache). Null for a learner off the roster; any other failure is
+ * thrown, and the bank falls back to rule labels.
+ * @param {object} deps
+ * @param {{preview: Function, currentStudyDay: () => string}} [deps.preview] - EarningsPreviewService
+ * @param {(learnerId: string) => Promise<object|null>} [deps.weeks] - a shared `cachedWeekPreview`
+ * @param {() => number} [deps.now]
+ * @param {number} [deps.ttlMs]
+ */
+export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS, weeks = null }) {
+  const week = weeks ?? cachedWeekPreview({ preview, now, ttlMs });
+  const built = new WeakMap(); // one Map per cached week, so a cache hit is the same Map
+  return async (learnerId) => {
+    const w = await week(learnerId);
+    if (!w) return null;
+    if (!built.has(w)) built.set(w, new Map((w.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label])));
+    return built.get(w);
+  };
+}
+
+/**
+ * School's `rewardFor({learnerId, unit})` port: what one sheet is worth
+ * (`domain/earnings/sheetReward.mjs`), off the shared week cache. Only a
+ * `live` economy names an amount; off and dry-run answer null without running
+ * a preview. Never throws: a failure is null, warned once per learner until a
+ * read for that learner succeeds again.
+ * @param {object} deps
+ * @param {(learnerId: string) => Promise<object|null>} deps.weeks - `cachedWeekPreview`
+ * @param {{catalog: () => {mode: string}}} deps.config
+ */
+export function cachedSheetRewards({ weeks, config, logger = console }) {
+  const warned = new Set();
+  return async ({ learnerId, unit } = {}) => {
+    try {
+      const mode = config.catalog().mode;
+      if (mode !== 'live') return null;
+      const reward = sheetReward({ week: await weeks(learnerId), unit, mode });
+      warned.delete(learnerId);
+      return reward;
+    } catch (err) {
+      if (!warned.has(learnerId)) {
+        warned.add(learnerId);
+        logger.warn?.('economy.sheet-reward.failed', { learnerId: learnerId ?? null, error: err?.message ?? String(err) });
+      }
+      return null;
+    }
   };
 }
 
@@ -76,9 +127,15 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       boundaryHour: economyApi.studyCalendar?.boundaryHour ?? 4,
       logger: rootLogger.child({ module: 'economy-earnings' }),
     });
-    // The bank names a payout by the preview line it paid for (ref → label),
-    // cached briefly so a polled bank does not rerun the ring standings.
-    economyApi.useEvidenceLabels?.(cachedEvidenceLabels({ preview: earningsPreview, now: labelCacheNow }));
+    // One briefly cached week per learner, so polled surfaces do not rerun the
+    // ring standings. The bank names a payout by the preview line it paid for
+    // (ref → label); School's "print my next sheet" says what the sheet is
+    // worth (`economyApi.rewardFor`, handed to School before this runtime exists).
+    const weeks = cachedWeekPreview({ preview: earningsPreview, now: labelCacheNow });
+    economyApi.useEvidenceLabels?.(cachedEvidenceLabels({ weeks }));
+    economyApi.useSheetRewards?.(cachedSheetRewards({
+      weeks, config: economyApi.configProjection, logger: rootLogger.child({ module: 'economy-sheet-reward' }),
+    }));
     // Payouts mint what this same preview says was earned (B3), so the board
     // and the ledger read one evaluator. Started by `startEconomyPayouts`.
     const payoutService = new PayoutService({

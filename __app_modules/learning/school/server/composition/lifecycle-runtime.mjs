@@ -58,6 +58,9 @@ try {
       academicPeriods: schoolAcademicPeriods,
       attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
+      // What "print my next sheet" is worth (`GET .../next`). A late-bound
+      // thunk: the earnings runtime that answers it is built after School.
+      rewardFor: economyApi.rewardFor ?? null,
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,

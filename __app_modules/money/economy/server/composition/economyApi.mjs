@@ -29,6 +29,8 @@ import { createEconomyRouter } from "../api/economy.mjs";
  * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, bankService: BankService,
  *   configProjection: EconomyConfigProjection, studyCalendar: {timezone: string|null, boundaryHour: number},
  *   useEvidenceLabels: (fn: (userId: string) => Promise<Map<string,string>|null>) => void,
+ *   useSheetRewards: (fn: (args: {learnerId: string, unit: object}) => Promise<object|null>) => void,
+ *   rewardFor: (args: {learnerId: string, unit: object}) => Promise<{silver: number, gems: number}|null>,
  *   router: import('express').Router }}
  */
 export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4,
@@ -68,9 +70,15 @@ export function createEconomyApi({ configService, logger = console, clock = () =
     clock,
     logger,
   });
+  // School's "print my next sheet" reward port. School is composed before the
+  // earnings runtime, so it gets this late-bound thunk: null until the runtime
+  // binds the real source (`cachedSheetRewards`).
+  let sheetRewards = null;
   return {
     economyService, earnRulesService, bankService, configProjection, studyCalendar,
     useEvidenceLabels(fn) { evidenceLabels = typeof fn === 'function' ? fn : null; },
+    useSheetRewards(fn) { sheetRewards = typeof fn === 'function' ? fn : null; },
+    rewardFor: async (args) => (sheetRewards ? sheetRewards(args) : null),
     router: createEconomyRouter({ economyService, bankService, logger }),
   };
 }

@@ -1547,9 +1547,15 @@ when `selfService.enabled` is true.
   subject}, sessionId}`. Surfaces show `sentence`.
 - `GET /api/v1/school/self-service/learners/:learnerId/next?subject=` is the dry
   run for the button's label: `{subject, unit, printable, reward}`. It opens no
-  session. `reward` comes from the optional `rewardFor({learnerId, unit})` port
-  that `createSchoolLifecycle` accepts. It is null when that port is not wired,
-  returns nothing or throws.
+  session. `reward` (`{silver, gems}` or null) comes from the optional
+  `rewardFor({learnerId, unit})` port that `createSchoolLifecycle` accepts. The
+  app wires it to the economy (`economyApi.rewardFor`, late-bound because the
+  earnings runtime is built after School): an amount only while the economy is
+  `live` and one earn rule prices this sheet, such as a `section-day` rule for
+  the subject that today's section has not earned yet. Dry-run and off answer
+  null, as does anything the economy cannot price with certainty (see the
+  economy reference, "Read (`rewardFor`, what a sheet is worth)"). It is also
+  null when the port is not wired, returns nothing or throws.
 
 **It can only print the learner's own next sheet.** With no subject named, the
 candidates come from `GetLearnerDayCompletion`: obligated sections first, then
@@ -1721,7 +1727,7 @@ order, never sorted or ranked. Each chip shows the kid's silver captioned "in
 the bank" (read out as "12 silver in the bank"), a gem when
 they have gems, and a "sneak used" tick when today's `piano.games` pass is
 active or consumed or its cap is used. Under it is the next sheet they can earn
-with ("+2 silver · Math 4-02", or just the unit title while `reward` is null)
+with ("+2 silver · Math 4-02", or just the unit title when `reward` is null)
 and a **Print** button. The strip and the header's two doors (bank and books)
 are the only things in the board pane that take a tap; the strip sets `pointer-events: auto` itself.
 
@@ -1841,7 +1847,7 @@ kid's bank, full screen over the locked panel.
   spend on yet." There is no buy button: buying is at the piano kiosk.
 - **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
   then every agenda section still `obligated`, by title. A reward shows only
-  when the economy prices it (`reward` is null in production).
+  when the economy prices it (`reward` is null unless the economy is `live`).
 - **Napping.** A failed bank read shows "The bank is napping. Try again soon."
   and no numbers: no balances, history or prices, and no cache or earlier read
   (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
@@ -2138,8 +2144,8 @@ Portal strip shows and the week close converts on Sunday. It is read with
 `EconomyService.peekBalance(id).silver`, a pure ledger fold that writes no
 wallet and reaps no session, at print time, so a morning tape shows the bank
 before that day's payouts. "Next" is the title `IssueSubjectNext.preview`
-answers for `GET /self-service/learners/:id/next`. Its `reward` is null until a
-`rewardFor` port is wired, so today the line carries no `+N`. The line is capped
+answers for `GET /self-service/learners/:id/next`. Its `reward` is null unless
+the economy is `live` and prices that sheet; a null reward prints no `+N`. The line is capped
 at 50 code points, which keeps Latin text on one row of the tape's 530px
 content width; only the title is shortened, at a word where it can be, with an
 ellipsis, and never through the middle of an emoji. The rules:

@@ -160,8 +160,8 @@ const nameFor = (subject) => {
 
 /**
  * Today's remaining work: the next sheet (`GET .../next`, with its reward
- * when the economy prices it; `reward` is null in production, so usually a
- * title alone) first, then every agenda section still `obligated`. Nothing
+ * when the economy prices it; `reward` is null unless the economy is live and
+ * one rule prices the sheet, so often a title alone) first, then every agenda section still `obligated`. Nothing
  * here invents an amount. `status` is `unavailable` only when both reads
  * failed; `done` when the plan says nothing is owed and there is no next sheet.
  */

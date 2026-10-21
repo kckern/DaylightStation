@@ -107,7 +107,7 @@ incomplete case it adds:
 - "Sneak used today — finish school to play more." when the cap is used (`passCapUsed`);
 - "Print my next sheet (Math 4-02)" from School's `GET …/self-service/learners/:id/next`.
   The "+N silver · " / "+N gem(s) · " prefix appears only when the reward names it, the
-  same words as the Portal bank strip; production answers `reward: null`. A 404
+  same words as the Portal bank strip; `reward` is null unless the economy is `live`. A 404
   (self-service off) shows no button. After a print the label is read again.
 
 A buy asks first, in a labelled group ("One game, then games lock until school is done")

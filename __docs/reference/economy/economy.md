@@ -186,8 +186,8 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 "+3 silver · early pass refunded", "12 silver → 12 gold · Sunday". A payout is
 named by the current week's preview line it paid for (its `evidenceRef`), then
 by the ruleset's label for its `ruleId`, then "schoolwork". The preview labels
-are cached per learner and week for 60 s (`cachedEvidenceLabels`), so a polled
-bank runs one preview a minute. Pass spends and refunds are matched on
+are cached per learner and week for 60 s (`cachedWeekPreview`, shared with
+School's `rewardFor`), so a polled bank runs one preview a minute. Pass spends and refunds are matched on
 `source: pass`. The two halves of a conversion (same `evidenceRef`, opposite
 signs; `at` is not compared, so a repaired pair still pairs) read as one line,
 named by the local weekday. Zero-delta `pass` markers are left out.
@@ -395,6 +395,36 @@ coin, price, reason }` (the refusal code as `reason`).
   a 2 s bound; a failure, a timeout or an unknown figure prints no line and
   never delays or breaks the tape. See the school reference, "The first line
   under the name is the week's silver".
+- **Read (`rewardFor`, what a sheet is worth):** School's "print my next sheet"
+  dry run (`GET /self-service/learners/:id/next`, behind the Portal bank strip,
+  the bank's ways to earn, the agenda tape's `Next: Math +2` and the piano
+  lock's button) asks `rewardFor({learnerId, unit})` for `{silver, gems}`.
+  `createEconomyApi` hands School a late-bound thunk (`economyApi.rewardFor`,
+  passed by `lifecycle-runtime.mjs`); the earnings runtime binds it with
+  `useSheetRewards(cachedSheetRewards(...))` once the preview exists. Until then,
+  and whenever the answer is unclear, it is null and no surface shows an amount.
+  The answer is `sheetReward` (`domain/earnings/sheetReward.mjs`) over the
+  learner's current-week preview, from the same 60 s cache as the bank's labels.
+  An amount only when the catalog is `live` (off and dry-run are null, without
+  running a preview: dry-run coins are not real, and the digest says so), the
+  school evidence is `ok`, and exactly one sheet-kind rule matches the unit
+  (subject, unit id prefix, course):
+  - `section-day`: one day's price at the learner's rate, while today's section
+    is `obligated`; null once it is `served` (another sheet adds nothing), and
+    for an elective, a faulted day or no row today.
+  - `section-week`: the week's price only when this sheet finishes the week:
+    Friday or later, the line `pending`, every earlier day served or excused,
+    today obligated, nothing obligated after today, no day unworked.
+  - `unit`: the per-unit price (a unit rule keyed by `courseId` is null: the
+    sheet does not carry its course).
+  - `day-met`, `week-met`, `ring-threshold`, `ring-contest`: never credited to a
+    sheet, and they do not count as a match.
+  Two matching rules, a matched rule with a learner override, a unit with no
+  subject or a zero price are null too. A failure (preview or catalog) is null
+  and warns `economy.sheet-reward.failed` once per learner until a read for
+  that learner works again; a learner off the roster is null, unwarned. The
+  cache means a section finished a moment ago can still show its `+N` for up to
+  a minute.
 - **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
   session and drains coins as the timer runs, surfacing the balance in the
   EmulatorConsole overlay (`session.coins`) and its `depleted` state
@@ -605,7 +635,7 @@ teacher capability cookie is scoped to `/api/v1/school`).
 ### Code
 
 - `2_domains/economy/earnings/` — `validateRuleset`, `resolveRules`,
-  `withUserOverride`, `evaluateEarnings` (pure).
+  `withUserOverride`, `evaluateEarnings`, `sheetReward` (pure).
 - `3_applications/economy/EarningsPreviewService.mjs` (windows, contest close,
   per-source failure handling), `PayoutService.mjs`, `WeekCloseService.mjs`,
   `EarnRulesService.mjs` (revisions), ports

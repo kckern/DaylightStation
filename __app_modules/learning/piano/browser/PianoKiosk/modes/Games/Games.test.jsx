@@ -684,7 +684,7 @@ describe('Games mode — early pass', () => {
     expect(screen.getByText('Spend 3 silver: one game')).toBeTruthy();
     // Gold is quoted but not affordable: no button, rather than one that fails.
     expect(screen.queryByText(/Spend 1 gold/)).toBeNull();
-    // `reward: null` in production: no amount is invented.
+    // `reward: null` (the economy cannot price it): no amount is invented.
     const print = await screen.findByText('Print my next sheet (Math 4-02)');
     expect(screen.queryByText(/\+\d+ silver/)).toBeNull();
 
