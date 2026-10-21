@@ -981,3 +981,121 @@ describe('allocateNext — rows that never reached paper are not occupied', () =
     expect(described.remainingContiguousSlots).toBe(2);
   });
 });
+
+describe('vacate — a failed attempt holds its window for regeneration', () => {
+  const at = () => '2026-10-20T18:05:12.000Z';
+  const fresh = () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({
+      directory: '/docs', io, rng: scriptedRng([[4, 2, 6, 3, 8, 6, 3], [1, 0, 0, 7, 9, 9, 8], [3, 3, 3, 3, 3, 3, 3]]), now: at,
+    });
+    return { io, store };
+  };
+  const sheet = (documentId, end, over = {}) => request({
+    documentId, rev: 'r1', seed: 7, learnerId: 'learner_a', rowRange: { start: 1, end }, ...over,
+  });
+  const deliver = async (store, documentId, end, over = {}) => {
+    const out = await store.allocateNext({ request: sheet(documentId, end, over) });
+    await store.markDelivered({ cardId: out.record.cardId, recordId: out.record.recordId });
+    return out.record;
+  };
+  const scriptureSheet = (sessionId, rev) => sheet(`scripture/course/ws-${sessionId}`, 3, {
+    rev, sessionId, unitId: 'scripture-unit-1',
+  });
+
+  it('records the unit on the allocation so a later session can find its window', async () => {
+    const { store } = fresh();
+    const out = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });
+    expect(out.record.unitId).toBe('scripture-unit-1');
+  });
+
+  it('vacates a pending window: off the card, held for its unit', async () => {
+    const { store } = fresh();
+    const out = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });
+    const vacated = await store.vacate({ cardId: out.record.cardId, recordId: out.record.recordId, reason: 'print' });
+    expect(vacated).toMatchObject({ status: 'vacated', deliveryState: 'cancelled', vacatedReason: 'print', vacatedAt: at() });
+    await expect(store.vacate({ cardId: out.record.cardId, recordId: out.record.recordId, reason: 'again' }))
+      .resolves.toBeNull();
+  });
+
+  it('a tail vacated window is simply consumed by whatever sheet appends next', async () => {
+    const { store } = fresh();
+    const civ = await deliver(store, 'civ-1', 3);                                          // 1-3 on paper
+    const failed = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });             // 4-6
+    await store.vacate({ cardId: failed.record.cardId, recordId: failed.record.recordId, reason: 'print' });
+    const atlas = await deliver(store, 'civ/atlas/ws-ses-1', 6);                             // 4-9: tail reuse
+    expect(atlas.rowRange).toEqual({ start: 4, end: 9 });
+    expect((await store.findByCard(civ.cardId)).find((r) => r.recordId === failed.record.recordId).status)
+      .toBe('superseded');
+
+    // Same unit fails once more mid-card, then a new session regenerates it.
+    const failed2 = await store.allocateNext({ request: scriptureSheet('ses_b', 'r2') });           // 10-12
+    await store.vacate({ cardId: failed2.record.cardId, recordId: failed2.record.recordId, reason: 'print' });
+    await deliver(store, 'math/ws-ses-2', 6);                                                // 10-15 (tail reuse)
+    const failed3 = await store.allocateNext({ request: scriptureSheet('ses_c', 'r3') });           // 16-18
+    await store.vacate({ cardId: failed3.record.cardId, recordId: failed3.record.recordId, reason: 'print' });
+    await deliver(store, 'sci/ws-ses-3', 3);                                                 // 16-18 (tail reuse)
+
+    // Nothing vacated is left below; the next same-unit sheet appends.
+    const regen = await store.allocateNext({ request: scriptureSheet('ses_d', 'r4') });
+    expect(regen.record.rowRange).toEqual({ start: 19, end: 21 });
+  });
+
+  it('reclaims a mid-card vacated window for the same unit instead of appending', async () => {
+    const { store, io } = fresh();
+    const civ = await deliver(store, 'civ-1', 3);                                          // 1-3
+    const failed = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });             // 4-6
+    // Leaked (not vacated) while later sheets were placed, then vacated by the sweep.
+    await deliver(store, 'math/ws-ses-2', 6);                                                // 7-12
+    await store.vacate({ cardId: civ.cardId, recordId: failed.record.recordId, reason: 'leak' });
+
+    const regen = await store.allocateNext({ request: scriptureSheet('ses_b', 'r2') });
+    expect(regen.record.cardId).toBe(civ.cardId);
+    expect(regen.record.rowRange).toEqual({ start: 4, end: 6 });
+    expect(regen.reclaimed).toMatchObject({ recordId: failed.record.recordId, reason: 'same-unit' });
+    const onDisk = io.load(`/docs/cards/${civ.cardId}.yml`);
+    expect(onDisk.find((r) => r.recordId === failed.record.recordId))
+      .toMatchObject({ status: 'superseded', supersededBy: regen.record.recordId });
+  });
+
+  it('a different unit may take a mid-card window only once it is written off, and only at the same size', async () => {
+    const { store } = fresh();
+    const civ = await deliver(store, 'civ-1', 3);
+    const failed = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });             // 4-6
+    await deliver(store, 'math/ws-ses-2', 6);                                                // 7-12
+    await store.vacate({ cardId: civ.cardId, recordId: failed.record.recordId, reason: 'leak' });
+
+    const other = (id, end) => sheet(`sci/ws-${id}`, end, { unitId: 'sci-unit' });
+    expect((await store.allocateNext({ request: other('x', 3) })).record.rowRange).toEqual({ start: 13, end: 15 });
+
+    await store.writeOff({ cardId: civ.cardId, recordId: failed.record.recordId, reason: 'unit-passed' });
+    expect((await store.allocateNext({ request: other('y', 2) })).record.rowRange).toEqual({ start: 16, end: 17 });
+    const filled = await store.allocateNext({ request: other('z', 3) });
+    expect(filled.record.rowRange).toEqual({ start: 4, end: 6 });
+    expect(filled.reclaimed).toMatchObject({ reason: 'written-off' });
+  });
+
+  it('reclaims a vacated window even when the tail has no room left', async () => {
+    const { store } = fresh();
+    const civ = await deliver(store, 'civ-1', 3);
+    const failed = await store.allocateNext({ request: scriptureSheet('ses_a', 'r1') });             // 4-6
+    await deliver(store, 'math/ws-ses-2', 44);                                               // 7-50: card full
+    await store.vacate({ cardId: civ.cardId, recordId: failed.record.recordId, reason: 'leak' });
+
+    const regen = await store.allocateNext({ request: scriptureSheet('ses_b', 'r2') });
+    expect(regen.record.cardId).toBe(civ.cardId);
+    expect(regen.record.rowRange).toEqual({ start: 4, end: 6 });
+    expect(regen.firstUse).toBe(false);
+  });
+
+  it('matches a legacy window that carries no unitId by its session', async () => {
+    const { store } = fresh();
+    const civ = await deliver(store, 'civ-1', 3);
+    const legacy = await store.allocateNext({ request: { ...scriptureSheet('ses_a', 'r1'), unitId: undefined } });
+    await deliver(store, 'math/ws-ses-2', 6);
+    await store.vacate({ cardId: civ.cardId, recordId: legacy.record.recordId, reason: 'leak' });
+
+    const retry = await store.allocateNext({ request: scriptureSheet('ses_a', 'r2') });
+    expect(retry.record.rowRange).toEqual({ start: 4, end: 6 });
+  });
+});

@@ -1618,10 +1618,13 @@ Portal), it falls back to the registered screen device's backend FKB REST
 adapter. The panel stays on and shows a visible failure only when both paths
 fail; standalone browser School never sends a physical-device command.
 
-The locked resting screen is a stable two-pane wall: the keypad and a read-only
-per-learner `Today at school` board share the panel evenly. The board is
-informational only—no teacher controls or links—and its delayed refresh never
-changes the keypad's size or position. Every 90 seconds the panes trade sides
+The locked resting screen is a stable two-pane wall: the keypad takes a third
+of the panel and a read-only per-learner status board the other two thirds.
+The board is informational only—no teacher controls or links—and its delayed
+refresh never changes the keypad's size or position. The keypad column is
+anchored at the top, not centred, and the code boxes sit directly on the keys;
+an outage message and its retry button appear under the keys, so they push
+only **Turn off screen** down and the keys never move. Every 90 seconds the panes trade sides
 to spread static-screen wear without remounting a code a child is entering.
 
 Minting and locking are independent so the rollout can be staged: print codes

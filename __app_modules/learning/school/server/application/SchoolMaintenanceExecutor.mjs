@@ -20,20 +20,24 @@
 export const SCHOOL_STALE_SWEEP_JOB = 'school-stale-sweep';
 
 export class SchoolMaintenanceExecutor {
-  #markSessionAbandoned; #defaultOlderThanDays; #logger;
+  #markSessionAbandoned; #sweepAnswerSheets; #defaultOlderThanDays; #logger;
 
   /**
    * @param {object} deps
    * @param {{sweepUntouched: Function}} deps.markSessionAbandoned
+   * @param {{execute: Function}} [deps.sweepAnswerSheets] - the OMR card pass
+   *   (`SweepAnswerSheets`), run after the session sweep so windows it just
+   *   freed are counted.
    * @param {number} [deps.olderThanDays=14] - household default; a job may
    *   override it per-run through its own `options`.
    * @param {object} [deps.logger]
    */
-  constructor({ markSessionAbandoned, olderThanDays = 14, logger = console } = {}) {
+  constructor({ markSessionAbandoned, sweepAnswerSheets = null, olderThanDays = 14, logger = console } = {}) {
     if (!markSessionAbandoned?.sweepUntouched) {
       throw new Error('SchoolMaintenanceExecutor requires markSessionAbandoned with sweepUntouched');
     }
     this.#markSessionAbandoned = markSessionAbandoned;
+    this.#sweepAnswerSheets = sweepAnswerSheets;
     this.#defaultOlderThanDays = olderThanDays;
     this.#logger = logger;
   }
@@ -45,7 +49,7 @@ export class SchoolMaintenanceExecutor {
 
   /**
    * @param {string} jobId
-   * @param {{olderThanDays?: number, dryRun?: boolean}} [options] - from the job's own config
+   * @param {{olderThanDays?: number, leakAfterHours?: number, dryRun?: boolean}} [options] - from the job's own config
    * @param {{executionId?: string}} [context]
    */
   async execute(jobId, options = {}, context = {}) {
@@ -55,17 +59,36 @@ export class SchoolMaintenanceExecutor {
     const olderThanDays = Number.isInteger(options?.olderThanDays) && options.olderThanDays > 0
       ? options.olderThanDays
       : this.#defaultOlderThanDays;
+    const leakAfterHours = Number.isFinite(options?.leakAfterHours) && options.leakAfterHours > 0
+      ? options.leakAfterHours
+      : undefined;
     const dryRun = options?.dryRun === true;
 
-    const result = await this.#markSessionAbandoned.sweepUntouched({ olderThanDays, dryRun });
+    let result;
+    let sessionError = null;
+    try {
+      result = await this.#markSessionAbandoned.sweepUntouched({ olderThanDays, dryRun });
+    } catch (error) {
+      sessionError = error;
+    }
+    // A broken session sweep must not also leave leaked card rows in place.
+    const answerSheets = this.#sweepAnswerSheets
+      ? await this.#sweepAnswerSheets.execute({ dryRun, ...(leakAfterHours ? { leakAfterHours } : {}) })
+      : null;
+    if (sessionError) throw sessionError;
     this.#logger.info?.('school.maintenance.sweep-ran', {
       executionId: context?.executionId ?? null,
       olderThanDays,
       dryRun,
       swept: result.swept.length,
       skipped: result.skipped.length,
+      ...(answerSheets ? {
+        leaksRecovered: answerSheets.leaksRecovered?.length ?? 0,
+        writtenOff: answerSheets.writtenOff?.length ?? 0,
+        gapsAccepted: answerSheets.gapsAccepted?.length ?? 0,
+      } : {}),
     });
-    return result;
+    return answerSheets ? { ...result, answerSheets } : result;
   }
 }
 

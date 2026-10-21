@@ -52,6 +52,14 @@ The standard BLE Heart Rate Measurement characteristic:
 | 1-2 | HR value | UINT16 little-endian BPM (if flag bit 0 = 1) |
 | 3+ | RR-intervals | Optional (not used) |
 
+### Readings the bridge withholds
+
+The garage bridge reports no HR (the packet is dropped, or `ComputedHeartRate` is `null`) when:
+
+- **BLE:** the strap supports skin-contact sensing (flag bit 1) and reports no contact (flag bit 2 clear). A strap off the chest is not reading a heart.
+- **BLE and ANT+:** the value is outside 50–230 bpm.
+- **ANT+ only — beat gate** (`satellites/fitness-controller/src/hrBeatGate.mjs`): a strap waking from sleep replays its pre-sleep HR and then sends zeros on a frozen `BeatCount`. After a strap is first seen or has been silent more than 5 s, HR is withheld until `BeatCount` (8-bit, wraps) has advanced twice; while streaming, HR is withheld whenever the count has not advanced for more than 3 s. The bridge logs one `HR beat-gate open after <ms>` line per wake.
+
 ## Configuration
 
 ### Environment Variable

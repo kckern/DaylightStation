@@ -108,16 +108,25 @@ describe('School keypad refusal that a child can act on', () => {
 });
 
 describe('School keypad outage layout', () => {
-  it('reserves the whole message-and-retry band above the keys', () => {
-    const status = styleRule('.school-selfservice__status');
-    const message = styleRule('.school-selfservice__message');
-    const retry = styleRule('.school-selfservice__retry');
+  it('keeps the outage band under the keys, so the code boxes sit on the pad', () => {
+    const { container } = render(<Keypad onSubmit={vi.fn()} message="Server is down" degraded onRetry={vi.fn()} />);
+    const root = container.querySelector('.school-selfservice');
+    const order = [...root.children].map((el) => el.className.split(' ')[0]);
+    expect(order.indexOf('school-selfservice__entry')).toBeLessThan(order.indexOf('school-selfservice__pad'));
+    expect(order.indexOf('school-selfservice__pad')).toBeLessThan(order.indexOf('school-selfservice__status'));
+    // Nothing above the keys changes height, so a fixed band is no longer needed.
+    expect(styleRule('.school-selfservice__status')).not.toContain('height: clamp(7.25rem, 15vh, 8rem)');
+    expect(styleRule('.school-selfservice__message')).toContain('white-space: nowrap');
+    expect(styleRule('.school-selfservice__retry')).toContain('flex: 0 0 52px');
+  });
 
-    // 52px retry + its 0.45rem gap + one text line needs more than the old
-    // 3.5rem band. Keeping it fixed prevents a failed request from painting a
-    // button on top of the first keypad row.
-    expect(status).toContain('height: clamp(7.25rem, 15vh, 8rem)');
-    expect(message).toContain('white-space: nowrap');
-    expect(retry).toContain('flex: 0 0 52px');
+  // jsdom has no layout, so this pins the RULE: a vertically centred column
+  // re-centres when the band under the keys grows (~85px for an outage), and
+  // the code boxes and keys jump. Top-anchored, the pad's position cannot
+  // depend on anything below it; only "Turn off screen" moves down.
+  it('anchors the keypad column at the top of the lock split, so an outage cannot move the keys', () => {
+    const rule = styleRule('.school-lock-split > .school-selfservice');
+    expect(rule).toContain('align-self: start');
+    expect(rule).not.toContain('align-self: center');
   });
 });

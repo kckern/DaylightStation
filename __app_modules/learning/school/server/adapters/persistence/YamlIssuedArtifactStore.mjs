@@ -143,7 +143,7 @@ export class YamlIssuedArtifactStore {
   async put({ artifactId, bytes, pageCount = null, issuedAt, sessionId = null, sessionIds = null, learnerId = null,
     unitId = null, captureKind = 'original', worksheetInstanceId = null, allocation = null,
     kind = 'worksheet', document = null, renderContext = null, parentArtifactIds = [],
-    representation = null, sourceDocument = null, supersedeUndelivered = false } = {}) {
+    representation = null, sourceDocument = null, supersedeUnissued = false } = {}) {
     const mediaType = representation?.mediaType ?? 'application/pdf';
     const generatedPdf = WORKSHEET_KINDS.has(kind) && mediaType === 'application/pdf';
     if (!validId(artifactId) || (!generatedPdf && !Buffer.isBuffer(bytes))) {
@@ -159,6 +159,7 @@ export class YamlIssuedArtifactStore {
         sourceDocument, renderContext, allocation, worksheetInstanceId,
       });
       const renderInputSha256 = generatedPdf ? renderInputDigest(normalizedInputs) : null;
+      let superseded;
       if (existing) {
         const same = generatedPdf
           ? existing.manifest.renderInputSha256 != null
@@ -170,12 +171,18 @@ export class YamlIssuedArtifactStore {
           return existing;
         }
         if (same) return existing;
-        // A recipe retained before a print that never reached paper names a
-        // card window that was released. The caller asserts that case; the
-        // retry's recipe replaces it rather than locking the session forever.
-        if (!(generatedPdf && supersedeUndelivered)) {
+        // A recipe is frozen because paper was cut from it. One whose session
+        // never recorded an issue (the print timed out, and its card rows were
+        // released) describes no sheet anyone can scan, so the caller's retry
+        // may replace it. The replaced digest stays on record as lineage.
+        if (!supersedeUnissued || !generatedPdf || existing.manifest.renderInputSha256 == null) {
           throw new DomainInvariantError(`issued artifact ${artifactId} is immutable`, { code: 'ARTIFACT_IMMUTABLE' });
         }
+        superseded = {
+          renderInputSha256: existing.manifest.renderInputSha256,
+          issuedAt: existing.manifest.issuedAt ?? null,
+          allocation: existing.manifest.allocation ?? null,
+        };
       }
       // The id is hierarchical now, so the leaf's own directory has to exist —
       // `mkdir(root)` alone was enough only while every artifact was one flat
@@ -215,14 +222,14 @@ export class YamlIssuedArtifactStore {
         // frozen semantic record used by their separately labelled replay.
         ...(sourceDocument ? { sourceDocument: structuredClone(sourceDocument) } : {}),
         parentArtifactIds: [...new Set(parentArtifactIds.filter(Boolean))],
-        ...(existing ? { supersededRenderInputSha256: existing.manifest.renderInputSha256 ?? null } : {}),
+        ...(superseded ? { supersedes: [...(existing.manifest.supersedes ?? []), superseded] } : {}),
       };
       const nonce = `${process.pid}-${Date.now()}`;
       const manifestTmp = `${this.#manifest(artifactId)}.${nonce}.tmp`;
       if (generatedPdf) {
         writeFileExclusive(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }));
         renameFile(manifestTmp, this.#manifest(artifactId));
-        return { manifest, bytes: null };
+        return { manifest, bytes: null, ...(superseded ? { superseded } : {}) };
       }
       const extension = typedRepresentation?.extension ?? 'pdf';
       const payload = this.#payload(artifactId, extension);

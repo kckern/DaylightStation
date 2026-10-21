@@ -27,6 +27,24 @@ function capitalize(str) {
 }
 
 /**
+ * Providers that can be re-authorized from here. The link starts a full-page
+ * OAuth redirect handled by the backend (/api/v1/admin/oauth/...).
+ */
+const RECONNECT_LINKS = {
+  withings: { href: '/api/v1/admin/oauth/withings/connect', label: 'Reconnect Withings' },
+};
+
+function ReconnectButton({ provider }) {
+  const link = RECONNECT_LINKS[provider];
+  if (!link) return null;
+  return (
+    <Button component="a" href={link.href} variant="light">
+      {link.label}
+    </Button>
+  );
+}
+
+/**
  * Display row with label and value.
  */
 function InfoRow({ label, children }) {
@@ -118,6 +136,9 @@ function IntegrationDetail() {
         <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
           {loadError}
         </Alert>
+        {/* Harvester-only providers (e.g. Withings) may not be listed in
+            integrations.yml; keep the reconnect reachable anyway. */}
+        <Group><ReconnectButton provider={provider} /></Group>
       </Stack>
     );
   }
@@ -217,14 +238,17 @@ function IntegrationDetail() {
       {/* Test Connection */}
       <Paper withBorder p="md">
         <Text size="sm" fw={600} mb="sm">Test Connection</Text>
-        <Button
-          leftSection={<IconRefresh size={16} />}
-          variant="light"
-          onClick={handleTestConnection}
-          loading={testing}
-        >
-          Test Connection
-        </Button>
+        <Group gap="sm">
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="light"
+            onClick={handleTestConnection}
+            loading={testing}
+          >
+            Test Connection
+          </Button>
+          <ReconnectButton provider={provider} />
+        </Group>
 
         {testResult && (
           <Paper withBorder p="md" mt="md">

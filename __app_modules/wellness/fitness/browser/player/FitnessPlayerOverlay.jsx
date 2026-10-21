@@ -282,7 +282,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
       {primaryOverlay}
       {promotedCycleLock}
       {showFullscreenVitals ? (
-        <FullscreenVitalsOverlay visible={showFullscreenVitals} />
+        <FullscreenVitalsOverlay visible={showFullscreenVitals} governanceStateOverride={governanceState} />
       ) : null}
       <CycleRiderSwapModal
         isOpen={isSwapModalOpen}

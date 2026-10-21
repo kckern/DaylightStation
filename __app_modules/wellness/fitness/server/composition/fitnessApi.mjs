@@ -207,7 +207,10 @@ export function createFitnessApiRouter(config) {
     frameRenderer: createTimelapseFrameRenderer(timelapseConfig || {}),
     artifactStore: new FilesystemTimelapseArtifactStore({
       mediaDir: configService.getMediaDir(),
-      videoEncoder: new FfmpegVideoAdapter({ logger }),
+      // A 3000-frame recap encodes in ~100s on a quiet host; the adapter's 120s
+      // default timed out under load and each hourly retry re-rendered every
+      // frame on the main thread (10 attempts / 7.5h for one 10-16 session).
+      videoEncoder: new FfmpegVideoAdapter({ logger, timeoutMs: 15 * 60_000 }),
       logger,
     }),
     posterProvider: plexPosterProvider.getPoster.bind(plexPosterProvider),
@@ -476,7 +479,7 @@ export function createFitnessPlayableModule({
   logger = console,
 } = {}) {
   const fitnessConfigService = new FitnessConfigService({
-    configProjection: new FitnessConfigProjection({ configService }),
+    configProjection: new FitnessConfigProjection({ configService, logger }),
     logger,
   });
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';

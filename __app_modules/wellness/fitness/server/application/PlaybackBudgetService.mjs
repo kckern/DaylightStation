@@ -1,5 +1,5 @@
 import { normalizePlaybackBudgetPolicies, reconcileBudget, reserveBudget, settleBudget, budgetView } from '../domain/services/playbackBudget.mjs';
-import { classifySupervision } from '../../shared/supervision.mjs';
+import { classifySupervision, isGovernedChildId } from '../../shared/supervision.mjs';
 import { hasGovernedLabel } from '../../shared/governedContent.mjs';
 
 /** Durable, serialized allowance owner. The browser may spend only returned grants. */
@@ -66,8 +66,9 @@ export class PlaybackBudgetService {
   observe(request) {
     return this.#serial(request.householdId,async()=>{
       const setup=this.#setup(request);
-      const {streamId,sequence,previousGrantId,participantIds=[],contentId=null}=request;
-      if(typeof streamId!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(streamId)||!Number.isSafeInteger(sequence)||sequence<1||!Array.isArray(participantIds)||participantIds.length>100||participantIds.some(id=>typeof id!=='string')||contentId!==null&&(typeof contentId!=='string'||contentId.length>256)) throw new TypeError('Invalid playback budget observation');
+      const {streamId,sequence,previousGrantId,participantIds=[],guestIds=[],contentId=null}=request;
+      const idList=list=>Array.isArray(list)&&list.length<=100&&list.every(id=>typeof id==='string'&&id.length<=100);
+      if(typeof streamId!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(streamId)||!Number.isSafeInteger(sequence)||sequence<1||!Array.isArray(participantIds)||participantIds.length>100||participantIds.some(id=>typeof id!=='string')||!idList(guestIds)||contentId!==null&&(typeof contentId!=='string'||contentId.length>256)) throw new TypeError('Invalid playback budget observation');
       const key={householdId:setup.householdId,deviceId:setup.deviceId,localDate:setup.localDate};
       const value=await this.#load(key); const receiptKey=`${streamId}:${sequence}`;
       const knownStream = Object.hasOwn(value.sequences, `${streamId}:seq`);
@@ -104,13 +105,20 @@ export class PlaybackBudgetService {
       // A newly mounted browser owns future roster facts. Older streams may
       // settle existing grants, but cannot remove supervision or refill time.
       value.activeStreamId = streamId;
-      const {supervised}=classifySupervision({participantIds,supervisorIds:setup.config.governance?.superusers??[]});
-      const governed=!supervised && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
+      // Same rule as the browser: guest assignments (from the kiosk roster) never
+      // supervise and are never metered; a governed child is not a supervisor,
+      // not exempt and not a guest.
+      const supervisorIds=setup.config.governance?.superusers??[];
+      const {supervised}=classifySupervision({participantIds,supervisorIds,guestIds});
+      // No governed child on the roster is NOT `supervised`: supervised resets the day's budget.
+      const lists={supervisorIds,exemptIds:setup.config.governance?.exemptions??[],guestIds};
+      const hasSubject=participantIds.some(id=>isGovernedChildId(id,lists));
+      const governed=!supervised && hasSubject && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
       for(const policy of setup.policies) {
         const prior=Object.hasOwn(value.policies,policy.id)?value.policies[policy.id]:null;
         let bucket=reconcileBudget(prior,policy,{localDate:setup.localDate,supervised});
         if(prior&&bucket.generation!==prior.generation)this.#logger?.info?.('fitness.playback_budget.reset',{deviceId:setup.deviceId,policyId:policy.id,generation:bucket.generation,reason:supervised?'supervisor_join':'local_day'});
-        if(governed&&!supervised&&request.requestGrant!==false) {
+        if(governed&&!supervised&&hasSubject&&request.requestGrant!==false) {
           const result=reserveBudget(bucket,policy,{id:`${setup.localDate}/${bucket.generation}/${streamId}/${sequence}/${policy.id}`,streamId,nowMs:setup.nowMs,nextResetAtMs:setup.nextResetAt});
           bucket=result.record;grants[policy.id]=result.grant;
         }
@@ -121,7 +129,7 @@ export class PlaybackBudgetService {
       value.sequences[`${streamId}:seq`]=sequence;value.receipts[receiptKey]=view;
       const receipts=Object.keys(value.receipts);for(const id of receipts.slice(0,Math.max(0,receipts.length-256)))delete value.receipts[id];
       await this.#store.save({...key,value});
-      this.#logger?.info?.('fitness.playback_budget.observed',{deviceId:setup.deviceId,localDate:setup.localDate,generation:view.generation,supervised,policies:view.policies.map(({id,spentMs,remainingMs,expired})=>({id,spentMs,remainingMs,expired}))});
+      this.#logger?.debug?.('fitness.playback_budget.observed',{deviceId:setup.deviceId,localDate:setup.localDate,generation:view.generation,supervised,policies:view.policies.map(({id,spentMs,remainingMs,expired})=>({id,spentMs,remainingMs,expired}))});
       return view;
     });
   }

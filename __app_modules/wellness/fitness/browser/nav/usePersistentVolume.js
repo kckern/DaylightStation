@@ -17,7 +17,10 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export function usePersistentVolume({ grandparentId, parentId, trackId, playerRef } = {}) {
+// `reapplyKey` re-applies the stored level without changing where it is
+// stored: a music player keyed per playlist passes the current track here so
+// each new track's audio element gets the playlist level.
+export function usePersistentVolume({ grandparentId, parentId, trackId, playerRef, reapplyKey } = {}) {
   const { getVolume, setVolume, applyToPlayer, version } = useVolumeStore();
   const ids = useMemo(
     () => ({
@@ -59,7 +62,7 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
     if (playerRef?.current) {
       applyDucked(resolved);
     }
-  }, [ids, playerRef, getVolume, applyDucked, version]);
+  }, [ids, playerRef, getVolume, applyDucked, version, reapplyKey]);
 
   const persistVolume = useCallback(
     (nextLevel) => {

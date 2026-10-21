@@ -163,6 +163,18 @@ controls at all**, deep link included: a damaged year of evidence must never
 present as a shelf a grown-up starts "fixing". Full design:
 `ops:docs/_wip/plans/2026-09-06-teacher-reading-admin-design.md`.
 
+**Log a book** sits on the global navigation (rail and phone bar) as an action
+rather than a section: it has no URL and opens over whatever page is showing,
+because it is a thirty-second job a grown-up does with a book in hand. It scans
+first, shows the book, then every enrolled learner's face with the server's
+"Logged today" and "Reading now" badges, nobody preselected. It reads
+`GET /school/teacher/books/:isbn/readers` and writes through the same per-child
+reading verbs as the Reading tab, one teacher write for the whole batch, with a
+✓/✗ and a Retry per child; see `reading-log.md` §5. Opening it from the phone
+rail closes the rail first, and closing it returns focus to the control that
+opened it (the menu button, from the phone rail). The phone bar's grid sizes
+itself to its item count.
+
 **Cards** (tab id `words`) is one panel per card-ladder deck the learner is enrolled in
 (`CardLadderWordsPanel`). The word table carries the grown-up word controls
 (reset, mark mastered, exclude, re-grade a typed answer, drop a deck from the

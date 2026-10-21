@@ -53,11 +53,15 @@
 
   &__hint { font-size: 0.85rem; opacity: 0.75; width: 100%; }
 
+  // Always one hint line plus one row of avatar buttons (a hidden placeholder
+  // while loading or empty), so the buttons below never move when it lands.
   &__savers {
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 0.5rem;
   }
+  &__placeholder { visibility: hidden; }
 
   &__btn {
     display: inline-flex;
@@ -90,6 +94,16 @@
   }
 
   &__saver { padding-left: 0.4rem; }
+
+  // Save as me (primary, grows) beside Just play (secondary).
+  &__choice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    > .emu-player-panel__btn--primary { flex: 1 1 auto; }
+  }
+
+  &__offkiosk { flex: 1 1 auto; font-size: 0.9rem; opacity: 0.75; }
 
   &__conflict p { margin: 0 0 0.6rem; }
 

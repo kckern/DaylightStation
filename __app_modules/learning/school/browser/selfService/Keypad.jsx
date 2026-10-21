@@ -20,9 +20,9 @@
  * reaching for the next digit. The refusal now happens IN the slots: the row
  * shakes, then the six digits turn over one by one into REJECT_WORD, hold, and
  * wipe back to empty. Nothing moves, the whole thing is over in under two
- * seconds, and the status row below keeps a reserved height so the messages
- * that still use words (a backend outage plus its retry button, or a refusal
- * that tells the child what to do instead) do not shift the pad either.
+ * seconds, and the status band sits under the keys, so the messages that
+ * still use words (a backend outage plus its retry button, or a refusal that
+ * tells the child what to do instead) do not shift the pad either.
  *
  * THE INTERACTION OUTLASTS THE ENTRY. Auto-submit made the sixth DIGIT the
  * child's finishing gesture, and `submit` empties the pad before the round
@@ -119,8 +119,8 @@ const ABANDONED_ENTRY_MS = 60_000;
  * @param {boolean} [props.busy] - a resolve is in flight.
  * @param {string|null} [props.message] - the degraded sentence, or the words a
  *   child-fixable refusal carries (an old sheet, a spent code, a burst). A
- *   plain wrong code arrives with none (see the header). Either way it sits in
- *   the reserved status row and displaces nothing.
+ *   plain wrong code arrives with none (see the header). Either way it is shown
+ *   in the status band under the keys and displaces nothing above it.
  * @param {boolean} [props.degraded] - the message is a backend fault, so offer
  *   a retry rather than making the child re-type a code that was never wrong.
  * @param {() => void} [props.onRetry]
@@ -510,40 +510,6 @@ export default function Keypad({
         {reject ? (refusalWords || 'That code did not work. Type it again.') : ''}
       </p>
 
-      {/* Reserved height, always rendered: this row is the only thing between
-          the slots and the pad, so it may never change the pad's position by
-          appearing.
-
-          WORDS FOR AN OUTAGE, AND FOR A REFUSAL A CHILD CAN ACT ON. A wrong
-          code says what it has to say in the slots above, so the hook leaves
-          `message` empty for it — "Try again." underneath would be the same
-          refusal twice. An old sheet, a spent code or a burst DOES carry
-          something to do (get today's card, ask a grown-up, wait), so its
-          sentence sits here beside the animation, and goes away as soon as the
-          next code is started so it never captions the wrong attempt. */}
-      <div className="school-selfservice__status">
-        {message && degraded && (
-          <p className="school-selfservice__message is-degraded">
-            {message}
-          </p>
-        )}
-        {refusalWords && (
-          <p className="school-selfservice__message is-refusal">
-            {refusalWords}
-          </p>
-        )}
-        {degraded && onRetry && (
-          <button
-            type="button"
-            className="school-selfservice__retry"
-            disabled={busy}
-            {...tap(onRetry)}
-          >
-            Try again
-          </button>
-        )}
-      </div>
-
       <div className="school-selfservice__pad">
         {DIGITS.map((digit) => (
           <button
@@ -582,6 +548,45 @@ export default function Keypad({
         >
           ⌫
         </button>
+      </div>
+
+      {/* The outage band sits UNDER the keys and is sized to its content, so
+          the code boxes sit directly on the pad. The keys stay put because of
+          TWO things together: nothing above the pad changes height (the title
+          and the code boxes are fixed), and the lock split anchors this column
+          at the top rather than centring it (`.school-lock-split >
+          .school-selfservice` in School.scss) — a centred column would
+          re-centre and lift the pad by half of whatever grew below it. So an
+          outage grows the column downward and moves only "Turn off screen".
+
+          WORDS FOR AN OUTAGE, AND FOR A REFUSAL A CHILD CAN ACT ON. A wrong
+          code says what it has to say in the slots above, so the hook leaves
+          `message` empty for it — "Try again." underneath would be the same
+          refusal twice. An old sheet, a spent code or a burst DOES carry
+          something to do (get today's card, ask a grown-up, wait), so its
+          sentence sits here, and goes away as soon as the next code is
+          started so it never captions the wrong attempt. */}
+      <div className="school-selfservice__status">
+        {message && degraded && (
+          <p className="school-selfservice__message is-degraded">
+            {message}
+          </p>
+        )}
+        {refusalWords && (
+          <p className="school-selfservice__message is-refusal">
+            {refusalWords}
+          </p>
+        )}
+        {degraded && onRetry && (
+          <button
+            type="button"
+            className="school-selfservice__retry"
+            disabled={busy}
+            {...tap(onRetry)}
+          >
+            Try again
+          </button>
+        )}
       </div>
 
       <button

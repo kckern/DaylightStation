@@ -6,6 +6,7 @@ import { useDeadlineCountdown } from "../../shared/index.js";
 import GovernanceAudioPlayer from "./GovernanceAudioPlayer.jsx";
 import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
+import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
 import "./GovernanceStateOverlay.scss";
 
 const TOTAL_NOTCHES = 56;
@@ -38,7 +39,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const progressColor = item.currentZone?.color || item.zoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
             return (
               <div
-                className="governance-progress-overlay__chip"
+                className={`governance-progress-overlay__chip${item.status === 'holding' ? ' governance-progress-overlay__chip--holding' : ''}`}
                 key={item.key}
                 style={borderStyle}
               >
@@ -63,7 +64,9 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                       {Number.isFinite(item.heartRate)
                         ? item.heartRate
                         : 'No HR data'}
+                      {item.status === 'holding' ? ' · Holding' : null}
                     </span>
+                    <GovernanceStartBadge statusBadge={{ status: item.status, zoneLabel: item.statusZoneLabel }} />
                   </div>
                 </div>
                 {percentValue != null ? (
@@ -403,15 +406,19 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   };
 
   const renderChipMeta = (row) => {
-    const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
-    const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
-    if (currentHr != null) {
-      if (targetHr != null) {
-        return `${currentHr} / ${targetHr}`;
+    const base = (() => {
+      const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
+      const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
+      if (currentHr != null) {
+        if (targetHr != null) {
+          return `${currentHr} / ${targetHr}`;
+        }
+        return String(currentHr);
       }
-      return String(currentHr);
-    }
-    return row.groupLabel || 'No HR data';
+      return row.groupLabel || 'No HR data';
+    })();
+    // D5: in the zone, hold still running — not missing.
+    return row.status === 'holding' ? `${base} · Holding` : base;
   };
 
   return (
@@ -514,6 +521,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                 <div className="governance-lock__chip-text governance-lock__chip-text--inline">
                   <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
+                  <GovernanceStartBadge statusBadge={{ status: row.status, zoneLabel: row.statusZoneLabel }} />
                 </div>
               </div>
             );

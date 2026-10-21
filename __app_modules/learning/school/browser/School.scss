@@ -59,7 +59,7 @@
   // the room, which rules out anything olive or yellow-green.
   --school-board-retry: #e2a33c;
   --school-board-retry-ink: #2a1a05;
-  // A day the house took off, on the term grid. Blue, the one colour the board
+  // A day the house took off, on the day squares. Blue, the one colour the board
   // did not already use: a vacation is not a miss (grey) and not done (green),
   // and it has to read as neither from across the room.
   --school-board-exempt: #4f8fd6;
@@ -1858,14 +1858,12 @@
   overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 
-// FIXED height, not min-height. This row sits between the slots and the pad, so
-// anything that appears in it (the outage sentence, its retry button) must not
-// shove the keys down the screen mid-tap. It reserves room for BOTH controls:
-// the old 3.5–4.5rem row was shorter than the 52px button by itself, so a
-// wrapped outage sentence made the retry button overflow into the keypad.
+// This band sits UNDER the keys, so an outage sentence and its retry button can
+// grow it without moving the code boxes or the keys above — provided the column
+// is top-anchored, which the lock split does (see `.school-lock-split`).
 .school-selfservice__status {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0.45rem; width: 100%; height: clamp(7.25rem, 15vh, 8rem);
+  gap: 0.45rem; width: 100%; min-height: 0;
 }
 .school-selfservice__message {
   max-width: calc(100% - 1rem); margin: 0; font-size: clamp(1rem, 2.5vw, 1.25rem); font-weight: 700;
@@ -2995,9 +2993,18 @@
 
   &[data-side='keypad-right'] { direction: rtl; > * { direction: ltr; } }
   &[data-side='keypad-left'] > * { direction: ltr; }
+  // TOP-ANCHORED, NOT CENTRED: the keys never move. A centred column
+  // re-centres whenever anything in it changes height, and the outage band
+  // and the screen-off sentence both sit UNDER the pad — an outage (~85px)
+  // used to lift the code boxes and keys by half its height. Anchored at a
+  // fixed offset from the top, the pad's position depends only on what is
+  // above it (the title and the code boxes, both fixed), so an outage pushes
+  // only "Turn off screen" down. The top padding stands in for the centring:
+  // at 1280×800 it lands the pad about where centring put it.
   > .school-selfservice {
-    justify-self: center; align-self: center;
-    padding: clamp(1.25rem, 3vw, 3rem); box-sizing: border-box;
+    justify-self: center; align-self: start;
+    padding: clamp(1.25rem, 15vh, 8rem) clamp(1.25rem, 3vw, 3rem) clamp(1.25rem, 3vw, 3rem);
+    box-sizing: border-box;
   }
 }
 // A COLUMN, not a canvas. The door was absolutely positioned here first and
@@ -3059,16 +3066,16 @@
   }
   &__row {
     flex: 1 1 0; min-height: 0;
-    // FOUR EQUAL QUARTERS, a hairline between each. Time widens left to right
-    // — who, today, this week, the term — and the card is cut evenly so the
-    // eye finds the same column on every row. The day quarter alone may grow
-    // past its share: a nine-pin day needs a four-pin base, and the pins are
-    // the one thing here that cannot shrink into illegibility.
+    // FOUR PARTITIONS, a hairline between each: who · today · coins · the
+    // last two weeks, cut the same on every card so the eye finds the same
+    // column on every row. The day partition alone may grow past its share:
+    // a nine-pin day needs a four-pin base, and the pins are the one thing
+    // here that cannot shrink into illegibility.
     display: grid;
-    // Not quite even quarters: the face needs less than a fourth, the pins
-    // and the sixteen-week grid need more, and the week strip is seven
-    // squares and a number.
-    grid-template-columns: 0.8fr minmax(max-content, 1.2fr) 0.75fr 1.35fr;
+    // Not even: the face needs less than a fourth, the pins and their count
+    // need more, the coins are a fixed column, and the two weeks are seven
+    // squares a row with the rings beneath.
+    grid-template-columns: 0.8fr minmax(max-content, 1.25fr) clamp(6.5rem, 13vw, 10rem) minmax(max-content, 0.9fr);
     align-items: stretch; column-gap: 0;
     padding: clamp(0.5rem, 1.4vh, 0.9rem) clamp(0.7rem, 1.3vw, 1rem);
     --disc-cap: clamp(1.75rem, 5.2vh, 2.8rem);
@@ -3104,41 +3111,26 @@
       font-size: clamp(1.3rem, 4.3vh, 2.2rem);
     }
   }
-  // FOUR PARTITIONS, time widening left to right: who · today · this week ·
-  // the term. Each is a column with its own number INSIDE it. The old card
+  // FOUR PARTITIONS, time widening left to right: who · today · coins ·
+  // the days. Each is a column with its own number INSIDE it. The old card
   // stacked a count, the rings and a strip of discs in one right-hand block,
   // so the count sat away from the discs it counted and a busy day made the
   // strip longer, not taller.
   // Every partition after the first wears the divider on its left edge.
-  &__day, &__week, &__term {
+  &__day, &__days {
     min-width: 0; min-height: 0;
     border-left: 1px solid var(--school-border);
     padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
     display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
     gap: clamp(0.25rem, 0.8vh, 0.5rem);
-    // The title sits on ONE LINE across the row — at the top of every
-    // partition — and the content centres in what is left beneath it.
-    > :nth-child(2) { margin-top: auto; }
-    > :last-child { margin-bottom: auto; }
-  }
-  // A quiet title on each timed partition; the face needs none.
-  &__part-title {
-    margin: 0; flex: none; line-height: 1;
-    font-size: clamp(0.65rem, 1.5vh, 0.85rem); font-weight: 700;
-    color: var(--school-muted); letter-spacing: 0.02em;
   }
   &__day {
     // The pins size themselves from THIS box's height (container units
     // below), so it has to be a size container.
     container-type: size;
-    // This partition has NO title, unlike its two neighbours, so the shared
-    // "title on the top line, content centred beneath it" rule above has
-    // nothing to skip past and would centre the BAR instead of the pins.
-    // Here the pins are the content and they get the whole box.
     justify-content: center;
-    > :nth-child(2) { margin-top: 0; }
-    > :last-child { margin-bottom: 0; }
   }
+  &__days { justify-content: center; }
   // Anchored to the rail's padded box, then pulled down by half its own height
   // so it sits exactly astride the avatar's bottom edge. `translate(-50%, 50%)`
   // does both the centring and the straddle, so the overlap stays half however
@@ -3187,18 +3179,20 @@
     // The 0.78 pitch this replaced was a guess, and at 0.78 the rows bit
     // into each other.
     //
-    // THE DISC IS SIZED FROM WHAT THE PARTITION ACTUALLY HAS: `--rows` and
+    // THE DISC IS SIZED FROM WHAT THE PARTITION ACTUALLY HAS: `--stack` and
     // `--base` come from the component; the height is the day box's own
-    // (`cqh`) less the title and the meter; the width is the box's (`cqw`).
-    // A one-row day gets the cap; a three-row day gets whatever fits.
+    // (`cqh` — `__day` is the size container) less a little breathing room;
+    // the width is the PINS ROOM's (`cqw` — `__pins-room` is an inline-size
+    // container, so it measures what is left beside the count, while `cqh`
+    // passes through it to the day box). A one-row day gets the cap; a
+    // three-row day gets whatever fits.
     // `--stack` is Σ of the per-row pitch factors (√3/2 for a nesting pair,
     // 1 for a pair that cannot nest — see `pitchFactors`), so the stack's
     // height is disc·(1 + stack) + gap·stack.
-    // What the bar and the gap above it take. This was 3.7rem when the
-    // partition also carried a "Today" heading and the bar carried "2 of 7"
-    // underneath — two lines of type that repeated what the pins and the card's
-    // own green already said, and charged the pins ~2.5rem of height for it.
-    // Both are gone; the discs got the height.
+    // 1.2rem of breathing room off the day box's height (the `+N` badges
+    // ride above the top row). This was 3.7rem when the partition also
+    // carried a "Today" heading and a "2 of 7" bar; both are gone and the
+    // discs got the height.
     --room-h: calc(100cqh - 1.2rem);
     --disc-by-height: calc((var(--room-h) - var(--disc-gap) * var(--stack, 0)) / (1 + var(--stack, 0)));
     --disc-by-width: calc((100cqw - (var(--base, 1) - 1) * var(--disc-gap)) / var(--base, 1));
@@ -3300,22 +3294,29 @@
     opacity: 0.75; letter-spacing: 0.03em;
     font-variant-numeric: tabular-nums;
   }
-  // THE METER: one segment per assignment, filled as each is done. Green
-  // segments are the day's done discs restated as a bar a doorway can read; the
-  // hollow ones are what is left. No words under it — the segments are the
-  // count, and the count is on the progressbar's aria-label for anyone who
-  // needs it read out.
-  &__meter {
-    flex: none; width: min(100%, 11rem);
-    display: flex; flex-direction: column; align-items: center;
+  // The count and the pins, side by side, across the whole day box (stretch,
+  // not shrink-to-fit: the pins room is an inline-size container and has no
+  // intrinsic width of its own to lend the row).
+  &__today {
+    align-self: stretch;
+    display: flex; align-items: center; justify-content: center; gap: clamp(0.6rem, 1.6vw, 1.2rem);
   }
-  &__bar {
-    width: 100%; height: clamp(0.4rem, 1.1vh, 0.6rem);
-    display: grid; grid-template-columns: repeat(var(--segments, 1), 1fr); gap: 2px;
+  // What is left beside the count. An INLINE-size container: the pins' `cqw`
+  // measures this room, so a two-digit count or a 9–10 pin day cannot push
+  // the base row out of the card, while their `cqh` still resolves against
+  // the day box (inline-size containment leaves the block axis alone).
+  &__pins-room {
+    flex: 1 1 0; min-width: 0;
+    container-type: inline-size;
+    // Against the count, not centred in the room: the number and its discs
+    // are one fact, and on a wide card a centred room stranded the count.
+    display: flex; justify-content: flex-start;
   }
-  &__segment {
-    border-radius: 999px; background: var(--school-board-pending);
-    &.is-done { background: var(--school-board-done); }
+  &__left { font-size: clamp(2rem, 7vh, 3.4rem); font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+  &__check {
+    width: clamp(2.2rem, 7vh, 3.4rem); aspect-ratio: 1; border-radius: 50%;
+    display: grid; place-items: center; background: var(--school-board-done); color: #fff;
+    svg { width: 62%; height: 62%; }
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
   // A DAY OFF reads as an answer, not a gap, so it is not dimmed like
@@ -3326,30 +3327,37 @@
   }
   &__status-hint { font-weight: 500; font-size: 0.85em; opacity: 0.7; }
 
-  // (The "DONE" chip that used to replace the count at 100% is gone. A
-  // finished row already turns green end to end — nameplate, card and every
-  // disc — so the chip was a third statement of the same fact, and it was
-  // taking the height from the discs that make the first one.)
+  // At 100% the count gives way to `__check` (above): one mark, no words. The
+  // row is already green end to end, so a caption would say it a third time.
 
-  // RINGS THIS WEEK. Sits under the "x of y" readout in the card's right
-  // column: a second, independent fact (how much the child MOVED) beside the
-  // school-work count, not a competitor to it. Quieter than the status line on
-  // purpose — the discs and their count are still what this board is for.
-  // THIS WEEK as seven squares — the term's current column on its side, the
-  // same cell size, the weekday letters under it. The ring and its count sit
-  // beneath both.
-  &__week-strip {
-    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-    --grid-cell: clamp(7px, 1.35vh, 12px);
-    --grid-gap: 2px;
+  // The days cell as a door to the term popup: no button chrome, the squares
+  // ARE the control.
+  &__days-door {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit;
+    cursor: pointer; border-radius: 6px;
+    // The panel's board pane is `pointer-events: none`; like the book door,
+    // this button alone takes taps back.
+    pointer-events: auto;
   }
-  &__grid--week { --grid-cell: inherit; --grid-gap: inherit; }
+
+  // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
+  &__two-weeks {
+    flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    --grid-cell: clamp(10px, min(2.6vh, 1.6vw), 28px); --grid-gap: 3px;
+  }
+  &__grid--weeks { --grid-cell: inherit; --grid-gap: inherit; }
+  // Last week reads as background to this week (weeks-as-rows is row-major,
+  // Monday first, so the first seven cells are last week).
+  &__grid--weeks .school-daygrid__cell:nth-child(-n + 7) { opacity: 0.65; }
   &__week-letters {
     list-style: none; margin: 0; padding: 0;
     display: grid; grid-template-columns: repeat(7, var(--grid-cell)); gap: var(--grid-gap);
     font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
     color: var(--school-muted); text-align: center;
   }
+  // RINGS THIS WEEK, under the two weeks in the card's right partition: a
+  // second, independent fact (how much the child MOVED), quieter on purpose —
+  // the pins and their count are still what this board is for.
   &__rings {
     flex: 0 0 auto;
     display: flex; flex-direction: row; align-items: center; gap: 0.35em;
@@ -3358,29 +3366,38 @@
     line-height: 1;
   }
   &__rings-count { font-variant-numeric: tabular-nums; }
+  // THE COINS, a fixed column so they line up down all four cards: icon cell
+  // then number cell; silver big, gold and gems smaller under it.
+  &__coins {
+    min-width: 0; border-left: 1px solid var(--school-border);
+    padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
+    display: flex; align-items: center; justify-content: flex-start;
+  }
+  &__coin-grid {
+    display: grid; grid-template-columns: clamp(1.6rem, 4.6vh, 2.4rem) auto;
+    align-items: center; column-gap: 0.45em; row-gap: 0.3em;
+    color: var(--school-text); font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    // THE SILVER SIZE follows the viewport WIDTH as well as its height: the
+    // column is 13vw, and at a 5vh-only size a three-digit figure with its +NN
+    // ran out of the card at 1280×800.
+    --silver: clamp(1.4rem, min(5vh, 2.6vw), 2.6rem);
+    // Room for the hanging +NN: it is absolutely positioned (no layout), so
+    // reserve its width here — about 0.9 of the silver size ("+NN" at half
+    // size is ~0.85 of it, plus a hairline margin) — so "123 +NN" fits.
+    padding-right: calc(var(--silver) * 0.9);
+  }
+  &__coin-icon { justify-self: center; width: 100%; height: auto; }
+  &__coin-icon--gold, &__coin-icon--gem { width: 58%; }
+  // `start`, so each number cell is only as wide as its number and the +N
+  // hangs after THAT number rather than at the end of the column.
+  &__figure { position: relative; justify-self: start; }
+  &__figure--silver { font-size: var(--silver); }
+  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #e2c15a; }
+  &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
+  // Hangs off the end of its number, so it never moves the column.
+  &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.15em; font-size: 0.5em; opacity: 0.45; }
 
-  // THE TERM GRID. Seven rows × one column per week, ~11px cells on the
-  // 1280x800 Portal: eighteen weeks fit in ~230px beside the pins. The grid's
-  // own palette is the household's (green/amber/grey) plus blue for a day
-  // the house took off; the count is never shown here — the card is read from
-  // across a room, and a number in an 11px square is noise.
-  // The grid and its two axes share one column template, declared once on
-  // the plot and read by all three, so a month label can only ever sit over
-  // its own week.
-  &__term-plot {
-    --grid-cell: clamp(6px, 1.3vh, 12px);
-    --grid-gap: 1px;
-    flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  }
-  &__term-axis {
-    list-style: none; margin: 0; padding: 0;
-    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
-    height: 0.7em;
-    font-size: clamp(0.5rem, 1.1vh, 0.62rem); font-weight: 700; line-height: 1;
-    color: var(--school-muted); font-variant-numeric: tabular-nums;
-    li { overflow: visible; white-space: nowrap; }
-    &--months { margin-top: 2px; }
-  }
   &__grid {
     // The day grid declares its own defaults on its root; the plot's values
     // have to be pulled through explicitly or a 1rem cell comes back.
@@ -3394,22 +3411,6 @@
     --grid-unknown-edge: color-mix(in srgb, var(--school-board-ink) 22%, transparent);
     --grid-current: var(--school-board-ink);
     justify-content: flex-end;
-  }
-  // The same footprint as an 18-week grid, so the card does not jump when the
-  // term lands. Shimmers like the pins.
-  &__grid--skeleton {
-    width: calc(16 * (clamp(6px, 1.3vh, 12px) + 1px));
-    height: calc(7 * (clamp(6px, 1.3vh, 12px) + 1px));
-    border-radius: 3px;
-    background: linear-gradient(
-      100deg,
-      var(--school-board-pending) 40%,
-      color-mix(in srgb, var(--school-board-pending) 55%, var(--school-fg)) 50%,
-      var(--school-board-pending) 60%
-    );
-    background-size: 300% 100%;
-    animation: school-board-shimmer 1.4s ease-in-out infinite;
-    opacity: 0.5;
   }
 
   // A CLEARED DAY, VISIBLE FROM THE DOORWAY — and STILL.
@@ -3441,7 +3442,7 @@
 // The cleared-day card no longer animates at all, so only the in-flight
 // skeleton shimmer is left to silence here.
 @media (prefers-reduced-motion: reduce) {
-  .school-status-board__pill--skeleton, .school-status-board__grid--skeleton { animation: none; }
+  .school-status-board__pill--skeleton { animation: none; }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short
  * viewports so the keypad always fits. */
@@ -3709,3 +3710,47 @@
     width: clamp(6rem, 22vh, 10rem); height: clamp(6rem, 22vh, 10rem); flex: 0 0 clamp(6rem, 22vh, 10rem);
   }
 }
+
+// THE TERM POPUP — one learner's whole term over the board. Read-only; a tap
+// anywhere closes it (TermModal.jsx). Cells are sized for a full screen, not
+// the card's 11px.
+.school-term-modal {
+  // Mounted from inside the inert board pane, so it must take taps back, and
+  // it sits above the keypad like the book-scan overlay.
+  pointer-events: auto;
+  position: fixed; inset: 0; z-index: 150;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, #000 72%, transparent);
+  &__sheet {
+    display: flex; flex-direction: column; align-items: center; gap: clamp(0.8rem, 2.5vh, 1.6rem);
+    padding: clamp(1rem, 3vh, 2rem) clamp(1.2rem, 3vw, 2.4rem);
+    border: 1px solid var(--school-border); border-radius: 20px;
+    background: var(--school-surface);
+    max-width: 94vw; max-height: 92vh;
+  }
+  &__header {
+    position: relative; display: flex; align-items: center; gap: 1rem; align-self: stretch;
+    .piano-avatar { width: clamp(3rem, 8vh, 4.5rem); height: clamp(3rem, 8vh, 4.5rem); }
+  }
+  &__title { margin: 0; font-size: clamp(1.4rem, 4vh, 2.2rem); font-weight: 800; }
+  &__close {
+    margin-left: auto; width: 48px; height: 48px; border-radius: 50%;
+    display: grid; place-items: center; border: 1px solid var(--school-border);
+    background: transparent; color: inherit; cursor: pointer;
+    svg { width: 22px; height: 22px; }
+  }
+  &__plot {
+    --grid-cell: clamp(14px, min(4.4vh, 3vw), 34px);
+    --grid-gap: 3px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  &__axis {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(var(--grid-cols, 1), var(--grid-cell)); gap: var(--grid-gap);
+    font-size: clamp(0.7rem, 1.8vh, 0.95rem); font-weight: 700; line-height: 1.2;
+    color: var(--school-muted); font-variant-numeric: tabular-nums;
+    li { overflow: visible; white-space: nowrap; }
+  }
+  &__grid { --grid-cell: inherit; --grid-gap: inherit; --grid-radius: 4px; }
+}
+

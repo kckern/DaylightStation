@@ -25,6 +25,10 @@ export class BleHeartRateDecoder {
     const sensorContactSupported = (flags >> 1) & 0x01;
     const sensorContactDetected = (flags >> 2) & 0x01;
 
+    // A strap that can sense skin contact and says it has none is not reading a
+    // heart: whatever value it sends is a held/replayed number, not a beat.
+    if (sensorContactSupported && !sensorContactDetected) return null;
+
     let hr;
     if (isUint16) {
       if (data.length < 3) return null;

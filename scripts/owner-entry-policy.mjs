@@ -32,6 +32,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/piano/cli/piano-voice-sweep-analyze.cli.mjs': null,
   '__app_modules/learning/piano/cli/piano-voice-sweep-slice.cli.mjs': null,
   '__app_modules/learning/school/cli/booklog.cli.mjs': null,
+  '__app_modules/media/art/cli/ambiance.cli.mjs': null,
 
   '__app_modules/learning/piano/server/composition/board-game-day.mjs': 'composition',
   '__app_modules/learning/piano/server/composition/pianoGames.mjs': 'composition',

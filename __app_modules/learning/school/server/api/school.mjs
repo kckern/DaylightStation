@@ -66,6 +66,7 @@ export function createSchoolRouter({
   moveReading = null,
   deleteReading = null,
   undoReadingRevision = null,
+  getBookReaders = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
   invalidateSessionEvidence = null,
@@ -1172,6 +1173,7 @@ export function createSchoolRouter({
     getBookShelf, getLearnerReadings, updateReading,
     addReadingEntry, updateReadingEntry, deleteReadingEntry,
     addReadingForLearner, moveReading, deleteReading, undoReadingRevision,
+    getBookReaders,
   });
   // Opened directly by window.open so the popup is created during the click
   // gesture. This signs a five-minute read-only scope and redirects to the

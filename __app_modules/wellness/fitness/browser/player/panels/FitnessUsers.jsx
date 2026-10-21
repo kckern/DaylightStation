@@ -11,6 +11,8 @@ import { StepMatCard } from "./RealtimeCards/StepMatCard.jsx";
 import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
+import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
+import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 
@@ -109,7 +111,7 @@ const UI_LABELS = CONFIG.uiLabels;
 // Vibration device types that should render VibrationCard instead of the generic inline card
 const VIBRATION_DEVICE_TYPES = new Set(['vibration', 'punching_bag', 'step_platform', 'pull_up_bar']);
 
-const FitnessUsersList = ({ onRequestGuestAssignment }) => {
+const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = undefined }) => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
   
@@ -138,7 +140,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     pressureMatActivities = {},
     assignEquipmentUser,
     disengagePressureMat,
+    governanceState: contextGovernanceState,
   } = fitnessContext;
+  // The player passes its bypass-aware snapshot (?nogovern, fingerprint or
+  // per-item bypass → isGoverned:false); the module sidebar has no player and
+  // reads context. `undefined` means "no override".
+  const governanceState = governanceStateOverride !== undefined
+    ? governanceStateOverride
+    : contextGovernanceState;
+
+  // D3: unattended children who still have to reach the startup zone once.
+  const governanceStatuses = React.useMemo(
+    () => resolveParticipantGovernanceStatuses(governanceState),
+    [governanceState]
+  );
 
   // Use context-provided arrays if available, fallback to derivation for backward compat
   const allDevices = React.useMemo(() => {
@@ -927,6 +942,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? Math.max(0, Math.min(1, progressInfo.progress))
                 : null;
               const shouldShowProgressBar = Boolean(progressInfo && (progressInfo.showBar || normalizedProgress !== null));
+              const startBadge = isHeartRate
+                ? ([participantEntry?.id, participantEntry?.profileId, profileId, resolvedUser?.id]
+                    .map((id) => (typeof id === 'string' ? id.trim().toLowerCase() : ''))
+                    .map((id) => (id ? governanceStatuses[id] : null))
+                    .find(Boolean) || null)
+                : null;
               Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
@@ -1085,6 +1106,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       <div className="device-name">
                         {deviceName} 
                       </div>
+                      {startBadge ? (
+                        <GovernanceStartBadge statusBadge={startBadge} className="device-start-badge" />
+                      ) : null}
                       <div className="device-stats">
                         <span className="device-icon">{getDeviceIcon(device)}</span>
                         <span className="device-value">{deviceValue}</span>

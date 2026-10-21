@@ -183,6 +183,7 @@ import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
 import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
+import { createOAuthRouter } from "./4_api/v1/routers/admin/oauth.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
 // the admin router; keeps 4_api/**/admin/* free of #apps imports).
 import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
@@ -1569,6 +1570,38 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Register headline harvester so scheduler can run feed-headlines job
   registerFeedHeadlineHarvester({ harvesterServices, feedServices, rootLogger });
 
+  // Harvester health: every harvest result feeds the monitor, which pushes the
+  // head of household when a source keeps failing, goes stale, or comes back.
+  const { HarvesterHealthMonitor } = await import("./3_applications/harvester/HarvesterHealthMonitor.mjs");
+  const { YamlHarvesterHealthStore } = await import("./1_adapters/harvester/YamlHarvesterHealthStore.mjs");
+  const harvesterHealthLogger = rootLogger.child({ module: 'harvester-health' });
+  const harvesterHealth = new HarvesterHealthMonitor({
+    store: new YamlHarvesterHealthStore({ path: configService.getHouseholdPath('harvester-health') }),
+    sendPush: async ({ title, message, data }) => {
+      // Resolved per push so a later household reload is picked up.
+      const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+      const recipient = configService.getHeadOfHousehold?.();
+      const notifyService = recipient
+        ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
+        : null;
+      if (!haGateway || !notifyService) {
+        harvesterHealthLogger.warn?.('harvester.health.no_push_target', { recipient: recipient || null });
+        return;
+      }
+      await haGateway.callService('notify', notifyService, { title, message, data });
+    },
+    // Same zone the harvesters themselves use (bootstrap harvesterTimezone).
+    timezone: configService.getTimezone?.() || null,
+    failureThreshold: 3, // keep ≤ the harvesters' circuit-breaker maxFailures
+    staleAfterDays: { withings: 7 },
+    skip: ['strava'], // StravaSyncHealth already pushes for Strava
+    logger: harvesterHealthLogger,
+  });
+  // Record (and push) only in the copy that owns the data; elsewhere GET /harvest
+  // still reads the shared state.
+  const { canRotateOAuthTokens } = await import("#system/runtime/runtimeEnvironment.mjs");
+  harvesterHealth.watch(harvesterServices.harvesterService, { enabled: canRotateOAuthTokens() });
+
   // Create harvest router using HarvesterService
   const { DefaultPrincipalResolver } = await import("./3_applications/common/context/DefaultPrincipalResolver.mjs");
   const { NodePromiseDeadline } = await import("./1_adapters/scheduling/NodePromiseDeadline.mjs");
@@ -1582,6 +1615,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     requestIds: { next: crypto.randomUUID },
     deadline: new NodePromiseDeadline(),
     timeoutPolicy: () => 120_000,
+    healthReport: () => harvesterHealth.report(),
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
@@ -3733,6 +3767,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     const { SchoolMaintenanceExecutor } = await import("../../__app_modules/learning/school/server/application-school-maintenance-executor.mjs");
     schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
       markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
+      sweepAnswerSheets: schoolLifecycle.useCases.sweepAnswerSheets ?? null,
       logger: rootLogger.child({ module: 'school-maintenance' }),
     });
   }
@@ -3920,6 +3955,30 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     ledger: notificationStack.ledgerStore,
   });
 
+  // Withings reconnect: admin-only, server-side code exchange (Withings codes
+  // expire in ~30s, so the exchange has to happen in the callback itself).
+  // The redirect URI must match one registered with the Withings app; set
+  // system auth withings.connect_redirect_uri when the request host differs.
+  let oauthRouter = null;
+  if (harvesterServices.withingsOAuth) {
+    oauthRouter = createOAuthRouter({
+      withingsOAuth: harvesterServices.withingsOAuth,
+      authStore: harvesterServices.authStore,
+      harvesterService: harvesterServices.harvesterService,
+      resolveUsername: () => configService.getHeadOfHousehold(),
+      // Only household members (same roster normalization as the /life switcher).
+      isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+        .includes(username),
+      redirectUri: (req) => configService.getSystemAuth?.('withings', 'connect_redirect_uri')
+        || `${(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim()}://${req.get('host')}${req.baseUrl}/withings/callback`,
+      newState: () => crypto.randomUUID(),
+      logger: adminApiLogger.child?.({ submodule: 'oauth' }) || adminApiLogger,
+    });
+  } else {
+    adminApiLogger.info?.('oauth.withings.disabled', { reason: 'Withings client_id/client_secret not configured' });
+  }
+
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
     householdContext,
@@ -3937,6 +3996,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     notificationLedgerStore: notificationStack.ledgerStore,
     stateGatesAdministration: stateGatesModule.administrationOperations,
     stateGatesActorFromRequest: stateGatesModule.actorFromRequest,
+    oauthRouter,
     logger: adminApiLogger
   });
 

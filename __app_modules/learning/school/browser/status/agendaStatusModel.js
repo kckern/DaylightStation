@@ -311,6 +311,33 @@ export function ringsByLearner(payload, at = Date.now()) {
   return Object.fromEntries(Object.entries(ringProgressByLearner(payload, at)).map(([id, v]) => [id, v.current]));
 }
 
+/**
+ * learnerId -> this week's silver, from the roster earnings preview
+ * (`GET /api/v1/earnings/preview`). Each entry carries the school week it
+ * prices (`from`..`to`), so a cached figure from last week is never shown as
+ * this week's. A learner the preview cannot price — no totals, or every line
+ * "can't tell" — is left out rather than shown as a zero.
+ */
+export function earningsByLearner(payload) {
+  const out = {};
+  for (const learner of payload?.learners ?? []) {
+    const totals = learner?.totals;
+    if (!learner?.learnerId || !Number.isFinite(totals?.silver)) continue;
+    const lines = learner.lines ?? [];
+    if (lines.length > 0 && lines.every((line) => line?.status === 'indeterminate')) continue;
+    const week = learner.windows?.school ?? payload?.windows?.school ?? {};
+    out[learner.learnerId] = {
+      silver: totals.silver,
+      gems: Number.isFinite(totals.gems) ? totals.gems : 0,
+      pendingSilver: Number.isFinite(learner.pending?.silver) ? learner.pending.silver : 0,
+      pendingGems: Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0,
+      from: week.from ?? null,
+      to: week.to ?? null,
+    };
+  }
+  return out;
+}
+
 /** The most rows a triangle may take: a fourth row shrinks the disc below the
  * diameter at which its glyph stays readable across the room. */
 export const MAX_TRIANGLE_ROWS = 3;

@@ -82,7 +82,7 @@ describe('config-backed semantic API seams', () => {
     const harvesterService = {
       has: vi.fn(() => true), listHarvesters: vi.fn(() => [{ serviceId: 'demo' }]),
       getAllStatuses: vi.fn(() => []), getStatus: vi.fn(() => ({ serviceId: 'demo' })),
-      harvest: vi.fn(async () => ({ collected: 1 })),
+      harvest: vi.fn(async () => ({ collected: 1 })), describeFailure: vi.fn(() => null),
     };
     const principalResolver = { resolve: vi.fn(() => 'head') };
     const app = mount('/harvest', createHarvestRouter({

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IssueDocument } from "../../../../__app_modules/learning/school/server/application/usecases/IssueDocument.mjs";
 import { CurriculumAccess } from "../../../../__app_modules/learning/school/server/application/CurriculumAccess.mjs";
 import { validateDocument } from "../../../../__app_modules/learning/school/server/domain/documents/documentValidation.mjs";
@@ -8,6 +8,10 @@ import { PublishPrintDocument } from "../../../../__app_modules/learning/school/
 import { RenderPrintDocument } from "../../../../__app_modules/learning/school/server/application/documents/RenderPrintDocument.mjs";
 import { createPrintDocumentRendering } from "../../../../__app_modules/learning/school/server/rendering/documents/PrintDocumentRendering.mjs";
 import { YamlAllocationStore } from "../../../../__app_modules/learning/school/server/adapters/documents/YamlAllocationStore.mjs";
+import { YamlIssuedArtifactStore } from "../../../../__app_modules/learning/school/server/adapters/persistence/YamlIssuedArtifactStore.mjs";
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { pdfText, requirePdftotext } from '#testlib/school/pdfText.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore,
@@ -605,9 +609,10 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
   // write used to leave a durable `live` record with no logged cardId and no
   // release — an undiscoverable orphan that burns a fresh card on every
   // retry. Both branches below force that ordering (allocation succeeds,
-  // something AFTER it fails) and assert the record ends `released`, with
-  // the orphan warning naming the stranded cardId.
-  it('a PRINT failure after a successful allocation logs the orphan warning and releases the card', async () => {
+  // something AFTER it fails) and assert the record ends `vacated` (off the
+  // card, held for this unit's retry), with the orphan warning naming the
+  // stranded cardId.
+  it('a PRINT failure after a successful allocation logs the orphan warning and vacates the window', async () => {
     const sid = await openPrintSession();
     const warnSpy = vi.fn();
     let artifactSeq = 0;
@@ -630,16 +635,17 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     expect(orphaned).toMatchObject({ sessionId: sid, stage: 'print' });
     expect(orphaned.cardId).toMatch(/^\d{7}$/);
 
-    const releasedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-released');
-    expect(releasedCall).toBeTruthy();
-    expect(releasedCall[1]).toMatchObject({ cardId: orphaned.cardId, releasedCount: 1 });
+    const vacatedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-vacated');
+    expect(vacatedCall[1]).toMatchObject({ cardId: orphaned.cardId, unitId: PRINT_UNIT, vacated: true });
 
     const records = await allocationStore.findByCard(orphaned.cardId);
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ recordId: orphaned.recordId, status: 'released' });
+    expect(records[0]).toMatchObject({
+      recordId: orphaned.recordId, status: 'vacated', deliveryState: 'cancelled', unitId: PRINT_UNIT, vacatedReason: 'print',
+    });
   });
 
-  it('a RENDER failure after a successful allocation logs the orphan warning and releases the card', async () => {
+  it('a RENDER failure after a successful allocation logs the orphan warning and vacates the window', async () => {
     const sid = await openPrintSession();
     // A real RenderPrintDocument, sharing the SAME repository/allocationStore
     // (so the allocation it writes is inspectable afterward) but with a
@@ -672,13 +678,72 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     expect(orphaned).toMatchObject({ sessionId: sid, stage: 'render' });
     expect(orphaned.cardId).toMatch(/^\d{7}$/);
 
-    const releasedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-released');
-    expect(releasedCall).toBeTruthy();
-    expect(releasedCall[1]).toMatchObject({ cardId: orphaned.cardId, releasedCount: 1 });
+    const vacatedCall = warnSpy.mock.calls.find(([event]) => event === 'school.issue.allocation-vacated');
+    expect(vacatedCall[1]).toMatchObject({ cardId: orphaned.cardId, vacated: true });
 
     const records = await allocationStore.findByCard(orphaned.cardId);
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ status: 'released' });
+    expect(records[0]).toMatchObject({ status: 'vacated', deliveryState: 'cancelled', vacatedReason: 'render' });
+  });
+
+  // 2026-10-10: a print timed out, the card rows were released, but the
+  // recipe retained under the session's fixed artifact id stayed frozen on
+  // the OLD allocation. Every retry drew a new card window, so its recipe
+  // differed, `put` threw ARTIFACT_IMMUTABLE outside the print try/catch, and
+  // each throw leaked the retry's own freshly allocated rows. The session
+  // could never print again.
+  describe('retry after a failed print, with a fixed per-session artifact id', () => {
+    let artifactRoot;
+    beforeEach(async () => { artifactRoot = await mkdtemp(path.join(os.tmpdir(), 'school-issue-retry-')); });
+    afterEach(async () => rm(artifactRoot, { recursive: true, force: true }));
+
+    const buildRetryCase = ({ issuedArtifacts, warn = vi.fn() }) => ({
+      warn,
+      useCase: new IssueDocument({
+        curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+        printer: printPrinter, formMaps: printFormMaps, issuedArtifacts,
+        printDocuments: repository, renderPrintDocument, allocationStore,
+        clock: printClock.now, rng: seededRng(11), newArtifactId: () => 'quiz/ws-ses-print',
+        logger: { ...silentLogger, warn },
+      }),
+    });
+
+    it('prints on the retry instead of failing ARTIFACT_IMMUTABLE forever', async () => {
+      const sid = await openPrintSession();
+      const issuedArtifacts = new YamlIssuedArtifactStore({
+        configService: { getHouseholdPath: (suffix) => path.join(artifactRoot, suffix) },
+      });
+      const { useCase, warn } = buildRetryCase({ issuedArtifacts });
+
+      printPrinter.setFault('offline');
+      await expect(useCase.execute({ sessionId: sid })).resolves.toMatchObject({ status: 'print_failed' });
+      printPrinter.setFault(null);
+      const retry = await useCase.execute({ sessionId: sid });
+
+      expect(retry.status).toBe('issued');
+      expect(printPrinter.jobs).toHaveLength(1);
+      const { manifest } = await issuedArtifacts.get('quiz/ws-ses-print');
+      expect(manifest.allocation.recordId).toBe(retry.allocation.recordId);
+      expect(manifest.supersedes).toHaveLength(1);
+      expect(warn.mock.calls.find(([event]) => event === 'school.issue.artifact-superseded')?.[1])
+        .toMatchObject({ sessionId: sid, artifactId: 'quiz/ws-ses-print' });
+    });
+
+    it('a recipe that cannot be saved vacates the card rows it just allocated', async () => {
+      const sid = await openPrintSession();
+      const refusing = { get: async () => null, put: async () => { throw new Error('disk full'); } };
+      const { useCase, warn } = buildRetryCase({ issuedArtifacts: refusing });
+
+      const result = await useCase.execute({ sessionId: sid });
+
+      expect(result.status).toBe('render_failed');
+      expect(printPrinter.jobs).toEqual([]);
+      expect(printSessions.derive(sid).lastFailure).toMatchObject({ stage: 'retain' });
+      const [, orphaned] = warn.mock.calls.find(([event]) => event === 'school.issue.allocation-orphaned');
+      expect(orphaned).toMatchObject({ sessionId: sid, stage: 'retain' });
+      const records = await allocationStore.findByCard(orphaned.cardId);
+      expect(records.every((record) => record.status === 'vacated' && record.vacatedReason === 'retain')).toBe(true);
+    });
   });
 
   it('a failure BEFORE any allocation write never logs an orphan warning (nothing to release)', async () => {

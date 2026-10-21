@@ -462,12 +462,9 @@ function GovernanceSection({ data, update }) {
           onChange={(val) => update('ring_time_unit_ms', val)}
         />
       </SimpleGrid>
-      <TagsInput
-        label="Superusers"
-        value={governance.superusers || []}
-        onChange={(vals) => update('governance.superusers', vals)}
-        placeholder="Add user ID..."
-      />
+      <Text size="sm" c="dimmed">
+        Supervisors: household owners and anyone with the guardian role (set in user profiles).
+      </Text>
       <TagsInput
         label="Exemptions"
         value={governance.exemptions || []}

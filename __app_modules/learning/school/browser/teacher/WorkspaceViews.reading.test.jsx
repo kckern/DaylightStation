@@ -17,6 +17,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({
   teacherWorkspaceApi: {
     readingShelf: vi.fn(),
     readingDetail: vi.fn(),
+    bookReaders: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     addReadingForLearner: vi.fn(),
     updateReading: vi.fn(),
     addReadingEntry: vi.fn(),

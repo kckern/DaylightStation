@@ -1,9 +1,19 @@
 # The term grid — one verdict per school day
 
-The status board draws each learner's term as a GitHub-style grid: seven rows
-(Monday at the top, Sunday at the bottom), one column per week, one square per
-study day, coloured by how the day went. An eighth row, drawn only when a
-learner carries week-level work, holds one square per week.
+The term read (`GET` via `schoolApi.learnerTerm`) judges every study day of a
+learner's term. The status board's card draws two rows of it — last week
+above this week, seven squares each, today outlined. **Tapping those two rows
+opens the full term** in a popup (`status/TermModal.jsx`): weeks as columns,
+week numbers above, months below, today ringed, the week-level row when a week
+carries weekly work. The popup is read-only, so it opens on the Portal too (the
+one tappable thing on a panel board); a tap anywhere, its close button, or 30
+seconds closes it. It draws from the term the card already holds — no extra
+read — and a card whose term failed to load has no door.
+
+`DayGrid` (`School/shared/dayGrid`) can still lay the whole term out as a
+GitHub-style grid: seven rows (Monday at the top, Sunday at the bottom), one
+column per week, one square per study day, coloured by how the day went, with
+an optional eighth row holding one square per week for week-level work.
 
 | Colour | State | Meaning |
 |---|---|---|

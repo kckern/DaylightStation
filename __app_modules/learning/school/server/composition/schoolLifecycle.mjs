@@ -139,6 +139,7 @@ import { LessonCompanionHandlers, ReadalongLessonCompanionHandler } from "../app
 import { ResolveReviewItem } from "../application/usecases/ResolveReviewItem.mjs";
 import { SetAssignments } from "../application/usecases/SetAssignments.mjs";
 import { MarkSessionAbandoned } from "../application/usecases/MarkSessionAbandoned.mjs";
+import { SweepAnswerSheets } from "../application/usecases/SweepAnswerSheets.mjs";
 import { ReplaceLostAnswerSheet } from "../application/usecases/ReplaceLostAnswerSheet.mjs";
 import { CreateLostAnswerSheetTicket } from "../application/usecases/CreateLostAnswerSheetTicket.mjs";
 import { EnrollLearner } from "../application/usecases/EnrollLearner.mjs";
@@ -1296,8 +1297,13 @@ export async function createSchoolLifecycle({
   // Stale-sweep roster (admin advocacy A5): the School learner directory the
   // runtime injects. Null here means listStale sees nobody and the nightly
   // sweep closes nothing — `lifecycle-runtime.mjs` must pass it.
+  // OMR card hygiene: vacates windows a failed attempt left behind (nightly,
+  // and the moment a session is abandoned) so the child's card has no gaps.
+  const sweepAnswerSheets = new SweepAnswerSheets({
+    allocationStore, sessions: stores.sessions, issuedArtifacts, teacherGate, clock, logger,
+  });
   const markSessionAbandoned = new MarkSessionAbandoned({
-    sessions: stores.sessions, teacherGate, learnerDirectory, clock, logger,
+    sessions: stores.sessions, teacherGate, learnerDirectory, answerSheets: sweepAnswerSheets, clock, logger,
   });
   const worksheetRecoveryAuthority = Object.freeze({ kind: 'worksheet-attribution-recovery' });
   const invalidateSessionEvidence = attemptDatastore ? new InvalidateSessionEvidence({
@@ -1513,7 +1519,7 @@ export async function createSchoolLifecycle({
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation, replaceRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, resolveCardScan, reviewHeldCardScan,
     setAssignments, closeLanguageDay,
-    previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
+    previewAgenda, markSessionAbandoned, sweepAnswerSheets, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     invalidateSessionEvidence, recoverMisattributedWorksheet,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,

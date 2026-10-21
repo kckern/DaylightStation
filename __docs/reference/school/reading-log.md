@@ -388,13 +388,68 @@ one of the detail's bands — it makes a reading that does not exist yet, so it
 carries no `baseRevisionCount` and no reason, and the child is told nothing: a
 book appearing on their shelf is their record getting bigger. It asks exactly
 what the child's own add flow asks — the number off the back, and where they
-are with it (starting, partway with a page, finished on a day) — and answers it
-in ONE call, so a book cannot land on the shelf with half the answer applied.
+are with it (starting, partway with a page, finished on a day — the household's
+study day when none is sent) — and answers it in ONE call, so a book cannot
+land on the shelf with half the answer applied. The form looks the number up as
+soon as it is a book number (a ten-digit one once the grown-up stops typing),
+defaults its tracking mode from the server, offers partway in page mode only,
+and warns, never blocks, when that child already logged the book today or has
+it open. Its request body comes from the same `logBookPlan.js#newReadingBody`
+the "Log a book" sheet uses for a new reading, so the two cannot drift.
 Three things differ from the child's door, all deliberately: the day is stamped
 `source: teacher`, the book's length is resolved server-side rather than typed,
 and the child's backdate floor does not apply, because repairing a record from
 months ago is what this surface is for. The empty shelf offers it, since that is
 when the first book gets added.
+
+**Log a book: one book, several children, today.** The console's global
+navigation (rail and phone bar) opens a sheet over whatever page is showing. It
+scans the barcode first, with the rear camera through the shared
+`frontend/src/lib/camera/useBarcodeScanner.js`; a typed number is always
+offered, and is the only path when the camera is denied. It shows the book (an
+ISBN-only card when the lookup misses: a lookup never blocks a log), then every
+enrolled learner's face, nobody preselected.
+
+`GET /school/teacher/books/:isbn/readers` (`GetBookReaders`, teacher-gated,
+read-only) is the server's view of each learner against that ISBN, read after
+the lookup so the book's length is in the cache:
+
+- `today`: opened, finished or logged on the study day. The face says "Logged
+  today"; choosing it is warned, never blocked.
+- `openReading`, `{id, progressMode, pageCount, revisionCount}`: the face says
+  "Reading now", and a check-in or finish goes ON that reading, never into a
+  second one. A set-aside reading is not open; the sheet starts a new one beside
+  it.
+- `finishedTodayIds`: lets a retry recognise a finish that landed but whose
+  answer was lost.
+- `suggestedMode`, from `bookShelf.mjs#defaultProgressMode`: page from 64 pages,
+  otherwise check, including an unknown length.
+- `unreadable`: that child's shelf could not be read, and their face is
+  disabled.
+
+What happened is one of **Finished today** (the default), **Started today**, or
+**Partway, page N** (page mode only), with a tracking toggle defaulted from
+`suggestedMode` that applies to new readings only. Saving is one existing
+per-child verb per child, never a bulk endpoint, all inside one teacher write:
+`POST …/reading` for a new reading (a finish sends no day and lands on the
+study day), or `POST …/:readingId/entries` then `PATCH …/:readingId` for an
+open one. Each child gets a ✓ or ✗ and a Retry that resends only them:
+
+- Every child has its own idempotency key. A new choice after a clear refusal
+  mints a new one; after an unknown outcome (no answer, a timeout, a 5xx) the
+  child is held to the first request and key, because it may have landed.
+- **An entry key replays, it does not repeat.** The same key with the same day
+  and amount appends no second revision and serves the revision count as it
+  stood right after the original write, so the finish that follows carries the
+  right base. The same key with different details is refused,
+  `409 IDEMPOTENCY_KEY_REUSED`.
+- A retry of an open reading re-reads the readers first. A finish that already
+  landed shows ✓ and sends nothing; a reading that changed underneath is said
+  on that face and nothing is sent.
+
+What the existing verbs cannot record without inventing a number ("started" on
+an open page-mode reading, anything but a finish on a minutes-mode one) is
+refused on that face by name.
 
 **An unreadable shelf shows a named error and no edit controls.** A damaged
 year of a child's evidence presented as "no books yet" invites a grown-up to
@@ -440,17 +495,20 @@ different job, and it is [`reading-shelf.md`](reading-shelf.md).
 
 | Piece | Path |
 |---|---|
-| Domain: projection, obligation, selection | `__backend/src/2_domains/school/bookShelf.mjs`, `bookLog.mjs` |
-| Store (v1 read, v2 write) | `__backend/src/1_adapters/persistence/yaml/YamlBookLogStore.mjs` |
-| Child use cases | `3_applications/school/usecases/{GetBookShelf,OpenBookShelfItem,RecordBookProgress}.mjs` |
-| Teacher use cases | `3_applications/school/usecases/teacher/` |
-| Agenda card | `2_domains/school/documents/receipts.mjs`, `usecases/BuildAgenda.mjs` |
-| Book resolution | `3_applications/books/ResolveBook.mjs`, `1_adapters/books/` |
-| Child panel | `frontend/src/modules/School/books/` |
-| Teacher workspace | `frontend/src/modules/School/teacher/panels/ReadingShelfPanel.jsx` |
-| HTTP | `4_api/v1/routers/{books,schoolBooks,school.teacherReading}.mjs` |
-| Scan-only gate | `3_applications/school/BookEntryPolicy.mjs`, pass in `usecases/PrepareBookScan.mjs` |
-| CLI | `cli/school/booklog.cli.mjs` |
+| Domain: projection, obligation, selection, default mode | `__app_modules/learning/school/server/domain/bookShelf.mjs`, `bookLog.mjs` |
+| Store (v1 read, v2 write) | `__app_modules/learning/school/server/adapters/persistence/YamlBookLogStore.mjs` |
+| Child use cases | `__app_modules/learning/school/server/application/usecases/{GetBookShelf,OpenBookShelfItem,RecordBookProgress}.mjs` |
+| Teacher use cases | `__app_modules/learning/school/server/application/usecases/teacher/` |
+| Readers of one book | `__app_modules/learning/school/server/application/usecases/teacher/GetBookReaders.mjs` |
+| Agenda card | `__app_modules/learning/school/server/domain/documents/receipts.mjs`, `application/usecases/BuildAgenda.mjs` |
+| Book resolution | `__capabilities/book-catalog/server/application/ResolveBook.mjs`, `server/adapters/` |
+| Child panel | `__app_modules/learning/school/browser/books/` |
+| Teacher workspace | `__app_modules/learning/school/browser/teacher/panels/ReadingShelfPanel.jsx` |
+| Quick log | `__app_modules/learning/school/browser/teacher/panels/LogBookSheet.jsx`, `logBookPlan.js`; `__app_modules/learning/school/browser/teacher/useBookFacts.js` |
+| Barcode camera | `frontend/src/lib/camera/useBarcodeScanner.js` |
+| HTTP | `__capabilities/book-catalog/server/api/books.mjs`; `__app_modules/learning/school/server/api/{schoolBooks,school.teacherReading}.mjs` |
+| Scan-only gate | `__app_modules/learning/school/server/application/BookEntryPolicy.mjs`, pass in `application/usecases/PrepareBookScan.mjs` |
+| CLI | `cli/school/booklog.cli.mjs` (entry), `__app_modules/learning/school/cli/booklog.cli.mjs` |
 
 ## Related
 

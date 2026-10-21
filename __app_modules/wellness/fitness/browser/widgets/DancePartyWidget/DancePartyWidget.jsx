@@ -163,15 +163,17 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     audioRef.current?.advance?.(1);
   }, []);
 
-  // Persistent volume (VolumeProvider store): survives exits/reloads, scoped
-  // to the dance audio playlist. The current track key in the ids makes the
-  // hook re-apply the stored level whenever the audio element swaps on track
-  // change. Touch levels map through the shared log curve (level 50 ≈ 10%
-  // output) so the low buttons are meaningful loudness choices.
+  // Persistent volume (VolumeProvider store): survives exits/reloads, one
+  // level per dance audio playlist. The current track key is the reapplyKey,
+  // so the hook re-applies that level whenever the audio element swaps on
+  // track change without storing a level per track. Touch levels map through
+  // the shared log curve (level 50 ≈ 10% output) so the low buttons are
+  // meaningful loudness choices.
   const volumeState = usePersistentVolume({
     grandparentId: 'fitness-dance',
     parentId: audioPlaylistId != null ? String(audioPlaylistId) : 'global',
-    trackId: track?.key || 'dance',
+    trackId: 'playlist',
+    reapplyKey: track?.key,
     playerRef: audioRef
   });
   const volumeLevel = snapToTouchLevel(logLevelFromVolume(volumeState.muted ? 0 : volumeState.volume));

@@ -115,6 +115,28 @@ describe('WithingsHarvester', () => {
   });
 
   describe('harvest', () => {
+    test('skips without refreshing when this process may not rotate tokens', async () => {
+      const gated = new WithingsHarvester({
+        httpClient: mockHttpClient,
+        lifelogStore: mockLifelogStore,
+        authStore: mockAuthStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        redirectUri: 'http://localhost/callback',
+        weightProcessor: mockWeightProcessor,
+        logger: mockLogger,
+        canRefreshTokens: () => false,
+      });
+
+      await expect(gated.harvest('alice')).resolves.toEqual({
+        count: 0, status: 'skipped', reason: 'token_refresh_disabled',
+      });
+      expect(mockHttpClient.post).not.toHaveBeenCalled();
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(mockAuthStore.save).not.toHaveBeenCalled();
+    });
+
     const mockTokenResponse = {
       data: {
         body: {
@@ -176,6 +198,50 @@ describe('WithingsHarvester', () => {
 
       expect(result.status).toBe('error');
       expect(result.reason).toBe('auth_failed');
+      expect(result.error).toBe('no refresh token saved');
+    });
+
+    it('logs token_persist_failed (without token values) when the rotated token cannot be saved', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'stored-refresh' });
+      mockAuthStore.save.mockRejectedValue(new Error('disk full'));
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+
+      const result = await harvester.harvest('alice');
+
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed' });
+      const call = mockLogger.error.mock.calls.find(([event]) => event === 'withings.auth.token_persist_failed');
+      expect(call).toBeTruthy();
+      expect(call[1]).toMatchObject({ username: 'alice', error: 'disk full' });
+      expect(JSON.stringify(call[1])).not.toContain('new-refresh-token');
+      expect(JSON.stringify(call[1])).not.toContain('test-access-token');
+    });
+
+    it('reports the Withings error when the refresh token is rejected', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: { status: 503, body: {}, error: 'Invalid Params: invalid refresh_token' } });
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'Invalid Params: invalid refresh_token' });
+    });
+
+    it('falls back to the Withings status code when the response has no error text', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: { status: 401, body: {} } });
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'Withings status 401' });
+    });
+
+    it('says the access token was missing when the response has neither error nor status', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockResolvedValue({ data: {} });
+      const result = await harvester.harvest('alice');
+      expect(result.error).toBe('no access token in Withings response');
+    });
+
+    it('reports the request error when the token call throws', async () => {
+      mockAuthStore.load.mockResolvedValue({ refresh_token: 'dead' });
+      mockHttpClient.post.mockRejectedValue(new Error('socket hang up'));
+      const result = await harvester.harvest('alice');
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed', error: 'socket hang up' });
     });
 
     test('respects yearsBack option', async () => {
@@ -314,6 +380,31 @@ describe('WithingsHarvester', () => {
       // Second harvest - should use cached token
       await harvester.harvest('testuser');
       expect(mockHttpClient.post).toHaveBeenCalledTimes(1);
+    });
+
+    test('resetAuth drops the cached token so the next harvest refreshes', async () => {
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+      mockHttpClient.get.mockResolvedValue(mockMeasureResponse);
+
+      await harvester.harvest('testuser');
+      harvester.resetAuth();
+      await harvester.harvest('testuser');
+      expect(mockHttpClient.post).toHaveBeenCalledTimes(2);
+    });
+
+    test('resetAuth clears a cooldown', async () => {
+      const rateLimitError = new Error('Too Many Requests');
+      rateLimitError.response = { status: 429 };
+      mockHttpClient.post.mockResolvedValue(mockTokenResponse);
+      mockHttpClient.get.mockRejectedValue(rateLimitError);
+      for (let i = 0; i < 3; i++) {
+        await harvester.harvest('testuser').catch(() => {});
+      }
+      expect(harvester.isInCooldown()).toBe(true);
+
+      harvester.resetAuth();
+      expect(harvester.isInCooldown()).toBe(false);
+      expect(harvester.getStatus().failures).toBe(0);
     });
   });
 

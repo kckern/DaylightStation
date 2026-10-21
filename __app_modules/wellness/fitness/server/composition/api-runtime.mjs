@@ -62,6 +62,9 @@ let providerWebhookAdapters = {};
       const stravaActivityAccess = new StravaActivityAccessGateway({
         client: stravaClient,
         configService,
+        authStore: harvesterServices?.authStore ?? null,
+        canRefreshTokens: harvesterServices?.canRefreshTokens ?? (() => false),
+        logger: rootLogger.child({ module: 'strava-client' }),
       });
       const stravaRetryScheduler = new NodeApplicationScheduler();
 

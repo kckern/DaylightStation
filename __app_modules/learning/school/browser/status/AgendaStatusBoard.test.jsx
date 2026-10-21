@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fileURLToPath } from 'node:url';
+import * as sass from 'sass';
 import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
-import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
 
 vi.mock("../schoolApi.js", () => ({
-  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn() },
+  schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn(), earningsRoster: vi.fn(), wallet: vi.fn() },
 }));
 // Capture the board's `omr` handler so a scan can be delivered to it directly.
 // The board must not wait out its five-minute poll to show a disc turning.
@@ -13,7 +15,17 @@ vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
   useWebSocketSubscription: (topic, cb) => { wsHandlers.push({ topic, cb }); },
 }));
 import { schoolApi } from "../schoolApi.js";
+import { schoolLog } from "../schoolLog.js";
 import { hasIcon } from "../home/icons/iconRegistry.js";
+
+// jsdom has no layout: what the stylesheet promises about sizing is pinned by
+// reading the compiled rule (the Keypad tests' pattern).
+const schoolStylesheet = sass.compile(
+  fileURLToPath(new URL("../School.scss", import.meta.url)),
+).css.replace(/\s+/g, ' ');
+const styleRule = (selector) => schoolStylesheet.match(
+  new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`),
+)?.[1] ?? '';
 
 const KIDS = [{ id: 'learner1', name: 'Learner One' }, { id: 'learner2', name: 'Learner Two' }];
 const ringGate = (learnerId, current, startsAt = 0, endsAt = 4_102_444_800_000) => ({
@@ -390,7 +402,7 @@ describe('AgendaStatusBoard render', () => {
   // anything. jsdom cannot see the colour or the glow — the harness screenshot
   // gate covers those — so the contract pinned here is the ATTRIBUTE the
   // stylesheet hangs both on.
-  it('flags a fully cleared day, and prints nothing under the pins', async () => {
+  it('flags a fully cleared day, with one check mark and no DONE words', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
         { unitId: 'civ.01', subject: 'civilization', outcome: { result: 'passed' } },
@@ -418,10 +430,10 @@ describe('AgendaStatusBoard render', () => {
       return el;
     });
     expect(row.dataset.complete).toBe('true');
-    // Nothing is printed under the pins at 100%: the row is green end to end
-    // — nameplate, card, every disc — and a chip saying "DONE" underneath was a
-    // third statement of the same fact, charging the discs the height.
-    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    // At 100% the count gives way to one check mark (no words): the row is
+    // green end to end — nameplate, card, every disc — and a "DONE" chip would
+    // be a third statement of the same fact.
+    expect(screen.getByTestId('board-day-done')).toBeTruthy();
     expect(screen.queryByText(/^Done$/i)).toBeNull();
   });
 
@@ -886,27 +898,28 @@ describe('the four partitions', () => {
     schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   });
 
-  it('packs seven assignments as pins in two rows of 3 and 4, bar under the pins', async () => {
+  it('packs seven assignments as pins in rows of 3 and 4, with how many are left beside them', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(7));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const meter = await screen.findByTestId('board-day-meter');
+    const count = await screen.findByTestId('board-day-count');
     const day = screen.getByTestId('board-day');
     const rows = day.querySelectorAll('.school-status-board__pills');
     expect([...rows].map((row) => row.querySelectorAll('.school-status-board__pill').length)).toEqual([3, 4]);
-    // The bar lives INSIDE the day partition, under the pins — one segment per
-    // assignment, and no printed count: the segments ARE the count, and the
-    // words underneath were costing the pins the height they need to be read
-    // from a doorway.
-    expect(day.contains(meter)).toBe(true);
-    expect(meter.querySelectorAll('.school-status-board__segment')).toHaveLength(7);
-    expect(day.querySelector('.school-status-board__status')).toBeNull();
-    expect(screen.queryByText('0 of 7')).toBeNull();
-    // Still announced, for anyone who cannot see the bar.
-    expect(meter.querySelector('[role="progressbar"]')).toHaveAttribute('aria-label', '0 of 7 done');
+    expect(day.contains(count)).toBe(true);
+    expect(count.parentElement.firstElementChild).toBe(count);
+    // The pins sit in their own room beside the count, so their width is
+    // measured against what is LEFT after the count, not the whole cell.
+    const room = count.nextElementSibling;
+    expect(room).toHaveClass('school-status-board__pins-room');
+    expect(room.firstElementChild).toBe(day.querySelector('.school-status-board__pins'));
+    expect(count.textContent).toBe('7');
+    expect(count).toHaveAttribute('role', 'progressbar');
+    expect(count).toHaveAttribute('aria-label', '0 of 7 done');
+    expect(day.querySelector('.school-status-board__segment')).toBeNull();
   });
 
-  it('shows no meter and no DONE chip once the day is finished — the row is green', async () => {
+  it('a finished day shows one check mark instead of a count, and no DONE text', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(2));
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [
       { learnerId: 'learner1', sessions: [
@@ -916,57 +929,84 @@ describe('the four partitions', () => {
     ] } });
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const day = await screen.findByTestId('board-day');
-    await waitFor(() => expect(
-      day.querySelectorAll('.school-status-board__pill[data-state="passed"]'),
-    ).toHaveLength(2));
-    expect(screen.queryByTestId('board-day-meter')).toBeNull();
+    const done = await screen.findByTestId('board-day-done');
+    expect(done).toHaveAttribute('aria-label', 'Done for the day');
+    expect(done.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByTestId('board-day-count')).toBeNull();
     expect(screen.queryByText(/^Done$/i)).toBeNull();
-    expect(day.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
+    expect(done.closest('.school-status-board__row')).toHaveAttribute('data-complete', 'true');
   });
 
-  it('drops the "Today" heading but keeps the partition named for a screen reader', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(3));
+  it('a rest day keeps its copy, with no count and no check mark', async () => {
+    const off = (subject) => ({
+      subject, next: { unitId: `${subject}.next` }, obligation: { state: 'excused', reason: 'not_a_school_day' },
+    });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('math'), off('language')], entries: [] } });
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const day = await screen.findByTestId('board-day');
-    expect(day.querySelector('.school-status-board__part-title')).toBeNull();
-    expect(day).toHaveAttribute('aria-label', 'Today');
-    // Its two neighbours keep theirs; the day is named by sitting between them.
-    expect(screen.getByText('This week')).toBeTruthy();
-    expect(screen.getByText('This term')).toBeTruthy();
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, data: { studyDay: '2026-09-26', learners: [{ learnerId: 'learner1', sessions: [] }] } });
+    render(<AgendaStatusBoard kids={kids} />);
+    expect(await screen.findByText('No school today')).toBeInTheDocument();
+    expect(screen.queryByTestId('board-day-count')).toBeNull();
+    expect(screen.queryByTestId('board-day-done')).toBeNull();
+    // No count and no pins: no empty row standing above the copy.
+    expect(screen.getByTestId('board-day').querySelector('.school-status-board__today')).toBeNull();
   });
 
-  it('draws the term as weeks-as-columns with today ringed, and the eighth row only for weekly work', async () => {
+  it('shows last week above this week, seven squares each, today outlined, no part titles', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const grid = await screen.findByTestId('board-term-grid');
-    expect(grid.classList.contains('school-daygrid--weeks-as-columns')).toBe(true);
-    expect(grid.style.getPropertyValue('--grid-cols')).toBe('2');
-    expect(grid.style.getPropertyValue('--grid-rows')).toBe('7');
-    expect(screen.getByTestId('board-term-today')).toHaveAttribute('data-state', 'partial');
-    expect(grid.querySelector('[data-day="2026-09-08"]')).toHaveAttribute('data-state', 'exempt');
-    // A day in the span with no verdict yet is hollow, not a miss.
-    expect(grid.querySelector('[data-day="2026-09-01"]')).toHaveAttribute('data-state', 'unknown');
-    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
+    const grid = await screen.findByTestId('board-days-grid');
+    expect(grid.classList.contains('school-daygrid--weeks-as-rows')).toBe(true);
+    const cells = [...grid.querySelectorAll('.school-daygrid__cell')];
+    expect(cells).toHaveLength(14);
+    // Row 1 is the week of 2026-08-31; row 2 is 2026-09-07 (today's week).
+    expect(cells[0]).toHaveAttribute('data-day', '2026-08-31');
+    expect(cells[7]).toHaveAttribute('data-day', '2026-09-07');
+    expect(cells[7]).toHaveAttribute('data-state', 'met');
+    expect(screen.getByTestId('board-days-today')).toHaveAttribute('data-day', '2026-09-09');
+    expect(screen.getByTestId('board-days').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
+    expect(screen.queryByText('This week')).toBeNull();
+    expect(screen.queryByText('This term')).toBeNull();
+    expect(screen.queryByTestId('board-term')).toBeNull();
   });
 
-  it('this week is the term\'s current column on its side, lettered, with days after today as outlines', async () => {
+  it('last week before the term starts draws as blank squares, not a missing row', async () => {
     schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    const fresh = { ...term, data: { ...term.data, from: '2026-09-07', days: [{ studyDay: '2026-09-07', state: 'met' }] } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(fresh);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const strip = await screen.findByTestId('board-week-grid');
-    const cells = strip.querySelectorAll('.school-daygrid__cell');
-    expect(cells).toHaveLength(7);
-    expect([...cells].map((c) => c.getAttribute('data-state'))).toEqual(['met', 'exempt', 'partial', 'future', 'future', 'future', 'future']);
-    expect(screen.getByTestId('board-week-today')).toHaveAttribute('data-day', '2026-09-09');
-    expect(screen.getByTestId('board-week').querySelector('.school-status-board__week-letters').textContent).toBe('MTWTFSS');
-    // …and the term marks that same week as ONE band behind its column.
-    const termGrid = screen.getByTestId('board-term-grid');
-    expect(termGrid).toHaveClass('school-daygrid--has-current');
-    expect(termGrid.style.getPropertyValue('--current-col')).toBe('1');
-    expect(termGrid.querySelectorAll('.school-daygrid__cell--current-week')).toHaveLength(0);
+    const grid = await screen.findByTestId('board-days-grid');
+    const cells = [...grid.querySelectorAll('.school-daygrid__cell')];
+    expect(cells).toHaveLength(14);
+    // Last week (2026-08-31..09-06) has no verdicts at all: seven hollow squares.
+    const lastWeek = cells.slice(0, 7);
+    expect(lastWeek.map((c) => c.getAttribute('data-day'))).toEqual([
+      '2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06',
+    ]);
+    expect(lastWeek.every((c) => c.getAttribute('data-state') === 'unknown')).toBe(true);
+  });
+
+  it('a pinned past day shows that day\'s week and the one before', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    // The term read is NOT pinned: its `today` is the real today (09-09), a
+    // week after the pinned day. The board must anchor on the pinned day.
+    expect(term.data.today).toBe('2026-09-09');
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-02" />);
+    const grid = await screen.findByTestId('board-days-grid');
+    expect(grid.querySelector('.school-daygrid__cell')).toHaveAttribute('data-day', '2026-08-24');
+    expect(screen.getByTestId('board-days-today')).toHaveAttribute('data-day', '2026-09-02');
+  });
+
+  it('the rings sit under the days with their icon, and a failed term read costs only the squares', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
+    schoolApi.stateGates.mockResolvedValue({ ok: true, status: 200, data: { items: [ringGate('learner1', 42)] } });
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByLabelText('42 rings this week')).toBeTruthy());
+    expect(screen.getAllByTestId('board-days')[0].contains(screen.getByLabelText('42 rings this week'))).toBe(true);
+    expect(screen.queryByTestId('board-days-grid')).toBeNull();
   });
 
   it('discs are inert marks by default — the Portal never gets a door', async () => {
@@ -974,7 +1014,66 @@ describe('the four partitions', () => {
     schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
     render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
     await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
-    expect(screen.getByTestId('agenda-status-board').querySelectorAll('button, a')).toHaveLength(0);
+    // The ONE tappable thing on a panel board is the days cell, which opens
+    // the read-only term popup; it starts no work.
+    await screen.findByRole('button', { name: "Show Learner One's term" });
+    const doors = [...screen.getByTestId('agenda-status-board').querySelectorAll('button, a')]
+      .filter((el) => !/^Show .*'s term$/.test(el.getAttribute('aria-label') ?? ''));
+    expect(doors).toHaveLength(0);
+  });
+
+  it('tapping the two weeks opens that learner\'s full term in a popup', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    const dialog = screen.getByRole('dialog', { name: "Learner One's term" });
+    const grid = within(dialog).getByTestId('term-modal-grid');
+    expect(grid.classList.contains('school-daygrid--weeks-as-columns')).toBe(true);
+    expect(grid.style.getPropertyValue('--grid-cols')).toBe('2');
+    expect(within(dialog).getByTestId('term-modal-today')).toHaveAttribute('data-day', '2026-09-09');
+    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(0);
+  });
+
+  it('the popup adds the weekly-work row only when a week carries weekly work', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(weekly);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    expect(within(screen.getByRole('dialog')).getByTestId('term-modal-grid').querySelectorAll('.school-daygrid__cell--week')).toHaveLength(2);
+  });
+
+  it('the popup closes on a tap anywhere, on its close button, and by itself after 30 seconds', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockResolvedValue(term);
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    const open = async () => fireEvent.click(await screen.findByRole('button', { name: "Show Learner One's term" }));
+    await open();
+    fireEvent.click(screen.getByRole('dialog'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The button is already on screen: open synchronously, because an async
+    // query would wait on timers that are now fake.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole('button', { name: "Show Learner One's term" }));
+      act(() => { vi.advanceTimersByTime(29_000); });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(1_500); });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('without a term the days are not a button', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(plan(1));
+    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /'s term$/ })).toBeNull();
   });
 
   it('given a door, each disc is a button that hands back its learner and subject', async () => {
@@ -989,32 +1088,52 @@ describe('the four partitions', () => {
     expect(onOpenSegment).toHaveBeenCalledWith('learner1', expect.objectContaining({ subject: 'math' }));
   });
 
-  it('adds the eighth row when a week carries week-level work', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    const weekly = { ...term, data: { ...term.data, weeks: [{ weekId: '2026-08-31', state: 'met', asked: 1 }, { weekId: '2026-09-07', state: 'unknown', asked: 1 }] } };
-    schoolApi.learnerTerm = vi.fn().mockResolvedValue(weekly);
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    const grid = await screen.findByTestId('board-term-grid');
-    expect(grid.querySelectorAll('.school-daygrid__cell--week')).toHaveLength(2);
-    expect(grid.style.getPropertyValue('--grid-rows')).toBe('8');
+  // CSS rules asserted (jsdom cannot see layout). The pins size their disc
+  // from `cqw`; inside the day cell that measured the whole cell, so the big
+  // count beside the pins pushed a wide day out of the card. The room is an
+  // INLINE-size container: `cqw` measures what is left after the count, while
+  // `cqh` still resolves against the day cell (a size container).
+  it('sizes the pins against the room left beside the count, not the whole cell', () => {
+    const room = styleRule('.school-status-board__pins-room');
+    expect(room).toContain('flex: 1 1 0');
+    expect(room).toContain('min-width: 0');
+    expect(room).toContain('container-type: inline-size');
+    expect(styleRule('.school-status-board__today')).toContain('align-self: stretch');
+    expect(styleRule('.school-status-board__day')).toContain('container-type: size');
   });
 
-  it('a failed term read costs the grid, never the card', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(2));
-    schoolApi.learnerTerm = vi.fn().mockRejectedValue(new Error('boom'));
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByLabelText('0 of 2 done')).toBeTruthy());
-    // The partition keeps its title; only the grid is absent.
-    await waitFor(() => expect(screen.getByTestId('board-term').querySelector('.school-daygrid, .school-status-board__grid--skeleton')).toBeNull());
+  // From the live render at 1920x1080: the pins centred in their room left
+  // the count stranded far from its discs, and the day squares sat at their
+  // 18px cap in a cell twice their width.
+  it('keeps the pins against their count, and grows the day squares with the card', () => {
+    expect(styleRule('.school-status-board__pins-room')).toContain('justify-content: flex-start');
+    expect(styleRule('.school-status-board__two-weeks')).toContain('--grid-cell: clamp(10px, min(2.6vh, 1.6vw), 28px)');
   });
 
-  it('shows the skeleton grid while the term is in flight', async () => {
-    schoolApi.agendaPreview.mockResolvedValue(plan(1));
-    schoolApi.learnerTerm = vi.fn(() => new Promise(() => {}));
-    render(<AgendaStatusBoard kids={kids} day="2026-09-09" />);
-    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
-    expect(screen.getByTestId('board-term').querySelector('.school-status-board__grid--skeleton')).toBeTruthy();
+  // From the live page: the panel's board pane is `pointer-events: none`, so
+  // the days door and the popup must take taps back themselves, and the popup
+  // must sit above the keypad (like the book-scan overlay, z-index 150).
+  it('the days door and the term popup take taps back from the inert board pane', () => {
+    expect(styleRule('.school-status-board__days-door')).toContain('pointer-events: auto');
+    const modal = styleRule('.school-term-modal');
+    expect(modal).toContain('pointer-events: auto');
+    expect(modal).toContain('z-index: 150');
   });
+
+  it('hangs each +N after its own number, not at the end of the column', () => {
+    expect(styleRule('.school-status-board__figure')).toContain('justify-self: start');
+  });
+
+  it('fits a three-digit silver figure and its +NN inside the coins column', () => {
+    // The reserve for the hanging +NN is ~0.9 of the silver size, and the
+    // silver size follows the viewport WIDTH (the column is 13vw), so
+    // "123 +NN" fits at 1280×800 instead of crossing the card edge.
+    const grid = styleRule('.school-status-board__coin-grid');
+    expect(grid).toMatch(/padding-right: calc\(var\(--silver\) \* 0\.9\)/);
+    expect(grid).toMatch(/--silver: clamp\([^;]*vw/);
+    expect(styleRule('.school-status-board__figure--silver')).toContain('font-size: var(--silver)');
+  });
+
 });
 
 // 2026-09-25, from the wall: the board "keeps on spinning and shimmering". Every
@@ -1172,11 +1291,190 @@ describe('rest day on the board', () => {
     expect(screen.queryByText('No plan to show')).toBeNull();
   });
 
-  it('draws the meter, not the rest copy, once a Saturday lesson is under way', async () => {
+  it('draws the count, not the rest copy, once a Saturday lesson is under way', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: { sections: [off('language', { unitId: 'fc.1' })], entries: [] } });
     schoolApi.teacherDay.mockResolvedValue(digest({ sessions: [{ unitId: 'fc.1', subject: 'language', state: 'issued', outcome: null }] }));
     render(<AgendaStatusBoard kids={kids} />);
     expect(await screen.findByRole('progressbar')).toBeInTheDocument();
     expect(screen.queryByText('No school today')).toBeNull();
+  });
+});
+
+const WEEK = { from: '2026-10-19', to: '2026-10-25' };
+const priced = (learnerId, silver, { gems = 0, pending = {}, lines = [{ status: 'earned' }] } = {}) => ({
+  learnerId, totals: { silver, gems }, pending: { silver: 0, gems: 0, ...pending }, lines, windows: { school: WEEK },
+});
+const roster = (...learners) => ({ ok: true, status: 200, data: { windows: { school: WEEK }, learners } });
+
+describe('earningsByLearner', () => {
+  it('maps the roster preview by learner, with the week it prices', () => {
+    expect(earningsByLearner(roster(priced('user_4', 21), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
+      user_4: { silver: 21, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to },
+      user_5: { silver: 23, gems: 0, pendingSilver: 5, pendingGems: 1, from: WEEK.from, to: WEEK.to },
+    });
+  });
+
+  it("leaves out a learner it cannot price: every line 'can't tell', or no totals", () => {
+    const unknown = priced('user_4', 0, { lines: [{ status: 'indeterminate' }, { status: 'indeterminate' }] });
+    const broken = { learnerId: 'user_5', lines: [] };
+    expect(earningsByLearner(roster(unknown, broken).data)).toEqual({});
+    expect(earningsByLearner(null)).toEqual({});
+  });
+});
+
+describe('AgendaStatusBoard silver this week', () => {
+  const DAY = '2026-10-20';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    schoolApi.wallet.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
+      entries: [{ unitId: 'math.01', subject: 'math' }] } });
+  });
+  const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver this week$`));
+
+  it('shows each learner\'s silver once the read lands, and nothing before it', async () => {
+    let land;
+    schoolApi.earningsRoster.mockReturnValue(new Promise((r) => { land = r; }));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done').length).toBe(2));
+    expect(silverOf('\\d+')).toBeNull();
+    await act(async () => land(roster(priced('learner1', 21))));
+    expect(silverOf('21')).toBeTruthy();
+    // learner2 was not priced: no number is invented for them.
+    expect(screen.getAllByLabelText(/silver this week$/).length).toBe(1);
+    expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
+  });
+
+  it('pending is a faded +N after the number, gems a third line only when earned or pending', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(
+      priced('learner1', 23, { pending: { silver: 5, gems: 1 } }),
+      priced('learner2', 10, { gems: 2 }),
+    ));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    const [one, two] = await waitFor(() => {
+      const cells = screen.getAllByTestId('board-coins');
+      expect(within(cells[0]).getByRole('img', { name: '23 silver this week, 5 more possible' })).toBeTruthy();
+      return cells;
+    });
+    // Pending is part of the figure's ONE spoken name; the visible "+5" is
+    // decoration, hidden from the accessibility tree.
+    const silver = within(one).getByRole('img', { name: '23 silver this week, 5 more possible' });
+    const plus = silver.querySelector('.school-status-board__more');
+    expect(plus.textContent).toBe('+5');
+    expect(plus).toHaveAttribute('aria-hidden', 'true');
+    const gems = within(one).getByRole('img', { name: '0 gems this week, 1 more possible' });
+    expect(gems.querySelector('.school-status-board__more').textContent).toBe('+1');
+    expect(within(two).getByRole('img', { name: '10 silver this week' })).toBeTruthy();
+    expect(within(two).getByRole('img', { name: '2 gems this week' })).toBeTruthy();
+    expect(within(two).queryByRole('img', { name: /more possible$/ })).toBeNull();
+    // No visible captions anywhere in the cell.
+    expect(one.textContent).not.toMatch(/silver|gold|gem/i);
+  });
+
+  it('the coins sit in one cell per card, silver then gold, as a two-column grid', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0 } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    const cell = screen.getAllByTestId('board-coins')[0];
+    const grid = cell.querySelector('.school-status-board__coin-grid');
+    const names = [...grid.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label'));
+    expect(names.slice(0, 2)).toEqual(['21 silver this week', '0 gold']);
+    // Each figure is an icon cell followed by a number cell: the grid aligns them.
+    expect(grid.children.length % 2).toBe(0);
+  });
+
+  it('a failed re-read keeps the figure already on the card', async () => {
+    schoolApi.earningsRoster.mockResolvedValueOnce(roster(priced('learner1', 21)));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    schoolApi.earningsRoster.mockResolvedValue({ ok: false, status: 500, data: null });
+    await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: DAY }));
+    expect(silverOf('21')).toBeTruthy();
+  });
+
+  it('a school event for a learner re-reads the silver', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 24)));
+    await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: DAY }));
+    await waitFor(() => expect(silverOf('24')).toBeTruthy());
+  });
+
+  it('a cached figure from another week is not painted', async () => {
+    // The snapshot IS of this study day (so the seed is accepted), but its
+    // silver prices LAST week: the Coins week check alone must hide it.
+    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+      studyDay: DAY, learners: {}, rings: {},
+      earnings: { learner1: { silver: 99, gems: 0, pendingSilver: 0, pendingGems: 0, from: '2026-10-12', to: '2026-10-18' } },
+    }));
+    schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 of 1 done').length).toBe(2));
+    expect(silverOf('99')).toBeNull();
+  });
+
+  it('a cached figure from this week paints before the read lands', async () => {
+    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+      studyDay: DAY, learners: {}, rings: {},
+      earnings: { learner1: { silver: 17, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to } },
+    }));
+    schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(silverOf('17')).toBeTruthy();
+  });
+});
+
+describe('AgendaStatusBoard gold', () => {
+  const DAY = '2026-10-20';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: false, status: 0, data: null });
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
+      entries: [{ unitId: 'math.01', subject: 'math' }] } });
+  });
+  const wallet = (balance) => ({ ok: true, status: 200, data: { balance, session: null } });
+
+  it('gold shows without silver, per learner, once its wallet read lands', async () => {
+    schoolApi.wallet.mockImplementation((id) => Promise.resolve(id === 'learner1' ? wallet(7) : { ok: false, status: 500, data: null }));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(await screen.findByLabelText('7 gold')).toBeTruthy();
+    // learner2's read failed: no figure is invented for them.
+    expect(screen.getAllByLabelText(/ gold$/)).toHaveLength(1);
+    expect(schoolApi.wallet).toHaveBeenCalledWith('learner1');
+    expect(schoolApi.wallet).toHaveBeenCalledWith('learner2');
+  });
+
+  it('a zero balance is shown as 0, not hidden', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(0));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('0 gold')).toHaveLength(2));
+  });
+
+  it('a failed re-read keeps the gold already shown', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(4));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('4 gold')).toHaveLength(2));
+    expect(schoolApi.wallet).toHaveBeenCalledTimes(2);
+    schoolApi.wallet.mockRejectedValue(new Error('down'));
+    await act(async () => wsHandlers.filter((h) => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: DAY }));
+    // The re-read really happened (one wallet per learner) and failed.
+    expect(schoolApi.wallet).toHaveBeenCalledTimes(4);
+    expect(screen.getAllByLabelText('4 gold')).toHaveLength(2);
+  });
+
+  it('logs a wallet read that comes back not-ok, with the learner and status', async () => {
+    const logged = vi.spyOn(schoolLog, 'selfServiceError');
+    schoolApi.wallet.mockImplementation((id) => Promise.resolve(id === 'learner1' ? wallet(7) : { ok: false, status: 503, data: null }));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(await screen.findByLabelText('7 gold')).toBeTruthy();
+    await waitFor(() => expect(logged).toHaveBeenCalledWith('status-board.wallet-failed', { learnerId: 'learner2', status: 503 }));
+    expect(logged).not.toHaveBeenCalledWith('status-board.wallet-failed', expect.objectContaining({ learnerId: 'learner1' }));
+    logged.mockRestore();
   });
 });

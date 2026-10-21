@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReadingShelfPanel from "./ReadingShelfPanel.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({
-  teacherWorkspaceApi: { readingShelf: vi.fn(), addReadingForLearner: vi.fn() },
+  teacherWorkspaceApi: { readingShelf: vi.fn(), addReadingForLearner: vi.fn(), bookReaders: vi.fn() },
 }));
 vi.mock("../../schoolApi.js", () => ({
   schoolApi: { books: { resolve: vi.fn() } },
@@ -192,7 +192,16 @@ describe('adding a book on the child’s behalf', () => {
     vi.clearAllMocks();
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     teacherWorkspaceApi.addReadingForLearner.mockResolvedValue(created);
-    schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { title: 'A Borrowed Title' } }));
+    schoolApi.books.resolve.mockResolvedValue(ok({ status: 'ok', book: { title: 'A Borrowed Title', authors: ['Someone'], pageCount: 184 } }));
+    teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(readersView()));
+  });
+
+  const reader = (over = {}) => ({
+    learnerId: 'User_4', name: 'User 4', suggestedMode: 'page', today: false, openReadingId: null, openReading: null, unreadable: false, ...over,
+  });
+  const readersView = ({ suggestedMode = 'page', pageCount = 184, ...over } = {}) => ({
+    isbn: '9780000000002', studyDay: '2026-09-06', pageCount, suggestedMode,
+    readers: [reader({ suggestedMode, ...over })],
   });
 
   const open = async (props = {}) => {
@@ -236,25 +245,36 @@ describe('adding a book on the child’s behalf', () => {
   it('asks for the page on the partway door, and will not submit without one', async () => {
     await open();
     fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Partway through' }));
+    // Offered once the server has suggested page mode for this length.
+    fireEvent.click(await screen.findByRole('button', { name: 'Partway through' }));
     expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Page they are on'), { target: { value: '84' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
     await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
     expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
-      .toMatchObject({ where: 'partway', page: 84 });
+      .toEqual({ isbn: '9780000000002', progressMode: 'page', where: 'partway', page: 84, by: 'test-user' });
   });
 
-  it('asks for the day on the finished door, and will not submit without one', async () => {
+  it('finishes today when no day is given — the server supplies it — and on the day when one is', async () => {
     await open();
     fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
     fireEvent.click(screen.getByRole('button', { name: 'Already finished it' }));
-    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(true);
+    expect(screen.getByText('Leave blank for today.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(false);
+    await screen.findByText(/184 pages/);
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1));
+    // Exactly what the "Log a book" sheet sends for a finish: no day at all.
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
+      .toEqual({ isbn: '9780000000002', progressMode: 'page', where: 'finished', by: 'test-user' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a book' }));
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Already finished it' }));
     fireEvent.change(screen.getByLabelText('Day they finished it'), { target: { value: '2026-08-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
-    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
-    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
-      .toMatchObject({ where: 'finished', finishedOn: '2026-08-20' });
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[1][1]).toMatchObject({ where: 'finished', finishedOn: '2026-08-20' });
   });
 
   it('will not send a number that is not a book number', async () => {
@@ -264,17 +284,100 @@ describe('adding a book on the child’s behalf', () => {
     expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
   });
 
-  it('looks the number up first, so a grown-up sees which book they are adding', async () => {
+  it('looks the number up as soon as it is a book number, so a grown-up sees which book they are adding', async () => {
     await open();
     fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
-    // Twice: the drawn cover sets the title AS the art, and the row names it.
-    expect((await screen.findAllByText(/A Borrowed Title/)).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/A Borrowed Title · Someone · 184 pages/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Look it up' })).toBeNull();
     // A miss names itself and changes nothing — the number may still be right.
     schoolApi.books.resolve.mockResolvedValue(ok({ status: 'not-found' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Look it up' }));
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000019' } });
     expect(await screen.findByText(/No book answers to that number/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(false);
+  });
+
+  it('looks up a ten-digit ISBN that ends in a digit once the grown-up leaves the field', async () => {
+    await open();
+    const input = screen.getByLabelText('ISBN');
+    fireEvent.change(input, { target: { value: '0000000000' } });
+    await act(async () => {});
+    expect(schoolApi.books.resolve).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    await waitFor(() => expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002'));
+    expect(await screen.findByText(/A Borrowed Title · Someone/)).toBeTruthy();
+  });
+
+  it('looks it up after a pause in typing, too', async () => {
+    await open();
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '0000000000' } });
+      await act(async () => { vi.advanceTimersByTime(499); });
+      expect(schoolApi.books.resolve).not.toHaveBeenCalled();
+      await act(async () => { vi.advanceTimersByTime(1); });
+      expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says a digit is off only once the grown-up has stopped typing', async () => {
+    await open();
+    const input = screen.getByLabelText('ISBN');
+    fireEvent.change(input, { target: { value: '9780000000003' } });
+    expect(screen.queryByText(/one digit is off/)).toBeNull();
+    fireEvent.blur(input);
+    expect(await screen.findByText(/one digit is off/)).toBeTruthy();
+    fireEvent.change(input, { target: { value: '978000000000' } });
+    expect(screen.queryByText(/one digit is off/)).toBeNull();
+  });
+
+  it('tracks by the server’s suggestion, and the grown-up can change it', async () => {
+    teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(readersView({ suggestedMode: 'check', pageCount: 32 })));
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check-ins' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.queryByRole('button', { name: 'Partway through' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Pages' }));
+    expect(screen.getByRole('button', { name: 'Partway through' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Partway through' }));
+    // Back to check-ins: partway goes with page mode.
+    fireEvent.click(screen.getByRole('button', { name: 'Check-ins' }));
+    expect(screen.queryByRole('button', { name: 'Partway through' })).toBeNull();
+    expect(screen.queryByLabelText('Page they are on')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add this book' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalled());
+    expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0][1])
+      .toEqual({ isbn: '9780000000002', progressMode: 'check', where: 'starting', by: 'test-user' });
+  });
+
+  it('tracks by check-ins when the server could not suggest a mode', async () => {
+    teacherWorkspaceApi.bookReaders.mockResolvedValue({ ok: false, status: 500, data: null });
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    await screen.findByText(/184 pages/);
+    await waitFor(() => expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Check-ins' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('warns, without blocking, when this child already logged it today or is reading it now', async () => {
+    teacherWorkspaceApi.bookReaders.mockResolvedValue(ok(readersView({
+      today: true, openReadingId: 'itm_1', openReading: { id: 'itm_1', progressMode: 'page', pageCount: 184, revisionCount: 0 },
+    })));
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    expect(await screen.findByText(/Already logged today/)).toBeTruthy();
+    expect(screen.getByText(/Already reading this/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add this book' }).disabled).toBe(false);
+  });
+
+  it('without the readers view, still warns from the shelf in hand that the child is reading it', async () => {
+    teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf({ items: [item({ bookId: '9780000000002' })] })));
+    teacherWorkspaceApi.bookReaders.mockResolvedValue({ ok: false, status: 403, data: {} });
+    await open();
+    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '9780000000002' } });
+    expect(await screen.findByText(/Already reading this/)).toBeTruthy();
+    expect(screen.queryByText(/Already logged today/)).toBeNull();
   });
 
   it('a refused add keeps the form and says what the server said', async () => {

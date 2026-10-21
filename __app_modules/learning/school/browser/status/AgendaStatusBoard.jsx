@@ -4,7 +4,8 @@
  * per-assignment discs carry the subject wall's own icons, so a kid walking
  * past reads their day as pictures rather than as a bar chart. Extra completed
  * work owned by one assignment rides on that disc as a `+N` badge instead of
- * inflating the assigned day; one "x of y" carries the assignment count.
+ * inflating the assigned day; one big number beside the pins says how many
+ * are left (a check mark once none are).
  *
  * A CLEARED DAY IS A STATE, NOT A SENTENCE. When every disc is filled the card
  * itself goes green — the child should be able to see they are finished from
@@ -54,8 +55,11 @@ import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayStatus, summarize, ringProgressByLearner, triangleRows } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
+import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
+import TermModal from "./TermModal.jsx";
 
 const REFRESH_MS = 5 * 60_000;
 const SCHOOL_REFRESH_EVENTS = new Set([
@@ -185,136 +189,71 @@ function Pins({ segments, onOpen = null }) {
   );
 }
 
-/**
- * The term as a grid, weeks as columns. `undefined` is in flight (a skeleton
- * of the right width), `null` is a failed read (nothing — a grid that lied
- * about a term would be worse than no grid), a term is drawn. The eighth row
- * appears only when a week carries week-level work.
- */
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/**
- * The two axes around the term grid, on the SAME column template as the
- * cells so they line up by construction: week numbers above (every fourth
- * week — a digit per 8px column is not legible from a doorway), months
- * below at the column in which each month begins.
- */
-function termAxes(weeks) {
-  const weekNumbers = weeks.map((w, i) => (i % 4 === 0 ? String(i + 1) : ''));
-  let lastMonth = null;
-  const months = weeks.map((w) => {
-    // The month a week belongs to is the month most of it is in: Thursday's.
-    const thursday = new Date(Date.parse(`${w.weekId}T00:00:00Z`) + 3 * 86_400_000);
-    const month = thursday.getUTCMonth();
-    if (month === lastMonth) return '';
-    lastMonth = month;
-    return MONTH_SHORT[month];
-  });
-  return { weekNumbers, months };
-}
-
-function TermGrid({ term }) {
-  if (term === null) return null;
-  if (term === undefined || !term.from || !term.to) {
-    return <div className="school-status-board__grid school-status-board__grid--skeleton" aria-hidden="true" />;
-  }
-  const weeks = Array.isArray(term.weeks) ? term.weeks : [];
-  const hasWeeklyWork = weeks.some((w) => (w.asked ?? 0) > 0);
-  const { weekNumbers, months } = termAxes(weeks);
-  const axisStyle = { '--grid-cols': weeks.length };
-  return (
-    <div className="school-status-board__term-plot">
-      <ol className="school-status-board__term-axis school-status-board__term-axis--weeks" style={axisStyle} aria-hidden="true">
-        {weekNumbers.map((n, i) => <li key={weeks[i].weekId}>{n}</li>)}
-      </ol>
-      <DayGrid
-        days={(term.days ?? []).map((d) => ({ studyDay: d.studyDay, state: d.state }))}
-        orientation="weeks-as-columns"
-        from={term.from}
-        to={term.to}
-        studyDay={term.today ?? null}
-        highlightCurrentWeek
-        extraRow={hasWeeklyWork ? weeks.map((w) => ({ weekId: w.weekId, state: w.state })) : null}
-        className="school-status-board__grid"
-        testId="board-term-grid"
-        todayTestId="board-term-today"
-        ariaLabel={`${term.label ?? 'This term'}: ${(term.days ?? []).filter((d) => d.state === 'met').length} days met`}
-      />
-      <ol className="school-status-board__term-axis school-status-board__term-axis--months" style={axisStyle} aria-hidden="true">
-        {months.map((m, i) => <li key={weeks[i].weekId}>{m}</li>)}
-      </ol>
-    </div>
-  );
-}
-
 const WEEKDAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /**
- * THIS WEEK as seven squares: the term grid's current column turned on its
- * side, drawn from the SAME rows so the two cannot disagree, with the
- * weekday letters under it. Days after today are outlines, not verdicts.
- * Nothing while the term is in flight; nothing at all without one.
+ * LAST WEEK AND THIS WEEK, a row each, from the same term rows as ever: on a
+ * Monday morning this week is blank, and last week is what tells the story.
+ * Today is outlined; days after it are outlines, not verdicts. Nothing while
+ * the term is in flight; nothing at all without one.
+ *
+ * `anchor` is the day the board shows — a pinned `day` when there is one. The
+ * term read is never pinned (its `today` is always the real today), so
+ * anchoring on `term.today` drew the wrong fortnight for a pinned past day.
  */
-function WeekStrip({ term }) {
-  if (!term?.today) return null;
-  const from = weekStart(term.today);
-  const to = addDays(from, 6);
+function TwoWeeks({ term, anchor }) {
+  if (!term?.today || !anchor) return null;
+  const thisWeek = weekStart(anchor);
+  const from = addDays(thisWeek, -7);
+  const to = addDays(thisWeek, 6);
   const days = (term.days ?? []).filter((d) => d.studyDay >= from && d.studyDay <= to)
     .map((d) => ({ studyDay: d.studyDay, state: d.state }));
   return (
-    <div className="school-status-board__week-strip" data-testid="board-week-strip">
-      <DayGrid
-        days={days.length ? days : [{ studyDay: term.today, state: 'unknown' }]}
-        orientation="weeks-as-rows"
-        from={from}
-        to={to}
-        studyDay={term.today}
-        className="school-status-board__grid school-status-board__grid--week"
-        testId="board-week-grid"
-        todayTestId="board-week-today"
-        ariaLabel={`This week: ${days.filter((d) => d.state === 'met').length} days met`}
-      />
+    <div className="school-status-board__two-weeks">
       <ol className="school-status-board__week-letters" aria-hidden="true">
         {WEEKDAY_LETTERS.map((letter, i) => <li key={i}>{letter}</li>)}
       </ol>
+      <DayGrid
+        days={days.length ? days : [{ studyDay: anchor, state: 'unknown' }]}
+        orientation="weeks-as-rows"
+        from={from}
+        to={to}
+        studyDay={anchor}
+        className="school-status-board__grid school-status-board__grid--weeks"
+        testId="board-days-grid"
+        todayTestId="board-days-today"
+        ariaLabel={`Last two weeks: ${days.filter((d) => d.state === 'met').length} days met`}
+      />
     </div>
   );
 }
 
 /**
- * The day's count as a SEGMENTED BAR — one segment per assignment, filled as
- * each is done.
- *
- * THE BAR ALONE. It used to carry "2 of 7" underneath and a "Done" chip at
- * 100%, and both were saying a second time what the reader could already see:
- * the filled segments ARE the count, and a finished row turns green end to end.
- * Two lines of redundant type were costing the pins the vertical space they
- * need to be read from across a room, which is the one job this panel has.
- *
- * The count survives for anyone who cannot see the bar — it is the
- * progressbar's `aria-label`, where it was all along.
+ * HOW MANY ARE LEFT, as one big number beside the pins — or, once the day is
+ * finished, one big check mark. The number is the progress bar for a screen
+ * reader ("2 of 7 done"); to the eye it is the across-the-room fact.
  */
-function DayMeter({ summary }) {
+function DayCount({ summary }) {
   if (!summary || summary.total <= 0) return null;
-  // Finished: the row's own green says it. Rendering nothing here is what lets
-  // the pins keep the height instead of handing it to a chip.
-  if (summary.done >= summary.total) return null;
+  if (summary.done >= summary.total) {
+    return (
+      <span className="school-status-board__check" data-testid="board-day-done" role="img" aria-label="Done for the day">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </span>
+    );
+  }
   return (
-    <div className="school-status-board__meter" data-testid="board-day-meter">
-      <div
-        className="school-status-board__bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={summary.total}
-        aria-valuenow={summary.done}
-        aria-label={`${summary.done} of ${summary.total} done`}
-        style={{ '--segments': summary.total }}
-      >
-        {Array.from({ length: summary.total }, (_, i) => (
-          <span key={i} className={`school-status-board__segment${i < summary.done ? ' is-done' : ''}`} />
-        ))}
-      </div>
-    </div>
+    <span
+      className="school-status-board__left"
+      data-testid="board-day-count"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={summary.total}
+      aria-valuenow={summary.done}
+      aria-label={`${summary.done} of ${summary.total} done`}
+    >
+      {summary.total - summary.done}
+    </span>
   );
 }
 
@@ -342,6 +281,52 @@ function RestDayStatus({ restDay, pinned }) {
  *   decision lives in `SchoolApp` on `isPanelSurface(screenId)`, not in a
  *   flag this component could be handed by mistake.
  */
+/**
+ * THE COINS: silver (this week, big), gold (lasting, smaller) and gems (only
+ * when earned or pending), as a two-column grid - icon cell, number cell - so
+ * the coins centre on one line and the numbers start at one edge, down every
+ * card. A faded +N hangs after a number without moving it. No captions: the
+ * icon is the label; the words are for a screen reader — each figure is ONE
+ * image whose name carries its pending too ("27 silver this week, 5 more
+ * possible"), and the visible +N is hidden from that tree. Nothing until a
+ * read lands, and nothing for a cached silver figure from another week.
+ */
+function Coins({ figure, gold, studyDay }) {
+  const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
+    && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
+  const hasGold = Number.isFinite(gold);
+  if (!inWeek && !hasGold) return null;
+  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-hidden="true">+{n}</span> : null);
+  const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
+  const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
+  return (
+    <div className="school-status-board__coin-grid">
+      {inWeek && (
+        <>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color="#c0c0c0" />
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver this week`, figure.pendingSilver)}>
+            {figure.silver}{more(figure.pendingSilver)}
+          </span>
+        </>
+      )}
+      {hasGold && (
+        <>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
+          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
+        </>
+      )}
+      {showGems && (
+        <>
+          <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`, figure.pendingGems)}>
+            {figure.gems}{more(figure.pendingGems)}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
@@ -356,8 +341,25 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // covers the whole roster, so folding it in would mean re-settling every
   // card when it lands — and a slow State Gates read would hold the plans back.
   const [rings, setRings] = useState(() => seed?.rings ?? {});
-  // The term grid, per learner: `undefined` while in flight, `null` when the
-  // read failed (the card then simply has no term), else the term read model.
+  // This week's silver (the earnings preview), learnerId -> figure + the week
+  // it prices. Settles independently of the plans, like the rings.
+  const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
+  const [gold, setGold] = useState(() => seed?.gold ?? {});
+  // Whose term popup is open (a learner id), or null.
+  const [termFor, setTermFor] = useState(null);
+  const openTerm = useCallback((kidId) => {
+    schoolLog.selfService('status-board.term-open', { learnerId: kidId });
+    setTermFor(kidId);
+  }, []);
+  const closeTerm = useCallback(() => {
+    setTermFor((current) => {
+      if (current) schoolLog.selfService('status-board.term-close', { learnerId: current });
+      return null;
+    });
+  }, []);
+  // The term read, per learner — the board draws only last week and this week
+  // from it: `undefined` while in flight, `null` when the read failed (the
+  // card then simply has no squares), else the term read model.
   // Settles independently, like the rings — the server replays today and
   // yesterday on every read and serves the rest from its cache.
   const [terms, setTerms] = useState(() => Object.fromEntries(
@@ -432,6 +434,40 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
         schoolLog.selfServiceError?.('status-board.state-gates-failed', { error: error?.message });
       });
   }, []);
+
+  const refreshCoins = useCallback(() => {
+    if (schoolApi.earningsRoster) {
+      // One roster read prices everyone. Fired alongside the plans, never
+      // awaited; a failed read keeps the figures already on the cards.
+      Promise.resolve(schoolApi.earningsRoster(day ?? null))
+        .then((res) => {
+          if (!aliveRef.current) return;
+          if (res?.ok) setEarnings(earningsByLearner(res.data));
+          else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
+        })
+        .catch((error) => {
+          schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
+        });
+    }
+    if (!schoolApi.wallet) return;
+    // One wallet per learner; each lands (or fails) on its own and a failure
+    // keeps that learner's figure.
+    for (const kid of kids) {
+      Promise.resolve(schoolApi.wallet(kid.id))
+        .then((res) => {
+          if (!aliveRef.current) return;
+          if (res && !res.ok) {
+            schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
+            return;
+          }
+          if (!res?.ok || !Number.isFinite(res.data?.balance)) return;
+          setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
+        })
+        .catch((error) => {
+          schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
+        });
+    }
+  }, [day, kids]);
 
   /**
    * Re-read the given learners (all of them when `learnerIds` is omitted).
@@ -532,15 +568,16 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   useEffect(() => {
     refresh();
     refreshRings();
-  }, [refresh, refreshRings]);
+    refreshCoins();
+  }, [refresh, refreshRings, refreshCoins]);
 
   // Periodic refresh — minutes, not seconds; a hidden panel refreshes nothing.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') { refresh(); refreshRings(); }
+      if (document.visibilityState !== 'hidden') { refresh(); refreshRings(); refreshCoins(); }
     }, REFRESH_MS);
     return () => clearInterval(timer);
-  }, [refresh, refreshRings]);
+  }, [refresh, refreshRings, refreshCoins]);
 
   // Persist what has settled, so the next mount paints it immediately.
   useEffect(() => {
@@ -552,8 +589,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
         term: terms[row.kid.id],
       };
     }
-    writeBoardCache({ studyDay, learners, rings });
-  }, [rows, terms, rings, studyDay]);
+    writeBoardCache({ studyDay, learners, rings, earnings, gold });
+  }, [rows, terms, rings, earnings, gold, studyDay]);
 
   /**
    * COMPLETED WORK CHANGES THE BOARD NOW, not in up to five minutes.
@@ -590,7 +627,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       source: 'omr', event, learnerId, studyDay,
     });
     refresh(learnerId ? [learnerId] : null);
-  }, [studyDay, rosterIds, refresh]);
+    // Graded work is what moves the week's silver.
+    refreshCoins();
+  }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
   const onSchool = useCallback((payload) => {
@@ -606,7 +645,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       source: 'school', event, learnerId, studyDay: eventStudyDay ?? studyDay,
     });
     refresh([learnerId]);
-  }, [studyDay, rosterIds, refresh]);
+    refreshCoins();
+  }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -621,8 +661,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     // The rings, and that learner's card: closing a workout is what moves the
     // gate, and the day digest's Fitness disc rides on the same event.
     refreshRings();
+    refreshCoins();
     refresh(learnerId ? [learnerId] : null);
-  }, [rosterIds, refreshRings, refresh]);
+  }, [rosterIds, refreshRings, refreshCoins, refresh]);
   useWebSocketSubscription('state-gates', onStateGates, [onStateGates]);
 
   const visible = useMemo(() => rows ?? [], [rows]);
@@ -653,37 +694,41 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               <span className="school-status-board__name">{kid.name}</span>
               <ProfileAvatar id={kid.id} name={kid.name} size={192} />
             </div>
-            {/* THE DAY: the assignments as a bowling-pin triangle, with the
-                count under the pins. Time widens left to right across the
-                card — who, today, this week, the term — and each partition
-                is one thing with its own number inside it, not a count
-                floating away from the thing it counts. */}
-            {/* No "Today" heading: this is the leftmost partition of a row
-                that reads who / today / this week / this term, and its two
-                neighbours are labelled, so the one in the middle of that
-                sentence is already named by its position. The label is kept for
-                anyone reading the page rather than looking at it. */}
+            {/* THE DAY: the assignments as a bowling-pin triangle, with how
+                many are left beside them. The card reads left to right —
+                who, today, coins, the last two weeks — and each partition is
+                one thing with its own number inside it, not a count floating
+                away from the thing it counts. No "Today" heading: the
+                position names it; the label is kept for anyone reading the
+                page rather than looking at it. */}
             <div className="school-status-board__day" data-testid="board-day" role="group" aria-label="Today">
-              {loading ? (
-                // SKELETON PINS while the plan is in flight — a three-disc
-                // pyramid, the row's height fixed by the disc size rather than
-                // by how many there turn out to be. They shimmer so the panel
-                // reads as working rather than as broken.
-                <div className="school-status-board__pins" aria-hidden="true">
-                  {[[0], [1, 2]].map((row, r) => (
-                    <ul key={r} className="school-status-board__pills">
-                      {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
-                    </ul>
-                  ))}
+              {/* Only when there is a count or pins to hold: a rest day or a
+                  plan-less card would otherwise carry an empty row above its
+                  copy. The pins sit in their own room so their width is
+                  measured against what is left beside the count. */}
+              {(loading || (summary && (summary.total > 0 || summary.segments.length > 0))) && (
+                <div className="school-status-board__today">
+                  {loading ? null : <DayCount summary={summary} />}
+                  <div className="school-status-board__pins-room">
+                    {loading ? (
+                      // SKELETON PINS while the plan is in flight — a three-disc
+                      // pyramid, the row's height fixed by the disc size rather than
+                      // by how many there turn out to be. They shimmer so the panel
+                      // reads as working rather than as broken.
+                      <div className="school-status-board__pins" aria-hidden="true">
+                        {[[0], [1, 2]].map((row, r) => (
+                          <ul key={r} className="school-status-board__pills">
+                            {row.map((i) => <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />)}
+                          </ul>
+                        ))}
+                      </div>
+                    ) : summary.segments.length > 0 ? (
+                      <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
+                    ) : null}
+                  </div>
                 </div>
-              ) : summary && summary.segments.length > 0 ? (
-                <Pins segments={summary.segments} onOpen={onOpenSegment ? (segment) => onOpenSegment(kid.id, segment) : null} />
-              ) : null}
-              {/* THE METER, under the pins: a segmented bar, and nothing once
-                  the day is finished. */}
-              {loading ? null : summary && summary.total > 0 ? (
-                <DayMeter summary={summary} />
-              ) : summary?.restDay ? (
+              )}
+              {loading ? null : summary && summary.total > 0 ? null : summary?.restDay ? (
                 // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
                 // is excused as not a school day, and the optional work is
                 // still on the agenda a card scan prints. "No plan to show"
@@ -695,17 +740,31 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
             </div>
-            {/* THIS WEEK: the fitness rings. Rendered only once the number has
-                arrived — a placeholder zero would be a claim we cannot support
-                yet, and "0" and "not loaded" are different facts. The count
-                stands alone until a weekly goal is authored (see
-                `ringProgressByLearner`). */}
-            <div className="school-status-board__week" data-testid="board-week">
-              <h3 className="school-status-board__part-title">This week</h3>
-              <WeekStrip term={terms[kid.id]} />
+            <div className="school-status-board__coins" data-testid="board-coins">
+              <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+            </div>
+            {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.
+                Rings render only once the number has arrived — a placeholder
+                zero would be a claim we cannot support yet. The count stands
+                alone until a weekly goal is authored (`ringProgressByLearner`). */}
+            <div className="school-status-board__days" data-testid="board-days">
+              {terms[kid.id]?.today ? (
+                // THE ONE DOOR ON A PANEL BOARD: it opens the read-only term
+                // popup and starts no work, so it is safe on the Portal.
+                <button
+                  type="button"
+                  className="school-status-board__days-door"
+                  aria-label={`Show ${kid.name}'s term`}
+                  onClick={() => openTerm(kid.id)}
+                >
+                  <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
+                </button>
+              ) : (
+                <TwoWeeks term={terms[kid.id]} anchor={day ?? terms[kid.id]?.today} />
+              )}
               {Number.isFinite(rings[kid.id]?.current) && (
                 <span className="school-status-board__rings" title="Rings this week">
-                  <RingIcon size="1.6em" label={`${rings[kid.id].current} rings this week`} />
+                  <RingIcon size="1.4em" label={`${rings[kid.id].current} rings this week`} />
                   <span className="school-status-board__rings-count">
                     {rings[kid.id].current}
                     {Number.isFinite(rings[kid.id].target) ? ` of ${rings[kid.id].target}` : ''}
@@ -713,16 +772,16 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 </span>
               )}
             </div>
-            {/* THE TERM: every day since September, one square each, weeks as
-                columns. Blank-but-present while loading, so the card is the
-                width it is going to be from the first paint. */}
-            <div className="school-status-board__term" data-testid="board-term">
-              <h3 className="school-status-board__part-title">This term</h3>
-              <TermGrid term={terms[kid.id]} />
-            </div>
           </li>
         ))}
       </ul>
+      {termFor && terms[termFor]?.from && (
+        <TermModal
+          kid={visible.find((row) => row.kid.id === termFor)?.kid ?? { id: termFor, name: termFor }}
+          term={terms[termFor]}
+          onClose={closeTerm}
+        />
+      )}
     </div>
   );
 }

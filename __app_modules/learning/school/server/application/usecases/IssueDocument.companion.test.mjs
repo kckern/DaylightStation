@@ -284,7 +284,9 @@ describe('IssueDocument — a required companion binds its finish code before th
     const artifactId = [...instances.values()][0].id;
     const { manifest } = await issuedArtifacts.get(artifactId);
     expect(manifest.allocation).toMatchObject({ cardId: '7654321' });
-    expect(manifest.supersededRenderInputSha256).toEqual(expect.any(String));
+    expect(manifest.supersedes).toEqual([expect.objectContaining({
+      renderInputSha256: expect.any(String), allocation: expect.objectContaining({ cardId: '1234567' }),
+    })]);
   });
 
   it('leaves an OPTIONAL companion exactly as it was: no finish code, no codeRef, no record', async () => {

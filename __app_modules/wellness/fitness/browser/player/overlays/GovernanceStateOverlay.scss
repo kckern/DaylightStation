@@ -865,6 +865,15 @@ $lock-zone-hues: (
     flex-direction: column;
     gap: 2px;
     line-height: 1.1;
+
+    .governance-start-badge {
+      align-self: flex-start;
+    }
+  }
+
+  // D5: in the zone, hold still running — set apart from the missing chips.
+  &__chip--holding {
+    border-style: dashed;
   }
 
   &__chip-name {

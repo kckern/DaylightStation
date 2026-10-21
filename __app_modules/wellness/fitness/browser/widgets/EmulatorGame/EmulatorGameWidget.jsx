@@ -61,9 +61,18 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const [arcadeUnlocked, setArcadeUnlocked] = useState(false);
   const [pendingGame, setPendingGame] = useState(null);
   const [launch, setLaunch] = useState(null);
-  const [savers, setSavers] = useState([]);
+  // null = this launch's save list has not arrived yet (PlayerPanel holds the
+  // row's place). The ref lets a scan that started before it arrived check
+  // the list as it stands when the scan ends.
+  const [savers, setSavers] = useState(null);
+  const saversRef = useRef(null);
+  saversRef.current = savers;
   const [selectMessage, setSelectMessage] = useState(null);
   const [claimConflict, setClaimConflict] = useState(null);
+  // Bumped to (re)open the game menu after a fingerprint step that ends in a
+  // question or a cancel, so the choice is never left hidden behind play.
+  const [menuOpenNonce, setMenuOpenNonce] = useState(0);
+  const reopenMenu = useCallback(() => setMenuOpenNonce((n) => n + 1), []);
   // Arcade-level notice (e.g. "<Game> is <owner>'s game"), auto-clears.
   const [notice, setNotice] = useState(null);
 
@@ -243,15 +252,20 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   // Commit a launch. `remountKey` forces a fresh console mount (the load path).
   const startGame = useCallback((game, decision, { remountKey } = {}) => {
     const ctx = buildLaunchContext(game, decision);
+    // Ask "continue / save as me / just play" before any progress exists:
+    // only where a fingerprint can answer (kiosk), only for a shared save
+    // game, only when nobody's save is loaded. Never for owned games.
+    const askAtLaunch = isKioskEnv() && supportsSave(game.saveMode) && !game.saveOwner && !decision.userId;
     setLaunch({
       ...ctx,
       userId: decision.userId,
       person: resolvePersonCard(decision.userId),
       startedAt: Date.now(),
+      askAtLaunch,
       key: remountKey ?? `${game.id}:${decision.userId || 'anon'}:${Date.now()}`,
     });
     setView('playing');
-    logger.info('fitness-emulator.launch', { game: game.id, action: decision.action, persist: decision.persist, user: decision.userId || null });
+    logger.info('fitness-emulator.launch', { game: game.id, action: decision.action, persist: decision.persist, user: decision.userId || null, askAtLaunch });
   }, [buildLaunchContext, resolvePersonCard, logger]);
 
   // Fetch who already has a save for this game — the menu's "Continue as" row
@@ -317,7 +331,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const launchFresh = useCallback((game) => {
     setSelectMessage(null);
     setClaimConflict(null);
-    setSavers([]);
+    setSavers(null);
     if (game.saveOwner && supportsSave(game.saveMode)) { launchOwned(game); return; }
     startGame(game, freshLaunch());
     loadSavers(game);
@@ -402,11 +416,13 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       if (verdict?.matched && String(verdict.userId).toLowerCase() === String(userId).toLowerCase()) {
         setSelectMessage(null);
         startGame(game, loadLaunch(userId), { remountKey: `${game.id}:${userId}:${Date.now()}` });
-      } else if (verdict?.matched) {
-        setSelectMessage(`That's not ${name}.`);
+        return;
       }
+      if (verdict?.matched) setSelectMessage(`That's not ${name}.`);
+      logger.info('fitness-emulator.load-saver.reask', { game: game.id, user: userId, matched: !!verdict?.matched });
+      reopenMenu();
     });
-  }, [launch, registerIdentify, resolvePersonCard, startGame]);
+  }, [launch, registerIdentify, resolvePersonCard, startGame, reopenMenu, logger]);
 
   // "Save my game": identify whoever scans → claim (warn if they already have a save).
   const handleClaim = useCallback(() => {
@@ -417,20 +433,34 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     registerIdentify('Save my game').then((verdict) => {
       setPendingGame(null);
       setView('playing');
-      if (!verdict?.matched) return;
+      if (!verdict?.matched) {
+        logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'no-match' });
+        reopenMenu();
+        return;
+      }
       const uid = verdict.userId;
-      if (savers.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
+      const known = saversRef.current;
+      if (known === null) {
+        // The list never arrived: claiming now could overwrite a save nobody was warned about.
+        setSelectMessage('Still checking who has a save. Try again.');
+        logger.warn('fitness-emulator.claim.reask', { game: game.id, reason: 'savers-unknown', user: uid });
+        reopenMenu();
+        return;
+      }
+      if (known.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
         setClaimConflict(resolvePersonCard(uid));
+        logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'conflict', user: uid });
+        reopenMenu();
       } else {
         activateSave(uid);
       }
     });
-  }, [launch, registerIdentify, savers, resolvePersonCard, activateSave]);
+  }, [launch, registerIdentify, resolvePersonCard, activateSave, reopenMenu, logger]);
 
   const handleExitGame = useCallback(() => {
     setLaunch(null);
     setView('arcade');
-    setSavers([]);
+    setSavers(null);
     setSelectMessage(null);
     setClaimConflict(null);
   }, []);
@@ -507,6 +537,8 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         onClaim={() => { closeMenu(); handleClaim(); }}
         onConfirmOverwrite={(uid) => activateSave(uid)}
         onCancelOverwrite={() => setClaimConflict(null)}
+        canIdentify={isKioskEnv()}
+        onJustPlay={() => { logger.info('fitness-emulator.just-play', { game: launch.game.id }); closeMenu(); }}
       />
     )
     : null;
@@ -572,6 +604,9 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             onExit={handleExitGame}
             menuSection={menuSection}
             menuAttention={saveGame && !launch.userId}
+            menuInitiallyOpen={!!launch.askAtLaunch}
+            menuOpenRequest={menuOpenNonce}
+            holdPaused={view === 'identify'}
           />
         </div>,
         document.body,

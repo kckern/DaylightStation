@@ -9,10 +9,17 @@ const memory = () => {
 describe('boardCache', () => {
   it('round-trips a settled snapshot', () => {
     const store = memory();
-    writeBoardCache({ studyDay: '2026-09-25', learners: { a: { summary: { total: 1 }, term: { days: [] } } }, rings: { a: { current: 3 } } }, store);
+    writeBoardCache({ studyDay: '2026-09-25', learners: { a: { summary: { total: 1 }, term: { days: [] } } }, rings: { a: { current: 3 } }, earnings: { a: { silver: 4 } }, gold: { a: 3 } }, store);
     expect(readBoardCache(store)).toEqual({
-      studyDay: '2026-09-25', learners: { a: { summary: { total: 1 }, term: { days: [] } } }, rings: { a: { current: 3 } },
+      studyDay: '2026-09-25', learners: { a: { summary: { total: 1 }, term: { days: [] } } }, rings: { a: { current: 3 } }, earnings: { a: { silver: 4 } }, gold: { a: 3 },
     });
+  });
+
+  it('keeps stored gold when a write carries none', () => {
+    const store = memory();
+    writeBoardCache({ studyDay: 'd1', learners: {}, gold: { a: 3 } }, store);
+    writeBoardCache({ studyDay: 'd1', learners: {} }, store);
+    expect(readBoardCache(store).gold).toEqual({ a: 3 });
   });
 
   it('keeps stored values for fields still in flight', () => {
@@ -38,5 +45,12 @@ describe('boardCache', () => {
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
     expect(readBoardCache(broken)).toBeNull();
     expect(() => writeBoardCache({ studyDay: 'd1' }, broken)).not.toThrow();
+  });
+
+  it('keeps stored earnings when a write carries none (the read still in flight)', () => {
+    const store = memory();
+    writeBoardCache({ studyDay: 'd1', learners: {}, earnings: { a: { silver: 4 } }, gold: { a: 3 } }, store);
+    writeBoardCache({ studyDay: 'd1', learners: {} }, store);
+    expect(readBoardCache(store).earnings).toEqual({ a: { silver: 4 } });
   });
 });

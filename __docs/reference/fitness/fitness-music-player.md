@@ -104,15 +104,23 @@ The log curve is calibrated so level 50 (midpoint) ≈ 10% output volume — mat
 
 ### Persistent volume
 
-Music volume is keyed by playlist and track via `usePersistentVolume`:
+Music volume is one level per playlist, via `usePersistentVolume`:
 
 ```
 grandparentId: 'fitness-music'
 parentId:      <selectedPlaylistId> || 'global'
-trackId:       <contentId|key|plex|assetId|ratingKey|id> || 'music'
+trackId:       'playlist'
+reapplyKey:    <contentId|key|plex|assetId|ratingKey|id>
 ```
 
-Volume choices persist across sessions and resolve per-track first, falling back up the hierarchy.
+The current track is the `reapplyKey`, not part of the storage key: it only
+re-applies the playlist level to each new track's audio element. Volume used to
+be stored per track, and a track's own level beat a newer playlist level, so a
+song adjusted weeks earlier came back at its old level when shuffle reached it.
+A playlist with no level yet inherits the most recent level saved anywhere in
+that playlist (which includes the old per-track entries), then the global
+default. Dance Party (`fitness-dance`) uses the same shape. Taps log
+`fitness.music.volume_select` / `fitness.dance.volume_select`.
 
 ### Error surfacing (primary)
 
@@ -185,7 +193,7 @@ The standalone chart and any screen layout containing `fitness:chart` are always
 | Source                              | Used for                                          |
 |-------------------------------------|---------------------------------------------------|
 | `useFitnessContext()`               | Pause flags, playlist list, music-enabled state, session instance for telemetry |
-| `usePersistentVolume`               | Per-track music volume hierarchy                  |
+| `usePersistentVolume`               | Per-playlist music volume                         |
 | `videoVolume` prop                  | Linear video volume control (passed through)      |
 | `<Player>` via `audioPlayerRef`     | Queue ownership, playback, `advance(1)`, `toggle()` |
 | `ContentDisplayUrl(trackKey)`       | Album artwork URL                                 |

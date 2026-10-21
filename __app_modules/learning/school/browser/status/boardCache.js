@@ -12,7 +12,7 @@
  *
  * The day's discs belong to one study day. The snapshot records which, and the
  * board drops them the moment the server names a different day — yesterday's
- * greens must never stand in for this morning's work. The term grid and ring
+ * greens must never stand in for this morning's work. The term read and ring
  * count are not day-scoped the same way and survive the rollover until their
  * own reads replace them.
  *
@@ -22,7 +22,7 @@
 
 const KEY = 'daylight.school.status-board.v1';
 
-/** @returns {{studyDay: string|null, learners: Object<string, {summary?: object|null, term?: object|null}>, rings: object}|null} */
+/** @returns {{studyDay: string|null, learners: Object<string, {summary?: object|null, term?: object|null}>, rings: object, earnings: object, gold: object}|null} */
 export function readBoardCache(storage = safeStorage()) {
   try {
     const raw = storage?.getItem(KEY);
@@ -33,6 +33,8 @@ export function readBoardCache(storage = safeStorage()) {
       studyDay: typeof parsed.studyDay === 'string' ? parsed.studyDay : null,
       learners: parsed.learners ?? {},
       rings: parsed.rings && typeof parsed.rings === 'object' ? parsed.rings : {},
+      earnings: parsed.earnings && typeof parsed.earnings === 'object' ? parsed.earnings : {},
+      gold: parsed.gold && typeof parsed.gold === 'object' ? parsed.gold : {},
     };
   } catch {
     return null;
@@ -44,14 +46,14 @@ export function readBoardCache(storage = safeStorage()) {
  * from `learners` keeps its stored entry; a field left `undefined` (still in
  * flight) keeps its stored value.
  */
-export function writeBoardCache({ studyDay, learners = {}, rings } = {}, storage = safeStorage()) {
+export function writeBoardCache({ studyDay, learners = {}, rings, earnings, gold } = {}, storage = safeStorage()) {
   if (!studyDay) return;
   try {
     const previous = readBoardCache(storage);
     const sameDay = previous?.studyDay === studyDay;
     const merged = {};
     for (const [id, entry] of Object.entries(previous?.learners ?? {})) {
-      // Another day's discs are dropped; its term grid is still the best we have.
+      // Another day's discs are dropped; its term read is still the best we have.
       merged[id] = sameDay ? { ...entry } : { term: entry.term };
     }
     for (const [id, entry] of Object.entries(learners)) {
@@ -63,6 +65,8 @@ export function writeBoardCache({ studyDay, learners = {}, rings } = {}, storage
       studyDay,
       learners: merged,
       rings: rings ?? previous?.rings ?? {},
+      earnings: earnings ?? previous?.earnings ?? {},
+      gold: gold ?? previous?.gold ?? {},
       savedAt: new Date().toISOString(),
     }));
   } catch {

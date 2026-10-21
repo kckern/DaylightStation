@@ -88,6 +88,11 @@ recap is otherwise indistinguishable from a clean run.
    record video on the session ─► move the raw frames to _trash (7-day retention)
 ```
 
+The encode gets 15 minutes (`fitnessApi.mjs`). A ~3000-frame recap takes ~100s on a
+quiet host, so the ffmpeg adapter's 120s default failed under load, and because a
+failed recap is retried hourly and every retry re-renders all frames on the backend's
+main thread, one timeout cost hours of event-loop stalls.
+
 ### Settle window (why the recap waits)
 
 An interrupted workout that is resumed — or manually stitched — shortly after is treated

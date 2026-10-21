@@ -9,7 +9,7 @@
  *
  * Data sources (relative to data root):
  * - system/config/jobs.yml          -- job definitions
- * - system/state/cron-runtime.yml   -- runtime state map (jobId → state)
+ * - system/scheduling/cron-runtime.yml   -- runtime state map (jobId → state)
  *
  * Manual "run now" is delegated to the injected SchedulerOrchestrator
  * (`triggerJob`) when available — the real scheduler execution path used by the
@@ -51,7 +51,7 @@ export class SchedulerAdminService {
     this.#configStore.writeScheduledJobs(jobs);
   }
 
-  /** Read the runtime state map from system/state/cron-runtime.yml */
+  /** Read the runtime state map from system/scheduling/cron-runtime.yml */
   #readRuntimeState() {
     return this.#configStore.readSchedulerRuntime();
   }
