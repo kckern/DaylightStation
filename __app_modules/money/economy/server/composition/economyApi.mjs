@@ -22,6 +22,7 @@ export function createEconomyApi({ configService, logger = console, clock = () =
   const economyService = new EconomyService({
     datastore: new YamlEconomyDatastore({ configService }),
     configProjection: new EconomyConfigProjection({ configService }),
+    clock,
     logger,
   });
   // The household earn rules (weekly earnings preview; the future payout).

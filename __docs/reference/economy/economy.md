@@ -24,8 +24,17 @@ is a rebuildable cache re-derived on every mutation.
 
 ```
 ledger/{YYYY-MM-DD}.yml   # append-only transactions, sharded by txn date
-wallet.yml               # { balance, as_of, session } — cache, reconcilable from ledger
+wallet.yml               # { balance, balances, as_of, session } — cache, reconcilable from ledger
 ```
+
+`balances` is `{ silver, gold, gems }`, each folded on its own and floored at 0.
+`balance` is the silver figure, kept for callers that predate currencies.
+
+Writes to a user's ledger are serialized through one per-user queue and land
+atomically (staged file, then rename), so concurrent appends never lose an entry
+or leave a half-written day file. `withUserLock(userId, fn)` holds that queue for
+a read-check-write (a purchase that checks a balance before it debits); an append
+made inside the lock writes straight through rather than waiting on itself.
 
 Household policy lives at `data/household/config/economy.yml` (auto-loaded as the
 `economy` household app config).
@@ -35,12 +44,29 @@ Household policy lives at `data/household/config/economy.yml` (auto-loaded as th
 ```yaml
 - id: txn_ab12cd34ef
   at: "2026-07-17T20:15:00.000Z"
-  kind: earn            # deposit | earn | spend | withdraw | adjust
+  kind: earn            # deposit | earn | spend | withdraw | adjust | convert | pass
+  currency: silver      # silver | gold | gems; an entry with no currency is silver
   delta: 5              # signed integer; sign must match kind
   action: piano-lesson-complete
   source: piano
   ref: "plex:12345"     # traceability handle (dedup key for earns)
+  # optional, written only when set:
+  ruleId: korean-daily  # the earn rule that paid it
+  price: { silver: 3 }  # what a pass cost
+  timeliness: on-time
+  evidenceRef: "unit:abc"
+  meta: { … }
 ```
+
+## Transaction kinds
+
+| Kind | Delta | Use |
+|---|---|---|
+| `deposit`, `earn` | > 0 | parent deposit; rewards |
+| `spend`, `withdraw` | < 0 | arcade drain; cash-out |
+| `adjust` | ≠ 0, either sign | auditable reconciliation (may push the ledger below zero) |
+| `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry |
+| `pass` | exactly 0 | voucher marker; the coin it cost is a separate `spend` |
 
 ## Transaction types
 
@@ -86,7 +112,7 @@ catalog leaves the campaign reward visible but skips the wallet mutation.
 
 | Method / Path | Body | Returns |
 |---|---|---|
-| GET `/users/:userId/wallet` | — | `{ userId, balance, session }` |
+| GET `/users/:userId/wallet` | — | `{ userId, balance, balances, session }` |
 | POST `/users/:userId/deposit` | `{ amount, note? }` | `{ userId, balance }` |
 | POST `/users/:userId/earn` | `{ action, source, ref? }` | `{ userId, earned, capped, duplicate, balance }` |
 | POST `/users/:userId/sessions` | `{ action, source }` | `{ userId, sessionId, balance, drainPerSecond }` |

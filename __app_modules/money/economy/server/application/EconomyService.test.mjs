@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
+import yaml from 'js-yaml';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyService } from "./EconomyService.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
@@ -118,6 +119,59 @@ describe('EconomyService', () => {
     expect((await svc.adjust(USER, { delta: -7, source: 'school-grade', ref: 'adjustment:one' })).duplicate).toBe(true);
     expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later' })).balance).toBe(0);
     expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later-2' })).balance).toBe(3);
+  });
+});
+
+describe('multi-currency balances', () => {
+  const ledgerDir = () => path.join(USER_DIR, 'apps', 'economy', 'ledger');
+  const writeDay = (day, txns) => {
+    fs.mkdirSync(ledgerDir(), { recursive: true });
+    fs.writeFileSync(path.join(ledgerDir(), `${day}.yml`), yaml.dump(txns));
+  };
+
+  it('getBalance returns balances alongside the silver balance', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 4 });
+    const res = await svc.getBalance(USER);
+    expect(res).toMatchObject({ userId: USER, balance: 4, balances: { silver: 4, gold: 0, gems: 0 }, session: null });
+  });
+
+  it('legacy entries without a currency count as silver', async () => {
+    writeDay('2026-07-17', [
+      { id: 'txn_old', at: '2026-07-17T10:00:00.000Z', kind: 'deposit', delta: 10, action: 'parent-deposit', source: 'admin', ref: null },
+      { id: 'txn_gold', at: '2026-07-17T11:00:00.000Z', kind: 'convert', delta: 3, action: 'week-close', source: 'economy', ref: null, currency: 'gold' },
+    ]);
+    const res = await makeService().getBalance(USER);
+    expect(res.balance).toBe(10);
+    expect(res.balances).toEqual({ silver: 10, gold: 3, gems: 0 });
+  });
+
+  it('the wallet snapshot carries balances, stamped by the injected clock', async () => {
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date('2026-10-19T15:00:00.000Z'),
+    });
+    await svc.deposit(USER, { amount: 6 });
+    const wallet = new YamlEconomyDatastore({ configService }).readWallet(USER);
+    expect(wallet).toEqual({ balance: 6, balances: { silver: 6, gold: 0, gems: 0 }, as_of: '2026-10-19T15:00:00.000Z', session: null });
+    expect(fs.existsSync(path.join(ledgerDir(), '2026-10-19.yml'))).toBe(true);
+  });
+
+  it('getHistory lists entries newest first, optionally since a time, legacy ones as silver', async () => {
+    writeDay('2026-10-17', [{ id: 'txn_1', at: '2026-10-17T10:00:00.000Z', kind: 'deposit', delta: 2, action: 'parent-deposit', source: 'admin', ref: null }]);
+    writeDay('2026-10-18', [
+      { id: 'txn_2', at: '2026-10-18T09:00:00.000Z', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null, currency: 'silver' },
+      { id: 'txn_3', at: '2026-10-18T12:00:00.000Z', kind: 'earn', delta: 1, action: 'x', source: 't', ref: null, currency: 'gems' },
+    ]);
+    const svc = makeService();
+    const all = await svc.getHistory(USER);
+    expect(all.map((t) => t.id)).toEqual(['txn_3', 'txn_2', 'txn_1']);
+    expect(all[2].currency).toBe('silver');
+    expect((await svc.getHistory(USER, { since: '2026-10-18T09:00:00.000Z' })).map((t) => t.id)).toEqual(['txn_3', 'txn_2']);
+    await expect(svc.getHistory('nobody')).rejects.toThrow();
+    await expect(svc.getHistory(USER, { since: 'not a date' })).rejects.toThrow(/since/);
   });
 });
 

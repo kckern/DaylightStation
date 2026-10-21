@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RULE_KINDS, DEFAULT_RULESET, validateRuleset, resolveRules, withUserOverride, evaluateEarnings, earningRef,
+  RULE_KINDS, CURRENCIES, DEFAULT_RULESET, validateRuleset, resolveRules, withUserOverride, evaluateEarnings, earningRef,
 } from "./index.mjs";
+import { CURRENCIES as LEDGER_CURRENCIES } from "../index.mjs";
 
 const WEEK = { from: '2026-09-21', to: '2026-09-27' };
 const RINGS_WEEK = { from: '2026-09-21T11:00:00.000Z', to: '2026-09-26T19:00:00.000Z' };
@@ -42,6 +43,12 @@ describe('validateRuleset', () => {
     expect(() => ruleset(rules, { kid: { rules: { nope: { reward: 1 } } } })).toThrow(/nope/);
     expect(() => ruleset(rules, { kid: { multiplier: 0 } })).toThrow(/multiplier/);
     expect(() => ruleset(rules, { kid: { multiplier: 11 } })).toThrow(/multiplier/);
+  });
+
+  it('shares the ledger currency list, but a rule never pays gold', () => {
+    expect(CURRENCIES).toBe(LEDGER_CURRENCIES);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: { copper: 1 } }])).toThrow(/unknown currency/);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: { silver: 1, gold: 1 } }])).toThrow(/gold/);
   });
 
   it('sorts ring thresholds and refuses a non-positive one', () => {
