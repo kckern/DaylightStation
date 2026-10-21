@@ -206,6 +206,15 @@ and paper controls appear directly only when an issued artifact actually
 exists. A subject with no planned offer is **No assignment**, not **Not
 started**, and is excluded from the unfinished count.
 
+**This week** sits above the Day: a subject × day grid of the seven days
+ending today (`WeekGrid`, built by `learnerWeek.js`). It makes the same two
+reads once per day (14 GETs, none recording) and joins each day with the same
+`joinLearnerDay`, so a cell cannot disagree with the Day it opens. A cell shows
+the subject's least-finished row that day, with its percent when one was
+recorded; a column header gives "done of planned" and opens that day. A day
+that will not load shows `?` rather than hiding. The week always ends today,
+so stepping back through days moves the highlight, not the reads.
+
 Opening a session from a Day records `from=day&studyDay=YYYY-MM-DD` in the URL.
 The inspector's Back control returns to that exact date; a session opened from
 History returns to History, and one opened from the action queue

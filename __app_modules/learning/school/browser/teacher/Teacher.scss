@@ -2998,3 +2998,34 @@
   .teacher-roster__agenda-link { grid-column: 2; grid-row: 2; }
   .teacher-roster__plan-link { margin-left: 0; }
 }
+
+// The week at a glance (WeekGrid): state colours match the roster day dots.
+// The scroll wrapper is what keeps a phone's page from scrolling sideways —
+// seven day columns plus a subject name do not fit 360px, so the TABLE
+// scrolls inside the panel instead.
+.teacher-week__scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.teacher-week {
+  width: 100%; min-width: 520px; border-collapse: separate; border-spacing: 3px; font-size: 13px;
+  th, td { padding: 0; text-align: center; }
+  tbody th { padding: 0 6px 0 0; text-align: left; font-weight: 600; color: #5d5647; white-space: nowrap; }
+  thead button {
+    display: grid; gap: 1px; width: 100%; min-height: 44px; border: 1px solid #e0d8c8; border-radius: 8px;
+    background: #fff; padding: 4px; cursor: pointer; font: inherit; color: #3b352b;
+    small { color: #6d6455; }
+    &[aria-pressed="true"] { border-color: #6e4b20; box-shadow: inset 0 0 0 1px #6e4b20; }
+    &:focus-visible { outline: 2px solid #6e4b20; outline-offset: 2px; }
+  }
+  &__cell {
+    height: 30px; border-radius: 6px;
+    button {
+      width: 100%; height: 100%; min-height: 30px; border: 0; border-radius: inherit; background: transparent;
+      font: inherit; font-weight: 700; font-size: 12px; color: inherit; cursor: pointer;
+    }
+    &--done { background: #e4f0e0; color: #2e6b34; }
+    &--in-progress { background: #fdf7e8; color: #8a6a2a; outline: 1px dashed #c9a35c; outline-offset: -3px; }
+    &--planned { background: #f3eee5; color: #8a8272; }
+    &--blocked { background: #fbe4de; color: #9a3b26; }
+    &--deferred { background: repeating-linear-gradient(45deg, #f3eee5 0 4px, #fff 4px 8px); color: #866526; }
+  }
+  &__empty { padding: 8px; color: #6d6455; text-align: left; }
+}

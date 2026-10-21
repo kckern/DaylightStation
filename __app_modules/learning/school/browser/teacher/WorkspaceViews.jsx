@@ -32,6 +32,7 @@ import CompanionFinishCode from "./panels/CompanionFinishCode.jsx";
 import LaunchPreviewAction from "./panels/LaunchPreviewAction.jsx";
 import GradedWorksheet from "./panels/GradedWorksheet.jsx";
 import LearnerDayView from "./panels/LearnerDayView.jsx";
+import WeekGrid from "./panels/WeekGrid.jsx";
 import ReadingShelfPanel from "./panels/ReadingShelfPanel.jsx";
 import ReadingDetailPanel from "./panels/ReadingDetailPanel.jsx";
 import CardLadderWordsPanel, { cardLadderEnrollments } from "./panels/CardLadderWordsPanel.jsx";
@@ -211,6 +212,9 @@ export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay()
         <h2>{learnerName}&rsquo;s day</h2>
         <p>What was planned, what got done, and what is still open — for any school day.</p>
       </div></div>
+      {/* The week always ends today, so stepping back through days below
+          moves the highlight, not the reads. */}
+      <WeekGrid learnerId={learnerId} endDay={localDay()} selectedDay={studyDay} onSelectDay={onChangeStudyDay} />
       <LearnerDayView
         learnerId={learnerId}
         learnerName={learnerName}

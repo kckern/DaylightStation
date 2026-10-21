@@ -331,4 +331,17 @@ describe('LearnerDayScreen study day', () => {
     })();
     expect(input.value).toBe(expected);
   });
+
+  it('puts the week above the day, and a day column opens that day', async () => {
+    const onChangeStudyDay = vi.fn();
+    render(<LearnerDayScreen learnerId="user_2" learnerName="User_2" studyDay="2026-08-20"
+      onChangeStudyDay={onChangeStudyDay} onOpenSession={() => {}} />);
+    expect(await screen.findByRole('heading', { name: 'This week' })).toBeInTheDocument();
+    const today = (() => {
+      const now = new Date();
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(now);
+    })();
+    (await screen.findByRole('button', { name: new RegExp(`^${today}`) })).click();
+    expect(onChangeStudyDay).toHaveBeenCalledTimes(1);
+  });
 });
