@@ -8,8 +8,8 @@
  * tile share, so the two never disagree about whether a pass is for sale.
  *
  * Every call goes through `DaylightAPI`, which throws on a non-2xx with
- * `error.status` set and the JSON body after " - " in the message;
- * `errorBody` reads that body back.
+ * `error.status` set and, when the body is JSON, `error.body`; `errorBody`
+ * reads it (falling back to the copy after " - " in the message).
  */
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 
@@ -28,6 +28,7 @@ const passPath = (learnerId, passId) => `${economyUser(learnerId)}/passes/${enco
 
 /** The JSON body of a failed `DaylightAPI` call, or null when it had none. */
 export function errorBody(error) {
+  if (error?.body && typeof error.body === 'object') return error.body;
   const message = String(error?.message ?? '');
   const at = message.indexOf(' - ');
   if (at < 0) return null;
@@ -59,8 +60,8 @@ export function offersFromBank(bank) {
     : [];
 }
 
-/** True when today's pass is spoken for: the cap is used and no pass is waiting to be played. */
-export function sneakUsed(access) {
+/** True when today's pass cap is spoken for and no pass is waiting to be played. */
+export function passCapUsed(access) {
   const pass = access?.pass;
   return Boolean(pass) && pass.state !== 'unknown' && pass.state !== 'active' && pass.capUsed === true;
 }
@@ -73,9 +74,20 @@ export function affordableOffers(access) {
   return (access.offers ?? []).filter((row) => row.affordable === true);
 }
 
-/** Whether the lock may sell a pass at all. The Games tile and the lock screen both read this. */
+/** Whether the lock can sell a pass right now (an affordable offer exists). */
 export function canBuyPass(access) {
   return affordableOffers(access).length > 0;
+}
+
+/**
+ * Whether a school-locked Games tile still leads somewhere: today's pass cap
+ * is unused and the ledger was readable. Affordable or not — a child with no
+ * silver can still reach the lock's Print button and earn some.
+ */
+export function canEnterLock(access) {
+  if (!access || access.unlocked || access.status !== 'ready' || access.state !== 'incomplete') return false;
+  const pass = access.pass;
+  return Boolean(pass) && pass.state !== 'unknown' && pass.state !== 'active' && pass.capUsed === false;
 }
 
 export const readBank = (learnerId) => DaylightAPI(`${economyUser(learnerId)}/bank`);
@@ -114,8 +126,9 @@ export function schoolProgress(completion) {
 
 /**
  * The Print button's label from `GET .../next`: "Print my next sheet (Math
- * 4-02)", with "+2 silver · " only when the economy prices the unit. Null when
- * nothing would print. The reward is never made up: `reward: null` (today's
+ * 4-02)", with "+2 silver · " / "+1 gem · " only when the economy prices the
+ * unit — the same reward words as the Portal's bank strip. Null when nothing
+ * would print. The reward is never made up: `reward: null` (today's
  * production answer) shows no amount.
  */
 export function nextSheetLabel(next) {
@@ -124,6 +137,9 @@ export function nextSheetLabel(next) {
   const title = unit.title || unit.unitId;
   if (!title) return null;
   const silver = next.reward?.silver;
-  const reward = Number.isFinite(silver) && silver > 0 ? `+${silver} silver · ` : '';
-  return `Print my next sheet (${reward}${title})`;
+  const gems = next.reward?.gems;
+  const parts = [];
+  if (Number.isFinite(silver) && silver > 0) parts.push(`+${silver} silver`);
+  if (Number.isFinite(gems) && gems > 0) parts.push(`+${gems} gem${gems === 1 ? '' : 's'}`);
+  return `Print my next sheet (${[...parts, title].join(' · ')})`;
 }

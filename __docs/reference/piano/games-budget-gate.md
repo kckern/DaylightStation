@@ -78,12 +78,24 @@ Every other result carries `pass: null, offers: []`. A failed bank read leaves t
 as it was and never turns the verdict into `error`. `state: 'unknown'` (the ledger could
 not be read) reads as locked, with no offers.
 
-**The Games tile** (`PianoMenu.jsx`) stays enabled under the school lock only when the
-lock can sell an affordable pass: `state: 'incomplete'`, a pass that is neither `active`
-nor `unknown`, `capUsed === false`, and an offer with `affordable: true`
-(`canBuyPass` in `earlyPass.js`). An active pass already reads as unlocked. A used cap,
-an unreadable ledger, or nothing for sale leaves the tile disabled. The live prices
-are 0, which means nothing is for sale, so the tile behaves as it did before.
+**Bank cadence.** The entitlement is still polled every 15 s; the bank is not. It is read
+on the edge into `incomplete`, when the tab becomes visible, on an explicit `refresh()`,
+and on a 60 s timer. Between those reads the last answer is reused. It is never read
+while a pass game is on screen (`pauseBankReads`, set by `Games()`), so the game's own
+consume cannot read back as a lock under it.
+
+**The office TV ignores the pass.** `PianoVisualizer` unlocks only on
+`unlocked && via !== 'pass'`. The pass is one game on the tablet, which consumes it and
+relocks; the office screen has neither, so honouring the pass there would hand out
+unmetered games for as long as it stayed active.
+
+**The Games tile** (`PianoMenu.jsx`) stays enabled under the school lock whenever today's
+cap is unused: `state: 'incomplete'`, a pass that is neither `active` nor `unknown`, and
+`capUsed === false` (`canEnterLock` in `earlyPass.js`). An affordable offer is not
+required, so a child with no silver still reaches the lock's progress line and Print
+button. With an affordable offer the blurb reads "Finish school, or buy one game". An
+active pass already reads as unlocked ("One game today"). A used cap, an unreadable
+ledger, or no bank answer at all leaves the tile disabled.
 [Games off](#games-off-gameaccessdisabledfor) is checked first and never offers.
 
 **The lock screen** (`SchoolLock.jsx`) keeps each lock reason's copy. In the plain
@@ -92,39 +104,48 @@ incomplete case it adds:
 - "School: X of Y done today", from `GET /api/v1/school/lifecycle/learners/:id/completion`
   (sections `served` against `served` plus `obligated`);
 - one "Spend N silver: one game" / "Spend N gold: one game" button per affordable offer;
-- "Sneak used today — finish school to play more." when the cap is used;
+- "Sneak used today — finish school to play more." when the cap is used (`passCapUsed`);
 - "Print my next sheet (Math 4-02)" from School's `GET …/self-service/learners/:id/next`.
-  The "+N silver · " prefix appears only when `reward.silver` is set; production answers
-  `reward: null`. A 404 (self-service off) shows no button.
+  The "+N silver · " / "+N gem(s) · " prefix appears only when the reward names it, the
+  same words as the Portal bank strip; production answers `reward: null`. A 404
+  (self-service off) shows no button. After a print the label is read again.
 
-A buy asks first ("One game, then games lock until school is done"), posts
-`POST …/passes {privilege, coin}`, and re-reads access in a `finally`, success or not,
-because a failed buy can leave an unpaid pass that is real. A 402 shows the shortfall
-("2 more silver to buy a game."), and a 409 `PASS_CAP` shows the cap copy.
+A buy asks first, in a labelled group ("One game, then games lock until school is done")
+that moves focus to "Not now". It posts `POST …/passes {privilege, coin}` and re-reads
+access in a `finally`, success or not, because a failed buy can leave an unpaid pass that
+is real. A 402 shows the shortfall ("2 more silver to buy a game.", or "Not enough silver
+yet." without one), a 409 `PASS_CAP` shows the cap copy, and `PASS_NOT_SOLD` says games
+aren't for sale. Only the notice and the print sentence are live regions; the panel is
+labelled by its heading.
 
-**The game.** `Games()` holds the session (`useEarlyPassSession`). While a pass is open:
+**The game.** `Games()` holds the session (`useEarlyPassSession`).
 
-- the match gate reports `armed: true`, so a game's "play again" returns to the host;
-- `registerCompletion` consumes the pass once the board game's save resolves;
-- a rematch request or an exit shows the relock screen ("Good game! Games lock again
-  until school is done." plus Print). Neither remounts a game or opens the picker;
-- an exit, a rematch, a crash (`GameBoundary`'s `onCrash`), or an unmount the host did not
-  start (the breadcrumb, a profile switch) refunds when `playedMs < 60000` and consumes
-  otherwise. `playedMs` runs from the game's own mount, so a pass that never reached a
-  game played 0 ms.
+- *Open.* Before the game mounts, the pass is open only while access says `via: 'pass'`;
+  if the pass ends while the child is on the picker or the challenge, the lock comes
+  straight back. Once the game mounts the pass is latched, and the routes stay open
+  whatever access says, so the refresh after a consume cannot cut off a result screen.
+- *Armed.* The match gate reports `armed: true`, so a game's "play again" returns to the
+  host.
+- *One terminal path.* A rematch request, an exit, a crash (`GameBoundary`'s `onCrash`),
+  an unmount the host did not start, and a profile switch all go through `end`, which
+  marks the pass relocked and settles it. The relock screen ("Good game! Games lock again
+  until school is done." plus Print) replaces the routes; nothing remounts a game or
+  opens the picker. Switching back to the player who bought it shows the relock screen.
+- *Settle modes.* `by-play-time` refunds when `playedMs < 60000` and consumes otherwise;
+  `playedMs` runs from the game's own mount, so a pass that never reached a game played
+  0 ms. `force-consume` is used for a profile switch (whatever the play time), and for
+  any end after a completion.
+- *Completion.* `registerCompletion` marks the pass completed synchronously, before the
+  board game's save is awaited, so an exit a moment later consumes. It consumes once the
+  save settles, even if the save fails. The relock waits for the next rematch or exit,
+  so the result screen stays up.
 
-The session keeps the routes open after the consume, so the access refresh that follows
-it cannot cut off a finished game's result screen.
-
-Exactly one terminal call is made per pass. A ref keyed by pass id is set before the
-request leaves, and the host's unmount is deferred a tick and cancelled by a remount,
-so a StrictMode double effect cannot spend the pass. The server also bounds a refund by
-its own clock. A `PASS_REFUND_CLOSED` refusal therefore consumes once instead, a
-`PASS_NOT_ACTIVE` refusal is only logged, and nothing retries.
-
-The office TV (`PianoVisualizer`) is unchanged. A pass bought on the tablet also opens it
-through the same hook, and its `exitGame('school-locked')` relocks it once the pass
-ends.
+Exactly one terminal call is made per pass: a ref keyed by pass id is set before the
+request leaves. The host's unmount is deferred one microtask and cancelled by a remount,
+so a StrictMode unmount-remount pair cannot spend the pass, and no timer outlives the
+screen. A refund refused as `PASS_NOT_ACTIVE` is only logged. Any other refund failure
+(`PASS_REFUND_CLOSED`, a 5xx, the network) tries one consume; if that fails too, it is
+logged and left. Nothing retries.
 
 ### Games off (`gameAccess.disabledFor`)
 
@@ -1056,7 +1077,7 @@ carry `matchId`, so a rematch is a new mount and a bounce is a short `playedMs`.
 |---|---|---|
 | `piano.early-pass.offered` | info | the lock screen shows a buy button, once per learner and set of offers |
 | `piano.early-pass.bought` | info | `POST …/passes` succeeded |
-| `piano.early-pass.consumed` | info | the pass was consumed, with `playedMs` and `reason` (`completion`, `rematch`, `exit`, `crash`, `unmount`, `switch`) |
+| `piano.early-pass.consumed` | info | the pass was consumed, with `playedMs`, `mode` and `reason` (`completion`, `rematch`, `exit`, `crash`, `unmount`, `switch`, `session-lost`) |
 | `piano.early-pass.refunded` | info | the pass was refunded inside the first minute |
 | `piano.early-pass.refused` | warn | a buy, consume or refund was refused or failed, with `action`, `status` and `code` |
 | `piano.early-pass.crash` | info | a pass game crashed; the settle follows |

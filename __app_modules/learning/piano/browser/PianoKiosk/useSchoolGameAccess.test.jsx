@@ -317,3 +317,67 @@ describe('useSchoolGameAccess and the early pass', () => {
     expect(bankCalls()).toHaveLength(0);
   });
 });
+
+describe('useSchoolGameAccess bank cadence', () => {
+  const PASS_ID = 'pass:kid-one:2026-08-30';
+  const bankCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('/economy/'));
+  const entitlementCalls = () => DaylightAPI.mock.calls.filter(([path]) => String(path).includes('entitlements'));
+  const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    h.bank = () => ({ pass: { 'piano.games': { passId: null, state: 'none', capUsed: false } }, offers: { 'piano.games': [] } });
+  });
+
+  it('keeps the 15 s entitlement poll but reads the bank only on the edge and the slow timer', async () => {
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    await tick(45_000);
+    expect(entitlementCalls().length).toBeGreaterThanOrEqual(4);
+    expect(bankCalls()).toHaveLength(1);
+    await tick(15_000);
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('reads the bank on the edge into incomplete', async () => {
+    h.response = entitlement({ decision: 'granted', basisState: 'satisfied' });
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(0);
+    h.response = entitlement();
+    await tick(15_000);
+    expect(bankCalls()).toHaveLength(1);
+  });
+
+  it('reads the bank when the tab becomes visible again', async () => {
+    renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('reads the bank on an explicit refresh()', async () => {
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one'));
+    await tick(0);
+    await act(async () => { await result.current.refresh(); });
+    expect(bankCalls()).toHaveLength(2);
+  });
+
+  it('never reads the bank while a pass game is held, and keeps the pass it had', async () => {
+    h.bank = () => ({ pass: { 'piano.games': { passId: PASS_ID, state: 'active', capUsed: true } }, offers: { 'piano.games': [] } });
+    const paused = { current: false };
+    const { result } = renderHook(() => useSchoolGameAccess('kid-one', { pauseBankReads: paused }));
+    await tick(0);
+    expect(result.current).toMatchObject({ unlocked: true, via: 'pass' });
+    paused.current = true;
+    await tick(120_000);
+    await act(async () => { await result.current.refresh(); });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(bankCalls()).toHaveLength(1);
+    expect(result.current).toMatchObject({ unlocked: true, via: 'pass' });
+  });
+});

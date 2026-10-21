@@ -128,7 +128,13 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // school verdict's momentary `loading` on the switch), re-picked himself,
   // and played chess — the school verdict was `complete`, and nothing else
   // was asked. The tablet's Games mode has always checked both.
-  const gamesAllowed = !gamesOff && schoolGameAccess.unlocked;
+  //
+  // An early pass does NOT count here (school economy slice 1). The pass is
+  // one game on the tablet, which consumes it and relocks; this screen has
+  // neither, so honouring `via: 'pass'` would hand out unmetered games for
+  // as long as the pass stayed active. Only school's own unlock opens it.
+  const schoolUnlocked = schoolGameAccess.unlocked && schoolGameAccess.via !== 'pass';
+  const gamesAllowed = !gamesOff && schoolUnlocked;
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -169,7 +175,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // are answers neither.
   const staleDenial = identityStale
     && schoolGameAccess.status === 'ready'
-    && !schoolGameAccess.unlocked;
+    && !schoolUnlocked;
   const rosterNeeded = pickerOpen || (!currentUser && users.length > 0) || staleDenial;
 
   // Picking is one key press against a row of six faces, and the row vanishes
@@ -213,7 +219,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
       // your own lane and no case for adding a wall. It is still the switch
       // worth being able to find afterwards, and an ordinary
       // `launcher.user-selected` line cannot be told apart from a normal pick.
-      if (!schoolGameAccess.unlocked && schoolGameAccess.status === 'ready' && currentUser && id !== currentUser) {
+      if (!schoolUnlocked && schoolGameAccess.status === 'ready' && currentUser && id !== currentUser) {
         getLogger().child({ component: 'piano-launcher' }).info(
           'launcher.user-switched-after-deny',
           { from: currentUser, to: id, deniedState: schoolGameAccess.state },
@@ -415,7 +421,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && !gamesOff && schoolGameAccess.unlocked && (
+      {launcherOpen && !rosterVisible && !gamesOff && schoolUnlocked && (
         <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
       )}
 
@@ -438,7 +444,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && !gamesOff && !schoolGameAccess.unlocked && (
+      {launcherOpen && !rosterVisible && !gamesOff && !schoolUnlocked && (
         <div className="note-launcher note-launcher--school-locked" role="status">
           <div className="nl-lock">
             <span className="nl-lock__badge" aria-hidden="true">

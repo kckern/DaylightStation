@@ -236,8 +236,9 @@ describe('PianoMenu while the lesson verdict is still outstanding', () => {
 });
 
 // The early pass (school economy slice 1, C5). The school-locked Games tile
-// stays live when the lock can sell a game the child can afford, so they can
-// reach the offer; otherwise it stays shut, as it always was.
+// stays live while today's pass cap is unused, affordable or not, so a child
+// with no silver can still reach the lock's Print button. A used cap or an
+// unreadable ledger shuts it, as it always was.
 describe('PianoMenu Games tile and the early pass', () => {
   const gamesTile = () => screen.getByText('Games').closest('button');
   const locked = (pass, offers = []) => ({
@@ -252,15 +253,27 @@ describe('PianoMenu Games tile and the early pass', () => {
     expect(gamesTile().textContent).toContain('buy one game');
   });
 
-  it('stays disabled when the offer is not affordable', () => {
+  it('is enabled when the offer is not affordable, so Print is reachable', () => {
     schoolAccess = locked({}, [{ coin: 'silver', price: 3, affordable: false }]);
     renderMenu();
-    expect(gamesTile().disabled).toBe(true);
+    expect(gamesTile().disabled).toBe(false);
     expect(gamesTile().textContent).toContain('Finish school to unlock');
   });
 
-  it('stays disabled when nothing is for sale (the shipped prices are 0)', () => {
+  it('is enabled when nothing is for sale (the shipped prices are 0)', () => {
     schoolAccess = locked({}, []);
+    renderMenu();
+    expect(gamesTile().disabled).toBe(false);
+  });
+
+  it('stays disabled when the bank could not be read at all', () => {
+    schoolAccess = { status: 'ready', state: 'incomplete', unlocked: false, pass: null, offers: [] };
+    renderMenu();
+    expect(gamesTile().disabled).toBe(true);
+  });
+
+  it('stays disabled when the day is indeterminate', () => {
+    schoolAccess = { ...locked({}, []), state: 'indeterminate' };
     renderMenu();
     expect(gamesTile().disabled).toBe(true);
   });

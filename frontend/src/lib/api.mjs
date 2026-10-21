@@ -79,6 +79,11 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         const error = new Error(`HTTP ${response.status}: ${response.statusText}${detail ? ` - ${detail}` : ''}`);
         error.status = response.status;
         error.transient = transient;
+        // The parsed body as well, so a caller reading a refusal's fields
+        // (`code`, `shortfall`) need not re-parse the message. Only when the
+        // body is JSON; the message above is unchanged either way.
+        const body = jsonErrorBody(errorText);
+        if (body !== undefined) error.body = body;
         throw error;
     }
 
@@ -97,6 +102,11 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
 // the same request is expected to succeed shortly.
 const TRANSIENT_STATUSES = new Set([502, 503, 504]);
 const MAX_ERROR_DETAIL = 300;
+const jsonErrorBody = (text) => {
+    const raw = String(text || '').trim();
+    if (!raw || (raw[0] !== '{' && raw[0] !== '[')) return undefined;
+    try { return JSON.parse(raw); } catch { return undefined; }
+};
 const errorBodyDetail = (text) => {
     const body = String(text || '').trim();
     if (!body || body.startsWith('<')) return '';

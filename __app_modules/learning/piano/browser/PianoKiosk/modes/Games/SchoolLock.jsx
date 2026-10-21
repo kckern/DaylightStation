@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { TouchButton } from '../../../../../../../frontend/src/lib/ui/index.js';
 import {
-  affordableOffers, buyPass, errorBody, nextSheetLabel, printNextSheet,
-  readCompletion, readNextSheet, schoolProgress, sneakUsed,
+  affordableOffers, buyPass, errorBody, nextSheetLabel, passCapUsed, printNextSheet,
+  readCompletion, readNextSheet, schoolProgress,
 } from '../../earlyPass.js';
+import './SchoolLock.scss';
 
 /** When print-next answers with no sentence (a 404, a 400, no network). */
 export const PRINT_FALLBACK = 'Can’t print right now. Ask a grown-up.';
@@ -19,14 +20,14 @@ function lockMessage(access) {
   return 'Finish today’s schoolwork to unlock Games.';
 }
 
-function buyNotice(error, coin) {
-  const body = errorBody(error);
+/** What a refused buy says to the child. Exported for its tests. */
+export function buyNotice(error, coin, body = errorBody(error)) {
   if (error?.status === 402) {
     const shortfall = Number.isFinite(body?.shortfall) ? body.shortfall : null;
     return shortfall != null ? `${shortfall} more ${body?.coin ?? coin} to buy a game.` : `Not enough ${coin} yet.`;
   }
   if (body?.code === 'PASS_CAP') return SNEAK_USED_COPY;
-  if (body?.code === 'PASS_NOT_SOLD') return 'Games are not for sale right now.';
+  if (body?.code === 'PASS_NOT_SOLD') return 'Games aren’t for sale right now.';
   return 'Couldn’t buy a game right now. Try again later.';
 }
 
@@ -34,31 +35,32 @@ function buyNotice(error, coin) {
  * "Print my next sheet (Math 4-02)": the one thing on the lock screen that
  * moves the day forward. Rendered only when School says something would
  * print; a 404 (self-service off) or any failed read shows nothing. The
- * reply's own sentence is what the child reads afterwards.
+ * reply's own sentence is what the child reads afterwards, and the label is
+ * read again after a print, so it names the sheet after the one just sent.
  */
 export function PrintNextButton({ learnerId, deviceId = null }) {
   const log = useMemo(() => getLogger().child({ component: 'piano-early-pass' }), []);
   const [label, setLabel] = useState(null);
   const [busy, setBusy] = useState(false);
   const [sentence, setSentence] = useState('');
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    setLabel(null);
-    if (!learnerId) return () => {};
+    if (!learnerId) { setLabel(null); return () => {}; }
     Promise.resolve().then(() => readNextSheet(learnerId))
       .then((next) => { if (!cancelled) setLabel(nextSheetLabel(next)); })
       .catch(() => { if (!cancelled) setLabel(null); });
     return () => { cancelled = true; };
-  }, [learnerId]);
+  }, [learnerId, reads]);
 
-  if (!label) return null;
   const print = async () => {
     setBusy(true);
     try {
       const res = await printNextSheet(learnerId, deviceId);
       setSentence(typeof res?.sentence === 'string' && res.sentence ? res.sentence : PRINT_FALLBACK);
       log.info('piano.early-pass.print-next', { learnerId, outcome: res?.outcome ?? null });
+      setReads((n) => n + 1);
     } catch (error) {
       setSentence(PRINT_FALLBACK);
       log.warn('piano.early-pass.print-next-failed', { learnerId, status: error?.status ?? null, error: error?.message ?? String(error) });
@@ -66,10 +68,11 @@ export function PrintNextButton({ learnerId, deviceId = null }) {
       setBusy(false);
     }
   };
+  if (!label && !sentence) return null;
   return (
-    <div className="piano-games__print-next">
-      <TouchButton variant="secondary" onClick={print} disabled={busy}>{label}</TouchButton>
-      {sentence && <p className="piano-games__print-next-sentence">{sentence}</p>}
+    <div className="piano-school-lock__print" aria-busy={busy}>
+      {label && <TouchButton variant="secondary" onClick={print} disabled={busy}>{label}</TouchButton>}
+      <p className="piano-school-lock__sentence" role="status" aria-live="polite">{sentence}</p>
     </div>
   );
 }
@@ -86,8 +89,10 @@ function EarlyPassOffer({ access, learnerId, deviceId }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const offeredRef = useRef(null);
+  const confirmRef = useRef(null);
+  const confirmId = useId();
   const offers = affordableOffers(access);
-  const used = sneakUsed(access);
+  const used = passCapUsed(access);
   const offerKey = offers.map((o) => `${o.coin}:${o.price}`).join(',');
 
   useEffect(() => {
@@ -100,12 +105,24 @@ function EarlyPassOffer({ access, learnerId, deviceId }) {
   }, [learnerId]);
 
   // Edge-triggered: the access hook refreshes every 15s and re-renders this.
+  // The payload is rebuilt from the key, so the effect depends on the key alone.
   useEffect(() => {
     const key = offerKey ? `${learnerId}:${offerKey}` : null;
     if (offeredRef.current === key) return;
     offeredRef.current = key;
-    if (key) log.info('piano.early-pass.offered', { learnerId, offers: offers.map(({ coin, price }) => ({ coin, price })) });
-  }, [learnerId, log, offerKey, offers]);
+    if (!key) return;
+    const quoted = offerKey.split(',').map((row) => {
+      const [coin, price] = row.split(':');
+      return { coin, price: Number(price) };
+    });
+    log.info('piano.early-pass.offered', { learnerId, offers: quoted });
+  }, [learnerId, log, offerKey]);
+
+  // The confirm step takes focus on its safe answer. TouchButton does not
+  // forward refs, so the group is the handle.
+  useEffect(() => {
+    if (confirming) confirmRef.current?.querySelector('[data-confirm-cancel]')?.focus?.();
+  }, [confirming]);
 
   const buy = async (offer) => {
     setBusy(true);
@@ -119,7 +136,7 @@ function EarlyPassOffer({ access, learnerId, deviceId }) {
         learnerId, action: 'buy', coin: offer.coin, status: error?.status ?? null,
         code: body?.code ?? null, passId: body?.passId ?? null,
       });
-      setNotice(buyNotice(error, offer.coin));
+      setNotice(buyNotice(error, offer.coin, body));
     } finally {
       // Always, success or not: a failed buy can still leave a real pass
       // behind (economy.md, "For the kiosk and Portal").
@@ -130,21 +147,21 @@ function EarlyPassOffer({ access, learnerId, deviceId }) {
   };
 
   return (
-    <div className="piano-games__early-pass">
-      {progress && <p className="piano-games__school-progress">{`School: ${progress.done} of ${progress.total} done today`}</p>}
-      {used && <p className="piano-games__sneak-used">{SNEAK_USED_COPY}</p>}
+    <div className="piano-school-lock__offer" aria-busy={busy}>
+      {progress && <p className="piano-school-lock__progress">{`School: ${progress.done} of ${progress.total} done today`}</p>}
+      {used && <p className="piano-school-lock__used">{SNEAK_USED_COPY}</p>}
       {confirming ? (
-        <div className="piano-games__early-pass-confirm">
-          <p>{CONFIRM_COPY}</p>
+        <div ref={confirmRef} className="piano-school-lock__confirm" role="group" aria-labelledby={confirmId}>
+          <p id={confirmId}>{CONFIRM_COPY}</p>
           <TouchButton onClick={() => buy(confirming)} disabled={busy}>{`Yes, spend ${confirming.price} ${confirming.coin}`}</TouchButton>
-          <TouchButton variant="secondary" onClick={() => setConfirming(null)} disabled={busy}>Not now</TouchButton>
+          <TouchButton data-confirm-cancel="" variant="secondary" onClick={() => setConfirming(null)} disabled={busy}>Not now</TouchButton>
         </div>
       ) : offers.map((offer) => (
         <TouchButton key={offer.coin} onClick={() => { setNotice(''); setConfirming(offer); }} disabled={busy}>
           {`Spend ${offer.price} ${offer.coin}: one game`}
         </TouchButton>
       ))}
-      {notice && <p className="piano-games__early-pass-notice">{notice}</p>}
+      <p className="piano-school-lock__notice" role="status" aria-live="polite">{notice}</p>
       <PrintNextButton learnerId={learnerId} deviceId={deviceId} />
     </div>
   );
@@ -154,13 +171,15 @@ function EarlyPassOffer({ access, learnerId, deviceId }) {
  * Gate 1's lock panel — shown in place of the Games routes while the school
  * day is not done. Same family as `BudgetLock` (`piano-mode__placeholder`).
  * The copy per reason is unchanged from the inline lock it replaced; the
- * plain `incomplete` case adds the early pass.
+ * plain `incomplete` case adds the early pass. Only the notice and the print
+ * sentence are live regions, so a 15s refresh does not re-announce the panel.
  */
 export default function SchoolLock({ access, learnerId, deviceId = null }) {
+  const headingId = useId();
   const offerable = access.status === 'ready' && access.state === 'incomplete' && Boolean(learnerId) && learnerId !== 'guest';
   return (
-    <section className="piano-mode__placeholder piano-games__school-lock" role="status">
-      <h2>Games are locked</h2>
+    <section className="piano-mode__placeholder piano-games__school-lock piano-school-lock" aria-labelledby={headingId}>
+      <h2 id={headingId}>Games are locked</h2>
       <p>{lockMessage(access)}</p>
       {offerable && <EarlyPassOffer access={access} learnerId={learnerId} deviceId={deviceId} />}
     </section>
@@ -172,11 +191,12 @@ export default function SchoolLock({ access, learnerId, deviceId = null }) {
  * school is done, and the next sheet is one tap away.
  */
 export function RelockScreen({ learnerId, deviceId = null, outcome = null }) {
+  const headingId = useId();
   return (
-    <section className="piano-mode__placeholder piano-games__relock" role="status">
-      <h2>Good game!</h2>
+    <section className="piano-mode__placeholder piano-games__relock piano-school-lock" aria-labelledby={headingId}>
+      <h2 id={headingId}>Good game!</h2>
       <p>Games lock again until school is done.</p>
-      {outcome === 'refunded' && <p>Your coins are back.</p>}
+      <p className="piano-school-lock__notice" role="status" aria-live="polite">{outcome === 'refunded' ? 'Your coins are back.' : ''}</p>
       <PrintNextButton learnerId={learnerId} deviceId={deviceId} />
     </section>
   );

@@ -240,6 +240,12 @@ The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
   `economy.pass.unpaid` at error.
 - Pass ids hold colons and may end in `.2`; `encodeURIComponent` them in the
   consume and refund paths.
+- The piano kiosk (C5) keeps its school-locked Games tile enabled whenever
+  today's cap is unused (`capUsed === false`, `state` not `unknown`), whether or
+  not an offer is affordable, so a child with no silver still reaches the lock's
+  Print button. It is disabled when the cap is used or the state is `unknown`.
+  The kiosk side is in
+  [games-budget-gate.md](../piano/games-budget-gate.md#the-early-pass-on-the-tablet).
 
 **Coins changed.** With an `eventBus` (from `createEconomyApi`), every write
 that moves a balance or a pass publishes `economy.coins-changed {userId, reason}`

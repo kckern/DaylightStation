@@ -7,89 +7,106 @@ import { consumePass, refundPass, errorBody, REFUND_WITHIN_MS } from '../../earl
  *
  * Lives in `Games()`, above the routes, because the pass outlives the game
  * host: once the game ends the host unmounts, and the screen that says "games
- * lock again" has to know the pass was spent. It also holds the routes open
- * after the pass is consumed, so the access refresh that follows a consume
- * cannot yank a finished game's result screen away mid-sentence.
+ * lock again" has to know the pass was spent.
+ *
+ * TWO SOURCES OF "A PASS IS OPEN", in order:
+ *
+ *  - Before the game starts, only the LIVE access answer (`via: 'pass'`). If
+ *    the pass ends while the child sits on the picker or the challenge, the
+ *    next access read drops `via` and the lock comes straight back: no game
+ *    ever runs on a dead pass.
+ *  - Once the game has mounted (`markStarted`), the pass is LATCHED (`held`).
+ *    From then on the routes stay open whatever access says, so the refresh
+ *    that follows a consume cannot cut a finished game off mid-result.
+ *
+ * ONE TERMINAL PATH. Every way a pass game ends — rematch, exit, crash, an
+ * unmount the host did not start, a profile switch — goes through `end`,
+ * which marks the pass relocked AND settles it. Nothing can settle without
+ * relocking, so no path leaves a spent pass behind an open picker.
  *
  * EXACTLY ONE TERMINAL CALL PER PASS. Consume and refund are idempotent on
  * the server, but firing both would let whichever lands first decide. The
- * guard is a ref keyed by pass id, set before the request leaves, so an
- * unmount racing an exit, a crash racing a completion, or a StrictMode double
- * effect all collapse onto the first caller.
+ * guard is a ref keyed by pass id, set before the request leaves.
  *
- * `playedMs` is measured from the game's own mount (`markStarted`), never
- * from the lock screen or the picker; a pass that never reached a game
- * played 0 ms. The server bounds the refund by its own clock as well, so a
- * refund can be refused (`PASS_REFUND_CLOSED`): that falls back to ONE consume,
- * never a loop. `PASS_NOT_ACTIVE` means the pass already ended elsewhere and
- * is only logged.
+ * SETTLE MODES. `'force-consume'` always consumes (a board game's durable
+ * completion, a profile switch, any end after a completion). `'by-play-time'`
+ * refunds under a minute of play and consumes otherwise. `playedMs` runs from
+ * the game's own mount; a pass that never reached a game played 0 ms. A
+ * refund the server refuses as `PASS_NOT_ACTIVE` (already ended elsewhere) is
+ * only logged; any other refund failure (`PASS_REFUND_CLOSED`, a 5xx, the
+ * network) tries ONE consume, and if that fails too it is logged and left.
+ * Nothing retries.
  */
 export default function useEarlyPassSession({ learnerId, access }) {
   const log = useMemo(() => getLogger().child({ component: 'piano-early-pass' }), []);
-  // The pass this screen opened with, and whose it is. Captured the first
-  // time the hook reports `via: 'pass'` and kept after the access refresh
-  // stops reporting it, which is the point.
+  const live = access?.via === 'pass' && access.pass?.passId && learnerId
+    ? { passId: access.pass.passId, learnerId, pass: access.pass }
+    : null;
   const [held, setHeld] = useState(null);
-  if (access?.via === 'pass' && access.pass?.passId && learnerId
-    && (held?.passId !== access.pass.passId || held?.learnerId !== learnerId)) {
-    setHeld({ passId: access.pass.passId, learnerId, pass: access.pass });
-  }
-  const [relockedId, setRelockedId] = useState(null);
+  const [relockedFor, setRelockedFor] = useState(null);
   const [outcome, setOutcome] = useState(null);
-  const settledRef = useRef(null);
-  const startedRef = useRef({ passId: null, at: null });
-  const leaveTimer = useRef(null);
-  const refreshRef = useRef(access?.refresh);
-  refreshRef.current = access?.refresh;
 
-  const mine = held && held.learnerId === learnerId ? held : null;
-  const relocked = Boolean(mine) && relockedId === mine.passId;
-  const holding = Boolean(mine) && !relocked;
-  // `held`, not `mine`: a profile switch mid-game unmounts the host, and that
-  // game's pass must still be settled for the child who was playing it.
+  // Refs mirror what the callbacks need at call time, which is often after
+  // the render that created them (an unmount, a resolved save).
   const heldRef = useRef(held);
   heldRef.current = held;
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const learnerRef = useRef(learnerId);
+  learnerRef.current = learnerId;
+  const refreshRef = useRef(access?.refresh);
+  refreshRef.current = access?.refresh;
+  const settledRef = useRef(null);
+  const completedRef = useRef(null);
+  const startedRef = useRef({ passId: null, at: null });
+  const pendingLeave = useRef(null);
 
-  const markStarted = useCallback(() => {
-    const pass = heldRef.current;
-    if (!pass || startedRef.current.passId === pass.passId) return;
-    startedRef.current = { passId: pass.passId, at: Date.now() };
+  const heldMine = held && held.learnerId === learnerId ? held : null;
+  const relocked = Boolean(relockedFor) && relockedFor.learnerId === learnerId;
+  const holding = !relocked && Boolean(heldMine || live);
+  const started = !relocked && Boolean(heldMine);
+  const passId = holding ? (heldMine ?? live).passId : null;
+
+  /** The pass a terminal call is about: this player's latched or live pass, else one latched for another player. */
+  const target = useCallback(() => {
+    const latched = heldRef.current;
+    if (latched && latched.learnerId === learnerRef.current) return latched;
+    return liveRef.current ?? latched ?? null;
   }, []);
 
-  const playedMs = useCallback((passId) => (startedRef.current.passId === passId && startedRef.current.at != null
+  const markStarted = useCallback(() => {
+    const pass = liveRef.current;
+    if (!pass || startedRef.current.passId === pass.passId) return;
+    startedRef.current = { passId: pass.passId, at: Date.now() };
+    heldRef.current = pass;
+    setHeld(pass);
+  }, []);
+
+  const playedMs = useCallback((id) => (startedRef.current.passId === id && startedRef.current.at != null
     ? Math.max(0, Date.now() - startedRef.current.at)
     : 0), []);
 
-  /**
-   * End the pass. `mode: 'consume'` always consumes (a board game's durable
-   * completion); `'played'` refunds under a minute of play and consumes
-   * otherwise. Resolves to 'consumed', 'refunded' or null.
-   */
-  const settle = useCallback(async (mode, reason) => {
-    const pass = heldRef.current;
+  const settle = useCallback(async (mode, reason, pass = target()) => {
     if (!pass || settledRef.current === pass.passId) return null;
     settledRef.current = pass.passId;
-    const { passId, learnerId: owner } = pass;
-    const ms = playedMs(passId);
-    const facts = { learnerId: owner, passId, playedMs: ms, reason };
+    const { passId: id, learnerId: owner } = pass;
+    const ms = playedMs(id);
+    const facts = { learnerId: owner, passId: id, playedMs: ms, reason, mode };
     try {
-      if (mode !== 'consume' && ms < REFUND_WITHIN_MS) {
+      if (mode === 'by-play-time' && ms < REFUND_WITHIN_MS) {
         try {
-          const res = await refundPass(owner, passId, ms, reason);
+          const res = await refundPass(owner, id, ms, reason);
           log.info('piano.early-pass.refunded', { ...facts, refunded: res?.refunded ?? null, duplicate: res?.duplicate === true });
           setOutcome('refunded');
           return 'refunded';
         } catch (error) {
           const code = errorBody(error)?.code ?? null;
           log.warn('piano.early-pass.refused', { ...facts, action: 'refund', status: error?.status ?? null, code });
-          // Only a closed window is worth a consume: the pass is still
-          // active and the game did happen. Anything else (already ended,
-          // network) stays a log line.
-          if (code !== 'PASS_REFUND_CLOSED') return null;
+          if (code === 'PASS_NOT_ACTIVE') return null;
         }
       }
       try {
-        const res = await consumePass(owner, passId, ms);
+        const res = await consumePass(owner, id, ms);
         log.info('piano.early-pass.consumed', { ...facts, duplicate: res?.duplicate === true });
         setOutcome('consumed');
         return 'consumed';
@@ -102,23 +119,44 @@ export default function useEarlyPassSession({ learnerId, access }) {
     } finally {
       try { refreshRef.current?.(); } catch { /* the relock stands either way */ }
     }
-  }, [log, playedMs]);
+  }, [log, playedMs, target]);
 
-  /** The game is over: settle by play time and put up the relock screen. */
-  const finish = useCallback((reason) => {
-    const pass = heldRef.current;
+  /** THE terminal transition: relock, then settle. */
+  const end = useCallback((mode, reason) => {
+    const pass = target();
     if (!pass) return;
-    setRelockedId(pass.passId);
-    settle('played', reason);
-  }, [settle]);
+    setRelockedFor({ passId: pass.passId, learnerId: pass.learnerId });
+    const switched = pass.learnerId !== learnerRef.current;
+    const completed = completedRef.current === pass.passId;
+    settle(switched || completed ? 'force-consume' : mode, switched ? 'switch' : reason, pass);
+  }, [settle, target]);
 
-  // The host's unmount is deferred one tick and cancelled by a remount, so a
-  // StrictMode mount-unmount-mount never spends the pass.
+  /**
+   * A board game reached its result. Marked synchronously, before its save is
+   * awaited, so an exit a moment later consumes instead of refunding.
+   */
+  const complete = useCallback(() => {
+    const pass = target();
+    if (pass) completedRef.current = pass.passId;
+    return pass;
+  }, [target]);
+
+  // The host's unmount is deferred one microtask and cancelled by a remount.
+  // React runs a StrictMode unmount-remount pair synchronously, so `stay`
+  // always lands first; a real unmount finishes before any timer could, and
+  // there is no timer to leave behind.
   const leave = useCallback((reason) => {
-    clearTimeout(leaveTimer.current);
-    leaveTimer.current = setTimeout(() => finish(reason), 0);
-  }, [finish]);
-  const stay = useCallback(() => clearTimeout(leaveTimer.current), []);
+    pendingLeave.current = reason;
+    queueMicrotask(() => {
+      const why = pendingLeave.current;
+      pendingLeave.current = null;
+      if (why) end('by-play-time', why);
+    });
+  }, [end]);
+  const stay = useCallback(() => { pendingLeave.current = null; }, []);
 
-  return { holding, relocked, outcome, pass: mine?.pass ?? null, markStarted, settle, finish, leave, stay };
+  return useMemo(() => ({
+    holding, relocked, started, outcome, passId,
+    markStarted, complete, settle, end, leave, stay,
+  }), [holding, relocked, started, outcome, passId, markStarted, complete, settle, end, leave, stay]);
 }

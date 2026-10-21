@@ -4,7 +4,7 @@ vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(a
 
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import {
-  canBuyPass, consumePass, errorBody, nextSheetLabel, offersFromBank, refundPass, schoolProgress, sneakUsed,
+  canBuyPass, canEnterLock, consumePass, errorBody, nextSheetLabel, offersFromBank, refundPass, schoolProgress, passCapUsed,
 } from './earlyPass.js';
 
 const access = (pass, offers = [{ coin: 'silver', price: 3, affordable: true }]) => ({
@@ -30,10 +30,23 @@ describe('earlyPass', () => {
   });
 
   it('calls the sneak used only when the ledger says so', () => {
-    expect(sneakUsed(access({ state: 'refunded', capUsed: true }))).toBe(true);
-    expect(sneakUsed(access({ state: 'unknown', capUsed: null }))).toBe(false);
-    expect(sneakUsed(access({ state: 'active', capUsed: true }))).toBe(false);
-    expect(sneakUsed(access({ state: 'none', capUsed: false }))).toBe(false);
+    expect(passCapUsed(access({ state: 'refunded', capUsed: true }))).toBe(true);
+    expect(passCapUsed(access({ state: 'unknown', capUsed: null }))).toBe(false);
+    expect(passCapUsed(access({ state: 'active', capUsed: true }))).toBe(false);
+    expect(passCapUsed(access({ state: 'none', capUsed: false }))).toBe(false);
+  });
+
+  it('lets a locked child reach the lock whenever the cap is free, affordable or not', () => {
+    expect(canEnterLock(access({ state: 'none', capUsed: false }, []))).toBe(true);
+    expect(canEnterLock(access({ state: 'none', capUsed: false }, [{ coin: 'silver', price: 3, affordable: false }]))).toBe(true);
+    expect(canEnterLock(access({ state: 'consumed', capUsed: true }))).toBe(false);
+    expect(canEnterLock(access({ state: 'unknown', capUsed: null }))).toBe(false);
+    expect(canEnterLock(access(null))).toBe(false);
+    expect(canEnterLock({ ...access({ state: 'none', capUsed: false }), state: 'indeterminate' })).toBe(false);
+  });
+
+  it('prefers the body DaylightAPI attaches', () => {
+    expect(errorBody(Object.assign(new Error('HTTP 409: Conflict'), { body: { code: 'PASS_CAP' } }))).toEqual({ code: 'PASS_CAP' });
   });
 
   it('drops offers when the ledger could not be read', () => {
@@ -47,6 +60,8 @@ describe('earlyPass', () => {
     const next = { unit: { unitId: 'm-4-02', title: 'Math 4-02' }, printable: true, reward: null };
     expect(nextSheetLabel(next)).toBe('Print my next sheet (Math 4-02)');
     expect(nextSheetLabel({ ...next, reward: { silver: 2 } })).toBe('Print my next sheet (+2 silver · Math 4-02)');
+    expect(nextSheetLabel({ ...next, reward: { silver: 2, gems: 1 } })).toBe('Print my next sheet (+2 silver · +1 gem · Math 4-02)');
+    expect(nextSheetLabel({ ...next, reward: { gems: 2 } })).toBe('Print my next sheet (+2 gems · Math 4-02)');
     expect(nextSheetLabel({ ...next, printable: false })).toBeNull();
     expect(nextSheetLabel(null)).toBeNull();
   });

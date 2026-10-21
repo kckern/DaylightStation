@@ -1,0 +1,70 @@
+/* The school lock and the relock after an early-pass game. One column: the
+   lock's sentence, today's progress, the buy buttons (or the confirm step),
+   the notice, and Print. */
+.piano-school-lock {
+  --sl-fg: var(--piano-fg, #f1f1f4);
+  --sl-muted: var(--piano-muted, #9a9aa6);
+  --sl-border: var(--piano-border, #34343f);
+  --sl-warn: var(--piano-warn, #e0a83a);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3, 0.75rem);
+  text-align: center;
+}
+
+.piano-school-lock__offer,
+.piano-school-lock__print {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3, 0.75rem);
+  width: min(32rem, 100%);
+}
+
+/* `.piano-mode__placeholder` italicises; buttons and the facts under the lock
+   read upright. */
+.piano-school-lock .ds-touch,
+.piano-school-lock__progress,
+.piano-school-lock__used,
+.piano-school-lock__notice,
+.piano-school-lock__sentence {
+  font-style: normal;
+}
+
+.piano-school-lock__progress {
+  color: var(--sl-fg);
+  font-weight: 600;
+}
+
+.piano-school-lock__used,
+.piano-school-lock__sentence {
+  color: var(--sl-muted);
+}
+
+/* Empty live regions stay rendered (a hidden region may not announce when it
+   fills) but take no room. */
+.piano-school-lock__notice:empty,
+.piano-school-lock__sentence:empty {
+  margin: 0;
+}
+
+/* The confirm step is visibly a different moment from the offer. */
+.piano-school-lock__confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2, 0.5rem);
+  width: 100%;
+  padding: var(--sp-3, 0.75rem);
+  border: 1px solid var(--sl-warn);
+  border-radius: var(--r-md, 12px);
+
+  > p {
+    margin: 0;
+    color: var(--sl-fg);
+    font-style: normal;
+    font-weight: 600;
+  }
+}

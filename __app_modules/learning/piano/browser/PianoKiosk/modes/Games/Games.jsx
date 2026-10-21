@@ -85,12 +85,17 @@ export function Games() {
   // had (2026-09-02 incident, repeated here because this one call site
   // omitted the option the hook was already built to consume).
   const learnerId = pianoUser?.currentUser ?? null;
+  // True while a pass game is on screen: the hook must not re-read the bank
+  // then, or the game's own consume would read back as a lock under it.
+  const passGameRef = useRef(false);
   const gameAccess = useSchoolGameAccess(learnerId, {
     schoolLearner: (pianoUser?.users || []).find((u) => u.id === pianoUser?.currentUser)?.schoolLearner,
+    pauseBankReads: passGameRef,
   });
   // The early pass (school economy slice 1): one game before school is done.
   // Held here, above the routes, because it outlives the game host.
   const earlyPass = useEarlyPassSession({ learnerId, access: gameAccess });
+  passGameRef.current = earlyPass.started;
   const deviceId = useMemo(() => readKioskDeviceId(), []);
 
   // BEFORE the school lock, and it is not a lock. A player games are not
@@ -115,9 +120,10 @@ export function Games() {
     return <RelockScreen learnerId={learnerId} deviceId={deviceId} outcome={earlyPass.outcome} />;
   }
 
-  // `holding`: a pass game is on screen. Its consume refreshes access to
-  // locked before the child has finished reading the result, and the lock
-  // must wait for the game to end rather than cut it off.
+  // `holding`: a pass is open — live from access until the game mounts, then
+  // latched. A latched game's consume refreshes access to locked before the
+  // child has finished reading the result, and the lock must wait for the
+  // game to end rather than cut it off.
   if (!gameAccess.unlocked && !earlyPass.holding) {
     return <SchoolLock access={gameAccess} learnerId={learnerId} deviceId={deviceId} />;
   }
@@ -273,23 +279,25 @@ function GameHost({ earlyPass = null }) {
   const passRef = useRef(passSession);
   passRef.current = passSession;
   // Leaving the host before the game ended, by any route the host does not
-  // see (the breadcrumb, a profile switch, the school lock). Deferred and
-  // cancelled by a remount inside the session, so StrictMode cannot spend it.
+  // see (the breadcrumb, a profile switch, the school lock). Deferred one
+  // microtask and cancelled by a remount, so StrictMode cannot spend it.
   useEffect(() => {
     passRef.current?.stay();
     return () => { passRef.current?.leave('unmount'); };
   }, []);
-  // The session can also end under a host that stays mounted: a profile
-  // switch to a player school has unlocked keeps this route, and this
-  // instance, on screen. The pass still belongs to the child who bought it.
+  // The session can also end under a host that stays mounted (an access
+  // answer that switches player without a loading frame). Keyed on the pass
+  // id, so it fires once, when the id goes away. `end` itself turns a
+  // different player into a force-consume.
+  const passKey = passSession?.passId ?? null;
   const lastPassRef = useRef(null);
   useEffect(() => {
-    if (passSession) { lastPassRef.current = passSession; return; }
+    if (passKey) { lastPassRef.current = passRef.current; return; }
     if (lastPassRef.current) {
-      lastPassRef.current.settle('played', 'switch');
+      lastPassRef.current.end('by-play-time', 'session-lost');
       lastPassRef.current = null;
     }
-  });
+  }, [passKey]);
 
   // Re-arm when the game itself changes under a mounted host. `:gameId` and
   // `:gameId/:subRoute` render the SAME element, so React preserves this
@@ -331,7 +339,7 @@ function GameHost({ earlyPass = null }) {
     const proceed = () => {
       logger.info('piano.game-rematch', { game: gameId, gated: gateEnabled, ...(passRef.current ? { via: 'pass' } : {}) });
       // One game was bought, and this was it.
-      if (passRef.current) { passRef.current.finish('rematch'); return; }
+      if (passRef.current) { passRef.current.end('by-play-time', 'rematch'); return; }
       if (gateEnabled) { setGatePending(true); return; }
       setMatchId((value) => value + 1);
     };
@@ -340,13 +348,17 @@ function GameHost({ earlyPass = null }) {
     else proceed();
   }, [boardGameDay, gameId, gateEnabled, logger]);
 
-  // A board game's durable result is the pass's completion: consumed once the
-  // save resolves, whatever the play time. The relock waits for the child to
-  // ask for the next match, so the result screen stays up.
+  // A board game's durable result is the pass's completion. Marked
+  // synchronously (so an exit a moment later consumes rather than refunds),
+  // then consumed once the save settles, whatever the play time. It consumes
+  // even when the save FAILS: the game was played to its end, and a failed
+  // board-game-day write is not the child's refund. The relock waits for the
+  // child to ask for the next match, so the result screen stays up.
   const registerCompletion = useCallback((request) => {
-    const settled = boardGameDay.registerCompletion(request);
     const session = passRef.current;
-    if (session) Promise.resolve(settled).catch(() => null).then(() => session.settle('consume', 'completion'));
+    session?.complete();
+    const settled = boardGameDay.registerCompletion(request);
+    if (session) Promise.resolve(settled).catch(() => null).then(() => session.settle('force-consume', 'completion'));
     return settled;
   }, [boardGameDay.registerCompletion]);
 
@@ -363,7 +375,7 @@ function GameHost({ earlyPass = null }) {
     const session = passRef.current;
     if (!session) return;
     logger.info('piano.early-pass.crash', { game: crashed });
-    session.settle('played', 'crash');
+    session.end('by-play-time', 'crash');
   }, [logger]);
 
   /**
@@ -396,7 +408,7 @@ function GameHost({ earlyPass = null }) {
 
   const exit = () => {
     logger.info('piano.game-exit', { game: gameId, ...(passRef.current ? { via: 'pass' } : {}) });
-    if (passRef.current) { passRef.current.finish('exit'); return; }
+    if (passRef.current) { passRef.current.end('by-play-time', 'exit'); return; }
     navigate(subRoute ? '../..' : '..', { relative: 'path' });
   };
 

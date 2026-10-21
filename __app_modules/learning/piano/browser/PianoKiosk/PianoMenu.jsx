@@ -11,7 +11,7 @@ import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
 import useSchoolGameAccess from './useSchoolGameAccess.js';
-import { canBuyPass } from './earlyPass.js';
+import { canBuyPass, canEnterLock } from './earlyPass.js';
 import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
 import { PIANO_MODES } from './pianoModes.js';
@@ -114,13 +114,15 @@ export function PianoMenu() {
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const gamesOffTile = m.id === 'games' && gamesOff;
-              // The early pass: a school-locked tile stays live when the lock
-              // can sell one game the child can afford, so they reach the
-              // offer. An active pass already reads as unlocked (`via:
-              // 'pass'`). A used cap, an unreadable ledger or nothing for
-              // sale leaves the tile shut, as before.
-              const passOffer = m.id === 'games' && !gamesOff && !gameAccess.unlocked && canBuyPass(gameAccess);
-              const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked && !passOffer;
+              // The early pass: a school-locked tile stays live while today's
+              // pass cap is unused, affordable or not, so the child reaches
+              // the lock (its progress line and Print button) and, with the
+              // coins, the offer. An active pass already reads as unlocked
+              // (`via: 'pass'`). A used cap or an unreadable ledger leaves
+              // the tile shut, as before.
+              const lockReachable = m.id === 'games' && !gamesOff && !gameAccess.unlocked && canEnterLock(gameAccess);
+              const passOffer = lockReachable && canBuyPass(gameAccess);
+              const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked && !lockReachable;
               const videosLocked = m.id === 'videos' && videosCapped;
               const disabled = m.disabled || gamesOffTile || schoolLocked || videosLocked || curfew || pending;
               // The count is the whole message. "Videos are locked" invites an
