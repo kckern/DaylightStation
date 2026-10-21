@@ -1370,9 +1370,10 @@ unavailable it skips **visibly**, never passing on nothing.
 
 ### Barcode → unknown UPC → custom food
 
-`BarcodeCapture` decodes via the native `BarcodeDetector` API, falling back to
-`@zxing/browser`, and always offers a manual-UPC text field as the same submit path (and
-the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
+`BarcodeCapture` decodes through the shared `useBarcodeScanner` hook
+(`frontend/src/lib/camera/`): the native `BarcodeDetector` API, falling back to a lazily
+loaded `@zxing/browser`, both limited to retail formats. The sheet always offers a
+manual-UPC text field as the same submit path (and the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
 
 - **Known UPC** (catalog or gateway hit) — proceeds through the portion-pick path above.
 - **Unknown UPC** (`result.unknownUpc === true`) — opens `CustomFoodSheet` with that UPC.
