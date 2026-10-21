@@ -59,6 +59,7 @@ Validated by `IContentSource.mjs`:
 | `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
 | `getStoragePath(id)` | — | Return a persistence key for watch state storage |
 | `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings |
+| `directIdPatterns` (getter) | — | `[{ pattern: RegExp, toId: (match) => 'source:id', priority? }]`: unprefixed text that is unambiguously one of this source's ids. Search looks such text up directly (via `getItem`) and leads with the hit, while the text search still runs. Plex declares `/^\d{2,}$/` (rating keys; 2-digit floor because search rejects text under 2 characters), Immich declares UUIDs. Candidates not yet declared (no adapter with an unambiguous id and get-by-id): YouTube 11-character ids |
 
 ### How Playable Data Is Returned
 

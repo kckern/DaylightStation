@@ -59,6 +59,17 @@ export class ImmichAdapter {
   }
 
   /**
+   * A bare UUID is an Immich asset id (getItem resolves it directly).
+   * @returns {Array<{pattern: RegExp, toId: function(RegExpMatchArray): string}>}
+   */
+  get directIdPatterns() {
+    return [{
+      pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      toId: (m) => `immich:${m[0]}`,
+    }];
+  }
+
+  /**
    * Strip source prefix from ID
    * @param {string} id
    * @returns {string}

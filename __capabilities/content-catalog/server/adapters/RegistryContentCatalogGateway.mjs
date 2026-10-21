@@ -1,6 +1,9 @@
 import { resolveFormat } from "../domain/utils/resolveFormat.mjs";
 import { IContentCatalogGateway, assertContentCatalogGateway } from "../application/ports/IContentCatalogGateway.mjs";
 
+// Bound on parallel direct-id lookups when several adapters' patterns match.
+const MAX_DIRECT_ID_MATCHES = 4;
+
 const PERMANENT_PLAYBACK_FAILURES = new Set(['metadata-missing', 'non-playable-type', 'audio-key-missing']);
 
 function publicResolution(resolved) {
@@ -122,11 +125,40 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
       }
       return { source: prefix, id: localId };
     }
-    if (/^\d+$/.test(trimmed)) return { source: 'plex', id: trimmed };
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-      return { source: 'immich', id: trimmed };
+    return this.parseDirectReferences(trimmed)[0] ?? null;
+  }
+
+  /**
+   * Every direct-id reading of `text`. An explicit `source:id` (or legacy
+   * prefix) is one reading. Otherwise each pattern declared by a registered
+   * adapter (registry.getDirectIdPatterns) that matches the whole text yields
+   * one, ordered by declared priority then adapter registration order, capped
+   * at MAX_DIRECT_ID_MATCHES. No adapter declares patterns -> [].
+   * @returns {Array<{source: string, id: string}>}
+   */
+  parseDirectReferences(text) {
+    if (!text || typeof text !== 'string') return [];
+    const trimmed = text.trim();
+    if (/^([a-z]+):(.+)$/i.test(trimmed)) {
+      const explicit = this.parseDirectReference(trimmed);
+      return explicit ? [explicit] : [];
     }
-    return null;
+    const out = [];
+    const seen = new Set();
+    for (const { source, pattern, toId } of this.registry.getDirectIdPatterns?.() ?? []) {
+      const m = trimmed.match(pattern);
+      if (!m) continue;
+      let id;
+      try { id = String(toId(m) ?? ''); } catch { continue; }
+      if (id.startsWith(`${source}:`)) id = id.slice(source.length + 1);
+      if (!id) continue;
+      const key = `${source}|${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ source, id });
+      if (out.length >= MAX_DIRECT_ID_MATCHES) break;
+    }
+    return out;
   }
 
   #source(resolution) {

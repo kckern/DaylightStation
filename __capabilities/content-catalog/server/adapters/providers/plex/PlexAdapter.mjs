@@ -261,6 +261,20 @@ export class PlexAdapter {
     return [{ prefix: 'plex' }];
   }
 
+  /**
+   * Unprefixed text that is unambiguously a Plex item id, for direct lookup
+   * (see ContentSourceRegistry.getDirectIdPatterns). A Plex rating key is a
+   * positive integer. The floor is 2 digits: the search endpoints reject
+   * text shorter than 2 characters, so a 1-digit floor could never fire, and a
+   * single digit is as likely to be text as an id. Longer numbers that are
+   * really text ("1984") cost one silent lookup miss, and the text search
+   * still runs alongside.
+   * @returns {Array<{pattern: RegExp, toId: function(RegExpMatchArray): string}>}
+   */
+  get directIdPatterns() {
+    return [{ pattern: /^\d{2,}$/, toId: (m) => `plex:${m[0]}` }];
+  }
+
   
 
 

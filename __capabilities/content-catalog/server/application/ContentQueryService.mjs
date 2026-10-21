@@ -167,17 +167,17 @@ export class ContentQueryService extends IContentQueryPort {
     const warnings = [];
 
     // Check if query.text looks like a direct ID
-    const idMatch = this.#contentCatalog.parseDirectReference(query.text);
+    const idMatches = this.#directIdMatches(query.text, 'search');
 
     // Run ID lookup and text search in parallel
-    const [idResult, searchResults] = await Promise.all([
+    const [idResults, searchResults] = await Promise.all([
       // Direct ID lookup (if text looks like an ID)
       (async () => {
-        if (!idMatch) return null;
+        if (idMatches.length === 0) return [];
         const start = performance.now();
-        const result = await this.#lookupById(idMatch.source, idMatch.id, warnings);
+        const found = await this.#lookupAll(idMatches, warnings, 'search');
         perf.idLookupMs = Math.round(performance.now() - start);
-        return result;
+        return found;
       })(),
 
       // Standard text search across adapters
@@ -219,7 +219,7 @@ export class ContentQueryService extends IContentQueryPort {
 
     // Merge results with ID match leading
     const mergeStart = performance.now();
-    let merged = this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+    let merged = this.#mergeResultsWithIdMatch(idResults, results, query, warnings);
 
     // Apply gatekeeper filter from alias resolution (after merge to include ID matches)
     if (gatekeeper && merged.items) {
@@ -280,6 +280,16 @@ export class ContentQueryService extends IContentQueryPort {
       yield { event: 'complete', totalMs: Math.round(performance.now() - searchStart), warnings: [this.#unknownSourceWarning(unknownSource)] };
       return;
     }
+
+    // Direct id reference ("plex:123", bare digits => plex, UUID => immich),
+    // detected on the ORIGINAL text before any alias prefix is stripped. Same
+    // shared parser search() uses; the lookup runs alongside the text search.
+    const idMatches = this.#directIdMatches(query.text, 'searchStream');
+    // Compound ids the lookup will resolve to. A text-search hit with one of
+    // these ids IS the exact match: it takes the exact-id score and skips the
+    // zero-score filter (its title need not contain the number), whichever
+    // of the two copies arrives first.
+    const idTargets = new Set(idMatches.map(m => `${m.source}:${m.id}`));
 
     // Parse prefix from query text (e.g., "music:beethoven" -> { prefix: 'music', term: 'beethoven' })
     const { prefix, term } = this.#parseContentQuery(query.text);
@@ -345,6 +355,16 @@ export class ContentQueryService extends IContentQueryPort {
       }
     });
 
+    // Direct id lookup rides the same race. It is not an adapter, so it never
+    // touches `pending`; its item is scored as an exact id match (leads the
+    // list) and is deduped against the adapter's own copy via emittedIds.
+    if (idMatches.length > 0) {
+      adapterPromises.push((async () => {
+        const items = await this.#lookupAll(idMatches, warnings, 'searchStream');
+        return { idLookup: true, items };
+      })());
+    }
+
     // Race all promises and yield results as they complete
     const remaining = [...adapterPromises];
     while (remaining.length > 0) {
@@ -354,6 +374,26 @@ export class ContentQueryService extends IContentQueryPort {
 
       // Remove completed promise
       remaining.splice(winner.index, 1);
+
+      if (winner.result.idLookup) {
+        // Id items lead: one results event per hit, in lookup order, scored as
+        // exact matches. Skipped when the text search already emitted that id
+        // (it was upgraded to the same score on the way out).
+        for (const item of winner.result.items) {
+          const itemSource = item.source ?? item.id?.split(':')[0];
+          const key = `${itemSource}|${item.id}`;
+          if (emittedIds.has(key)) continue;
+          emittedIds.add(key);
+          const { _idMatch, ...visible } = item;
+          yield {
+            event: 'results',
+            source: itemSource,
+            items: [{ ...visible, score: RelevanceScoringService.score(item, query.text) }],
+            pending: [...pending]
+          };
+        }
+        continue;
+      }
 
       const { source, result, skipped, error } = winner.result;
       pending.delete(source);
@@ -412,7 +452,11 @@ export class ContentQueryService extends IContentQueryPort {
       // newest N regardless) fills the result list with noise, so drop those
       // here rather than making every consumer re-derive the same judgement.
       items = items
-        .map(item => ({ ...item, score: RelevanceScoringService.score(item, query.text) }))
+        .map(item => ({
+          ...item,
+          score: RelevanceScoringService.score(idTargets.has(item.id) ? { ...item, _idMatch: true } : item, query.text),
+          ...(idTargets.has(item.id) && { matchReason: item.matchReason ?? 'id-lookup' }),
+        }))
         .filter(item => !query.text || item.score > 0)
         .sort((a, b) => b.score - a.score);
 
@@ -522,7 +566,12 @@ export class ContentQueryService extends IContentQueryPort {
 
       return null;
     } catch (error) {
-      // Silent failure - ID lookup is best-effort
+      // A not-found is a plain miss (a number that is only text, "1984").
+      // Only a real failure becomes a user-visible warning.
+      if (error?.status === 404 || error?.statusCode === 404 || error?.response?.status === 404
+        || /\b404\b|not.?found/i.test(error?.message ?? '')) {
+        return null;
+      }
       warnings.push({
         source,
         error: `ID lookup failed: ${error.message}`,
@@ -531,19 +580,44 @@ export class ContentQueryService extends IContentQueryPort {
     }
   }
 
+  /** Direct-id readings of `text` (registry-fed), with a structured log. */
+  #directIdMatches(text, via) {
+    const matches = this.#contentCatalog.parseDirectReferences?.(text)
+      ?? [this.#contentCatalog.parseDirectReference(text)].filter(Boolean);
+    if (matches.length > 0) {
+      this.#logger.info?.('content-query.direct-id.matched', { via, text, matches: matches.map(m => `${m.source}:${m.id}`) });
+    }
+    return matches;
+  }
+
+  /**
+   * Look every match up in parallel (each bounded by its source timeout in
+   * #lookupById). Result order follows match order: explicit form first, else
+   * pattern priority then adapter registration order.
+   */
+  async #lookupAll(matches, warnings, via) {
+    const found = await Promise.all(matches.map(async (m) => {
+      const start = performance.now();
+      const item = await this.#lookupById(m.source, m.id, warnings);
+      this.#logger.info?.(item ? 'content-query.direct-id.hit' : 'content-query.direct-id.miss', {
+        via, source: m.source, id: m.id, ms: Math.round(performance.now() - start),
+      });
+      return item;
+    }));
+    return found.filter(Boolean);
+  }
+
   /**
    * Merge search results with ID match leading, sorted by relevance.
    */
-  #mergeResultsWithIdMatch(idResult, results, query, warnings) {
+  #mergeResultsWithIdMatch(idResults, results, query, warnings) {
     let items = results.flatMap(r => r.result.items || []);
 
-    // If we have an ID match, prepend it (avoiding duplicates)
-    if (idResult) {
-      const idMatchId = idResult.id;
-      // Remove any duplicate from search results
-      items = items.filter(item => item.id !== idMatchId);
-      // Prepend the ID match
-      items.unshift(idResult);
+    // ID matches lead (avoiding duplicates), in lookup priority order
+    if (idResults?.length) {
+      const idIds = new Set(idResults.map(r => r.id));
+      items = items.filter(item => !idIds.has(item.id));
+      items.unshift(...idResults);
     }
 
     // Apply capability filter

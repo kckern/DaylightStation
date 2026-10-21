@@ -69,6 +69,29 @@ export class ContentSourceRegistry {
   }
 
   /**
+   * Direct-id patterns declared by registered adapters (optional
+   * `directIdPatterns` getter: `[{ pattern: RegExp, toId: (match) => 'src:id',
+   * priority?: number }]`). Returned in match-priority order: higher
+   * `priority` first, then registration order.
+   * @returns {Array<{source: string, pattern: RegExp, toId: function, priority: number}>}
+   */
+  getDirectIdPatterns() {
+    const out = [];
+    for (const { adapter } of this.#adapterEntries.values()) {
+      const declared = adapter.directIdPatterns;
+      if (!Array.isArray(declared)) continue;
+      for (const d of declared) {
+        if (!(d?.pattern instanceof RegExp) || typeof d.toId !== 'function') continue;
+        out.push({ source: adapter.source, pattern: d.pattern, toId: d.toId, priority: Number(d.priority) || 0 });
+      }
+    }
+    return out
+      .map((d, i) => ({ d, i }))
+      .sort((a, b) => (b.d.priority - a.d.priority) || (a.i - b.i))
+      .map(({ d }) => d);
+  }
+
+  /**
    * Get adapter by source name
    * @param {string} source
    * @returns {import('../../../3_applications/content/ports/IContentSource.mjs').IContentSource|undefined}

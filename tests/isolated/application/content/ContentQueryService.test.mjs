@@ -5,8 +5,17 @@ import { RegistryContentCatalogGateway } from "../../../../__capabilities/conten
 
 // Keep the rich registry fixtures, but cross the application boundary through
 // the same semantic catalog gateway used by composition.
+// Direct-id patterns are declared by adapters (see PlexAdapter/ImmichAdapter
+// `directIdPatterns`); these fixture registries have none, so supply the same
+// declarations the real adapters make.
+const FIXTURE_DIRECT_ID_PATTERNS = [
+  { source: 'plex', pattern: /^\d{2,}$/, toId: (m) => `plex:${m[0]}`, priority: 0 },
+  { source: 'immich', pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, toId: (m) => `immich:${m[0]}`, priority: 0 },
+];
+
 class ContentQueryService extends ApplicationContentQueryService {
   constructor({ registry, contentCatalog, prefixAliases = {}, ...deps }) {
+    if (registry && !registry.getDirectIdPatterns) registry.getDirectIdPatterns = () => FIXTURE_DIRECT_ID_PATTERNS;
     super({
       ...deps,
       prefixAliases,
