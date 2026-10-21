@@ -66,8 +66,8 @@ plex:12345:
   explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
   them; a record with an empty spots map is judged by its single playhead.
 - Unfinished / finished rules for a spot: `__backend/src/2_domains/content/services/mediaSpots.mjs`
-  (≥ 5 min or ≥ 5% to count as unfinished; finished at the same line as
-  `isWatched` — see [Default Classifier](#default-classifier)).
+  (≥ 5 min or ≥ 5% to count as unfinished; finished at the default rule —
+  see [Default Classifier](#default-classifier)).
 
 ### Watched / unwatched marks
 
@@ -91,35 +91,63 @@ Classifiers determine when content transitions between states (unwatched, in-pro
 | Condition | State |
 |-----------|-------|
 | `percent === 0` | unwatched |
-| `percent < 90`, or more than 10 min left | in-progress |
-| `percent >= 90` and at most 10 min left | watched |
+| `0 < percent < 90` | in-progress |
+| `percent >= 90` | watched |
 
-The rule is `isWatchComplete` in `shared/contracts/media/watchCompletion.mjs`,
-shared by the backend and the Player. It is behind `MediaProgress.isWatched`,
-the `completedAt` stamp in `RecordPlaybackProgress`, per-screen spots and the
-media-server scrobble. A natural end always counts as watched. With no known
-duration it falls back to the percentage alone.
+This is "movie mode": 90% played, no cap on what is left, read as "the credits
+have started" (credits run ~4-10% of a modern feature). It is `DEFAULT_RULE` /
+`isWatchComplete` in `shared/contracts/media/watchCompletion.mjs`. A natural
+end always counts as watched.
 
-The remaining-time cap exists because a fixed percentage scales with length.
-The last 10% of a 30-minute class is a cooldown, but the last 10% of a 5-hour
-racing longplay is half an hour of riding. Items up to 100 minutes are
-unaffected; longer ones need more (91.7% of 2 h, 94.4% of 3 h).
+### Per-library rule (`watch_completion`)
+
+A percentage scales with length. The last 10% of a 30-minute class is a
+cooldown; the last 10% of a 5-hour racing longplay is half an hour of riding.
+So a library can replace the default in the household media config
+(`household/media/config.yml`):
+
+```yaml
+watch_completion:
+  default:                 # every library not listed
+    min_percent: 90
+  libraries:
+    plex/14_fitness:       # key = progress namespace (plex/<sectionId>_<slug>)
+      min_watch_sec: 30    # too little recorded watch time never counts
+      tiers:               # first tier whose max_duration_sec fits wins
+        - max_duration_sec: 2700
+          min_percent: 50
+        - min_percent: 95
+          max_remaining_sec: 300
+```
+
+- The key is the item's progress namespace, already resolved on every write and
+  read. A tier inherits the entry-level fields; the last tier must have no
+  `max_duration_sec` (catch-all) and bounds must ascend.
+- With no known duration the cap is skipped and the last tier applies.
+- `min_watch_sec` is a weak floor: recorded watch time includes forward seeks.
+- Missing or malformed config falls back to the coded default. A bad library
+  entry is dropped (that library uses the default) with a
+  `media.watch_completion.rule_invalid` warn; the rest still load. A config read
+  that throws logs `media.watch_completion.read_failed` once per outage.
+- Config is re-read on every judgement, so a household config reload takes
+  effect without a restart.
+
+**Where the library rule applies:** the `completedAt` stamp in
+`RecordPlaybackProgress` (`play/log`), the media-server scrobble gate, and
+Fitness show checkmarks (`FitnessPlayableService`, which also serves Piano and
+School courses — those live in the Lectures library and get the default).
+
+**Where only the default applies:** `MediaProgress.isWatched`, per-screen
+spots (`mediaSpots`), the queue skip and remote progress sync. These do not
+carry the namespace, so a Fitness longplay at 94% may still read as finished in
+the household Media list.
 
 A client's `status: 'completed'` on `play/log` is a claim, not a verdict. It
 scrobbles the item on the media server (marking it watched there and clearing
-the server's resume point) only when the same rule agrees.
-
-### Custom Classifiers
-
-Source instances or household configuration can override classifier thresholds. For example, fitness content might use a stricter threshold:
-
-| Condition | State |
-|-----------|-------|
-| `percent === 0` | unwatched |
-| `0 < percent < 95` | in-progress |
-| `percent >= 95` | watched |
-
-Classifiers are config-defined, not hardcoded per content type.
+the server's resume point) only when the library rule agrees; otherwise the
+backend logs `play.log.completed_claim_rejected`. Browsers do not judge
+completion themselves: the Fitness player reports `completed` only on a
+natural end.
 
 ---
 
