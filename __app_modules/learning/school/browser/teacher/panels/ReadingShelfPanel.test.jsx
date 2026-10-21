@@ -309,8 +309,16 @@ describe('adding a book on the child’s behalf', () => {
 
   it('looks it up after a pause in typing, too', async () => {
     await open();
-    fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '0000000000' } });
-    await waitFor(() => expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002'), { timeout: 2000 });
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(screen.getByLabelText('ISBN'), { target: { value: '0000000000' } });
+      await act(async () => { vi.advanceTimersByTime(499); });
+      expect(schoolApi.books.resolve).not.toHaveBeenCalled();
+      await act(async () => { vi.advanceTimersByTime(1); });
+      expect(schoolApi.books.resolve).toHaveBeenCalledWith('9780000000002');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says a digit is off only once the grown-up has stopped typing', async () => {

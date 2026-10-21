@@ -107,15 +107,14 @@ describe('TeacherConsole workspace', () => {
       // The tab's visible word and its name agree.
       const tab = within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('button', { name: 'Log book' });
       expect(tab.textContent).toBe('Log book');
-      const entries = [null, tab];
-      fireEvent.click(entries[1]);
+      fireEvent.click(tab);
       const sheet = await screen.findByRole('dialog', { name: 'Log a book' });
       expect(await within(sheet).findByLabelText('ISBN')).toBeTruthy();
       // An action, not a section: the page underneath does not change.
       expect(window.location.pathname).toBe('/school/teacher');
       fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
       expect(screen.queryByRole('dialog', { name: 'Log a book' })).toBeNull();
-      expect(document.activeElement).toBe(entries[1]);
+      expect(document.activeElement).toBe(tab);
     });
 
     it('opened from the phone rail, closes the rail first, and gives focus to the menu button it came through', async () => {
