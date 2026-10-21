@@ -69,6 +69,35 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
     expect(ruleFor).toHaveBeenCalledWith('plex/14_fitness', expect.any(Number));
   });
 
+  test('library rule: percent clears 95 but 11.6 min left -> no completedAt (the cap alone rejects)', async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const ruleFor = vi.fn(() => ({ minPercent: 95, maxRemainingSec: 300, minWatchSec: null }));
+    const app = makeApp({ existingState: null, setSpy, completionRules: { ruleFor } });
+    await request(app).post('/log')
+      .send({ type: 'plex', assetId: 'plex:674290', percent: 96, seconds: 16768 }).expect(200);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeFalsy();
+  });
+
+  test('a natural end stamps completedAt under the strict rule at 94%', async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const ruleFor = vi.fn(() => ({ minPercent: 95, maxRemainingSec: 300, minWatchSec: null }));
+    const app = makeApp({ existingState: null, setSpy, completionRules: { ruleFor } });
+    await request(app).post('/log')
+      .send({ type: 'plex', assetId: 'plex:674290', percent: 94, seconds: 16429, naturalEnd: true }).expect(200);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeTruthy();
+  });
+
+  test('a minWatchSec rule: a tiny recorded watch delta does not stamp completedAt', async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const ruleFor = vi.fn(() => ({ minPercent: 90, maxRemainingSec: null, minWatchSec: 30 }));
+    const existing = { contentId: 'plex:674498', playhead: 634, duration: 678, percent: 94, playCount: 1, watchTime: 0 };
+    const app = makeApp({ existingState: existing, setSpy, completionRules: { ruleFor } });
+    await request(app).post('/log')
+      .send({ type: 'plex', assetId: 'plex:674498', percent: 95, seconds: 644 }).expect(200);
+    expect(setSpy.mock.calls[0][0].watchTime).toBe(10);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeFalsy();
+  });
+
   test('default (movie mode): completedAt stamped at 94% of a long film', async () => {
     const setSpy = vi.fn().mockResolvedValue(undefined);
     const app = makeApp({ existingState: null, setSpy });

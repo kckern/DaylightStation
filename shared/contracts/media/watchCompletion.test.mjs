@@ -107,3 +107,63 @@ describe('createWatchCompletionRules', () => {
     expect(rules.ruleFor('plex/14_fitness', 1800)).toMatchObject({ minPercent: 90, source: 'default' });
   });
 });
+
+describe('compileWatchCompletion validation', () => {
+  const reasonFor = (raw, namespace) => compileWatchCompletion(raw).errors.find((e) => e.namespace === namespace)?.reason;
+
+  it('rejects min_percent of 0 or below (would finish anything started)', () => {
+    expect(reasonFor({ libraries: { a: { min_percent: 0 } } }, 'a')).toMatch(/min_percent/);
+    expect(reasonFor({ libraries: { a: { min_percent: -5 } } }, 'a')).toMatch(/min_percent/);
+    expect(reasonFor({ libraries: { a: { min_percent: 100 } } }, 'a')).toBeUndefined();
+  });
+  it('accepts only real numbers: numeric strings, arrays and booleans are errors', () => {
+    expect(reasonFor({ libraries: { a: { min_percent: '95' } } }, 'a')).toMatch(/min_percent/);
+    expect(reasonFor({ libraries: { a: { max_remaining_sec: [300] } } }, 'a')).toMatch(/max_remaining_sec/);
+    expect(reasonFor({ libraries: { a: { min_watch_sec: true } } }, 'a')).toMatch(/min_watch_sec/);
+    expect(reasonFor({ libraries: { a: { max_remaining_sec: Infinity } } }, 'a')).toMatch(/max_remaining_sec/);
+  });
+  it('tiers must strictly ascend by max_duration_sec', () => {
+    const tiers = (...ts) => ({ libraries: { a: { tiers: ts } } });
+    expect(reasonFor(tiers({ max_duration_sec: 3600, min_percent: 50 }, { max_duration_sec: 1800, min_percent: 60 }, { min_percent: 95 }), 'a'))
+      .toBe('tiers must ascend by max_duration_sec');
+    expect(reasonFor(tiers({ max_duration_sec: 1800, min_percent: 50 }, { max_duration_sec: 1800, min_percent: 60 }, { min_percent: 95 }), 'a'))
+      .toBe('tiers must ascend by max_duration_sec');
+    expect(reasonFor(tiers({ max_duration_sec: 1800, min_percent: 50 }, { max_duration_sec: 3600, min_percent: 60 }, { min_percent: 95 }), 'a'))
+      .toBeUndefined();
+  });
+  it('a libraries block that is not a mapping is an error, default rule applies', () => {
+    for (const libraries of ['plex/14_fitness', [{ min_percent: 50 }]]) {
+      const { ruleFor, errors } = compileWatchCompletion({ libraries });
+      expect(errors).toEqual([{ namespace: 'libraries', reason: 'must be a mapping' }]);
+      expect(ruleFor('plex/14_fitness', 1800)).toMatchObject({ minPercent: 90, source: 'default' });
+    }
+  });
+  it('a default that is not a mapping is an error, coded default applies', () => {
+    for (const def of ['90%', [90]]) {
+      const { ruleFor, errors } = compileWatchCompletion({ default: def });
+      expect(errors.map((e) => e.namespace)).toEqual(['default']);
+      expect(ruleFor('x', 100)).toMatchObject({ minPercent: 90 });
+    }
+  });
+});
+
+describe('createWatchCompletionRules read failures', () => {
+  it('warns read_failed once when the reader starts throwing, again only after it recovers and fails anew', () => {
+    let fail = true;
+    const logger = { warn: vi.fn() };
+    const rules = createWatchCompletionRules({
+      readConfig: () => { if (fail) throw new Error('config gone'); return FITNESS; },
+      logger,
+    });
+    rules.ruleFor('plex/14_fitness', 1800);
+    rules.ruleFor('plex/14_fitness', 1800);
+    rules.ruleFor('plex/14_fitness', 1800);
+    const readFailed = () => logger.warn.mock.calls.filter(([event]) => event === 'media.watch_completion.read_failed');
+    expect(readFailed()).toEqual([['media.watch_completion.read_failed', { error: 'config gone' }]]);
+    fail = false;
+    expect(rules.ruleFor('plex/14_fitness', 1800)).toMatchObject({ minPercent: 50 });
+    fail = true;
+    rules.ruleFor('plex/14_fitness', 1800);
+    expect(readFailed()).toHaveLength(2);
+  });
+});
