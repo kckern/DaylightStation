@@ -52,7 +52,7 @@ describe('FitnessPlayableService structure cache', () => {
     });
 
     const result = await Promise.race([
-      service.getPlayableEpisodes('675689', 'h'),
+      service.getPlayableEpisodes('675689'),
       new Promise((_, reject) => setTimeout(() => reject(new Error('blocked on Plex refresh')), 25)),
     ]);
 
@@ -66,9 +66,9 @@ describe('FitnessPlayableService structure cache', () => {
 
   it('fetches the Plex episode list once for repeat reads inside the TTL', async () => {
     const { service, resolvePlayables } = makeService();
-    await service.getPlayableEpisodes('675689', 'h');
-    await service.getPlayableEpisodes('plex:675689', 'h');
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
+    await service.getPlayableEpisodes('plex:675689');
+    await service.getPlayableEpisodes('675689');
     expect(resolvePlayables).toHaveBeenCalledTimes(1);
   });
 
@@ -76,9 +76,9 @@ describe('FitnessPlayableService structure cache', () => {
   // today; it must be read on every single call, cache or no cache.
   it('never caches watch state — every read re-enriches', async () => {
     const { service, resolvePlayables, enrichWithWatchState } = makeService();
-    await service.getPlayableEpisodes('675689', 'h');
-    await service.getPlayableEpisodes('675689', 'h');
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
+    await service.getPlayableEpisodes('675689');
+    await service.getPlayableEpisodes('675689');
     expect(resolvePlayables).toHaveBeenCalledTimes(1);
     expect(enrichWithWatchState).toHaveBeenCalledTimes(3);
   });
@@ -86,9 +86,9 @@ describe('FitnessPlayableService structure cache', () => {
   it('re-fetches once the TTL has passed', async () => {
     let clock = 0;
     const { service, resolvePlayables } = makeService({ now: () => clock, structureTtlMs: 1000 });
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     clock = 1500;
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     expect(resolvePlayables).toHaveBeenCalledTimes(2);
   });
 
@@ -96,12 +96,12 @@ describe('FitnessPlayableService structure cache', () => {
     let clock = 0;
     let releaseRefresh;
     const { service, resolvePlayables } = makeService({ now: () => clock, structureTtlMs: 1000 });
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     resolvePlayables.mockImplementationOnce(() => new Promise((resolve) => { releaseRefresh = resolve; }));
     clock = 1500;
 
     const result = await Promise.race([
-      service.getPlayableEpisodes('675689', 'h'),
+      service.getPlayableEpisodes('675689'),
       new Promise((_, reject) => setTimeout(() => reject(new Error('blocked on Plex refresh')), 25)),
     ]);
 
@@ -112,7 +112,7 @@ describe('FitnessPlayableService structure cache', () => {
 
   it('describeItem reuses the cached item/info reads', async () => {
     const { service, getContainerInfo, getItem } = makeService();
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     const described = await service.describeItem('plex:675689');
     expect(described).toEqual({ title: 'Hoffman', labels: ['Piano'] });
     expect(getItem).toHaveBeenCalledTimes(1);
@@ -131,10 +131,10 @@ describe('FitnessPlayableService structure cache', () => {
   it('shares an in-flight fetch rather than starting a second one', async () => {
     const { service, resolvePlayables } = makeService();
     await Promise.all([
-      service.getPlayableEpisodes('675689', 'h'),
-      service.getPlayableEpisodes('675689', 'h'),
-      service.getPlayableEpisodes('675689', 'h'),
-      service.getPlayableEpisodes('675689', 'h'),
+      service.getPlayableEpisodes('675689'),
+      service.getPlayableEpisodes('675689'),
+      service.getPlayableEpisodes('675689'),
+      service.getPlayableEpisodes('675689'),
     ]);
     expect(resolvePlayables).toHaveBeenCalledTimes(1);
   });
@@ -143,11 +143,11 @@ describe('FitnessPlayableService structure cache', () => {
   // object, one request's edit would become every later request's input.
   it('hands out copies, so a caller mutating the result cannot poison the cache', async () => {
     const { service } = makeService();
-    const first = await service.getPlayableEpisodes('675689', 'h');
+    const first = await service.getPlayableEpisodes('675689');
     expect(first.info).toBeTruthy();
     first.info.labels = ['MUTATED'];
     first.items[0].title = 'MUTATED';
-    const second = await service.getPlayableEpisodes('675689', 'h');
+    const second = await service.getPlayableEpisodes('675689');
     expect(second.info.labels).toEqual(['Piano']);
     expect(second.items[0].title).not.toBe('MUTATED');
   });
@@ -157,19 +157,19 @@ describe('FitnessPlayableService structure cache', () => {
       .mockRejectedValueOnce(new Error('plex down'))
       .mockResolvedValue([{ id: 'plex:1', title: 'Lesson 1' }]);
     const service = new FitnessPlayableService({
-        contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
-        logger: { warn() {}, debug() {}, info() {} },
+      contentCatalog: catalog({ resolvePlayables, getContainerInfo: async () => null, getItem: async () => null }),
+      logger: { warn() {}, debug() {}, info() {} },
     });
-    await expect(service.getPlayableEpisodes('675689', 'h')).rejects.toThrow('plex down');
-    await expect(service.getPlayableEpisodes('675689', 'h')).resolves.toBeTruthy();
+    await expect(service.getPlayableEpisodes('675689')).rejects.toThrow('plex down');
+    await expect(service.getPlayableEpisodes('675689')).resolves.toBeTruthy();
     expect(resolvePlayables).toHaveBeenCalledTimes(2);
   });
 
   it('can be invalidated when content actually changes', async () => {
     const { service, resolvePlayables } = makeService();
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     service.invalidateStructure('675689');
-    await service.getPlayableEpisodes('675689', 'h');
+    await service.getPlayableEpisodes('675689');
     expect(resolvePlayables).toHaveBeenCalledTimes(2);
   });
 });

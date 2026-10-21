@@ -65,7 +65,7 @@ plex:12345:
   carries the stored `spots`/`lastDevice` over (undefined = untouched). An
   explicit `spots: {}` / `lastDevice: null` (mark watched/unwatched) clears
   them; a record with an empty spots map is judged by its single playhead.
-- Unfinished / finished rules for a spot: `__backend/src/2_domains/content/services/mediaSpots.mjs`
+- Unfinished / finished rules for a spot: `__capabilities/playback/server/domain/services/mediaSpots.mjs`
   (≥ 5 min or ≥ 5% to count as unfinished; finished at the default rule —
   see [Default Classifier](#default-classifier)).
 
@@ -131,6 +131,9 @@ watch_completion:
   that throws logs `media.watch_completion.read_failed` once per outage.
 - Config is re-read on every judgement, so a household config reload takes
   effect without a restart.
+- Two composition roots compile the rule (play/log's and the Fitness playable
+  module's), so a bad entry's `media.watch_completion.rule_invalid` warn
+  appears twice per config change.
 
 **Where the library rule applies:** the `completedAt` stamp in
 `RecordPlaybackProgress` (`play/log`), the media-server scrobble gate, and
