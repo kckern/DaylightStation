@@ -5,7 +5,8 @@
  * badge once a bank bound to its unit exists, and any request can be
  * dismissed through the gate — but a dismissal REQUIRES a reason, which is
  * delivered to the child as a note (advocacy A5: no silent verbs about
- * children).
+ * children). A retake ask can also be GRANTED here, which clears it with a
+ * note that says yes.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -33,6 +34,39 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
     }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); onChanged?.(); } });
   };
 
+  // Granting a retake: open another try on the most recent failed attempt of
+  // that unit, then clear the ask with a sentence that says YES — it used to
+  // take a trip to History and back, and the child then read a "dismissal"
+  // for a request that had been granted.
+  //
+  // Session rows (`listForLearner`) carry no `remediation` field; an attempt
+  // already given another try reads `state: 'remediation_opened'`. It is not
+  // filtered out: OpenRemediation answers `already_opened` for it, and "yes,
+  // you have another try" is still true — which also keeps a retried tap
+  // (after a lapsed sign-in) from failing on the try the first tap opened.
+  const grant = (r, key) => run(key, async ({ actorId, pin }) => {
+    const sessions = await schoolApi.learnerSessions(r.userId);
+    if (!sessions.ok) return sessions;
+    const failed = (sessions.data?.sessions ?? [])
+      .filter((s) => s.unitId === r.unitId && s.outcome?.result === 'needs_remediation')
+      .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))[0];
+    if (!failed) {
+      return { ok: false, status: 409, data: { error: 'No failed attempt of this lesson is waiting for another try — open the lesson from History to check.' } };
+    }
+    const opened = await schoolApi.offerRetake(failed.sessionId, { openedBy: actorId, pin });
+    if (!opened.ok) return opened;
+    // 201 with `status: 'unavailable'` opened nothing (a paused lesson, say);
+    // the ask stays, with the server's own reason.
+    if (opened.data?.status === 'unavailable') {
+      return { ok: false, status: 409, data: { error: opened.data.message ?? 'There is nothing to try again right now.' } };
+    }
+    return schoolApi.quizRequestDismiss({
+      unitId: r.unitId ?? null, bankId: r.bankId ?? null, kind: 'retake', sessionId: r.sessionId ?? null,
+      userId: r.userId, dismissedBy: actorId, pin,
+      reason: 'Yes — you have another try. It will be on your next agenda.',
+    });
+  }, { onSuccess: () => { requests.retry(); onChanged?.(); } });
+
   return (
     <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting." unavailableCopy="Quiz requests aren't enabled on this install.">
       <ul className="teacher-quizreq">
@@ -54,6 +88,9 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
                 <span className="teacher-quizreq__note">&ldquo;{r.note}&rdquo;</span>
               )}
               {r.fulfilled && <span className="teacher-quizreq__done">bank authored</span>}
+              {r.kind === 'retake' && r.unitId && asking !== key && (
+                <button type="button" disabled={busy === key} onClick={() => grant(r, key)}>Offer another try</button>
+              )}
               {asking === key ? (
                 <span className="teacher-quizreq__reason">
                   <input
@@ -81,9 +118,9 @@ export default function QuizRequestBacklog({ kids, onChanged }) {
       </ul>
       {items.length > 0 && (
         <p className="teacher-panel__empty">
-          Fulfilling a request means authoring a quiz bank YAML bound to that
-          unit (data/content/quizzes/, `unit:` backlink) — the badge flips the
-          moment one exists. Dismissing one sends your reason to the child.
+          A quiz request is fulfilled by authoring a bank for that unit (ask
+          whoever maintains the curriculum files); the badge flips the moment
+          one exists. Dismissing one sends your reason to the child.
         </p>
       )}
     </PanelFrame>
