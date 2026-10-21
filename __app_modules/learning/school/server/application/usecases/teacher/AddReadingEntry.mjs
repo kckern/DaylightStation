@@ -31,7 +31,7 @@ export class AddReadingEntry {
       ? (reading?.entries ?? []).find((row) => row?.idempotencyKey === idempotencyKey) ?? null
       : null;
     if (replayOf) {
-      assertSameEntry(replayOf, { on, page, minutes });
+      assertSameEntry(replayOf, { on, page, minutes, note });
       this.#context.logger.info?.('school.teacher-reading.entry-replayed', { learnerId, readingId });
       return { revision: null, result: replayOf, revisionCount: countAfter(reading, replayOf, revisionCount), replayed: true };
     }
@@ -86,11 +86,14 @@ function countAfter(reading, entry, fallback) {
  * save on a reused key — refused, as the store refuses a key that already
  * opened a different book.
  */
-function assertSameEntry(stored, { on, page, minutes }) {
+function assertSameEntry(stored, { on, page, minutes, note }) {
   const differs = [];
+  // A note is stored only when there is one, so an empty one is no note.
+  const storedNote = stored.note || null;
   if (stored.on !== on) differs.push(`on ${stored.on}`);
   if ((stored.page ?? null) !== page) differs.push(stored.page == null ? 'no page' : `page ${stored.page}`);
   if ((stored.minutes ?? null) !== minutes) differs.push(stored.minutes == null ? 'no minutes' : `${stored.minutes} minutes`);
+  if (storedNote !== (note || null)) differs.push(storedNote === null ? 'no note' : 'the note it was sent with');
   if (differs.length) {
     throw new StateConflictError(
       `That save already landed with ${differs.join(', ')} — reload and try again.`,

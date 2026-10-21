@@ -480,6 +480,35 @@ describe('LogBookSheet — partial failure and retry', () => {
     expect(keys[1]).toBe(keys[0]);
   });
 
+  it('an entry key the server says was used for a different entry: the next Retry goes on a new key', async () => {
+    // e.g. the study day rolled over between the try and the retry.
+    teacherWorkspaceApi.addReadingEntry.mockResolvedValueOnce({
+      ok: false, status: 409, data: { error: 'That save already landed with on 2026-09-05 — reload and try again.', code: 'IDEMPOTENCY_KEY_REUSED' },
+    });
+    await ready('Learner B');
+    save();
+    await screen.findByText(/already landed/);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledTimes(2));
+    const [first, second] = teacherWorkspaceApi.addReadingEntry.mock.calls;
+    expect(second[3]).not.toBe(first[3]);
+    expect(second[3]).toMatch(/:entry$/);
+    await waitFor(() => expect(summary()).toMatch(/Learner B ✓/));
+  });
+
+  it('the same refusal in the error-object shape re-keys too', async () => {
+    teacherWorkspaceApi.addReadingEntry.mockResolvedValueOnce({
+      ok: false, status: 409, data: { ok: false, error: { message: 'That save already landed.', code: 'IDEMPOTENCY_KEY_REUSED' } },
+    });
+    await ready('Learner B');
+    save();
+    await screen.findByText(/already landed/);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry Learner B' }));
+    await waitFor(() => expect(teacherWorkspaceApi.addReadingEntry).toHaveBeenCalledTimes(2));
+    const [first, second] = teacherWorkspaceApi.addReadingEntry.mock.calls;
+    expect(second[3]).not.toBe(first[3]);
+  });
+
   it('an open reading’s entry whose answer was lost: Retry resends it on the same key, even after a new choice', async () => {
     teacherWorkspaceApi.addReadingEntry.mockResolvedValueOnce(LOST);
     await ready('Learner B');

@@ -85,6 +85,9 @@ const choiceFor = (progress, { happened, page, mode }) => [
 
 const entryOf = (plan) => (plan?.kind === 'open' && plan.entry ? JSON.stringify(plan.entry) : null);
 
+/** The server's refusal code, in either error shape the API serves. */
+const refusalCode = (outcome) => outcome?.data?.code ?? outcome?.data?.error?.code ?? null;
+
 /** No answer, a timeout or a server error: the write may have landed. */
 const isUnknown = (outcome) => !outcome.ok && !outcome.skipped
   && (outcome.status === 0 || outcome.status === 408 || outcome.status >= 500);
@@ -210,7 +213,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
   const [results, setResults] = useState({});
   const [saving, setSaving] = useState(false);
   // Per child: { key, choice, made, plan, aimedAt, entryDone, landedEntry,
-  // frozen, done }.
+  // frozen, rekey, done }.
   const progressRef = useRef({});
   const inFlightRef = useRef(false);
   const disposedRef = useRef(false);
@@ -268,13 +271,13 @@ function BookStep({ isbn, onAnother, onSaving }) {
       if (disposedRef.current) return STOPPED;
       let progress = progressRef.current[learnerId];
       if (progress?.done) continue;
-      if (!progress?.frozen && (!progress || progress.choice !== choiceFor(progress, choice))) {
+      if (progress?.rekey || (!progress?.frozen && (!progress || progress.choice !== choiceFor(progress, choice)))) {
         // A first try, or a new choice after a clear refusal: a new key. The
         // reading an earlier try was aimed at is kept, so a finish that
         // landed unseen is never followed by a second, duplicate reading.
         progress = {
           key: mintLogKey(), choice: null, made: choice, plan: null, aimedAt: progress?.aimedAt ?? null,
-          entryDone: false, landedEntry: progress?.landedEntry ?? null, frozen: false, done: false,
+          entryDone: false, landedEntry: progress?.landedEntry ?? null, frozen: false, rekey: false, done: false,
         };
         progress.choice = choiceFor(progress, choice);
         progressRef.current[learnerId] = progress;
@@ -313,6 +316,10 @@ function BookStep({ isbn, onAnother, onSaving }) {
       } else {
         const entryUnseen = plan.kind === 'open' && Boolean(plan.entry) && !progress.entryDone;
         progress.frozen = isUnknown(outcome) && (plan.kind === 'new' || entryUnseen);
+        // The server says this key already carries a DIFFERENT entry (the
+        // study day rolled over, say) and none of ours landed under it: the
+        // same key can never go through again, so the next try mints one.
+        progress.rekey = entryUnseen && progress.landedEntry === null && refusalCode(outcome) === 'IDEMPOTENCY_KEY_REUSED';
       }
       touched.add(learnerId);
       setResults((value) => ({

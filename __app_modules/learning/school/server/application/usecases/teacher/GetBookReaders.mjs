@@ -52,7 +52,14 @@ export class GetBookReaders {
       throw new ValidationError(`isbn must be a 13-digit ISBN: ${isbn}`);
     }
 
-    const studyDay = this.#context.studyDay() ?? this.#context.now().slice(0, 10);
+    // The household's study day. With no launcher wired there is nothing
+    // household-aware to ask (no reading is being opened here), so the UTC
+    // date is the last resort, and it is logged rather than assumed quietly.
+    let studyDay = this.#context.studyDay();
+    if (!studyDay) {
+      studyDay = this.#context.now().slice(0, 10);
+      this.#context.logger.warn?.('school.teacher-reading.readers-no-study-day', { isbn, fallback: studyDay });
+    }
     const facts = await this.#context.facts(isbn);
     const pageCount = Number.isInteger(facts?.pageCount) && facts.pageCount > 0 ? facts.pageCount : null;
     const suggestedMode = defaultProgressMode(pageCount);

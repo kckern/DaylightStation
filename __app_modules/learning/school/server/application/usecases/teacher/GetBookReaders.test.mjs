@@ -169,6 +169,14 @@ describe('GetBookReaders', () => {
     expect(seeded()).toBe(before);
   });
 
+  it('with no study day wired, falls back to the clock’s date and says so', async () => {
+    const warn = vi.fn();
+    const view = await new GetBookReaders(deps({ bookLogLauncher: null, logger: { info() {}, warn, error() {} } }))
+      .execute({ isbn: ISBN, by: TEACHER });
+    expect(view.studyDay).toBe('2026-09-06');
+    expect(warn).toHaveBeenCalledWith('school.teacher-reading.readers-no-study-day', expect.objectContaining({ fallback: '2026-09-06' }));
+  });
+
   it('requires a roster accessor', () => {
     expect(() => new GetBookReaders({ ...deps(), roster: null })).toThrow(/roster/);
   });

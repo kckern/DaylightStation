@@ -303,6 +303,20 @@ describe('AddReadingEntry', () => {
     expect((await only()).revisions).toHaveLength(1);
   });
 
+  it('a replay with an edited note is a different save: refused as a reused key, not dropped', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page: 40, idempotencyKey: 'log-4:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, note: 'read aloud', baseRevisionCount: 0 });
+    const same = await new AddReadingEntry(deps()).execute({ ...entry, note: 'read aloud', baseRevisionCount: 0 });
+    expect(same.replayed).toBe(true);
+    const refusal = await new AddReadingEntry(deps()).execute({ ...entry, note: 'read alone', baseRevisionCount: 0 }).catch((error) => error);
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(refusal.message).toMatch(/already landed with the note/);
+    const missing = await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 }).catch((error) => error);
+    expect(missing.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect((await only()).revisions).toHaveLength(1);
+  });
+
   it('a new key on a stale base is still refused', async () => {
     const add = (idempotencyKey, page) => new AddReadingEntry(deps()).execute({
       learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page, baseRevisionCount: 0, idempotencyKey,
@@ -484,6 +498,15 @@ describe('AddReadingForLearner', () => {
       by: TEACHER, idempotencyKey: 'teacher-add-1',
     });
     expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-06' });
+  });
+
+  it('with no study day, a finish with no day lands on the day the store opened it, not the UTC date', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: null })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished', openedOn: '2026-09-05',
+      by: TEACHER, idempotencyKey: 'teacher-add-2',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+    expect(reading.entries[0]).toMatchObject({ on: '2026-09-05' });
   });
 
   it('a retried open does not log the day twice', async () => {

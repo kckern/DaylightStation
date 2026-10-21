@@ -51,20 +51,14 @@ export class AddReadingForLearner {
     if (!DOORS.includes(where)) throw new ValidationError(`where must be starting|partway|finished, got: ${where}`);
     if (page !== null && where !== 'partway') throw new ValidationError('a page only belongs to the partway door');
     if (finishedOn !== null && where !== 'finished') throw new ValidationError('a finish day only belongs to the finished door');
-    // "Finished today" is the common case, and today is the HOUSEHOLD's
-    // study day — a 4am rule a phone's calendar does not know. So a caller
-    // may send no day, and the server supplies it.
-    const finishDay = where === 'finished' && finishedOn === null
-      ? (this.#context.studyDay() ?? this.#context.now().slice(0, 10))
-      : finishedOn;
     if (where === 'partway') {
       if (!(Number.isInteger(page) && page > 0)) throw new ValidationError('the partway door needs the page they are on');
       // A page is evidence for page mode, and evidence of nothing in the other
       // two: a `minutes` reading counts minutes and a `check` one counts days.
       if (progressMode !== 'page') throw new ValidationError('a page belongs to a page-mode reading');
     }
-    if (where === 'finished' && !isDayKey(finishDay)) {
-      throw new ValidationError(`the finished door needs the day they finished it: ${finishDay}`);
+    if (where === 'finished' && finishedOn !== null && !isDayKey(finishedOn)) {
+      throw new ValidationError(`the finished door needs the day they finished it: ${finishedOn}`);
     }
 
     // Never invented, and never asked of the grown-up: the length is a fact
@@ -84,6 +78,12 @@ export class AddReadingForLearner {
 
     const at = this.#context.now();
     const today = this.#context.studyDay() ?? opened.openedOn ?? at.slice(0, 10);
+    // "Finished today" is the common case, and today is the HOUSEHOLD's
+    // study day — a 4am rule a phone's calendar does not know. So a caller
+    // may send no day, and the server supplies it: the study day, else the
+    // day the store opened the reading on (its own household day), and the
+    // UTC date only as the last resort.
+    const finishDay = where === 'finished' && finishedOn === null ? today : finishedOn;
     // THE EVIDENCE FIRST, THEN THE DECISION, exactly as the child's own
     // finished door does it. Interrupted between the two, the shelf
     // under-reports a finished book as still being read — which is fixable;
