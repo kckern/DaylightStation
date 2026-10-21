@@ -105,8 +105,14 @@ describe('GetBookReaders', () => {
     const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
     expect(rowFor(view, 'learner_c')).toEqual({
       learnerId: 'learner_c', name: 'Learner C', suggestedMode: 'check',
-      today: false, openReadingId: null, openReading: null, unreadable: false,
+      today: false, openReadingId: null, openReading: null, finishedTodayIds: [], unreadable: false,
     });
+  });
+
+  it('names the readings of this book finished on the study day, and no earlier finish', async () => {
+    const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
+    expect(rowFor(view, 'learner_a').finishedTodayIds).toEqual(['rdg_a']);
+    expect(rowFor(view, 'learner_b').finishedTodayIds).toEqual([]);
   });
 
   it('suggests page mode for a book of 64 pages or more', async () => {
@@ -136,7 +142,7 @@ describe('GetBookReaders', () => {
       },
     };
     const view = await new GetBookReaders(deps()).execute({ isbn: ISBN, by: TEACHER });
-    expect(rowFor(view, 'learner_c')).toMatchObject({ unreadable: true, today: false, openReadingId: null });
+    expect(rowFor(view, 'learner_c')).toMatchObject({ unreadable: true, today: false, openReadingId: null, finishedTodayIds: [] });
     expect(rowFor(view, 'learner_b').openReadingId).toBe('rdg_b');
   });
 

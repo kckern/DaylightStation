@@ -13,6 +13,8 @@
  *   check-in or finish goes ON it, and the row carries what a write to it
  *   needs: its mode, its length and `revisionCount` (the `baseRevisionCount`
  *   every edit verb requires).
+ * - `finishedTodayIds` — the readings of this ISBN finished on the study day,
+ *   so a retried save can tell its own finish landed.
  * - `suggestedMode` — `defaultProgressMode`, from the book's length.
  *
  * A finished reading carries no flag: a re-read is a new reading.
@@ -73,7 +75,7 @@ export class GetBookReaders {
       readings = (await this.#context.bookLog.listForLearner(learnerId)) ?? [];
     } catch (error) {
       this.#context.logger.warn?.('school.teacher-reading.readers-shelf-unreadable', { learnerId, isbn, error: error.message });
-      return { ...row, today: false, openReadingId: null, openReading: null, unreadable: true };
+      return { ...row, today: false, openReadingId: null, openReading: null, finishedTodayIds: [], unreadable: true };
     }
 
     const ofBook = readings.filter((reading) => reading?.book?.isbn === isbn);
@@ -96,6 +98,12 @@ export class GetBookReaders {
         pageCount: open.book?.pageCount ?? null,
         revisionCount: Array.isArray(open.revisions) ? open.revisions.length : 0,
       } : null,
+      // Which readings of this book were finished on the study day. A save
+      // whose finish response was lost re-reads this to see that it landed,
+      // instead of opening a second, duplicate finished reading.
+      finishedTodayIds: ofBook
+        .filter((reading) => reading.status === 'finished' && reading.finishedOn === studyDay)
+        .map((reading) => reading.id),
       unreadable: false,
     };
   }
