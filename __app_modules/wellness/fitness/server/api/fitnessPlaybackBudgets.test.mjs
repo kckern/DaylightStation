@@ -41,9 +41,10 @@ it('enforces 15 minutes over two episodes through the native meter, API and dura
  view=await reloaded.observe({householdId:'test',deviceId:'tv',streamId:'new-browser',sequence:3,participantIds:['child'],contentId:'episode-2',requestGrant:true});
  expect(view.policies[0].grant.ms).toBe(5000);
  now+=86400000;expect((await reloaded.status({householdId:'test',deviceId:'tv'})).policies[0].spentMs).toBe(0);
+ const before=(await reloaded.status({householdId:'test',deviceId:'tv'})).generation;
  for(const [n,ids] of [[10,['exempt-rider']],[11,['no-profile']]]) {
   const v=await reloaded.observe({householdId:'test',deviceId:'tv',streamId:'new-browser',sequence:n,participantIds:ids,contentId:'episode-2',requestGrant:true});
-  expect(v.policies[0].grant??null).toBeNull();expect(v.policies[0].spentMs).toBe(0);
+  expect(v.policies[0].grant??null).toBeNull();expect(v.policies[0].spentMs).toBe(0);expect(v.generation).toBe(before);
  }
  await request(app).post('/budget/observe').send({deviceId:'unconfigured',streamId:'bad',sequence:1}).expect(400);
  } finally {rmSync(dir,{force:true,recursive:true});}

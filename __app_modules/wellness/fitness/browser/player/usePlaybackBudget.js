@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useReducer } from 'react';
 import { resolveContentId } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { classifySupervision } from '../../shared/supervision.mjs';
+import { classifySupervision, isGovernedChildId } from '../../shared/supervision.mjs';
 import { PlaybackBudgetController } from './PlaybackBudgetController.js';
 
 const INACTIVE = { blocked: false, status: 'inactive', remainingMs: 0 };
@@ -17,12 +17,9 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds
   const latest = useRef(null);
   const participantIds = (participantRoster ?? []).filter(p => p.isActive !== false).map(p => p.id).filter(Boolean);
   const { supervised } = classifySupervision({ participantIds, supervisorIds });
-  const norm = (list) => new Set((list ?? []).map((v) => String(v).trim().toLowerCase()));
-  const exempt = norm(exemptIds);
-  const supervisorSet = norm(supervisorIds);
   // No governed child (only supervisors, guests or exempt riders): nothing to meter.
-  const hasSubject = (participantRoster ?? []).some((p) => p.isActive !== false && p.id && !p.isGuest
-    && !exempt.has(String(p.id).trim().toLowerCase()) && !supervisorSet.has(String(p.id).trim().toLowerCase()));
+  const hasSubject = (participantRoster ?? []).some((p) => p.isActive !== false && !p.isGuest
+    && isGovernedChildId(p.id, { supervisorIds, exemptIds }));
   latest.current = {
     participantIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
     matching: Boolean(currentMedia && governanceState?.isGoverned),

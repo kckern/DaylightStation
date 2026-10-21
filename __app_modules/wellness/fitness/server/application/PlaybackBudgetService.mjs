@@ -1,11 +1,12 @@
 import { normalizePlaybackBudgetPolicies, reconcileBudget, reserveBudget, settleBudget, budgetView } from '../domain/services/playbackBudget.mjs';
-import { classifySupervision } from '../../shared/supervision.mjs';
+import { classifySupervision, isGovernedChildId } from '../../shared/supervision.mjs';
 import { hasGovernedLabel } from '../../shared/governedContent.mjs';
 
 /** Durable, serialized allowance owner. The browser may spend only returned grants. */
 export class PlaybackBudgetService {
   #store; #config; #catalog; #clock; #calendar; #devices; #users; #logger; #queues = new Map(); #content = new Map();
   constructor({ store, policyConfig, contentCatalog, clock, calendar, deviceDirectory, userDirectory, logger }) {
+    if (typeof userDirectory !== 'function') throw new Error('PlaybackBudgetService requires userDirectory (without it no roster has a governed child and the budget never spends)');
     this.#store=store; this.#config=policyConfig; this.#catalog=contentCatalog;
     this.#clock=clock; this.#calendar=calendar; this.#devices=deviceDirectory; this.#users=userDirectory; this.#logger=logger;
   }
@@ -106,9 +107,8 @@ export class PlaybackBudgetService {
       value.activeStreamId = streamId;
       const {supervised}=classifySupervision({participantIds,supervisorIds:setup.config.governance?.superusers??[]});
       // No governed child on the roster is NOT `supervised`: supervised resets the day's budget.
-      const exempt=(setup.config.governance?.exemptions??[]).map(v=>String(v).toLowerCase());
-      const supers=(setup.config.governance?.superusers??[]).map(v=>String(v).toLowerCase());
-      const hasSubject=participantIds.some(id=>!exempt.includes(String(id).toLowerCase())&&!supers.includes(String(id).toLowerCase())&&!!this.#users?.(id));
+      const lists={supervisorIds:setup.config.governance?.superusers??[],exemptIds:setup.config.governance?.exemptions??[]};
+      const hasSubject=participantIds.some(id=>isGovernedChildId(id,lists)&&!!this.#users(id));
       const governed=!supervised && hasSubject && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
       for(const policy of setup.policies) {
         const prior=Object.hasOwn(value.policies,policy.id)?value.policies[policy.id]:null;

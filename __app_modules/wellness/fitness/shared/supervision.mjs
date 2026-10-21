@@ -1,4 +1,10 @@
 const normalize = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
+/** A roster id that can be governed: not a supervisor, not exempt. (Guests are excluded by callers.) */
+export function isGovernedChildId(id, { supervisorIds = [], exemptIds = [] } = {}) {
+  const key = normalize(typeof id === 'number' ? String(id) : id);
+  if (!key) return false;
+  return !supervisorIds.some(v => normalize(v) === key) && !exemptIds.some(v => normalize(v) === key);
+}
 export function classifySupervision({ participantIds = [], supervisorIds = [] } = {}) {
   const supervisors = new Set(supervisorIds.map(normalize).filter(Boolean));
   const present = [...new Set(participantIds.map(normalize).filter(id => supervisors.has(id)))];

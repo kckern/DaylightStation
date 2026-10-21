@@ -4,7 +4,7 @@ const configuration={governance:{superusers:['parent'],playback_budgets:[{id:'un
 function harness() {
  const records=new Map(); let time=Date.UTC(2026,9,18,12); let fail=false;
  const store={load:async key=>structuredClone(records.get(JSON.stringify(key))??null),save:async ({value,...key})=>{if(fail)throw Error('write failed');records.set(JSON.stringify(key),structuredClone(value));}};
- const service=new PlaybackBudgetService({store,policyConfig:()=>configuration,contentCatalog:{getItem:async id=>({metadata:{labels:id==='video'?['Movement']:['Other']}})},clock:{now:()=>time},calendar:now=>({localDate:new Date(now).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z')+86400000}),deviceDirectory:()=>({'test-tv':{fleet:true}}),logger:{info(){},warn(){}}});
+ const service=new PlaybackBudgetService({store,userDirectory:id=>id==='child'?{}:null,policyConfig:()=>configuration,contentCatalog:{getItem:async id=>({metadata:{labels:id==='video'?['Movement']:['Other']}})},clock:{now:()=>time},calendar:now=>({localDate:new Date(now).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z')+86400000}),deviceDirectory:()=>({'test-tv':{fleet:true}}),logger:{info(){},warn(){}}});
  const req={householdId:'test',deviceId:'test-tv',streamId:'browser',participantIds:['child'],contentId:'video'};
  return {service,records,req,advance:ms=>{time+=ms;},fail:()=>{fail=true;}};
 }
@@ -68,4 +68,10 @@ it('rejects incomplete exhausted buckets instead of treating them as a new day',
  const h=harness();await h.service.observe({...h.req,sequence:1});
  const [key,value]=[...h.records.entries()][0];delete value.policies.unattended.localDate;value.policies.unattended.spentMs=900000;h.records.set(key,value);
  await expect(h.service.observe({...h.req,sequence:2})).rejects.toThrow('Corrupt');
+});
+
+describe('PlaybackBudgetService wiring',()=>{
+ it('throws without a userDirectory instead of silently not metering',()=>{
+  expect(()=>new PlaybackBudgetService({store:{},policyConfig:()=>({}),contentCatalog:{},clock:{},calendar:()=>({}),deviceDirectory:()=>({})})).toThrow(/userDirectory/);
+ });
 });
