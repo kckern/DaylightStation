@@ -340,7 +340,9 @@ export const schoolApi = {
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),
-  requestRetake: (body) => req('/retake-requests', body),
+  // No `requestRetake`: on-screen quizzes retake until passed (2026-10-21), so
+  // no browser surface files a retake ask. The server route stays for the
+  // legacy rows still on the backlog (`teacher.md` §12).
   flagConcern: (body) => req('/flags', body),
   // --- Self-service access codes (design §4) -------------------------------
   // `/resolve` NEVER answers with an error status for a bad code: an unknown,

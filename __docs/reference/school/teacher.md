@@ -928,8 +928,8 @@ session inspector, *Offer another try* (§3).
 
 **Opening a retry does not clear a row.** `OpenRemediation` opens the fresh
 session but removes nothing from the backlog; a dismissal is the only thing
-that removes a row. Pre-existing behaviour, stated here so a row that outlives
-its own grant does not read as a bug.
+that removes a row. Stated here so a legacy retake row that is still listed
+after a retry was opened from the session inspector does not read as a bug.
 
 A dismissal without a reason is not possible: the reason *is* the delivery. The
 dismissal targets exactly one row — kind and session id ride along, because a
