@@ -100,9 +100,11 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     answering.current = true;
     setBusy(true);
     setCurrentQid(question.id);
-    const r = await api.answer(day, { questionId: question.id, response });
+    let r;
+    try { r = await api.answer(day, { questionId: question.id, response }); }
+    catch (e) { r = { ok: false, data: { error: 'Try again.' } }; }
+    finally { answering.current = false; }
     setBusy(false);
-    answering.current = false;
     if (r.ok) setResult(r.data); else setError(r.data?.error ?? 'Try again.');
   };
   // Fetch first, then swap view and clear the grade together: the answered
@@ -118,7 +120,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   // entries saved lands here too. Ref-guarded like complete.
   const submitting = useRef(false);
   const readyToSubmit = Boolean(day) && Boolean(view) && promptIdx >= PROMPTS.length && !view.questions
-    && !['clarify', 'completed', 'excused'].includes(view.phase) && !busy;
+    && !['clarify', 'completed', 'excused'].includes(view.phase) && !busy && !error;
   useEffect(() => {
     if (!readyToSubmit || submitting.current) return;
     submitting.current = true;

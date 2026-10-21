@@ -73,16 +73,24 @@ describe('SchoolDebriefProgram start card', () => {
       render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
       fireEvent.click(await screen.findByRole('button', { name: /pick up|tell me/i }));
     };
-    it('submit failure then Enter retries and reaches the questions', async () => {
+    it('a persistent submit failure does not loop; Try again retries exactly once per press', async () => {
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'entry', next: { kind: 'submit' }, entries: full }));
       api.open = api.day;
-      api.submit = vi.fn()
-        .mockResolvedValueOnce({ ok: false, status: 500, data: null })
-        .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: full, questions: qs, answers: {} }));
+      const good = ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: full, questions: qs, answers: {} });
+      api.submit = vi.fn(async () => ({ ok: false, status: 500, data: null }));
       await go();
-      fireEvent.click(await screen.findByRole('button', { name: /try again/i }));
-      expect(await screen.findByText('One')).toBeInTheDocument();
+      const btn = await screen.findByRole('button', { name: /try again/i });
+      for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 20));
+      expect(api.submit).toHaveBeenCalledTimes(1);
+      fireEvent.click(btn);
+      await waitFor(() => expect(api.submit).toHaveBeenCalledTimes(2));
+      await screen.findByRole('button', { name: /try again/i });
+      for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 20));
       expect(api.submit).toHaveBeenCalledTimes(2);
+      api.submit.mockResolvedValueOnce(good);
+      fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+      expect(await screen.findByText('One')).toBeInTheDocument();
+      expect(api.submit).toHaveBeenCalledTimes(3);
     });
     it('submit failure then the Enter key retries', async () => {
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'entry', next: { kind: 'submit' }, entries: full }));
@@ -92,8 +100,11 @@ describe('SchoolDebriefProgram start card', () => {
         .mockResolvedValueOnce(ok({ studyDay: '2026-10-21', phase: 'answering', next: { kind: 'question', id: 'q1' }, entries: full, questions: qs, answers: {} }));
       await go();
       await screen.findByRole('button', { name: /try again/i });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(api.submit).toHaveBeenCalledTimes(1);
       enter();
       expect(await screen.findByText('One')).toBeInTheDocument();
+      expect(api.submit).toHaveBeenCalledTimes(2);
     });
     it('complete failure then Enter retries and reaches the summary', async () => {
       school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
