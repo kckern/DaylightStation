@@ -21,7 +21,7 @@ import { humanDate, localDay } from "./teacherDates.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
 import {
   CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView, CoinsView, CoinsRosterView,
+  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView, DebriefsView, CoinsView, CoinsRosterView,
 } from "./WorkspaceViews.jsx";
 import "./Teacher.scss";
 
@@ -43,6 +43,7 @@ const LEARNER_NAV = [
   { id: 'history', label: 'History' },
   { id: 'reading', label: 'Reading' },
   { id: 'words', label: 'Cards' }, // id kept: console links name the tab `words`
+  { id: 'debriefs', label: 'Debriefs' },
   { id: 'coins', label: 'Coins' },
   { id: 'reports', label: 'Reports' },
   { id: 'operations', label: 'Operations' },
@@ -168,6 +169,7 @@ function TeacherShell({ PianoProgramsPanel }) {
         onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
       reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
       words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
+      debriefs: <DebriefsView learnerId={learner.id} learnerName={learner.name} />,
       coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,

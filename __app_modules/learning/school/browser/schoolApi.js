@@ -77,6 +77,8 @@ export const schoolApi = {
   wallet: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/wallet`),
   earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
   putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
+  teacherDebriefs: (learnerId, by) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/history?by=${encodeURIComponent(by)}`),
+  teacherDebriefAction: (learnerId, day, action, body) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/day/${encodeURIComponent(day)}/${action}`, body, 'POST'),
   putEarnRules: (body) => req('/teacher/economy/earn-rules', body, 'PUT'),
 
   rubiksCubePreview: () => req('/rubiks-cube/preview'),
