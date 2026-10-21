@@ -198,9 +198,12 @@ real pass has), plus `capUsed`: whether today's passes already use up its cap
 (across all passes, a pass for another privilege counts). Today's shards are
 read strictly here: one that does not parse gives `state: 'unknown',
 capUsed: null` and logs `economy.bank.pass-unreadable`, rather than claiming the
-day's pass is unused. (`activePass`, used for gating, stays lenient but logs
-`economy.pass.ledger-unreadable` when a strict read of those shards would have
-thrown.)
+day's pass is unused. `activePass`, used for gating, fails closed: on
+`CORRUPT_LEDGER` it logs `economy.pass.ledger-unreadable` (warn) and returns
+null, so games stay locked. It never falls back to a lenient read: a study day
+spans two UTC shards, so a purchase can sit in one shard and its `:consumed`
+marker in the next, and skipping the unreadable one would make a used pass
+read active again.
 
 `weekEndsAt` is the next fire of `week_close.cron` in the household timezone,
 by cron-parser (the scheduler's parser), so any cron the scheduler accepts
@@ -209,9 +212,12 @@ works. No cron, or one that does not parse (logged
 (Monday at 4 am). Two caveats:
 
 - The scheduler (`AgentAssignmentScheduler.registerTask`) parses the cron with
-  no timezone, so the job fires in the **process** TZ. The production container
-  sets `TZ` to the household timezone; the two must stay equal, or `weekEndsAt`
-  and the real close disagree.
+  no timezone, so the job fires in the **process** TZ. In the container that is
+  `TZ`, set by `docker/entrypoint.sh` from `system.yml` `.timezone` (the
+  Dockerfile defaults it to `America/Los_Angeles`). The bank and the passes read
+  the household timezone (`getHouseholdTimezone`), a separate setting. The two
+  must match, or `weekEndsAt` and the real close disagree. `createEconomyApi`
+  logs `economy.timezone-mismatch` at warn on boot when `TZ` is set and differs.
 - The job's cron is read once at boot, while the bank reads the live catalog. After
   a cron edit and a reload, `weekEndsAt` shows the new schedule but the job keeps
   the old one until a restart.
@@ -222,6 +228,8 @@ The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
 
 - Check `pass['piano.games']` (`state === 'active'`) for the game unlock, and
   `capUsed` for "sneak used today".
+- `state: 'unknown'` means the ledger could not be read: treat games as locked
+  and offer no sale.
 - After **any** `POST /passes` failure, re-read the bank (refresh in a
   `finally`). A storage failure after the marker leaves an unpaid pass that is
   real and active. The error then carries `passId`, and the server logs

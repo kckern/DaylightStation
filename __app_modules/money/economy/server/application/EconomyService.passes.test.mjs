@@ -249,15 +249,28 @@ describe('EconomyService.activePass', () => {
     await expect(svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }))
       .resolves.toMatchObject({ pass: { passId: `pass:${USER}:2026-10-21` } });
   });
-  it('a corrupt shard today: passesToday({strict}) throws CORRUPT_LEDGER; the lenient read logs it and carries on', async () => {
+  it('a corrupt shard today: passesToday throws CORRUPT_LEDGER; activePass fails closed (null) and logs it', async () => {
     const logger = quiet();
     const svc = makeService({ logger });
     await fundSilver(svc, 5);
     await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
     fs.writeFileSync(path.join(USER_DIR, USER, 'apps', 'economy', 'ledger', '2026-10-19.yml'), ': : not yaml [');
     await expect(svc.passesToday(USER, { strict: true })).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
-    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toMatchObject({ passId: PASS });
+    await expect(svc.passesToday(USER)).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toBeNull();
     expect(logger.warn).toHaveBeenCalledWith('economy.pass.ledger-unreadable', expect.objectContaining({ learnerId: USER, studyDay: DAY }));
+  });
+  it('a used pass never reads active again: purchase in shard D, consume in D+1, D+1 corrupt', async () => {
+    const svc = makeService();
+    await fundSilver(svc, 5);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }); // 2026-10-20T15:00Z, shard 10-20
+    at('2026-10-21T02:00:00.000Z'); // still study day 10-20, shard 10-21
+    await svc.consumePass(USER, { passId: PASS, playedMs: 300000 });
+    const dPlus1 = path.join(USER_DIR, USER, 'apps', 'economy', 'ledger', '2026-10-21.yml');
+    expect(fs.readFileSync(dPlus1, 'utf8')).toContain(':consumed');
+    fs.writeFileSync(dPlus1, ': : not yaml [');
+    at('2026-10-21T03:00:00.000Z');
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toBeNull();
   });
   it('the 4 am boundary is the household\'s, not UTC\'s', async () => {
     const svc = new EconomyService({

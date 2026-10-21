@@ -21,12 +21,20 @@ import { createEconomyRouter } from "../api/economy.mjs";
  *   runtime reads it back from `studyCalendar`, so the preview's "today" and
  *   the day a pass belongs to come from one setting.
  * @param {number} [config.boundaryHour=4]
+ * @param {string} [config.processTimezone] - defaults to `process.env.TZ`
  * @returns {{ economyService: EconomyService, earnRulesService: EarnRulesService, bankService: BankService,
  *   configProjection: EconomyConfigProjection, studyCalendar: {timezone: string|null, boundaryHour: number},
  *   useEvidenceLabels: (fn: (userId: string) => Promise<Map<string,string>|null>) => void,
  *   router: import('express').Router }}
  */
-export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4 }) {
+export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4,
+  processTimezone = process.env.TZ }) {
+  // The week-close job fires in the process TZ (the container's, from
+  // system.yml); the bank and the passes read the household's. Say so once
+  // when they differ.
+  if (processTimezone && timezone && processTimezone !== timezone) {
+    logger.warn?.('economy.timezone-mismatch', { processTimezone, householdTimezone: timezone });
+  }
   const configProjection = new EconomyConfigProjection({ configService, logger });
   const studyCalendar = Object.freeze({ timezone: timezone ?? null, boundaryHour });
   const economyService = new EconomyService({

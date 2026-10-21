@@ -38,6 +38,23 @@ describe('cachedEvidenceLabels', () => {
     await labels('kid');
     expect(preview.preview).toHaveBeenCalledTimes(3);
   });
+  it('concurrent misses for one key share one preview; a rejection is evicted', async () => {
+    let release;
+    const preview = makePreview();
+    preview.preview.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const labels = cachedEvidenceLabels({ preview, now: () => 0 });
+    const both = Promise.all([labels('kid'), labels('kid')]);
+    release({ lines });
+    const [a, b] = await both;
+    expect(a).toBe(b);
+    expect(preview.preview).toHaveBeenCalledTimes(1);
+    preview.preview.mockImplementationOnce(() => Promise.reject(new Error('flaky')));
+    const failing = cachedEvidenceLabels({ preview, now: () => 0 });
+    await expect(Promise.all([failing('kid'), failing('kid')])).rejects.toThrow('flaky');
+    expect(preview.preview).toHaveBeenCalledTimes(2);
+    expect(await failing('kid')).toEqual(new Map([['line:1', 'Green day']]));
+    expect(preview.preview).toHaveBeenCalledTimes(3);
+  });
   it('a new week is a new key', async () => {
     const preview = makePreview();
     const labels = cachedEvidenceLabels({ preview, now: () => 0 });
@@ -88,6 +105,13 @@ describe('createEconomyApi + createEconomyEarningsRuntime', () => {
     expect(economyApi.studyCalendar).toEqual({ timezone: 'America/Los_Angeles', boundaryHour: 4 });
     expect(economyApi.economyService.currentStudyDay()).toBe('2026-10-19');
     expect(runtime.earningsPreview.currentStudyDay()).toBe('2026-10-19');
+  });
+  it('warns once at build when the process TZ (the week-close job\'s) differs from the household timezone', () => {
+    const configService = { getHouseholdAppConfig: () => ({}), getUserProfile: () => null, getUserDir: () => '/nonexistent', getHouseholdPath: () => '/nonexistent' };
+    const make = (processTimezone) => { const logger = quiet(); createEconomyApi({ configService, logger, timezone: 'America/Los_Angeles', processTimezone }); return logger.warn; };
+    expect(make('UTC')).toHaveBeenCalledWith('economy.timezone-mismatch', { processTimezone: 'UTC', householdTimezone: 'America/Los_Angeles' });
+    expect(make('America/Los_Angeles')).not.toHaveBeenCalled();
+    expect(make(undefined)).not.toHaveBeenCalled();
   });
   it('the runtime binds the bank\'s evidence labels; a learner off the roster reads null', async () => {
     const { bind } = await build();

@@ -517,29 +517,34 @@ export class EconomyService {
   }
 
   /**
-   * Today's passes, first first. `strict` throws CORRUPT_LEDGER when one of
-   * today's shards does not parse (the bank shows "unknown"). Otherwise the
-   * read is lenient, for gating, but a shard that would have thrown is logged
-   * (`economy.pass.ledger-unreadable`) before the lenient read carries on.
+   * Today's passes, first first, read strictly: a shard of today's that does
+   * not parse throws CORRUPT_LEDGER. Never lenient: a study day spans two UTC
+   * shards, so a purchase can sit in one and its `:consumed` marker in the
+   * next, and skipping the unreadable one would bring a used pass back to
+   * life. (`{ strict }` is accepted for callers that say so; it is always on.)
    */
-  async passesToday(userId, { strict = false } = {}) {
+  async passesToday(userId, _opts = {}) {
     this.#assertUser(userId);
     const studyDay = this.currentStudyDay();
-    const fromDay = this.#readFrom(studyDay);
-    let txns;
-    try {
-      txns = this.#ds.readAllTransactions(userId, { fromDay, strict: true });
-    } catch (err) {
-      if (strict || err?.code !== 'CORRUPT_LEDGER') throw err;
-      this.#logger.warn?.('economy.pass.ledger-unreadable', { learnerId: userId, studyDay, error: err.message });
-      txns = this.#ds.readAllTransactions(userId, { fromDay });
-    }
+    const txns = this.#ds.readAllTransactions(userId, { fromDay: this.#readFrom(studyDay), strict: true });
     return passesOn(txns, { learnerId: userId, studyDay });
   }
 
-  /** Today's active pass for `privilege`, or null. A pass expires when the study day rolls over at 4 am. */
+  /**
+   * Today's active pass for `privilege`, or null. A pass expires when the
+   * study day rolls over at 4 am. Fails closed: a shard it cannot read logs
+   * `economy.pass.ledger-unreadable` and returns null (games stay locked).
+   */
   async activePass(userId, { privilege } = {}) {
-    return (await this.passesToday(userId)).find((p) => p.state === 'active' && p.privilege === privilege) ?? null;
+    let today;
+    try {
+      today = await this.passesToday(userId);
+    } catch (err) {
+      if (err?.code !== 'CORRUPT_LEDGER') throw err;
+      this.#logger.warn?.('economy.pass.ledger-unreadable', { learnerId: userId, studyDay: this.currentStudyDay(), privilege, error: err.message });
+      return null;
+    }
+    return today.find((p) => p.state === 'active' && p.privilege === privilege) ?? null;
   }
 
   /** Lock, strict read, and the pass `passId` names for this user; 404 for anything else. */

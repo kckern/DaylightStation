@@ -6,33 +6,37 @@ const LABEL_CACHE_TTL_MS = 60_000;
 /**
  * The bank's evidence labels: the current week's preview lines for one
  * learner, as ref → label. Cached per learner and week for `ttlMs`
- * (default 60 s), so per-kid bank polling runs one preview a minute. A
- * learner the preview does not know (off the school roster) gets null, which
- * is cached too; any other failure is thrown, uncached, and the bank falls
- * back to rule labels.
+ * (default 60 s), so per-kid bank polling runs one preview a minute. The
+ * in-flight promise is what is cached, so concurrent misses for one key share
+ * one preview. A learner the preview does not know (off the school roster)
+ * gets null, cached too; any other failure evicts the entry and is thrown,
+ * and the bank falls back to rule labels.
  * @param {object} deps
  * @param {{preview: Function, currentStudyDay: () => string}} deps.preview - EarningsPreviewService
  * @param {() => number} [deps.now]
  * @param {number} [deps.ttlMs]
  */
 export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS }) {
-  const cache = new Map(); // `${learnerId}|${monday}` → { at, labels }
-  return async (learnerId) => {
+  const cache = new Map(); // `${learnerId}|${monday}` → { at, promise }
+  const load = async (learnerId) => {
+    try {
+      const week = await preview.preview({ learnerId });
+      return new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
+    } catch (err) {
+      if (err instanceof EntityNotFoundError) return null;
+      throw err;
+    }
+  };
+  return (learnerId) => {
     const key = `${learnerId}|${weekWindowFor(preview.currentStudyDay()).from}`;
     const t = now();
     const hit = cache.get(key);
-    if (hit && t - hit.at < ttlMs) return hit.labels;
-    let labels;
-    try {
-      const week = await preview.preview({ learnerId });
-      labels = new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
-    } catch (err) {
-      if (!(err instanceof EntityNotFoundError)) throw err;
-      labels = null;
-    }
+    if (hit && t - hit.at < ttlMs) return hit.promise;
     for (const [k, v] of cache) if (t - v.at >= ttlMs) cache.delete(k);
-    cache.set(key, { at: t, labels });
-    return labels;
+    const entry = { at: t, promise: load(learnerId) };
+    cache.set(key, entry);
+    entry.promise.catch(() => { if (cache.get(key) === entry) cache.delete(key); });
+    return entry.promise;
   };
 }
 
