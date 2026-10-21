@@ -3080,6 +3080,9 @@ export class GovernanceEngine {
       .map((zone) => String(zone || '').toLowerCase())
       .filter((zone) => Number.isFinite(this._getZoneRank(zone))))];
     const effectiveChallengeZones = challengeZones.length > 0 ? challengeZones : [startupZone];
+    // One or two children must all make it; with three or more, "most" keeps a
+    // single straggler from locking everyone (still named in missingUsers).
+    const groupRule = eligibleChildren.length >= 3 ? 'most' : 'all';
     return {
       ...policy,
       requirements: [...(policy.requirements || []), ...childStartRequirement],
@@ -3096,10 +3099,10 @@ export class GovernanceEngine {
           id: `__unattended_${zone}_${index}`,
           type: 'zone',
           zone,
-          rule: 'all',
+          rule: groupRule,
           timeAllowedSeconds,
           weight: 1,
-          label: `All ${zone}`,
+          label: `${groupRule === 'most' ? 'Most' : 'All'} ${zone}`,
         })),
       }],
     };
@@ -3619,11 +3622,33 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId) ?? 0;
     const isSubject = this._buildSubjectFilter(activeParticipants);
 
-    const metUsers = [];
+    // A rider counts only after holding the zone for challenge_hold_seconds
+    // continuously within this challenge (0 = instant). Dropping out resets.
+    const holdSetting = Number(this.config?.challenge_hold_seconds ?? 10);
+    const holdMs = (Number.isFinite(holdSetting) ? Math.max(0, holdSetting) : 10) * 1000;
+    const now = this._now();
+    challenge.zoneHold = challenge.zoneHold || {};
+    const inZone = [];
     activeParticipants.forEach((participantId) => {
       const pRank = this._getZoneRank(userZoneMap[participantId]) ?? 0;
-      if (pRank >= requiredRank) metUsers.push(participantId);
+      if (pRank >= requiredRank) {
+        inZone.push(participantId);
+        if (challenge.zoneHold[participantId] == null) challenge.zoneHold[participantId] = now;
+      } else {
+        delete challenge.zoneHold[participantId];
+      }
     });
+    // Riders who left the session lose their hold too.
+    Object.keys(challenge.zoneHold).forEach((id) => {
+      if (!activeParticipants.includes(id)) delete challenge.zoneHold[id];
+    });
+    const metUsers = inZone.filter((id) => now - challenge.zoneHold[id] >= holdMs);
+    const holding = inZone.filter((id) => !metUsers.includes(id));
+    // Time until the earliest in-progress hold completes, so the caller can
+    // pulse then instead of waiting for the challenge deadline.
+    const holdRemainingMs = holding.length
+      ? Math.max(0, holdMs - (now - Math.min(...holding.map((id) => challenge.zoneHold[id]))))
+      : null;
 
     const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
     const cls = this._classifyParticipants(activeParticipants);
@@ -3648,6 +3673,8 @@ export class GovernanceEngine {
         actualCount: metUsers.length,   // eligible numerator
         satisfied,
         metUsers,
+        holding,                        // in zone, hold not yet complete
+        holdMs,
         nonSubjectContributors,         // guests/exempt whose in-zone HR fed the tally
         missingUsers,                   // subjects-only
         subjects: cls.subjects,
@@ -3660,6 +3687,8 @@ export class GovernanceEngine {
       satisfied,
       metUsers,
       missingUsers,
+      holding,
+      holdRemainingMs,
       actualCount: metUsers.length,
       ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       requiredCount,
@@ -5322,9 +5351,15 @@ export class GovernanceEngine {
             this._schedulePulse(500);
             return;
           } else {
-            this._schedulePulse(challenge.type === 'step'
+            const untilDeadline = challenge.type === 'step'
               ? Math.min(500, Math.max(50, challenge.expiresAt - now))
-              : Math.max(50, challenge.expiresAt - now));
+              : Math.max(50, challenge.expiresAt - now);
+            // A rider mid-hold completes before the deadline: pulse at the
+            // earliest hold end so completion is not late.
+            const holdRemainingMs = challenge.summary?.holdRemainingMs;
+            this._schedulePulse(Number.isFinite(holdRemainingMs)
+              ? Math.min(untilDeadline, Math.max(50, holdRemainingMs))
+              : untilDeadline);
             return;
           }
         } else {

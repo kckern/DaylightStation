@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GovernanceEngine } from "./GovernanceEngine.js";
 
 const ZONES = {
@@ -19,10 +19,10 @@ const CONFIG = {
   zoneConfig: Object.values(ZONES.zoneInfoMap),
 };
 
-function harness() {
+function harness(overrides = {}) {
   let now = 100_000;
   const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
-  engine.configure(CONFIG);
+  engine.configure({ ...CONFIG, ...overrides });
   engine.setMedia({ id: 'episode-1', type: 'episode', labels: ['cardio'] });
   const evaluate = (userZoneMap, guestIds = []) => engine.evaluate({
     activeParticipants: Object.keys(userZoneMap), userZoneMap,
@@ -70,7 +70,7 @@ describe('GovernanceEngine — unattended child policy', () => {
   });
 
   it('alternates all-child warm and hot challenges after startup unlock', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 0 }); // asserts same-tick completion, not the D5 hold
     h.evaluate({ first: 'hot', second: 'hot' }); // both started: these tests are about challenges, not the D3 start gate
     h.advance(179_999);
     h.evaluate({ first: 'active', second: 'active' });
@@ -92,7 +92,7 @@ describe('GovernanceEngine — unattended child policy', () => {
   });
 
   it('locks a failed all-warm challenge and recovers only when every child is warm', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 0 }); // asserts same-tick completion, not the D5 hold
     h.evaluate({ first: 'hot', second: 'hot' }); // both started: these tests are about challenges, not the D3 start gate
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
@@ -108,7 +108,7 @@ describe('GovernanceEngine — unattended child policy', () => {
   // hot challenge was skipped by the 20-BPM feasibility check (kids cruising
   // ~26 BPM under hot). The countdown hit zero and silently reset, forever.
   it('issues the hot challenge even when every child is far below hot', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 0 }); // asserts same-tick completion, not the D5 hold
     const hotMin = 160;
     const zoneConfig = [
       { id: 'cool', min: 0 }, { id: 'active', min: 100 },
@@ -246,5 +246,32 @@ describe('GovernanceEngine — per-child start gate', () => {
     h.advance(200_000);
     h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
     expect(h.engine.requirementSummary.requirements.some((r) => r.id === '__unattended_child_start')).toBe(false);
+  });
+  it('three children get "most" challenges; two get "all"', () => {
+    const h = harness();
+    h.evaluate({ a: 'hot', b: 'hot', c: 'hot' });
+    const three = h.engine._applyUnattendedPolicy({ requirements: [] }, ['a', 'b', 'c'], { a: 'hot', b: 'hot', c: 'hot' });
+    expect(three.challenges[0].selections.every((s) => s.rule === 'most')).toBe(true);
+    expect(three.challenges[0].selections.map((s) => s.label)).toEqual(['Most warm', 'Most hot']);
+    const two = h.engine._applyUnattendedPolicy({ requirements: [] }, ['a', 'b'], { a: 'hot', b: 'hot' });
+    expect(two.challenges[0].selections.every((s) => s.rule === 'all')).toBe(true);
+    expect(two.challenges[0].selections.map((s) => s.label)).toEqual(['All warm', 'All hot']);
+  });
+  it('a challenge completes only after the 10s hold, with a pulse due at the hold end', () => {
+    const h = harness();
+    h.evaluate({ first: 'hot', second: 'hot' });
+    h.advance(180_000);
+    h.evaluate({ first: 'active', second: 'active' });
+    expect(h.engine.challengeState.activeChallenge).toMatchObject({ zone: 'warm', status: 'pending' });
+    const pulse = vi.spyOn(h.engine, '_schedulePulse');
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge.status).toBe('pending');
+    expect(pulse).toHaveBeenLastCalledWith(10_000);
+    h.advance(9_999);
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge.status).toBe('pending');
+    h.advance(1);
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge.status).toBe('success');
   });
 });

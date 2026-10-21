@@ -653,13 +653,16 @@ the overdue children, which takes the normal warning, grace and lock path.
 Each child's start is kept for the media item, through leaving and rejoining or
 a supervisor's visit, and is reset when the media changes
 (`governance.unattended.child_started` / `child_start_overdue`). The engine then replaces the ordinary
-random challenge schedule with cyclic `all` challenges at the configured zones
-on the exact configured interval. By default those targets alternate between
+random challenge schedule with cyclic group challenges at the configured zones
+on the exact configured interval. The group rule scales with the roster: `all`
+(label "All warm") for one or two eligible children, `most` ("Most warm") for
+three or more, so one straggler cannot lock the others. Each child's met/missing
+status is still evaluated, logged (`governance.challenge_eval`) and shown. By default those targets alternate between
 Warm and the startup zone (normally Hot). These challenges bypass the 20-BPM
 feasibility check that ordinary policies use: the cycle exists to demand effort
 from children who are coasting, so "nobody is close to Hot right now" is the
 moment to fire, not a reason to skip. A missed challenge locks playback
-until every governed child reaches the target. A superuser joining immediately
+until the rule's required count of governed children hold the target. A superuser joining immediately
 stands this policy down and restores the normal policy; leaving again starts a
 fresh startup gate.
 
@@ -677,6 +680,16 @@ challenge that cannot drop is skipped like an infeasible one, and any configured
 or unattended selection at or below the baseline is skipped at start
 (`governance.challenge.skipped_baseline_zone`).
 
+Every zone challenge (supervised or unattended) counts a rider only after they
+have held the target zone for `challenge_hold_seconds` (default 10) continuous
+seconds within that challenge. A rider already in the zone when the challenge
+appears still holds for the full time; dropping below the zone resets that
+rider's hold. The challenge completes once the required count of riders have
+each completed a hold. `0` restores instant completion. The evaluation result
+carries `holding` (in zone, hold incomplete) and `holdRemainingMs`, and the
+engine pulses at the earliest hold end so completion is not late. Cycle
+challenges are unaffected.
+
 ## Configuration
 
 ### Governance Policies
@@ -686,6 +699,7 @@ Located in `data/household/fitness/config.yml`:
 ```yaml
 governance:
   grace_period_seconds: 30
+  challenge_hold_seconds: 10  # zone challenges: continuous seconds in zone (0 = instant)
   superusers:
     - user_1
   unattended_policy:

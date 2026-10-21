@@ -71,7 +71,7 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
 
   it('challenge: a guest in-zone counts toward achievement (group tally)', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, warm: 1, hot: 2 };
     const zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
     eng._captureLatestInputs({
@@ -94,7 +94,7 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
 
   it('challenge: a slacking guest is never blamed', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, hot: 2 };
     eng._captureLatestInputs({ activeParticipants: ['user_2', 'g1'], guestIds: ['g1'], zoneRankMap });
     eng._latestInputs.zoneRankMap = zoneRankMap;
@@ -171,7 +171,7 @@ describe('GovernanceEngine — exemptions remain non-subjects without a baseline
 
   it('a guest-only challenge needs their in-zone contribution instead of auto-winning', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, hot: 2 };
     eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'], zoneRankMap });
     const missed = eng.evaluateChallengeZone({ zone: 'hot', rule: 1 }, ['g1'], { g1: 'cold' }, 1);
@@ -216,7 +216,7 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
 
   it('does not let an exempt participant be the sole challenge satisfier', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
@@ -240,7 +240,7 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
 
   it('credits an exempt participant once a non-exempt participant also contributes', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
@@ -263,7 +263,7 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
 
   it('does not let a guest unlock a challenge for an exempt-plus-guest roster', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_5', 'visitor'], guestIds: ['visitor'], zoneRankMap,
@@ -290,7 +290,7 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
 describe('challenge targets never grow because a visitor joined', () => {
   it.each(['all', 'most', 'some', 6])('uses subjects for %s and requires a subject contributor', (rule) => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['exempt'] };
+    eng.config = { exemptions: ['exempt'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const people = ['rider', 'guest', 'exempt'];
     eng._captureLatestInputs({ activeParticipants: people, guestIds: ['guest'], zoneRankMap: { cold: 0, hot: 2 } });
     const result = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'hot', guest: 'cold', exempt: 'cold' }, 3);
