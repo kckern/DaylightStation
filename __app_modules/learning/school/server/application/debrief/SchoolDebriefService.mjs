@@ -4,7 +4,7 @@
  * state is always re-derived. Answer keys never leave here before the matching
  * answer is recorded.
  */
-import { PROMPTS, deriveDebriefState } from "../../domain/schoolDebrief.mjs";
+import { PROMPTS, TEACHER_EVENTS, deriveDebriefState } from "../../domain/schoolDebrief.mjs";
 
 const MIN_TAKE_BYTES = 1000;
 class DebriefError extends Error { constructor(message, status = 400) { super(message); this.name = 'DebriefError'; this.status = status; } }
@@ -31,12 +31,17 @@ export class SchoolDebriefService {
     if (status === 'unreadable' || status === 'corrupt') throw new DebriefError('The debrief record could not be read.', 503);
     return events;
   }
+  // Only the child's own events carry `late`; a grown-up acting the next day must not make a day late.
   async #append(learnerId, day, event) {
-    return this.#debriefs.append(learnerId, day, { ...event, at: this.#now(), ...(this.#late(day) ? { late: true } : {}) });
+    const late = !TEACHER_EVENTS.has(event.type) && this.#late(day);
+    return this.#debriefs.append(learnerId, day, { ...event, at: this.#now(), ...(late ? { late: true } : {}) });
   }
   #view(day, events) {
     const s = deriveDebriefState(events);
-    const late = s.late || this.#late(day);
+    // A finished day's timeliness is what its own events say; only a day still being written
+    // takes "is it today?" into account (its next child event will be stamped late).
+    const finished = ['completed', 'excused', 'rejected'].includes(s.phase);
+    const late = s.late || (!finished && this.#late(day));
     const strip = (q) => {
       const answered = s.answers[q.id];
       if (q.kind === 'choice') return answered ? q : { id: q.id, kind: q.kind, prompt: q.prompt, options: q.options };
@@ -141,8 +146,16 @@ export class SchoolDebriefService {
     return v;
       });
   }
-  async excuse(learnerId, day, { by, reason = null }) { await this.#append(learnerId, day, { type: 'excused', by: by ?? null, reason }); return this.day(learnerId, day); }
-  async reject(learnerId, day, { by, reason = null }) { await this.#append(learnerId, day, { type: 'rejected', by: by ?? null, reason }); return this.day(learnerId, day); }
+  async excuse(learnerId, day, { by, reason = null }) {
+    await this.#append(learnerId, day, { type: 'excused', by: by ?? null, reason });
+    this.#logger.info?.('school.debrief.excused', { learnerId, day, by: by ?? null });
+    return this.day(learnerId, day);
+  }
+  async reject(learnerId, day, { by, reason = null }) {
+    await this.#append(learnerId, day, { type: 'rejected', by: by ?? null, reason });
+    this.#logger.info?.('school.debrief.rejected', { learnerId, day, by: by ?? null });
+    return this.day(learnerId, day);
+  }
   // Deliberately works on completed days too (teacher re-score).
   async rescore(learnerId, day, { by }) {
     const s = deriveDebriefState(await this.#events(learnerId, day));
@@ -152,14 +165,26 @@ export class SchoolDebriefService {
     // With answers already given the questions stay; only the score is replaced.
     const keep = Object.keys(s.answers).length ? s.questions : out.questions;
     await this.#append(learnerId, day, { type: 'rescored', by: by ?? null, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: keep, questioner: 'model', model: out.model ?? null });
+    this.#logger.info?.('school.debrief.rescored', { learnerId, day, by: by ?? null, substance: out.substance });
     return this.day(learnerId, day);
   }
+  /**
+   * Teacher history: every day with a file, plus every owed day in the range that has none
+   * (phase 'not-started'), so a missed day can still be excused. Default range: the last 14
+   * owed study days ending today.
+   */
   async history(learnerId, { from = null, to = null } = {}) {
-    const days = await this.#debriefs.listDays(learnerId, { from, to });
+    const days = new Set(await this.#debriefs.listDays(learnerId, { from, to }));
+    let owed = [];
+    try { owed = (await this.#launcher.owedDays?.(learnerId, { from, to })) ?? []; }
+    catch (err) { this.#logger.warn?.('school.debrief.history-owed-unavailable', { learnerId, error: err?.message }); }
+    for (const d of owed) days.add(d);
     const rows = [];
-    for (const d of days) {
-      try { const { events } = await this.#debriefs.read(learnerId, d); rows.push({ studyDay: d, ...this.#teacherView(d, events) }); }
-      catch { rows.push({ studyDay: d, phase: 'unreadable' }); }
+    for (const d of [...days].sort()) {
+      let read;
+      try { read = await this.#debriefs.read(learnerId, d); } catch { read = { status: 'unreadable' }; }
+      if (read.status === 'unreadable' || read.status === 'corrupt') { rows.push({ studyDay: d, phase: 'unreadable' }); continue; }
+      rows.push({ studyDay: d, ...this.#teacherView(d, read.events ?? []) });
     }
     return rows.reverse();
   }

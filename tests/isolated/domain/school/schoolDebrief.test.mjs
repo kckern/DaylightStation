@@ -72,8 +72,14 @@ describe('deriveDebriefState', () => {
     expect(deriveDebriefState([...done, { type: 'rejected', by: 'p', reason: 'junk', at: at(3) }]).phase).toBe('rejected');
     expect(deriveDebriefState([{ type: 'excused', by: 'p', reason: 'sick', at: at(3) }]).phase).toBe('excused');
   });
-  it('late is true if any event is late', () => {
+  it('late is true if any of the child\'s events is late', () => {
     expect(deriveDebriefState([{ type: 'opened', late: true, at: at(0) }]).late).toBe(true);
+  });
+  it('a grown-up event never makes the day late, even if stamped late', () => {
+    const onTime = [{ type: 'questions', substance: 7, questions: [], questioner: 'fallback', at: at(1) }, { type: 'completed', at: at(2) }];
+    for (const type of ['excused', 'rejected', 'rescored']) {
+      expect(deriveDebriefState([...onTime, { type, by: 'p', late: true, questions: [], questioner: 'model', at: at(3) }]).late).toBe(false);
+    }
   });
   it('rescored replaces questions and substance', () => {
     const s = deriveDebriefState([
@@ -85,11 +91,22 @@ describe('deriveDebriefState', () => {
 });
 
 describe('fallbackQuestions', () => {
-  it('builds at least two choice questions from the entries, answer among options', () => {
+  it('f1 has exactly one said class among unsaid options; there is no free yes/no question', () => {
     const qs = fallbackQuestions({ classes: { text: 'math, science, art' }, learned: { text: 'fractions' } });
-    const choices = qs.filter((q) => q.kind === 'choice');
-    expect(choices.length).toBeGreaterThanOrEqual(2);
-    for (const q of choices) expect(q.options).toContain(q.answer);
+    expect(qs.map((q) => q.id)).toEqual(['f1', 'f3']);
+    const f1 = qs[0];
+    expect(f1.options).toContain(f1.answer);
+    expect(f1.options.filter((o) => ['math', 'science', 'art'].includes(o.toLowerCase()))).toEqual([f1.answer]);
+  });
+  it('f1 answer position varies with the text and is stable for the same text', () => {
+    const at = (classes, learned) => { const f1 = fallbackQuestions({ classes: { text: classes }, learned: { text: learned } })[0]; return f1.options.indexOf(f1.answer); };
+    const positions = new Set();
+    for (let i = 0; i < 12; i += 1) positions.add(at('math, reading', `thing ${i}`));
+    expect(positions.size).toBeGreaterThan(1);
+    expect(at('math', 'beans')).toBe(at('math', 'beans'));
+  });
+  it('no classes: no f1 (nothing to ask), only the reflection', () => {
+    expect(fallbackQuestions({ learned: { text: 'fractions' } }).map((q) => q.id)).toEqual(['f3']);
   });
 });
 

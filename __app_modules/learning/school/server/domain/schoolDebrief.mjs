@@ -46,6 +46,8 @@ export function previousStudyDay(day) {
 }
 
 const QUESTION_EVENTS = new Set(['questions', 'rescored']);
+/** Grown-up actions (spec §2 events table). Never late: a teacher acting tomorrow must not make today late. */
+export const TEACHER_EVENTS = Object.freeze(new Set(['excused', 'rejected', 'rescored']));
 
 export function deriveDebriefState(events = []) {
   const s = {
@@ -55,7 +57,7 @@ export function deriveDebriefState(events = []) {
   let completed = false; let override = null;
   for (const e of events) {
     if (!e || typeof e !== 'object') continue;
-    if (e.late === true) s.late = true;
+    if (e.late === true && !TEACHER_EVENTS.has(e.type)) s.late = true;
     if (e.type === 'entry' && e.promptId) s.entries[e.promptId] = { text: e.text ?? '', via: e.via ?? null, audioRef: e.audioRef ?? null };
     else if (e.type === 'clarify-asked') s.clarify = { prompt: e.prompt, text: null };
     else if (e.type === 'clarify' && s.clarify) s.clarify = { ...s.clarify, text: e.text ?? '' };
@@ -89,15 +91,35 @@ export function deriveDebriefState(events = []) {
   return s;
 }
 
-/** Deterministic questions when the AI is unavailable: built only from what the learner said. */
+/** A small stable hash of the entries' text, so the fallback's option order is pure but not fixed. */
+function textHash(entries) {
+  const text = PROMPTS.map((p) => String(entries[p.id]?.text ?? '')).join('\u0000');
+  let h = 0;
+  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h;
+}
+const FALLBACK_DISTRACTORS = ['Lunch', 'Recess', 'Music', 'Library', 'Gym', 'Art'];
+
+/**
+ * Deterministic questions when the AI is unavailable: built only from what the learner said.
+ * f1 names one class they said among classes they did not; its position rotates with the
+ * text, so "always pick the first" is not a strategy. f3 is a real reflection. A fallback
+ * day never earns the quiz bonus (SchoolDebriefProgramLauncher.weekFacts).
+ */
 export function fallbackQuestions(entries = {}) {
   const classes = String(entries.classes?.text ?? '').split(/,|\band\b|\n/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
   const learned = String(entries.learned?.text ?? '').trim();
   const qs = [];
-  const subjects = classes.length >= 1 ? classes : ['Math', 'Reading'];
-  const pool = [...new Set([...subjects, 'Lunch', 'Recess', 'Music'])].slice(0, 4);
-  qs.push({ id: 'f1', kind: 'choice', prompt: 'Which of these did you say you had today?', options: pool, answer: pool[0] });
-  qs.push({ id: 'f2', kind: 'choice', prompt: 'Did you tell me one thing you learned today?', options: ['Yes', 'No'], answer: learned ? 'Yes' : 'No' });
+  if (classes.length) {
+    const h = textHash(entries);
+    const said = new Set(classes.map((c) => c.toLowerCase()));
+    const answer = classes[h % classes.length];
+    const distractors = FALLBACK_DISTRACTORS.filter((d) => !said.has(d.toLowerCase())).slice(0, 3);
+    const options = [answer, ...distractors];
+    const shift = h % options.length;
+    const rotated = [...options.slice(shift), ...options.slice(0, shift)];
+    qs.push({ id: 'f1', kind: 'choice', prompt: 'Which of these did you say you had today?', options: rotated, answer });
+  }
   if (learned) qs.push({ id: 'f3', kind: 'short', prompt: 'Explain the thing you learned in one sentence, as if teaching a younger kid.', expected: learned });
   return qs;
 }

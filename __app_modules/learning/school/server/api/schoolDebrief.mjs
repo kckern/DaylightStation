@@ -49,6 +49,7 @@ export function createSchoolDebriefRouter({ service, grants, teacherGate, audioS
   // Teacher routes first so '/teacher' is never read as a learner id.
   router.get('/teacher/:learnerId/history', wrap(async (req) => {
     teacherGate.assert({ userId: req.query.by ?? null, pin: capabilityProof(req), action: 'school.debrief.read', context: { learnerId: req.params.learnerId } });
+    for (const k of ['from', 'to']) if (req.query[k] != null && !STUDY_DAY_RE.test(String(req.query[k]))) throw new RouteError(`bad ${k}`, 400);
     return { days: await service.history(req.params.learnerId, { from: req.query.from ?? null, to: req.query.to ?? null }) };
   }));
   router.get('/teacher/:learnerId/audio/:file', (req, res) => {
@@ -62,6 +63,7 @@ export function createSchoolDebriefRouter({ service, grants, teacherGate, audioS
   });
   for (const action of ['excuse', 'reject', 'rescore']) {
     router.post(`/teacher/:learnerId/day/:day/${action}`, express.json(), wrap(async (req) => {
+      if (!STUDY_DAY_RE.test(req.params.day)) throw new RouteError('bad day', 400);
       const by = teacher(req, `school.debrief.${action}`);
       return service[action](req.params.learnerId, req.params.day, { by, reason: req.body?.reason ?? null });
     }));

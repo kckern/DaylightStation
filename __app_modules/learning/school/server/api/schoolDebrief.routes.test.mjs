@@ -83,4 +83,29 @@ describe('school debrief router', () => {
     const r = await request(a).post('/debrief/test-learner/day/2026-10-21/complete').set('X-School-Debrief-Grant', 'good');
     expect(r.status).toBe(500); expect(JSON.stringify(r.body)).not.toMatch(/openai|secret/);
   });
+  it('teacher day actions refuse a malformed day with 400 (never a store error)', async () => {
+    const { a, service } = app();
+    const r = await request(a).post('/debrief/teacher/test-learner/day/yesterday/excuse').send({ by: 'parent', pin: '1' });
+    expect(r.status).toBe(400);
+    expect(service.excuse).not.toHaveBeenCalled();
+  });
+  it('teacher history goes through the gate with ?by= and the read action', async () => {
+    const { a, service, teacherGate } = app();
+    const r = await request(a).get('/debrief/teacher/test-learner/history?by=parent&from=2026-10-01&to=2026-10-21');
+    expect(r.status).toBe(200); expect(r.body).toEqual({ days: [] });
+    expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'parent', action: 'school.debrief.read', context: { learnerId: 'test-learner' } }));
+    expect(service.history).toHaveBeenCalledWith('test-learner', { from: '2026-10-01', to: '2026-10-21' });
+    expect((await request(a).get('/debrief/teacher/test-learner/history?by=parent&from=junk')).status).toBe(400);
+    const denied = app({ gateThrows: true });
+    expect((await request(denied.a).get('/debrief/teacher/test-learner/history?by=x')).status).toBe(403);
+    expect(denied.service.history).not.toHaveBeenCalled();
+  });
+  it('teacher audio: a gate refusal is 403 and never reads the store', async () => {
+    const read = vi.fn(() => ({ buffer: Buffer.from('x'), mimeType: 'audio/webm' }));
+    const assert = vi.fn(() => { const e = new Error('no'); e.name = 'GuestForbiddenError'; throw e; });
+    const a = express(); a.use('/debrief', createSchoolDebriefRouter({ service: {}, grants, teacherGate: { assert }, audioStore: { read }, logger: {} }));
+    expect((await request(a).get('/debrief/teacher/test-learner/audio/2026-10-21-1.webm?by=stranger')).status).toBe(403);
+    expect(assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'stranger', action: 'school.debrief.read' }));
+    expect(read).not.toHaveBeenCalled();
+  });
 });
