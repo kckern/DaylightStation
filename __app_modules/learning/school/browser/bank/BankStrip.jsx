@@ -108,7 +108,24 @@ export function nextLabel(next) {
   return [...parts, title].join(' · ');
 }
 
-export default function BankStrip({ kids = [], deviceId = null, className = '' }) {
+/** The chip's top line: a button into the bank door when there is one, a plain row otherwise. */
+function ChipBox({ className, onOpen, label, children }) {
+  if (!onOpen) return <div className={className}>{children}</div>;
+  return (
+    <button type="button" className={className} onClick={onOpen} data-testid="bank-chip-open">
+      {children}
+      <span className="school-bank-strip__sr">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * @param {object} props
+ * @param {(learnerId: string) => void} [props.onOpen] - a tap on a kid's chip
+ *   (name and coins, not Print) opens that kid's bank through the panel's bank
+ *   door (`BankDoor`). Absent, the chip is not a button.
+ */
+export default function BankStrip({ kids = [], deviceId = null, className = '', onOpen = null }) {
   const log = useMemo(() => getLogger().child({ component: 'school-bank-strip' }), []);
   const device = deviceId || DEFAULT_DEVICE_ID;
   const [silverColor, silverRef] = useCoinColor('silver');
@@ -245,7 +262,11 @@ export default function BankStrip({ kids = [], deviceId = null, className = '' }
           const name = kid.name ?? kid.id;
           return (
             <li key={kid.id} className="school-bank-strip__kid" data-testid="bank-chip" data-learner={kid.id}>
-              <div className="school-bank-strip__chip">
+              <ChipBox
+                className={`school-bank-strip__chip${onOpen ? ' school-bank-strip__chip--door' : ''}`}
+                onOpen={onOpen ? () => onOpen(kid.id) : null}
+                label={`Open ${name}'s bank`}
+              >
                 <span className="school-bank-strip__name">{name}</span>
                 {chip && (
                   <span className="school-bank-strip__coins">
@@ -267,7 +288,7 @@ export default function BankStrip({ kids = [], deviceId = null, className = '' }
                 {bank?.status === 'unavailable' && (
                   <span className="school-bank-strip__napping">bank is napping</span>
                 )}
-              </div>
+              </ChipBox>
               <div className="school-bank-strip__next" data-testid="bank-next">
                 {label && (
                   <>

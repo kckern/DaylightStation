@@ -1722,8 +1722,8 @@ the bank" (read out as "12 silver in the bank"), a gem when
 they have gems, and a "sneak used" tick when today's `piano.games` pass is
 active or consumed or its cap is used. Under it is the next sheet they can earn
 with ("+2 silver · Math 4-02", or just the unit title while `reward` is null)
-and a **Print** button. The strip and the book door are the only things in the
-board pane that take a tap; the strip sets `pointer-events: auto` itself.
+and a **Print** button. The strip and the header's two doors (bank and books)
+are the only things in the board pane that take a tap; the strip sets `pointer-events: auto` itself.
 
 - **Silver** is `balances.silver` from `GET /api/v1/economy/users/:id/bank`.
   The week close converts the whole silver balance to gold, so the balance is
@@ -1775,6 +1775,73 @@ board pane that take a tap; the strip sets `pointer-events: auto` itself.
   The board re-reads only its coin figures on it, also coalesced.
 - **Below 820 px** the board pane is hidden, so the strip renders under the
   keypad instead. It is mounted once, in one place or the other (`useNarrowPortal`).
+- **A chip is a door.** Its name-and-coins line is a button into that kid's
+  bank screen (below), through the same bank door as the header's coin button.
+  Print stays its own button.
+
+**The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
+kid's bank, full screen over the locked panel.
+
+- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. A
+  coin button ("My bank") sits beside "Log a book" in the board header and asks
+  "Whose bank?" with the shelf's own face grid (`LearnerChoice`). A tap on a
+  strip chip already names the kid, so it skips the faces and sends the same
+  request. Both post `POST /api/v1/school/bank/open {screenId, learnerId}`
+  (`OpenBankAtPanel`): the learner must be on the current roster and a School
+  panel must be configured (`resolveBookScanTarget`), or it refuses with 400 /
+  403 / 503 and a kid-readable `error`. It answers
+  `{ launchTarget: { kind: 'program', program: 'economy-bank', learnerId, bankGrant } }`.
+  The grant comes from `HmacSchoolBankGrantIssuer`, a twin of the shelf's
+  issuer with its own key context (a bank grant opens no shelf, and a shelf
+  grant opens no bank), good for `PANEL_BANK_GRANT_TTL_MS` (10 minutes,
+  `app.mjs`). The "Whose bank?" screen is drawn by the panel, outside the board
+  header, because below 820 px the board pane is hidden and a chip in the keypad
+  column can still need it to show a refusal. Logs: `school.bank.panel-opened
+  {screenId, learnerId}` on the server; `economy.bank.door-opened {learnerId,
+  via}` / `economy.bank.door-open-failed` in the browser.
+- **What the grant guards.** SchoolApp mounts the screen only on a target with a
+  `bankGrant` (`economy-bank-refused` otherwise). The bank data comes from
+  `GET /api/v1/economy/users/:id/bank`, which takes no grant: the door is the
+  identity step that makes a kid open their own bank, not a lock on the economy
+  read.
+- **Memory only.** `section: 'bank'` has no path, so a reload or the back button
+  never reopens a kid's bank. `goHome` clears it, an identity lapse closes it,
+  and the panel's idle knob (`lock.idleTimeoutSeconds`) sends it home. The
+  screen carries its own Back, so the locked panel's Done overlay stays off it.
+  `useSelfService.launchTarget` copies `bankGrant` by name like every grant.
+- **Balances.** Three `StatCard`s, silver emphasized: silver "becomes gold in N
+  days" (whole calendar days from the bank's `studyDay` to `weekEndsAt`, the
+  close read four hours early so a Monday 4 am close is Sunday night's:
+  "tonight" on Sunday, "tomorrow night" on Saturday, "in 7 days" between the
+  close and 4 am); gold and gems "yours for good".
+- **History.** The bank's plain-words lines, newest first, under Today,
+  Yesterday or the date.
+- **Ways to spend.** Each privilege the bank quotes for sale, with its price in
+  each coin and "can buy at the piano" or "N more silver" (or gold). The item
+  says instead "after school is done" once today's early pass is used
+  (`capUsed`, or consumed / refunded), "Your early game is waiting at the piano."
+  for an active pass, "Open now: school is done." on a complete day, and "Can't
+  check today's pass right now." for `state: 'unknown'` (never used, never
+  available). Whether school is done comes from the agenda preview's
+  per-section `obligation` (nothing `obligated`; unknown on a `faulted` section
+  or plan errors), the same field `/lifecycle/learners/:id/completion` folds, so
+  one read serves this and Ways to earn. Nothing on sale (every price 0, the
+  shipped config) says "Nothing to spend on yet." There is no buy button:
+  buying is at the piano kiosk.
+- **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
+  then every agenda section still `obligated`, by title. A reward shows only
+  when the economy prices it (`reward` is null in production).
+- **Napping.** A failed bank read shows "The bank is napping. Try again soon."
+  and no numbers: no balances, history or prices, and no cache or earlier read
+  (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
+  so it still shows.
+- **Refresh** is the strip's: the `school` topic's events for that kid,
+  coalesced. Opening logs `economy.bank.opened {learnerId}` under component
+  `school-bank-screen`.
+- **Contract test:** `npm run test:bank-ui`
+  (`tests/live/flow/school/bank-strip-contract.runtime.test.mjs`, a Vite dev
+  server with every `/api/v1/**` call stubbed): strip, chip, door, bank screen,
+  back.
 
 A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
 only screen in the house that mounts School, so ignoring them would break the

@@ -76,6 +76,9 @@ export function createSchoolRouter({
   // Economy earn rules, changed from the teacher console (ManageEarnRules):
   // the rules are the economy's; this surface only gates who may edit them.
   manageEarnRules = null,
+  // The coin bank's panel door (`OpenBankAtPanel`): a face tap in, a
+  // short-lived bank launch target out. Null hides the route (404).
+  openBankAtPanel = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
@@ -1083,6 +1086,19 @@ export function createSchoolRouter({
     if (!cards) throw new EntityNotFoundError('learner answer sheets', 'not configured');
     res.set('Cache-Control', 'no-store').json({ schema: 'school.answer-sheets/v1',
       learnerId: req.params.learnerId, cards });
+  }));
+  // The coin bank's door on the wall panel (economy slice 1, C3). The use
+  // case owns both checks and stamps its refusals with a `status`; this maps
+  // that status and reads nothing from the body but the screen and learner.
+  router.post('/bank/open', wrap(async (req, res) => {
+    if (!openBankAtPanel) throw new EntityNotFoundError('bank door', 'not configured');
+    res.set('Cache-Control', 'no-store');
+    try {
+      res.json(await openBankAtPanel.open({ screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
+    } catch (err) {
+      if (Number.isInteger(err?.status)) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
   }));
   // What school work pays (economy earn rules). Reads are the economy's own
   // /api/v1/earnings; writes live HERE so the teacher capability cookie

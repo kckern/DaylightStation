@@ -153,6 +153,10 @@ hallway screen is worth nothing by the time anyone finds it. The other bound is
 the roster: the server, not the client, decides that the learner named is one
 of today's.
 
+The coin bank has a door of the same kind beside this one ("My bank",
+`BankDoor`, `OpenBankAtPanel`): the same roster and panel checks, its own grant
+issuer and a ten-minute clock. See the bank screen in the School README.
+
 The door stands wherever the School panel does, the browser mount included —
 the same place the printed-code keypad already opens a shelf. It briefly also
 required the request to name the configured panel, which was theatre: the

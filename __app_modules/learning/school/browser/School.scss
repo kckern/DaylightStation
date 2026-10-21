@@ -3048,6 +3048,9 @@
   cursor: pointer; touch-action: manipulation; white-space: nowrap;
 }
 .school-book-door__icon { font-size: 1.75rem; line-height: 1; }
+// The header's doors side by side: the coin bank, then the book shelf.
+.school-board-header__doors { flex: 0 0 auto; display: flex; align-items: center; gap: .6rem; }
+.school-bank-door__icon { width: 1.75rem; height: 1.75rem; flex: 0 0 auto; }
 .school-book-door__label { font-size: 1rem; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
 // No reserved lane any more: "Turn off screen" used to be pinned to the

@@ -5,6 +5,7 @@ import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
+import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
 import { TeacherCapabilitySessions as TeacherCapabilitySessions } from "../application/TeacherCapabilitySessions.mjs";
 import { renderSessionResultPng as renderSessionResultPng } from "../rendering/documents/SessionResultRenderer.mjs";
 import { studyDayForInstant as studyDayForInstant } from "../domain/studyDay.mjs";
@@ -159,6 +160,24 @@ try {
     schoolLifecycleLogger.warn('school.book-shelf.panel-door-unavailable', {
       launcher: Boolean(dependencies.schoolLifecycle.bookLogLauncher),
       grants: Boolean(dependencies.schoolBookPanelGrants),
+      target: Boolean(bookScanTarget),
+    });
+  }
+
+  // The coin bank's door on the same panel (economy slice 1, C3): the shelf
+  // door's two checks (roster, a configured panel) and its own short grant.
+  // It needs no lifecycle launcher: the bank is a screen, not a program run.
+  const openBankAtPanel = dependencies.schoolBankPanelGrants && bookScanTarget
+    ? new OpenBankAtPanel({
+      roster: () => schoolLearnerDirectory.listLearners(),
+      grants: dependencies.schoolBankPanelGrants,
+      target: bookScanTarget,
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  if (!openBankAtPanel) {
+    schoolLifecycleLogger.warn('school.bank.panel-door-unavailable', {
+      grants: Boolean(dependencies.schoolBankPanelGrants),
       target: Boolean(bookScanTarget),
     });
   }
@@ -595,6 +614,7 @@ try {
 
   v1Routers.school = createSchoolRouter(createSchoolApiServices({
     schoolErrors,
+    openBankAtPanel,
     schoolService,
     flashcardStudy,
     cardLadderStudy,

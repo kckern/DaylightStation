@@ -1,0 +1,78 @@
+// One kid's coin bank, full screen over the locked panel. The School tokens
+// throughout; calm by design: no motion, no ranking colours.
+.school-bank-screen {
+  // The shelf's text column (School.scss `.school-books`): on a narrow panel
+  // the column is the panel and the max() collapses to the plain gutter.
+  --bank-pad: clamp(0.6rem, 2vh, 1.2rem);
+  --bank-inset: max(1rem, calc(50% - 36rem + 1rem));
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  padding-top: var(--bank-pad);
+  background: var(--school-bg); color: var(--school-fg);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.school-bank-screen__body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: grid; gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-content: start;
+  padding: 0 var(--bank-inset) 1.5rem;
+}
+
+.school-bank-screen__header { flex: 0 0 auto; padding-inline: var(--bank-inset); }
+
+.school-bank-screen__section {
+  display: flex; flex-direction: column; gap: .6rem;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface);
+}
+
+// The three stats across the top, a row of their own.
+.school-bank-screen__balances {
+  grid-column: 1 / -1;
+  flex-direction: row; flex-wrap: wrap; gap: 1rem;
+  padding: 0; border: 0; background: none;
+  > .ds-stat { flex: 1 1 12rem; min-width: 0; }
+}
+.school-bank-screen__stat-label { display: inline-flex; align-items: center; gap: .4rem; }
+.school-bank-screen__stat-icon { width: 1.2em; height: 1.2em; }
+
+.school-bank-screen__heading { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.school-bank-screen__quiet { margin: 0; color: var(--school-muted); font-size: 1.05rem; }
+.school-bank-screen__napping {
+  grid-column: 1 / -1;
+  margin: 2rem 0 0; text-align: center;
+  color: var(--school-muted); font-size: clamp(1.3rem, 3vh, 1.8rem); font-weight: 700;
+}
+
+.school-bank-screen__day { display: flex; flex-direction: column; gap: .25rem; }
+.school-bank-screen__day-label {
+  margin: .35rem 0 0; color: var(--school-muted);
+  font-size: .85rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.school-bank-screen__lines, .school-bank-screen__offers, .school-bank-screen__prices, .school-bank-screen__earn {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.school-bank-screen__line { font-size: 1.05rem; overflow-wrap: anywhere; }
+
+.school-bank-screen__offer { display: flex; flex-direction: column; gap: .3rem; }
+.school-bank-screen__offer-label { font-weight: 700; font-size: 1.1rem; }
+.school-bank-screen__price { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
+.school-bank-screen__price-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.school-bank-screen__price--silver .school-bank-screen__price-amount { color: var(--school-coin-silver); }
+.school-bank-screen__price--gold .school-bank-screen__price-amount { color: var(--school-coin-gold); }
+.school-bank-screen__price-state, .school-bank-screen__offer-note { margin: 0; color: var(--school-muted); }
+
+.school-bank-screen__earn-item { display: flex; align-items: baseline; gap: .6rem; font-size: 1.05rem; min-width: 0; }
+.school-bank-screen__earn-title { min-width: 0; overflow-wrap: anywhere; }
+.school-bank-screen__earn-reward { color: var(--school-coin-silver); font-weight: 700; white-space: nowrap; }
+.school-bank-screen__earn-tag {
+  margin-left: auto; padding: .05rem .5rem;
+  border: 1px solid var(--school-border); border-radius: 999px;
+  color: var(--school-muted); font-size: .8rem; white-space: nowrap;
+}

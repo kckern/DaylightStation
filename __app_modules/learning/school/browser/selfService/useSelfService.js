@@ -241,6 +241,8 @@ function launchTarget(action, effect) {
       cubeGrant: effect.cubeGrant ?? null,
       studyGrant: effect.studyGrant ?? null,
       bookGrant: effect.bookGrant ?? null,
+      // The coin bank screen (economy slice 1, C3) mounts on its own grant too.
+      bankGrant: effect.bankGrant ?? null,
       learnerId: effect.learnerId ?? null,
     };
   }

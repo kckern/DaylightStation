@@ -121,6 +121,18 @@ describe('useSelfService: reels and cube effects keep their grants', () => {
     expect(onLaunch.mock.calls[0][0]).toMatchObject({ program: 'language-reels', unitId: 'reels:korean', reelId: 'r1', reelGrant: 'signed-reel' });
   });
 
+  it('the coin bank screen keeps its bankGrant (copied by name, like every grant)', async () => {
+    const onLaunch = vi.fn(async () => true);
+    await drive({ effect: { kind: 'program', program: 'economy-bank', programId: 'economy-bank', learnerId: 'kid1', bankGrant: 'signed-bank' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toMatchObject({ kind: 'program', program: 'economy-bank', learnerId: 'kid1', bankGrant: 'signed-bank' });
+  });
+
+  it('an effect with no bankGrant hands over null, never undefined', async () => {
+    const onLaunch = vi.fn(async () => false);
+    await drive({ effect: { kind: 'program', program: 'rubiks-cube', programId: 'rubiks-cube', courseId: 'c', cubeGrant: 'g', learnerId: 'kid1' }, onLaunch });
+    expect(onLaunch.mock.calls[0][0]).toHaveProperty('bankGrant', null);
+  });
+
   it('rubiks-cube keeps courseId and cubeGrant', async () => {
     const onLaunch = vi.fn(async () => true);
     await drive({ effect: { kind: 'program', program: 'rubiks-cube', programId: 'rubiks-cube', courseId: 'cube-101', cubeGrant: 'signed-cube', learnerId: 'kid1' }, onLaunch });

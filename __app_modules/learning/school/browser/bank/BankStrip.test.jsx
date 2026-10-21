@@ -257,3 +257,26 @@ describe('BankStrip, steady', () => {
     expect(schoolApi.economyBank.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('BankStrip: the chip is a door into the kid\'s bank', () => {
+  it('a chip tap opens that kid\'s bank; Print stays its own button', async () => {
+    schoolApi.economyBank.mockResolvedValue(bank(4));
+    schoolApi.nextItem.mockResolvedValue(next('Math 4-02'));
+    const onOpen = vi.fn();
+    render(<BankStrip kids={KIDS} onOpen={onOpen} />);
+    await waitFor(() => expect(screen.getAllByText('Math 4-02')).toHaveLength(3));
+    const ay = chips()[1];
+    fireEvent.click(within(ay).getByTestId('bank-chip-open'));
+    expect(onOpen).toHaveBeenCalledWith('kid-a');
+    schoolApi.printNext.mockResolvedValue({ ok: true, status: 200, data: { sentence: 'Printing.' } });
+    fireEvent.click(within(ay).getByRole('button', { name: /^Print / }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('without a door the chip is not a button', async () => {
+    schoolApi.economyBank.mockResolvedValue(bank(4));
+    render(<BankStrip kids={KIDS} />);
+    await waitFor(() => expect(chips()).toHaveLength(3));
+    expect(screen.queryByTestId('bank-chip-open')).toBeNull();
+  });
+});

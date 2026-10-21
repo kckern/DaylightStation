@@ -383,6 +383,10 @@ export const schoolApi = {
   // `bank` above is a QUESTION bank: one kid's coins in one read, from the
   // economy (`{ balances, history, pass, offers, weekEndsAt, studyDay }`).
   economyBank: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/bank`),
+  // The bank screen's panel door (C3): `{screenId, learnerId}` in, a
+  // short-lived `economy-bank` launch target with a `bankGrant` out (see
+  // `OpenBankAtPanel`). A refusal carries `{ error: '<sentence>' }`.
+  bankOpen: (body) => req('/bank/open', body),
   // The dry run behind the strip's Print label: `{ subject, unit, printable,
   // reward }`. Opens nothing.
   nextItem: (learnerId, subject = null) => req(

@@ -4,6 +4,7 @@ import { HmacSchoolStudyGrantIssuer as HmacSchoolStudyGrantIssuer } from "../ada
 import { HmacSchoolReelGrantIssuer as HmacSchoolReelGrantIssuer } from "../adapters/actions/HmacSchoolReelGrantIssuer.mjs";
 import { HmacSchoolCubeGrantIssuer as HmacSchoolCubeGrantIssuer } from "../adapters/actions/HmacSchoolCubeGrantIssuer.mjs";
 import { HmacSchoolBookGrantIssuer as HmacSchoolBookGrantIssuer } from "../adapters/actions/HmacSchoolBookGrantIssuer.mjs";
+import { HmacSchoolBankGrantIssuer as HmacSchoolBankGrantIssuer } from "../adapters/actions/HmacSchoolBankGrantIssuer.mjs";
 import { HmacSchoolLaunchPreviewTokenIssuer as HmacSchoolLaunchPreviewTokenIssuer } from "../adapters/actions/HmacSchoolLaunchPreviewTokenIssuer.mjs";
 import { YamlDocumentFileStore as YamlDocumentFileStore } from "../adapters/YamlDocumentFileStore.mjs";
 import { LanguageReelService as LanguageReelService } from "../application/LanguageReelService.mjs";
@@ -19,7 +20,7 @@ import { YamlLanguageStudyDatastore as YamlLanguageStudyDatastore } from "../ada
 import { resolveGate as resolveGate } from "../domain/accessGate.mjs";
 
 export async function createSchoolLanguageRuntime(dependencies) {
-  const { configService, rootLogger, jwtSecret, PANEL_BOOK_GRANT_TTL_MS, createLanguageTranscriptionService, scopedGateway, schoolFullConfig, eventBus, presenceStore } = dependencies;
+  const { configService, rootLogger, jwtSecret, PANEL_BOOK_GRANT_TTL_MS, PANEL_BANK_GRANT_TTL_MS, createLanguageTranscriptionService, scopedGateway, schoolFullConfig, eventBus, presenceStore } = dependencies;
 const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')?.gate || null;
   const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
   let schoolStudyGrants = null;
@@ -27,6 +28,7 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
   let schoolCubeGrants = null;
   let schoolBookGrants = null;
   let schoolBookPanelGrants = null;
+  let schoolBankPanelGrants = null;
   let schoolLaunchPreviewTokens = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
@@ -50,6 +52,13 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
     schoolBookPanelGrants = new HmacSchoolBookGrantIssuer({ key: jwtSecret, ttlMs: PANEL_BOOK_GRANT_TTL_MS });
   } catch (error) {
     rootLogger.error('school.books.panel-grants-unavailable', { error: error.message });
+  }
+  // The coin bank's panel door: its own key context (a bank grant opens no
+  // shelf), and the same face-tap pricing, so minutes rather than hours.
+  try {
+    schoolBankPanelGrants = new HmacSchoolBankGrantIssuer({ key: jwtSecret, ttlMs: PANEL_BANK_GRANT_TTL_MS });
+  } catch (error) {
+    rootLogger.error('school.bank.panel-grants-unavailable', { error: error.message });
   }
   try { schoolLaunchPreviewTokens = new HmacSchoolLaunchPreviewTokenIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.launch-preview.tokens-unavailable', { error: error.message });
@@ -121,5 +130,5 @@ const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')
     },
     logger: rootLogger.child({ module: 'school-language' })
   });
-  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
+  return { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolBankPanelGrants, schoolLaunchPreviewTokens, languageReelService, rubiksCubeService, languageTranscription, languageStudyService };
 }

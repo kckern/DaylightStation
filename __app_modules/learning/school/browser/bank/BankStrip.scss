@@ -33,6 +33,14 @@
   min-width: 0;
   height: 2.1rem;
 }
+// With a bank door, the chip's line is a button into it: the same row,
+// with the button's own chrome taken off.
+.school-bank-strip__chip--door {
+  width: 100%; margin: 0; padding: 0;
+  border: 0; background: none; color: inherit; font: inherit; text-align: inherit;
+  cursor: pointer; touch-action: manipulation;
+  min-height: 2.75rem; height: auto; // the 44px touch floor
+}
 .school-bank-strip__name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-weight: 700; font-size: 1.05rem;
