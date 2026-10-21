@@ -16,7 +16,8 @@
  *      forgot to clean up, so it logs at `warn`. Session-less records (CLI
  *      renders) are never touched: their delivery is never confirmed, and some
  *      are cards in a child's hands.
- *   2. WRITE-OFFS — a vacated window whose unit the child has since passed
+ *   2. WRITE-OFFS — a vacated window whose unit the child has since passed,
+ *      or whose session was abandoned with nothing open left for its unit,
  *      may be filled by a different sheet of the same size; one on a card the
  *      child has moved off can never be reclaimed at all.
  *   3. ACCEPTED GAPS — a stranded window below later sheets is a permanent
@@ -160,6 +161,11 @@ export class SweepAnswerSheets {
     const current = await context.currentCard(record.learnerId);
     if (current !== card.cardId) return 'card-moved-on';
     if (record.unitId && (await context.unitPassed(record.learnerId, record.unitId))) return 'unit-passed';
+    // An abandoned session with nothing open for its unit will not be
+    // regenerated (a dated lesson the agenda has moved past), so the rows go
+    // to the next sheet of the same size. Should the unit come back after
+    // all, its own windows still win: same-unit reclaim ignores write-offs.
+    if (record.unitId && (await context.unitAbandoned(record))) return 'session-abandoned';
     return null;
   }
 
@@ -188,6 +194,12 @@ export class SweepAnswerSheets {
       sessionRow: async (record) => (await rowsFor(record.learnerId)).find((row) => row.sessionId === record.sessionId) ?? {},
       unitPassed: async (learnerId, unitId) => (await rowsFor(learnerId))
         .some((row) => row.unitId === unitId && row.outcome?.result === 'passed'),
+      unitAbandoned: async (record) => {
+        const rows = await rowsFor(record.learnerId);
+        const own = rows.find((row) => row.sessionId === record.sessionId);
+        return own?.state === 'abandoned'
+          && !rows.some((row) => row.unitId === record.unitId && !row.terminal);
+      },
       currentCard: async (learnerId) => {
         if (!currentByLearner.has(learnerId)) {
           currentByLearner.set(learnerId, await this.#allocationStore.currentCardIdFor(learnerId));

@@ -121,6 +121,37 @@ describe('SweepAnswerSheets — write-offs and accepted gaps', () => {
     expect((await store.findByCard('7000001'))[0]).toMatchObject({ writtenOffReason: 'unit-passed' });
   });
 
+  it('writes off a window whose session was abandoned with no open session left for its unit', async () => {
+    const sessions = fakeSessions({ rows: { learner_a: [
+      { sessionId: 'ses_old', unitId: 'scripture-unit-1', state: 'abandoned', terminal: true, outcome: null },
+      { sessionId: 'ses_next', unitId: 'scripture-unit-2', state: 'issued', terminal: false },
+    ] } });
+    const { store, seed, sweep } = build({ sessions });
+    seed('7000001', [
+      rec('7000001', 1, 3, { sessionId: 'ses_old', unitId: 'scripture-unit-1', status: 'vacated', deliveryState: 'cancelled' }),
+      rec('7000001', 4, 9, { sessionId: 'ses_atlas' }),
+    ]);
+
+    const result = await sweep.execute();
+
+    expect(result.writtenOff).toEqual([expect.objectContaining({ rows: { start: 1, end: 3 }, reason: 'session-abandoned' })]);
+    expect(result.gapsAccepted).toEqual([]);
+    expect((await store.findByCard('7000001'))[0]).toMatchObject({ writtenOffReason: 'session-abandoned' });
+  });
+
+  it('keeps holding an abandoned session window while another session for the same unit is open', async () => {
+    const sessions = fakeSessions({ rows: { learner_a: [
+      { sessionId: 'ses_old', unitId: 'scripture-unit-1', state: 'abandoned', terminal: true },
+      { sessionId: 'ses_retry', unitId: 'scripture-unit-1', state: 'created', terminal: false },
+    ] } });
+    const { seed, sweep } = build({ sessions });
+    seed('7000001', [
+      rec('7000001', 1, 3, { sessionId: 'ses_old', unitId: 'scripture-unit-1', status: 'vacated', deliveryState: 'cancelled' }),
+      rec('7000001', 4, 9, { sessionId: 'ses_atlas' }),
+    ]);
+    expect((await sweep.execute()).writtenOff).toEqual([]);
+  });
+
   it('holds a vacated window on the current card while its unit is still to do', async () => {
     const { seed, sweep } = build();
     seed('7000001', [
