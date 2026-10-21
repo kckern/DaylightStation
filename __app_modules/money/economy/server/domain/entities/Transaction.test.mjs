@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTransaction, foldBalance, foldBalances, CURRENCIES } from "./Transaction.mjs";
+import { createTransaction, foldBalance, foldBalances, CURRENCIES, isPayoutEntry } from "./Transaction.mjs";
 
 const AT = '2026-10-19T12:00:00.000Z';
 const base = (over) => ({ id: 'txn_x', kind: 'earn', delta: 2, action: 'x', source: 'test', at: AT, ...over });
@@ -87,4 +87,20 @@ describe('foldBalance', () => {
   it('clamps a negative net to zero (never reports overdraft)', () => {
     expect(foldBalance([{ delta: 5 }, { delta: -9 }])).toBe(0);
   });
+});
+
+describe('isPayoutEntry', () => {
+  const minted = { kind: 'earn', source: 'payout', action: 'payout:korean-daily' };
+  it('is what mint writes: a paid kind, source payout, a payout: action', () => {
+    expect(isPayoutEntry(minted)).toBe(true);
+    expect(isPayoutEntry({ ...minted, kind: 'prize', action: 'payout:contest' })).toBe(true);
+  });
+  it.each([
+    ['a deposit naming source payout', { kind: 'deposit', source: 'payout', action: 'parent-deposit' }],
+    ['an earn with a catalog action', { ...minted, action: 'piano-lesson-complete' }],
+    ['another source', { ...minted, source: 'api' }],
+    ['a convert half', { kind: 'convert', source: 'payout', action: 'payout:x' }],
+    ['no action', { kind: 'earn', source: 'payout' }],
+    ['nothing', null],
+  ])('is not %s', (_label, t) => { expect(isPayoutEntry(t)).toBe(false); });
 });

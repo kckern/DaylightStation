@@ -33,6 +33,18 @@ export function createTransaction({ id, kind, delta, action, source, ref = null,
     ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v != null)) };
 }
 
+// The kinds a payout mints (EconomyService.mint): what counts toward a payout ref's "paid".
+export const PAID_KINDS = Object.freeze(new Set(['earn', 'prize']));
+
+/**
+ * Whether an entry is one PayoutService minted: a paid kind, `source: payout`
+ * AND an `action` in the `payout:` namespace, which only `mint` stamps. A
+ * `source` alone is not proof: older entry points let a caller name it.
+ */
+export function isPayoutEntry(t) {
+  return PAID_KINDS.has(t?.kind) && t.source === 'payout' && typeof t.action === 'string' && t.action.startsWith('payout:');
+}
+
 /** `{silver, gold, gems}`, each folded on its own and floored at 0 (never reports overdraft). */
 export function foldBalances(transactions) {
   const sums = Object.fromEntries(CURRENCIES.map((c) => [c, 0]));

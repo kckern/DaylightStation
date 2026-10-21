@@ -25,7 +25,10 @@
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
-import { CURRENCIES } from "../domain/index.mjs";
+import { CURRENCIES, isPayoutEntry } from "../domain/index.mjs";
+
+// Failures a retry cannot fix: a person has to look at the ledger.
+const NEEDS_A_PERSON = new Set(['CORRUPT_LEDGER', 'BAD_CONVERT_HALF', 'ORPHAN_CONVERT_HALF']);
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -110,7 +113,7 @@ export class WeekCloseService {
       wallets.set(entry.learnerId, null);
     }
     for (const userId of this.#listUsers() ?? []) {
-      if (!wallets.has(userId)) wallets.set(userId, 'payout');
+      if (!wallets.has(userId)) wallets.set(userId, isPayoutEntry);
     }
     return wallets;
   }
@@ -151,22 +154,22 @@ export class WeekCloseService {
     }
     const counts = { converted: 0, repaired: 0, wouldConvert: 0, belowRate: 0, skipped: 0, failed: 0 };
     const learners = [];
-    for (const [learnerId, requireSource] of this.#wallets(settled)) {
+    for (const [learnerId, requireEntry] of this.#wallets(settled)) {
       // One learner's failed settle is logged by PayoutService; their close still runs.
       const results = [];
-      for (const rule of rules) results.push(await this.#convert(learnerId, week, rule, mode, counts, requireSource));
+      for (const rule of rules) results.push(await this.#convert(learnerId, week, rule, mode, counts, requireEntry));
       learners.push({ learnerId, results });
     }
     this.#logger.info?.('economy.week-close.closed', { weekId: week, mode, learners: learners.length, rules: rules.length, ...counts });
     return { weekId: week, mode, learners };
   }
 
-  async #convert(learnerId, weekId, { from, to, rate }, mode, counts, requireSource) {
+  async #convert(learnerId, weekId, { from, to, rate }, mode, counts, requireEntry) {
     const base = { learnerId, weekId, from, to, rate };
     try {
       const res = await this.#economy.convert(learnerId, {
         from, to, rate, ref: closeRef(learnerId, weekId),
-        action: 'week-close', source: 'week-close', meta: { weekId }, dryRun: mode === 'dry-run', requireSource,
+        action: 'week-close', source: 'week-close', meta: { weekId }, dryRun: mode === 'dry-run', requireEntry,
       });
       // A repair goes to the currency the first half named, which may not be today's rule's.
       const target = res.to ?? to;
@@ -188,8 +191,7 @@ export class WeekCloseService {
       return { ...res, from, to: target };
     } catch (err) {
       counts.failed += 1;
-      // A corrupt ledger shard needs a person, not a retry.
-      const level = err?.code === 'CORRUPT_LEDGER' ? 'error' : 'warn';
+      const level = NEEDS_A_PERSON.has(err?.code) ? 'error' : 'warn';
       this.#logger[level]?.('economy.week-close.failed', { ...base, error: message(err), code: err?.code ?? null });
       return { status: 'failed', from, to, rate, error: message(err) };
     }

@@ -7,6 +7,7 @@ import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatasto
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
 import { EconomyService } from "./EconomyService.mjs";
 import { WeekCloseService, closingWeekFor } from "./WeekCloseService.mjs";
+import { createTransaction } from "../domain/index.mjs";
 
 const LEARNERS = ['learner-a', 'learner-b']; // the school roster
 // Household users: the roster, a parent (deposits, arcade) and a kid who left the roster.
@@ -205,6 +206,28 @@ describe('WeekCloseService.close', () => {
     expect(log.of('economy.week-close.failed')).toEqual([
       expect.objectContaining({ level: 'error', data: expect.objectContaining({ learnerId: 'learner-a', code: 'CORRUPT_LEDGER' }) }),
     ]);
+  });
+
+  it.each([
+    ['a tampered first half', { currency: 'silver', delta: -3, ref: `close:learner-a:${WEEK}`, meta: { from: 'silver', to: 'gold', rate: 1, spent: 3, got: 99 } }],
+    ['an orphan gold half', { currency: 'gold', delta: 12, ref: `close:learner-a:${WEEK}:gold` }],
+  ])('%s needs a person: failed at error level', async (_label, over) => {
+    const { service, economy, log } = setup();
+    await fund(economy, 'learner-a', 12);
+    await new YamlEconomyDatastore({ configService }).appendTransaction('learner-a', createTransaction({
+      id: 'txn_tampered', kind: 'convert', action: 'week-close', source: 'week-close', at: '2026-09-27T23:30:00.000Z', ...over }));
+    await service.close({ weekId: WEEK });
+    expect(log.of('economy.week-close.failed')).toEqual([
+      expect.objectContaining({ level: 'error', data: expect.objectContaining({ learnerId: 'learner-a' }) }),
+    ]);
+  });
+
+  it('an off-roster user whose deposit claims source payout never converts', async () => {
+    const { service, economy, ledger } = setup();
+    await economy.deposit('parent-a', { amount: 40, source: 'payout' });
+    const res = await service.close({ weekId: WEEK });
+    expect(converts(ledger('parent-a'))).toEqual([]);
+    expect(res.learners.find((l) => l.learnerId === 'parent-a').results[0].status).toBe('not-an-earner');
   });
 
   it('a fractional rate floors the gold; a balance too small for one gold converts nothing', async () => {

@@ -8,12 +8,11 @@
  * datastore's per-user lock: an append awaits the user's queue, so without
  * the lock a second call could pass the same check before the first lands.
  */
-import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES } from "../domain/index.mjs";
+import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 
 const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session considered dead
-const PAID_KINDS = new Set(['earn', 'prize']); // what counts toward a payout ref's "paid"
 
 /** Whole `to` coins for `amount` at `rate`, floored (the epsilon absorbs 0.29 × 100 = 28.999…). */
 export function convertedAmount(amount, rate) {
@@ -295,22 +294,26 @@ export class EconomyService {
    *                         `rate` and `got`, even if the caller's rule has
    *                         changed since), never re-reading the balance
    *                         (`repaired`). A first half whose figures do not
-   *                         add up is refused (ValidationError).
-   *   only the `to` half    refuses (ValidationError): this method never
-   *                         writes that, so a person should look
+   *                         add up is refused (ValidationError,
+   *                         BAD_CONVERT_HALF).
+   *   only the `to` half    refuses (ValidationError, ORPHAN_CONVERT_HALF):
+   *                         this method never writes that, so a person
+   *                         should look
    *   neither               `nothing` (balance ≤ 0), `not-an-earner` (with
-   *                         `requireSource`: no ledger entry has that
-   *                         `source`), `below-rate` (balance too small for
+   *                         `requireEntry`: no ledger entry passes it),
+   *                         `below-rate` (balance too small for
    *                         one whole `to` coin: nothing is spent for
    *                         nothing), or `converted`
    * `dryRun` gives the same answer (`would-convert`, `would-repair`) and
    * writes nothing, not even the wallet snapshot. Once the first half has
-   * landed the wallet snapshot is written even if the second half throws.
-   * @param {string|null} [args.requireSource] - convert only a wallet with at
-   *   least one entry from this source (the week close: `payout`)
+   * landed the wallet snapshot is written even if the second half throws; a
+   * snapshot failure then is logged and never hides the append's error.
+   * @param {((txn: object) => boolean)|null} [args.requireEntry] - convert only
+   *   a wallet with at least one entry passing this (the week close:
+   *   `isPayoutEntry`)
    * @returns {Promise<{userId: string, status: string, spent: number, got: number, rate: number, to: string, txnIds: string[]}>}
    */
-  async convert(userId, { from, to, rate, ref, action = 'convert', source = 'convert', meta = null, dryRun = false, requireSource = null }) {
+  async convert(userId, { from, to, rate, ref, action = 'convert', source = 'convert', meta = null, dryRun = false, requireEntry = null }) {
     this.#assertUser(userId);
     if (!CURRENCIES.includes(from) || !CURRENCIES.includes(to) || from === to) {
       throw new ValidationError(`convert needs two different currencies, got ${from} → ${to}`);
@@ -340,22 +343,18 @@ export class EconomyService {
           this.#logger.warn('economy.convert.repair-original-target', { userId, ref, from, to: original.to, ruleTo: to });
         }
         const txn = half(original.to, original.got, toRef, original);
-        try {
-          await this.#ds.appendTransaction(userId, txn);
-        } finally {
-          this.#snapshot(userId);
-        }
+        await this.#appendThenSnapshot(userId, txn, ref);
         this.#logger.debug?.('economy.convert.repaired', { userId, ref, from, ...original });
         return result('repaired', original.spent, original.got, { ...opts, txnIds: [txn.id] });
       }
       const toRef = `${ref}:${to}`;
       if (txns.some((t) => isHalf(t, toRef, to))) {
-        throw new ValidationError(`convert ${ref}: the ${to} half exists without the ${from} half`);
+        throw new ValidationError(`convert ${ref}: the ${to} half exists without the ${from} half`, { code: 'ORPHAN_CONVERT_HALF' });
       }
 
       const spent = foldBalances(txns)[from];
       if (spent <= 0) return result('nothing', 0, 0);
-      if (requireSource != null && !txns.some((t) => t.source === requireSource)) return result('not-an-earner', 0, 0);
+      if (requireEntry != null && !txns.some((t) => requireEntry(t))) return result('not-an-earner', 0, 0);
       const got = convertedAmount(spent, rate);
       if (got <= 0) return { ...result('below-rate', 0, 0), balance: spent };
       if (dryRun) return result('would-convert', spent, got);
@@ -366,14 +365,30 @@ export class EconomyService {
       // never coins minted from nothing. The snapshot follows the ledger
       // either way.
       await this.#ds.appendTransaction(userId, out);
-      try {
-        await this.#ds.appendTransaction(userId, back);
-      } finally {
-        this.#snapshot(userId);
-      }
+      await this.#appendThenSnapshot(userId, back, ref);
       this.#logger.debug?.('economy.convert', { userId, ref, from, to, rate, spent, got });
       return result('converted', spent, got, { txnIds: [out.id, back.id] });
     });
+  }
+
+  /**
+   * Append, then refresh the wallet snapshot whatever happened: it must match
+   * the ledger, which already holds an earlier half. A snapshot failure is
+   * logged and never replaces the append's own error.
+   */
+  async #appendThenSnapshot(userId, txn, ref) {
+    let appendErr = null;
+    try {
+      await this.#ds.appendTransaction(userId, txn);
+    } catch (err) {
+      appendErr = err;
+    }
+    try {
+      this.#snapshot(userId);
+    } catch (err) {
+      this.#logger.error?.('economy.convert.snapshot-failed', { userId, ref, error: err?.message ?? String(err) });
+    }
+    if (appendErr) throw appendErr;
   }
 
   async openSession(userId, { action, source }) {

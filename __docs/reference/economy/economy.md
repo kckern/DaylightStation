@@ -156,10 +156,14 @@ the file is missing.
 |---|---|---|
 | GET `/users/:userId/wallet` | — | `{ userId, balance, balances, session }` |
 | POST `/users/:userId/deposit` | `{ amount, note? }` | `{ userId, balance }` |
-| POST `/users/:userId/earn` | `{ action, source, ref? }` | `{ userId, earned, capped, duplicate, balance }` |
+| POST `/users/:userId/earn` | `{ action, ref?, amount? }` | `{ userId, earned, capped, duplicate, balance }` |
 | POST `/users/:userId/sessions` | `{ action, source }` | `{ userId, sessionId, balance, drainPerSecond }` |
 | POST `/users/:userId/sessions/:sessionId/settle` | `{ coins }` (cumulative) | `{ userId, balance, depleted }` |
 | POST `/users/:userId/sessions/:sessionId/close` | `{ coins? }` (cumulative) | `{ userId, balance }` |
+
+The ledger `source` of a deposit (`admin`) or an earn (`api`) is set by the
+router; a body's `source` is ignored, so no request can write an entry that
+passes for a payout or a week close.
 
 Domain errors map to HTTP: `ValidationError` → 400 (bad amount, blackout, no
 balance, existing session), `EntityNotFoundError` → 404 (unknown user).
@@ -335,9 +339,11 @@ Per close, `catalog()` is read once (mode and rules):
 - **Whose wallets.** Every roster learner from that settle (a roster learner
   the payout reports `not-a-user` has no wallet and is skipped), plus every
   other household user (`EconomyConfigProjection.users()`) who has at least
-  one ledger entry with `source: payout`: a kid who left the roster, a
-  piano-only earner. That check runs inside the convert lock
-  (`convert({ requireSource: 'payout' })`, status `not-an-earner`). Parents'
+  one payout entry: a kid who left the roster, a piano-only earner. A payout
+  entry is what `mint` writes (`isPayoutEntry`: kind `earn` or `prize`,
+  `source: payout` and an action starting `payout:`), so a deposit that names
+  `source: payout` does not count. That check runs inside the convert lock
+  (`convert({ requireEntry: isPayoutEntry })`, status `not-an-earner`). Parents'
   and legacy-deposit silver never converts: arcade metered spend runs on
   silver, and a wallet that never had a payout keeps it. Without a roster only
   the payout earners close.
@@ -367,16 +373,19 @@ Per close, `catalog()` is read once (mode and rules):
 - **Idempotent.** The out half's ref means the week is closed: a second close
   writes nothing (`already-converted`). The out half is written first, so a
   crash between the appends leaves gold owed, never gold from nothing, and
-  `wallet.yml` is rewritten from the ledger even when the in half throws. The
+  `wallet.yml` is rewritten from the ledger even when the in half throws (a
+  snapshot failure then logs `economy.convert.snapshot-failed` at error and
+  the append's own error still reaches the caller). The
   next close of that week writes the missing in half from the out half's own
   `meta` (`economy.week-close.repaired`, warn) without re-reading the balance:
   its `to`, `rate` and `got`, even if the rule has changed since (a different
   target logs `economy.convert.repair-original-target`). An out half whose
   figures do not add up (delta not negative, `meta.from` not the rule's
   `from`, a bad `meta.to` or `meta.rate`, or `meta.got` not a whole number
-  from 1 to floor(spent × rate)) is refused, as is an in half without its out
-  half. A corrupt shard throws `CORRUPT_LEDGER` and nothing is written (logged
-  `economy.week-close.failed` at error).
+  from 1 to floor(spent × rate)) is refused (`BAD_CONVERT_HALF`), as is an in
+  half without its out half (`ORPHAN_CONVERT_HALF`). A corrupt shard throws
+  `CORRUPT_LEDGER` and nothing is written. Those three need a person and log
+  `economy.week-close.failed` at error; any other failure logs it at warn.
 - **Modes.** `off`: nothing (no settle, no read). `dry-run`: logs
   `economy.week-close.would-convert { learnerId, weekId, silver, gold, rate }`
   and writes nothing. `live`: writes and logs `economy.week-close.converted` per

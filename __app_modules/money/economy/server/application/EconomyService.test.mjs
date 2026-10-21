@@ -6,11 +6,12 @@ import yaml from 'js-yaml';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyService } from "./EconomyService.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
-import { createTransaction } from "../domain/index.mjs";
+import { createTransaction, isPayoutEntry } from "../domain/index.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const USER = 'test-user';
-const USER_DIR = path.join(os.tmpdir(),'econ-svc-test-user');
+// A fresh directory per test: a fixed tmp path is shared with concurrent runs in other worktrees.
+let USER_DIR;
 const ECONOMY_CONFIG = {
   currency: { name: 'coins' },
   earn: { 'piano-lesson-complete': { reward: 5, per: 'completion', daily_cap: 10 } },
@@ -22,14 +23,14 @@ const configService = {
   getUserDir: () => USER_DIR,
   getHouseholdAppConfig: () => ECONOMY_CONFIG,
 };
-const clean = () => { try { fs.rmSync(USER_DIR, { recursive: true, force: true }); } catch {} };
+const clean = () => { if (USER_DIR) fs.rmSync(USER_DIR, { recursive: true, force: true }); };
 const makeService = () => new EconomyService({
   datastore: new YamlEconomyDatastore({ configService }),
   configProjection: new EconomyConfigProjection({ configService }),
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
 });
 
-beforeEach(clean);
+beforeEach(() => { USER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'econ-svc-')); });
 afterEach(clean);
 
 describe('EconomyService', () => {
@@ -548,13 +549,43 @@ describe('convert', () => {
     expect(await svc.convert(USER, args({ dryRun: true }))).toMatchObject({ status: 'would-convert', spent: 12, got: 12 });
     expect(converts()).toEqual([]);
   });
-  it('requireSource: no entry from that source is not-an-earner; one is enough', async () => {
+  it('requireEntry: no matching entry is not-an-earner; one payout is enough', async () => {
     const svc = makeService();
     await svc.deposit(USER, { amount: 20 });
-    expect((await svc.convert(USER, args({ requireSource: 'payout' }))).status).toBe('not-an-earner');
+    expect((await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).status).toBe('not-an-earner');
     expect(converts()).toEqual([]);
     await fund(svc, 5);
-    expect(await svc.convert(USER, args({ requireSource: 'payout' }))).toMatchObject({ status: 'converted', spent: 25 });
+    expect(await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).toMatchObject({ status: 'converted', spent: 25 });
+  });
+  it('a deposit claiming source payout is still not a payout entry', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 20, source: 'payout' });
+    expect((await svc.convert(USER, args({ requireEntry: isPayoutEntry }))).status).toBe('not-an-earner');
+  });
+  it('an orphan to half refuses with ORPHAN_CONVERT_HALF; a tampered first half with BAD_CONVERT_HALF', async () => {
+    const svc = makeService();
+    await fund(svc, 12);
+    await ds().appendTransaction(USER, half({ currency: 'gold', delta: 12, ref: `${REF}:gold` }));
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'ORPHAN_CONVERT_HALF' });
+    await expect(svc.convert(USER, args({ ref: 'close:other' }))).resolves.toMatchObject({ status: 'converted' });
+    await ds().appendTransaction(USER, outHalf({ got: 99 }, -3));
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'BAD_CONVERT_HALF' });
+  });
+  it('when the append and the snapshot both throw, the caller sees the append error', async () => {
+    const quiet = { info: () => {}, warn: () => {}, error: vi.fn(), debug: () => {} };
+    const datastore = new YamlEconomyDatastore({ configService });
+    const svc = new EconomyService({ datastore, configProjection: new EconomyConfigProjection({ configService }), logger: quiet });
+    await fund(svc, 12);
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'convert' && txn.currency === 'gold') throw Object.assign(new Error('disk full'), { code: 'DISK_FULL' });
+      return append(userId, txn);
+    };
+    datastore.writeWallet = () => { throw new Error('wallet unwritable'); };
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ message: 'disk full', code: 'DISK_FULL' });
+    // The repair path: same rule.
+    await expect(svc.convert(USER, args())).rejects.toMatchObject({ code: 'DISK_FULL' });
+    expect(quiet.error.mock.calls.filter(([e]) => e === 'economy.convert.snapshot-failed')).toHaveLength(2);
   });
   it('a to half without its from half throws', async () => {
     const svc = makeService();

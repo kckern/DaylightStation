@@ -75,6 +75,14 @@ describe('economy router', () => {
     expect(after.body.balance).toBe(11);
   });
 
+  it('deposit and earn ignore a body source: no caller can write a payout-sourced entry', async () => {
+    const app = makeApp();
+    await request(app).post(`/api/v1/economy/users/${USER}/deposit`).send({ amount: 10, source: 'payout' }).expect(200);
+    await request(app).post(`/api/v1/economy/users/${USER}/earn`).send({ action: 'piano-lesson-complete', source: 'week-close' }).expect(200);
+    const sources = new YamlEconomyDatastore({ configService }).readAllTransactions(USER).map((t) => [t.kind, t.source]);
+    expect(sources).toEqual([['deposit', 'admin'], ['earn', 'api']]);
+  });
+
   it('maps domain errors to non-200s', async () => {
     const app = makeApp();
 

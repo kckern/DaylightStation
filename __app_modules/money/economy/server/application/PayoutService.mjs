@@ -21,9 +21,10 @@
  * since this process last logged it, and the per-settle summary is `debug`
  * unless something minted or a count moved.
  */
+import { PAID_KINDS } from "../domain/index.mjs";
+
 const CURRENCIES = ['silver', 'gems'];
 const HELD = new Set(['indeterminate', 'pending']);
-const PAID_KINDS = new Set(['earn', 'prize']);
 
 /** The ledger ref one currency of an earning line is paid under. Stable across runs. */
 export function payoutRef(lineRef, currency) {

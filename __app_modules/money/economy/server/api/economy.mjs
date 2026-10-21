@@ -4,7 +4,8 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 /**
  * Household economy API — per-user wallets, earn/deposit, and metered spend sessions.
  *
- * Thin HTTP layer: input pass-through + delegation to the injected EconomyService,
+ * Thin HTTP layer: input pass-through + delegation to the injected EconomyService
+ * (except `source`: deposit stamps `admin`, earn `api`, whatever the body says),
  * which owns policy resolution, ledger writes, and wallet snapshots. Domain errors
  * (ValidationError → 400, EntityNotFoundError → 404) are shaped by
  * errorHandlerMiddleware({ shape: 'string' }).
@@ -25,12 +26,16 @@ export function createEconomyRouter({ economyService, logger = console }) {
     res.json(await economyService.getBalance(req.params.userId));
   }));
 
+  // `source` is the server's, never the body's: a body naming `payout` or
+  // `week-close` must not pass for a ledger entry those jobs wrote.
   router.post('/users/:userId/deposit', asyncHandler(async (req, res) => {
-    res.json(await economyService.deposit(req.params.userId, req.body || {}));
+    const { amount, note } = req.body || {};
+    res.json(await economyService.deposit(req.params.userId, { amount, note, source: 'admin' }));
   }));
 
   router.post('/users/:userId/earn', asyncHandler(async (req, res) => {
-    res.json(await economyService.earn(req.params.userId, req.body || {}));
+    const { action, ref, amount } = req.body || {};
+    res.json(await economyService.earn(req.params.userId, { action, ref, amount, source: 'api' }));
   }));
 
   router.post('/users/:userId/sessions', asyncHandler(async (req, res) => {
