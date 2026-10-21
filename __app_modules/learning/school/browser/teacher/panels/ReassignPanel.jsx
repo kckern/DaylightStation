@@ -19,7 +19,7 @@
  * attempts, and offering it nowhere would send a grown-up back to typing dates
  * blind, which is the defect the picker exists to have fixed.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -88,9 +88,15 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
     ? titles.lesson(s.unitId)
     : s.unitId ?? 'Lesson with no unit recorded');
 
+  // Only the newest load may write: chips load on tap now, and a slow reply
+  // for an earlier tap must not replace the day the teacher is looking at.
+  const loadSeq = useRef(0);
+
   const load = async (forDay = day) => {
+    const mine = ++loadSeq.current;
     setLoadError(null);
     const summary = await schoolApi.attemptsSummary(learnerId, forDay);
+    if (mine !== loadSeq.current) return;
     if (!summary.ok) { setLoadError('Couldn’t load that day’s work.'); setLoaded(null); return; }
     setLoaded({ day: forDay, assessments: summary.data?.assessments ?? [] });
   };

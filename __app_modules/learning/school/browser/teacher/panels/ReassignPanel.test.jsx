@@ -6,7 +6,7 @@
  * it happened on was not even offerable in the picker.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import ReassignPanel from "./ReassignPanel.jsx";
 
 vi.mock("../../schoolApi.js", () => ({
@@ -86,6 +86,24 @@ describe('ReassignPanel — work with no machine attempts', () => {
     await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
     fireEvent.click(screen.getByText('2026-08-26'));
     await waitFor(() => expect(schoolApi.attemptsSummary).toHaveBeenCalledWith('user_4', '2026-08-26'));
+  });
+
+  // Chips load on tap: a slow reply for an earlier tap must not replace the
+  // day the teacher tapped last (the chip and the list would disagree).
+  it('shows the day tapped last even when an earlier tap answers later', async () => {
+    seed();
+    schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-10-20', '2026-10-19'] }));
+    let releaseFirst;
+    schoolApi.attemptsSummary
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = () => resolve(ok({ assessments: [{ assessmentId: 'a-old', title: 'Old day work', count: 1 }] })); }))
+      .mockImplementationOnce(async () => ok({ assessments: [{ assessmentId: 'a-new', title: 'New day work', count: 1 }] }));
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '2026-10-19' }));
+    fireEvent.click(screen.getByRole('button', { name: '2026-10-20' }));
+    await screen.findByText('New day work');
+    await act(async () => { releaseFirst(); });
+    expect(screen.queryByText('Old day work')).toBeNull();
+    expect(screen.getByText('New day work')).toBeTruthy();
   });
 
   it('lists a lesson with no recorded answers and moves it, with a reason, to the sibling', async () => {
