@@ -219,17 +219,24 @@ describe('TeacherConsole workspace', () => {
 
   it('surfaces shell read failures instead of silently showing an empty school', async () => {
     schoolApi.roster.mockResolvedValueOnce({ ok: false, status: 503, data: null });
-    schoolApi.lifecycleReview.mockResolvedValueOnce({ ok: false, status: 503, data: null });
+    // Twice: the shell reads on mount and the dashboard re-reads on arrival;
+    // the newer read is the one that lands.
+    schoolApi.lifecycleReview
+      .mockResolvedValueOnce({ ok: false, status: 503, data: null })
+      .mockResolvedValueOnce({ ok: false, status: 503, data: null });
     await ready();
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Student roster unavailable'));
     expect(screen.getByRole('status').textContent).toContain('Action-queue totals unavailable');
   });
 
   it('the rail badge, the phone tab bar and the dashboard strip show one backlog count', async () => {
-    // Once: this file never resets its mocks, and the shell reads these once on mount.
-    schoolApi.lifecycleReview.mockResolvedValueOnce({ ok: true, status: 200, data: { items: [{ id: 'r1' }] } });
-    schoolApi.printPending.mockResolvedValueOnce({ ok: true, status: 200, data: [{ id: 'p1' }] });
-    schoolApi.quizRequests.mockResolvedValueOnce({ ok: true, status: 200, data: [{ userId: 'user_2' }, { userId: 'user_4' }] });
+    // Once per read: this file never resets its mocks, and the shell reads
+    // these on mount and again when the dashboard opens.
+    for (let i = 0; i < 2; i += 1) {
+      schoolApi.lifecycleReview.mockResolvedValueOnce({ ok: true, status: 200, data: { items: [{ id: 'r1' }] } });
+      schoolApi.printPending.mockResolvedValueOnce({ ok: true, status: 200, data: [{ id: 'p1' }] });
+      schoolApi.quizRequests.mockResolvedValueOnce({ ok: true, status: 200, data: [{ userId: 'user_2' }, { userId: 'user_4' }] });
+    }
     await ready();
     // Quiz requests count too — the badge used to leave them out.
     await waitFor(() => expect(screen.getByLabelText('4 items waiting').textContent).toBe('4'));

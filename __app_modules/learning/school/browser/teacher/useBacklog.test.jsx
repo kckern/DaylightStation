@@ -39,4 +39,24 @@ describe('useBacklog', () => {
     await act(() => result.current.refresh());
     expect(result.current.total).toBe(4);
   });
+  it('a slow older read never overwrites a newer one', async () => {
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(6));
+    let releaseOld;
+    schoolApi.lifecycleReview
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOld = () => resolve(ok({ items: [{}, {}, {}, {}, {}] })); }))
+      .mockResolvedValueOnce(ok({ items: [] }));
+    let older;
+    act(() => { older = result.current.refresh(); });
+    await act(() => result.current.refresh());
+    expect(result.current.review).toBe(0);
+    await act(async () => { releaseOld(); await older; });
+    expect(result.current).toMatchObject({ review: 0, total: 4 });
+  });
+  it('counts quiz requests only when the server sends the array the queue renders', async () => {
+    schoolApi.quizRequests.mockResolvedValue(ok({ requests: [{}, {}] }));
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(3));
+    expect(result.current.quizzes).toBe(0);
+  });
 });

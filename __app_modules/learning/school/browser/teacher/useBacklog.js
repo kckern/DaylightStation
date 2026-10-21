@@ -16,18 +16,24 @@ const broken = (response) => !response.ok && response.status !== 404;
 export function useBacklog({ pollMs = 60_000 } = {}) {
   const [counts, setCounts] = useState({ review: null, prints: null, quizzes: null, total: 0, failed: false });
   const alive = useRef(true);
+  // The 60s poll and an onChanged refresh can overlap; only the latest read
+  // may land, or a slow older answer puts back a count the teacher cleared.
+  const seq = useRef(0);
 
   const refresh = useCallback(async () => {
     // A hidden tab polls nothing; visibilitychange below catches up on return.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const mine = ++seq.current;
     const [review, prints, quizzes] = await Promise.all([
       schoolApi.lifecycleReview(), schoolApi.printPending(), schoolApi.quizRequests(),
     ]);
-    if (!alive.current) return;
+    if (!alive.current || mine !== seq.current) return;
     const next = {
       review: countOf(review, (d) => (d?.items ?? []).length),
       prints: countOf(prints, (d) => (Array.isArray(d) ? d.length : 0)),
-      quizzes: countOf(quizzes, (d) => (Array.isArray(d) ? d.length : (d?.requests ?? []).length)),
+      // Arrays only: QuizRequestBacklog renders nothing else, and the badge
+      // must not count rows the queue will not show.
+      quizzes: countOf(quizzes, (d) => (Array.isArray(d) ? d.length : 0)),
     };
     const failed = [review, prints, quizzes].some(broken);
     if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status, quizStatus: quizzes.status });

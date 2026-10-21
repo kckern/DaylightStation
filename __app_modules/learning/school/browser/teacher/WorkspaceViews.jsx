@@ -154,6 +154,9 @@ export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog
   // card grid promising "agenda … and repair" (names the tabs don't use)
   // was pure drift (UX audit F25/F26). The dashboard is the Today digest
   // plus a compact backlog summary — the queue owns the full lists.
+  // Re-read on arrival: counts change elsewhere too (an inspector settle, a
+  // reprint), and the dashboard should not show them a poll late.
+  useEffect(() => { backlog?.refresh?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading">
