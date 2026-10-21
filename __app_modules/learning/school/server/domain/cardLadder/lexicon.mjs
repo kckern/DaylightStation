@@ -219,6 +219,38 @@ export function validateLexicon(raw) {
   return { errors: [], lexicon: { ...header, entries } };
 }
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Optional `releases: [{opensOn, words}]` — a calendar for introductions. A
+ * word named in a release may be introduced only from its `opensOn` study day;
+ * a word in no release is always eligible. `words` stays the whole deck.
+ */
+function validateReleases(raw, deckWords, errors) {
+  if (raw.releases === undefined) return;
+  if (!Array.isArray(raw.releases)) { errors.push('releases must be a list'); return; }
+  const released = new Set();
+  raw.releases.forEach((release, index) => {
+    const at = `releases[${index}]`;
+    if (typeof release?.opensOn !== 'string' || !DAY_KEY.test(release.opensOn)) errors.push(`${at}.opensOn must be a YYYY-MM-DD day`);
+    if (!Array.isArray(release?.words) || release.words.length === 0) { errors.push(`${at}.words must be a non-empty list`); return; }
+    for (const wordId of release.words) {
+      if (!deckWords.has(wordId)) errors.push(`${at}: '${wordId}' is not in the deck's words`);
+      if (released.has(wordId)) errors.push(`${at}: '${wordId}' is already in an earlier release`);
+      released.add(wordId);
+    }
+  });
+}
+
+/** Deck word ids not yet open for introduction on `day` (a study-day key). */
+export function unreleasedWords(deck, day) {
+  const closed = new Set();
+  for (const release of Array.isArray(deck?.releases) ? deck.releases : []) {
+    if (!(release?.opensOn <= day)) for (const wordId of release?.words ?? []) closed.add(wordId);
+  }
+  return closed;
+}
+
 export function isLexiconDeck(raw) {
   return Boolean(raw) && typeof raw === 'object' && Array.isArray(raw.words) && typeof raw.lexicon === 'string';
 }
@@ -237,6 +269,7 @@ export function expandLexiconDeck(raw, lexicon) {
     seen.add(wordId);
     if (!entries?.has?.(wordId)) errors.push(`words[${index}]: '${wordId}' is not in the lexicon`);
   });
+  validateReleases(raw, seen, errors);
   if (errors.length) return { errors };
   const cards = raw.words.map((wordId) => {
     const entry = entries.get(wordId);

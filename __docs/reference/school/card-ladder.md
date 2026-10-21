@@ -537,6 +537,26 @@ carry `introducedExtra: true` and `newAllowance` skips them on both counts:
 they never use up a day's `newPerDay` and never fill the working set, so
 extra learning today never shrinks tomorrow's goal.
 
+### Release calendar (`releases`)
+
+A lexicon deck may pace its introductions by date, for a deck that follows an
+outside class rather than the learner's own speed:
+
+```yaml
+words: [w1, w2, w3, w4]          # still the whole deck
+releases:
+  - { opensOn: '2026-10-18', words: [w1, w2] }
+  - { opensOn: '2026-10-25', words: [w3] }
+```
+
+A word named in a release enters the new-word pool from its `opensOn` study
+day; a word in no release (`w4`) is always eligible. Only introduction is held:
+a word already met reviews as usual, and quizzes, My words and paper feedback
+still see `words`. Learn more respects the calendar too. `expandLexiconDeck`
+rejects a malformed day, a release word missing from `words`, or a word in two
+releases. Filter: `unreleasedWords` (`domain/cardLadder/lexicon.mjs`), applied
+in `CardLadderSittingService#pool`.
+
 The cap stops the **guided** day continuing on its own; it never locks a
 child out. Past the cap, the practice menu and Learn more stay available on
 request.

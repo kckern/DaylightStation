@@ -1,6 +1,6 @@
 export {
   LEXICON_SCHEMA, LEXICON_SCHEMA_V3, LEXICON_SCHEMAS, WORD_KINDS, DECOY_SIDES, SLUG, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
-  isLexiconDeck, expandLexiconDeck,
+  isLexiconDeck, expandLexiconDeck, unreleasedWords,
 } from "./lexicon.mjs";
 export { hashString, seededShuffle } from "./checkItem.mjs";
 export {

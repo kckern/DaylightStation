@@ -31,7 +31,7 @@ import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.m
 import {
   applyGraded, addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
   quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
-  servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget,
+  servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget, unreleasedWords,
 } from "../domain/cardLadder/index.mjs";
 
 const FOLD_LOOKBACK_DAYS = 60;
@@ -236,7 +236,7 @@ export class CardLadderSittingService {
     const groups = [];
     for (const deckId of order) {
       const other = deckId === deck.id ? deck : await this.#decks.getFlashcardDeck(deckId).catch(() => null);
-      groups.push({ deckId, ids: [...(other?.words ?? [])] });
+      groups.push({ deckId, ids: [...(other?.words ?? [])], releases: other?.releases });
     }
     return groups;
   }
@@ -266,6 +266,12 @@ export class CardLadderSittingService {
       }));
       groups = groups.filter((_group, index) => eligible[index]);
     }
+    // A deck's release calendar holds back words not yet open today; met words review as usual.
+    const day = this.#today();
+    groups = groups.map((group) => {
+      const closed = unreleasedWords(group, day);
+      return closed.size ? { ...group, ids: group.ids.filter(id => !closed.has(id)) } : group;
+    });
     const ids = orderNewWords(groups, { order, learnerId: learnerId ?? '' });
     return ids.filter((id) => (status.words[id]?.state ?? 'new') === 'new');
   }

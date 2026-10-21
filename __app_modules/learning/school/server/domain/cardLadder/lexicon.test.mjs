@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateFlashcardDeck } from "../flashcards/index.mjs";
 import {
-  LEXICON_SCHEMA, LEXICON_SCHEMA_V3, expandLexiconDeck, isLexiconDeck, parseMediaRef, validateLexicon, wordAssetIds, wordPackageDir,
+  LEXICON_SCHEMA, LEXICON_SCHEMA_V3, expandLexiconDeck, isLexiconDeck, parseMediaRef, unreleasedWords, validateLexicon, wordAssetIds, wordPackageDir,
 } from "./index.mjs";
 
 // Korean is the worked example; the Spanish case below proves nothing is Korean-specific.
@@ -133,6 +133,28 @@ describe('expandLexiconDeck', () => {
     expect(expandLexiconDeck({ ...raw, words: ['nope'] }, lex).errors.join('\n')).toMatch(/'nope' is not in the lexicon/);
     expect(expandLexiconDeck({ ...raw, words: ['gawi', 'gawi'] }, lex).errors.join('\n')).toMatch(/duplicates 'gawi'/);
     expect(expandLexiconDeck({ ...raw, cards: [] }, lex).errors.join('\n')).toMatch(/must not also author cards/);
+  });
+  it('keeps a release calendar and refuses releases that are malformed, outside words, or overlapping', () => {
+    const releases = [{ opensOn: '2026-10-25', words: ['gawi'] }];
+    expect(expandLexiconDeck({ ...raw, releases }, lex).deck.releases).toEqual(releases);
+    const errorsFor = (bad) => expandLexiconDeck({ ...raw, releases: bad }, lex).errors.join('\n');
+    expect(errorsFor({})).toMatch(/releases must be a list/);
+    expect(errorsFor([{ opensOn: '10/25', words: ['gawi'] }])).toMatch(/opensOn must be a YYYY-MM-DD day/);
+    expect(errorsFor([{ opensOn: '2026-10-25', words: [] }])).toMatch(/words must be a non-empty list/);
+    expect(errorsFor([{ opensOn: '2026-10-25', words: ['annyeong-haseyo'] }])).toMatch(/'annyeong-haseyo' is not in the deck's words/);
+    expect(errorsFor([{ opensOn: '2026-10-25', words: ['gawi'] }, { opensOn: '2026-11-01', words: ['gawi'] }])).toMatch(/already in an earlier release/);
+  });
+});
+
+describe('unreleasedWords', () => {
+  const deck = { words: ['a', 'b', 'c'], releases: [{ opensOn: '2026-10-18', words: ['a'] }, { opensOn: '2026-10-25', words: ['b'] }] };
+  it('closes words whose release opens after the day, from the opening day on they are eligible', () => {
+    expect([...unreleasedWords(deck, '2026-10-21')]).toEqual(['b']);
+    expect([...unreleasedWords(deck, '2026-10-25')]).toEqual([]);
+    expect([...unreleasedWords(deck, '2026-10-17')]).toEqual(['a', 'b']);
+  });
+  it('a deck without releases closes nothing', () => {
+    expect(unreleasedWords({ words: ['a'] }, '2026-10-21').size).toBe(0);
   });
 });
 

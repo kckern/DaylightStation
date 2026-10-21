@@ -533,6 +533,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/wellness/fitness/cli/fitness.cli.mjs': null,
   '__app_modules/learning/school/cli/korean-course.cli.mjs': null,
   '__app_modules/learning/school/cli/korean-course-repair.cli.mjs': null,
+  '__app_modules/learning/school/cli/class-board.cli.mjs': null,
   '__app_modules/wellness/fitness/browser/admin.mjs': null,
   '__app_modules/wellness/fitness/browser/context.mjs': null,
   '__app_modules/wellness/fitness/browser/kiosk.mjs': null,

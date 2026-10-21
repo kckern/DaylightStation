@@ -312,6 +312,23 @@ describe('CardLadderSittingService', () => {
     expect(logger.info).toHaveBeenCalledWith('school.card-ladder.learn-more', expect.objectContaining({ mode: 'test' }));
   });
 
+  it('a deck release calendar holds a word back until its opening day; a met word keeps reviewing', async () => {
+    const releasedDeck = (opensOn) => ({
+      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Class', words: ['gawi', 'pul'], lexicon: REF, releases: [{ opensOn, words: ['pul'] }] } : null),
+      listFlashcardDecks: async () => [],
+    });
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const held = make({ store, decks: releasedDeck('2026-09-27') });
+    const opened = await held.service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item.type).toBe('summary');
+    await expect(held.service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId })).rejects.toThrow(/no new words/);
+    const open = make({ store: memoryStore(), decks: releasedDeck(TODAY) });
+    const fresh = await open.service.open({ userId: 'test-learner', deckId: DECK });
+    expect(fresh.item).toMatchObject({ type: 'flashcard', mode: 'intro' });
+  });
+
   it('a day with nothing to do is done for today as soon as it is opened', async () => {
     const store = memoryStore();
     for (const id of ['gawi', 'pul']) store.s.status.words[id] = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
