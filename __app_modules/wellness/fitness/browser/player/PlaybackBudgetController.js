@@ -77,7 +77,8 @@ export class PlaybackBudgetController {
     this.account();
     const changed = this.input.contentId !== input.contentId || this.input.media !== input.media;
     const policyChanged = this.input.supervised !== input.supervised || this.input.hasSubject !== input.hasSubject || this.input.canPlay !== input.canPlay
-      || this.input.matching !== input.matching || JSON.stringify(this.input.participantIds) !== JSON.stringify(input.participantIds);
+      || this.input.matching !== input.matching || JSON.stringify(this.input.participantIds) !== JSON.stringify(input.participantIds)
+      || JSON.stringify(this.input.guestIds ?? []) !== JSON.stringify(input.guestIds ?? []);
     const mediaChanged = this.input.media !== input.media;
     this.input = input;
     if (mediaChanged) this.bind(input.media);
@@ -112,7 +113,7 @@ export class PlaybackBudgetController {
     const body = this.retry ?? {
       deviceId: this.deviceId, streamId: this.streamId, sequence: ++this.sequence,
       expectedGeneration: this.view?.generation,
-      participantIds: this.input.participantIds ?? [], contentId: this.input.contentId ?? null,
+      participantIds: this.input.participantIds ?? [], guestIds: this.input.guestIds ?? [], contentId: this.input.contentId ?? null,
       requestGrant: allowGrant && this.eligible() && this.input.canPlay && !this.manualPause,
       settlements,
       // Kept for older API consumers and diagnostics; the server settles once.

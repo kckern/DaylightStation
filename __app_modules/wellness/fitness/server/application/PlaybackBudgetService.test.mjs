@@ -4,7 +4,7 @@ const configuration={governance:{superusers:['parent'],playback_budgets:[{id:'un
 function harness() {
  const records=new Map(); let time=Date.UTC(2026,9,18,12); let fail=false;
  const store={load:async key=>structuredClone(records.get(JSON.stringify(key))??null),save:async ({value,...key})=>{if(fail)throw Error('write failed');records.set(JSON.stringify(key),structuredClone(value));}};
- const service=new PlaybackBudgetService({store,userDirectory:id=>id==='child'?{}:null,policyConfig:()=>configuration,contentCatalog:{getItem:async id=>({metadata:{labels:id==='video'?['Movement']:['Other']}})},clock:{now:()=>time},calendar:now=>({localDate:new Date(now).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z')+86400000}),deviceDirectory:()=>({'test-tv':{fleet:true}}),logger:{info(){},warn(){}}});
+ const service=new PlaybackBudgetService({store,policyConfig:()=>configuration,contentCatalog:{getItem:async id=>({metadata:{labels:id==='video'?['Movement']:['Other']}})},clock:{now:()=>time},calendar:now=>({localDate:new Date(now).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z')+86400000}),deviceDirectory:()=>({'test-tv':{fleet:true}}),logger:{info(){},warn(){}}});
  const req={householdId:'test',deviceId:'test-tv',streamId:'browser',participantIds:['child'],contentId:'video'};
  return {service,records,req,advance:ms=>{time+=ms;},fail:()=>{fail=true;}};
 }
@@ -70,8 +70,28 @@ it('rejects incomplete exhausted buckets instead of treating them as a new day',
  await expect(h.service.observe({...h.req,sequence:2})).rejects.toThrow('Corrupt');
 });
 
-describe('PlaybackBudgetService wiring',()=>{
- it('throws without a userDirectory instead of silently not metering',()=>{
-  expect(()=>new PlaybackBudgetService({store:{},policyConfig:()=>({}),contentCatalog:{},clock:{},calendar:()=>({}),deviceDirectory:()=>({})})).toThrow(/userDirectory/);
+describe('one governed-child rule: not supervisor, not exempt, not guest',()=>{
+ it('meters a member rider who has no household profile',async()=>{
+  const h=harness();
+  const view=await h.service.observe({...h.req,sequence:1,participantIds:['member-rider']});
+  expect(view.policies[0].grant.ms).toBe(5000);
+ });
+ it('does not meter a roster of guests only',async()=>{
+  const h=harness();
+  const view=await h.service.observe({...h.req,sequence:1,participantIds:['visitor'],guestIds:['visitor']});
+  expect(view.policies[0].grant).toBeNull();expect(view.policies[0].spentMs).toBe(0);expect(view.supervised).toBe(false);
+ });
+ it('a supervisor assigned as a guest neither supervises nor resets the day',async()=>{
+  const h=harness();await h.service.observe({...h.req,sequence:1});
+  const joined=await h.service.observe({...h.req,sequence:2,participantIds:['child','parent'],guestIds:['parent'],previousGrantId:undefined});
+  expect(joined.supervised).toBe(false);
+  expect(joined.generation).toBe(1);
+  expect(joined.policies[0].spentMs).toBeGreaterThan(0);
+  expect(joined.policies[0].grant.ms).toBe(5000);
+ });
+ it('rejects malformed guestIds',async()=>{
+  const h=harness();
+  for(const guestIds of ['visitor',[1],['x'.repeat(101)],Array.from({length:101},(_,i)=>`g${i}`)])
+   await expect(h.service.observe({...h.req,sequence:1,guestIds})).rejects.toThrow(TypeError);
  });
 });

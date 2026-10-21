@@ -33,3 +33,13 @@ describe('isGovernedChildId', () => {
     expect(isGovernedChildId('child')).toBe(true);
   });
 });
+
+describe('guest assignments', () => {
+  it('a guest-assigned supervisor does not supervise', () => {
+    expect(classifySupervision({ participantIds: ['child-a', 'parent-b'], supervisorIds: ['parent-b'], guestIds: ['Parent-B'] }).supervised).toBe(false);
+  });
+  it('a guest is not a governed child', () => {
+    expect(isGovernedChildId('visitor', { guestIds: ['visitor'] })).toBe(false);
+    expect(isGovernedChildId('member', { guestIds: ['visitor'] })).toBe(true);
+  });
+});

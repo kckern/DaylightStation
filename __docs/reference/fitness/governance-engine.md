@@ -647,17 +647,32 @@ turning their monitor into a solo playback key.
 **Supervisors** come from household profiles: anyone whose profile has
 `type: owner`, plus anyone with `roles: [guardian]`. `governance.superusers` in
 the fitness config is retired and ignored; if present it logs
-`governance.config.superusers_retired` once.
+`governance.config.superusers_retired` once. If no profile resolves as a
+supervisor, `FitnessConfigProjection` logs `governance.config.no_supervisors`
+at error level (once per process): with an empty set the unattended policy is
+off.
+
+A supervisor counts as present only on their own strap (an owned or member
+device, roster `isGuest: false`). Picking a supervisor's profile in the guest
+picker needs no PIN, so a guest-assigned supervisor is a guest: it does not
+stand the policy down, and it does not stand down or reset playback budgets
+either. This closes the "child picks Mom in the guest picker" bypass.
 
 The decision tree, evaluated against the active roster:
 
-1. `unattended_policy` disabled, or a supervisor on the roster: normal policy.
-2. No eligible child (the roster holds only supervisors, guests and exempt
-   riders): normal policy. An exempt rider alone still cannot unlock governed
-   content, because the normal policy's non-exempt-contributor anchor is kept.
-   An exempt adult who should unlock content gets a profile with
-   `roles: [guardian]`.
-3. Otherwise the unattended policy applies, as follows.
+1. `unattended_policy` disabled, or a supervisor (not guest-assigned) on the
+   roster: normal policy.
+2. Guests on the roster but no eligible child (for example a guest alone, or
+   a child who handed their strap to a "guest" and left): the unattended
+   policy stays engaged with its start gate, which only an eligible child can
+   satisfy, so the governed video stays locked. This holds even after a child
+   opened the video and left. Guests never unlock governed content by
+   themselves.
+3. No eligible child and no guest (only exempt riders): normal policy. An
+   exempt rider alone still cannot unlock governed content, because the
+   normal policy's non-exempt-contributor anchor is kept. An exempt adult who
+   should unlock content gets a profile with `roles: [guardian]`.
+4. Otherwise the unattended policy applies, as follows.
 
 Each governed video starts locked until a non-guest, non-exempt child reaches
 the configured startup zone (latched for the media item). Every other eligible
@@ -665,7 +680,9 @@ child must then reach the startup zone once within 120 seconds of joining, or
 of the video opening for children already present. Inside that window nothing
 pauses. Past it, the engine adds a `__unattended_child_start` requirement
 (`rule: 'all'`) naming only the overdue children, which takes the normal
-warning, grace and lock path.
+warning, grace and lock path. The only way out is for the overdue child to
+reach the start zone: the requirement then disappears and the phase returns
+to unlocked.
 
 Start bookkeeping per media item:
 

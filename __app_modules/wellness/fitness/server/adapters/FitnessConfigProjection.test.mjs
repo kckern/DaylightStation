@@ -27,4 +27,19 @@ describe('FitnessConfigProjection supervisors', () => {
     const p = new FitnessConfigProjection({ configService: configService(null) });
     expect(p.raw()).toBeNull();
   });
+  it('logs an error once when no supervisor resolves (unattended policy would be off)', () => {
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const service = { ...configService({ governance: {} }), getAllUserProfiles: () => new Map([['child-a', { type: 'family_member' }]]) };
+    const p = new FitnessConfigProjection({ configService: service, logger });
+    expect(p.raw().governance.superusers).toEqual([]);
+    p.raw();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith('governance.config.no_supervisors', expect.objectContaining({ householdId: 'default' }));
+  });
+  it('does not log the error when a supervisor resolves', () => {
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    const p = new FitnessConfigProjection({ configService: configService({ governance: {} }), logger });
+    p.raw();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
 });

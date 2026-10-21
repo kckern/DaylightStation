@@ -2,6 +2,7 @@ import { resolveSupervisorIds } from '../../shared/supervision.mjs';
 
 export class FitnessConfigProjection {
   #warned = false;
+  #noSupervisorsLogged = false;
   constructor({ configService, logger = console }) { this.configService = configService; this.logger = logger; }
   resolveHouseholdId(hid) { return hid || this.configService.getDefaultHouseholdId(); }
   raw(hid) {
@@ -16,6 +17,12 @@ export class FitnessConfigProjection {
     const superusers = resolveSupervisorIds(
       this.configService.getAllUserProfiles?.() ?? new Map(), householdId, this.configService.getDefaultHouseholdId(),
     );
+    if (superusers.length === 0 && !this.#noSupervisorsLogged) {
+      // No owner/guardian profile resolved: the unattended policy is silently off
+      // and the budget never sees a supervisor. Loud, but once per instance.
+      this.#noSupervisorsLogged = true;
+      this.logger.error?.('governance.config.no_supervisors', { householdId });
+    }
     return { ...config, governance: { ...governance, superusers } };
   }
   publicConfig(hid) { return this.raw(hid); }

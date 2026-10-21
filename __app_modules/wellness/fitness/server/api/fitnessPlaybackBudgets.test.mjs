@@ -17,7 +17,7 @@ it('enforces 15 minutes over two episodes through the native meter, API and dura
  store:new YamlPlaybackBudgetStore({configService:{getHouseholdPath:()=>dir}}),
  policyConfig:()=>({governance:{superusers:['parent'],exemptions:['exempt-rider'],playback_budgets:[{id:'family-time',match:'governed',when:'unattended',limit_minutes:15}]},governedLabels:['ExerciseFun']}),
  contentCatalog:{getItem:async()=>({metadata:{labels:['ExerciseFun']}})},clock:{now:()=>now},
- calendar:t=>({localDate:new Date(t).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(t).toISOString().slice(0,10))+86400000}),deviceDirectory:()=>({tv:{}}),userDirectory:id=>({child:{},'exempt-rider':{}})[id]??null,logger:{info(){}} });
+ calendar:t=>({localDate:new Date(t).toISOString().slice(0,10),nextResetAt:Date.parse(new Date(t).toISOString().slice(0,10))+86400000}),deviceDirectory:()=>({tv:{}}),logger:{info(){}} });
  const app=express();app.use(express.json());app.use('/budget',createFitnessPlaybackBudgetsRouter({service:makeService(),householdId:'test'}));
  const media=new EventTarget();Object.assign(media,{paused:true,readyState:4,seeking:false});
  media.pause=()=>{if(!media.paused){media.paused=true;media.dispatchEvent(new Event('pause'));}};
@@ -42,8 +42,8 @@ it('enforces 15 minutes over two episodes through the native meter, API and dura
  expect(view.policies[0].grant.ms).toBe(5000);
  now+=86400000;expect((await reloaded.status({householdId:'test',deviceId:'tv'})).policies[0].spentMs).toBe(0);
  const before=(await reloaded.status({householdId:'test',deviceId:'tv'})).generation;
- for(const [n,ids] of [[10,['exempt-rider']],[11,['no-profile']]]) {
-  const v=await reloaded.observe({householdId:'test',deviceId:'tv',streamId:'new-browser',sequence:n,participantIds:ids,contentId:'episode-2',requestGrant:true});
+ for(const [n,ids,guestIds] of [[10,['exempt-rider'],[]],[11,['visitor'],['visitor']]]) {
+  const v=await reloaded.observe({householdId:'test',deviceId:'tv',streamId:'new-browser',sequence:n,participantIds:ids,guestIds,contentId:'episode-2',requestGrant:true});
   expect(v.policies[0].grant??null).toBeNull();expect(v.policies[0].spentMs).toBe(0);expect(v.generation).toBe(before);
  }
  await request(app).post('/budget/observe').send({deviceId:'unconfigured',streamId:'bad',sequence:1}).expect(400);

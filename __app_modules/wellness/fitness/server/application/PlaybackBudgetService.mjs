@@ -4,11 +4,10 @@ import { hasGovernedLabel } from '../../shared/governedContent.mjs';
 
 /** Durable, serialized allowance owner. The browser may spend only returned grants. */
 export class PlaybackBudgetService {
-  #store; #config; #catalog; #clock; #calendar; #devices; #users; #logger; #queues = new Map(); #content = new Map();
-  constructor({ store, policyConfig, contentCatalog, clock, calendar, deviceDirectory, userDirectory, logger }) {
-    if (typeof userDirectory !== 'function') throw new Error('PlaybackBudgetService requires userDirectory (without it no roster has a governed child and the budget never spends)');
+  #store; #config; #catalog; #clock; #calendar; #devices; #logger; #queues = new Map(); #content = new Map();
+  constructor({ store, policyConfig, contentCatalog, clock, calendar, deviceDirectory, logger }) {
     this.#store=store; this.#config=policyConfig; this.#catalog=contentCatalog;
-    this.#clock=clock; this.#calendar=calendar; this.#devices=deviceDirectory; this.#users=userDirectory; this.#logger=logger;
+    this.#clock=clock; this.#calendar=calendar; this.#devices=deviceDirectory; this.#logger=logger;
   }
   #serial(householdId, work) {
     const prior=this.#queues.get(householdId)??Promise.resolve();
@@ -67,8 +66,9 @@ export class PlaybackBudgetService {
   observe(request) {
     return this.#serial(request.householdId,async()=>{
       const setup=this.#setup(request);
-      const {streamId,sequence,previousGrantId,participantIds=[],contentId=null}=request;
-      if(typeof streamId!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(streamId)||!Number.isSafeInteger(sequence)||sequence<1||!Array.isArray(participantIds)||participantIds.length>100||participantIds.some(id=>typeof id!=='string')||contentId!==null&&(typeof contentId!=='string'||contentId.length>256)) throw new TypeError('Invalid playback budget observation');
+      const {streamId,sequence,previousGrantId,participantIds=[],guestIds=[],contentId=null}=request;
+      const idList=list=>Array.isArray(list)&&list.length<=100&&list.every(id=>typeof id==='string'&&id.length<=100);
+      if(typeof streamId!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(streamId)||!Number.isSafeInteger(sequence)||sequence<1||!Array.isArray(participantIds)||participantIds.length>100||participantIds.some(id=>typeof id!=='string')||!idList(guestIds)||contentId!==null&&(typeof contentId!=='string'||contentId.length>256)) throw new TypeError('Invalid playback budget observation');
       const key={householdId:setup.householdId,deviceId:setup.deviceId,localDate:setup.localDate};
       const value=await this.#load(key); const receiptKey=`${streamId}:${sequence}`;
       const knownStream = Object.hasOwn(value.sequences, `${streamId}:seq`);
@@ -105,10 +105,14 @@ export class PlaybackBudgetService {
       // A newly mounted browser owns future roster facts. Older streams may
       // settle existing grants, but cannot remove supervision or refill time.
       value.activeStreamId = streamId;
-      const {supervised}=classifySupervision({participantIds,supervisorIds:setup.config.governance?.superusers??[]});
+      // Same rule as the browser: guest assignments (from the kiosk roster) never
+      // supervise and are never metered; a governed child is not a supervisor,
+      // not exempt and not a guest.
+      const supervisorIds=setup.config.governance?.superusers??[];
+      const {supervised}=classifySupervision({participantIds,supervisorIds,guestIds});
       // No governed child on the roster is NOT `supervised`: supervised resets the day's budget.
-      const lists={supervisorIds:setup.config.governance?.superusers??[],exemptIds:setup.config.governance?.exemptions??[]};
-      const hasSubject=participantIds.some(id=>isGovernedChildId(id,lists)&&!!this.#users(id));
+      const lists={supervisorIds,exemptIds:setup.config.governance?.exemptions??[],guestIds};
+      const hasSubject=participantIds.some(id=>isGovernedChildId(id,lists));
       const governed=!supervised && hasSubject && request.requestGrant!==false && await this.#governed(contentId,setup); const grants={};
       for(const policy of setup.policies) {
         const prior=Object.hasOwn(value.policies,policy.id)?value.policies[policy.id]:null;

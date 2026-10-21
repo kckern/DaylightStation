@@ -192,9 +192,53 @@ describe('GovernanceEngine — no eligible child', () => {
     expect(reqs).toEqual(expect.arrayContaining([expect.objectContaining({ zone: 'active' })]));
     expect(reqs.some((r) => r.zone === 'hot')).toBe(false);
   });
-  it('a guest alone gets the normal policy', () => {
+  // Anti-cheat: guests never unlock governed content by themselves.
+  it('a guest alone keeps the unattended start gate and the video stays locked', () => {
     const h = harness();
-    h.evaluate({ visitor: 'active' }, ['visitor']);
+    h.evaluate({ visitor: 'hot' }, ['visitor']);
+    expect(h.engine.phase).toBe('pending');
+    const start = h.engine.requirementSummary.requirements.find((r) => r.type === 'unattended_startup');
+    expect(start).toMatchObject({ satisfied: false });
+  });
+  it('a child who hands their strap to a guest and leaves does not keep the video open', () => {
+    const h = harness();
+    h.evaluate({ child: 'hot' });
+    expect(h.engine.phase).toBe('unlocked');
+    h.evaluate({ visitor: 'hot' }, ['visitor']); // strap reassigned to a guest, child gone
+    expect(h.engine.phase).not.toBe('unlocked');
+    expect(['pending', 'locked']).toContain(h.engine.phase);
+    h.advance(60_000);
+    h.evaluate({ visitor: 'hot' }, ['visitor']);
+    expect(['pending', 'locked']).toContain(h.engine.phase);
+  });
+});
+
+describe('GovernanceEngine — guest-assigned supervisor', () => {
+  it('a supervisor picked as a guest does not supervise', () => {
+    const h = harness();
+    h.evaluate({ parent: 'active', child: 'active' }, ['parent']);
+    expect(h.engine.phase).toBe('pending');
+    expect(h.engine.requirementSummary.requirements.some((r) => r.type === 'unattended_startup')).toBe(true);
+  });
+  it('the same supervisor on their own strap does supervise', () => {
+    const h = harness();
+    h.evaluate({ parent: 'active', child: 'active' });
+    expect(h.engine.phase).toBe('unlocked');
+  });
+});
+
+describe('GovernanceEngine — leaving a start lock', () => {
+  it('an overdue child goes warning, then reaching hot clears the requirement and unlocks', () => {
+    const h = harness();
+    h.engine.config.grace_period_seconds = 30;
+    h.evaluate({ 'child-a': 'hot' });
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    h.advance(121_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.phase).toBe('warning');
+    h.advance(1_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'hot' });
+    expect(h.engine.requirementSummary.requirements.some((r) => r.id === '__unattended_child_start')).toBe(false);
     expect(h.engine.phase).toBe('unlocked');
   });
 });

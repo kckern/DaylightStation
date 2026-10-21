@@ -15,13 +15,16 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds
   useEffect(() => { const work = resumeTask.current; resumeTask.current = null; work?.(); }, [resumeVersion]);
   const enabled = policies != null && (!Array.isArray(policies) || policies.length > 0);
   const latest = useRef(null);
-  const participantIds = (participantRoster ?? []).filter(p => p.isActive !== false).map(p => p.id).filter(Boolean);
-  const { supervised } = classifySupervision({ participantIds, supervisorIds });
+  const active = (participantRoster ?? []).filter(p => p.isActive !== false && p.id);
+  const participantIds = active.map(p => p.id);
+  // Guest assignments are sent to the server too, so both sides apply the same
+  // rule: a guest-picked supervisor does not supervise, a guest is never metered.
+  const guestIds = active.filter(p => p.isGuest).map(p => p.id);
+  const { supervised } = classifySupervision({ participantIds, supervisorIds, guestIds });
   // No governed child (only supervisors, guests or exempt riders): nothing to meter.
-  const hasSubject = (participantRoster ?? []).some((p) => p.isActive !== false && !p.isGuest
-    && isGovernedChildId(p.id, { supervisorIds, exemptIds }));
+  const hasSubject = participantIds.some(id => isGovernedChildId(id, { supervisorIds, exemptIds, guestIds }));
   latest.current = {
-    participantIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
+    participantIds, guestIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
     matching: Boolean(currentMedia && governanceState?.isGoverned),
     canPlay: !governanceState?.videoLocked && !externalHold,
   };

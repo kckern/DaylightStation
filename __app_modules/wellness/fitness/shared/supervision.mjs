@@ -1,13 +1,23 @@
 const normalize = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
-/** A roster id that can be governed: not a supervisor, not exempt. (Guests are excluded by callers.) */
-export function isGovernedChildId(id, { supervisorIds = [], exemptIds = [] } = {}) {
+const has = (list, key) => (list ?? []).some(v => normalize(v) === key);
+/**
+ * The one governed-child rule, shared by the browser and the budget server:
+ * a roster id that is not a supervisor, not exempt, and not a guest assignment.
+ */
+export function isGovernedChildId(id, { supervisorIds = [], exemptIds = [], guestIds = [] } = {}) {
   const key = normalize(typeof id === 'number' ? String(id) : id);
   if (!key) return false;
-  return !supervisorIds.some(v => normalize(v) === key) && !exemptIds.some(v => normalize(v) === key);
+  return !has(supervisorIds, key) && !has(exemptIds, key) && !has(guestIds, key);
 }
-export function classifySupervision({ participantIds = [], supervisorIds = [] } = {}) {
+/**
+ * A supervisor counts as present only on their own (owned/member) strap —
+ * never as a guest assignment, which needs no PIN and would let a child
+ * "pick Mom" in the guest picker to stand governance down.
+ */
+export function classifySupervision({ participantIds = [], supervisorIds = [], guestIds = [] } = {}) {
   const supervisors = new Set(supervisorIds.map(normalize).filter(Boolean));
-  const present = [...new Set(participantIds.map(normalize).filter(id => supervisors.has(id)))];
+  const guests = new Set((guestIds ?? []).map(normalize).filter(Boolean));
+  const present = [...new Set(participantIds.map(normalize).filter(id => supervisors.has(id) && !guests.has(id)))];
   return { supervised: present.length > 0, supervisorIds: present };
 }
 

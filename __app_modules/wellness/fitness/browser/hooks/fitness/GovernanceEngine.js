@@ -2985,15 +2985,24 @@ export class GovernanceEngine {
     const settings = this.config?.unattended_policy || {};
     const superusers = new Set((this.config?.superusers || []).map(normalizeName));
     const enabled = settings.enabled !== false && superusers.size > 0;
-    const adminPresent = classifySupervision({ participantIds: activeParticipants, supervisorIds: [...superusers] }).supervised;
     const guestIds = new Set(this._latestInputs?.guestIds || []);
+    // A supervisor counts only on their own strap: one picked in the guest
+    // picker (no PIN) is a guest, or a child could "pick Mom" to escape.
+    const adminPresent = classifySupervision({
+      participantIds: activeParticipants, supervisorIds: [...superusers], guestIds: [...guestIds],
+    }).supervised;
     const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
     const eligibleChildren = activeParticipants.filter((id) =>
       !guestIds.has(id)
       && !superusers.has(normalizeName(id))
       && !exemptUsers.has(normalizeName(id))
     );
-    const shouldApply = enabled && !adminPresent && eligibleChildren.length > 0;
+    // Guests never unlock governed content by themselves: a guest on the roster
+    // keeps the policy engaged even with no eligible child, and the start gate
+    // (which only eligible children can satisfy) keeps the video locked. An
+    // exempt-only roster gets the normal policy.
+    const guestPresent = activeParticipants.some((id) => guestIds.has(id));
+    const shouldApply = enabled && !adminPresent && (eligibleChildren.length > 0 || guestPresent);
     const state = this._unattendedPolicyState || {
       mediaId: this.media?.id ?? null,
       active: false,
@@ -3079,7 +3088,9 @@ export class GovernanceEngine {
     }
     this._unattendedPolicyState = state;
 
-    if (!state.startupSatisfied) {
+    // No eligible child (guests only): nobody can hold the video open, even
+    // after it was opened by a child who has since left.
+    if (!state.startupSatisfied || eligibleChildren.length === 0) {
       return {
         ...policy,
         requirements: [

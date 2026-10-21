@@ -449,7 +449,6 @@ export function createFitnessApiRouter(config) {
     policyConfig: id => fitnessConfigService.getNormalizedConfig(id),
     contentCatalog: fitnessContentCatalog,
     deviceDirectory: id => configService.getHouseholdDevices(id)?.devices ?? {},
-    userDirectory: id => configService.getUserProfile(id),
     clock: { now: () => Date.now() },
     calendar: (now, id) => {
       const day = moment.tz(now, configService.getHouseholdTimezone(id));
