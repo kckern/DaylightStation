@@ -10,7 +10,7 @@ function makeLogger() {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-function makeApp({ existingState = null, setSpy }) {
+function makeApp({ existingState = null, setSpy, completionRules }) {
   const mockAdapter = {
     getStoragePath: vi.fn().mockResolvedValue('plex/14_fitness'),
     getItem: vi.fn().mockResolvedValue({ metadata: { title: 'Upper Body', duration: 678000 } })
@@ -28,6 +28,7 @@ function makeApp({ existingState = null, setSpy }) {
   const recordPlaybackProgress = new RecordPlaybackProgress({
     contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }),
     mediaProgressMemory: mockMediaProgress,
+    completionRules,
     nowTimestamp: () => '2026-08-28 12:00:00',
   });
   app.use(createPlayRouter({
@@ -57,18 +58,23 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
     expect(typeof persisted.completedAt).toBe('string');
   });
 
-  test('does not stamp completedAt past 90% when a long tail is left', async () => {
-    // 4h51m racing longplay at 94%: 17 minutes (a whole cup) still to play
+  test('library rule with a time cap: no completedAt at 94% with 17 min left', async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const ruleFor = vi.fn(() => ({ minPercent: 95, maxRemainingSec: 300, minWatchSec: null }));
+    const app = makeApp({ existingState: null, setSpy, completionRules: { ruleFor } });
+    await request(app).post('/log')
+      .send({ type: 'plex', assetId: 'plex:674290', percent: 94.1, seconds: 16429 }).expect(200);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeFalsy();
+    // the gateway hands back the adapter's getStoragePath() value as the namespace
+    expect(ruleFor).toHaveBeenCalledWith('plex/14_fitness', expect.any(Number));
+  });
+
+  test('default (movie mode): completedAt stamped at 94% of a long film', async () => {
     const setSpy = vi.fn().mockResolvedValue(undefined);
     const app = makeApp({ existingState: null, setSpy });
-
-    await request(app)
-      .post('/log')
-      .send({ type: 'plex', assetId: 'plex:674290', percent: 94.1, seconds: 16429 })
-      .expect(200);
-
-    const persisted = setSpy.mock.calls[0][0];
-    expect(persisted.completedAt).toBeFalsy();
+    await request(app).post('/log')
+      .send({ type: 'plex', assetId: 'plex:674290', percent: 94.1, seconds: 16429 }).expect(200);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeTruthy();
   });
 
   test('does not stamp completedAt when percent < 90', async () => {

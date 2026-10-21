@@ -19,13 +19,14 @@ import { RecordPlaybackProgress } from "./RecordPlaybackProgress.mjs";
 
 const NOW = 1_789_577_175_000;
 
-function build({ reportPlaybackSession } = {}) {
+function build({ reportPlaybackSession, completionRules } = {}) {
   return new RecordPlaybackProgress({
     // resolveSource returning null short-circuits the metadata branch, which
     // keeps this test about the wiring rather than about content resolution.
     contentCatalog: { resolveSource: () => null },
     mediaProgressMemory: null,
     reportPlaybackSession,
+    completionRules,
     nowTimestamp: () => '2026-09-16 12:00:00',
     nowEpoch: () => NOW,
     nowIso: () => '2026-09-16T19:00:00.000Z',
@@ -76,13 +77,21 @@ describe('RecordPlaybackProgress reports the playback session', () => {
     expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: true }));
   });
 
+  const FITNESS_RULES = { ruleFor: () => ({ minPercent: 95, maxRemainingSec: 300, minWatchSec: null, source: 'plex/14_fitness', tier: 1 }) };
+
   // 2026-10-20: FitnessPlayer closed a 4h51m racing longplay at 94% and sent
-  // status 'completed'. The scrobble marked it watched on Plex and wiped its
-  // resume point with 17 minutes, a whole cup, still unplayed.
-  it('does NOT report completion for a completed status with a long tail left', async () => {
+  // status 'completed'; the scrobble wiped its Plex resume point.
+  it('does NOT report completion when the library rule says a long tail is left', async () => {
+    const report = reporter();
+    await build({ reportPlaybackSession: report, completionRules: FITNESS_RULES })
+      .execute(progress({ status: 'completed', percent: 94, seconds: 16429 }));
+    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: false }));
+  });
+
+  it('with no rules configured, a completed claim past 90% scrobbles (movie mode)', async () => {
     const report = reporter();
     await build({ reportPlaybackSession: report }).execute(progress({ status: 'completed', percent: 94, seconds: 16429 }));
-    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: false }));
+    expect(report.execute).toHaveBeenCalledWith(expect.objectContaining({ completed: true }));
   });
 
   it('does NOT report completion for a completed status early in the item', async () => {
