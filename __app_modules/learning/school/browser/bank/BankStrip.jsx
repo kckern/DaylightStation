@@ -109,12 +109,13 @@ export function nextLabel(next) {
 }
 
 /** The chip's top line: a button into the bank door when there is one, a plain row otherwise. */
-function ChipBox({ className, onOpen, label, children }) {
+// As a button its name is the action ("Open Ay's bank"); what the chip shows
+// (the coins, or "bank is napping") is its description.
+function ChipBox({ className, onOpen, label, describedBy, children }) {
   if (!onOpen) return <div className={className}>{children}</div>;
   return (
-    <button type="button" className={className} onClick={onOpen} data-testid="bank-chip-open">
+    <button type="button" className={className} onClick={onOpen} data-testid="bank-chip-open" aria-label={label} aria-describedby={describedBy}>
       {children}
-      <span className="school-bank-strip__sr">{label}</span>
     </button>
   );
 }
@@ -266,10 +267,11 @@ export default function BankStrip({ kids = [], deviceId = null, className = '', 
                 className={`school-bank-strip__chip${onOpen ? ' school-bank-strip__chip--door' : ''}`}
                 onOpen={onOpen ? () => onOpen(kid.id) : null}
                 label={`Open ${name}'s bank`}
+                describedBy={`school-bank-chip-${kid.id}`}
               >
                 <span className="school-bank-strip__name">{name}</span>
                 {chip && (
-                  <span className="school-bank-strip__coins">
+                  <span className="school-bank-strip__coins" id={`school-bank-chip-${kid.id}`}>
                     <CoinIcon className="school-bank-strip__coin" color={silverColor} />
                     <span className="school-bank-strip__silver" aria-hidden="true">{chip.silver}</span>
                     <span className="school-bank-strip__caption" aria-hidden="true">in the bank</span>
@@ -286,7 +288,7 @@ export default function BankStrip({ kids = [], deviceId = null, className = '', 
                   </span>
                 )}
                 {bank?.status === 'unavailable' && (
-                  <span className="school-bank-strip__napping">bank is napping</span>
+                  <span className="school-bank-strip__napping" id={`school-bank-chip-${kid.id}`}>bank is napping</span>
                 )}
               </ChipBox>
               <div className="school-bank-strip__next" data-testid="bank-next">

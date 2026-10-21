@@ -40,6 +40,7 @@ const bankData = (over = {}) => ({
   pass: { 'piano.games': none },
   offers: { 'piano.games': [] },
   weekEndsAt: CLOSE,
+  weekEndsOn: '2026-10-25',
   ...over,
 });
 const ok = (data) => ({ ok: true, status: 200, data });
@@ -68,22 +69,32 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('goldCountdown', () => {
-  it('counts whole calendar days to the close, Monday 4 am being Sunday night', () => {
-    expect(goldCountdown({ weekEndsAt: CLOSE, studyDay: '2026-10-21', now: NOW })).toBe('becomes gold in 4 days');
-    expect(goldCountdown({ weekEndsAt: CLOSE, studyDay: '2026-10-24', now: new Date(2026, 9, 24, 8).getTime() })).toBe('becomes gold tomorrow night');
-    expect(goldCountdown({ weekEndsAt: CLOSE, studyDay: '2026-10-25', now: new Date(2026, 9, 25, 8).getTime() })).toBe('becomes gold tonight');
-    // 2 am Monday is still Sunday's study day.
-    expect(goldCountdown({ weekEndsAt: CLOSE, studyDay: '2026-10-25', now: new Date(2026, 9, 26, 2).getTime() })).toBe('becomes gold tonight');
+  // Only the two server dates decide the words: the panel's own clock and
+  // timezone do not enter into it (the instant only flags a passed close).
+  const say = (studyDay, weekEndsOn) => goldCountdown({ studyDay, weekEndsOn, weekEndsAt: CLOSE, now: NOW });
+  it('counts whole days between today\'s study day and the close\'s', () => {
+    expect(say('2026-10-21', '2026-10-25')).toBe('becomes gold in 4 days');
+    expect(say('2026-10-24', '2026-10-25')).toBe('becomes gold tomorrow night');
+    expect(say('2026-10-25', '2026-10-25')).toBe('becomes gold tonight');
+    expect(say('2026-10-25', '2026-11-01')).toBe('becomes gold in 7 days');
+    expect(say('2026-12-31', '2027-01-03')).toBe('becomes gold in 3 days');
   });
 
-  it('after the close, before 4 am, the next Sunday is a week away', () => {
-    const nextClose = new Date(2026, 10, 2, 4, 0).toISOString();
-    expect(goldCountdown({ weekEndsAt: nextClose, studyDay: '2026-10-25', now: new Date(2026, 9, 26, 4, 30).getTime() })).toBe('becomes gold in 7 days');
+  it('the same two dates say the same thing whatever the instant or the clock', () => {
+    const a = goldCountdown({ studyDay: '2026-10-25', weekEndsOn: '2026-10-25', weekEndsAt: '2026-10-26T11:00:00.000Z', now: Date.parse('2026-10-25T23:30:00Z') });
+    const b = goldCountdown({ studyDay: '2026-10-25', weekEndsOn: '2026-10-25', weekEndsAt: '2026-10-26T11:00:00.000Z', now: Date.parse('2026-10-26T08:00:00Z') });
+    expect(a).toBe('becomes gold tonight');
+    expect(b).toBe(a);
   });
 
-  it('says nothing without a close', () => {
-    expect(goldCountdown({ weekEndsAt: null, now: NOW })).toBeNull();
-    expect(goldCountdown({ weekEndsAt: 'soon', now: NOW })).toBeNull();
+  it('a close already past is happening now', () => {
+    expect(goldCountdown({ studyDay: '2026-10-25', weekEndsOn: '2026-10-25', weekEndsAt: '2026-10-26T11:00:00.000Z', now: Date.parse('2026-10-26T11:00:01Z') }))
+      .toBe('becoming gold now');
+  });
+
+  it('says nothing without both dates', () => {
+    expect(goldCountdown({ studyDay: '2026-10-21', weekEndsOn: null, now: NOW })).toBeNull();
+    expect(goldCountdown({ studyDay: null, weekEndsOn: '2026-10-25', now: NOW })).toBeNull();
   });
 });
 
@@ -101,6 +112,14 @@ describe('spendItems', () => {
   it('nothing on sale is empty: every price 0 quotes []', () => {
     expect(spendItems({ offers: offer([]), pass: { 'piano.games': none } }).empty).toBe(true);
     expect(spendItems({ offers: {} }).empty).toBe(true);
+  });
+
+  it('the server\'s affordable wins over a local count; the count is the fallback', () => {
+    const { items } = spendItems({
+      offers: offer([{ coin: 'silver', price: 5, affordable: false }, { coin: 'gold', price: 2 }]),
+      pass: { 'piano.games': none }, balances: { silver: 9, gold: 1 },
+    });
+    expect(items[0].prices.map((p) => p.state)).toEqual(['not enough yet', '1 more gold']);
   });
 
   it('per coin: can buy, or how many more', () => {
@@ -268,5 +287,21 @@ describe('BankScreen', () => {
     expect(idleExit).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(idleExit).toHaveBeenCalledWith('idle');
+  });
+
+  it('overlapping loads: a first read that lands last never overwrites the newer one', async () => {
+    vi.useFakeTimers();
+    const answers = [];
+    schoolApi.economyBank.mockImplementation(() => new Promise((resolve) => answers.push(resolve)));
+    await renderScreen();
+    const school = wsHandlers.filter((h) => h.topic === 'school').at(-1).cb;
+    act(() => { school({ event: 'coins-changed', learnerId: 'kid' }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(answers).toHaveLength(2);
+    await act(async () => { answers[1](ok(bankData({ balances: { silver: 9, gold: 12, gems: 1 } }))); });
+    await act(async () => { answers[0](ok(bankData({ balances: { silver: 3, gold: 12, gems: 1 } }))); });
+    const silver = screen.getByTestId('bank-balances').querySelector('.ds-stat');
+    expect(silver).toHaveTextContent('9');
+    expect(silver).not.toHaveTextContent('3');
   });
 });

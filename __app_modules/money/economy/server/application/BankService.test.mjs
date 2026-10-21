@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BankService, nextWeekClose } from './BankService.mjs';
+import { BankService, nextWeekClose, weekCloseStudyDay } from './BankService.mjs';
 
 const LA = 'America/Los_Angeles';
 const TUESDAY = Date.parse('2026-10-20T15:00:00Z'); // 08:00 PDT
@@ -25,6 +25,28 @@ describe('nextWeekClose', () => {
     const onUnreadable = vi.fn();
     expect(nextWeekClose({ nowMs: TUESDAY, studyDay: '2026-10-20', cron: 'every sunday', timezone: LA, onUnreadable })).toBe('2026-10-26T11:00:00.000Z');
     expect(onUnreadable).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe('weekCloseStudyDay', () => {
+  // The study day a close belongs to, in the household zone with its boundary,
+  // so a browser in any timezone can count days by date alone.
+  const on = (iso) => weekCloseStudyDay(iso, { timezone: LA, boundaryHour: 4 });
+  it('a Sunday 23:30 PDT close (06:30Z Monday) is Sunday\'s', () => {
+    expect(on('2026-10-26T06:30:00.000Z')).toBe('2026-10-25');
+  });
+  it('a close at Sunday midnight PDT is still Sunday\'s, not Monday\'s', () => {
+    expect(on('2026-10-26T07:00:00.000Z')).toBe('2026-10-25');
+  });
+  it('the fallback close at Monday 4 am PDT is the end of Sunday\'s study day', () => {
+    expect(on('2026-10-26T11:00:00.000Z')).toBe('2026-10-25');
+  });
+  it('a close just after 4 am Monday would be Monday\'s', () => {
+    expect(on('2026-10-26T11:00:01.000Z')).toBe('2026-10-26');
+  });
+  it('nothing readable is null', () => {
+    expect(on(null)).toBeNull();
+    expect(on('soon')).toBeNull();
   });
 });
 
@@ -59,6 +81,7 @@ describe('BankService.bank', () => {
     expect(res.history).toHaveLength(50);
     expect(res.history.slice(0, 2).map((l) => l.text)).toEqual(['+2 silver · Isaiah 50–51 passed', '+1 silver · Green day']);
     expect(res.weekEndsAt).toBe('2026-10-26T06:30:00.000Z');
+    expect(res.weekEndsOn).toBe('2026-10-25');
   });
   it('pass is keyed by privilege, with one "none" shape and whether the cap is used', async () => {
     const bank = new BankService({ economy: makeEconomy({ passesToday: async () => [pianoPass] }), config, rules, clock });

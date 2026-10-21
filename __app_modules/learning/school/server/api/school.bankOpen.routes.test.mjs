@@ -24,12 +24,12 @@ const refusing = (status, message) => ({
 
 describe('POST /bank/open', () => {
   it('hands the launch target back, uncached, from the body\'s screen and learner alone', async () => {
-    const openBankAtPanel = { open: vi.fn(async () => ({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: 'kid', bankGrant: 'g' } })) };
+    const openBankAtPanel = { open: vi.fn(async () => ({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: 'kid' } })) };
     const res = await request(app({ openBankAtPanel }))
       .post('/api/v1/school/bank/open')
       .send({ screenId: 'portal', learnerId: 'kid', extra: 'ignored' })
       .expect(200);
-    expect(res.body.launchTarget).toEqual({ kind: 'program', program: 'economy-bank', learnerId: 'kid', bankGrant: 'g' });
+    expect(res.body.launchTarget).toEqual({ kind: 'program', program: 'economy-bank', learnerId: 'kid' });
     expect(res.headers['cache-control']).toBe('no-store');
     expect(openBankAtPanel.open).toHaveBeenCalledWith({ screenId: 'portal', learnerId: 'kid' });
   });

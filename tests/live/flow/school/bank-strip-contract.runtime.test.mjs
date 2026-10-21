@@ -12,8 +12,13 @@ const OUT_DIR = path.join(process.cwd(), 'test-results/bank-strip');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const VIEWPORT = { width: 1280, height: 800 };
+// One pinned instant everything agrees with: Wednesday 2026-10-21, 10:00 in
+// the browser's zone, so today's study day, the close four days on and the
+// "Today" history line all line up.
 const STUDY_DAY = '2026-10-21';
-const GRANT = 'signed-disposable-bank-grant';
+const NOW = new Date(2026, 9, 21, 10, 0);
+const WEEK_ENDS_ON = '2026-10-25';
+const WEEK_ENDS_AT = new Date(2026, 9, 26, 4, 0).toISOString();
 const SCREEN_CONFIG = {
   screen: 'portal',
   route: '/screen/portal',
@@ -29,16 +34,18 @@ const bankFor = (learnerId) => ({
   studyDay: STUDY_DAY,
   balances: learnerId === 'learner_a' ? { silver: 7, gold: 12, gems: 1 } : { silver: 2, gold: 0, gems: 0 },
   history: [
-    { text: '+2 silver · Fractions 4-02 passed', at: new Date().toISOString(), kind: 'earn', ids: ['h1'] },
-    { text: '12 silver → 12 gold · Sunday', at: '2026-10-18T20:00:00.000Z', kind: 'convert', ids: ['h2', 'h3'] },
+    { text: '+2 silver · Fractions 4-02 passed', at: new Date(2026, 9, 21, 9, 0).toISOString(), kind: 'earn', ids: ['h1'] },
+    { text: '12 silver → 12 gold · Sunday', at: new Date(2026, 9, 18, 20, 0).toISOString(), kind: 'convert', ids: ['h2', 'h3'] },
   ],
   pass: { 'piano.games': { passId: null, state: 'none', capUsed: false } },
   offers: { 'piano.games': [{ coin: 'silver', price: 10, affordable: false }] },
-  weekEndsAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+  weekEndsAt: WEEK_ENDS_AT,
+  weekEndsOn: WEEK_ENDS_ON,
 });
 
-async function installBankWorld(page, { bankFails = false } = {}) {
+async function installBankWorld(page, { bankFails = false, openRefusal = null } = {}) {
   const opens = [];
+  await page.clock.setFixedTime(NOW);
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -52,7 +59,8 @@ async function installBankWorld(page, { bankFails = false } = {}) {
     if (pathname === '/api/v1/school/bank/open' && method === 'POST') {
       const body = request.postDataJSON();
       opens.push(body);
-      return json({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: body.learnerId, bankGrant: GRANT } });
+      if (openRefusal) return json({ error: openRefusal }, 403);
+      return json({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: body.learnerId } });
     }
     const bank = /^\/api\/v1\/economy\/users\/([^/]+)\/bank$/.exec(pathname);
     if (bank) return bankFails ? json({ error: 'down' }, 503) : json(bankFor(decodeURIComponent(bank[1])));
@@ -107,7 +115,7 @@ test('strip → chip → bank screen → back, with no buy button and no path of
   await expect(bank.getByRole('heading', { name: 'Bank' })).toBeVisible();
   await expect(bank).toContainText('Learner A');
   const balances = bank.getByTestId('bank-balances');
-  await expect(balances).toContainText('becomes gold in');
+  await expect(balances).toContainText('becomes gold in 4 days');
   await expect(balances).toContainText('yours for good');
   await expect(bank.getByTestId('bank-history')).toContainText('Today');
   await expect(bank.getByTestId('bank-history')).toContainText('+2 silver · Fractions 4-02 passed');
@@ -151,4 +159,25 @@ test('a bank that cannot be read naps, with no numbers', async ({ page }) => {
   await expect(bank.getByTestId('bank-balances')).toHaveCount(0);
   await expect(bank.getByTestId('bank-history')).toHaveCount(0);
   await screenshot(page, '04-napping');
+});
+
+test('narrow panel: a refused chip shows the refusal on the panel, not in the hidden board', async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 900 });
+  await installBankWorld(page, { openRefusal: 'Choose a current School learner.' });
+  await page.goto('/school');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+
+  // Below 820 px the board pane (and the header's coin button) is hidden; the
+  // strip rides in the keypad column.
+  await expect(page.getByTestId('bank-door')).toBeHidden();
+  await page.getByRole('button', { name: "Open Learner A's bank" }).click();
+  const who = page.getByRole('dialog', { name: 'Whose bank' });
+  await expect(who).toBeVisible();
+  await expect(who.getByRole('alert')).toHaveText('Choose a current School learner.');
+  await expect(page.getByTestId('bank-screen')).toHaveCount(0);
+  await screenshot(page, '05-narrow-refusal');
+
+  await who.getByTestId('screen-header-back').click();
+  await expect(who).toHaveCount(0);
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
 });

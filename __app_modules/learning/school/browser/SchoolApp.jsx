@@ -265,7 +265,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [reelLaunch, setReelLaunch] = useState(null);
   const [cubeLaunch, setCubeLaunch] = useState(null);
   const [bookLaunch, setBookLaunch] = useState(null);
-  // The coin bank screen (economy slice 1, C3): `{ learnerId, bankGrant }`
+  // The coin bank screen (economy slice 1, C3): `{ learnerId }`
   // from the panel's bank door. Memory only: no path names it, so a reload
   // or a back button never reopens a kid's bank.
   const [bankLaunch, setBankLaunch] = useState(null);
@@ -530,16 +530,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       return true;
     }
     // The coin bank screen. NOT `kind: 'bank'`, which is a question bank (the
-    // quiz branch below). The grant is what the screen mounts on; no grant,
-    // no screen. `openSection('bank')` pushes no path (`sectionPathFor` has
-    // no entry for it), so the bank stays memory-only.
+    // quiz branch below). No grant: the door is the roster check plus the face
+    // tap, and the bank read is unauthenticated in slice 1. What this checks is
+    // that the target names one learner, the same one that was launched for;
+    // the render below shows it only while that learner is the current one.
+    // `openSection('bank')` pushes no path (`sectionPathFor` has no entry for
+    // it), so the bank stays memory-only.
     if (target?.kind === 'program' && target.program === 'economy-bank') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
-      if (!target.bankGrant || !learnerId) {
-        schoolLog.bank('economy-bank-refused', { reason: !target.bankGrant ? 'no-grant' : 'no-learner' });
+      const mismatch = Boolean(launchedLearnerId && target.learnerId && launchedLearnerId !== target.learnerId);
+      if (!learnerId || mismatch) {
+        schoolLog.bank('economy-bank-refused', { reason: mismatch ? 'learner-mismatch' : 'no-learner' });
         return false;
       }
-      setBankLaunch({ learnerId, bankGrant: target.bankGrant });
+      setBankLaunch({ learnerId });
       openSection('bank');
       return true;
     }
@@ -688,12 +692,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // bank; a tap on a strip chip opens that kid's straight through the same
   // request. Like the shelf door, it claims the kid and lands in
   // `onPortalLaunch`.
-  const bankDoor = useBankDoor({
-    screenId,
-    onLaunch: (target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); },
-  });
-  const chooseBank = bankDoor.choose;
+  const launchFromBankDoor = useCallback((target, learnerId) => {
+    claim(learnerId);
+    return onPortalLaunch(target, learnerId);
+  }, [claim, onPortalLaunch]);
+  const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
+  const { choose: chooseBank, close: closeBankDoor } = bankDoor;
   const openBankFromChip = useCallback((learnerId) => chooseBank(learnerId, 'chip'), [chooseBank]);
+  // The door belongs to the locked panel's resting view (keypad + board).
+  // Anything that leaves it (a code's card, a runner, a section) closes it.
+  const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
+  useEffect(() => { if (!bankDoorView) closeBankDoor(); }, [bankDoorView, closeBankDoor]);
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:
@@ -795,13 +804,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     setSection(null);
     setStudyLaunch(null);
     setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
-    setBankLaunch(null); // and the bank's with the bank
+    setBankLaunch(null);
+    closeBankDoor(); // a "Whose bank?" sheet (or its refusal) never waits for the next child
     setActive(null);
     setNotice(null);
     setMaterialPath([]);
     syncUrl(null, []);
     schoolLog.nav('home', {});
-  }, [syncUrl]);
+  }, [syncUrl, closeBankDoor]);
 
   // MaterialsSection reports its live nav chain (collection → work → track ids)
   // here so the URL tracks the breadcrumb all the way down to a playing track.
@@ -1129,7 +1139,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               {/* "Whose bank?" is drawn by the panel, not inside the board
                   header: below 820px the board pane is hidden, and a chip in
                   the keypad column can still need it for a refusal. */}
-              <BankDoorSheet door={bankDoor} roster={roster} />
+              <BankDoorSheet door={bankDoor} roster={roster} idleTimeoutSeconds={lock.idleTimeoutSeconds} />
             </div>
           ) : (
             <LaunchCard

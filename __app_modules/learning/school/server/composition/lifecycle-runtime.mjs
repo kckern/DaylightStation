@@ -165,21 +165,17 @@ try {
   }
 
   // The coin bank's door on the same panel (economy slice 1, C3): the shelf
-  // door's two checks (roster, a configured panel) and its own short grant.
-  // It needs no lifecycle launcher: the bank is a screen, not a program run.
-  const openBankAtPanel = dependencies.schoolBankPanelGrants && bookScanTarget
+  // door's two checks (roster, a configured panel) and nothing minted. The
+  // bank is a screen, not a program run, so it needs no lifecycle launcher.
+  const openBankAtPanel = bookScanTarget
     ? new OpenBankAtPanel({
       roster: () => schoolLearnerDirectory.listLearners(),
-      grants: dependencies.schoolBankPanelGrants,
       target: bookScanTarget,
       logger: schoolLifecycleLogger,
     })
     : null;
   if (!openBankAtPanel) {
-    schoolLifecycleLogger.warn('school.bank.panel-door-unavailable', {
-      grants: Boolean(dependencies.schoolBankPanelGrants),
-      target: Boolean(bookScanTarget),
-    });
+    schoolLifecycleLogger.warn('school.bank.panel-door-unavailable', { target: false });
   }
 
   if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.realtime && dependencies.schoolLifecycle.getLearnerDayCompletion) {

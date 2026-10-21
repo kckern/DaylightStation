@@ -5,8 +5,6 @@
 import { subjectLabel } from "../home/subjects.js";
 import { labelize } from "../teacher/labelize.js";
 
-/** The study day turns at 4 am (economy.md, "Study day"); a close at Monday 4 am is Sunday night's. */
-export const BOUNDARY_HOURS = 4;
 const DAY_MS = 86_400_000;
 const COINS = ['silver', 'gold'];
 
@@ -16,32 +14,31 @@ export const PRIVILEGE_LABELS = Object.freeze({
 });
 
 const pad = (n) => String(n).padStart(2, '0');
-/** The browser's local calendar date (the panel runs in the household's zone). */
+/** The browser's local calendar date. Used only to group history lines. */
 export const localDay = (ms) => {
   const d = new Date(ms);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-const dayNumber = (day) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / DAY_MS;
 const isDay = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+/** Days since the epoch for a `YYYY-MM-DD`, by pure date arithmetic (no timezone). */
+const dayNumber = (day) => Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / DAY_MS;
 
 /**
- * "becomes gold tonight" / "tomorrow night" / "in N days", from the bank's
- * `weekEndsAt` (the next Sunday close) and its `studyDay` (today).
+ * "becomes gold tonight" / "tomorrow night" / "in N days".
  *
- * WHOLE CALENDAR DAYS, not 24-hour blocks. A close at Monday 4 am belongs to
- * Sunday's study day, so the close's day is read four hours earlier; on that
- * day it is "tonight". Counting 24-hour blocks would tell a kid on Saturday
- * morning "in 2 days" for something that happens tomorrow night. After the
- * close but before 4 am, `weekEndsAt` is already next Sunday, so this reads
- * "in 7 days". Null when either input is missing: no countdown beats a wrong one.
+ * BOTH DATES COME FROM THE SERVER: `studyDay` is today's study day and
+ * `weekEndsOn` the study day the close belongs to, each in the household's
+ * timezone with its 4 am boundary (`BankService.weekCloseStudyDay`). The count
+ * is their difference in whole days, so a panel whose own clock is in another
+ * zone says the same thing. `weekEndsAt` (the instant) is read only to notice
+ * a close that has already passed: "becoming gold now". Null when either date
+ * is missing: no countdown beats a wrong one.
  */
-export function goldCountdown({ weekEndsAt, studyDay = null, now = Date.now() } = {}) {
+export function goldCountdown({ weekEndsOn = null, studyDay = null, weekEndsAt = null, now = Date.now() } = {}) {
   const end = Date.parse(weekEndsAt ?? '');
-  if (!Number.isFinite(end)) return null;
-  if (end <= now) return 'becomes gold tonight';
-  const today = isDay(studyDay) ? studyDay : localDay(now - BOUNDARY_HOURS * 3_600_000);
-  const closeDay = localDay(end - BOUNDARY_HOURS * 3_600_000 - 1);
-  const days = dayNumber(closeDay) - dayNumber(today);
+  if (Number.isFinite(end) && end <= now) return 'becoming gold now';
+  if (!isDay(weekEndsOn) || !isDay(studyDay)) return null;
+  const days = dayNumber(weekEndsOn) - dayNumber(studyDay);
   if (days <= 0) return 'becomes gold tonight';
   if (days === 1) return 'becomes gold tomorrow night';
   return `becomes gold in ${days} days`;
@@ -51,13 +48,16 @@ const DAY_HEADING = { weekday: 'long', month: 'short', day: 'numeric' };
 
 /**
  * The history lines (newest first, as the bank sends them) grouped by the
- * local day they happened on, each group headed "Today", "Yesterday" or the
+ * browser's local calendar day, split at LOCAL MIDNIGHT (not the 4 am study
+ * boundary: "Today" here means the calendar day on the panel's clock), each group headed "Today", "Yesterday" or the
  * weekday and date. A line with no readable time goes in an "Earlier" group
  * at the end rather than being dropped.
  */
 export function historyByDay(history = [], now = Date.now()) {
   const today = localDay(now);
-  const yesterday = localDay(now - DAY_MS);
+  // Calendar arithmetic, not `now - 24h`: a DST night is 23 or 25 hours long.
+  const d = new Date(now);
+  const yesterday = localDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, 12).getTime());
   const groups = [];
   const byKey = new Map();
   for (const line of Array.isArray(history) ? history : []) {
@@ -95,7 +95,6 @@ export function schoolDoneFrom(agenda) {
   return !live.some((s) => s.obligation.state === 'obligated');
 }
 
-const coinWord = (coin) => coin;
 const privilegeLabel = (privilege) => PRIVILEGE_LABELS[privilege] ?? labelize(String(privilege).replace(/[._]/g, '-'));
 
 /**
@@ -131,10 +130,14 @@ export function spendItems({ offers = {}, pass = {}, balances = {}, schoolDone =
       note,
       prices: sold.map(({ coin, price, affordable }) => {
         const have = Number.isFinite(balances?.[coin]) ? balances[coin] : 0;
-        const canBuy = affordable === true || have >= price;
+        // The server's verdict wins (it folds the same ledger `buyPass` will);
+        // the local count is only the fallback for a row without one.
+        const canBuy = typeof affordable === 'boolean' ? affordable : have >= price;
         return {
           coin, price,
-          state: note ? null : (canBuy ? 'can buy at the piano' : `${price - have} more ${coinWord(coin)}`),
+          // A server "no" over a local count that looks enough (a read in
+          // between) has no honest number to give.
+          state: note ? null : (canBuy ? 'can buy at the piano' : (price - have > 0 ? `${price - have} more ${coin}` : 'not enough yet')),
         };
       }),
     });
@@ -167,11 +170,10 @@ export function earnItems({ agenda = null, next = null } = {}) {
   const seen = new Set();
   const nextUnit = next?.unit ?? null;
   if (nextUnit && (nextUnit.title || nextUnit.unitId)) {
-    seen.add(nextUnit.unitId);
+    if (nextUnit.unitId) seen.add(nextUnit.unitId);
     items.push({
       key: `next:${nextUnit.unitId ?? nextUnit.title}`,
       title: nextUnit.title || nextUnit.unitId,
-      subject: nameFor(next.subject ?? nextUnit.subject ?? null),
       reward: rewardText(next.reward),
       next: true,
     });
@@ -185,7 +187,6 @@ export function earnItems({ agenda = null, next = null } = {}) {
     items.push({
       key: `agenda:${unitId ?? section.subject}`,
       title: section.next?.title || nameFor(section.subject),
-      subject: nameFor(section.subject),
       reward: null,
       next: false,
     });

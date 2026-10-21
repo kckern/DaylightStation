@@ -1,7 +1,8 @@
 /**
  * BankScreen — one kid's coin bank on the Portal (school economy slice 1, C3).
  * Opened through `BankDoor` (a face tap, or a tap on the kid's chip on the
- * bank strip), which is what puts a bank grant and an identity on the panel.
+ * bank strip), which checks the roster and puts an identity on the panel. The
+ * bank read itself is unauthenticated in slice 1.
  *
  * FOUR SECTIONS, in the order a kid asks them:
  *
@@ -51,15 +52,16 @@ function Identity({ learner }) {
   );
 }
 
-const coinLabel = (Icon, color, text) => (
-  <span className="school-bank-screen__stat-label"><Icon className="school-bank-screen__stat-icon" color={color} />{text}</span>
+// `ref` reads a coin token off the label itself (`useCoinColor`).
+const coinLabel = (Icon, color, text, ref = undefined) => (
+  <span className="school-bank-screen__stat-label" ref={ref}><Icon className="school-bank-screen__stat-icon" color={color} />{text}</span>
 );
 
 export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, now = null }) {
   const learnerId = learner?.id ?? null;
   const log = useMemo(() => getLogger().child({ component: 'school-bank-screen' }), []);
   const [silverColor, silverRef] = useCoinColor('silver');
-  const [goldColor] = useCoinColor('gold');
+  const [goldColor, goldRef] = useCoinColor('gold');
   // { status: 'loading'|'ok'|'unavailable', data }
   const [bank, setBank] = useState({ status: 'loading', data: null });
   const [agenda, setAgenda] = useState(null);
@@ -159,10 +161,10 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
                 emphasis
                 label={coinLabel(CoinIcon, silverColor, 'Silver')}
                 value={data.balances.silver}
-                trend={goldCountdown({ weekEndsAt: data.weekEndsAt, studyDay: data.studyDay, now: at })}
+                trend={goldCountdown({ weekEndsOn: data.weekEndsOn, studyDay: data.studyDay, weekEndsAt: data.weekEndsAt, now: at })}
               />
               <StatCard
-                label={coinLabel(CoinIcon, goldColor, 'Gold')}
+                label={coinLabel(CoinIcon, goldColor, 'Gold', goldRef)}
                 value={Number.isFinite(data.balances.gold) ? data.balances.gold : 0}
                 trend="yours for good"
               />

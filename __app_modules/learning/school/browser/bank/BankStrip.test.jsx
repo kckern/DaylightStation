@@ -266,7 +266,9 @@ describe('BankStrip: the chip is a door into the kid\'s bank', () => {
     render(<BankStrip kids={KIDS} onOpen={onOpen} />);
     await waitFor(() => expect(screen.getAllByText('Math 4-02')).toHaveLength(3));
     const ay = chips()[1];
-    fireEvent.click(within(ay).getByTestId('bank-chip-open'));
+    const open = within(ay).getByRole('button', { name: "Open Ay's bank" });
+    expect(open).toHaveAccessibleDescription(/4 silver in the bank/);
+    fireEvent.click(open);
     expect(onOpen).toHaveBeenCalledWith('kid-a');
     schoolApi.printNext.mockResolvedValue({ ok: true, status: 200, data: { sentence: 'Printing.' } });
     fireEvent.click(within(ay).getByRole('button', { name: /^Print / }));

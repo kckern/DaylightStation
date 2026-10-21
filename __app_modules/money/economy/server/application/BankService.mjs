@@ -13,7 +13,7 @@
 import { CronExpressionParser } from 'cron-parser';
 import { historyLines, quote, foldBalances, findPass, capUsed, nonePass } from "../domain/index.mjs";
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
-import { studyDayWindowForDate } from "../../../../learning/school/server/domain-study-day.mjs";
+import { studyDayWindowForDate, studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
 
 export const HISTORY_LIMIT = 50;
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -40,6 +40,19 @@ export function nextWeekClose({ nowMs, studyDay, cron = null, timezone = null, b
   }
   const sunday = addDays(weekWindowFor(studyDay).from, 6);
   return new Date(studyDayWindowForDate(sunday, { timezone, boundaryHour }).endAtMs).toISOString();
+}
+
+/**
+ * The study day a close belongs to (`YYYY-MM-DD`), in the household timezone
+ * with its boundary hour. A close is the END of its day, so the instant itself
+ * is read a millisecond early: Monday 4 am closes Sunday. The bank sends this
+ * as `weekEndsOn` so a client counts days by date arithmetic alone, with no
+ * timezone of its own. Null for anything unreadable.
+ */
+export function weekCloseStudyDay(weekEndsAt, { timezone = null, boundaryHour = 4 } = {}) {
+  const ms = Date.parse(weekEndsAt ?? '');
+  if (!Number.isFinite(ms)) return null;
+  return studyDayForInstant(ms - 1, { timezone, boundaryHour });
 }
 
 export class BankService {
@@ -111,6 +124,10 @@ export class BankService {
       const found = findPass(catalog, privilege);
       return { ...(mine.length ? mine[mine.length - 1] : none), capUsed: found ? capUsed(today, found) : null };
     };
+    const weekEndsAt = nextWeekClose({
+      nowMs: this.#clock().getTime(), studyDay, cron: catalog.week_close?.cron ?? null, timezone, boundaryHour,
+      onUnreadable: (err) => this.#logger.warn?.('economy.bank.cron-unreadable', { cron: catalog.week_close?.cron, error: err?.message ?? String(err) }),
+    });
     return {
       userId,
       studyDay,
@@ -118,10 +135,8 @@ export class BankService {
       history,
       pass: Object.fromEntries(privileges.map((privilege) => [privilege, passFor(privilege)])),
       offers: Object.fromEntries(privileges.map((privilege) => [privilege, quote(catalog, { privilege, balances })])),
-      weekEndsAt: nextWeekClose({
-        nowMs: this.#clock().getTime(), studyDay, cron: catalog.week_close?.cron ?? null, timezone, boundaryHour,
-        onUnreadable: (err) => this.#logger.warn?.('economy.bank.cron-unreadable', { cron: catalog.week_close?.cron, error: err?.message ?? String(err) }),
-      }),
+      weekEndsAt,
+      weekEndsOn: weekCloseStudyDay(weekEndsAt, { timezone, boundaryHour: boundaryHour ?? 4 }),
     };
   }
 }

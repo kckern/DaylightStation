@@ -170,7 +170,7 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 
 | Method / Path | Body | Returns |
 |---|---|---|
-| GET `/users/:userId/bank` | — | `{ userId, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt }` |
+| GET `/users/:userId/bank` | — | `{ userId, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt, weekEndsOn }` |
 | POST `/users/:userId/passes` | `{ privilege, coin }` | `{ userId, pass, balances }` |
 | POST `/users/:userId/passes/:passId/consume` | `{ playedMs? }` | `{ userId, pass, duplicate }` |
 | POST `/users/:userId/passes/:passId/refund` | `{ playedMs, reason? }` | `{ userId, pass, refunded, duplicate, balances }` |
@@ -209,7 +209,11 @@ read active again.
 by cron-parser (the scheduler's parser), so any cron the scheduler accepts
 works. No cron, or one that does not parse (logged
 `economy.bank.cron-unreadable`), gives the end of the week's Sunday study day
-(Monday at 4 am). Two caveats:
+(Monday at 4 am). `weekEndsOn` is the study day that close belongs to
+(`weekCloseStudyDay`: the instant read a millisecond early, in the household
+timezone with its boundary hour, so a Monday 4 am close is Sunday's). A client
+counts days to the close as `weekEndsOn − studyDay`, by date alone, with no
+timezone of its own. Two caveats:
 
 - The scheduler (`AgentAssignmentScheduler.registerTask`) parses the cron with
   no timezone, so the job fires in the **process** TZ. In the container that is

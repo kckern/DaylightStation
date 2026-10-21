@@ -9,20 +9,16 @@ export const BANK_PROGRAM = 'economy-bank';
  * strip), taps their face, and sees their own bank: balances, history, ways
  * to spend and ways to earn.
  *
- * THE SAME TRADE AS THE SHELF'S PANEL DOOR (`OpenBookShelfAtPanel`). A face
- * tap proves only that someone at the household's panel chose that face, so
- * the grant is minted short (`PANEL_BANK_GRANT_TTL_MS` in `app.mjs`) and
- * carries one learner.
+ * THE DOOR IS THE ROSTER CHECK PLUS THE FACE TAP, AND NOTHING ELSE. It mints
+ * no grant. The bank data is read from `GET /api/v1/economy/users/:id/bank`,
+ * which is unauthenticated in slice 1 (decided): anyone at the panel could
+ * read any kid's bank, and a grant here would only imply a protection that
+ * does not exist. What the door does is make the ordinary path a kid opening
+ * their OWN bank, by tapping their own face.
  *
- * WHAT THE GRANT DOES AND DOES NOT GUARD. It is what SchoolApp mounts the bank
- * screen on: no grant, no screen. The bank DATA is read from
- * `GET /api/v1/economy/users/:id/bank`, which takes no grant today; this door
- * is the identity step that makes a kid open their OWN bank, not a lock on the
- * economy's read. A route that later wants to verify it has the issuer.
+ * TWO CHECKS, the shelf door's two (`OpenBookShelfAtPanel`):
  *
- * TWO CHECKS, the shelf door's two:
- *
- * 1. The learner is on the CURRENT roster, so a stale id cannot mint anything.
+ * 1. The learner is on the CURRENT roster, so a stale id opens nothing.
  * 2. A School panel is configured (`resolveBookScanTarget`). Which screen the
  *    client names is not checked: it names its own screen, so that check was
  *    theatre on the shelf and was dropped there.
@@ -31,15 +27,14 @@ export const BANK_PROGRAM = 'economy-bank';
  */
 export class OpenBankAtPanel {
   #deps;
-  constructor({ roster, grants, target, logger = {} }) {
+  constructor({ roster, target, logger = {} }) {
     if (typeof roster !== 'function') throw new TypeError('OpenBankAtPanel requires a roster reader');
-    if (typeof grants?.issue !== 'function') throw new TypeError('OpenBankAtPanel requires a bank grant issuer');
-    this.#deps = { roster, grants, target, logger };
+    this.#deps = { roster, target, logger };
   }
 
   /**
    * @param {{screenId?: string, learnerId?: string}} request
-   * @returns {Promise<{launchTarget: {kind: 'program', program: string, learnerId: string, bankGrant: string}}>}
+   * @returns {Promise<{launchTarget: {kind: 'program', program: string, learnerId: string}}>}
    */
   async open({ screenId, learnerId } = {}) {
     if (typeof learnerId !== 'string' || !learnerId) refuse(400, 'Choose whose bank to open.');
@@ -50,14 +45,8 @@ export class OpenBankAtPanel {
       refuse(403, 'Choose a current School learner.');
     }
 
-    const launchTarget = {
-      kind: 'program',
-      program: BANK_PROGRAM,
-      learnerId,
-      bankGrant: this.#deps.grants.issue({ learnerId }),
-    };
     this.#deps.logger.info?.('school.bank.panel-opened', { screenId: screenId ?? null, learnerId });
-    return { launchTarget };
+    return { launchTarget: { kind: 'program', program: BANK_PROGRAM, learnerId } };
   }
 }
 
