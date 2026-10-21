@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileExists, readBinary, writeBinaryAtomic } from '#system/utils/FileIO.mjs';
 
+const LEARNER_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const EXT_BY_TYPE = [[/ogg/, 'ogg'], [/mp4|m4a/, 'm4a']];
 const MIME_BY_EXT = { webm: 'audio/webm', ogg: 'audio/ogg', m4a: 'audio/mp4' };
 
@@ -11,6 +12,7 @@ export class FilesystemDebriefAudio {
 
   /** @returns {Promise<string>} ref `<learnerId>/<file>` */
   async save({ learnerId, studyDay, buffer, mimeType }) {
+    if (!LEARNER_RE.test(String(learnerId))) throw new Error('invalid learnerId');
     const ext = (EXT_BY_TYPE.find(([re]) => re.test(mimeType ?? '')) ?? [null, 'webm'])[1];
     const name = `${studyDay}-${this.#clock()}.${ext}`;
     writeBinaryAtomic(path.join(this.#root, learnerId, name), buffer); // creates the directory
@@ -19,6 +21,7 @@ export class FilesystemDebriefAudio {
 
   /** @returns {{buffer: Buffer, mimeType: string}|null} */
   read(learnerId, file) {
+    if (!LEARNER_RE.test(String(learnerId))) return null;
     const full = path.join(this.#root, learnerId, file);
     if (!fileExists(full)) return null;
     return { buffer: readBinary(full), mimeType: MIME_BY_EXT[path.extname(file).slice(1)] ?? 'application/octet-stream' };

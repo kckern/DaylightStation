@@ -7,7 +7,7 @@
 import { PROMPTS, deriveDebriefState } from "../../domain/schoolDebrief.mjs";
 
 const MIN_TAKE_BYTES = 1000;
-class DebriefError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
+class DebriefError extends Error { constructor(message, status = 400) { super(message); this.name = 'DebriefError'; this.status = status; } }
 
 export class SchoolDebriefService {
   #debriefs; #launcher; #questioner; #judge; #transcribe; #saveAudio; #config; #clock; #logger;

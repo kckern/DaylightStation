@@ -900,7 +900,7 @@ try {
       debriefs: dependencies.schoolLifecycle.debriefStore,
       launcher: debriefLauncher,
       questioner: new DebriefQuestioner({ aiGateway: debriefAi, model: debriefConfig.questioner.model, timeoutMs: debriefConfig.questioner.timeoutMs, logger: debriefLogger }),
-      judge: new DebriefAnswerJudge({ aiGateway: debriefAi, decisionGateway: dependencies.decisionGateway ?? null, model: debriefConfig.judge.model, timeoutMs: debriefConfig.judge.timeoutMs, logger: debriefLogger }),
+      judge: new DebriefAnswerJudge({ aiGateway: debriefAi, decisionGateway: dependencies.scopedGateway?.(dependencies.decisionGateway, { app: 'school', feature: 'debrief' }) ?? null, model: debriefConfig.judge.model, timeoutMs: debriefConfig.judge.timeoutMs, logger: debriefLogger }),
       transcribe: debriefAi?.transcribe ? (buffer, opts) => debriefAi.transcribe(buffer, opts) : null,
       saveAudio: (args) => debriefAudio.save(args), // served by GET /debrief/teacher/:learnerId/audio/:file
       config: debriefConfig, logger: debriefLogger,

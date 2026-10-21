@@ -65,4 +65,22 @@ describe('school debrief router', () => {
     expect((await request(a).get('/debrief/teacher/test-learner/audio/..%2Fx.webm')).status).toBe(404);
     expect(read).toHaveBeenCalledTimes(1);
   });
+  it('refuses a bad grant before parsing a huge body (403, not 413)', async () => {
+    const { a } = app();
+    const r = await request(a).post('/debrief/test-learner/day/2026-10-21/take').set('X-School-Debrief-Grant', 'bad').set('Content-Type', 'audio/webm').send(Buffer.alloc(20 * 1024 * 1024));
+    expect(r.status).toBe(403);
+  });
+  it('answers malformed JSON with a JSON 400, and an oversize take with a JSON 413', async () => {
+    const { a } = app();
+    const bad = await request(a).post('/debrief/test-learner/day/2026-10-21/entry').set('X-School-Debrief-Grant', 'good').set('Content-Type', 'application/json').send('{nope');
+    expect(bad.status).toBe(400); expect(bad.headers['content-type']).toMatch(/json/); expect(bad.body.error).toBeTruthy();
+    const big = await request(a).post('/debrief/test-learner/day/2026-10-21/take').set('X-School-Debrief-Grant', 'good').set('Content-Type', 'audio/webm').send(Buffer.alloc(11 * 1024 * 1024));
+    expect(big.status).toBe(413); expect(big.body.error).toMatch(/too large/);
+  });
+  it('does not surface upstream AI errors (429) verbatim', async () => {
+    const { a, service } = app();
+    service.complete = vi.fn(async () => { throw Object.assign(new Error('openai rate limit sk-secret'), { status: 429 }); });
+    const r = await request(a).post('/debrief/test-learner/day/2026-10-21/complete').set('X-School-Debrief-Grant', 'good');
+    expect(r.status).toBe(500); expect(JSON.stringify(r.body)).not.toMatch(/openai|secret/);
+  });
 });
