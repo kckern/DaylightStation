@@ -92,6 +92,7 @@ describe('EconomyService', () => {
     const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
     expect(res.earned).toBe(0);
     expect(res.skipped).toBe(true);
+    expect(res.reason).toBe('no-catalog');
     expect(res.balance).toBe(0);
   });
   // The catalog file ships `earn: {}` (prices live in earn-rules.yml now), and

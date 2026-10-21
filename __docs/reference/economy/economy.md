@@ -123,9 +123,11 @@ spend: {}
   `rules_source: earn-rules`, `week_close: { cron: null, convert: [] }`,
   `passes: {}`, `digest: { cron: null, zero_days_alert: null }`. A section of the
   wrong type reads as its default. A `mode` other than `off`, `dry-run` or `live`
-  reads as `off` and logs `economy.catalog.unknown-mode`; a typo never pays out.
+  reads as `off` and logs `economy.catalog.unknown-mode` (once per distinct bad
+  value); a typo never pays out. A bare `mode:` (null) counts as unknown; only a
+  missing key is quietly `off`.
 
-**Modes.** `off`: payouts do nothing. `dry-run`: payouts log
+**Modes** (read by PayoutService, B3; not built yet). `off`: payouts do nothing. `dry-run`: payouts log
 `economy.payout.would-mint` and change no balance. `live`: payouts write the ledger.
 
 **Legacy `earn`/`spend` maps.** Every earnable/spendable is a keyed entry with
@@ -135,12 +137,16 @@ parent rules; `users:` holds per-kid overrides (most-specific-wins). Key fields:
 - spend: `cost` + `per` (→ drain rate), `self_serve`, `auth`, `blackout` (local-time windows)
 
 `earn` skips (returns `skipped: true`, no ledger entry) when there is no `earn`
-map, and when the map is empty (`reason: 'not-priced'`), so the always-on piano
-lesson hook stays quiet. An unknown action in a non-empty map is a
+map (`reason: 'no-catalog'`) and when the map is empty (`reason: 'not-priced'`),
+so the always-on piano lesson hook stays quiet. An unknown action in a non-empty map is a
 `ValidationError`.
 
 Both reads go through `getHouseholdAppConfig`, so `dscli system reload
---allow-write` (or `--app economy`) picks up an edit without a restart.
+--allow-write` (or `--app economy`) picks up an edit to `mode`, `passes` and the
+`earn`/`spend` maps without a restart. Cron schedules (`week_close.cron`,
+`digest.cron`) are registered at startup and need a restart. To stop payouts, set
+`mode: off`; do not delete the file, because a reload keeps the old snapshot when
+the file is missing.
 
 Card Game's daily-research award uses this configurable catalog entry:
 
@@ -154,7 +160,8 @@ earn:
 
 The Gaming service calls it once when a non-guest user's daily research first becomes
 complete. Its `daily:{local-date}` reference makes retries idempotent; a missing economy
-catalog leaves the campaign reward visible but skips the wallet mutation.
+catalog leaves the campaign reward visible but skips the wallet mutation. The shipped
+catalog (`earn: {}`) does not price it, so the call returns `reason: 'not-priced'`.
 
 ## API (`/api/v1/economy`)
 

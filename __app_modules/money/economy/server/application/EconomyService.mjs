@@ -153,7 +153,7 @@ export class EconomyService {
     // economy with an unknown action still throws below.
     if (!config?.earn) {
       const wallet = this.#snapshot(userId);
-      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, txnId: null, balance: wallet.balance };
+      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, reason: 'no-catalog', txnId: null, balance: wallet.balance };
     }
     // The catalog ships `earn: {}` (prices moved to earn-rules.yml), and `{}`
     // is truthy: an empty map prices nothing, so it skips the same way.

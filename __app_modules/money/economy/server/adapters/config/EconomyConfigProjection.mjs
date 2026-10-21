@@ -12,6 +12,8 @@ const MODES = new Set(['off', 'dry-run', 'live']);
 const isMap = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
 export class EconomyConfigProjection {
+  #lastWarnedMode;
+
   constructor({ configService, logger = console }) {
     this.configService = configService;
     this.logger = logger;
@@ -22,10 +24,17 @@ export class EconomyConfigProjection {
   catalog() {
     const doc = this.policy();
     // Never guess a payout mode: anything unrecognised is off, and says so.
-    let mode = doc.mode ?? 'off';
+    // Only an absent key is quietly off; a bare `mode:` (null) warns. Payouts
+    // read this on every outcome, so a bad value warns once until it changes.
+    let mode = doc.mode === undefined ? 'off' : doc.mode;
     if (!MODES.has(mode)) {
-      this.logger.warn?.('economy.catalog.unknown-mode', { mode, fallback: 'off' });
+      if (this.#lastWarnedMode !== mode) {
+        this.logger.warn?.('economy.catalog.unknown-mode', { mode, fallback: 'off' });
+        this.#lastWarnedMode = mode;
+      }
       mode = 'off';
+    } else {
+      this.#lastWarnedMode = undefined;
     }
     const weekClose = isMap(doc.week_close) ? doc.week_close : {};
     const digest = isMap(doc.digest) ? doc.digest : {};
