@@ -996,6 +996,59 @@ describe('Games mode — early pass', () => {
     expect(terminalCalls()).toHaveLength(1);
   });
 
+  it('switching between two kids who each hold a pass settles the first and restarts the clock for the second', async () => {
+    withActivePass();
+    schoolAccess.onRefresh = null;
+    const B_PASS = 'pass:learner2:2026-10-21';
+    const users = [{ id: 'learner1', name: 'a' }, { id: 'learner2', name: 'b' }];
+    const view = renderGames('/games/probe-game', 'learner1', testConfig, [], users);
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+    now += 120_000;
+
+    schoolAccess.pass = { passId: B_PASS, state: 'active', capUsed: true };
+    view.rerender(gamesTree('/games/probe-game', 'learner2', testConfig, [], users));
+    await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+    expect(posts('/consume')[0]).toEqual([
+      `api/v1/economy/users/learner1/passes/${ENCODED}/consume`, { playedMs: 120_000 }, 'POST',
+    ]);
+    // A fresh match for learner2, so their clock starts now.
+    await waitFor(() => expect(probe.mounts).toBe(2));
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+
+    now += 30_000;
+    fireEvent.click(screen.getByText('probe-exit'));
+    await waitFor(() => expect(posts('/refund')).toHaveLength(1));
+    expect(posts('/refund')[0]).toEqual([
+      `api/v1/economy/users/learner2/passes/${encodeURIComponent(B_PASS)}/refund`, { playedMs: 30_000, reason: 'exit' }, 'POST',
+    ]);
+    expect(terminalCalls()).toHaveLength(2);
+  });
+
+  it.each([
+    ['loading', { status: 'loading', state: null, unlocked: false, pass: null, offers: [] }],
+    ['error', { status: 'error', state: null, unlocked: false, pass: null, offers: [] }],
+  ])('a spent pass never reopens through a %s answer after switching back', async (_label, answer) => {
+    withActivePass();
+    schoolAccess.onRefresh = null;
+    const users = [{ id: 'learner1', name: 'a' }, { id: 'learner2', name: 'b' }];
+    const view = renderGames('/games/probe-game', 'learner1', testConfig, [], users);
+    now += 120_000;
+    schoolAccess.pass = { passId: 'pass:learner2:2026-10-21', state: 'active', capUsed: true };
+    view.rerender(gamesTree('/games/probe-game', 'learner2', testConfig, [], users));
+    await waitFor(() => expect(posts('/consume')).toHaveLength(1));
+    await waitFor(() => expect(probe.mounts).toBe(2));
+
+    schoolAccess.answer = answer;
+    view.rerender(gamesTree('/games/probe-game', 'learner1', testConfig, [], users));
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(screen.queryByTestId('probe-game')).toBeNull();
+    expect(screen.queryByText('Space Invaders')).toBeNull();
+    expect(screen.queryByText('Good game!') ?? screen.queryByText('Games are locked')).toBeTruthy();
+    // learner1's pass was settled once, never again.
+    expect(posts('/consume').filter(([path]) => String(path).includes('/learner1/'))).toHaveLength(1);
+    expect(posts('/refund').filter(([path]) => String(path).includes('/learner1/'))).toHaveLength(0);
+  });
+
   it('under StrictMode, buy, play and exit make exactly one terminal call', async () => {
     locked();
     schoolAccess.onRefresh = () => {

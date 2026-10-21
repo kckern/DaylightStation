@@ -145,8 +145,12 @@ labelled by its heading.
   save settles, even if the save fails. The relock waits for the next rematch or exit,
   so the result screen stays up.
 
-Exactly one terminal call is made per pass: a ref keyed by pass id is set before the
-request leaves. The host's unmount is deferred one microtask and cancelled by a remount,
+Exactly one terminal call is made per pass: a set of settled pass ids is checked before
+the request leaves. Every ended pass id is also remembered for the life of the screen, and
+no live answer, sticky copy or latch can resolve to one again. When one player's pass gives
+way to another's under a mounted host (two kids each holding a pass), the previous pass is
+force-consumed as a `switch` and the game remounts, so the new pass's clock starts at its
+own game's mount. The relock is kept per player. The host's unmount is deferred one microtask and cancelled by a remount,
 so a StrictMode unmount-remount pair cannot spend the pass, and no timer outlives the
 screen. Hiding these routes in React `<Activity>` would run that cleanup and settle the
 pass. A refund refused as `PASS_NOT_ACTIVE` is only logged. Any other refund failure

@@ -57,20 +57,29 @@ export default function useEarlyPassSession({ learnerId, access }) {
   // timeout. It is dropped only by a ready read that says it is not active.
   // Adjusted during render (React's sanctioned derive-from-props pattern), so
   // no frame ever renders the host without it.
+  //
+  // Every pass that has ended is remembered for the life of this screen
+  // (`endedIds`), and neither the live answer, the sticky copy nor the latch
+  // can ever resolve to one again: two kids each holding a pass, switching
+  // back and forth through `loading` frames, must not reopen a spent pass.
+  const endedIds = useRef(new Set());
   const [sticky, setSticky] = useState(null);
-  const fresh = access?.via === 'pass' && access.pass?.passId && learnerId
+  const freshAnswer = access?.via === 'pass' && access.pass?.passId && learnerId
     ? { passId: access.pass.passId, learnerId, pass: access.pass }
     : null;
+  const fresh = freshAnswer && !endedIds.current.has(freshAnswer.passId) ? freshAnswer : null;
   let live = fresh;
   if (fresh) {
     if (sticky?.passId !== fresh.passId || sticky?.learnerId !== fresh.learnerId) setSticky(fresh);
-  } else if (sticky && sticky.learnerId === learnerId && !speaksForPass(access)) {
+  } else if (sticky && sticky.learnerId === learnerId && !speaksForPass(access) && !endedIds.current.has(sticky.passId)) {
     live = sticky;
   } else if (sticky && sticky.learnerId === learnerId) {
     setSticky(null);
   }
   const [held, setHeld] = useState(null);
-  const [relockedFor, setRelockedFor] = useState(null);
+  // learnerId -> the pass id that relocked them. Per player, so switching
+  // back to a child whose pass ended shows their relock, whoever played since.
+  const [relockedBy, setRelockedBy] = useState({});
   const [outcome, setOutcome] = useState(null);
 
   // Refs mirror what the callbacks need at call time, which is often after
@@ -83,42 +92,45 @@ export default function useEarlyPassSession({ learnerId, access }) {
   learnerRef.current = learnerId;
   const refreshRef = useRef(access?.refresh);
   refreshRef.current = access?.refresh;
-  const settledRef = useRef(null);
-  const endedRef = useRef(null);
-  const completedRef = useRef(null);
-  const startedRef = useRef({ passId: null, at: null });
+  const settledIds = useRef(new Set());
+  const completedIds = useRef(new Set());
+  // passId -> when its game mounted.
+  const startedAt = useRef(new Map());
   const pendingLeave = useRef(null);
 
-  const heldMine = held && held.learnerId === learnerId ? held : null;
-  const relocked = Boolean(relockedFor) && relockedFor.learnerId === learnerId;
+  const isEnded = (pass) => Boolean(pass) && endedIds.current.has(pass.passId);
+  const heldMine = held && held.learnerId === learnerId && !isEnded(held) ? held : null;
+  const relockedId = relockedBy[learnerId] ?? null;
+  const relocked = Boolean(relockedId);
   const holding = !relocked && Boolean(heldMine || live);
   const started = !relocked && Boolean(heldMine);
-  const passId = holding ? (heldMine ?? live).passId : null;
+  const current = holding ? (heldMine ?? live) : null;
+  const passId = current?.passId ?? null;
   // Whether the relocked pass ever reached a game: "Good game!" only then.
-  const played = relocked && held?.passId === relockedFor.passId;
+  const played = relocked && startedAt.current.has(relockedId);
 
   /** The pass a terminal call is about: this player's latched or live pass, else one latched for another player. */
   const target = useCallback(() => {
-    const latched = heldRef.current;
+    const latched = heldRef.current && !endedIds.current.has(heldRef.current.passId) ? heldRef.current : null;
     if (latched && latched.learnerId === learnerRef.current) return latched;
     return liveRef.current ?? latched ?? null;
   }, []);
 
   const markStarted = useCallback(() => {
     const pass = liveRef.current;
-    if (!pass || startedRef.current.passId === pass.passId) return;
-    startedRef.current = { passId: pass.passId, at: Date.now() };
+    if (!pass || startedAt.current.has(pass.passId) || endedIds.current.has(pass.passId)) return;
+    startedAt.current.set(pass.passId, Date.now());
     heldRef.current = pass;
     setHeld(pass);
   }, []);
 
-  const playedMs = useCallback((id) => (startedRef.current.passId === id && startedRef.current.at != null
-    ? Math.max(0, Date.now() - startedRef.current.at)
+  const playedMs = useCallback((id) => (startedAt.current.has(id)
+    ? Math.max(0, Date.now() - startedAt.current.get(id))
     : 0), []);
 
   const settle = useCallback(async (mode, reason, pass = target()) => {
-    if (!pass || settledRef.current === pass.passId) return null;
-    settledRef.current = pass.passId;
+    if (!pass || settledIds.current.has(pass.passId)) return null;
+    settledIds.current.add(pass.passId);
     const { passId: id, learnerId: owner } = pass;
     const ms = playedMs(id);
     const facts = { learnerId: owner, passId: id, playedMs: ms, reason, mode };
@@ -151,21 +163,25 @@ export default function useEarlyPassSession({ learnerId, access }) {
     }
   }, [log, playedMs, target]);
 
-  /** THE terminal transition: relock, then settle. */
-  const end = useCallback((mode, reason) => {
-    const pass = target();
+  /**
+   * THE terminal transition: relock the pass's owner, then settle. `pass`
+   * defaults to the current target; the host names the PREVIOUS pass
+   * explicitly when one player's pass gives way to another's.
+   */
+  const end = useCallback((mode, reason, pass = target()) => {
     // Once per pass: the host's own unmount follows every relock.
-    if (!pass || endedRef.current === pass.passId) return;
-    endedRef.current = pass.passId;
-    setRelockedFor({ passId: pass.passId, learnerId: pass.learnerId });
+    if (!pass || endedIds.current.has(pass.passId)) return;
+    endedIds.current.add(pass.passId);
+    setRelockedBy((map) => ({ ...map, [pass.learnerId]: pass.passId }));
+    setSticky((value) => (value?.passId === pass.passId ? null : value));
     // Already settled (a completion consumed it): still re-read access, so
     // nothing keeps answering `via: 'pass'` behind the relock.
-    if (settledRef.current === pass.passId) {
+    if (settledIds.current.has(pass.passId)) {
       try { refreshRef.current?.(); } catch { /* the relock stands */ }
       return;
     }
     const switched = pass.learnerId !== learnerRef.current;
-    const completed = completedRef.current === pass.passId;
+    const completed = completedIds.current.has(pass.passId);
     settle(switched || completed ? 'force-consume' : mode, switched ? 'switch' : reason, pass);
   }, [settle, target]);
 
@@ -175,7 +191,7 @@ export default function useEarlyPassSession({ learnerId, access }) {
    */
   const complete = useCallback(() => {
     const pass = target();
-    if (pass) completedRef.current = pass.passId;
+    if (pass) completedIds.current.add(pass.passId);
     return pass;
   }, [target]);
 
@@ -195,7 +211,9 @@ export default function useEarlyPassSession({ learnerId, access }) {
   const stay = useCallback(() => { pendingLeave.current = null; }, []);
 
   return useMemo(() => ({
-    holding, relocked, started, played, outcome, passId,
+    holding, relocked, started, played, outcome, passId, pass: current,
     markStarted, complete, settle, end, leave, stay,
+  // `current` is rebuilt each render; its id stands for it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [holding, relocked, started, played, outcome, passId, markStarted, complete, settle, end, leave, stay]);
 }

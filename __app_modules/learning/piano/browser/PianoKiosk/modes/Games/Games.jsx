@@ -285,17 +285,24 @@ function GameHost({ earlyPass = null }) {
     passRef.current?.stay();
     return () => { passRef.current?.leave('unmount'); };
   }, []);
-  // The session can also end under a host that stays mounted (an access
-  // answer that switches player without a loading frame). Keyed on the pass
-  // id, so it fires once, when the id goes away. `end` itself turns a
-  // different player into a force-consume.
+  // The session can also change under a host that stays mounted: an access
+  // answer that switches player without a loading frame, or one player's
+  // pass giving way to another's. Keyed on the pass id. Whenever it changes,
+  // the PREVIOUS pass ends: force-consumed as a switch when another pass
+  // takes its place (it was played, by its owner), by play time when the
+  // pass simply went away. A new pass also gets a fresh match, so its clock
+  // starts at its own game's mount rather than inheriting nothing.
   const passKey = passSession?.passId ?? null;
   const lastPassRef = useRef(null);
   useEffect(() => {
-    if (passKey) { lastPassRef.current = passRef.current; return; }
-    if (lastPassRef.current) {
-      lastPassRef.current.end('by-play-time', 'session-lost');
-      lastPassRef.current = null;
+    const last = lastPassRef.current;
+    lastPassRef.current = passKey ? { session: passRef.current, pass: passRef.current?.pass ?? null } : null;
+    if (!last?.pass || last.pass.passId === passKey) return;
+    if (passKey) {
+      last.session.end('force-consume', 'switch', last.pass);
+      setMatchId((value) => value + 1);
+    } else {
+      last.session.end('by-play-time', 'session-lost', last.pass);
     }
   }, [passKey]);
 
