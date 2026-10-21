@@ -849,17 +849,45 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
  * step-up PIN first, then a link — opening a tab after an async PIN prompt
  * is what popup blockers refuse.
  */
+// The states a sheet carries marks in (sessionEvents TRANSITIONS: graded and
+// everything after it). An allowlist, not "anything past issued": submitted is
+// handed in but unmarked, abandoned/failed never came back, and a state added
+// later stays hidden until someone decides it has marks.
+const MARKED_SHEET_STATES = new Set(['graded', 'outcome_recorded', 'remediation_opened', 'rewarded']);
+
+// The postview route's own error text names entity ids (EntityNotFoundError
+// and friends); a teacher reads a sentence instead. Statuses not listed keep
+// useTeacherWrite's default handling — 403 in particular, which it retries.
+const MARKED_SHEET_ERRORS = {
+  404: 'This sheet is no longer on file.',
+  400: "This sheet can't be drawn with marks.",
+  501: "Marked sheets aren't set up on this install.",
+};
+
 function MarkedSheet({ artifactId }) {
   const [url, setUrl] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-postview' });
   const key = `postview:${artifactId}`;
+  // A fetch can outlive the inspector (the teacher navigates away while the
+  // PDF renders); its blob URL is then revoked, never put into state.
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   useEffect(() => () => { if (url) URL.revokeObjectURL?.(url); }, [url]);
   if (url) return <a href={url} target="_blank" rel="noreferrer">Open the marked sheet (PDF)</a>;
+  const fetchSheet = async ({ stepUpToken }) => {
+    const response = await teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken);
+    const copy = !response.ok && MARKED_SHEET_ERRORS[response.status];
+    return copy ? { ...response, data: { error: copy } } : response;
+  };
+  const opened = (blob) => {
+    const next = URL.createObjectURL(blob);
+    if (!mountedRef.current) { URL.revokeObjectURL?.(next); return; }
+    setUrl(next);
+    teacherLog.nav('postview-open', { artifactId });
+  };
   return <>
-    <button type="button" disabled={busy === key} onClick={() => run(key,
-      ({ stepUpToken }) => teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken),
-      { stepUp: { action: 'artifact.postview', resource: artifactId },
-        onSuccess: (blob) => { setUrl(URL.createObjectURL(blob)); teacherLog.nav('postview-open', { artifactId }); } })}>
+    <button type="button" disabled={busy === key} onClick={() => run(key, fetchSheet,
+      { stepUp: { action: 'artifact.postview', resource: artifactId }, onSuccess: opened })}>
       See the marked sheet
     </button>
     {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
@@ -1051,12 +1079,12 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
                 action={<>
                   {artifact.reprintable === true
                     && <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />}
-                  {/* The marked sheet exists only once the child has handed the
-                      work back, and only for their own sheet — a receipt is the
+                  {/* The marked sheet exists only once the work has been marked
+                      (MARKED_SHEET_STATES), and only for the child's own sheet — a receipt is the
                       result, not the work, and a sheet with no bytes on file
                       cannot be drawn on. */}
                   {artifact.role !== 'result-receipt' && artifact.availability !== 'unavailable'
-                    && !['created', 'issued', 'reprinted'].includes(sessionState?.state)
+                    && MARKED_SHEET_STATES.has(sessionState?.state)
                     && <MarkedSheet artifactId={artifact.artifactId} />}
                 </>}
               />

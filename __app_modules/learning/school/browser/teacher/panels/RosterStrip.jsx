@@ -143,8 +143,13 @@ function needsAdult(obligation) {
  * the held entry the section's `next`, and the failed attempt is from an
  * earlier day, so nothing of today's joins it. The digest's `attention` item
  * for that unit is what still names the session, so it is asked first.
+ * Exported for its unit test only.
  */
-function grownUpHref(linkTo, learnerId, base, row = null, { attention = [], studyDay = null } = {}) {
+export function grownUpHref(linkTo, learnerId, base, row = null, { attention = [], studyDay = null } = {}) {
+  // One unit for every destination, offer first — the unit a held lesson is
+  // matched on. The repair-tools link used to read session first, so a row
+  // whose offer and session named different units sent the two links to
+  // different lessons (review 2026-10-21).
   const unitId = row?.offer?.unitId ?? row?.session?.unitId ?? null;
   if (linkTo === 'history') {
     const held = unitId ? attention.find((item) => item.unitId === unitId) : null;
@@ -157,7 +162,7 @@ function grownUpHref(linkTo, learnerId, base, row = null, { attention = [], stud
   return teacherLearnerOpsPath(learnerId, {
     reason: row?.obligation?.reason ?? null,
     subject: row?.subject ?? null,
-    unit: row?.session?.unitId ?? row?.offer?.unitId ?? null,
+    unit: unitId,
     day: studyDay,
   }, base);
 }

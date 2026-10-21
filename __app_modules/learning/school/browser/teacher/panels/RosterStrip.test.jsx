@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
-import RosterStrip from "./RosterStrip.jsx";
+import RosterStrip, { grownUpHref } from "./RosterStrip.jsx";
 import { teacherLog } from "../teacherLog.js";
 
 // RosterStrip's only network dependency is the agenda preview read (per
@@ -396,5 +396,23 @@ describe('RosterStrip — the open card follows the URL', () => {
     window.history.pushState({}, '', window.location.pathname);
     window.dispatchEvent(new PopStateEvent('popstate'));
     await waitFor(() => expect(card).toHaveAttribute('aria-expanded', 'false'));
+  });
+});
+
+// One unit for both destinations: the history link and the repair-tools link
+// used to read offer/session in opposite orders, so a row whose offer and
+// session named different units sent the two links to different lessons.
+describe('grownUpHref — one unitId for every destination', () => {
+  const row = { subject: 'math', obligation: { reason: 'awaiting_grown_up' }, offer: { unitId: 'unit-offer' }, session: { unitId: 'unit-session', sessionId: 'ses_old' } };
+
+  it('the repair-tools link names the offered unit, as the history link does', () => {
+    expect(grownUpHref('learner-operations', 'user_4', undefined, row, { studyDay: '2026-08-26' }))
+      .toBe('/school/teacher/students/user_4/operations?reason=awaiting_grown_up&subject=math&unit=unit-offer&day=2026-08-26');
+  });
+
+  it('the history link opens the held lesson of the offered unit', () => {
+    const attention = [{ unitId: 'unit-offer', sessionId: 'ses_held' }, { unitId: 'unit-session', sessionId: 'ses_other' }];
+    expect(grownUpHref('history', 'user_4', undefined, row, { attention }))
+      .toMatch(/\/sessions\/ses_held/);
   });
 });

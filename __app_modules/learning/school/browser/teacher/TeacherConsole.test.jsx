@@ -359,6 +359,84 @@ describe('TeacherConsole workspace', () => {
     expect(screen.queryByRole('button', { name: 'See the marked sheet' })).toBeNull();
   });
 
+  // Only the states that carry marks offer the sheet — an allowlist, so a
+  // state added later stays hidden until someone decides it has marks.
+  const markedSession = (state) => ({ ok: true, status: 200, data: {
+    schema: 'school.teacher-session/v3', sessionId: 'ses_s', revision: 1,
+    taxonomy: { subject: 'Math', lessonTitle: 'Fractions' },
+    state: { learnerId: 'user_4', state }, events: [],
+    artifacts: [{ artifactId: 'a3', kind: 'worksheet', availability: 'regenerable', reprintable: false }],
+  } });
+  it.each([
+    ['graded', true], ['outcome_recorded', true], ['remediation_opened', true], ['rewarded', true],
+    ['submitted', false], ['abandoned', false], ['failed', false], [null, false],
+  ])('a session in state %s offers the marked sheet: %s', async (state, offered) => {
+    teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession(state));
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
+    render(<TeacherConsole />);
+    await screen.findByRole('heading', { name: 'Fractions' });
+    expect(screen.queryAllByRole('button', { name: 'See the marked sheet' })).toHaveLength(offered ? 1 : 0);
+  });
+
+  // The route's own error text names entity ids (EntityNotFoundError); the
+  // teacher reads a sentence instead.
+  it.each([
+    [404, 'This sheet is no longer on file.'],
+    [400, 'This sheet can\'t be drawn with marks.'],
+    [501, 'Marked sheets aren\'t set up on this install.'],
+  ])('a %s from the marked sheet reads plainly', async (status, copy) => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
+    teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: false, status, data: { error: 'EntityNotFoundError: artifact a3 not found for ses_s' } });
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
+    render(<TeacherConsole />);
+    fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
+    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(copy)).toBeTruthy();
+    expect(screen.queryByText(/EntityNotFoundError/)).toBeNull();
+  });
+
+  it('a marked-sheet error the copy does not cover keeps the hook\'s own message', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
+    teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: false, status: 500, data: null });
+    window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
+    render(<TeacherConsole />);
+    fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
+    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('That didn’t save — try again.')).toBeTruthy();
+  });
+
+  it('revokes the marked sheet\'s blob URL when the inspector closes mid-fetch', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    const created = URL.createObjectURL;
+    const revoked = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:late');
+    URL.revokeObjectURL = vi.fn();
+    try {
+      teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
+      let resolve;
+      teacherWorkspaceApi.artifactPostview.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+      window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
+      const { unmount } = render(<TeacherConsole />);
+      fireEvent.click(await screen.findByRole('button', { name: 'See the marked sheet' }));
+      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await waitFor(() => expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalled());
+      unmount();
+      await act(async () => { resolve({ ok: true, status: 200, data: new Blob(['%PDF']) }); });
+      await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:late'));
+    } finally {
+      URL.createObjectURL = created;
+      URL.revokeObjectURL = revoked;
+    }
+  });
+
   it('reads a bookmarked session without a local teacher claim', async () => {
     const priorSessionReads = teacherWorkspaceApi.session.mock.calls.length;
     teacherWorkspaceApi.session
