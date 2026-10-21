@@ -942,7 +942,9 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
                 key={artifact.artifactId}
                 artifact={artifact}
                 lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'}
-                action={['exact', 'regenerable'].includes(artifact.availability)
+                // The read model says which paper the server will reprint;
+                // offering any other is a button that only ever refuses.
+                action={artifact.reprintable === true
                   ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
                   : null}
               />

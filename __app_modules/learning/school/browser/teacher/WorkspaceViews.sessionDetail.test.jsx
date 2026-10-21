@@ -62,7 +62,7 @@ const SESSION = {
       { itemId: 'q-year', questionNumber: 20, prompt: 'Statehood year?', given: '1808', expected: ['1818'], verdict: 'incorrect' },
     ],
   },
-  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'regenerable', originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
+  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'regenerable', reprintable: true, originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
   events: [],
 };
 
@@ -167,6 +167,17 @@ describe('SessionInspector detail coherence', () => {
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const reprint = await screen.findByRole('button', { name: /Print another copy/i });
     expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
+  });
+
+  // The server says which paper it will reprint (only while it is still out,
+  // never a result receipt); a button it would refuse is not offered.
+  it('offers no reprint for paper the server will not reprint', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, artifacts: SESSION.artifacts.map((artifact) => ({ ...artifact, reprintable: false })),
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await screen.findByText('Issued materials and results');
+    expect(screen.queryByRole('button', { name: /Print another copy/i })).toBeNull();
   });
 
   // `artifact.reprint` is ReprintIssuedArtifact's audit label; it is not one of

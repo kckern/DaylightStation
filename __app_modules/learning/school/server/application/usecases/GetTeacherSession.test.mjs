@@ -88,6 +88,20 @@ describe('GetTeacherSession artifact read-through', () => {
     // Still visible to a teacher elsewhere (the raw review-queue read model).
     expect(result.reviewEvidence.some((item) => item.itemId === 'key-alignment')).toBe(true);
   });
+  it('says a worksheet is reprintable only while the paper is still out', async () => {
+    const build = (evts) => new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => evts), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async (artifactId) => ({ manifest: { artifactId, representation: { mediaType: 'application/pdf' } } })) },
+      reviewQueue: { listForSession: vi.fn(async () => []) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+    });
+    const out = await build(events.slice(0, 2)).execute({ sessionId: 'ses_illinois' });
+    expect(out.artifacts[0].reprintable).toBe(true);
+    const handedIn = await build(events).execute({ sessionId: 'ses_illinois' });
+    expect(handedIn.artifacts[0].reprintable).toBe(false);
+  });
 });
 
 describe('GetLearnerTimeline catalog join', () => {

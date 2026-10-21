@@ -1,7 +1,11 @@
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
-import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
+import { reduceSession, statesAccepting } from "../../domain/sessions/sessionEvents.mjs";
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
+
+// The same rule `ReprintIssuedArtifact` enforces: paper still out can be
+// reprinted; once it is handed in the server refuses with SESSION_NOT_REPRINTABLE.
+const REPRINTABLE = statesAccepting('reprinted');
 
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
@@ -35,7 +39,7 @@ export class GetTeacherSession {
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
         return artifact ? { ...artifact.manifest, availability: 'regenerable', exactBytesRetained: false,
-          generatedAtRequest: true,
+          generatedAtRequest: true, reprintable: REPRINTABLE.has(state.state),
           originalPdfUrl: schoolArtifactRef(artifactId, 'original.pdf'),
           thumbnailUrl: (artifact.manifest.representation?.mediaType ?? 'application/pdf') === 'application/pdf'
             ? schoolArtifactRef(artifactId, 'thumbnail.png') : null }
@@ -43,11 +47,12 @@ export class GetTeacherSession {
       })),
       Promise.all((state.resultReceiptArtifacts ?? []).map(async (receipt) => {
         const artifact = await this.#artifacts?.get?.(receipt.artifactId);
+        // `ReprintIssuedArtifact` reprints issued artifacts only; a receipt is not one.
         return artifact ? {
-          ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
+          ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true, reprintable: false,
           originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
           printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
-        } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false };
+        } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false, reprintable: false };
       })),
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
