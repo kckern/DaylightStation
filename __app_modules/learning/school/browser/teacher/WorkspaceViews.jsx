@@ -268,7 +268,7 @@ function CourseContext({ courseId, lessonId = null, learnerId = null }) {
   );
 }
 
-function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
+function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', learnerId = '' }) {
   const authorizedRead = useAuthorizedTeacherRead();
   const [refresh, setRefresh] = useState(0);
   const exceptions = usePanelFetch(() => authorizedRead(() => teacherWorkspaceApi.curriculumExceptions()), {
@@ -283,8 +283,15 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   const modules = [...new Set(units.map((unit) => unit.module).filter(Boolean))];
   // Neutral by default: the most drastic decision and a preselected reason
   // must never be the zero-interaction path.
-  const [form, setForm] = useState({ kind: '', learnerId: '', targetType: 'lesson',
+  const [form, setForm] = useState({ kind: '', learnerId, targetType: 'lesson',
     targetId: lessonId, courseId, replacementLessonId: '', reason: '' });
+  // A preselected lesson's course comes from the catalog, which a user pick
+  // (`change('targetId')`) would otherwise have filled.
+  useEffect(() => {
+    if (!lessonId || form.courseId) return;
+    const unit = units.find((candidate) => candidate.unitId === lessonId);
+    if (unit?.courseId) setForm((current) => ({ ...current, courseId: unit.courseId }));
+  }, [lessonId, units.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [preview, setPreview] = useState(null);
   const [retracting, setRetracting] = useState(null);
   const [retractReason, setRetractReason] = useState('');
@@ -316,7 +323,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
       { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }),
     { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
-  return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
+  return <div id="curriculum-exceptions"><PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
     <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
     {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
     <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
@@ -334,7 +341,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
       <button type="button" onClick={() => { setRetracting(null); setRetractReason(''); }}>Cancel</button>
     </span>
     : <button type="button" disabled={busy} onClick={() => { setRetracting(exception.exceptionId); setRetractReason(''); }}>Retract</button>}</li>)}</ul>
-  </div></PanelFrame>;
+  </div></PanelFrame></div>;
 }
 
 export function CoursesView({ learnerId, learnerName, courseId, kids: _kids, PianoProgramsPanel }) {
@@ -539,8 +546,18 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
   </div>;
 }
 
+/**
+ * `?unit` and `?learner` come from a child's "excuse or pause this lesson for
+ * everyone" link: the exception form opens on them and scrolls into view.
+ */
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  const unit = params.get('unit') ?? '';
+  const learner = params.get('learner') ?? '';
+  useEffect(() => {
+    if (unit) document.getElementById('curriculum-exceptions')?.scrollIntoView?.({ block: 'start' });
+  }, [unit]);
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={learner} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
 }
 
 function BulkRegradePanel() {

@@ -49,6 +49,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant-1' } })),
   timeline: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
   session: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  curriculumExceptions: vi.fn(async () => ({ ok: true, status: 200, data: { active: [] } })),
   agendaDispatchPreview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   agendaDispatch: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   adjustGrade: vi.fn(async () => ({ ok: false, status: 404, data: null })),
@@ -409,6 +410,29 @@ describe('TeacherConsole workspace', () => {
     }
   });
 
+  // Sent from a child's "excuse or pause this lesson for everyone" link: the
+  // exception form opens on that lesson, its course and that child.
+  it('school operations preselects the lesson and learner it was sent for', async () => {
+    const units = schoolApi.curriculumUnits.getMockImplementation();
+    schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
+    const scrollIntoView = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      window.history.pushState({}, '', '/school/teacher/operations?unit=unit-a&learner=user_4');
+      render(<TeacherConsole />);
+      const field = (label) => [...document.querySelectorAll('#curriculum-exceptions label')]
+        .find((node) => node.firstChild?.textContent === label)?.querySelector('select');
+      await waitFor(() => expect(field('Lesson')?.value).toBe('unit-a'));
+      expect(field('Student').value).toBe('user_4');
+      await waitFor(() => expect(field('Course').value).toBe('c1'));
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      schoolApi.curriculumUnits.mockImplementation(units);
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('previews a bounded systematic regrade before a protected apply', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts
@@ -418,7 +442,9 @@ describe('TeacherConsole workspace', () => {
     render(<TeacherConsole />);
     await waitFor(() => expect(screen.getByText('Systematic regrade')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Bank ID'), { target: { value: 'math/fractions' } });
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Corrected answer key' } });
+    // The exception panel above has a Reason field of its own.
+    const regrade = screen.getByText('Systematic regrade').closest('section');
+    fireEvent.change(within(regrade).getByLabelText('Reason'), { target: { value: 'Corrected answer key' } });
     fireEvent.click(screen.getByRole('button', { name: 'Preview regrade' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply 1 corrections' })).toBeTruthy());
     expect(schoolApi.regradeAttempts).toHaveBeenCalledWith(expect.objectContaining({
