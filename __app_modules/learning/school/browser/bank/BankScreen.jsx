@@ -39,10 +39,10 @@ import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvata
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
-import { earnItems, goldCountdown, historyByDay, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
+import { NAPPING, earnItems, goldCountdown, historyByDay, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
 import './BankScreen.scss';
 
-export const NAPPING = 'The bank is napping. Try again soon.';
+export { NAPPING };
 export const NOTHING_TO_SPEND = 'Nothing to spend on yet.';
 export const COINS_SOON = 'Coins start soon.';
 
