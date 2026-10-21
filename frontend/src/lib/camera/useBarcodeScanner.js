@@ -9,13 +9,17 @@
  * What a decoded value means — a UPC, an ISBN, nothing — is the caller's
  * business; to scan again after rejecting one, change `restartKey`.
  *
- * `cameraState`: `idle` (inactive) | `starting` | `live` | `denied`. Denied
- * covers a refused permission AND a browser with no camera API: both mean
- * "type the number instead".
+ * `cameraState`: `idle` (inactive) | `starting` | `live` | `done` (a decode
+ * landed, or the caller called `stop()`; the camera is released) | `denied`.
+ * Denied covers a refused permission AND a browser with no camera API: both
+ * mean "type the number instead".
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const RETAIL_BARCODE_FORMATS = Object.freeze(['upc_a', 'upc_e', 'ean_13', 'ean_8']);
+
+/** The native detector's format names, as zxing's `BarcodeFormat` keys. */
+const ZXING_FORMAT = Object.freeze({ upc_a: 'UPC_A', upc_e: 'UPC_E', ean_13: 'EAN_13', ean_8: 'EAN_8' });
 
 /**
  * @param {object} args
@@ -47,13 +51,22 @@ export function useBarcodeScanner({
       stopped = true;
       zxingControls?.stop?.();
       stream?.getTracks?.().forEach((track) => track.stop());
+      // A released stream left on the element keeps its last frame (and, on
+      // some browsers, the camera light) until the element goes away.
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
-    stopRef.current = stop;
+    // The caller's stop (and a decode) also says so in `cameraState`; the
+    // effect's own cleanup does not, because the next run sets the state.
+    const finish = () => {
+      if (!stopped) setCameraState('done');
+      stop();
+    };
+    stopRef.current = finish;
     const emit = (value, via) => {
       if (stopped || fired) return;
       fired = true;
       logger?.info?.(`decode.${via}`, {});
-      stop();
+      finish();
       callback.current?.(value);
     };
 
@@ -83,9 +96,13 @@ export function useBarcodeScanner({
           };
           tick();
         } else {
-          const { BrowserMultiFormatReader } = await import('@zxing/browser');
+          const { BrowserMultiFormatReader, BarcodeFormat } = await import('@zxing/browser');
           if (stopped) return;
           const reader = new BrowserMultiFormatReader();
+          // The same formats the native path asks for, so a QR code or a
+          // shelf label is never read as a number.
+          const possible = formats.map((name) => BarcodeFormat?.[ZXING_FORMAT[name]]).filter((value) => value !== undefined);
+          if (possible.length) reader.possibleFormats = possible;
           zxingControls = await reader.decodeFromVideoElement(video, (result) => {
             if (result) emit(result.getText(), 'zxing');
           });

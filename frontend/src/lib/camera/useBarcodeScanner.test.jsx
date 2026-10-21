@@ -3,9 +3,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 import { useBarcodeScanner, RETAIL_BARCODE_FORMATS } from './useBarcodeScanner.js';
 
-const zxing = vi.hoisted(() => ({ decodeFromVideoElement: vi.fn(), stop: vi.fn() }));
+const zxing = vi.hoisted(() => ({ decodeFromVideoElement: vi.fn(), stop: vi.fn(), formats: null }));
 vi.mock('@zxing/browser', () => ({
+  BarcodeFormat: { UPC_A: 14, UPC_E: 15, EAN_13: 7, EAN_8: 6, QR_CODE: 11 },
   BrowserMultiFormatReader: class {
+    set possibleFormats(value) { zxing.formats = value; }
     decodeFromVideoElement(video, callback) { return zxing.decodeFromVideoElement(video, callback); }
   },
 }));
@@ -32,6 +34,7 @@ beforeEach(() => {
   delete window.BarcodeDetector;
   zxing.decodeFromVideoElement.mockReset();
   zxing.stop.mockReset();
+  zxing.formats = null;
 });
 afterEach(() => { cleanup(); delete window.BarcodeDetector; });
 
@@ -48,6 +51,8 @@ describe('useBarcodeScanner', () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ video: { facingMode: 'environment' } });
     expect(tracks[0].stop).toHaveBeenCalled();
     expect(zxing.decodeFromVideoElement).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('done'));
+    expect(document.querySelector('video').srcObject).toBeNull();
   });
 
   it('falls back to the lazily loaded zxing reader where there is no native detector', async () => {
@@ -60,6 +65,8 @@ describe('useBarcodeScanner', () => {
     await waitFor(() => expect(onDecode).toHaveBeenCalledWith('9780000000002'));
     expect(zxing.stop).toHaveBeenCalled();
     expect(tracks[0].stop).toHaveBeenCalled();
+    // Only the retail formats, so a QR code or a shelf label is not read as a number.
+    expect(zxing.formats).toEqual([14, 15, 7, 6]);
   });
 
   it('reports denied when the camera is refused', async () => {
