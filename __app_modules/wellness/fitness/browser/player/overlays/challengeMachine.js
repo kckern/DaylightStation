@@ -167,6 +167,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		progress: 0,
 		missingUsers: [],
 		metUsers: [],
+		holdingUsers: [],
 		statusLabel: '',
 		timeLabel: '—',
 		countdownPaused: false,
@@ -234,6 +235,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		const actualCount = Number.isFinite(challenge.actualCount) ? Math.max(0, challenge.actualCount) : 0;
 		const missingUsers = Array.isArray(challenge.missingUsers) ? challenge.missingUsers.filter(Boolean) : [];
 		const metUsers = Array.isArray(challenge.metUsers) ? challenge.metUsers.filter(Boolean) : [];
+		const holdingUsers = Array.isArray(challenge.holding) ? challenge.holding.filter(Boolean) : [];
 		const zoneLabel = challenge.zoneLabel || challenge.zone || 'Zone';
 		const isStepChallenge = challenge.type === 'step';
 		const zoneInfo = isStepChallenge
@@ -324,6 +326,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 			progress,
 			missingUsers,
 			metUsers,
+			holdingUsers,
 			statusLabel,
 			timeLabel,
 			countdownPaused,

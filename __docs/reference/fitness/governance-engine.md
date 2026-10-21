@@ -652,7 +652,13 @@ engine adds a `__unattended_child_start` requirement (`rule: 'all'`) naming only
 the overdue children, which takes the normal warning, grace and lock path.
 Each child's start is kept for the media item, through leaving and rejoining or
 a supervisor's visit, and is reset when the media changes
-(`governance.unattended.child_started` / `child_start_overdue`). The engine then replaces the ordinary
+(`governance.unattended.child_started` / `child_start_overdue`). Once the video
+has opened, the composed state carries `unattendedStart` (`{ zone, zoneLabel,
+children: { [id]: { started, overdue, remainingMs } } }`, otherwise `null`);
+`resolveParticipantGovernanceStatuses()` in `useGovernanceDisplay.js` turns it
+into `reach-start` / `start-overdue`, which the sidebar roster card, the
+fullscreen vitals avatar and the warning/lock rows draw as a "Reach Hot" badge
+(`GovernanceStartBadge`, warning style once overdue). The engine then replaces the ordinary
 random challenge schedule with cyclic group challenges at the configured zones
 on the exact configured interval. The group rule scales with the roster: `all`
 (label "All warm") for one or two eligible children, `most` ("Most warm") for
@@ -687,7 +693,11 @@ appears still holds for the full time; dropping below the zone resets that
 rider's hold. The challenge completes once the required count of riders have
 each completed a hold. `0` restores instant completion. The evaluation result
 carries `holding` (in zone, hold incomplete) and `holdRemainingMs`, and the
-engine pulses at the earliest hold end so completion is not late. Cycle
+engine pulses at the earliest hold end so completion is not late. The
+challenge snapshot in the composed state copies `holding` and `holdRemainingMs`.
+Riders mid-hold stay in `missingUsers`, but the display layer gives them the
+status `holding`: the challenge overlay draws them as pulsing blocks after the
+completed ones, and warning/lock rows read "Holding" rather than missing. Cycle
 challenges are unaffected.
 
 ## Configuration

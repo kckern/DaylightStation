@@ -305,3 +305,54 @@ describe('resolveGovernanceDisplay — cadence sensor recovery', () => {
     expect(result.challenge).toBeNull();
   });
 });
+
+describe('resolveGovernanceDisplay — unattended start state and challenge holds', () => {
+  const unattendedStart = {
+    zone: 'cardio',
+    zoneLabel: 'Cardio',
+    children: {
+      'child-a': { started: true, overdue: false, remainingMs: 0 },
+      'child-b': { started: false, overdue: false, remainingMs: 80_000 },
+      'child-c': { started: false, overdue: true, remainingMs: 0 },
+    },
+  };
+
+  it('maps not-started children to reach-start / start-overdue, even while unlocked', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ unattendedStart }), emptyDisplayMap, zoneMetaWithCardio);
+    expect(result.show).toBe(false);
+    expect(result.participantStatuses['child-a']).toBeUndefined();
+    expect(result.participantStatuses['child-b']).toEqual({ status: 'reach-start', zoneLabel: 'Cardio', remainingMs: 80_000 });
+    expect(result.participantStatuses['child-c']).toEqual({ status: 'start-overdue', zoneLabel: 'Cardio', remainingMs: 0 });
+  });
+
+  it('marks the overdue child\'s warning row as start-overdue', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'warning',
+      unattendedStart,
+      requirements: [{ id: '__unattended_child_start', satisfied: false, zone: 'cardio', missingUsers: ['child-c'], metUsers: [] }],
+    }), makeDisplayMap({ 'child-c': { displayName: 'Child C', heartRate: 100, zoneId: 'fat-burn' } }), zoneMetaWithCardio);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ userId: 'child-c', status: 'start-overdue', statusZoneLabel: 'Cardio' });
+  });
+
+  it('a rider mid-hold is holding, not missing', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'warning',
+      challenge: {
+        type: 'zone', status: 'pending', zone: 'cardio', zoneLabel: 'Cardio',
+        metUsers: [], missingUsers: ['child-a', 'child-b'], holding: ['child-a'], holdRemainingMs: 4_000,
+      },
+    }), makeDisplayMap({
+      'child-a': { displayName: 'Child A', heartRate: 150, zoneId: 'cardio' },
+      'child-b': { displayName: 'Child B', heartRate: 100, zoneId: 'fat-burn' },
+    }), zoneMetaWithCardio);
+    const byId = Object.fromEntries(result.rows.map((row) => [row.userId, row.status]));
+    expect(byId).toEqual({ 'child-a': 'holding', 'child-b': 'missing' });
+    expect(result.participantStatuses['child-a']).toMatchObject({ status: 'holding', zoneLabel: 'Cardio' });
+  });
+
+  it('no unattended state and no holds means no participant statuses', () => {
+    const result = resolveGovernanceDisplay(makeGovState(), emptyDisplayMap, emptyZoneMeta);
+    expect(result.participantStatuses).toEqual({});
+  });
+});

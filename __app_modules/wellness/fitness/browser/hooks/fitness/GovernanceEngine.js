@@ -971,6 +971,10 @@ export class GovernanceEngine {
       actualCount: summary && summary.actualCount != null ? summary.actualCount : null,
       metUsers: Array.isArray(summary && summary.metUsers) ? [...summary.metUsers] : [],
       missingUsers: Array.isArray(summary && summary.missingUsers) ? [...summary.missingUsers] : [],
+      // D5: riders in the zone whose hold has not completed yet (still in
+      // missingUsers — the display layer shows them as "holding").
+      holding: Array.isArray(summary && summary.holding) ? [...summary.holding] : [],
+      holdRemainingMs: Number.isFinite(summary?.holdRemainingMs) ? summary.holdRemainingMs : null,
       remainingSeconds,
       totalSeconds,
       startedAt,
@@ -2398,8 +2402,33 @@ export class GovernanceEngine {
       challengeCountdownSeconds: challengeSnapshot ? challengeSnapshot.remainingSeconds : null,
       challengeCountdownTotal: challengeSnapshot ? challengeSnapshot.totalSeconds : null,
       nextChallenge: nextChallengeSnapshot,
+      unattendedStart: this._buildUnattendedStartSnapshot(now),
       hrInactiveUsers: Array.isArray(this._latestInputs?.hrInactiveUsers) ? [...this._latestInputs.hrInactiveUsers] : []
     };
+  }
+
+  /**
+   * D3 per-child start state for the display: who still has to reach the
+   * startup zone once, and how long they have. Null unless the unattended
+   * policy is active and the video has opened.
+   */
+  _buildUnattendedStartSnapshot(now) {
+    const state = this._unattendedPolicyState;
+    if (!state?.active || !state.startupSatisfied) return null;
+    const settings = this.config?.unattended_policy || {};
+    const zone = String(settings.startup_zone || 'hot').toLowerCase();
+    const zoneInfo = this._getZoneInfo(zone);
+    const children = {};
+    Object.entries(state.children || {}).forEach(([id, child]) => {
+      if (!child) return;
+      if (child.started) {
+        children[id] = { started: true, overdue: false, remainingMs: 0 };
+        return;
+      }
+      const remainingMs = Math.max(0, CHILD_START_WINDOW_MS - (now - child.since));
+      children[id] = { started: false, overdue: remainingMs === 0, remainingMs };
+    });
+    return { zone, zoneLabel: zoneInfo?.name || zone, children };
   }
 
   // Main evaluation loop, called periodically or on data change

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
+import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import RpmDeviceAvatar from "../../components/RpmDeviceAvatar.jsx";
 import StepMatVitalsTile from "../../components/StepMatVitalsTile.jsx";
 import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from "../../hooks/fitness/ParticipantRoster.js";
@@ -72,6 +73,10 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   } = fitnessCtx || {};
 
   const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
+  const governanceStatuses = useMemo(
+    () => resolveParticipantGovernanceStatuses(fitnessCtx?.governanceState),
+    [fitnessCtx?.governanceState]
+  );
   const boostContributions = (cycleChallenge?.type === 'cycle' && cycleChallenge.boostContributions)
     ? cycleChallenge.boostContributions
     : null;
@@ -149,10 +154,11 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           progressValue,
           boostBadge: boostContributions && Number.isFinite(boostContributions[user?.id])
             ? `×${(1 + boostContributions[user.id]).toFixed(1)}`
-            : null
+            : null,
+          statusBadge: user?.id ? (governanceStatuses[String(user.id).trim().toLowerCase()] || null) : null
         };
       });
-  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions]);
+  }, [getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions, governanceStatuses]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};
@@ -279,6 +285,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               className={item.isInactive ? 'inactive' : ''}
               showIndicator={item.progressValue !== null}
               boostBadge={item.boostBadge}
+              statusBadge={item.statusBadge}
             />
           ))}
         </div>

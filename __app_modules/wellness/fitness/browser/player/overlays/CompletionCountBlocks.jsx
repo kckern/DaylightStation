@@ -28,9 +28,11 @@ function CompletionCountBlocks({
   targetCount,
   actualCount,
   metUsers = [],
+  holdingUsers = [],
   containerClassName,
   blockClassName,
   completeBlockClassName,
+  holdingBlockClassName,
   activeBlockClassName,
   activeIndex,
   ariaLabel,
@@ -45,15 +47,21 @@ function CompletionCountBlocks({
 
     const safeCompleted = Math.min(safeTarget, safeActual);
     const safeMetUsers = Array.isArray(metUsers) ? metUsers : [];
+    const safeHoldingUsers = Array.isArray(holdingUsers) ? holdingUsers.filter(Boolean) : [];
     const safeActiveIndex = Number.isFinite(activeIndex) ? Math.round(activeIndex) : -1;
     const nextBlocks = Array.from({ length: safeTarget }, (_, index) => {
       const complete = index < safeCompleted;
-      const user = complete ? safeMetUsers[index] : null;
-      const initial = complete ? getInitial(resolveUserLabel(user, resolveMetUserLabel, index)) : '';
+      // Riders in the zone whose hold has not completed fill the next blocks
+      // as "holding" — neither met nor missing.
+      const holdingUser = !complete ? safeHoldingUsers[index - safeCompleted] : undefined;
+      const holding = holdingUser !== undefined;
+      const user = complete ? safeMetUsers[index] : (holding ? holdingUser : null);
+      const initial = (complete || holding) ? getInitial(resolveUserLabel(user, resolveMetUserLabel, index)) : '';
       return {
         id: index + 1,
         complete,
-        active: !complete && index === safeActiveIndex,
+        holding,
+        active: !complete && !holding && index === safeActiveIndex,
         initial
       };
     });
@@ -63,7 +71,7 @@ function CompletionCountBlocks({
       completedCount: safeCompleted,
       blocks: nextBlocks
     };
-  }, [targetCount, actualCount, metUsers, resolveMetUserLabel, activeIndex]);
+  }, [targetCount, actualCount, metUsers, holdingUsers, resolveMetUserLabel, activeIndex]);
 
   if (!blocks.length) return null;
 
@@ -80,11 +88,12 @@ function CompletionCountBlocks({
         const className = [
           blockClassName,
           block.complete ? completeBlockClassName : null,
+          block.holding && holdingBlockClassName ? holdingBlockClassName : null,
           block.active && activeBlockClassName ? activeBlockClassName : null
         ].filter(Boolean).join(' ');
         return (
           <span key={block.id} className={className} aria-hidden="true">
-            {block.complete && block.initial ? block.initial : null}
+            {(block.complete || block.holding) && block.initial ? block.initial : null}
           </span>
         );
       })}
@@ -96,9 +105,11 @@ CompletionCountBlocks.propTypes = {
   targetCount: PropTypes.number,
   actualCount: PropTypes.number,
   metUsers: PropTypes.array,
+  holdingUsers: PropTypes.array,
   containerClassName: PropTypes.string.isRequired,
   blockClassName: PropTypes.string.isRequired,
   completeBlockClassName: PropTypes.string.isRequired,
+  holdingBlockClassName: PropTypes.string,
   activeBlockClassName: PropTypes.string,
   activeIndex: PropTypes.number,
   ariaLabel: PropTypes.string,

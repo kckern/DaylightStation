@@ -275,3 +275,51 @@ describe('GovernanceEngine — per-child start gate', () => {
     expect(h.engine.challengeState.activeChallenge.status).toBe('success');
   });
 });
+
+describe('GovernanceEngine — start state and holds in the composed state', () => {
+  it('exposes each child\'s start window once the video opens', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.state.unattendedStart).toBeNull(); // gate not open yet
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'active' });
+    const start = h.engine.state.unattendedStart;
+    expect(start).toMatchObject({ zone: 'hot', zoneLabel: 'hot' });
+    expect(start.children['child-a']).toEqual({ started: true, overdue: false, remainingMs: 0 });
+    expect(start.children['child-b']).toMatchObject({ started: false, overdue: false });
+    expect(start.children['child-b'].remainingMs).toBeLessThanOrEqual(120_000);
+    expect(start.children['child-b'].remainingMs).toBeGreaterThan(119_000);
+
+    h.advance(30_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.state.unattendedStart.children['child-b'].remainingMs).toBe(90_000);
+
+    h.advance(91_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    expect(h.engine.state.unattendedStart.children['child-b']).toEqual({ started: false, overdue: true, remainingMs: 0 });
+
+    h.evaluate({ 'child-a': 'active', 'child-b': 'hot' });
+    expect(h.engine.state.unattendedStart.children['child-b']).toEqual({ started: true, overdue: false, remainingMs: 0 });
+  });
+
+  it('is null while a supervisor is present', () => {
+    const h = harness();
+    h.evaluate({ parent: 'active', 'child-a': 'active' });
+    expect(h.engine.state.unattendedStart).toBeNull();
+  });
+
+  it('carries riders mid-hold on the challenge snapshot', () => {
+    const h = harness();
+    h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
+    h.advance(180_000);
+    h.evaluate({ 'child-a': 'active', 'child-b': 'active' });
+    h.advance(1_000);
+    h.evaluate({ 'child-a': 'warm', 'child-b': 'active' });
+    h.advance(4_000);
+    h.evaluate({ 'child-a': 'warm', 'child-b': 'active' });
+    const challenge = h.engine.state.challenge;
+    expect(challenge.status).toBe('pending');
+    expect(challenge.holding).toEqual(['child-a']);
+    expect(challenge.holdRemainingMs).toBe(6_000);
+    expect(challenge.missingUsers).toContain('child-b');
+  });
+});

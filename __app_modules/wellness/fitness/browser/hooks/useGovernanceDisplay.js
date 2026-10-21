@@ -5,6 +5,51 @@ import { calculateZoneProgressTowardsTarget } from "./fitness/types.js";
 const FALLBACK_AVATAR = DaylightMediaPath('/static/img/users/user');
 const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 
+const isLiveZoneChallenge = (challenge) => Boolean(challenge
+  && challenge.type !== 'cycle'
+  && !challenge.paused
+  && challenge.status === 'pending');
+
+/**
+ * Per-participant governance status beyond met/missing, keyed by normalized id:
+ * - 'reach-start' / 'start-overdue': an unattended child who has not yet reached
+ *   the startup zone once (D3), inside or past the 120s window.
+ * - 'holding': a rider in the challenge zone whose hold has not completed (D5).
+ * The start state wins over holding: it is the standing instruction.
+ * Pure; exported for the roster surfaces that do not consume the full display.
+ */
+export function resolveParticipantGovernanceStatuses(govState) {
+  const statuses = {};
+  if (!govState?.isGoverned) return statuses;
+  const challenge = govState?.challenge;
+  if (isLiveZoneChallenge(challenge) && Array.isArray(challenge.holding)) {
+    const zoneLabel = challenge.zoneLabel || challenge.zone || null;
+    challenge.holding.forEach((userId) => {
+      const key = normalize(userId);
+      if (!key) return;
+      statuses[key] = {
+        status: 'holding',
+        zoneLabel,
+        remainingMs: Number.isFinite(challenge.holdRemainingMs) ? challenge.holdRemainingMs : null
+      };
+    });
+  }
+  const start = govState?.unattendedStart;
+  if (start && start.children && typeof start.children === 'object') {
+    const zoneLabel = start.zoneLabel || start.zone || null;
+    Object.entries(start.children).forEach(([userId, child]) => {
+      const key = normalize(userId);
+      if (!key || !child || child.started) return;
+      statuses[key] = {
+        status: child.overdue ? 'start-overdue' : 'reach-start',
+        zoneLabel,
+        remainingMs: Number.isFinite(child.remainingMs) ? child.remainingMs : 0
+      };
+    });
+  }
+  return statuses;
+}
+
 /**
  * Pure function: resolve governance decisions + display map → display rows.
  * Exported for testability. Used via useGovernanceDisplay hook.
@@ -30,6 +75,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     ? null
     : rawChallenge;
   const normalizedRequirements = Array.isArray(requirements) ? requirements : [];
+  const participantStatuses = resolveParticipantGovernanceStatuses({ ...govState, challenge });
   const activityRequirements = normalizedRequirements.filter((req) => req?.type === 'activity_rate');
 
   if (status === 'unlocked') {
@@ -57,6 +103,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
           videoLocked: true,
           metRows: [],
           challenge,
+          participantStatuses,
           activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
         };
       }
@@ -71,10 +118,11 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
         videoLocked: false,
         metRows: [],
         challenge,
+        participantStatuses,
         activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
       };
     }
-    return { show: false, status, rows: [], metRows: [], activityRequirements };
+    return { show: false, status, rows: [], metRows: [], activityRequirements, participantStatuses };
   }
 
   // Collect all (userId, targetZoneId) pairs from unsatisfied requirements + active challenge
@@ -111,7 +159,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
       if (isZeroHrInDisplay(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
-        userTargets.set(key, { userId, targetZoneId });
+        userTargets.set(key, { userId, targetZoneId, source: 'requirement' });
       }
     });
   });
@@ -125,14 +173,17 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
       if (isZeroHrInDisplay(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
-        userTargets.set(key, { userId, targetZoneId });
+        userTargets.set(key, { userId, targetZoneId, source: 'challenge' });
       }
     });
   }
 
   // Resolve each user against the display map
   const rows = [];
-  for (const [key, { userId, targetZoneId }] of userTargets) {
+  const challengeHolding = new Set(
+    (Array.isArray(challenge?.holding) ? challenge.holding : []).map(normalize)
+  );
+  for (const [key, { userId, targetZoneId, source }] of userTargets) {
     const display = displayMap.get(key);
     const targetZone = targetZoneId ? (zoneMap[targetZoneId] || null) : null;
     const currentZoneId = display?.zoneId || null;
@@ -161,9 +212,22 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     const resolvedName = (preferGroupLabels && display?.groupLabel)
       ? display.groupLabel
       : (display?.displayName || userId);
+    // A row is 'missing' unless the rider is mid-hold on the challenge that
+    // put them here (D5), or is an unattended child past the start window (D3).
+    const participantStatus = participantStatuses[key] || null;
+    let rowStatus = 'missing';
+    if (source === 'challenge' && challengeHolding.has(key)) {
+      rowStatus = 'holding';
+    } else if (participantStatus?.status === 'start-overdue') {
+      rowStatus = 'start-overdue';
+    }
     rows.push({
       key: key,
       userId,
+      status: rowStatus,
+      statusZoneLabel: rowStatus === 'start-overdue'
+        ? participantStatus.zoneLabel
+        : (rowStatus === 'holding' ? (challenge?.zoneLabel || challenge?.zone || null) : null),
       displayName: resolvedName,
       avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
       heartRate: display?.heartRate ?? null,
@@ -236,7 +300,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     activityRequirements,
     activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null,
     rows,
-    metRows
+    metRows,
+    participantStatuses
   };
 }
 
