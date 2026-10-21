@@ -1396,7 +1396,7 @@ describe('AgendaStatusBoard silver this week', () => {
 
   it('the coins sit in one cell per card, silver then gold, as a two-column grid', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
-    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0 } });
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0, balances: { silver: 0, gold: 0, gems: 0 } } });
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     await waitFor(() => expect(silverOf('21')).toBeTruthy());
     const cell = screen.getAllByTestId('board-coins')[0];
@@ -1459,7 +1459,24 @@ describe('AgendaStatusBoard gold', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
   });
-  const wallet = (balance) => ({ ok: true, status: 200, data: { balance, session: null } });
+  // `balance` is the SILVER figure (EconomyService); gold is `balances.gold`.
+  // The silver here differs on purpose, so reading the wrong field fails.
+  const wallet = (gold, silver = 40) => ({ ok: true, status: 200, data: { balance: silver, balances: { silver, gold, gems: 0 }, session: null } });
+
+  it('gold is the gold balance, never the silver `balance` figure', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(3, 12));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('3 gold')).toHaveLength(2));
+    expect(screen.queryByLabelText('12 gold')).toBeNull();
+  });
+
+  it('a wallet with no `balances` shows no gold rather than the silver figure', async () => {
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 12, session: null } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(schoolApi.wallet).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(screen.queryByLabelText(/ gold$/)).toBeNull();
+  });
 
   it('gold shows without silver, per learner, once its wallet read lands', async () => {
     schoolApi.wallet.mockImplementation((id) => Promise.resolve(id === 'learner1' ? wallet(7) : { ok: false, status: 500, data: null }));

@@ -453,8 +453,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
             schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
             return;
           }
-          if (!res?.ok || !Number.isFinite(res.data?.balance)) return;
-          setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
+          // `balance` is the SILVER figure; gold is `balances.gold`. A wallet
+          // with no `balances` shows no gold rather than the silver number.
+          const goldBalance = res?.ok ? res.data?.balances?.gold : undefined;
+          if (!Number.isFinite(goldBalance)) return;
+          setGold((current) => ({ ...current, [kid.id]: goldBalance }));
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });

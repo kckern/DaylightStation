@@ -73,7 +73,7 @@ export const schoolApi = {
   earningsRoster: (week = null) => reqAbsolute(
     `/api/v1/earnings/preview${week ? `?${new URLSearchParams({ week })}` : ''}`,
   ),
-  // A learner's lasting coin balance (gold) on the economy ledger.
+  // A learner's wallet: `balances.gold` is the lasting coin; `balance` is the silver figure.
   wallet: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/wallet`),
   earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
   putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
