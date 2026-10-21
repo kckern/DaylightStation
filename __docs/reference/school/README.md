@@ -1529,6 +1529,52 @@ synthetic `created` state instead and hands `/act` a `SYNTHETIC_SESSION_ID` that
 must never reach a use case. `/act` is where a real session is opened, because by
 then the child has pressed a button.
 
+#### Print my next sheet (no code)
+
+The Portal's bank strip and the piano kiosk's lock screen print a child's next
+worksheet without a code, through `IssueSubjectNext`
+(`application/usecases/IssueSubjectNext.mjs`):
+
+- `POST /api/v1/school/lifecycle/learners/:learnerId/print-next {subject?, deviceId?}`
+  prints. The body is read for `subject` and `deviceId` and nothing else; a
+  learner off the roster is a `404`, a subject that is not one of that learner's
+  sections today is a `400`. Everything else, printer failures included, is a
+  `200` carrying `{status, outcome, sentence, subject, unit: {unitId, title,
+  subject}, sessionId}`. Surfaces show `sentence`.
+- `GET /api/v1/school/lifecycle/learners/:learnerId/next?subject=` is the dry
+  run for the button's label: `{subject, unit, printable, reward}`. It opens no
+  session. `reward` comes from the optional `rewardFor({learnerId, unit})` port
+  that `createSchoolLifecycle` accepts. It is null when that port is not wired,
+  returns nothing or throws.
+
+**It can only print the learner's own next sheet.** With no subject named, the
+subject comes from `GetLearnerDayCompletion`: obligated sections first, then
+electives (excused and not yet served), in plan order. Within each tier the
+first section whose next move is paper wins, so a program or a video at the top
+of the plan does not take the button. `ResolveSubjectNext` then resolves that
+subject exactly as for a scanned subject ticket, and ensures the session. The
+sheet prints only when the self-service card for that resolution would offer
+`print` (`offeredActions`). Served, locked, empty, program and non-paper moves
+answer with the card's own sentence and print nothing.
+
+**The print step is shared with the keypad.** `printSessionSheet.mjs` holds
+`PRINT_RESULTS` and the `IssueDocument` call that `RunSelfServiceAction`'s
+`print` button uses. The two surfaces say the same thing about the same printer
+("The printer did not answer. Try that again in a minute."), and only the event
+names differ.
+
+**A 20-second per-learner debounce sits in front of everything.** It is
+separate from `IssueDocument`'s per-session `printCooldownMinutes`. It catches
+one child tapping the strip and the kiosk, or one button twice, a moment apart:
+"It's already on its way — give it a minute." The stamp is checked and armed
+before any await, so two requests in flight together still print once. It is
+released whenever the tap printed nothing (a refusal, a printer failure, the
+session cooldown), so a failed print can be retried straight away. The stamp
+lives in process memory, so a backend restart clears it.
+
+Events: `school.subject-next.printed`, `.refused` (warn when a print failed)
+and `.debounced`, each with `{learnerId, subject, unitId, status, deviceId}`.
+
 #### The reading log
 
 **The shelf is open to every learner, every day.** An enrollment carries the

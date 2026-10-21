@@ -55,31 +55,21 @@ import { createEvent } from "../../domain/sessions/sessionEvents.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { ensureSession } from "./offerSession.mjs";
 import { SYNTHETIC_SESSION_ID } from "./ResolveAccessCode.mjs";
+import {
+  TELL_A_GROWN_UP, printSessionSheet, reportUseCaseResult, unwiredAnswer, threwAnswer,
+} from "./printSessionSheet.mjs";
 
 /** The buttons that act on a work session, and therefore need a real one. */
 const NEEDS_SESSION = new Set(['print', 'play', 'launch', 'screen', 'retry']);
 
-const TELL_A_GROWN_UP = 'Something went wrong. Tell a grown-up.';
 /** The card moved on under the child's finger — recompute and type again. */
 const MOVED_ON = 'That is not what this lesson needs now. Type your code again.';
 
 /**
- * `IssueDocument` status -> what the panel says and how Task 8 should branch.
- *
- * `sentence: null` means the use case's own message is already panel-safe
- * ("Printing your sheet."). Every other row is rewritten because
- * `IssueDocument`'s copy tells the child to SCAN — a scanner instruction on a
- * keypad, the exact trap `offeredActions` warns about for `nextMove`'s labels.
+ * `IssueDocument` status -> panel answer lives in `printSessionSheet.mjs`
+ * (`PRINT_RESULTS`), shared with `IssueSubjectNext` so the keypad and the
+ * Portal's "print my next sheet" say the same thing about the same printer.
  */
-const PRINT_RESULTS = Object.freeze({
-  issued: { outcome: 'done', sentence: null },
-  reprinted: { outcome: 'done', sentence: null },
-  debounced: { outcome: 'debounced', sentence: "It's already on its way — give it a minute." },
-  already_done: { outcome: 'refused', sentence: 'That one is finished. Type your code again to see what is next.' },
-  print_failed: { outcome: 'failed', sentence: 'The printer did not answer. Try that again in a minute.' },
-  render_failed: { outcome: 'failed', sentence: 'We could not make that sheet. Tell a grown-up.' },
-  unavailable: { outcome: 'failed', sentence: 'There is no sheet for this one. Tell a grown-up.' },
-});
 
 /** `DispatchMedia` status -> the same, for the same reason. */
 const PLAY_RESULTS = Object.freeze({
@@ -369,17 +359,7 @@ export class RunSelfServiceAction {
    * `offerSession.mjs` records deleting after it drifted.
    */
   async #print(sessionId) {
-    if (!this.#issue) return this.#unwired('print', sessionId);
-    let result;
-    try {
-      result = await this.#issue.execute({ sessionId });
-    } catch (error) {
-      return this.#threw('print', sessionId, error);
-    }
-    return this.#report('print', PRINT_RESULTS, result, sessionId, {
-      artifactId: result?.artifactId ?? null,
-      pageCount: result?.pageCount ?? null,
-    });
+    return printSessionSheet({ issueDocument: this.#issue, sessionId, logger: this.#logger });
   }
 
   /**
@@ -545,28 +525,7 @@ export class RunSelfServiceAction {
    * about is a real gap and there is no other way to see it.
    */
   #report(action, table, result, sessionId, effect) {
-    const known = table[result?.status];
-    if (!known) {
-      this.#logger.warn?.('school.selfservice.action.unknown-status', {
-        action, sessionId, status: result?.status ?? null,
-      });
-    } else if (known.outcome === 'failed') {
-      this.#logger.warn?.('school.selfservice.action.use-case-failed', {
-        action, sessionId, status: result.status, message: result.message ?? null,
-      });
-    }
-    // `sentence: null` in a table means "the use case already said it well".
-    const own = known?.sentence === null ? result?.message : known?.sentence;
-    const outcome = known?.outcome ?? 'failed';
-    return {
-      outcome,
-      // A blank sentence is the one thing a panel may never show, so even a
-      // use case that answers with an empty message gets words here.
-      sentence: (typeof own === 'string' && own.trim()) ? own : (outcome === 'done' ? 'All set.' : TELL_A_GROWN_UP),
-      sessionId,
-      effect: { status: result?.status ?? null, ...effect },
-      transition: action === 'print' && outcome === 'done' ? 'confirm-print' : 'message',
-    };
+    return reportUseCaseResult({ action, table, result, sessionId, effect, logger: this.#logger });
   }
 
   /**
@@ -800,15 +759,11 @@ export class RunSelfServiceAction {
   }
 
   #unwired(action, sessionId) {
-    this.#logger.warn?.('school.selfservice.action.unwired', { action, sessionId });
-    return { outcome: 'failed', sentence: 'That is not set up yet. Tell a grown-up.', sessionId, effect: null };
+    return unwiredAnswer({ action, sessionId, logger: this.#logger });
   }
 
   #threw(action, sessionId, error) {
-    this.#logger.error?.('school.selfservice.action.failed', {
-      stage: action, sessionId, error: error?.message ?? String(error),
-    });
-    return { outcome: 'failed', sentence: TELL_A_GROWN_UP, sessionId, effect: null };
+    return threwAnswer({ action, sessionId, error, logger: this.#logger });
   }
 }
 

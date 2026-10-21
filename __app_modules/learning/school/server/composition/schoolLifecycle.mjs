@@ -132,6 +132,7 @@ import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.m
 import { ResolveAccessCode } from "../application/usecases/ResolveAccessCode.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
 import { RunSelfServiceAction } from "../application/usecases/RunSelfServiceAction.mjs";
+import { IssueSubjectNext } from "../application/usecases/IssueSubjectNext.mjs";
 import { RecordLessonCompanionProgress } from "../application/usecases/RecordLessonCompanionProgress.mjs";
 import { GetCompanionFinishCode } from "../application/usecases/GetCompanionFinishCode.mjs";
 import { ReadPrinterHealth } from "../application/usecases/ReadPrinterHealth.mjs";
@@ -296,6 +297,10 @@ export async function createSchoolLifecycle({
   // app.mjs). The term grid's term IS one of these; null leaves the term
   // read model unwired rather than inventing a calendar of its own.
   academicPeriods = null,
+  // `({learnerId, unit}) => Promise<{silver?, gems?}|null>` — the reward label
+  // for "print my next sheet" (`GET .../next`). Owned by the economy, injected
+  // so School never imports it. Null shows no reward; a throw is swallowed.
+  rewardFor = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const schoolRealtime = realtime ?? (eventBus ? new EventBusSchoolRealtimeAdapter({ eventBus }) : null);
@@ -1436,6 +1441,22 @@ export async function createSchoolLifecycle({
     clock,
     logger,
   });
+  // "Print my next sheet" with no code — the Portal bank strip and the piano
+  // kiosk. The SAME resolver the scan path asks, the SAME projection, and the
+  // SAME `issueDocument` the keypad's `print` button reaches through the
+  // shared `printSessionSheet` helper, so a sheet printed from here is the
+  // sheet a scanned subject ticket would have printed.
+  const issueSubjectNext = new IssueSubjectNext({
+    resolveSubjectNext,
+    getLearnerDayCompletion,
+    planProjection,
+    sessions: stores.sessions,
+    issueDocument,
+    roster: () => schoolRoster.list(),
+    rewardFor,
+    clock,
+    logger,
+  });
   const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
   // The escape hatch for a companion whose media is broken: a grown-up reads
   // the finish code out. Built HERE because the code store and `householdId`
@@ -1521,7 +1542,7 @@ export async function createSchoolLifecycle({
     setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, sweepAnswerSheets, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     invalidateSessionEvidence, recoverMisattributedWorksheet,
-    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, issueSubjectNext, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch, issueSubjectCode,
     getLearnerTerm, rebuildLearnerTerm,

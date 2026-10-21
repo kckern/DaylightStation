@@ -123,7 +123,7 @@ describe('fail closed', () => {
       'enrollLearner', 'getCompanionFinishCode', 'getLearnerDayCompletion', 'getLearnerTerm', 'getPianoLessonGate',
       'gradeSubmission',
       'invalidateSessionEvidence', 'issueComposedWorksheet', 'issueCorrectedResultReceipt', 'issueDirectLaunch',
-      'issueDocument', 'issueSubjectCode', 'manageCurriculumException',
+      'issueDocument', 'issueSubjectCode', 'issueSubjectNext', 'manageCurriculumException',
       'manageProgramDayBypass', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
       'rebuildLearnerTerm', 'recordLessonCompanionProgress', 'recordMediaCompletion', 'recoverMisattributedWorksheet', 'replaceLostAnswerSheet', 'replaceRemediation',
       'reprintIssuedArtifact', 'reprintResultReceiptArtifact', 'resolveAccessCode', 'resolveCardScan', 'resolvePersonalCard',
