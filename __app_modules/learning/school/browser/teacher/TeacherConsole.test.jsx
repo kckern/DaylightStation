@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import TeacherConsoleView from "./TeacherConsole.jsx";
 import PianoProgramsPanel from "../../../piano/browser/teacher-programs.mjs";
+import { localDay, shiftDay } from "./teacherDates.js";
 
 const TeacherConsole = () => <MantineProvider><TeacherConsoleView PianoProgramsPanel={PianoProgramsPanel} /></MantineProvider>;
 
@@ -638,6 +639,18 @@ describe('TeacherConsole workspace', () => {
     } finally {
       schoolApi.curriculumUnits.mockImplementation(units);
     }
+  });
+
+  // A regrade is about work already done: the range covers the last month,
+  // and a linked `?bank=` arrives filled in rather than retyped from memory.
+  it('systematic regrade defaults to the last 30 days and takes a linked bank', async () => {
+    window.history.pushState({}, '', '/school/teacher/operations?bank=math/fractions/b1');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByText('Systematic regrade')).toBeTruthy());
+    const regrade = screen.getByText('Systematic regrade').closest('section');
+    expect(within(regrade).getByLabelText('Bank ID').value).toBe('math/fractions/b1');
+    expect(within(regrade).getByLabelText('From').value).toBe(shiftDay(localDay(), -30));
+    expect(within(regrade).getByLabelText('Through').value).toBe(localDay());
   });
 
   it('previews a bounded systematic regrade before a protected apply', async () => {

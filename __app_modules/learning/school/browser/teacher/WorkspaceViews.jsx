@@ -40,7 +40,7 @@ import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacher
 import { grownUpActionFor } from "./obligationCopy.js";
 import { teacherLog } from "./teacherLog.js";
 import { curriculumTitles } from "./curriculumTitles.js";
-import { localDay, humanDate, humanDateTime } from "./teacherDates.js";
+import { localDay, shiftDay, humanDate, humanDateTime } from "./teacherDates.js";
 import { presentSessionState } from "./sessionPresentation.js";
 import CoinsPanel from "./panels/CoinsPanel.jsx";
 import CoinsRosterPanel from "./panels/CoinsRosterPanel.jsx";
@@ -579,7 +579,12 @@ export function OperationsView({ kids }) {
 
 function BulkRegradePanel() {
   const today = localDay();
-  const [form, setForm] = useState({ bankId: '', fromDay: today, toDay: today, reason: '' });
+  // A systematic regrade is about work already done: default to the last 30
+  // days, not to an empty range ending today. A linked `?bank=` arrives filled
+  // in; the shell keys this view by its query, so a new link is a fresh form.
+  const monthAgo = shiftDay(today, -30);
+  const bankFromUrl = new URLSearchParams(window.location.search).get('bank') ?? '';
+  const [form, setForm] = useState({ bankId: bankFromUrl, fromDay: monthAgo, toDay: today, reason: '' });
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'bulk-regrade' });
   const key = 'bulk-regrade';
