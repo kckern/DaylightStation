@@ -110,6 +110,7 @@ try {
       // The reading shelf (book-log program): grants for the panel's /act
       // target, the Books domain's resolver and repository for the shelf.
       bookGrants: dependencies.schoolBookGrants,
+      debriefGrants: dependencies.schoolDebriefGrants,
       resolveBook: books.resolveBook,
       bookRepository: books.bookRepository,
       // Shelf and teacher views render covers from OUR address, never the
