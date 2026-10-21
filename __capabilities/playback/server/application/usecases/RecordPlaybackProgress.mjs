@@ -122,7 +122,9 @@ export class RecordPlaybackProgress {
       percent: statePercent, playhead: normalizedSeconds, duration: estimatedDuration, watchTime: newWatchTime,
     }, rule);
     const remainingSec = estimatedDuration > 0 ? estimatedDuration - normalizedSeconds : null;
-    if (statePercent >= rule.minPercent) {
+    // Heartbeats on an already-finished item decide nothing; skip their line.
+    const stillOpen = !existingState?.completedAt || status === 'completed' || naturalEnd === true;
+    if (stillOpen && statePercent >= rule.minPercent) {
       this.logger.debug?.('play.log.completion_judged', {
         assetId: compoundId, namespace: progressNamespace, rule: rule.source ?? 'default', tier: rule.tier ?? 0,
         percent: statePercent, remainingSec, complete: watchComplete,

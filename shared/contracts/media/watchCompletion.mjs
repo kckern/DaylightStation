@@ -12,12 +12,15 @@
  *     default: { min_percent: 90 }
  *     libraries:
  *       plex/14_fitness:            # progress namespace
- *         min_watch_sec: 30         # a seek or preview never counts
+ *         min_watch_sec: 30         # too little recorded watch time never counts (watch
+ *                                   # time includes forward seeks today, so a weak floor)
  *         tiers:                    # first tier whose max_duration_sec fits wins
  *           - { max_duration_sec: 2700, min_percent: 50 }
  *           - { min_percent: 95, max_remaining_sec: 300 }
  *
- * A natural end always counts and is the caller's to pass separately.
+ * A tier inherits the entry-level fields and cannot clear them; the percent
+ * compared is the caller's rounded figure. A natural end always counts and is
+ * the caller's to pass separately.
  */
 
 /** Movie mode: 90% played, no cap on what is left. */
@@ -49,18 +52,22 @@ const RULE_KEYS = ['min_percent', 'max_remaining_sec', 'min_watch_sec'];
 const ENTRY_KEYS = new Set([...RULE_KEYS, 'tiers']);
 const TIER_KEYS = new Set([...RULE_KEYS, 'max_duration_sec']);
 
-function readNumber(raw, key, { max = Infinity } = {}) {
-  if (raw[key] == null) return null;
-  const value = Number(raw[key]);
-  if (typeof raw[key] === 'boolean' || !Number.isFinite(value) || value < 0 || value > max) {
-    throw new Error(`${key} must be a number from 0 to ${max === Infinity ? 'any' : max}`);
+// YAML numbers only: a quoted "95" is a typo worth hearing about, not coercing.
+function readNumber(raw, key, { max = Infinity, aboveZero = false } = {}) {
+  const value = raw[key];
+  if (value == null) return null;
+  const ok = typeof value === 'number' && Number.isFinite(value)
+    && (aboveZero ? value > 0 : value >= 0) && value <= max;
+  if (!ok) {
+    throw new Error(`${key} must be a number ${aboveZero ? 'above' : 'from'} 0${max === Infinity ? '' : ` to ${max}`}`);
   }
   return value;
 }
 
 function readRule(raw, inherited) {
   return {
-    minPercent: readNumber(raw, 'min_percent', { max: 100 }) ?? inherited.minPercent ?? DEFAULT_RULE.minPercent,
+    // 0% would finish anything the moment it started
+    minPercent: readNumber(raw, 'min_percent', { max: 100, aboveZero: true }) ?? inherited.minPercent ?? DEFAULT_RULE.minPercent,
     maxRemainingSec: readNumber(raw, 'max_remaining_sec') ?? inherited.maxRemainingSec ?? null,
     minWatchSec: readNumber(raw, 'min_watch_sec') ?? inherited.minWatchSec ?? null,
   };
@@ -81,6 +88,11 @@ function parseEntry(raw) {
     return { maxDurationSec: readNumber(tier, 'max_duration_sec'), rule: readRule(tier, base) };
   });
   if (tiers[tiers.length - 1].maxDurationSec != null) throw new Error('last tier must have no max_duration_sec (catch-all)');
+  // First fit wins, so an out-of-order bound would shadow the tiers after it.
+  const bounds = tiers.slice(0, -1).map((t) => t.maxDurationSec);
+  if (bounds.some((b, i) => b == null || (i > 0 && b <= bounds[i - 1]))) {
+    throw new Error('tiers must ascend by max_duration_sec');
+  }
   return tiers;
 }
 
@@ -106,7 +118,12 @@ export function compileWatchCompletion(raw) {
   const fallback = [{ maxDurationSec: null, rule: DEFAULT_RULE }];
   const defaultTiers = (raw?.default != null && compile('default', raw.default)) || fallback;
   const libraries = new Map();
-  const listed = raw?.libraries && typeof raw.libraries === 'object' ? raw.libraries : {};
+  let listed = {};
+  if (raw?.libraries != null) {
+    const mapping = typeof raw.libraries === 'object' && !Array.isArray(raw.libraries);
+    if (mapping) listed = raw.libraries;
+    else errors.push({ namespace: 'libraries', reason: 'must be a mapping' });
+  }
   for (const [namespace, entry] of Object.entries(listed)) {
     const tiers = compile(namespace, entry);
     if (tiers) libraries.set(namespace, tiers);
@@ -131,9 +148,18 @@ export function compileWatchCompletion(raw) {
 export function createWatchCompletionRules({ readConfig, logger = null } = {}) {
   let lastRaw;
   let compiled = null;
+  let readFailing = false;
   const current = () => {
     let raw;
-    try { raw = readConfig?.(); } catch { raw = undefined; }
+    try {
+      raw = readConfig?.();
+      readFailing = false;
+    } catch (error) {
+      raw = undefined;
+      // Once per outage, not once per judgement while it lasts.
+      if (!readFailing) logger?.warn?.('media.watch_completion.read_failed', { error: error.message });
+      readFailing = true;
+    }
     if (compiled && raw === lastRaw) return compiled;
     lastRaw = raw;
     compiled = compileWatchCompletion(raw);
