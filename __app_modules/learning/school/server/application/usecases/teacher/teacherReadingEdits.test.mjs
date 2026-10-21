@@ -278,6 +278,31 @@ describe('AddReadingEntry', () => {
     expect(reading.revisions.filter((row) => row.verb === 'reading.entry.add')).toHaveLength(1);
   });
 
+  it('a replay serves the count as it stood right after the ORIGINAL write, so a later edit still refuses the finish', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page: 120, idempotencyKey: 'log-2:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 });
+    // Someone else edits the reading in between (revision 2).
+    await new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, patch: { pageCount: 200 }, baseRevisionCount: 1,
+    });
+    const replay = await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 });
+    expect(replay).toMatchObject({ replayed: true, revisionCount: 1 });
+    await expect(new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER,
+      patch: { status: 'finished', finishedOn: '2026-09-05' }, baseRevisionCount: replay.revisionCount,
+    })).rejects.toThrow(/changed since you loaded it/);
+  });
+
+  it('a replay that says something different from the save that landed is refused, not merged', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', idempotencyKey: 'log-3:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, page: 40, baseRevisionCount: 0 });
+    await expect(new AddReadingEntry(deps()).execute({ ...entry, page: 60, baseRevisionCount: 0 }))
+      .rejects.toThrow(/already landed with page 40/);
+    await expect(new AddReadingEntry(deps()).execute({ ...entry, on: '2026-09-04', page: 40, baseRevisionCount: 0 }))
+      .rejects.toThrow(/already landed/);
+    expect((await only()).revisions).toHaveLength(1);
+  });
+
   it('a new key on a stale base is still refused', async () => {
     const add = (idempotencyKey, page) => new AddReadingEntry(deps()).execute({
       learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page, baseRevisionCount: 0, idempotencyKey,
