@@ -24,10 +24,16 @@ describe('entrySentence', () => {
     expect(entrySentence(tx({ kind: 'prize', currency: 'gems', delta: 2, action: 'payout:x', ruleId: 'x' }), opts)).toBe('+2 gems · prize');
   });
   it('an early pass and its refund', () => {
-    expect(entrySentence(tx({ kind: 'spend', delta: -3, action: 'early-pass', ref: 'pass:k:2026-10-20' }), opts)).toBe('−3 silver · early pass');
-    expect(entrySentence(tx({ kind: 'spend', currency: 'gold', delta: -1, action: 'early-pass', ref: 'pass:k:2026-10-20' }), opts)).toBe('−1 gold · early pass');
-    expect(entrySentence(tx({ kind: 'earn', delta: 3, action: 'early-pass-refund', ref: 'pass:k:2026-10-20:refund' }), opts))
+    expect(entrySentence(tx({ kind: 'spend', delta: -3, action: 'early-pass', source: 'pass', ref: 'pass:k:2026-10-20' }), opts)).toBe('−3 silver · early pass');
+    expect(entrySentence(tx({ kind: 'spend', currency: 'gold', delta: -1, action: 'early-pass', source: 'pass', ref: 'pass:k:2026-10-20' }), opts)).toBe('−1 gold · early pass');
+    expect(entrySentence(tx({ kind: 'earn', delta: 3, action: 'early-pass-refund', source: 'pass', ref: 'pass:k:2026-10-20:refund' }), opts))
       .toBe('+3 silver · early pass refunded');
+  });
+  it('a pass is matched by its source, whatever the catalog key is', () => {
+    expect(entrySentence(tx({ kind: 'spend', delta: -2, action: 'arcade-sneak', source: 'pass' }), opts)).toBe('−2 silver · early pass');
+    expect(entrySentence(tx({ kind: 'earn', delta: 2, action: 'arcade-sneak-refund', source: 'pass' }), opts)).toBe('+2 silver · early pass refunded');
+    // Not a pass: an earn whose action merely ends in -refund.
+    expect(entrySentence(tx({ kind: 'earn', delta: 2, action: 'bottle-refund', source: 'api' }), opts)).toBe('+2 silver · bottle refund');
   });
   it('other spends and earns read their action as words', () => {
     expect(entrySentence(tx({ kind: 'spend', delta: -3, action: 'chess-sneak' }), opts)).toBe('−3 silver · chess sneak');
@@ -53,13 +59,21 @@ describe('historyLines', () => {
     expect(texts([back, out])).toEqual(['12 silver → 12 gold · Sunday']);
     expect(historyLines([back, out], opts)[0]).toMatchObject({ kind: 'convert', at: AT, ids: ['b', 'o'] });
   });
+  it('a repaired pair (the second half written later) still reads as one sentence', () => {
+    const repaired = { ...back, at: '2026-10-19T07:30:00.000Z' };
+    expect(texts([repaired, out])).toEqual(['12 silver → 12 gold · Sunday']);
+  });
+  it('halves of different conversions never pair', () => {
+    const other = { ...back, evidenceRef: 'close:2026-10-05' };
+    expect(texts([other, out])).toHaveLength(2);
+  });
   it('a lone half still reads', () => {
     expect(texts([out])).toEqual(['−12 silver · converted · Sunday']);
   });
   it('keeps order, newest first as given, and skips the zero-delta pass markers', () => {
     const marker = tx({ id: 'm', kind: 'pass', delta: 0, action: 'early-pass', ref: 'pass:k:2026-10-20' });
     const pay = tx({ id: 'p', kind: 'earn', delta: 2, action: 'payout:scripture-week', ruleId: 'scripture-week', evidenceRef: 'line:isaiah' });
-    const sp = tx({ id: 's', kind: 'spend', delta: -3, action: 'early-pass', ref: 'pass:k:2026-10-20' });
+    const sp = tx({ id: 's', kind: 'spend', delta: -3, action: 'early-pass', source: 'pass', ref: 'pass:k:2026-10-20' });
     expect(texts([marker, sp, back, out, pay])).toEqual([
       '−3 silver · early pass', '12 silver → 12 gold · Sunday', '+2 silver · Isaiah 50–51 passed',
     ]);

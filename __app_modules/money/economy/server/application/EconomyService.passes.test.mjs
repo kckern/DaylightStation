@@ -167,6 +167,49 @@ describe('EconomyService.buyPass', () => {
     expect(res).toMatchObject({ refunded: 0, pass: { state: 'refunded' } });
     expect(ledger().filter((t) => t.kind === 'earn')).toEqual([]);
   });
+  it('a spend that fails after the marker names the unpaid pass on the error and logs it at error', async () => {
+    const logger = quiet();
+    const datastore = ds();
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'spend') throw new Error('disk full');
+      return append(userId, txn);
+    };
+    const svc = makeService({ datastore, logger });
+    await fundSilver(svc, 5);
+    const err = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }).catch((e) => e);
+    expect(err).toMatchObject({ message: 'disk full', passId: PASS });
+    expect(logger.error).toHaveBeenCalledWith('economy.pass.unpaid', { learnerId: USER, passId: PASS, error: 'disk full' });
+    expect(logger.info).not.toHaveBeenCalledWith('economy.pass.bought', expect.anything());
+  });
+  it('a marker that fails writes nothing and names no pass', async () => {
+    const logger = quiet();
+    const datastore = ds();
+    const append = datastore.appendTransaction.bind(datastore);
+    datastore.appendTransaction = async (userId, txn) => {
+      if (txn.kind === 'pass') throw new Error('disk full');
+      return append(userId, txn);
+    };
+    const svc = makeService({ datastore, logger });
+    await fundSilver(svc, 5);
+    const err = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }).catch((e) => e);
+    expect(err.message).toBe('disk full');
+    expect(err.passId).toBeUndefined();
+    expect(ledger().map((t) => t.kind)).toEqual(['deposit']);
+    expect(logger.error).not.toHaveBeenCalledWith('economy.pass.unpaid', expect.anything());
+  });
+  it('a buy racing a mint makes one pass and a balance that adds up', async () => {
+    const svc = makeService();
+    await fundSilver(svc, 3);
+    const [bought] = await Promise.all([
+      svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }),
+      makeService().mint(USER, { currency: 'silver', amount: 4, ref: 'payout:race' }),
+    ]);
+    expect(bought.pass.state).toBe('active');
+    expect(ledger().filter((t) => t.kind === 'pass')).toHaveLength(1);
+    expect((await svc.getBalance(USER)).balances.silver).toBe(4);
+    expect(ds().readWallet(USER).balances.silver).toBe(4);
+  });
   it('when the spend and the snapshot both throw, the caller sees the spend error', async () => {
     const logger = quiet();
     const datastore = ds();
@@ -206,6 +249,16 @@ describe('EconomyService.activePass', () => {
     await expect(svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' }))
       .resolves.toMatchObject({ pass: { passId: `pass:${USER}:2026-10-21` } });
   });
+  it('a corrupt shard today: passesToday({strict}) throws CORRUPT_LEDGER; the lenient read logs it and carries on', async () => {
+    const logger = quiet();
+    const svc = makeService({ logger });
+    await fundSilver(svc, 5);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'silver' });
+    fs.writeFileSync(path.join(USER_DIR, USER, 'apps', 'economy', 'ledger', '2026-10-19.yml'), ': : not yaml [');
+    await expect(svc.passesToday(USER, { strict: true })).rejects.toMatchObject({ code: 'CORRUPT_LEDGER' });
+    expect(await svc.activePass(USER, { privilege: 'piano.games' })).toMatchObject({ passId: PASS });
+    expect(logger.warn).toHaveBeenCalledWith('economy.pass.ledger-unreadable', expect.objectContaining({ learnerId: USER, studyDay: DAY }));
+  });
   it('the 4 am boundary is the household\'s, not UTC\'s', async () => {
     const svc = new EconomyService({
       datastore: ds(), configProjection: new EconomyConfigProjection({ configService }), logger: quiet(),
@@ -244,6 +297,14 @@ describe('EconomyService.consumePass / refundPass', () => {
     const res = await svc.refundPass(USER, { passId: PASS, playedMs: 59000, reason: 'crash' });
     expect(res).toMatchObject({ refunded: 3, duplicate: false, balances: { silver: 5 }, pass: { state: 'refunded', reason: 'crash' } });
     expect(ledger().find((t) => t.kind === 'earn')).toMatchObject({ currency: 'silver', delta: 3, action: 'early-pass-refund', ref: `${PASS}:refund` });
+  });
+  it('a gold pass refunds in gold', async () => {
+    const svc = makeService();
+    await fundGold(svc, 2);
+    await svc.buyPass(USER, { privilege: 'piano.games', coin: 'gold' });
+    const res = await svc.refundPass(USER, { passId: PASS, playedMs: 1000 });
+    expect(res).toMatchObject({ refunded: 1, balances: { gold: 2, silver: 0 } });
+    expect(ledger().find((t) => t.kind === 'earn' && t.source === 'pass')).toMatchObject({ currency: 'gold', delta: 1, ref: `${PASS}:refund` });
   });
   it('the server bounds the window too: playedMs 0 an hour later is refused', async () => {
     const svc = await bought();

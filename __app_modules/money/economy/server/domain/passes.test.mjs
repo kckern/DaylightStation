@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { passRef, parsePassRef, passState, passesOn, findPass, quote, PASS_SELLABLE_COINS } from './passes.mjs';
+import { passRef, parsePassRef, passState, passesOn, findPass, quote, PASS_SELLABLE_COINS, nonePass, capUsed } from './passes.mjs';
 
 const L = 'kid';
 const DAY = '2026-10-20';
@@ -38,6 +38,12 @@ describe('passState', () => {
   it('none when no purchase marker exists', () => {
     expect(passState([], { learnerId: L, studyDay: DAY })).toMatchObject({ passId: REF, state: 'none', privilege: null, price: null });
   });
+  it('nonePass has the same keys as a real pass state', () => {
+    const real = passState([marker(REF, 'active'), spend], { learnerId: L, studyDay: DAY });
+    const none = nonePass({ learnerId: L, studyDay: DAY, privilege: 'piano.games' });
+    expect(none).toMatchObject({ passId: null, state: 'none', privilege: 'piano.games', paid: 0 });
+    expect(Object.keys(real).filter((k) => !(k in none))).toEqual([]);
+  });
   it('active after the purchase, with the privilege, coin, price and what was paid', () => {
     expect(passState([marker(REF, 'active'), spend], { learnerId: L, studyDay: DAY }))
       .toMatchObject({ state: 'active', privilege: 'piano.games', coin: 'silver', price: 3, paid: 3, boughtAt: '2026-10-20T15:00:00.000Z' });
@@ -45,9 +51,17 @@ describe('passState', () => {
   it('a purchase marker whose spend never landed is active and unpaid', () => {
     expect(passState([marker(REF, 'active')], { learnerId: L, studyDay: DAY })).toMatchObject({ state: 'active', paid: 0 });
   });
-  it('the latest transition marker wins', () => {
+  it('a transition marker ends the pass', () => {
     const txns = [marker(REF, 'active'), spend, marker(`${REF}:consumed`, 'consumed', { playedMs: 120000 })];
     expect(passState(txns, { learnerId: L, studyDay: DAY })).toMatchObject({ state: 'consumed', playedMs: 120000 });
+  });
+  it('the FIRST transition wins, as the writes do', () => {
+    const consumed = marker(`${REF}:consumed`, 'consumed');
+    const refunded = marker(`${REF}:refunded`, 'refunded');
+    expect(passState([marker(REF, 'active'), spend, consumed, refunded], { learnerId: L, studyDay: DAY }).state).toBe('consumed');
+    expect(passState([marker(REF, 'active'), spend, refunded, consumed], { learnerId: L, studyDay: DAY }).state).toBe('refunded');
+    // A refund earn is the refund's first write.
+    expect(passState([marker(REF, 'active'), spend, refundEarn, consumed], { learnerId: L, studyDay: DAY }).state).toBe('refunded');
   });
   it('a refund earn reads as refunded even before its marker lands', () => {
     expect(passState([marker(REF, 'active'), spend, refundEarn], { learnerId: L, studyDay: DAY }))
@@ -65,6 +79,20 @@ describe('passesOn', () => {
     const txns = [marker(REF, 'active'), marker(`${REF}.2`, 'active'), marker(`${REF}:refunded`, 'refunded')];
     expect(passesOn(txns, { learnerId: L, studyDay: DAY }).map((p) => [p.passId, p.state]))
       .toEqual([[REF, 'refunded'], [`${REF}.2`, 'active']]);
+  });
+});
+
+describe('capUsed', () => {
+  const day = (refs) => refs.map((r, i) => ({ passId: r, pass: i === 1 ? 'arcade' : 'early-pass' }));
+  it('counts every pass across all-passes, only this pass otherwise', () => {
+    expect(capUsed(day([REF]), { key: 'early-pass', def: CATALOG.passes['early-pass'] })).toBe(true);
+    expect(capUsed([], { key: 'early-pass', def: CATALOG.passes['early-pass'] })).toBe(false);
+    const own = { key: 'early-pass', def: { cap: { per: 'study-day', count: 1, across: 'this-pass' } } };
+    expect(capUsed([{ pass: 'arcade' }], own)).toBe(false);
+    expect(capUsed([{ pass: 'early-pass' }], own)).toBe(true);
+  });
+  it('a cap it cannot read is null', () => {
+    expect(capUsed([], { key: 'p', def: { cap: { per: 'week' } } })).toBeNull();
   });
 });
 

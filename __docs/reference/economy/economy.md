@@ -170,7 +170,7 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 
 | Method / Path | Body | Returns |
 |---|---|---|
-| GET `/users/:userId/bank` | — | `{ userId, balances, history, pass, offers, weekEndsAt }` |
+| GET `/users/:userId/bank` | — | `{ userId, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt }` |
 | POST `/users/:userId/passes` | `{ privilege, coin }` | `{ userId, pass, balances }` |
 | POST `/users/:userId/passes/:passId/consume` | `{ playedMs? }` | `{ userId, pass, duplicate }` |
 | POST `/users/:userId/passes/:passId/refund` | `{ playedMs, reason? }` | `{ userId, pass, refunded, duplicate, balances }` |
@@ -179,16 +179,55 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 (`{ text, at, kind, ids }`): "+2 silver · Green day", "−3 silver · early pass",
 "+3 silver · early pass refunded", "12 silver → 12 gold · Sunday". A payout is
 named by the current week's preview line it paid for (its `evidenceRef`), then
-by the ruleset's label for its `ruleId`, then "schoolwork"; the two halves of a
-conversion (same `at` and `evidenceRef`) read as one line, named by the local
-weekday. Zero-delta `pass` markers are left out. `pass` is today's latest pass
-(`{ state: 'none', studyDay }` before any). `offers` maps each privilege a pass
-opens to its quote: `[{ coin, price, affordable }]`, one row per coin the pass is
-sold in, so `[]` means not for sale. `weekEndsAt` is the next
-`week_close.cron` instant (a weekly `M H * * D` cron in the household timezone),
-or the end of the week's Sunday study day (Monday at 4 am) when the cron is unset
-or not that shape. The code is `domain/historyText.mjs` (pure) and
-`application/BankService.mjs`.
+by the ruleset's label for its `ruleId`, then "schoolwork". The preview labels
+are cached per learner and week for 60 s (`cachedEvidenceLabels`), so a polled
+bank runs one preview a minute. Pass spends and refunds are matched on
+`source: pass`. The two halves of a conversion (same `evidenceRef`, opposite
+signs; `at` is not compared, so a repaired pair still pairs) read as one line,
+named by the local weekday. Zero-delta `pass` markers are left out.
+
+`balances` and each offer's `affordable` are folded from the same ledger read
+as the history, never the wallet snapshot, so an offer says what `buyPass` will
+decide. `offers` maps each privilege a pass opens to its quote:
+`[{ coin, price, affordable }]`, one row per coin the pass is sold in, so `[]`
+means not for sale.
+
+`pass` is keyed by privilege: `pass['piano.games']` is that privilege's latest
+pass today, or the "none" shape (`passId: null, state: 'none'`, the same keys a
+real pass has), plus `capUsed`: whether today's passes already use up its cap
+(across all passes, a pass for another privilege counts). Today's shards are
+read strictly here: one that does not parse gives `state: 'unknown',
+capUsed: null` and logs `economy.bank.pass-unreadable`, rather than claiming the
+day's pass is unused. (`activePass`, used for gating, stays lenient but logs
+`economy.pass.ledger-unreadable` when a strict read of those shards would have
+thrown.)
+
+`weekEndsAt` is the next fire of `week_close.cron` in the household timezone,
+by cron-parser (the scheduler's parser), so any cron the scheduler accepts
+works. No cron, or one that does not parse (logged
+`economy.bank.cron-unreadable`), gives the end of the week's Sunday study day
+(Monday at 4 am). Two caveats:
+
+- The scheduler (`AgentAssignmentScheduler.registerTask`) parses the cron with
+  no timezone, so the job fires in the **process** TZ. The production container
+  sets `TZ` to the household timezone; the two must stay equal, or `weekEndsAt`
+  and the real close disagree.
+- The job's cron is read once at boot, while the bank reads the live catalog. After
+  a cron edit and a reload, `weekEndsAt` shows the new schedule but the job keeps
+  the old one until a restart.
+
+The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
+
+**For the kiosk and Portal (C2, C3, C5).**
+
+- Check `pass['piano.games']` (`state === 'active'`) for the game unlock, and
+  `capUsed` for "sneak used today".
+- After **any** `POST /passes` failure, re-read the bank (refresh in a
+  `finally`). A storage failure after the marker leaves an unpaid pass that is
+  real and active. The error then carries `passId`, and the server logs
+  `economy.pass.unpaid` at error.
+- Pass ids hold colons and may end in `.2`; `encodeURIComponent` them in the
+  consume and refund paths.
 
 **Pass errors** carry a `code`. `PASS_CAP`, `PASS_NOT_SOLD`, `PASS_NOT_ACTIVE`
 and `PASS_REFUND_CLOSED` → 409: the request is well-formed, and the day, the
@@ -235,8 +274,9 @@ pass the same day, only when `count` allows it, is `….2`). Every entry carries
 | `earn`, +what was paid, action `{key}-refund` | `{id}:refund` | refund |
 | `pass` marker, `meta.state: refunded` (`playedMs, reason`) | `{id}:refunded` | refund |
 
-The ledger is append-only, so a state change is a new marker; `passState` folds
-them, latest first. Every buy and transition runs in the user lock over a
+The ledger is append-only, so a state change is a new marker. `passState`
+reads the first transition (a consumed marker, or the refund's first write),
+as the writes enforce. Every buy and transition runs in the user lock over a
 strict ledger read, and affordability is the folded ledger balance, never the
 wallet snapshot. A refusal writes nothing.
 
@@ -246,7 +286,9 @@ twice, is a no-op (`duplicate: true`) and refunds once.
 
 **Write order fails safe for the kid.** A purchase writes the marker, then the
 spend: a crash between leaves a pass nobody paid for (`paid: 0`), never coins
-gone with no pass; it is not charged later. A refund writes the earn, then the
+gone with no pass; it is not charged later. The buy still fails: the error
+carries `passId`, and `economy.pass.unpaid { learnerId, passId, error }` is logged
+at error. A marker that fails writes nothing. A refund writes the earn, then the
 marker: the earn is the refund's commit point, so with it present the pass reads
 refunded and a retried refund writes only the missing marker. The refund hands
 back what was paid (0 for an unpaid pass). The wallet snapshot is refreshed

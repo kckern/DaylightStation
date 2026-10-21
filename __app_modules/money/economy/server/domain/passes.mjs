@@ -44,27 +44,56 @@ export const refundRef = (id) => `${id}:refund`;
 
 const sum = (txns) => txns.reduce((s, t) => s + (t.delta || 0), 0);
 
+/** A day with no pass (for `privilege`): the same keys a real pass state has. */
+export function nonePass({ learnerId = null, studyDay = null, privilege = null, passId = null } = {}) {
+  return { passId, learnerId, studyDay, state: 'none', pass: null, privilege, coin: null, price: null, paid: 0, refunded: 0, boughtAt: null, endedAt: null, playedMs: null };
+}
+
 function stateOf(txns, id) {
   const parsed = parsePassRef(id);
-  const markers = txns.filter((t) => t.kind === 'pass' && [id, consumedRef(id), refundedRef(id)].includes(t.ref));
-  const purchase = markers.find((t) => t.ref === id);
-  const base = { passId: id, learnerId: parsed?.learnerId ?? null, studyDay: parsed?.studyDay ?? null };
-  if (!purchase) return { ...base, state: 'none', pass: null, privilege: null, coin: null, price: null, paid: 0, refunded: 0, boughtAt: null };
+  const purchase = txns.find((t) => t.kind === 'pass' && t.ref === id);
+  const base = { learnerId: parsed?.learnerId ?? null, studyDay: parsed?.studyDay ?? null };
+  if (!purchase) return { ...nonePass(base), passId: id };
   const m = purchase.meta ?? {};
   const coin = m.coin ?? null;
   const paid = 0 - sum(txns.filter((t) => t.kind === 'spend' && t.ref === id && (t.currency ?? 'silver') === coin));
   const refundEntries = txns.filter((t) => t.kind === 'earn' && t.ref === refundRef(id));
-  // Latest marker wins; a refund earn is the refund's commit point, so it
-  // reads as refunded even if its marker never landed.
-  const latest = markers[markers.length - 1];
-  const state = refundEntries.length ? 'refunded' : (latest.meta?.state ?? 'active');
-  const ended = state === 'active' ? null : markers.find((t) => t.ref === (state === 'consumed' ? consumedRef(id) : refundedRef(id)));
+  // The FIRST transition wins, as the writes enforce: a consumed marker, or
+  // the refund's first write (its earn; its marker when nothing was paid).
+  const first = txns.find((t) => (t.kind === 'pass' && (t.ref === consumedRef(id) || t.ref === refundedRef(id)))
+    || (t.kind === 'earn' && t.ref === refundRef(id)));
+  const state = !first ? 'active' : (first.ref === consumedRef(id) ? 'consumed' : 'refunded');
+  const ended = state === 'active' ? null : txns.find((t) => t.kind === 'pass' && t.ref === (state === 'consumed' ? consumedRef(id) : refundedRef(id)));
   return {
-    ...base, state,
+    ...base, passId: id, state,
     pass: m.pass ?? null, privilege: m.privilege ?? null, coin, price: m.price ?? null,
     paid, refunded: sum(refundEntries), boughtAt: m.boughtAt ?? purchase.at ?? null,
-    ...(ended ? { endedAt: ended.at, playedMs: ended.meta?.playedMs ?? null, ...(ended.meta?.reason ? { reason: ended.meta.reason } : {}) } : {}),
+    endedAt: ended?.at ?? null, playedMs: ended?.meta?.playedMs ?? null,
+    ...(ended?.meta?.reason ? { reason: ended.meta.reason } : {}),
   };
+}
+
+const CAP_PERIODS = new Set(['study-day', 'day']);
+
+/** `{count, across}` from a pass's `cap`, or null when it cannot be honoured as written. Absent: one a day, across all passes. */
+export function readCap(cap) {
+  if (cap == null) return { count: 1, across: 'all-passes' };
+  if (!CAP_PERIODS.has(cap.per ?? 'study-day')) return null;
+  const count = cap.count ?? 1;
+  if (!Number.isInteger(count) || count < 0) return null;
+  return { count, across: cap.across ?? 'all-passes' };
+}
+
+/**
+ * Whether the day's passes (`passesOn`) use up the cap of catalog pass
+ * `{key, def}`: `count` passes in any state; `across: all-passes` counts
+ * every pass, any other value only this one. Null for a cap it cannot read.
+ */
+export function capUsed(passesToday, { key, def }) {
+  const cap = readCap(def?.cap);
+  if (!cap) return null;
+  const counted = cap.across === 'all-passes' ? passesToday : passesToday.filter((p) => p.pass === key);
+  return counted.length >= cap.count;
 }
 
 /**

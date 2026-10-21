@@ -9,7 +9,7 @@
  * the lock a second call could pass the same check before the first lands.
  */
 import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS,
-  passRef, parsePassRef, passesOn, findPass, priceIn, consumedRef, refundedRef, refundRef } from "../domain/index.mjs";
+  passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
@@ -19,19 +19,9 @@ const STALE_SESSION_MS = 5 * 60 * 1000; // no settle for 5 min → session consi
 // minute" claim: the refund window plus this much for picking and loading a
 // game. Past it, a client saying `playedMs: 0` is not taken at its word.
 export const REFUND_SETUP_MS = 5 * 60 * 1000;
-const CAP_PERIODS = new Set(['study-day', 'day']);
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const isPlayedMs = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
-
-/** `{count, across}` from a pass's `cap`, or null when it cannot be honoured as written. Absent: one a day, across all passes. */
-function readCap(cap) {
-  if (cap == null) return { count: 1, across: 'all-passes' };
-  if (!CAP_PERIODS.has(cap.per ?? 'study-day')) return null;
-  const count = cap.count ?? 1;
-  if (!Number.isInteger(count) || count < 0) return null;
-  return { count, across: cap.across ?? 'all-passes' };
-}
 
 /** Whole `to` coins for `amount` at `rate`, floored (the epsilon absorbs 0.29 × 100 = 28.999…). */
 export function convertedAmount(amount, rate) {
@@ -453,9 +443,10 @@ export class EconomyService {
     return this.#configProjection.catalog?.() ?? { passes: {} };
   }
 
-  #passRefused(userId, privilege, coin, price, code, message, details = undefined) {
+  /** Log a refusal and return its error, for the caller to throw. */
+  #passRefusal(userId, privilege, coin, price, code, message, details = undefined) {
     this.#logger.info('economy.pass.refused', { learnerId: userId, privilege, coin, price, reason: code });
-    throw new ValidationError(message, { code, ...(details ? { details } : {}) });
+    return new ValidationError(message, { code, ...(details ? { details } : {}) });
   }
 
   #readFrom(studyDay) {
@@ -482,24 +473,23 @@ export class EconomyService {
     if (typeof privilege !== 'string' || !privilege.trim()) throw new ValidationError('privilege is required', { field: 'privilege' });
     if (typeof coin !== 'string' || !coin.trim()) throw new ValidationError('coin is required', { field: 'coin' });
     const found = findPass(this.#catalog(), privilege);
-    if (!found) this.#passRefused(userId, privilege, coin, null, 'PASS_NOT_SOLD', `no pass opens ${privilege}`);
+    if (!found) throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', `no pass opens ${privilege}`);
     const price = priceIn(found.def, coin);
-    if (price == null) this.#passRefused(userId, privilege, coin, null, 'PASS_NOT_SOLD', `${found.key} is not sold in ${coin}`);
+    if (price == null) throw this.#passRefusal(userId, privilege, coin, null, 'PASS_NOT_SOLD', `${found.key} is not sold in ${coin}`);
     const cap = readCap(found.def.cap);
-    if (!cap) this.#passRefused(userId, privilege, coin, price, 'PASS_NOT_SOLD', `${found.key} has a cap this economy cannot honour`);
+    if (!cap) throw this.#passRefusal(userId, privilege, coin, price, 'PASS_NOT_SOLD', `${found.key} has a cap this economy cannot honour`);
     return this.#ds.withUserLock(userId, async () => {
       const date = this.#clock();
       const at = date.toISOString();
       const studyDay = this.currentStudyDay(date);
       const txns = this.#ds.readAllTransactions(userId, { strict: true });
       const today = passesOn(txns, { learnerId: userId, studyDay });
-      const counted = cap.across === 'all-passes' ? today : today.filter((p) => p.pass === found.key);
-      if (counted.length >= cap.count) {
-        this.#passRefused(userId, privilege, coin, price, 'PASS_CAP', `${cap.count} pass${cap.count === 1 ? '' : 'es'} a day: already used today`);
+      if (capUsed(today, found)) {
+        throw this.#passRefusal(userId, privilege, coin, price, 'PASS_CAP', `${cap.count} pass${cap.count === 1 ? '' : 'es'} a day: already used today`);
       }
       const balance = foldBalances(txns)[coin];
       if (balance < price) {
-        this.#passRefused(userId, privilege, coin, price, 'PASS_UNAFFORDABLE', `${found.key} costs ${price} ${coin}; the balance is ${balance}`,
+        throw this.#passRefusal(userId, privilege, coin, price, 'PASS_UNAFFORDABLE', `${found.key} costs ${price} ${coin}; the balance is ${balance}`,
           { coin, price, balance, shortfall: price - balance });
       }
       const id = passRef({ learnerId: userId, studyDay, seq: today.length + 1 });
@@ -508,18 +498,43 @@ export class EconomyService {
         meta: { pass: found.key, privilege, coin, price, state: 'active', boughtAt: at, studyDay,
           refundWithinMs: Number.isFinite(found.def.refund_within_ms) ? found.def.refund_within_ms : null } });
       const spend = createTransaction({ ...common, id: this.#newTransactionId(), kind: 'spend', delta: -price });
-      const wallet = await this.#appendThenSnapshot(userId, [marker, spend], id, 'economy.pass.snapshot-failed');
+      // Marker first: if it fails nothing was written. If the spend fails
+      // after it, the pass exists unpaid; the error names it (`passId`) and
+      // says so at error level, and the caller must re-read the bank.
+      await this.#ds.appendTransaction(userId, marker);
+      let wallet;
+      try {
+        wallet = await this.#appendThenSnapshot(userId, spend, id, 'economy.pass.snapshot-failed');
+      } catch (err) {
+        if (err && typeof err === 'object') err.passId = id;
+        this.#logger.error?.('economy.pass.unpaid', { learnerId: userId, passId: id, error: err?.message ?? String(err) });
+        throw err;
+      }
       this.#logger.info('economy.pass.bought', { learnerId: userId, privilege, coin, price, passId: id });
       const pass = passesOn([...txns, marker, spend], { learnerId: userId, studyDay }).find((p) => p.passId === id);
       return { userId, pass, balances: wallet?.balances ?? foldBalances([...txns, spend]) };
     });
   }
 
-  /** Today's passes, first first (lenient read: display and gating only). */
-  async passesToday(userId) {
+  /**
+   * Today's passes, first first. `strict` throws CORRUPT_LEDGER when one of
+   * today's shards does not parse (the bank shows "unknown"). Otherwise the
+   * read is lenient, for gating, but a shard that would have thrown is logged
+   * (`economy.pass.ledger-unreadable`) before the lenient read carries on.
+   */
+  async passesToday(userId, { strict = false } = {}) {
     this.#assertUser(userId);
     const studyDay = this.currentStudyDay();
-    return passesOn(this.#ds.readAllTransactions(userId, { fromDay: this.#readFrom(studyDay) }), { learnerId: userId, studyDay });
+    const fromDay = this.#readFrom(studyDay);
+    let txns;
+    try {
+      txns = this.#ds.readAllTransactions(userId, { fromDay, strict: true });
+    } catch (err) {
+      if (strict || err?.code !== 'CORRUPT_LEDGER') throw err;
+      this.#logger.warn?.('economy.pass.ledger-unreadable', { learnerId: userId, studyDay, error: err.message });
+      txns = this.#ds.readAllTransactions(userId, { fromDay });
+    }
+    return passesOn(txns, { learnerId: userId, studyDay });
   }
 
   /** Today's active pass for `privilege`, or null. A pass expires when the study day rolls over at 4 am. */
@@ -541,7 +556,7 @@ export class EconomyService {
   }
 
   #notActive(pass, verb) {
-    throw new ValidationError(`pass ${pass.passId} is ${pass.state}; it cannot be ${verb}`, { code: 'PASS_NOT_ACTIVE', details: { state: pass.state } });
+    return new ValidationError(`pass ${pass.passId} is ${pass.state}; it cannot be ${verb}`, { code: 'PASS_NOT_ACTIVE', details: { state: pass.state } });
   }
 
   /**
@@ -553,7 +568,7 @@ export class EconomyService {
     if (playedMs != null && !isPlayedMs(playedMs)) throw new ValidationError('playedMs must be a non-negative number', { field: 'playedMs' });
     return this.#withPass(userId, passId, async (pass, txns) => {
       if (pass.state === 'consumed') return { userId, pass, duplicate: true };
-      if (pass.state !== 'active') this.#notActive(pass, 'consumed');
+      if (pass.state !== 'active') throw this.#notActive(pass, 'consumed');
       const marker = createTransaction({ id: this.#newTransactionId(), kind: 'pass', delta: 0, currency: pass.coin ?? 'silver',
         action: pass.pass ?? 'pass', source: 'pass', ref: consumedRef(passId), evidenceRef: passId, at: this.#now(),
         meta: { pass: pass.pass, privilege: pass.privilege, state: 'consumed', playedMs } });
@@ -595,7 +610,7 @@ export class EconomyService {
       }
       if (pass.state !== 'active') {
         this.#logger.info('economy.pass.refused', { ...log, reason: 'PASS_NOT_ACTIVE' });
-        this.#notActive(pass, 'refunded');
+        throw this.#notActive(pass, 'refunded');
       }
       const date = this.#clock();
       const window = txns.find((t) => t.kind === 'pass' && t.ref === passId)?.meta?.refundWithinMs

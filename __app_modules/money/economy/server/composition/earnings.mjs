@@ -1,7 +1,42 @@
 import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
 
-export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger}) {
+const LABEL_CACHE_TTL_MS = 60_000;
+
+/**
+ * The bank's evidence labels: the current week's preview lines for one
+ * learner, as ref → label. Cached per learner and week for `ttlMs`
+ * (default 60 s), so per-kid bank polling runs one preview a minute. A
+ * learner the preview does not know (off the school roster) gets null, which
+ * is cached too; any other failure is thrown, uncached, and the bank falls
+ * back to rule labels.
+ * @param {object} deps
+ * @param {{preview: Function, currentStudyDay: () => string}} deps.preview - EarningsPreviewService
+ * @param {() => number} [deps.now]
+ * @param {number} [deps.ttlMs]
+ */
+export function cachedEvidenceLabels({ preview, now = () => Date.now(), ttlMs = LABEL_CACHE_TTL_MS }) {
+  const cache = new Map(); // `${learnerId}|${monday}` → { at, labels }
+  return async (learnerId) => {
+    const key = `${learnerId}|${weekWindowFor(preview.currentStudyDay()).from}`;
+    const t = now();
+    const hit = cache.get(key);
+    if (hit && t - hit.at < ttlMs) return hit.labels;
+    let labels;
+    try {
+      const week = await preview.preview({ learnerId });
+      labels = new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
+    } catch (err) {
+      if (!(err instanceof EntityNotFoundError)) throw err;
+      labels = null;
+    }
+    for (const [k, v] of cache) if (t - v.at >= ttlMs) cache.delete(k);
+    cache.set(key, { at: t, labels });
+    return labels;
+  };
+}
+
+export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,labelCacheNow = () => Date.now()}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
@@ -37,17 +72,9 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       boundaryHour: economyApi.studyCalendar?.boundaryHour ?? 4,
       logger: rootLogger.child({ module: 'economy-earnings' }),
     });
-    // The bank names a payout by the preview line it paid for (ref → label).
-    // A learner off the school roster has no preview: rule labels name theirs.
-    economyApi.useEvidenceLabels?.(async (learnerId) => {
-      try {
-        const week = await earningsPreview.preview({ learnerId });
-        return new Map((week?.lines ?? []).filter((l) => l.ref && l.label).map((l) => [l.ref, l.label]));
-      } catch (err) {
-        if (err instanceof EntityNotFoundError) return null;
-        throw err;
-      }
-    });
+    // The bank names a payout by the preview line it paid for (ref → label),
+    // cached briefly so a polled bank does not rerun the ring standings.
+    economyApi.useEvidenceLabels?.(cachedEvidenceLabels({ preview: earningsPreview, now: labelCacheNow }));
     // Payouts mint what this same preview says was earned (B3), so the board
     // and the ledger read one evaluator. Started by `startEconomyPayouts`.
     const payoutService = new PayoutService({

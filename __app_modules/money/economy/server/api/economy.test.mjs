@@ -105,8 +105,8 @@ describe('economy router: bank and passes', () => {
   const now = new Date('2026-10-20T15:00:00.000Z');
   const PASS = `pass:${USER}:2026-10-20`;
   const svcConfig = {
-    getUserProfile: (id) => (id === USER ? { id } : null),
-    getUserDir: () => dir,
+    getUserProfile: (id) => ([USER, 'other-user'].includes(id) ? { id } : null),
+    getUserDir: (id) => path.join(dir, id),
     getHouseholdAppConfig: () => ({ mode: 'live', earn: {}, week_close: { cron: '30 23 * * 0' }, passes }),
   };
   const quietLog = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -137,7 +137,7 @@ describe('economy router: bank and passes', () => {
     const res = await request(app).get(`${base}/bank`).expect(200);
     expect(res.body).toMatchObject({
       balances: { silver: 2, gold: 0, gems: 0 },
-      pass: { passId: PASS, state: 'active', privilege: 'piano.games' },
+      pass: { 'piano.games': { passId: PASS, state: 'active', privilege: 'piano.games', capUsed: true } },
       offers: { 'piano.games': [{ coin: 'silver', price: 3, affordable: false }, { coin: 'gold', price: 1, affordable: false }] },
       weekEndsAt: '2026-10-25T23:30:00.000Z',
     });
@@ -182,6 +182,27 @@ describe('economy router: bank and passes', () => {
     const consume = await request(app).post(`${base}/passes/${id}/consume`).send({ playedMs: 20000 });
     expect([consume.status, consume.body.code]).toEqual([409, 'PASS_NOT_ACTIVE']);
     expect((await request(app).post(`${base}/passes/${encodeURIComponent(`pass:${USER}:2026-01-01`)}/consume`).send({})).status).toBe(404);
+  });
+
+  it('another learner\'s pass id is 404, and writes nothing', async () => {
+    const { app, economyService } = build();
+    await economyService.deposit(USER, { amount: 5 });
+    await buy(app, { privilege: 'piano.games', coin: 'silver' }).expect(200);
+    const id = encodeURIComponent(PASS);
+    expect((await request(app).post(`/api/v1/economy/users/other-user/passes/${id}/consume`).send({ playedMs: 0 })).status).toBe(404);
+    expect((await request(app).post(`/api/v1/economy/users/other-user/passes/${id}/refund`).send({ playedMs: 0 })).status).toBe(404);
+    expect(new YamlEconomyDatastore({ configService: svcConfig }).readAllTransactions(USER).filter((t) => t.kind === 'pass')).toHaveLength(1);
+  });
+
+  it('a second-pass id (`….2`) round-trips through the route params, encoded', async () => {
+    passes['early-pass'].cap.count = 2;
+    const { app, economyService } = build();
+    await economyService.deposit(USER, { amount: 10 });
+    await buy(app, { privilege: 'piano.games', coin: 'silver' }).expect(200);
+    const second = (await buy(app, { privilege: 'piano.games', coin: 'silver' }).expect(200)).body.pass.passId;
+    expect(second).toBe(`${PASS}.2`);
+    const res = await request(app).post(`${base}/passes/${encodeURIComponent(second)}/consume`).send({ playedMs: 1 }).expect(200);
+    expect(res.body.pass).toMatchObject({ passId: second, state: 'consumed' });
   });
 
   it('consume marks the pass consumed; a repeat is a no-op', async () => {

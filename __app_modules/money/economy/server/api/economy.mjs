@@ -17,7 +17,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  *   POST /users/:userId/sessions                        → { userId, sessionId, balance, drainPerSecond }
  *   POST /users/:userId/sessions/:sessionId/settle      → { userId, balance, depleted }   (coins = CUMULATIVE consumed)
  *   POST /users/:userId/sessions/:sessionId/close       → { userId, balance }             (coins = CUMULATIVE consumed)
- *   GET  /users/:userId/bank                            → { balances, history, pass, offers, weekEndsAt }
+ *   GET  /users/:userId/bank                            → { studyDay, balances, history, pass: {[privilege]}, offers, weekEndsAt }
  *   POST /users/:userId/passes                {privilege, coin}            → { userId, pass, balances }
  *   POST /users/:userId/passes/:passId/consume {playedMs}                   → { userId, pass, duplicate }
  *   POST /users/:userId/passes/:passId/refund  {playedMs, reason}           → { userId, pass, refunded, duplicate, balances }
