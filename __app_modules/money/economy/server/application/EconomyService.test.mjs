@@ -281,6 +281,85 @@ describe('read-check-write under the user lock', () => {
   });
 });
 
+describe('mint (payouts)', () => {
+  const REF = 'earn:test-user:korean:2026-09-21:on-time';
+  const mintArgs = (over = {}) => ({ currency: 'silver', amount: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout', ...over });
+
+  it('writes one entry carrying the rule, the timeliness and the evidence ref', async () => {
+    const svc = makeService();
+    const res = await svc.mint(USER, mintArgs());
+    expect(res).toMatchObject({ userId: USER, minted: 4, duplicate: false, balances: { silver: 4, gold: 0, gems: 0 } });
+    const [txn] = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txn).toMatchObject({ kind: 'earn', currency: 'silver', delta: 4, ref: REF, ruleId: 'korean', timeliness: 'on-time', evidenceRef: REF, source: 'payout' });
+    expect(res.txnId).toBe(txn.id);
+  });
+
+  it('is idempotent on ref across the whole ledger, not just today', async () => {
+    let now = '2026-09-21T18:00:00.000Z';
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configProjection: new EconomyConfigProjection({ configService }),
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+      clock: () => new Date(now),
+    });
+    await svc.mint(USER, mintArgs());
+    now = '2026-09-25T18:00:00.000Z';
+    const again = await svc.mint(USER, mintArgs());
+    expect(again).toMatchObject({ minted: 0, duplicate: true });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)).toHaveLength(1);
+  });
+
+  // A week line grows as the week goes (one green day, then two): its ref
+  // pays the shortfall, so the ledger's sum on a ref is never more than the
+  // line says, and never less once the line has been settled.
+  it('amount is what the ref is worth in total: a grown line pays only the difference', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ amount: 2 }));
+    const grown = await svc.mint(USER, mintArgs({ amount: 5 }));
+    expect(grown).toMatchObject({ minted: 3, duplicate: false, balances: { silver: 5 } });
+    const shrunk = await svc.mint(USER, mintArgs({ amount: 1 }));
+    expect(shrunk).toMatchObject({ minted: 0, duplicate: true, paid: 5 });
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER).map((t) => t.delta)).toEqual([2, 3]);
+  });
+
+  it('counts a ref per currency', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ currency: 'gems', amount: 1, ref: `${REF}:gems` }));
+    const silver = await svc.mint(USER, mintArgs());
+    expect(silver).toMatchObject({ minted: 4, balances: { silver: 4, gems: 1 } });
+  });
+
+  it('a prize is its own kind', async () => {
+    const svc = makeService();
+    await svc.mint(USER, mintArgs({ kind: 'prize', ruleId: 'contest' }));
+    expect(new YamlEconomyDatastore({ configService }).readAllTransactions(USER)[0].kind).toBe('prize');
+  });
+
+  it('rejects a bad amount, a missing ref, a kind other than earn or prize, and an unknown user', async () => {
+    const svc = makeService();
+    await expect(svc.mint(USER, mintArgs({ amount: 0 }))).rejects.toThrow(/amount/);
+    await expect(svc.mint(USER, mintArgs({ amount: 1.5 }))).rejects.toThrow(/amount/);
+    await expect(svc.mint(USER, mintArgs({ ref: '' }))).rejects.toThrow(/ref/);
+    await expect(svc.mint(USER, mintArgs({ kind: 'deposit' }))).rejects.toThrow(/kind/);
+    await expect(svc.mint(USER, mintArgs({ currency: 'copper' }))).rejects.toThrow(/currency/);
+    await expect(svc.mint('nobody', mintArgs())).rejects.toThrow(/unknown user/);
+  });
+
+  it('two concurrent mints of one ref pay once', async () => {
+    const svc = makeService();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const held = new YamlEconomyDatastore({ configService }).withUserLock(USER, () => gate);
+    const a = svc.mint(USER, mintArgs());
+    const b = svc.mint(USER, mintArgs());
+    release();
+    await held;
+    const results = await Promise.all([a, b]);
+    expect(results.map((r) => r.minted).sort()).toEqual([0, 4]);
+    expect((await svc.getBalance(USER)).balance).toBe(4);
+  });
+});
+
 describe('metered sessions', () => {
   it('openSession requires positive balance and no existing session', async () => {
     const svc = makeService();

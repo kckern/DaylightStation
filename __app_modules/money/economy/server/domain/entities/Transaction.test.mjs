@@ -42,9 +42,13 @@ describe('currency and the new kinds', () => {
     expect(() => createTransaction(base({ kind: 'pass', delta: 1 }))).toThrow();
   });
   it('every other kind rejects a zero delta', () => {
-    for (const kind of ['deposit', 'earn', 'spend', 'withdraw', 'adjust', 'convert']) {
+    for (const kind of ['deposit', 'earn', 'prize', 'spend', 'withdraw', 'adjust', 'convert']) {
       expect(() => createTransaction(base({ kind, delta: 0 }))).toThrow(/delta/);
     }
+  });
+  it('a prize (the weekly ring contest) is positive-only, like an earn', () => {
+    expect(createTransaction(base({ kind: 'prize', delta: 5, currency: 'gems' })).kind).toBe('prize');
+    expect(() => createTransaction(base({ kind: 'prize', delta: -5 }))).toThrow(/sign/);
   });
   it('convert takes either sign (the paired entries of one conversion)', () => {
     expect(createTransaction(base({ kind: 'convert', delta: -12, currency: 'silver' })).delta).toBe(-12);

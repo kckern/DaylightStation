@@ -9,7 +9,8 @@ export const CURRENCIES = Object.freeze(['silver', 'gold', 'gems']);
 
 // 0 = any non-zero sign. adjust: reconciliation. convert: one of a paired
 // −from/+to entry. pass: a voucher marker that moves no coin (delta must be 0).
-const KIND_SIGN = { deposit: 1, earn: 1, spend: -1, withdraw: -1, adjust: 0, convert: 0, pass: null };
+// prize: a contest win (the weekly ring contest), paid like an earn.
+const KIND_SIGN = { deposit: 1, earn: 1, prize: 1, spend: -1, withdraw: -1, adjust: 0, convert: 0, pass: null };
 
 export function createTransaction({ id, kind, delta, action, source, ref = null, note = null, at,
   currency = 'silver', ruleId = null, price = null, timeliness = null, evidenceRef = null, meta = null }) {

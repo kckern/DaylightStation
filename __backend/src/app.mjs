@@ -11,7 +11,7 @@ import { configureLifelogArchive } from "../../__app_modules/personal/lifelog/se
 import { createLifelogWeightService } from "../../__app_modules/wellness/health/server/composition/lifelog-weight.mjs";
 import { registerFeedHeadlineHarvester } from "../../__app_modules/media/feed/server/composition/harvester.mjs";
 import { installAutomotiveRelay } from "../../__app_modules/household/auto/server/composition/ingress.mjs";
-import {createEconomyEarningsRuntime} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
+import {createEconomyEarningsRuntime,startEconomyPayouts} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
 import {studyDayFor,isInWindow} from "../../__app_modules/learning/school/server/study-calendar.mjs";
 import {createChessRuntime} from "../../__app_modules/games/chess/server/composition/runtime.mjs";
 import {createEmulatorRuntime} from "../../__app_modules/games/emulator/server/composition/runtime.mjs";
@@ -2896,7 +2896,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  v1Routers.earnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  const economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+  v1Routers.earnings = economyEarnings.router;
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
@@ -3342,6 +3343,19 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // Hourly check, deduped per study-day+counts, so a stable backlog nudges
   // once and a grown one nudges again — Telegram via the same notification
   // stack the lifeplan ceremonies use, with a tappable console link.
+  // Weekly earnings payouts (economy B3): mint what the preview above says
+  // was earned. Settles on school outcomes and piano lessons (debounced per
+  // learner) and every 15 min for the roster. Inert while economy/config.yml
+  // reads `mode: off`; `dry-run` only logs. School's own per-unit reward
+  // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
+  startEconomyPayouts({
+    payoutService: economyEarnings.payoutService,
+    config: economyApi.configProjection,
+    eventBus,
+    scheduler: agentsServices.scheduler,
+    logger: rootLogger.child({ module: 'economy-payout' }),
+  });
+
   if (agentsServices.scheduler && notificationStack?.notificationService) {
     agentsServices.scheduler.registerTask('school:teacher-backlog-nudge', '0 * * * *', async () => {
       try {

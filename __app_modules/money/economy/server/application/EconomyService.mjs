@@ -197,6 +197,49 @@ export class EconomyService {
     });
   }
 
+  /**
+   * Pay what an earning is worth (PayoutService). `ref` is the idempotency
+   * key across the WHOLE ledger, not one day's shard, and `amount` is what the
+   * ref is worth in total: the mint pays only the part no entry with this ref
+   * and currency has paid yet. A retried or racing mint therefore writes
+   * nothing, and a week line that grew (a second green day) pays only the
+   * difference. A ref already paid more than `amount` (a rate cut, a retracted
+   * grade) is never clawed back here; that is an `adjust`.
+   * Outside the earn catalog: no `daily_cap`, no action lookup.
+   * @param {string} userId
+   * @param {object} args
+   * @param {'silver'|'gold'|'gems'} args.currency
+   * @param {number} args.amount - positive integer, the ref's full worth
+   * @param {'earn'|'prize'} [args.kind='earn']
+   * @param {string} args.ref - one key per currency (PayoutService suffixes `:gems`)
+   * @param {string|null} [args.ruleId]
+   * @param {string|null} [args.timeliness]
+   * @param {string|null} [args.evidenceRef] - the earning line the entry pays for
+   * @param {string} [args.source='payout']
+   */
+  async mint(userId, { currency = 'silver', amount, kind = 'earn', ref, ruleId = null, timeliness = null, evidenceRef = null, source = 'payout' }) {
+    this.#assertUser(userId);
+    if (!['earn', 'prize'].includes(kind)) throw new ValidationError(`mint kind must be earn or prize, got ${kind}`);
+    if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('mint amount must be a positive integer');
+    if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('mint ref is required');
+    return this.#ds.withUserLock(userId, async () => {
+      // One all-time read per mint, under the lock: the authoritative check.
+      const paid = this.#ds.readAllTransactions(userId)
+        .filter((t) => t.ref === ref && (t.currency ?? 'silver') === currency)
+        .reduce((s, t) => s + (t.delta || 0), 0);
+      const owed = amount - paid;
+      if (owed <= 0) {
+        const wallet = this.#snapshot(userId);
+        return { userId, minted: 0, duplicate: true, paid, txnId: null, balance: wallet.balance, balances: wallet.balances };
+      }
+      const txn = createTransaction({ id: this.#newTransactionId(), kind, currency, delta: owed, action: ruleId ?? kind, source, ref, ruleId, timeliness, evidenceRef, at: this.#now() });
+      await this.#ds.appendTransaction(userId, txn);
+      const wallet = this.#snapshot(userId);
+      this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });
+      return { userId, minted: owed, duplicate: false, paid, txnId: txn.id, balance: wallet.balance, balances: wallet.balances };
+    });
+  }
+
   async openSession(userId, { action, source }) {
     this.#assertUser(userId);
     const policy = resolvePolicy(this.#config(), userId, action);

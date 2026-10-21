@@ -12,7 +12,8 @@ ledger is append-only and auditable.
 > HR-zone effort measure is **rings** (renamed from "fitness coins", see
 > `ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
 > are a measure, not money. They are never exchanged or debited; reaching ring
-> thresholds and winning the weekly ring contest earn coin *awards* (not yet wired).
+> thresholds and winning the weekly ring contest earn coin *awards*, paid by
+> PayoutService (see "Weekly earnings payout").
 
 ## Currency model & source of truth
 
@@ -50,7 +51,7 @@ rules sit beside it in `economy/earn-rules.yml`.
 ```yaml
 - id: txn_ab12cd34ef
   at: "2026-07-17T20:15:00.000Z"
-  kind: earn            # deposit | earn | spend | withdraw | adjust | convert | pass
+  kind: earn            # deposit | earn | prize | spend | withdraw | adjust | convert | pass
   currency: silver      # silver | gold | gems; an entry with no currency is silver
   delta: 5              # signed integer; sign must match kind
   action: piano-lesson-complete
@@ -69,6 +70,7 @@ rules sit beside it in `economy/earn-rules.yml`.
 | Kind | Delta | Use |
 |---|---|---|
 | `deposit`, `earn` | > 0 | parent deposit; rewards |
+| `prize` | > 0 | a contest win (the weekly ring contest), minted by PayoutService |
 | `spend`, `withdraw` | < 0 | arcade drain; cash-out |
 | `adjust` | ≠ 0, either sign | auditable reconciliation (may push the ledger below zero) |
 | `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry. The ledger does not enforce the pairing; the week close writes both halves under the user lock |
@@ -86,7 +88,7 @@ rules sit beside it in `economy/earn-rules.yml`.
     consumed since the session opened (monotonic), and the server charges only
     newly-crossed whole coins. This makes settles idempotent (safe to retry) and
     immune to sub-coin flushing.
-- **Award** — ring thresholds and the weekly ring contest → coins (not built). Rings are evidence, never exchanged.
+- **Award** — ring thresholds and the weekly ring contest → silver and gems, minted by PayoutService from the earnings preview. Rings are evidence, never exchanged.
 
 ## Policy catalog (`economy/config.yml`)
 
@@ -127,7 +129,7 @@ spend: {}
   value); a typo never pays out. A bare `mode:` (null) counts as unknown; only a
   missing key is quietly `off`.
 
-**Modes** (read by PayoutService, B3; not built yet). `off`: payouts do nothing. `dry-run`: payouts log
+**Modes** (read by PayoutService on every settle). `off`: payouts do nothing. `dry-run`: payouts log
 `economy.payout.would-mint` and change no balance. `live`: payouts write the ledger.
 
 **Legacy `earn`/`spend` maps.** Every earnable/spendable is a keyed entry with
@@ -144,24 +146,9 @@ so the always-on piano lesson hook stays quiet. An unknown action in a non-empty
 Both reads go through `getHouseholdAppConfig`, so `dscli system reload
 --allow-write` (or `--app economy`) picks up an edit to `mode`, `passes` and the
 `earn`/`spend` maps without a restart. Cron schedules (`week_close.cron`,
-`digest.cron`) are registered at startup and need a restart. To stop payouts, set
+`digest.cron`, the payout reconcile) are registered at startup and need a restart. To stop payouts, set
 `mode: off`; do not delete the file, because a reload keeps the old snapshot when
 the file is missing.
-
-Card Game's daily-research award uses this configurable catalog entry:
-
-```yaml
-earn:
-  piano-card-game-daily:
-    reward: 2
-    per: completion
-    daily_cap: 2
-```
-
-The Gaming service calls it once when a non-guest user's daily research first becomes
-complete. Its `daily:{local-date}` reference makes retries idempotent; a missing economy
-catalog leaves the campaign reward visible but skips the wallet mutation. The shipped
-catalog (`earn: {}`) does not price it, so the call returns `reason: 'not-priced'`.
 
 ## API (`/api/v1/economy`)
 
@@ -192,9 +179,15 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
   first time `UserVideoProgressStore` stamps `completedAt`. An economy failure
   never breaks progress recording. (Assumes `/log` `userId` is piano-kiosk-only —
   see the design doc's "Known assumptions".)
-- **Earn (Card Game):** the Gaming session service fires `piano-card-game-daily`
-  after the first qualifying battle/featured-skill completion of the local day. Guest
-  play and repeated session commands never pay durable coins.
+- **Payout (school, fitness, piano → ledger):** `PayoutService.settle` mints what
+  the weekly earnings preview says was earned (next section). Wired by
+  `startEconomyPayouts` (`composition/earnings.mjs`): it settles a learner 30 s after
+  the last `school.session.outcome-recorded` (`{learnerId}`) or
+  `piano.lesson.completed` (`{userId}`), and every learner every 15 min
+  (`economy:payout-reconcile`). School's own per-unit reward in
+  `CloseSessionOutcome` stays off (`lifecycle.economy.enabled: false` in
+  `school.yml`): school work is paid by PayoutService only, and turning both on
+  would pay a unit twice.
 - **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
   session and drains coins as the timer runs, surfacing the balance in the
   EmulatorConsole overlay (`session.coins`) and its `depleted` state
@@ -203,10 +196,10 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 
 ## Weekly earnings preview (school → economy)
 
-**Status:** preview only (2026-09-26). It prices a week of evidence in
+**Status:** the preview (2026-09-26) prices a week of evidence in
 **silver** (the weekly currency of the taxonomy,
 `ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`) and writes nothing to
-any ledger. Design: `ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
+any ledger; PayoutService (2026-10-20) mints what it prices. Design: `ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
 
 ### Earn rules
 
@@ -247,8 +240,38 @@ pays twice is two rules. Per-learner overrides live under `users.<id>`:
 - A failed evidence source makes its lines `indeterminate` ("can't tell"), never
   `none`. Other statuses: `earned`, `none` (with a note saying why), `disabled`.
 - Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>` — the
-  future payout's idempotency key. The rules revision is recorded on the line
+  payout's idempotency key. The rules revision is recorded on the line
   (`priced`), never in the ref, so a rate edit cannot pay a week twice.
+
+### Payout
+
+`PayoutService` (`application/PayoutService.mjs`) reads `catalog().mode` on every
+settle, then previews the learner's week (`week` = any study day in it; the
+triggers pass none, which is the preview's current study day at the 4 am
+boundary).
+
+- Only `earned` lines pay. `indeterminate` and `pending` lines are held (H9) and
+  logged `economy.payout.held` (`info` for indeterminate, `debug` for pending);
+  `none` and `disabled` pay nothing.
+- A line that pays both currencies writes one entry per currency: silver under the
+  line's `ref`, gems under `<ref>:gems`. Each entry carries `ruleId`,
+  `timeliness`, `evidenceRef` (the line's `ref`) and `source: payout`. The ring
+  contest is kind `prize`; every other rule is `earn`.
+- `EconomyService.mint(userId, { currency, amount, kind, ref, ... })` treats
+  `amount` as what the ref is worth in total and pays only the shortfall, read
+  from the whole ledger under the user lock. A second settle writes nothing; two
+  racing settles (an event and the reconcile) pay once; a line that grew
+  (Tuesday's green day on top of Monday's, more rings) pays the difference. A ref
+  already paid more than the line now says (a rate cut, a retracted grade) is not
+  clawed back; that is an `adjust`.
+- `dry-run` logs `economy.payout.would-mint { learnerId, ref, currency, amount,
+  ruleId }` per entry and writes nothing (no wallet snapshot either). `off` skips
+  the preview.
+- A settle failure is logged `economy.payout.failed` and never thrown into the
+  event bus or the scheduler. A player who is not on the school roster logs
+  `economy.payout.unknown-learner` at debug.
+- The reconcile settles the current week only. Evidence for a past week that
+  lands after its Monday 04:00 rollover (a late grade) is not paid automatically.
 
 ### API
 
@@ -398,6 +421,6 @@ the price of ordinary responsibility.
 
 ## Not yet built (later phases)
 
-Weekly earnings PAYOUT (the preview above prices; nothing mints yet), week close + silver→gold conversion, tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
+Week close + silver→gold conversion, tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
 biometric auth, parent dashboard, deposit admin UI
 (Phase 1 deposits are API-only).
