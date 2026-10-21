@@ -37,6 +37,7 @@ const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
   rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
+  hrStaleMs: 5000, // an HR strap with no real reading for this long reads null, even while its packets keep arriving
   transportStallMs: 1200, // MUST equal rpmZero: the stall check and the zero gate have to cross on the same prune tick, or a tick landing between them zeroes the meter and the hold then preserves that zero for the whole stall
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
   emptySessionTransportHold: 180000, // Max sensor-pipeline silence during which an empty roster is NOT counted as an empty room (link outage, not departure)
@@ -118,11 +119,12 @@ const roundValue = (key, value) => {
   return value;
 };
 
-export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, emptySession, sessionEndCooldown } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, hrStaleMs, emptySession, sessionEndCooldown } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
   if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
   if (typeof transportStallMs === 'number' && !Number.isNaN(transportStallMs)) FITNESS_TIMEOUTS.transportStallMs = transportStallMs;
+  if (typeof hrStaleMs === 'number' && !Number.isNaN(hrStaleMs)) FITNESS_TIMEOUTS.hrStaleMs = hrStaleMs;
   if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
   if (typeof sessionEndCooldown === 'number' && !Number.isNaN(sessionEndCooldown)) FITNESS_TIMEOUTS.sessionEndCooldown = sessionEndCooldown;
 };
@@ -202,7 +204,8 @@ export class FitnessSession {
     this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
-    this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
+    this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
+    this._hrReadingState = new Map(); // deviceId -> true (reading) | false (no reading); edges drive _onHrReadingLost
 
     // Session Entity Registry - tracks participation segments per device assignment
     // Each device assignment creates a new entity with fresh metrics (rings, start time)
@@ -350,6 +353,120 @@ export class FitnessSession {
    * @param {Array<any>} allUsers
    * @returns {boolean} True if sync produced changes
    */
+  /**
+   * Sync the zone store from the users present on the roster, and tell
+   * governance when anything changed.
+   * @param {string|null} changedUserId
+   * @returns {boolean} whether the store changed
+   */
+  _syncPresentZoneProfiles(changedUserId = null) {
+    if (!this.zoneProfileStore) return false;
+    const allUsers = this.userManager.getAllUsers();
+    // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+    const presentIds = this._participantRoster?.getPresentParticipantIds();
+    const usersForZones = presentIds
+      ? allUsers.filter(u => presentIds.has(u.id))
+      : allUsers;
+    const changed = this._syncZoneProfiles(usersForZones);
+    if (changed && this.governanceEngine) {
+      this.governanceEngine.notifyZoneChange(changedUserId, {});
+    }
+    return changed;
+  }
+
+  /**
+   * Track one HR device's reading ↔ no-reading edges. Logs once per edge (never
+   * per packet) and, on loss, restarts the device's warm-up window and clears
+   * everything downstream that could outlive the real data.
+   * @param {string} deviceId
+   * @param {boolean} hasReading
+   * @param {{ reason?: string }} [opts]
+   */
+  _observeHrReading(deviceId, hasReading, { reason = null } = {}) {
+    const key = String(deviceId);
+    const prev = this._hrReadingState.get(key);
+    if (prev === hasReading) return;
+    this._hrReadingState.set(key, hasReading);
+    if (!hasReading) this._deviceHrSampleCount.delete(key);
+    // First sighting is not an edge: nothing was held, nothing to clear.
+    if (prev === undefined) return;
+    const userId = this._hrOccupantId(key);
+    if (hasReading) {
+      getLogger().info('fitness.device.hr_reading_restored', { deviceId: key, userId });
+      return;
+    }
+    getLogger().info('fitness.device.hr_reading_lost', { deviceId: key, userId, reason });
+    this._onHrReadingLost(key, userId);
+  }
+
+  _hrOccupantId(deviceId) {
+    const ledgerEntry = this.userManager?.assignmentLedger?.get(deviceId);
+    const user = this.userManager?.resolveUserForDevice(deviceId);
+    return ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user?.id || null;
+  }
+
+  /**
+   * A strap stopped reading (null packets, stale reading, inactive, removed).
+   * Accrual stops at once: TreasureBox takes its dropout path. The user's
+   * governance-facing state (HR, hrInactive, committed zone) follows only once
+   * the loss outlasts HR_LOSS_GRACE_MS — see _maybeConfirmHrLoss.
+   */
+  _onHrReadingLost(deviceId, userId) {
+    if (!userId) return;
+    this.treasureBox?.recordHeartRateForDevice(deviceId, null, { profileId: userId, fallbackUserId: userId });
+  }
+
+  /**
+   * Push "no reading" into the device's user and, if that is the moment the
+   * user goes hrInactive (grace elapsed), drop the committed zone so hysteresis
+   * cannot hold a zone no real reading supports. Idempotent; called on every
+   * null packet and every prune tick while a device has no reading.
+   */
+  _maybeConfirmHrLoss(deviceId, user = null, wasHrInactive = null) {
+    const key = String(deviceId);
+    const owner = user || this.userManager?.resolveUserForDevice(key);
+    if (!owner) return;
+    const before = wasHrInactive ?? !!owner.currentData?.hrInactive;
+    if (wasHrInactive == null) {
+      owner.updateFromDevice?.({ type: 'heart_rate', deviceId: key, heartRate: null });
+    }
+    if (before || !owner.currentData?.hrInactive) return;
+    const userId = this._hrOccupantId(key) || owner.id;
+    getLogger().info('fitness.device.hr_loss_confirmed', { deviceId: key, userId });
+    this.zoneProfileStore?.resetZoneState?.(userId);
+    this._syncPresentZoneProfiles(userId);
+  }
+
+  /**
+   * After a prune: an HR device whose reading went stale, that went inactive,
+   * or that was removed has lost its reading even though no packet said so.
+   */
+  _observeHrReadingsAfterPrune() {
+    const present = new Set();
+    for (const device of this.deviceManager.getAllDevices()) {
+      if (device.type !== 'heart_rate') continue;
+      const key = String(device.id);
+      present.add(key);
+      if (device.inactiveSince) {
+        this._observeHrReading(key, false, { reason: 'inactive' });
+        this._deviceHrSampleCount.delete(key);
+        this._maybeConfirmHrLoss(key);
+        continue;
+      }
+      if (!(Number.isFinite(device.heartRate) && device.heartRate > 0)) {
+        this._observeHrReading(key, false, { reason: 'stale-reading' });
+        // No packet may arrive to end the grace: re-check it on the prune tick.
+        this._maybeConfirmHrLoss(key);
+      }
+    }
+    for (const key of [...this._hrReadingState.keys()]) {
+      if (present.has(key)) continue;
+      this._observeHrReading(key, false, { reason: 'removed' });
+      this._hrReadingState.delete(key);
+      this._deviceHrSampleCount.delete(key);
+    }
+  }
+
   _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
     try {
@@ -464,14 +581,26 @@ export class FitnessSession {
         }
         device.lastOccupantSlug = currentOccupant;
         
+        const wasHrInactive = !!user.currentData?.hrInactive;
         user.updateFromDevice(deviceData);
+
+        // No reading is a real state: the strap is present but not reading.
+        // Nothing accrues or counts while it lasts (see _onHrReadingLost).
+        const isHrPacket = deviceData.type === 'heart_rate';
+        const hasHrReading = isHrPacket && Number.isFinite(deviceData.heartRate) && deviceData.heartRate > 0;
+        if (isHrPacket) {
+          this._observeHrReading(device.id, hasHrReading, { reason: 'no-reading-packet' });
+          if (!hasHrReading) this._maybeConfirmHrLoss(device.id, user, wasHrInactive);
+        }
 
         // Device startup discard: first 3 HR readings may be stale/cached from prior session
         // NOTE: Sets a flag instead of returning early — the pre-session buffer check (below)
         // must still run so the session can start. Only TreasureBox/ZoneProfileStore/governance
-        // are skipped during the discard window.
+        // are skipped during the discard window. Only real readings count, and the count
+        // restarts whenever the reading is lost or the device goes away, so the window
+        // applies on every reconnect — not once per page load.
         let startupDiscarded = false;
-        if (deviceData.type === 'heart_rate') {
+        if (hasHrReading) {
           const STARTUP_DISCARD_COUNT = 3;
           const deviceKey = String(device.id);
           const count = this._deviceHrSampleCount.get(deviceKey) || 0;
@@ -498,29 +627,22 @@ export class FitnessSession {
         // DeviceManager/UserManager (no TreasureBox), user.updateFromDevice()
         // has already run above, and notifyZoneChange only arms a 100ms
         // debounce — so nothing here depends on the box having run.
-        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
-          const allUsers = this.userManager.getAllUsers();
-          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
-          const presentIds = this._participantRoster?.getPresentParticipantIds();
-          const usersForZones = presentIds
-            ? allUsers.filter(u => presentIds.has(u.id))
-            : allUsers;
-          const changed = this._syncZoneProfiles(usersForZones);
+        if (!startupDiscarded && hasHrReading && this.zoneProfileStore) {
           // No cache invalidation to push here: TreasureBox polls the store's
           // zone-config revision on read (ZoneProfileStore.getZoneConfigRevision).
-          if (changed && this.governanceEngine) {
-            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
-          }
+          this._syncPresentZoneProfiles(resolvedSlug);
         }
 
         // Feed TreasureBox if HR - Phase 2: Use entity-based routing
-        if (!startupDiscarded && this.treasureBox && deviceData.type === 'heart_rate') {
+        if (this.treasureBox && isHrPacket && (hasHrReading ? !startupDiscarded : true)) {
           // Check ledger for current occupant (guest may have taken over)
           const ledgerEntry = this.userManager?.assignmentLedger?.get(device.id);
           const currentOccupantId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user.id;
           
-          // Try to route via entity first (Phase 2), fall back to current occupant
-          this.treasureBox.recordHeartRateForDevice(device.id, deviceData.heartRate, {
+          // Try to route via entity first (Phase 2), fall back to current occupant.
+          // No reading → null: TreasureBox's dropout path resets the interval
+          // without an award. It is never handed a held value.
+          this.treasureBox.recordHeartRateForDevice(device.id, hasHrReading ? deviceData.heartRate : null, {
             profileId: currentOccupantId,
             fallbackUserId: currentOccupantId
           });
@@ -2493,6 +2615,7 @@ export class FitnessSession {
     
     // Prune DeviceManager
     this.deviceManager.pruneStaleDevices(timeouts);
+    this._observeHrReadingsAfterPrune();
     
     // Re-check active set
     const allDevices = this.deviceManager.getAllDevices();
@@ -2797,10 +2920,22 @@ export class FitnessSession {
     this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
+    // Session end (not engine.reset(), which also runs mid-session): the
+    // inert-requirement alarm may fire once more in the next session.
+    this.governanceEngine.resetSessionAlarms?.();
+    // The device manager is replaced above; per-device HR bookkeeping must go
+    // with it, or the next prune logs every old strap as "removed" and the
+    // next session skips its warm-up discard.
+    this._hrReadingState.clear();
+    this._deviceHrSampleCount.clear();
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};
     this._equipmentRider?.clear();
+    // Configured riders are per-session defaults. Seeding used to run only on
+    // page load, so after the first session ended the tricycle had no rider and
+    // its cadence floor stood down for every later workout (2026-10-20).
+    this.seedConfiguredRiders(this.getEquipmentCatalog());
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }

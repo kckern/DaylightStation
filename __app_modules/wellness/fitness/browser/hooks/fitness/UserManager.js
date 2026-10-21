@@ -3,6 +3,15 @@ import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { DeviceOwnershipIndex } from "./DeviceOwnershipIndex.js";
 import { isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 
+/**
+ * How long a user keeps their last real heart rate through a no-reading spell
+ * before going hrInactive. Rings and zone accrual stop at the first null
+ * (TreasureBox gets null at once); only the governance-facing state waits, so
+ * a strap blip (beat freeze, short radio gap) does not drop a solo child out of
+ * governance and freeze the video. Same span as DeviceManager's hrStaleMs.
+ */
+export const HR_LOSS_GRACE_MS = 5000;
+
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
     const { id: configuredId, globalZones, zoneOverrides, groupLabel, source, category, avatarUrl, schoolLearner } = options;
@@ -18,6 +27,7 @@ export class User {
     this.hrDeviceIds = new Set();
     if (hrDeviceId) this.hrDeviceIds.add(String(hrDeviceId));
     this._pendingHR = new Map(); // deviceId → { hr, ts } for multi-device arbitration
+    this._lastRealHrAt = null; // wall-clock of the last real (>0) reading, for HR_LOSS_GRACE_MS
     this.cadenceDeviceId = cadenceDeviceId;
     this.groupLabel = groupLabel || null; // e.g., "Dad", "Mom", etc.
     this.source = source || null; // e.g., "Primary", "Secondary", "Guest"
@@ -109,6 +119,13 @@ export class User {
 
   #updateHeartRateData(heartRate) {
     if (!heartRate || heartRate <= 0) {
+      // A short no-reading spell keeps the last reading for governance and
+      // display; it ends after HR_LOSS_GRACE_MS (re-checked on every null
+      // packet and on every prune tick by FitnessSession).
+      if (this._lastRealHrAt != null && !this.currentData?.hrInactive
+          && (Date.now() - this._lastRealHrAt) <= HR_LOSS_GRACE_MS) {
+        return;
+      }
       // Device disconnect or cold start: clear stale HR data.
       // Downstream consumers (ZoneProfileStore, TimelineRecorder) will see null
       // and correctly treat this as "no data" rather than using cached values.
@@ -119,6 +136,7 @@ export class User {
       return;
     }
 
+    this._lastRealHrAt = Date.now();
     const hrData = this._cumulativeData.heartRate;
     hrData.readings.push({ value: heartRate, timestamp: new Date() });
     

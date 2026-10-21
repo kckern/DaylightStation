@@ -1976,6 +1976,16 @@ export class GovernanceEngine {
     }
   }
 
+  /**
+   * Forget per-session alarm memory (the inert-requirement alarm is "once per
+   * requirement per SESSION"). Called from FitnessSession.reset() at session
+   * end — NOT from reset(), which also runs mid-session in evaluate()'s
+   * no-policy branch and would let the alarm fire again within one session.
+   */
+  resetSessionAlarms() {
+    this._requirementLiveness = null;
+  }
+
   reset() {
     this._clearTimers();
     this._cleanupPlaybackSubscription();

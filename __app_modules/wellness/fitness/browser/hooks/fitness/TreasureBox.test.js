@@ -138,3 +138,41 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
     expect(misses[0][2]).toBe('warn');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-20: a strap sent null readings for seven minutes and the browser kept
+// scoring a held 144 bpm. The box's own contract is that a null sample is a
+// dropout: the interval restarts and no ring is paid for it.
+describe('FitnessTreasureBox — no rings while the reading is null', () => {
+  const ZONES = [
+    { id: 'cool', name: 'Cool', min: 0, color: 'blue', rings: 0 },
+    { id: 'warm', name: 'Warm', min: 120, color: 'yellow', rings: 2 },
+  ];
+
+  it('pays nothing for an interval that ends on null samples', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const t0 = 1_700_000_000_000;
+      vi.setSystemTime(t0);
+      const box = new FitnessTreasureBox({ startTime: t0, timebase: {} });
+      box.configure({ zones: ZONES });
+      const unit = box.ringTimeUnitMs;
+
+      box.recordUserHeartRate('user_1', 144);
+      expect(box.perUser.get('user_1').highestZone.id).toBe('warm');
+
+      for (let ms = 1_000; ms <= unit * 3; ms += 1_000) {
+        vi.setSystemTime(t0 + ms);
+        box.recordUserHeartRate('user_1', null);
+        box.processTick(-1, new Set(['user_1']));
+      }
+
+      const acc = box.perUser.get('user_1');
+      expect(acc.totalRings || 0).toBe(0);
+      expect(acc.highestZone).toBeNull();
+      expect(acc.lastZoneId).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

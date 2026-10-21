@@ -1011,7 +1011,13 @@ requirements:
 
 The gate is dormant until all of the following are true at once:
 
-1. The equipment is **claimed** by a rider who is an active participant.
+1. The equipment is **claimed** by a rider who is an active participant. An
+   equipment entry's configured `rider` is the default claim and is re-applied
+   at the start of **every** session (`FitnessSession.reset()` re-seeds), not
+   only on page load. Before 2026-10-20 it was cleared when a session ended, so
+   from the second workout after a page load the tricycle was unclaimed and its
+   floor stood down silently. A requirement that never produces a result for
+   its grace window logs `governance.requirement.inert` once per session.
 2. That rider has a **live heart-rate strap** (`require_rider_hr`, default true).
    An exempt rider satisfies this — exemption excuses an HR *target*, not
    presence.
