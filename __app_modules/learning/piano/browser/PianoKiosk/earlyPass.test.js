@@ -54,6 +54,9 @@ describe('earlyPass', () => {
     expect(offersFromBank(bank)).toEqual([]);
     expect(offersFromBank({ ...bank, pass: { 'piano.games': { state: 'none' } } })).toHaveLength(1);
     expect(offersFromBank({})).toEqual([]);
+    // A price of 0 means not sold in that coin (the shipped config): no row.
+    const zero = { pass: { 'piano.games': { state: 'none' } }, offers: { 'piano.games': [{ coin: 'silver', price: 0, affordable: true }, { coin: 'gold', price: 2, affordable: false }] } };
+    expect(offersFromBank(zero)).toEqual([{ coin: 'gold', price: 2, affordable: false }]);
   });
 
   it('labels the next sheet without inventing a reward', () => {

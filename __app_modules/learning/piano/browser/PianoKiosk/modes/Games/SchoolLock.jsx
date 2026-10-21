@@ -190,12 +190,14 @@ export default function SchoolLock({ access, learnerId, deviceId = null }) {
  * After the early-pass game: no rematch, no picker. Games lock again until
  * school is done, and the next sheet is one tap away.
  */
-export function RelockScreen({ learnerId, deviceId = null, outcome = null }) {
+export function RelockScreen({ learnerId, deviceId = null, outcome = null, played = true }) {
   const headingId = useId();
+  // "Good game!" only after a game. A pass left at the challenge or the
+  // loading screen reads neutrally.
   return (
     <section className="piano-mode__placeholder piano-games__relock piano-school-lock" aria-labelledby={headingId}>
-      <h2 id={headingId}>Good game!</h2>
-      <p>Games lock again until school is done.</p>
+      <h2 id={headingId}>{played ? 'Good game!' : 'Games are locked'}</h2>
+      <p>{played ? 'Games lock again until school is done.' : 'Games are locked again until school is done.'}</p>
       <p className="piano-school-lock__notice" role="status" aria-live="polite">{outcome === 'refunded' ? 'Your coins are back.' : ''}</p>
       <PrintNextButton learnerId={learnerId} deviceId={deviceId} />
     </section>

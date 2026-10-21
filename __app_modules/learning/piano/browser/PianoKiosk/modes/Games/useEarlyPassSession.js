@@ -37,11 +37,38 @@ import { consumePass, refundPass, errorBody, REFUND_WITHIN_MS } from '../../earl
  * network) tries ONE consume, and if that fails too it is logged and left.
  * Nothing retries.
  */
+/**
+ * Whether an access answer is a VERDICT on the pass: a ready read that is
+ * not `indeterminate`, and (when school says incomplete) one whose bank read
+ * landed with a readable pass. A failed poll, a loading frame, an
+ * indeterminate day or a failed bank read says nothing about the pass.
+ */
+function speaksForPass(access) {
+  if (access?.status !== 'ready' || access.state === 'indeterminate') return false;
+  if (access.state !== 'incomplete') return true;
+  return Boolean(access.pass) && access.pass.state !== 'unknown';
+}
+
 export default function useEarlyPassSession({ learnerId, access }) {
   const log = useMemo(() => getLogger().child({ component: 'piano-early-pass' }), []);
-  const live = access?.via === 'pass' && access.pass?.passId && learnerId
+  // STICKY for the same player across answers that are not a verdict. A
+  // network blip on the 15s poll during the challenge used to drop the pass,
+  // unmount the host and refund at 0 ms — the day's one pass gone to a
+  // timeout. It is dropped only by a ready read that says it is not active.
+  // Adjusted during render (React's sanctioned derive-from-props pattern), so
+  // no frame ever renders the host without it.
+  const [sticky, setSticky] = useState(null);
+  const fresh = access?.via === 'pass' && access.pass?.passId && learnerId
     ? { passId: access.pass.passId, learnerId, pass: access.pass }
     : null;
+  let live = fresh;
+  if (fresh) {
+    if (sticky?.passId !== fresh.passId || sticky?.learnerId !== fresh.learnerId) setSticky(fresh);
+  } else if (sticky && sticky.learnerId === learnerId && !speaksForPass(access)) {
+    live = sticky;
+  } else if (sticky && sticky.learnerId === learnerId) {
+    setSticky(null);
+  }
   const [held, setHeld] = useState(null);
   const [relockedFor, setRelockedFor] = useState(null);
   const [outcome, setOutcome] = useState(null);
@@ -57,6 +84,7 @@ export default function useEarlyPassSession({ learnerId, access }) {
   const refreshRef = useRef(access?.refresh);
   refreshRef.current = access?.refresh;
   const settledRef = useRef(null);
+  const endedRef = useRef(null);
   const completedRef = useRef(null);
   const startedRef = useRef({ passId: null, at: null });
   const pendingLeave = useRef(null);
@@ -66,6 +94,8 @@ export default function useEarlyPassSession({ learnerId, access }) {
   const holding = !relocked && Boolean(heldMine || live);
   const started = !relocked && Boolean(heldMine);
   const passId = holding ? (heldMine ?? live).passId : null;
+  // Whether the relocked pass ever reached a game: "Good game!" only then.
+  const played = relocked && held?.passId === relockedFor.passId;
 
   /** The pass a terminal call is about: this player's latched or live pass, else one latched for another player. */
   const target = useCallback(() => {
@@ -124,8 +154,16 @@ export default function useEarlyPassSession({ learnerId, access }) {
   /** THE terminal transition: relock, then settle. */
   const end = useCallback((mode, reason) => {
     const pass = target();
-    if (!pass) return;
+    // Once per pass: the host's own unmount follows every relock.
+    if (!pass || endedRef.current === pass.passId) return;
+    endedRef.current = pass.passId;
     setRelockedFor({ passId: pass.passId, learnerId: pass.learnerId });
+    // Already settled (a completion consumed it): still re-read access, so
+    // nothing keeps answering `via: 'pass'` behind the relock.
+    if (settledRef.current === pass.passId) {
+      try { refreshRef.current?.(); } catch { /* the relock stands */ }
+      return;
+    }
     const switched = pass.learnerId !== learnerRef.current;
     const completed = completedRef.current === pass.passId;
     settle(switched || completed ? 'force-consume' : mode, switched ? 'switch' : reason, pass);
@@ -144,7 +182,8 @@ export default function useEarlyPassSession({ learnerId, access }) {
   // The host's unmount is deferred one microtask and cancelled by a remount.
   // React runs a StrictMode unmount-remount pair synchronously, so `stay`
   // always lands first; a real unmount finishes before any timer could, and
-  // there is no timer to leave behind.
+  // there is no timer to leave behind. NOTE: hiding these routes in React
+  // `<Activity mode="hidden">` would run this cleanup and settle the pass.
   const leave = useCallback((reason) => {
     pendingLeave.current = reason;
     queueMicrotask(() => {
@@ -156,7 +195,7 @@ export default function useEarlyPassSession({ learnerId, access }) {
   const stay = useCallback(() => { pendingLeave.current = null; }, []);
 
   return useMemo(() => ({
-    holding, relocked, started, outcome, passId,
+    holding, relocked, started, played, outcome, passId,
     markStarted, complete, settle, end, leave, stay,
-  }), [holding, relocked, started, outcome, passId, markStarted, complete, settle, end, leave, stay]);
+  }), [holding, relocked, started, played, outcome, passId, markStarted, complete, settle, end, leave, stay]);
 }

@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, resolvePath, useNavigate } from 'react-router-dom';
 
 const schoolAccess = vi.hoisted(() => ({
-  unlocked: true, via: null, pass: null, offers: [], refreshes: 0, onRefresh: null, real: false,
+  unlocked: true, via: null, pass: null, offers: [], refreshes: 0, onRefresh: null, real: false, answer: null,
 }));
 const gameBudget = vi.hoisted(() => ({ state: 'off', secondsLeft: 0, warn: false }));
 const daylightApi = vi.hoisted(() => vi.fn(() => Promise.resolve({ parsed: { games: {} } })));
@@ -120,6 +120,8 @@ vi.mock('../../useSchoolGameAccess.js', async (importOriginal) => {
     }, []);
     const notGated = opts?.schoolLearner === false && learnerId !== 'guest' && Boolean(learnerId);
     if (notGated) return { status: 'ready', state: 'not_gated', unlocked: true, refresh };
+    // A whole answer, for the reads that are not verdicts (error, indeterminate).
+    if (schoolAccess.answer) return { ...schoolAccess.answer, refresh };
     const viaPass = !schoolAccess.unlocked && schoolAccess.via === 'pass';
     return {
       status: 'ready', state: schoolAccess.unlocked ? 'complete' : 'incomplete',
@@ -202,6 +204,7 @@ beforeEach(() => {
   schoolAccess.refreshes = 0;
   schoolAccess.onRefresh = null;
   schoolAccess.real = false;
+  schoolAccess.answer = null;
   probe.crash = false;
   probe.save = null;
   gameBudget.state = 'off';
@@ -772,6 +775,9 @@ describe('Games mode — early pass', () => {
     expect(probe.mounts).toBe(1);
     expect(terminalCalls()).toHaveLength(1);
     expect(log.lines.some(([event]) => event === 'piano.early-pass.consumed')).toBe(true);
+    // The relock still re-reads access although the pass was already
+    // settled, so nothing keeps answering `via: 'pass'`.
+    expect(schoolAccess.refreshes).toBe(2);
   });
 
   it('an exit 30 s in refunds and relocks — never a remount, never the picker', async () => {
@@ -841,6 +847,48 @@ describe('Games mode — early pass', () => {
     fireEvent.click(screen.getByText('gate-leave'));
     await waitFor(() => expect(posts('/refund')).toHaveLength(1));
     expect(posts('/refund')[0][1]).toEqual({ playedMs: 0, reason: 'exit' });
+    // No game was played, so no "Good game!".
+    expect(screen.getByText('Games are locked again until school is done.')).toBeTruthy();
+    expect(screen.queryByText('Good game!')).toBeNull();
+    expect(await screen.findByText('Print my next sheet (Math 4-02)')).toBeTruthy();
+  });
+
+  it('a failed access read during the challenge keeps the challenge and the pass', async () => {
+    withActivePass();
+    const view = renderGames('/games/probe-game', 'learner1', { ...testConfig, gameGate: { enabled: true } });
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+
+    // A network blip on the 15 s poll: not a verdict about the pass.
+    schoolAccess.answer = { status: 'error', state: null, unlocked: false, pass: null, offers: [] };
+    view.rerender(gamesTree('/games/probe-game', 'learner1', { ...testConfig, gameGate: { enabled: true } }));
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+    schoolAccess.answer = { status: 'ready', state: 'indeterminate', unlocked: false, pass: null, offers: [] };
+    view.rerender(gamesTree('/games/probe-game', 'learner1', { ...testConfig, gameGate: { enabled: true } }));
+    expect(screen.getByTestId('game-gate')).toBeTruthy();
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(terminalCalls()).toHaveLength(0);
+    expect(screen.queryByText('Good game!')).toBeNull();
+
+    // And the pass still opens the game once the reads recover.
+    schoolAccess.answer = null;
+    view.rerender(gamesTree('/games/probe-game', 'learner1', { ...testConfig, gameGate: { enabled: true } }));
+    fireEvent.click(screen.getByText('gate-pass'));
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+  });
+
+  it.each([
+    ['a thrown entitlement read', { status: 'error', state: null, unlocked: false, pass: null, offers: [] }],
+    ['an indeterminate answer', { status: 'ready', state: 'indeterminate', unlocked: false, pass: null, offers: [] }],
+    ['a pass that reads as spent', { status: 'ready', state: 'incomplete', unlocked: false, pass: { passId: 'x', state: 'consumed', capUsed: true }, offers: [] }],
+  ])('a mounted game is latched: %s leaves it up with no terminal call', async (_label, answer) => {
+    withActivePass();
+    const view = renderGames('/games/probe-game', 'learner1');
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+    schoolAccess.answer = answer;
+    view.rerender(gamesTree('/games/probe-game', 'learner1'));
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(screen.getByTestId('probe-game')).toBeTruthy();
+    expect(terminalCalls()).toHaveLength(0);
   });
 
   it('a refund that fails for an unknown reason tries ONE consume', async () => {

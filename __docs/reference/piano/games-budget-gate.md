@@ -120,16 +120,21 @@ labelled by its heading.
 
 **The game.** `Games()` holds the session (`useEarlyPassSession`).
 
-- *Open.* Before the game mounts, the pass is open only while access says `via: 'pass'`;
-  if the pass ends while the child is on the picker or the challenge, the lock comes
-  straight back. Once the game mounts the pass is latched, and the routes stay open
+- *Open.* Before the game mounts, the pass is open while access says `via: 'pass'`, and it
+  stays open for the same player across answers that are not a verdict on it (a failed
+  poll, a loading frame, an `indeterminate` day, a failed bank read), so a network blip
+  during the challenge cannot spend it. Only a ready read that says the pass is not
+  active closes it: if the pass really ended while the child is on the picker or the
+  challenge, the lock comes straight back. Once the game mounts the pass is latched, and the routes stay open
   whatever access says, so the refresh after a consume cannot cut off a result screen.
 - *Armed.* The match gate reports `armed: true`, so a game's "play again" returns to the
   host.
 - *One terminal path.* A rematch request, an exit, a crash (`GameBoundary`'s `onCrash`),
   an unmount the host did not start, and a profile switch all go through `end`, which
-  marks the pass relocked and settles it. The relock screen ("Good game! Games lock again
-  until school is done." plus Print) replaces the routes; nothing remounts a game or
+  marks the pass relocked and settles it, once per pass; a pass already settled (a
+  completion's consume) still gets an access re-read. The relock screen ("Good game!
+  Games lock again until school is done." plus Print, or "Games are locked again until
+  school is done." when no game ever started) replaces the routes; nothing remounts a game or
   opens the picker. Switching back to the player who bought it shows the relock screen.
 - *Settle modes.* `by-play-time` refunds when `playedMs < 60000` and consumes otherwise;
   `playedMs` runs from the game's own mount, so a pass that never reached a game played
@@ -143,7 +148,8 @@ labelled by its heading.
 Exactly one terminal call is made per pass: a ref keyed by pass id is set before the
 request leaves. The host's unmount is deferred one microtask and cancelled by a remount,
 so a StrictMode unmount-remount pair cannot spend the pass, and no timer outlives the
-screen. A refund refused as `PASS_NOT_ACTIVE` is only logged. Any other refund failure
+screen. Hiding these routes in React `<Activity>` would run that cleanup and settle the
+pass. A refund refused as `PASS_NOT_ACTIVE` is only logged. Any other refund failure
 (`PASS_REFUND_CLOSED`, a 5xx, the network) tries one consume; if that fails too, it is
 logged and left. Nothing retries.
 

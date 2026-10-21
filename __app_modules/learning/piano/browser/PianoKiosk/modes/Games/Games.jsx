@@ -117,7 +117,7 @@ export function Games() {
   // school's to open. Unless school itself has opened Games since, in which
   // case there is nothing to relock.
   if (earlyPass.relocked && !(gameAccess.unlocked && gameAccess.via !== 'pass')) {
-    return <RelockScreen learnerId={learnerId} deviceId={deviceId} outcome={earlyPass.outcome} />;
+    return <RelockScreen learnerId={learnerId} deviceId={deviceId} outcome={earlyPass.outcome} played={earlyPass.played} />;
   }
 
   // `holding`: a pass is open — live from access until the game mounts, then

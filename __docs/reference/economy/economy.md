@@ -246,6 +246,8 @@ The code is `domain/historyText.mjs` (pure) and `application/BankService.mjs`.
   Print button. It is disabled when the cap is used or the state is `unknown`.
   The kiosk side is in
   [games-budget-gate.md](../piano/games-budget-gate.md#the-early-pass-on-the-tablet).
+- With School's self-service off (`GET …/self-service/learners/:id/next` answers 404), the
+  kiosk lock shows progress only, with no Print button.
 
 **Coins changed.** With an `eventBus` (from `createEconomyApi`), every write
 that moves a balance or a pass publishes `economy.coins-changed {userId, reason}`

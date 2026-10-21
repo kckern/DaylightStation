@@ -48,6 +48,12 @@ describe('DaylightAPI failures', () => {
     expect(err.message).toBe('HTTP 402: Payment Required - {"code":"PASS_UNAFFORDABLE","shortfall":2}');
   });
 
+  it('leaves a large JSON body off `error.body`, so a logged error stays small', async () => {
+    const big = JSON.stringify({ code: 'X', detail: 'y'.repeat(5000) });
+    fetchMock.mockResolvedValue(response({ status: 400, statusText: 'Bad Request', body: big }));
+    expect((await failure()).body).toBeUndefined();
+  });
+
   it('leaves `body` unset when the error body is not JSON', async () => {
     fetchMock.mockResolvedValue(response({ status: 502, statusText: 'Bad Gateway', body: NGINX_502 }));
     expect((await failure()).body).toBeUndefined();
