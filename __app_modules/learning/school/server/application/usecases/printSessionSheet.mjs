@@ -131,4 +131,80 @@ export async function printSessionSheet({
   });
 }
 
+/** What a screen says when a fresh sheet for a failed attempt went out. */
+export const FRESH_SHEET_SENTENCE = 'Printing a fresh sheet to try again.';
+
+/**
+ * Open the retry session for a failed attempt (`OpenRemediation`). Never
+ * throws. Answers `{ opened }` with `opened.newSessionId` set, or `{ answer }`:
+ * a screen answer for an unwired collaborator, a throw, or a refusal.
+ *
+ * `OpenRemediation`'s own refusals ("There is nothing to try again right
+ * now.", "After two tries, a grown-up will help with this one.") are already
+ * screen-safe and are passed through; `refusedSentence` is only the fallback
+ * for a refusal that carries no message.
+ */
+export async function openRemediationSession({
+  openRemediation, sessionId, refusedSentence = TELL_A_GROWN_UP,
+  logger = console, events = SELF_SERVICE_EVENTS,
+}) {
+  if (!openRemediation) return { answer: unwiredAnswer({ action: 'retry', sessionId, logger, events }) };
+  let opened;
+  try {
+    opened = await openRemediation.execute({ sessionId });
+  } catch (error) {
+    return { answer: threwAnswer({ action: 'retry', sessionId, error, logger, events }) };
+  }
+  if (opened?.status === 'unavailable' || !opened?.newSessionId) {
+    return {
+      answer: {
+        outcome: 'refused',
+        sentence: opened?.message || refusedSentence,
+        sessionId,
+        effect: { status: opened?.status ?? null },
+      },
+    };
+  }
+  return { opened };
+}
+
+/**
+ * One operation's answer, restated as the retry it was: the FRESH session's
+ * id, the lineage in `effect`, and the fresh-sheet sentence for a print that
+ * went out.
+ */
+export function retryAnswer({ result, sessionId, opened, operation }) {
+  return {
+    ...result,
+    sessionId: opened.newSessionId,
+    sentence: operation === 'print' && result.outcome === 'done'
+      ? FRESH_SHEET_SENTENCE : result.sentence,
+    effect: { ...(result.effect ?? {}), remediationOf: sessionId, variant: opened.variant ?? null },
+  };
+}
+
+/**
+ * A failed attempt's fresh sheet: open the retry session, then print it.
+ * The paper half of `RunSelfServiceAction#retry`, shared with
+ * `IssueSubjectNext`. Never throws.
+ *
+ * @param {object} args
+ * @param {object|null} args.openRemediation
+ * @param {object|null} args.issueDocument
+ * @param {string} args.sessionId - the FAILED session the retry hangs off
+ */
+export async function printFreshSheet({
+  openRemediation, issueDocument, sessionId, refusedSentence = TELL_A_GROWN_UP,
+  logger = console, events = SELF_SERVICE_EVENTS,
+}) {
+  const { answer, opened } = await openRemediationSession({
+    openRemediation, sessionId, refusedSentence, logger, events,
+  });
+  if (answer) return answer;
+  const result = await printSessionSheet({
+    issueDocument, sessionId: opened.newSessionId, logger, events,
+  });
+  return retryAnswer({ result, sessionId, opened, operation: 'print' });
+}
+
 export default printSessionSheet;

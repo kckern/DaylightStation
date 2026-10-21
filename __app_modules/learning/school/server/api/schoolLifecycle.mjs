@@ -141,9 +141,6 @@ const capabilityProof = (req) => {
  * @param {object} [deps.getPianoLessonGate] - read-only "does this learner owe
  *   a piano lesson right now"; gates `GET .../piano-lesson-gate`, the second
  *   read seam for the piano kiosk
- * @param {object} [deps.issueSubjectNext] - the code-free "print my next
- *   sheet" door (Portal bank strip, piano kiosk); gates `POST .../print-next`
- *   and the dry-run `GET .../next`
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.issueComposedWorksheet] - persistent multi-lesson worksheet issuer
  * @param {object} [deps.dispatchMedia]
@@ -176,7 +173,6 @@ export function createSchoolLifecycleRouter({
   getPianoLessonGate = null,
   issueDirectLaunch = null,
   issueSubjectCode = null,
-  issueSubjectNext = null,
   issueDocument = null,
   issueComposedWorksheet = null,
   dispatchMedia = null,
@@ -404,32 +400,6 @@ export function createSchoolLifecycleRouter({
         subject: req.body?.subject,
         program: req.body?.program ?? null,
       });
-      res.set('Cache-Control', 'no-store').json(result);
-    }));
-  }
-
-  // --- print my next sheet (Portal bank strip, piano kiosk) -----------------
-  // No code and no PIN, so the body is read for exactly three things and
-  // nothing else: the learner (from the path), an optional subject, and the
-  // device asking. The use case refuses a learner off the roster (404) and a
-  // subject that is not that learner's (400), and only ever prints the sheet
-  // the learner's own plan says is next — never a unit named by the caller.
-  // A refusal or a printer failure is still a 200 with a sentence: the
-  // surfaces show `sentence`, and a status code is not something a child reads.
-  if (issueSubjectNext) {
-    router.post('/learners/:learnerId/print-next', asyncHandler(async (req, res) => {
-      const { subject = null, deviceId = null } = req.body ?? {};
-      const result = await issueSubjectNext.execute({
-        learnerId: req.params.learnerId, subject, deviceId,
-      });
-      res.set('Cache-Control', 'no-store').json(result);
-    }));
-
-    // The dry run behind the button's label: which unit would print, and the
-    // reward for it when the economy can say. Opens no session.
-    router.get('/learners/:learnerId/next', asyncHandler(async (req, res) => {
-      const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
-      const result = await issueSubjectNext.preview({ learnerId: req.params.learnerId, subject });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

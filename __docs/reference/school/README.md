@@ -1535,13 +1535,17 @@ The Portal's bank strip and the piano kiosk's lock screen print a child's next
 worksheet without a code, through `IssueSubjectNext`
 (`application/usecases/IssueSubjectNext.mjs`):
 
-- `POST /api/v1/school/lifecycle/learners/:learnerId/print-next {subject?, deviceId?}`
+These routes are on the self-service router, the locked panel's sanctioned
+surface, so the locked panel still never calls `/lifecycle`. They mount only
+when `selfService.enabled` is true.
+
+- `POST /api/v1/school/self-service/learners/:learnerId/print-next {subject?, deviceId?}`
   prints. The body is read for `subject` and `deviceId` and nothing else; a
   learner off the roster is a `404`, a subject that is not one of that learner's
   sections today is a `400`. Everything else, printer failures included, is a
   `200` carrying `{status, outcome, sentence, subject, unit: {unitId, title,
   subject}, sessionId}`. Surfaces show `sentence`.
-- `GET /api/v1/school/lifecycle/learners/:learnerId/next?subject=` is the dry
+- `GET /api/v1/school/self-service/learners/:learnerId/next?subject=` is the dry
   run for the button's label: `{subject, unit, printable, reward}`. It opens no
   session. `reward` comes from the optional `rewardFor({learnerId, unit})` port
   that `createSchoolLifecycle` accepts. It is null when that port is not wired,
@@ -1554,20 +1558,28 @@ first section whose next move is paper wins, so a program or a video at the top
 of the plan does not take the button. `ResolveSubjectNext` then resolves that
 subject exactly as for a scanned subject ticket, and ensures the session. The
 sheet prints only when the self-service card for that resolution would offer
-`print` (`offeredActions`). Served, locked, empty, program and non-paper moves
-answer with the card's own sentence and print nothing.
+`print` (`offeredActions`), or a paper `retry` ("Print a fresh sheet" after a
+failed attempt). A retry counts as paper when the subject is chosen, opens the
+remediation session through `OpenRemediation` and prints that one ("Printing a
+fresh sheet to try again."). A refused remediation, such as the retry cap,
+answers with `OpenRemediation`'s own sentence and prints nothing. Served,
+locked and empty answer with the card's sentence. A program or another
+non-paper move answers with the card's button label as a sentence ("Open Math
+Facts.", "Play the video.") and prints nothing.
 
 **The print step is shared with the keypad.** `printSessionSheet.mjs` holds
-`PRINT_RESULTS` and the `IssueDocument` call that `RunSelfServiceAction`'s
-`print` button uses. The two surfaces say the same thing about the same printer
+`PRINT_RESULTS`, the `IssueDocument` call that `RunSelfServiceAction`'s
+`print` button uses, and `printFreshSheet`, the open-remediation-then-print step
+behind its `retry` button. The two surfaces say the same thing about the same printer
 ("The printer did not answer. Try that again in a minute."), and only the event
 names differ.
 
-**A 20-second per-learner debounce sits in front of everything.** It is
-separate from `IssueDocument`'s per-session `printCooldownMinutes`. It catches
+**A 20-second per-learner debounce sits in front of resolving.** It is armed
+after validation (roster and subject), so a foreign subject is always a `400`.
+It is separate from `IssueDocument`'s per-session `printCooldownMinutes`. It catches
 one child tapping the strip and the kiosk, or one button twice, a moment apart:
-"It's already on its way — give it a minute." The stamp is checked and armed
-before any await, so two requests in flight together still print once. It is
+"It's already on its way — give it a minute." The check and the stamp have
+no await between them, so two requests in flight together still print once. It is
 released whenever the tap printed nothing (a refusal, a printer failure, the
 session cooldown), so a failed print can be retried straight away. The stamp
 lives in process memory, so a backend restart clears it.

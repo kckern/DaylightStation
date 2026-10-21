@@ -1452,6 +1452,9 @@ export async function createSchoolLifecycle({
     planProjection,
     sessions: stores.sessions,
     issueDocument,
+    // A failed attempt's "Print a fresh sheet" opens its retry through the
+    // SAME instance the keypad and the scan path use.
+    openRemediation,
     roster: () => schoolRoster.list(),
     rewardFor,
     clock,
@@ -1594,6 +1597,9 @@ export async function createSchoolLifecycle({
       recordLessonCompanionProgress,
       readPrinterHealth,
       curriculum,
+      // "Print my next sheet" lives on the panel's sanctioned surface, so the
+      // locked panel still never calls /lifecycle.
+      issueSubjectNext,
     })
     : null;
   if (!selfServiceEnabled) {

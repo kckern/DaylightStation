@@ -1,7 +1,8 @@
 // @vitest-environment node
 /**
- * `POST /learners/:learnerId/print-next` and `GET /learners/:learnerId/next` —
- * the code-free "print my next sheet" door. The judgement lives in
+ * `POST /self-service/learners/:learnerId/print-next` and
+ * `GET /self-service/learners/:learnerId/next` — the code-free "print my next
+ * sheet" door, on the locked panel's sanctioned router. The judgement lives in
  * `IssueSubjectNext`; what is pinned here is the boundary: the body is read for
  * `subject` and `deviceId` and nothing else, a learner off the roster is a 404,
  * a subject that is not theirs is a 400, a printer failure is still a 200 with
@@ -10,11 +11,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createSchoolLifecycleTestRouter as createSchoolLifecycleRouter } from '../../../_lib/school/schoolLifecycleRouterTestSupport.mjs';
+import { createSchoolSelfServiceRouter } from "../../../../__app_modules/learning/school/server/api/school.selfservice.mjs";
+import { createSchoolLifecycleTestRouter } from '../../../_lib/school/schoolLifecycleRouterTestSupport.mjs';
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
-const BASE = '/api/v1/school/lifecycle';
+const BASE = '/api/v1/school/self-service';
 
 const fakeUseCase = () => ({
   execute: vi.fn(async ({ learnerId, subject }) => {
@@ -35,10 +37,9 @@ const fakeUseCase = () => ({
 function appWith(issueSubjectNext) {
   const app = express();
   app.use(express.json());
-  app.use(BASE, createSchoolLifecycleRouter({
-    buildAgenda: { execute: vi.fn() },
+  app.use(BASE, createSchoolSelfServiceRouter({
+    resolveAccessCode: { resolve: vi.fn(), execute: vi.fn() },
     issueSubjectNext,
-    logger: { info() {}, warn() {}, error() {} },
   }));
   app.use(errorHandlerMiddleware());
   return app;
@@ -96,5 +97,19 @@ describe('GET /learners/:learnerId/next', () => {
   it('404s a learner who is not on the roster', async () => {
     const response = await request(appWith(fakeUseCase())).get(`${BASE}/learners/stranger/next`);
     expect(response.status).toBe(404);
+  });
+});
+
+describe('not on the lifecycle router', () => {
+  it('the locked panel\'s rule holds: /lifecycle has no print-next door', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school/lifecycle', createSchoolLifecycleTestRouter({
+      buildAgenda: { execute: vi.fn() },
+      issueSubjectNext: fakeUseCase(),
+    }));
+    app.use(errorHandlerMiddleware());
+    expect((await request(app).post('/api/v1/school/lifecycle/learners/learner_a/print-next').send({})).status).toBe(404);
+    expect((await request(app).get('/api/v1/school/lifecycle/learners/learner_a/next')).status).toBe(404);
   });
 });

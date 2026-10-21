@@ -13,6 +13,7 @@ import { ResolveSubjectNext } from "./ResolveSubjectNext.mjs";
 import { GetLearnerDayCompletion } from "../GetLearnerDayCompletion.mjs";
 import { PlanProjection } from "../PlanProjection.mjs";
 import { CurriculumAccess } from "../CurriculumAccess.mjs";
+import { OpenRemediation } from "./OpenRemediation.mjs";
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore,
   fakeClock, sequentialIds, silentLogger,
@@ -62,6 +63,7 @@ const build = ({
   completion = null,
   roster = [{ id: 'kid1' }, { id: 'grownup1' }],
   rewardFor = null,
+  remediationMaxRounds = 2,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({
@@ -93,6 +95,9 @@ const build = ({
     planProjection,
     sessions,
     issueDocument: issue,
+    openRemediation: new OpenRemediation({
+      curriculum, sessions, clock: clock.now, newSessionId, remediationMaxRounds, logger: silentLogger,
+    }),
     roster: () => roster,
     rewardFor,
     clock: clock.now,
@@ -185,7 +190,8 @@ describe('a program subject', () => {
     expect(result.status).toBe('program');
     expect(result.outcome).toBe('refused');
     expect(result.sessionId).toBeNull();
-    expect(result.sentence).toMatch(/no sheet/i);
+    // The card's own button label, as a sentence — no new template.
+    expect(result.sentence).toBe(`Open ${fixtureUnit(LANGUAGE_UNIT).title}.`);
     expect(result.unit).toMatchObject({ unitId: LANGUAGE_UNIT, subject: 'language' });
     expect(logger.calls.find((c) => c.event === 'school.subject-next.refused')?.data).toMatchObject({
       learnerId: 'kid1', subject: 'language', unitId: LANGUAGE_UNIT, status: 'program', deviceId: 'kiosk',
@@ -259,6 +265,11 @@ describe('what it will accept', () => {
     // And the refused call did not arm the debounce.
     expect((await useCase.execute({ learnerId: 'kid1' })).status).toBe('issued');
   });
+
+  it('refuses a foreign subject even inside the debounce window', async () => {
+    expect((await useCase.execute({ learnerId: 'kid1' })).status).toBe('issued');
+    await expect(useCase.execute({ learnerId: 'kid1', subject: 'history' })).rejects.toMatchObject({ name: 'ValidationError' });
+  });
 });
 
 describe('preview (GET /next)', () => {
@@ -284,6 +295,78 @@ describe('preview (GET /next)', () => {
   });
 });
 
+/** Grade the session `sessionId` as failed, the way the OMR path records it. */
+const failSession = async (sessionId) => {
+  for (const event of [
+    { type: 'issued', artifactId: `art_${sessionId}` },
+    { type: 'submitted', transport: 'paper' },
+    { type: 'graded', attemptIds: [`att_${sessionId}`], percent: 20 },
+    { type: 'outcome_recorded', outcomeId: `out:${sessionId}`, result: 'needs_remediation' },
+  ]) {
+    // eslint-disable-next-line no-await-in-loop
+    await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
+  }
+};
+
+describe('a failed attempt (needs_remediation)', () => {
+  const failFirstSheet = async () => {
+    const first = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(first.status).toBe('issued');
+    await failSession(first.sessionId);
+    clock.advanceMs(21_000);
+    issue.calls.length = 0;
+    return first.sessionId;
+  };
+
+  it('with the subject named, opens the retry and prints the fresh sheet', async () => {
+    const failed = await failFirstSheet();
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+
+    expect(result).toMatchObject({
+      status: 'issued', outcome: 'done', sentence: 'Printing a fresh sheet to try again.', subject: 'math',
+      unit: { unitId: WORKSHEET_UNIT },
+    });
+    expect(result.sessionId).not.toBe(failed);
+    expect(issue.calls).toEqual([result.sessionId]);
+    const created = (await sessions.readEvents(result.sessionId))[0];
+    expect(created).toMatchObject({ type: 'created', remediationOf: failed });
+  });
+
+  it('with no subject named, a retry counts as paper and wins the button', async () => {
+    build({
+      completion: {
+        execute: async () => ({
+          sections: [
+            { subject: 'language', state: 'obligated', reason: null },
+            { subject: 'math', state: 'obligated', reason: null },
+          ],
+        }),
+      },
+    });
+    await failFirstSheet();
+    const preview = await useCase.preview({ learnerId: 'kid1' });
+    expect(preview).toMatchObject({ subject: 'math', printable: true });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(result).toMatchObject({ status: 'issued', subject: 'math', sentence: 'Printing a fresh sheet to try again.' });
+    expect(issue.calls).toHaveLength(1);
+  });
+
+  it('a capped retry answers with the remediation\'s own sentence and prints nothing', async () => {
+    build({ remediationMaxRounds: 1 });
+    await failFirstSheet();
+    const retry = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(retry.status).toBe('issued');
+    await failSession(retry.sessionId);
+    clock.advanceMs(21_000);
+    issue.calls.length = 0;
+
+    const capped = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(issue.calls).toHaveLength(0);
+    expect(capped).toMatchObject({ outcome: 'refused', sessionId: null });
+    expect(capped.sentence).toMatch(/a grown-up will help/i);
+  });
+});
+
 describe('through the real composition', () => {
   let harness;
   beforeEach(async () => {
@@ -303,6 +386,24 @@ describe('through the real composition', () => {
     expect(second.status).toBe('debounced');
     expect(harness.printedPdfs()).toHaveLength(1);
     await expect(issueNext.execute({ learnerId: 'nobody' })).rejects.toMatchObject({ name: 'EntityNotFoundError' });
+  });
+
+  it('prints a failed attempt\'s fresh sheet through the composed OpenRemediation', async () => {
+    const issueNext = harness.useCases.issueSubjectNext;
+    const first = await issueNext.execute({ learnerId: 'kid1' });
+    for (const event of [
+      { type: 'submitted', transport: 'paper' },
+      { type: 'graded', attemptIds: ['att_x'], percent: 10 },
+      { type: 'outcome_recorded', outcomeId: `out:${first.sessionId}`, result: 'needs_remediation' },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      await harness.stores.sessions.appendEvent(first.sessionId, { ...event, sessionId: first.sessionId, at: harness.clock.iso() });
+    }
+    harness.advanceClock(21_000);
+    const retry = await issueNext.execute({ learnerId: 'kid1' });
+    expect(retry).toMatchObject({ status: 'issued', sentence: 'Printing a fresh sheet to try again.' });
+    expect(retry.sessionId).not.toBe(first.sessionId);
+    expect(harness.printedPdfs()).toHaveLength(2);
   });
 
   it('a printer that is offline answers print_failed, and the next tap heals it', async () => {

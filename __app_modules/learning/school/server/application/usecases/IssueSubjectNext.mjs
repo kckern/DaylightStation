@@ -24,14 +24,19 @@
  *      exactly as for a scanned ticket.
  *   3. When the card for that resolution offers `print`, the sheet goes out
  *      through `printSessionSheet`, the helper the keypad's `print` button
- *      uses. Anything else (served, locked, empty, a program, a video) gets
- *      its sentence and nothing is printed.
+ *      uses. When it offers a paper `retry` ("Print a fresh sheet" after a
+ *      failed attempt), `printFreshSheet` opens the remediation session and
+ *      prints that, as the keypad's retry button does. Anything else
+ *      (served, locked, empty, a program, a video) gets the card's sentence,
+ *      or its button label as one ("Open Math Facts."), and nothing prints.
  *
- * THE DEBOUNCE IS PER LEARNER, AND IT COMES FIRST. `IssueDocument` already
- * refuses a reprint of one SESSION inside `printCooldownMinutes`; this is a
- * different guard, against one child tapping the strip and the kiosk (or one
- * button twice) a moment apart. It is checked and armed synchronously before
- * anything is read, so two requests in flight together still print once. It
+ * THE DEBOUNCE IS PER LEARNER, AND IT COMES BEFORE RESOLVING. `IssueDocument`
+ * already refuses a reprint of one SESSION inside `printCooldownMinutes`; this
+ * is a different guard, against one child tapping the strip and the kiosk (or
+ * one button twice) a moment apart. It is armed after validation (roster, and
+ * the subject being in the learner's plan, so a foreign subject is always a
+ * 400) and before anything is resolved. The check and the stamp have no await
+ * between them, so two requests in flight together still print once. It
  * is RELEASED when the tap printed nothing — a refusal, a failure, the
  * session cooldown — because "it's already on its way" must never be said
  * about a sheet that is not; a printer that failed must be retryable at once
@@ -47,7 +52,9 @@ import { offeredCard } from "../../domain/selfService/offeredActions.mjs";
 import { nextMove, remediationOptionsFor } from "./offerSession.mjs";
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { SYNTHETIC_SESSION_ID } from "./ResolveAccessCode.mjs";
-import { PRINT_RESULTS, TELL_A_GROWN_UP, printSessionSheet } from "./printSessionSheet.mjs";
+import {
+  PRINT_RESULTS, TELL_A_GROWN_UP, printSessionSheet, printFreshSheet,
+} from "./printSessionSheet.mjs";
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$/;
 const DEVICE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,80}$/;
@@ -64,12 +71,24 @@ const EVENTS = Object.freeze({
   useCaseFailed: 'school.subject-next.use-case-failed',
 });
 
-const lowerFirst = (s) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+const capitalise = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
 
-/** The one new line: work whose next step is not paper. */
-const noSheetSentence = (work) => (work?.label
-  ? `There's no sheet to print for this one. ${work.label} instead.`
-  : TELL_A_GROWN_UP);
+/**
+ * Work whose next step is not paper answers with the card's own button label
+ * as a sentence ("Open Math Facts.", "Play the video."), capitalised the way
+ * `offeredActions`'s `waitingSentence` capitalises a move's label.
+ */
+const labelSentence = (work) => {
+  const label = typeof work?.label === 'string' ? capitalise(work.label.trim()) : '';
+  if (!label) return TELL_A_GROWN_UP;
+  return /[.!?]$/.test(label) ? label : `${label}.`;
+};
+
+/**
+ * Does this card action put paper in the tray? A plain `print`, or a `retry`
+ * whose fresh session's first step is a print ("Print a fresh sheet").
+ */
+const isPaper = (work) => work?.kind === 'print' || (work?.kind === 'retry' && work.operation === 'print');
 
 const unitView = (unit, fallbackSubject) => (unit ? {
   unitId: unit.unitId ?? null,
@@ -78,7 +97,7 @@ const unitView = (unit, fallbackSubject) => (unit ? {
 } : null);
 
 export class IssueSubjectNext {
-  #resolver; #completion; #projection; #sessions; #issue; #roster; #rewardFor;
+  #resolver; #completion; #projection; #sessions; #issue; #remediation; #roster; #rewardFor;
   #debounceMs; #clock; #logger;
   /** learnerId -> epoch ms of the last tap still counted as on its way. */
   #taps = new Map();
@@ -92,6 +111,8 @@ export class IssueSubjectNext {
    *   look ahead without opening a session
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {import('./IssueDocument.mjs').IssueDocument} [deps.issueDocument]
+   * @param {import('./OpenRemediation.mjs').OpenRemediation} [deps.openRemediation]
+   *   opens the fresh session behind a failed attempt's "Print a fresh sheet"
    * @param {(() => Array<{id: string}>)|null} [deps.roster] - who may be named
    * @param {((args: {learnerId: string, unit: object}) => Promise<object|null>)|null} [deps.rewardFor]
    *   optional label source for `preview`; null, absent or throwing all mean
@@ -102,7 +123,7 @@ export class IssueSubjectNext {
    */
   constructor({
     resolveSubjectNext, getLearnerDayCompletion, planProjection, sessions,
-    issueDocument = null, roster = null, rewardFor = null,
+    issueDocument = null, openRemediation = null, roster = null, rewardFor = null,
     debounceMs = DEFAULT_DEBOUNCE_MS, clock = () => new Date(), logger = console,
   } = {}) {
     if (!resolveSubjectNext || !getLearnerDayCompletion || !planProjection || !sessions) {
@@ -113,6 +134,7 @@ export class IssueSubjectNext {
     this.#projection = planProjection;
     this.#sessions = sessions;
     this.#issue = issueDocument;
+    this.#remediation = openRemediation;
     this.#roster = roster;
     this.#rewardFor = typeof rewardFor === 'function' ? rewardFor : null;
     this.#debounceMs = debounceMs;
@@ -133,6 +155,9 @@ export class IssueSubjectNext {
     this.#assertLearner(learnerId);
     const wanted = this.#subjectArg(subject);
     const device = typeof deviceId === 'string' && DEVICE_RE.test(deviceId) ? deviceId : null;
+    // Validation comes BEFORE the debounce: a foreign subject is always a 400,
+    // never "it's already on its way".
+    const sections = await this.#sections(learnerId, wanted);
 
     // Checked and armed with no await in between: two taps in flight together
     // cannot both get past this line.
@@ -150,10 +175,8 @@ export class IssueSubjectNext {
 
     let answer;
     try {
-      answer = await this.#run({ learnerId, subject: wanted });
+      answer = await this.#run({ learnerId, subject: wanted, sections });
     } catch (error) {
-      this.#release(learnerId, now);
-      if (error instanceof ValidationError || error instanceof EntityNotFoundError) throw error;
       this.#logger.error?.(EVENTS.failed, {
         stage: 'run', learnerId, subject: wanted, error: error?.message ?? String(error),
       });
@@ -194,8 +217,7 @@ export class IssueSubjectNext {
     };
   }
 
-  async #run({ learnerId, subject }) {
-    const sections = await this.#sections(learnerId, subject);
+  async #run({ learnerId, subject, sections }) {
     let chosen = subject;
     if (!chosen) {
       const look = await this.#lookahead(learnerId);
@@ -218,11 +240,11 @@ export class IssueSubjectNext {
     });
     const work = card.actions.find((a) => a.kind !== 'exit') ?? null;
 
-    if (resolution?.kind !== 'move' || work?.kind !== 'print') {
+    if (resolution?.kind !== 'move' || !isPaper(work)) {
       return {
         status: resolution?.kind === 'move' ? 'no_sheet' : (resolution?.kind ?? 'empty'),
         outcome: 'refused',
-        sentence: card.sentence ?? noSheetSentence(work),
+        sentence: card.sentence ?? labelSentence(work),
         subject: chosen, unit, sessionId: null,
       };
     }
@@ -237,16 +259,25 @@ export class IssueSubjectNext {
       };
     }
 
-    const printed = await printSessionSheet({
-      issueDocument: this.#issue, sessionId, logger: this.#logger, events: EVENTS,
-    });
+    // A failed attempt prints a FRESH sheet on a new session, through the
+    // same open-then-print step the keypad's retry button takes.
+    const printed = work.kind === 'retry'
+      ? await printFreshSheet({
+        openRemediation: this.#remediation, issueDocument: this.#issue, sessionId,
+        logger: this.#logger, events: EVENTS,
+      })
+      : await printSessionSheet({
+        issueDocument: this.#issue, sessionId, logger: this.#logger, events: EVENTS,
+      });
     return {
       status: printed.effect?.status ?? 'error',
       outcome: printed.outcome,
       sentence: printed.sentence,
       subject: chosen,
       unit,
-      sessionId,
+      // The session a sheet went to (the fresh one, for a retry); null when
+      // the remediation was refused and nothing was attempted.
+      sessionId: printed.outcome === 'refused' ? null : (printed.sessionId ?? null),
     };
   }
 
@@ -307,7 +338,7 @@ export class IssueSubjectNext {
           kind: 'move', move: nextMove(unit ?? {}, state, remediationOptionsFor(entry)), state, unit, entry,
         };
         return offeredCard(resolution, { ...this.#bankOptions(unit), now: this.#clock() })
-          .actions.some((a) => a.kind === 'print');
+          .actions.some(isPaper);
       }).catch((error) => {
         this.#logger.warn?.('school.subject-next.lookahead-failed', {
           learnerId, subject, error: error?.message ?? String(error),

@@ -57,6 +57,7 @@ import { ensureSession } from "./offerSession.mjs";
 import { SYNTHETIC_SESSION_ID } from "./ResolveAccessCode.mjs";
 import {
   TELL_A_GROWN_UP, printSessionSheet, reportUseCaseResult, unwiredAnswer, threwAnswer,
+  printFreshSheet, openRemediationSession, retryAnswer,
 } from "./printSessionSheet.mjs";
 
 /** The buttons that act on a work session, and therefore need a real one. */
@@ -441,32 +442,23 @@ export class RunSelfServiceAction {
    * banks mount, and launches dispatch exactly as a fresh created card would.
    */
   async #retry({ sessionId, offered, learnerId, unit }) {
-    if (!this.#remediation) return this.#unwired('retry', sessionId);
-    let opened;
-    try {
-      opened = await this.#remediation.execute({ sessionId });
-    } catch (error) {
-      return this.#threw('retry', sessionId, error);
+    const operation = offered?.operation ?? 'print';
+    // Paper is the shared step (`printFreshSheet`), the same one
+    // `IssueSubjectNext` prints a retry through.
+    if (operation === 'print') {
+      return printFreshSheet({
+        openRemediation: this.#remediation, issueDocument: this.#issue, sessionId,
+        refusedSentence: MOVED_ON, logger: this.#logger,
+      });
     }
-
-    if (opened?.status === 'unavailable' || !opened?.newSessionId) {
-      // OpenRemediation's own refusals ("There is nothing to try again right
-      // now.", "We could not find that work.") are already panel-safe.
-      return {
-        outcome: 'refused',
-        sentence: opened?.message || MOVED_ON,
-        sessionId,
-        effect: { status: opened?.status ?? null },
-      };
-    }
+    const { answer, opened } = await openRemediationSession({
+      openRemediation: this.#remediation, sessionId, refusedSentence: MOVED_ON, logger: this.#logger,
+    });
+    if (answer) return answer;
 
     const fresh = opened.newSessionId;
     let result;
-    const operation = offered?.operation ?? 'print';
     switch (operation) {
-      case 'print':
-        result = await this.#print(fresh);
-        break;
       case 'play':
         result = await this.#play(fresh, offered.target ?? null);
         break;
@@ -483,13 +475,7 @@ export class RunSelfServiceAction {
           transition: 'message',
         };
     }
-    return {
-      ...result,
-      sessionId: fresh,
-      sentence: operation === 'print' && result.outcome === 'done'
-        ? 'Printing a fresh sheet to try again.' : result.sentence,
-      effect: { ...(result.effect ?? {}), remediationOf: sessionId, variant: opened.variant ?? null },
-    };
+    return retryAnswer({ result, sessionId, opened, operation });
   }
 
   /**
