@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import QuizRunner from "./QuizRunner.jsx";
+import { schoolLog } from "../schoolLog.js";
 
 const answerMock = vi.fn();
 const openSessionMock = vi.fn();
@@ -213,23 +214,62 @@ describe('student-advocacy wave 7', () => {
     expect(onExit).toHaveBeenCalled();
   });
 
-  it('a failing graded run shows the pass bar honestly and offers the retake ask', async () => {
+  // 2026-10-21 decision: an on-screen quiz retakes until it is passed, with
+  // no grown-up in the loop — a fail offers Try again, never a retake ask.
+  it('a failing graded run shows the pass bar honestly and offers Try again, not a retake ask', async () => {
     answerMock
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
-    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
+    const onRestart = vi.fn();
+    const sessionLog = vi.spyOn(schoolLog, 'session');
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} onRestart={onRestart} />);
     await confirmChoice('Seattle');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     await confirmChoice('Boise');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('0% — passing is 80%. You can try again.');
-    fireEvent.click(screen.getByRole('button', { name: /ask for a retake/i }));
-    await waitFor(() => expect(requestRetakeMock).toHaveBeenCalledWith(
-      { userId: 'kid1', bankId: 'caps', title: 'Caps' }));
-    expect(await screen.findByTestId('retake-asked')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ask for a retake/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRestart).toHaveBeenCalledWith({ fresh: true });
+    expect(requestRetakeMock).not.toHaveBeenCalled();
+    // The restart is a session event of its own, next to start/end.
+    expect(sessionLog).toHaveBeenCalledWith('restart', expect.objectContaining({
+      sessionId: 'ses_1', bankId: 'caps', fresh: true, passed: false,
+    }));
+    sessionLog.mockRestore();
   });
 
-  it('a passing graded run celebrates and does NOT offer the retake ask', async () => {
+  it('a failed module quiz offers Try again above the reflection prompt', async () => {
+    answerMock
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
+    const onRestart = vi.fn();
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro', moduleId: 'gate' }}
+      onExit={() => {}} onRestart={onRestart} />);
+    await confirmChoice('Seattle');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await confirmChoice('Boise');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await screen.findByTestId('quiz-summary');
+    // The reflection prompt still closes the module; Try again sits beside it.
+    expect(screen.getByText('How does this feel now?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRestart).toHaveBeenCalledWith({ fresh: true });
+  });
+
+  it('a passed module quiz keeps the reflection prompt alone — no Try again', async () => {
+    const onRestart = vi.fn();
+    render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro', moduleId: 'gate' }}
+      onExit={() => {}} onRestart={onRestart} />);
+    await confirmChoice('Olympia');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    await confirmChoice('Salem');
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/^Passed/);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('a passing graded run celebrates', async () => {
     render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
     await confirmChoice('Olympia');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
@@ -237,7 +277,6 @@ describe('student-advocacy wave 7', () => {
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('Passed — 100%, and passing is 80%.');
     expect(screen.getByTestId('quiz-cheer')).toHaveTextContent('Perfect! Every single one.');
-    expect(screen.queryByRole('button', { name: /ask for a retake/i })).toBeNull();
     // Summary ceremony (design wave 9): one dot per question, all right here.
     expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
   });

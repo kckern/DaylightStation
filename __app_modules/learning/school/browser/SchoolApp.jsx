@@ -1279,7 +1279,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onExit={() => setActive(null)}
           />
         )}
-        {active?.mode === 'problems' && <QuizRunner bank={active.bank} mode="drill" learning={active.learning} onExit={() => setActive(null)} />}
+        {/* Same remount-by-key restart as the quiz mount above (2026-10-21:
+            on-screen quizzes retake until passed) — without onRestart a failed
+            drill had no way to go again. */}
+        {active?.mode === 'problems' && (
+          <QuizRunner
+            key={`drill:${active.bank.id}:${runNonce}`}
+            bank={active.bank}
+            mode="drill"
+            learning={active.learning}
+            fresh={runFresh}
+            onExit={() => setActive(null)}
+            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
+          />
+        )}
         {active?.mode === 'learning_probe' && (
           <LearningProbeRunner module={active.module} learning={active.learning} onExit={() => setActive(null)} />
         )}

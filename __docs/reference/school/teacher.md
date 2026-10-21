@@ -895,20 +895,36 @@ diplomas.
 
 ## 12. What a child can ask for
 
-Children file three kinds of request, and every one of them ends in a sentence
+Children file two kinds of request, and every one of them ends in a sentence
 from a grown-up. This is the *no silent verbs about children* contract.
 
 ```mermaid
 flowchart TD
-    K1["Retake — 'I want another try'"] --> BL["Teacher backlog"]
-    K2["Flag — 'something seems wrong'"] --> BL
+    K2["Flag — 'something seems wrong'"] --> BL["Teacher backlog"]
     K3["Quiz request — a gated unit with no bank"] --> BL
+    K1["Retake ask (legacy rows only)"] -.-> BL
     BL --> F{"Resolution"}
     F -->|"a bank bound to the unit now exists"| AUTO["Auto-badged 'bank authored'"]
     F -->|"teacher dismisses"| DIS["Reason REQUIRED<br/>delivered to the child as a note"]
 ```
 
-**Granting a retake does not clear the row.** `OpenRemediation` opens the fresh
+**On-screen quizzes retake until passed, with no grown-up** (decision
+2026-10-21). A failed summary offers *Try again*, which reopens the sitting
+fresh — at every runner mount: library and catalog quizzes, catalog drills
+(`problems` modules), and the materials gate quiz. A failed catalog module shows
+it above the reflection prompt; a pass keeps the prompt alone. The runner no
+longer files a retake ask, so a child is never left waiting on a grown-up to
+set up another try. Each restart is logged as `session` `restart`.
+
+**Retake asks still on file are dismiss-only.** Rows of `kind: 'retake'` filed
+before that decision still show in the backlog and are cleared the same way as
+any other row — *Dismiss…* with a reason. The `POST /retake-requests` route
+and `SchoolService.requestRetake` stay so those rows keep reading; nothing in
+the browser calls them any more. A grown-up who wants to open a retry on a
+graded attempt (`outcome_recorded` → `remediation_opened`) does it from the
+session inspector, *Offer another try* (§3).
+
+**Opening a retry does not clear a row.** `OpenRemediation` opens the fresh
 session but removes nothing from the backlog; a dismissal is the only thing
 that removes a row. Pre-existing behaviour, stated here so a row that outlives
 its own grant does not read as a bug.

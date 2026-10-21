@@ -23,25 +23,6 @@ const ITEM_COMPONENTS = {
 };
 
 /**
- * A kid's own voice on a fail (student-advocacy A2): one tap files a retake
- * ask on the teacher's backlog — no gate, no dead end.
- */
-function RetakeAsk({ userId, bankId, title }) {
-  const [state, setState] = useState('idle'); // idle | asked | failed
-  const ask = async () => {
-    const { ok } = await schoolApi.requestRetake({ userId, bankId, title });
-    setState(ok ? 'asked' : 'failed');
-  };
-  if (state === 'asked') return <p className="school-runner__retake" data-testid="retake-asked">Asked! A grown-up will set up another try.</p>;
-  return (
-    <>
-      <button type="button" className="school-runner__retake-btn" data-testid="retake-ask" onClick={ask}>Ask for a retake</button>
-      {state === 'failed' && <p className="school-runner__unrecorded-summary">That didn’t send — try again.</p>}
-    </>
-  );
-}
-
-/**
  * The kid's "this seems wrong" channel (advocacy wave 7): one tap files a
  * kind:'flag' row into the teacher backlog — mis-keyed answers and broken
  * screens get a voice without the child needing a grown-up standing there.
@@ -206,6 +187,16 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
     }
   };
 
+  // Every restart goes through here so it lands in the session log beside
+  // start/end. `passed` is only known on the summary; the timeout card's
+  // Start again carries none.
+  const restart = ({ fresh: wantFresh, passed } = {}) => {
+    schoolLog.session('restart', {
+      sessionId, bankId: bank.id, mode, fresh: wantFresh, ...(passed !== undefined ? { passed } : {}),
+    });
+    onRestart({ fresh: wantFresh });
+  };
+
   if (done) {
     const gradedCount = bank.items.length - unrecordedCount;
     const percent = gradedCount > 0 ? Math.round((score / gradedCount) * 100) : 0;
@@ -236,14 +227,11 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
               : `${percent}% — passing is ${passingPercent}%. You can try again.`}
           </p>
         )}
-        {passed === false && currentUser?.id && (
-          <RetakeAsk userId={currentUser.id} bankId={bank.id} title={bank.title} />
-        )}
         {passed === false && learning?.unitId && currentUser?.id && onTutor && (
           <TutorOffer userId={currentUser.id} sessionId={sessionId} onOpen={onTutor} />
         )}
         {/* Student-advocacy W7b: a fail is also a way back to the lesson, not
-            just a retake ask. Gated on `learning?.unitId` — the context only a
+            just another try. Gated on `learning?.unitId` — the context only a
             catalog-launched quiz module carries (see LearningCatalogBrowser) —
             and on `onReview` actually being wired, since a bank-practice run
             or the materials gate quiz (SchoolMaterialPlayer) has neither. */}
@@ -266,18 +254,29 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
           </p>
         )}
         {learning?.moduleId ? (
-          <LearningReflectionPrompt
-            activity={{ id: bank.id, sessionId }}
-            learning={learning}
-            onDone={onExit}
-            continueLabel="Done"
-          />
+          <>
+            {passed === false && onRestart && (
+              // A failed module quiz retakes like any other (2026-10-21): Try
+              // again sits above the reflection prompt, which still closes the
+              // module when the child would rather stop. A pass keeps the
+              // prompt alone — the module is done.
+              <div className="school-runner__summary-actions">
+                <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>
+              </div>
+            )}
+            <LearningReflectionPrompt
+              activity={{ id: bank.id, sessionId }}
+              learning={learning}
+              onDone={onExit}
+              continueLabel="Done"
+            />
+          </>
         ) : (
           <div className="school-runner__summary-actions">
             {onRestart && (
               // A deliberate restart: fresh wipes the persisted sitting so the
               // new run starts at q1 instead of resuming this finished one.
-              <button type="button" className="school-runner__again" onClick={() => onRestart({ fresh: true })}>Try again</button>
+              <button type="button" className="school-runner__again" onClick={() => restart({ fresh: true, passed })}>Try again</button>
             )}
             <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
           </div>
@@ -298,7 +297,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpo
             // NOT fresh: this card promises "your finished answers are saved —
             // start again to keep going", and the sitting is what keeps that
             // promise — the reopened run resumes where the timeout cut it off.
-            <button type="button" className="school-runner__again" onClick={() => onRestart({ fresh: false })}>Start again</button>
+            <button type="button" className="school-runner__again" onClick={() => restart({ fresh: false })}>Start again</button>
           )}
           <button type="button" className="school-runner__done" onClick={onExit}>Back</button>
         </div>
