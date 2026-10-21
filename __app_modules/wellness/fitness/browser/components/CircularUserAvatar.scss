@@ -264,4 +264,14 @@
     pointer-events: none;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   }
+
+  // D3 start badge ("Reach Hot") sits across the top edge of the avatar.
+  .vital-start-badge {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
 }

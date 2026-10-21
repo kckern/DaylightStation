@@ -4044,3 +4044,12 @@
     }
   }
 }
+
+// D3 per-child start badge ("Reach Hot") under the name on a roster card.
+.fitness-device .device-info .device-start-badge {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.fitness-device.card-vertical .device-info .device-start-badge {
+  align-self: center;
+}

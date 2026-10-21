@@ -86,3 +86,9 @@ it('polls the server once a minute when there is nothing to meter', async () => 
  const before=h.calls.length;for(let i=0;i<59;i+=1)h.advance(1000);await h.flush();
  expect(h.calls.length).toBe(before);h.advance(1000);await h.flush();expect(h.calls.length).toBe(before+1);
 });
+it('does not meter when no governed child is on the roster', async () => {
+ const h=harness();h.controller.update({...h.input,hasSubject:false});await h.flush();
+ await h.media.play();h.advance(6000);await h.flush();
+ expect(h.media.paused).toBe(false);expect(h.spent()).toBe(0);
+ expect(h.calls.every(c=>c.requestGrant===false)).toBe(true);
+});

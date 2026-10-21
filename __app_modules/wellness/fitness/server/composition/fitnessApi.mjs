@@ -479,7 +479,7 @@ export function createFitnessPlayableModule({
   logger = console,
 } = {}) {
   const fitnessConfigService = new FitnessConfigService({
-    configProjection: new FitnessConfigProjection({ configService }),
+    configProjection: new FitnessConfigProjection({ configService, logger }),
     logger,
   });
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';

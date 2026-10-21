@@ -2806,7 +2806,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const playbackBudget = usePlaybackBudget({
     deviceId, policies: governanceConfig?.playback_budgets,
-    supervisorIds: governanceConfig?.superusers, participantRoster,
+    supervisorIds: governanceConfig?.superusers, exemptIds: governanceConfig?.exemptions, participantRoster,
     currentMedia, governanceState, mediaRef: videoPlayerRef,
     externalHold: Boolean(voiceMemoOverlayState?.open),
   });

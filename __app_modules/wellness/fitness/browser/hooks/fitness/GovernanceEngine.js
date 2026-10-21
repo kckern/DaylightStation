@@ -25,6 +25,10 @@ const normalizeZoneId = (value) => {
     .replace(/[^a-z0-9]+/g, '-');
 };
 
+// Unattended: every eligible child must reach the startup zone once within this
+// window of joining (or of the video opening, for children already present).
+const CHILD_START_WINDOW_MS = 120_000;
+
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 // Supported governance audio-cue triggers (see _normalizeAudioCues).
@@ -967,6 +971,10 @@ export class GovernanceEngine {
       actualCount: summary && summary.actualCount != null ? summary.actualCount : null,
       metUsers: Array.isArray(summary && summary.metUsers) ? [...summary.metUsers] : [],
       missingUsers: Array.isArray(summary && summary.missingUsers) ? [...summary.missingUsers] : [],
+      // D5: riders in the zone whose hold has not completed yet (still in
+      // missingUsers — the display layer shows them as "holding").
+      holding: Array.isArray(summary && summary.holding) ? [...summary.holding] : [],
+      holdRemainingMs: Number.isFinite(summary?.holdRemainingMs) ? summary.holdRemainingMs : null,
       remainingSeconds,
       totalSeconds,
       startedAt,
@@ -2394,8 +2402,35 @@ export class GovernanceEngine {
       challengeCountdownSeconds: challengeSnapshot ? challengeSnapshot.remainingSeconds : null,
       challengeCountdownTotal: challengeSnapshot ? challengeSnapshot.totalSeconds : null,
       nextChallenge: nextChallengeSnapshot,
+      unattendedStart: this._buildUnattendedStartSnapshot(now),
       hrInactiveUsers: Array.isArray(this._latestInputs?.hrInactiveUsers) ? [...this._latestInputs.hrInactiveUsers] : []
     };
+  }
+
+  /**
+   * D3 per-child start state for the display: who still has to reach the
+   * startup zone once, and how long they have. Null unless the unattended
+   * policy is active and the video has opened.
+   */
+  _buildUnattendedStartSnapshot(now) {
+    const state = this._unattendedPolicyState;
+    if (!state?.active || !state.startupSatisfied) return null;
+    const settings = this.config?.unattended_policy || {};
+    const zone = String(settings.startup_zone || 'hot').toLowerCase();
+    const zoneInfo = this._getZoneInfo(zone);
+    const children = {};
+    // state.children keeps departed children too (their start survives a
+    // rejoin), so this is NOT the live roster — consumers key by participant.
+    Object.entries(state.children || {}).forEach(([id, child]) => {
+      if (!child) return;
+      if (child.started) {
+        children[id] = { started: true, overdue: false, remainingMs: 0 };
+        return;
+      }
+      const remainingMs = Math.max(0, CHILD_START_WINDOW_MS - (now - child.since));
+      children[id] = { started: false, overdue: remainingMs === 0, remainingMs };
+    });
+    return { zone, zoneLabel: zoneInfo?.name || zone, children };
   }
 
   // Main evaluation loop, called periodically or on data change
@@ -2950,8 +2985,24 @@ export class GovernanceEngine {
     const settings = this.config?.unattended_policy || {};
     const superusers = new Set((this.config?.superusers || []).map(normalizeName));
     const enabled = settings.enabled !== false && superusers.size > 0;
-    const adminPresent = classifySupervision({ participantIds: activeParticipants, supervisorIds: [...superusers] }).supervised;
-    const shouldApply = enabled && !adminPresent;
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    // A supervisor counts only on their own strap: one picked in the guest
+    // picker (no PIN) is a guest, or a child could "pick Mom" to escape.
+    const adminPresent = classifySupervision({
+      participantIds: activeParticipants, supervisorIds: [...superusers], guestIds: [...guestIds],
+    }).supervised;
+    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
+    const eligibleChildren = activeParticipants.filter((id) =>
+      !guestIds.has(id)
+      && !superusers.has(normalizeName(id))
+      && !exemptUsers.has(normalizeName(id))
+    );
+    // Guests never unlock governed content by themselves: a guest on the roster
+    // keeps the policy engaged even with no eligible child, and the start gate
+    // (which only eligible children can satisfy) keeps the video locked. An
+    // exempt-only roster gets the normal policy.
+    const guestPresent = activeParticipants.some((id) => guestIds.has(id));
+    const shouldApply = enabled && !adminPresent && (eligibleChildren.length > 0 || guestPresent);
     const state = this._unattendedPolicyState || {
       mediaId: this.media?.id ?? null,
       active: false,
@@ -2962,7 +3013,7 @@ export class GovernanceEngine {
       if (state.active) {
         getLogger().info('governance.unattended.stood_down', {
           contentId: this.media?.id ?? null,
-          reason: adminPresent ? 'admin_present' : 'disabled',
+          reason: adminPresent ? 'admin_present' : (eligibleChildren.length === 0 ? 'no_eligible_child' : 'disabled'),
         });
         this.challengeState.activeChallenge = null;
         this.challengeState.nextChallenge = null;
@@ -2970,10 +3021,13 @@ export class GovernanceEngine {
         this.challengeState.nextChallengeRemainingMs = null;
         this.challengeState.videoLocked = false;
       }
+      const mediaId = this.media?.id ?? null;
       this._unattendedPolicyState = {
-        mediaId: this.media?.id ?? null,
+        mediaId,
         active: false,
         startupSatisfied: false,
+        // A child who leaves and rejoins within the same video keeps their start.
+        children: state.mediaId === mediaId ? (state.children || {}) : {},
       };
       return policy;
     }
@@ -2997,13 +3051,22 @@ export class GovernanceEngine {
 
     const startupZone = String(settings.startup_zone || 'hot').toLowerCase();
     const startupRank = this._getZoneRank(startupZone);
-    const guestIds = new Set(this._latestInputs?.guestIds || []);
-    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
-    const eligibleChildren = activeParticipants.filter((id) =>
-      !guestIds.has(id)
-      && !superusers.has(normalizeName(id))
-      && !exemptUsers.has(normalizeName(id))
-    );
+    const now = this._now();
+    const currentMediaId = this.media?.id ?? null;
+    if (state.mediaId !== currentMediaId) {
+      state.mediaId = currentMediaId;
+      state.startupSatisfied = false;
+      state.children = {};
+    }
+    state.children = state.children || {};
+    for (const id of eligibleChildren) {
+      const rank = this._getZoneRank(userZoneMap?.[id]);
+      const child = state.children[id] || (state.children[id] = { since: now, started: false });
+      if (!child.started && Number.isFinite(rank) && Number.isFinite(startupRank) && rank >= startupRank) {
+        child.started = true;
+        getLogger().info('governance.unattended.child_started', { contentId: state.mediaId, participantId: id });
+      }
+    }
     if (!state.startupSatisfied && Number.isFinite(startupRank)) {
       const achiever = eligibleChildren.find((id) => {
         const rank = this._getZoneRank(userZoneMap?.[id]);
@@ -3011,6 +3074,10 @@ export class GovernanceEngine {
       });
       if (achiever) {
         state.startupSatisfied = true;
+        // The 120s window counts from the video opening for children already present.
+        for (const child of Object.values(state.children)) {
+          if (!child.started) child.since = now;
+        }
         this._playbackEvidence = this._capturePlaybackEvidence(achiever, startupZone, 'startup_gate');
         getLogger().info('governance.unattended.startup_satisfied', {
           contentId: state.mediaId,
@@ -3021,7 +3088,9 @@ export class GovernanceEngine {
     }
     this._unattendedPolicyState = state;
 
-    if (!state.startupSatisfied) {
+    // No eligible child (guests only): nobody can hold the video open, even
+    // after it was opened by a child who has since left.
+    if (!state.startupSatisfied || eligibleChildren.length === 0) {
       return {
         ...policy,
         requirements: [
@@ -3032,6 +3101,18 @@ export class GovernanceEngine {
       };
     }
 
+    const overdue = eligibleChildren.filter((id) => !state.children[id]?.started
+      && now - state.children[id].since >= CHILD_START_WINDOW_MS);
+    for (const id of overdue) {
+      if (!state.children[id].overdueLogged) {
+        state.children[id].overdueLogged = true;
+        getLogger().info('governance.unattended.child_start_overdue', { contentId: state.mediaId, participantId: id });
+      }
+    }
+    const childStartRequirement = overdue.length
+      ? [{ id: '__unattended_child_start', type: 'unattended_startup', zone: startupZone, rule: 'all', eligibleChildren: overdue }]
+      : [];
+
     const intervalSeconds = Math.max(1, Math.round(Number(settings.challenge_interval_seconds) || 180));
     const timeAllowedSeconds = Math.max(1, Math.round(Number(settings.challenge_time_allowed_seconds) || 90));
     const configuredChallengeZones = Array.isArray(settings.challenge_zones)
@@ -3041,8 +3122,12 @@ export class GovernanceEngine {
       .map((zone) => String(zone || '').toLowerCase())
       .filter((zone) => Number.isFinite(this._getZoneRank(zone))))];
     const effectiveChallengeZones = challengeZones.length > 0 ? challengeZones : [startupZone];
+    // One or two children must all make it; with three or more, "most" keeps a
+    // single straggler from locking everyone (still named in missingUsers).
+    const groupRule = eligibleChildren.length >= 3 ? 'most' : 'all';
     return {
       ...policy,
+      requirements: [...(policy.requirements || []), ...childStartRequirement],
       challenges: [{
         id: '__unattended_zone_cycle',
         intervalRangeSeconds: [intervalSeconds, intervalSeconds],
@@ -3056,10 +3141,10 @@ export class GovernanceEngine {
           id: `__unattended_${zone}_${index}`,
           type: 'zone',
           zone,
-          rule: 'all',
+          rule: groupRule,
           timeAllowedSeconds,
           weight: 1,
-          label: `All ${zone}`,
+          label: `${groupRule === 'most' ? 'Most' : 'All'} ${zone}`,
         })),
       }],
     };
@@ -3223,7 +3308,10 @@ export class GovernanceEngine {
       if (definitionType === 'unattended_startup') {
         const zoneId = String(definition.zone || 'hot').toLowerCase();
         const requiredRank = this._getZoneRank(zoneId);
-        const metUsers = (definition.eligibleChildren || []).filter((id) => {
+        const children = definition.eligibleChildren || [];
+        const ruleAll = definition.rule === 'all';
+        const required = ruleAll ? children.length : 1;
+        const metUsers = children.filter((id) => {
           const rank = this._getZoneRank(userZoneMap?.[id]);
           return Number.isFinite(rank) && rank >= requiredRank;
         });
@@ -3234,13 +3322,13 @@ export class GovernanceEngine {
           zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
           targetZoneId: zoneId,
           severity: requiredRank,
-          rule: 1,
-          ruleLabel: this._describeRule(1, 1),
-          requiredCount: 1,
+          rule: ruleAll ? 'all' : 1,
+          ruleLabel: this._describeRule(ruleAll ? 'all' : 1, required),
+          requiredCount: required,
           actualCount: metUsers.length,
           metUsers,
-          missingUsers: metUsers.length ? [] : [...(definition.eligibleChildren || [])],
-          satisfied: metUsers.length >= 1,
+          missingUsers: children.filter((id) => !metUsers.includes(id)),
+          satisfied: metUsers.length >= required,
         };
       } else if (definitionType !== 'zone') {
         summary = this.requirementTypes.evaluate(definitionType, definition, {
@@ -3576,11 +3664,33 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId) ?? 0;
     const isSubject = this._buildSubjectFilter(activeParticipants);
 
-    const metUsers = [];
+    // A rider counts only after holding the zone for challenge_hold_seconds
+    // continuously within this challenge (0 = instant). Dropping out resets.
+    const holdSetting = Number(this.config?.challenge_hold_seconds ?? 10);
+    const holdMs = (Number.isFinite(holdSetting) ? Math.max(0, holdSetting) : 10) * 1000;
+    const now = this._now();
+    challenge.zoneHold = challenge.zoneHold || {};
+    const inZone = [];
     activeParticipants.forEach((participantId) => {
       const pRank = this._getZoneRank(userZoneMap[participantId]) ?? 0;
-      if (pRank >= requiredRank) metUsers.push(participantId);
+      if (pRank >= requiredRank) {
+        inZone.push(participantId);
+        if (challenge.zoneHold[participantId] == null) challenge.zoneHold[participantId] = now;
+      } else {
+        delete challenge.zoneHold[participantId];
+      }
     });
+    // Riders who left the session lose their hold too.
+    Object.keys(challenge.zoneHold).forEach((id) => {
+      if (!activeParticipants.includes(id)) delete challenge.zoneHold[id];
+    });
+    const metUsers = inZone.filter((id) => now - challenge.zoneHold[id] >= holdMs);
+    const holding = inZone.filter((id) => !metUsers.includes(id));
+    // Time until the earliest in-progress hold completes, so the caller can
+    // pulse then instead of waiting for the challenge deadline.
+    const holdRemainingMs = holding.length
+      ? Math.max(0, holdMs - (now - Math.min(...holding.map((id) => challenge.zoneHold[id]))))
+      : null;
 
     const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
     const cls = this._classifyParticipants(activeParticipants);
@@ -3605,6 +3715,8 @@ export class GovernanceEngine {
         actualCount: metUsers.length,   // eligible numerator
         satisfied,
         metUsers,
+        holding,                        // in zone, hold not yet complete
+        holdMs,
         nonSubjectContributors,         // guests/exempt whose in-zone HR fed the tally
         missingUsers,                   // subjects-only
         subjects: cls.subjects,
@@ -3617,6 +3729,8 @@ export class GovernanceEngine {
       satisfied,
       metUsers,
       missingUsers,
+      holding,
+      holdRemainingMs,
       actualCount: metUsers.length,
       ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       requiredCount,
@@ -5279,9 +5393,15 @@ export class GovernanceEngine {
             this._schedulePulse(500);
             return;
           } else {
-            this._schedulePulse(challenge.type === 'step'
+            const untilDeadline = challenge.type === 'step'
               ? Math.min(500, Math.max(50, challenge.expiresAt - now))
-              : Math.max(50, challenge.expiresAt - now));
+              : Math.max(50, challenge.expiresAt - now);
+            // A rider mid-hold completes before the deadline: pulse at the
+            // earliest hold end so completion is not late.
+            const holdRemainingMs = challenge.summary?.holdRemainingMs;
+            this._schedulePulse(Number.isFinite(holdRemainingMs)
+              ? Math.min(untilDeadline, Math.max(50, holdRemainingMs))
+              : untilDeadline);
             return;
           }
         } else {

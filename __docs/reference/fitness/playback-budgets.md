@@ -12,7 +12,9 @@ governance:
       reset_on: [local_day, supervisor_join]
 ```
 
-No budget entries preserves existing playback. A supervisor is an active roster participant whose normalized ID occurs in `governance.superusers`, the same definition used by unattended HOT governance. Exemptions and guests do not imply supervision. Presence is instrumented through the roster.
+No budget entries preserves existing playback. A supervisor is an active roster participant whose household profile is `type: owner` or has `roles: [guardian]`, the same definition used by unattended HOT governance (`governance.superusers` is retired and ignored). Exemptions and guests do not imply supervision. Presence is instrumented through the roster. A supervisor counts only on their own strap: a supervisor's profile picked in the guest picker is a guest assignment, so it neither stands metering down nor triggers the `supervisor_join` reset.
+
+A budget only meters while a governed child is on the roster. A governed child is a roster id that is not a supervisor, not exempt and not a guest; no household profile is required (a member rider without a profile is metered). With no governed child (only supervisors, guests or exempt riders) playback is not metered and the allowance is NOT reset. The browser sends the roster's guest assignments as `guestIds` in each observe body (array of at most 100 strings, each at most 100 characters), and the server applies the same rule to `participantIds` minus `guestIds`. Server and browser share one module, `shared/supervision.mjs` (`classifySupervision`, `isGovernedChildId`).
 
 Allowance resets at household-local midnight, or once on an absent-to-present supervisor transition. Supervised time is free; when the supervisor leaves, the fresh allowance remains. The provider observes roster changes even with no Player mounted. HOT and challenges never replenish the allowance.
 
@@ -20,7 +22,7 @@ The browser meters observed native playing time with a monotonic clock. Pause, b
 
 The separate `playback_budget` gate composes with exercise governance and survives manual/remote play, seek and queue advance. Exhaustion displays “Unattended playback limit reached” and “An adult can join to continue.” Queue and workout remain intact; saved playback state records reason `playback_budget`.
 
-GET `/api/v1/fitness/playback-budgets?deviceId=...` reads status. POST `/api/v1/fitness/playback-budgets/observe` submits roster IDs, canonical content ID, stream/sequence and grant settlements. Responses are uncached. Limits and labels come from server configuration; effective parent labels come from the content catalog. Durable daily records live under household `fitness/playback-budgets/YYYY-MM-DD.yml`, schema `fitness.playback-budgets/v1`. Invalid records are errors, never fresh balances. Writes use atomic replacement with file/directory fsync. Request receipts make retries idempotent, and reset generations fence old grants.
+GET `/api/v1/fitness/playback-budgets?deviceId=...` reads status. POST `/api/v1/fitness/playback-budgets/observe` submits roster IDs, guest IDs, canonical content ID, stream/sequence and grant settlements. Responses are uncached. Limits and labels come from server configuration; effective parent labels come from the content catalog. Durable daily records live under household `fitness/playback-budgets/YYYY-MM-DD.yml`, schema `fitness.playback-budgets/v1`. Invalid records are errors, never fresh balances. Writes use atomic replacement with file/directory fsync. Request receipts make retries idempotent, and reset generations fence old grants.
 
 Deploy backend and frontend together, then reload the kiosk. A spent-today rollout must seed the existing device/policy balance before that first refresh; editing YAML alone does not activate enforcement.
 

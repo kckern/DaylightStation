@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, useReducer } from 'react';
 import { resolveContentId } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
-import { classifySupervision } from '../../shared/supervision.mjs';
+import { classifySupervision, isGovernedChildId } from '../../shared/supervision.mjs';
 import { PlaybackBudgetController } from './PlaybackBudgetController.js';
 
 const INACTIVE = { blocked: false, status: 'inactive', remainingMs: 0 };
 /** Provider-owned observer survives Player closing, so roster joins still reset. */
-export function usePlaybackBudget({ deviceId, policies, supervisorIds, participantRoster, currentMedia, governanceState, mediaRef, externalHold }) {
+export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds, participantRoster, currentMedia, governanceState, mediaRef, externalHold }) {
   const [state, setState] = useState(INACTIVE);
   const controller = useRef(null);
   const resumeTask = useRef(null);
@@ -15,10 +15,16 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, participa
   useEffect(() => { const work = resumeTask.current; resumeTask.current = null; work?.(); }, [resumeVersion]);
   const enabled = policies != null && (!Array.isArray(policies) || policies.length > 0);
   const latest = useRef(null);
-  const participantIds = (participantRoster ?? []).filter(p => p.isActive !== false).map(p => p.id).filter(Boolean);
-  const { supervised } = classifySupervision({ participantIds, supervisorIds });
+  const active = (participantRoster ?? []).filter(p => p.isActive !== false && p.id);
+  const participantIds = active.map(p => p.id);
+  // Guest assignments are sent to the server too, so both sides apply the same
+  // rule: a guest-picked supervisor does not supervise, a guest is never metered.
+  const guestIds = active.filter(p => p.isGuest).map(p => p.id);
+  const { supervised } = classifySupervision({ participantIds, supervisorIds, guestIds });
+  // No governed child (only supervisors, guests or exempt riders): nothing to meter.
+  const hasSubject = participantIds.some(id => isGovernedChildId(id, { supervisorIds, exemptIds, guestIds }));
   latest.current = {
-    participantIds, supervised, contentId: currentMedia ? resolveContentId(currentMedia) : null,
+    participantIds, guestIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
     matching: Boolean(currentMedia && governanceState?.isGoverned),
     canPlay: !governanceState?.videoLocked && !externalHold,
   };
