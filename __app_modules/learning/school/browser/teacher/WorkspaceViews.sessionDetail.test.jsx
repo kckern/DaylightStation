@@ -169,8 +169,8 @@ describe('SessionInspector detail coherence', () => {
     expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
   });
 
-  // The server says which paper it will reprint (only while it is still out,
-  // never a result receipt); a button it would refuse is not offered.
+  // The server says which paper it will reprint (a worksheet only while it is
+  // still out and its lesson is not paused); a button it would refuse is not offered.
   it('offers no reprint for paper the server will not reprint', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
       ...SESSION, artifacts: SESSION.artifacts.map((artifact) => ({ ...artifact, reprintable: false })),
@@ -178,6 +178,21 @@ describe('SessionInspector detail coherence', () => {
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     await screen.findByText('Issued materials and results');
     expect(screen.queryByRole('button', { name: /Print another copy/i })).toBeNull();
+  });
+
+  // A retained receipt reprints after hand-in (ReprintResultReceiptArtifact
+  // has no session-state gate), so a marked lesson still offers it.
+  it('offers another copy of a receipt on a marked lesson', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION,
+      artifacts: [{ artifactId: 'rcpt_1', kind: 'result-receipt', role: 'result-receipt', availability: 'exact',
+        exactBytesRetained: true, reprintable: true, representation: { mediaType: 'image/png' } }],
+    } });
+    teacherWorkspaceApi.reprintArtifact.mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, artifactId: 'rcpt_1' } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    (await screen.findByRole('button', { name: /Print another copy/i })).click();
+    expect(await screen.findByText('Result receipt ready to print')).toBeInTheDocument();
+    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[0][0]).toBe('rcpt_1');
   });
 
   // `artifact.reprint` is ReprintIssuedArtifact's audit label; it is not one of

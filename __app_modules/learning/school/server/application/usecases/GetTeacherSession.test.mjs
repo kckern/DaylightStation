@@ -129,6 +129,56 @@ describe('GetTeacherSession artifact read-through', () => {
     const handedIn = await build(events).execute({ sessionId: 'ses_illinois' });
     expect(handedIn.artifacts[0].reprintable).toBe(false);
   });
+  // `SchoolArtifactService.reprint` sends receipt kinds to
+  // `ReprintResultReceiptArtifact`, which has no session-state gate: a receipt
+  // stays reprintable after hand-in, as long as it is a retained PNG.
+  it('keeps a retained receipt reprintable after the work is marked', async () => {
+    const receiptEvent = { type: 'result_receipt_captured', seq: 5, at: '2026-08-24T15:21:00.000Z', artifactId: 'rcpt-1', kind: 'result-receipt' };
+    const manifests = {
+      'rcpt-1': { artifactId: 'rcpt-1', kind: 'result-receipt', representation: { mediaType: 'image/png' } },
+      'rcpt-2': { artifactId: 'rcpt-2', kind: 'result-receipt', representation: { mediaType: 'application/pdf' } },
+    };
+    const build = (receiptId) => new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => [...events, { ...receiptEvent, artifactId: receiptId }]), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async (artifactId) => (manifests[artifactId] ? { manifest: manifests[artifactId] } : null)) },
+      reviewQueue: { listForSession: vi.fn(async () => []) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+    });
+    const receiptRow = (out) => out.artifacts.find((row) => row.role === 'result-receipt');
+    expect(receiptRow(await build('rcpt-1').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(true);
+    expect(receiptRow(await build('rcpt-2').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+    expect(receiptRow(await build('rcpt-missing').execute({ sessionId: 'ses_illinois' })).reprintable).toBe(false);
+  });
+  // `ReprintIssuedArtifact` refuses CURRICULUM_PAUSED before it looks at state.
+  it('withholds a worksheet reprint while its lesson is paused', async () => {
+    const useCase = new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => events.slice(0, 2)), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async (artifactId) => ({ manifest: { artifactId, representation: { mediaType: 'application/pdf' } } })) },
+      reviewQueue: { listForSession: vi.fn(async () => []) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+      curriculumExceptions: { active: vi.fn(async () => [{ kind: 'paused', resolvedLessonIds: ['atlas-us-p044-illinois'] }]) },
+    });
+    const out = await useCase.execute({ sessionId: 'ses_illinois' });
+    expect(out.artifacts[0].reprintable).toBe(false);
+  });
+  // GradeSubmission returns `awaiting_review` only from `submitted`; a marked
+  // session settles as a `duplicate`, which the console accepts.
+  it('offers hand-settling on a marked session even with a row still unmarked', async () => {
+    const useCase = new GetTeacherSession({
+      sessions: { readEvents: vi.fn(async () => events), listForLearner: vi.fn(async () => []) },
+      curriculum: { getUnit: vi.fn(async () => null), listWorks: vi.fn(async () => []), listUnits: vi.fn(async () => []) },
+      worksheetInstances: { findBySession: vi.fn(async () => null) },
+      issuedArtifacts: { get: vi.fn(async () => null) },
+      reviewQueue: { listForSession: vi.fn(async () => [{ itemId: 'q1', verdict: null }]) },
+      printDocuments: { getPublished: vi.fn(async () => null) },
+    });
+    const out = await useCase.execute({ sessionId: 'ses_illinois' });
+    expect(out.capabilities).toMatchObject({ manualSettlement: true, pendingReview: 1 });
+  });
 });
 
 describe('GetLearnerTimeline catalog join', () => {

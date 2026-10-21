@@ -24,9 +24,18 @@ export function useBacklog({ pollMs = 60_000 } = {}) {
     // A hidden tab polls nothing; visibilitychange below catches up on return.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const mine = ++seq.current;
-    const [review, prints, quizzes] = await Promise.all([
-      schoolApi.lifecycleReview(), schoolApi.printPending(), schoolApi.quizRequests(),
-    ]);
+    let review; let prints; let quizzes;
+    try {
+      [review, prints, quizzes] = await Promise.all([
+        schoolApi.lifecycleReview(), schoolApi.printPending(), schoolApi.quizRequests(),
+      ]);
+    } catch (error) {
+      // A read that throws (offline) flags the strip and keeps the last counts.
+      if (!alive.current || mine !== seq.current) return;
+      teacherLog.fetch('backlog-failed', { error: error?.message ?? String(error) });
+      setCounts((current) => ({ ...current, failed: true }));
+      return;
+    }
     if (!alive.current || mine !== seq.current) return;
     const next = {
       review: countOf(review, (d) => (d?.items ?? []).length),

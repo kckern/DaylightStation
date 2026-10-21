@@ -32,6 +32,13 @@ describe('useBacklog', () => {
     const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
     await waitFor(() => expect(result.current.failed).toBe(true));
   });
+  // A read that throws (network down) must flag the strip, not leave an
+  // unhandled rejection and a count that never changes.
+  it('flags a read that throws', async () => {
+    schoolApi.printPending.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+  });
   it('refresh() re-reads at once', async () => {
     const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
     await waitFor(() => expect(result.current.total).toBe(6));

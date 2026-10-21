@@ -177,8 +177,10 @@ export function QueueView({ kids, onChanged }) {
   // Rows name their lesson. No catalog (or an unknown unit) leaves the row's
   // link reading "Open the lesson" rather than a placeholder title.
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'queue-catalog', notFoundAs: 'unavailable' });
-  const titles = curriculumTitles(catalog.data?.units ?? []);
-  const titleFor = (unitId) => { const t = unitId ? titles.lesson(unitId) : null; return t === 'Lesson title unavailable' ? null : t; };
+  const titleFor = useMemo(() => {
+    const titles = curriculumTitles(catalog.data?.units ?? []);
+    return (unitId) => { const t = unitId ? titles.lesson(unitId) : null; return t === 'Lesson title unavailable' ? null : t; };
+  }, [catalog.data]);
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Action queue</p><h2>Needs a grown-up</h2><p>Review, print, and learner requests in one interruption-friendly list.</p></div></div>
