@@ -106,6 +106,13 @@
     color: var(--gp-paper-dim);
     font-style: italic;
   }
+  // A picture clue shares the column with its prompt: shrink both so the text
+  // stays below the picture instead of overflowing onto it at 960×540.
+  &--media {
+    .gp-media--image { max-height: 34%; }
+    .gp-reveal { gap: 0.75rem; }
+    .gp-reveal__prompt { font-size: 1.5rem; }
+  }
 }
 .jp-final {
   flex: 1 1 auto;

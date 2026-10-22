@@ -29,7 +29,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
       : [{ key: 'Esc', label: 'Time out' }];
 
   return (
-    <div className="jp-clue" data-testid="clue-screen">
+    <div className={`jp-clue${active.clue.media && !mediaError ? ' jp-clue--media' : ''}`} data-testid="clue-screen">
       <div className="jp-clue__banner">
         {isDailyDouble && <span className="jp-clue__dd">DAILY DOUBLE</span>}
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
