@@ -75,7 +75,6 @@ const CONFIG = {
   },
   rpm: {
     animationBase: 270, // used to compute spin speed
-    scale: { min: 0.4, overflowFactor: 0.8 },
     colorMap: {
       red: '#ff6b6b',
       orange: '#ff922b',
@@ -372,7 +371,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
   const [scale, setScale] = useState(1);
-  const [rpmScale, setRpmScale] = useState(1);
   const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
   const hrCounts = React.useMemo(() => {
     if (!allDevices) return { all: 0, active: 0, candidate: 0 };
@@ -384,7 +382,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   React.useRef(null); // Hidden ref for measurement
-  const rpmGroupRef = React.useRef(null);
 
   // Build lookup maps for heart rate device colors and user assignments
   const hrColorMap = React.useMemo(() => {
@@ -724,23 +721,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     setScale(newScale);
   }, [sortedDevices]); // Only recalculate when devices change, not on scale changes
 
-  // Auto-scale RPM group to fit width
-  useEffect(() => {
-    if (!rpmGroupRef.current || !containerRef.current) return;
-
-    const rpmContainer = rpmGroupRef.current;
-    const containerWidth = containerRef.current.clientWidth || 0;
-    const scrollWidth = rpmContainer.scrollWidth;
-
-    if (scrollWidth > containerWidth && containerWidth > 0) {
-      const idealRpmScale = containerWidth / scrollWidth;
-      const { min, overflowFactor } = CONFIG.rpm.scale;
-      setRpmScale(Math.max(min, idealRpmScale * overflowFactor));
-    } else {
-      setRpmScale(1);
-    }
-  }, [sortedDevices]);
-
   return (
     <>
       <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
@@ -771,19 +751,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
               return sortedDevices.map((device) => {
               if (device.type === 'rpm-group') {
                 const rpmDevices = device.devices;
-                const isMultiDevice = rpmDevices.length > 1;
-                
+
+                // One fixed circle size at every bike count; the grid wraps
+                // instead of shrinking (FitnessSidebar.scss .rpm-devices).
                 return (
-                  <div 
-                    key="rpm-group" 
-                    ref={rpmGroupRef}
-                    className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}
-                    style={{
-                      transform: `scale(${rpmScale})`,
-                      transformOrigin: 'left center'
-                    }}
-                  >
-                    <div className={`rpm-devices devicecount_${rpmDevices.length}`}>
+                  <div key="rpm-group" className="rpm-group-container">
+                    <div className="rpm-devices">
                       {rpmDevices.map(rpmDevice => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);

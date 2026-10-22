@@ -892,108 +892,58 @@
   }
 }
 
-// RPM Group styling
+// RPM Group styling — one circle size at every bike count. Four bikes fit
+// one row of the 250px sidebar (4 x 46 + 3 x 10 = 214 of 218px); a fifth
+// wraps to a second row.
 .rpm-group-container {
-  display: flex;
-  align-items: center;
+  --rpm-cell: 46px;
+  --rpm-gap: 10px;
   width: 100%;
-  min-height: 3.2rem;
   background: rgba(34, 34, 34, 0.6);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 8px 6px 10px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-  gap: 4px;
-  
-  &.single-device .rpm-group-title {
-    display: block;
-  }
-  
-  &.multi-device .rpm-group-title {
-    display: none;
-  }
-  
-  .rpm-group-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    margin-right: 8px;
-    white-space: nowrap;
-    letter-spacing: 0.35px;
-  }
-  
+
   .rpm-devices {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex: 1;
-
-    // Single device - default layout
-    &.devicecount_1 {
-      justify-content: flex-start;
-    }
-
-    // 2-3 devices - horizontal row
-    &.devicecount_2,
-    &.devicecount_3 {
-      flex-direction: row;
-      justify-content: flex-start;
-      gap: 10px;
-    }
-
-    // 4+ devices - grid layout
-    &.devicecount_4,
-    &.devicecount_5,
-    &.devicecount_6 {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      justify-items: center;
-    }
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--rpm-cell));
+    justify-content: center;
+    gap: var(--rpm-gap);
   }
-  .rpm_devices.devicecount_4 {
-    .rpm-device-avatar {
-      width: 32px;
-      height: 32px;
-    }
-  }
-  
+
   .rpm-device-avatar {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
+    // RpmDeviceAvatar.scss sets its own 64px on the element; override it here.
+    --rpm-avatar-size: var(--rpm-cell);
     position: relative;
-    flex: 1;
-    min-width: 0;
-        padding-bottom: 1ex;
-    
+    width: var(--rpm-avatar-size);
+    height: var(--rpm-avatar-size);
+
     .rpm-avatar-wrapper {
       position: relative;
-      width: 58px;
-      height: 58px;
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-      
+
       .rpm-spinning-border {
         position: absolute;
-        inset: -4px;
+        inset: -3px;
         border-radius: 50%;
-        border: 5px dashed rgba(255, 146, 43, 0.7);
+        border: 3px dashed rgba(255, 146, 43, 0.7);
         animation: spin-rpm linear infinite;
         animation-duration: var(--spin-duration, 1s);
         transition: animation-duration 0.3s ease-out;
-        
+
         &.rpm-zero {
           border-color: rgba(255, 146, 43, 0.2);
           animation: none;
         }
       }
-      
+
       .rpm-avatar-content {
-        width: 58px;
-        height: 58px;
+        width: 100%;
+        height: 100%;
         border-radius: 50%;
         overflow: hidden;
         background: #333;
@@ -1002,18 +952,15 @@
         justify-content: center;
         position: relative;
         z-index: 1;
-        
+
         .rpm-device-image {
+          position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
           object-fit: cover;
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
         }
-        
+
         .rpm-value-overlay {
           position: absolute;
           bottom: 0;
@@ -1024,57 +971,17 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 1.2rem;
+          font-size: 1.1rem;
           font-weight: 800;
           color: #fff;
           letter-spacing: 0.5px;
           z-index: 1;
-          
+
           &.rpm-zero {
             background: rgba(100, 100, 100, 0.7);
           }
         }
       }
-    }
-    
-    .rpm-device-name {
-      font-size: 0.6rem;
-      color: rgba(255, 255, 255, 0.7);
-      text-align: center;
-      width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      padding: 0 1px;
-    }
-  }
-}
-
-/* Global: when there are exactly 4 RPM devices, shrink avatars to 32px everywhere.
-   Support both hyphen and underscore variants to be robust to class naming. */
-.rpm-devices.devicecount-4,
-.rpm-devices.devicecount_4,
-.rpm_devices.devicecount-4,
-.rpm_devices.devicecount_4 {
-  .rpm-device-avatar {
-    width: 32px;
-    height: 32px;
-
-    /* Ensure inner avatar elements also shrink from default 58px */
-    .rpm-avatar-wrapper,
-    .rpm-avatar-content {
-      width: 32px;
-      height: 32px;
-      font-style: 1ex;
-    }
-
-    .rpm-spinning-border {
-      inset: -3px;
-      border-width: 3px;
-    }
-
-    .rpm-value-overlay {
-      font-size: 0.8rem!important;
     }
   }
 }
