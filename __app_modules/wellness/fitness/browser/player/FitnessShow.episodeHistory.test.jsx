@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, act } from '@testing-library/react';
 
 // Per-rider episode history on the show screen: the grid chip's avatars and
 // the session list in an episode's details.
@@ -107,6 +107,20 @@ describe('FitnessShow episode history', () => {
     await waitFor(() => expect(logSpy.warn).toHaveBeenCalledWith('fitness.show.episode_history_failed', expect.objectContaining({ error: 'boom' })));
     expect(container.querySelector('[data-testid="episode-rider-badge"]')).toBeNull();
     expect(card(container, '401').querySelector('.badge.watched-date').textContent).toContain('✔️');
+  });
+
+  it('refetches the history when the show refreshes after a workout', async () => {
+    mockApi({ history: { episodes: {} } });
+    const { container } = renderShow();
+    await waitFor(() => expect(DaylightAPI.mock.calls.some(([url]) => url.includes('/sessions/episode-history'))).toBe(true));
+    expect(container.querySelector('[data-testid="episode-rider-badge"]')).toBeNull();
+
+    // The ride just ended: the session log now has it.
+    mockApi();
+    await act(async () => { window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: 'plex:9000' } })); });
+    await waitFor(() => expect(card(container, '401')?.querySelector('[data-testid="episode-rider-badge"]')).toBeTruthy());
+    const historyCalls = DaylightAPI.mock.calls.filter(([url]) => url.includes('/sessions/episode-history'));
+    expect(historyCalls).toHaveLength(2);
   });
 
   it('lists the sessions under the description in the episode details', async () => {

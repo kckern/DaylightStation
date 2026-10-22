@@ -243,6 +243,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
+  // Bumped with every show refresh (an episode just ended) so the per-rider
+  // history refetches too — the episode ids alone don't change.
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
 
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
@@ -413,8 +416,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (typeof window === 'undefined') return undefined;
     const handleRefresh = (event) => {
       const targetId = event?.detail?.showId || event?.detail?.id || null;
-      if (targetId && String(targetId) !== String(showId)) return;
+      if (targetId && String(targetId).replace(/^[a-z]+:/i, '') !== String(showId)) return;
       fetchShowData();
+      setHistoryRefresh((n) => n + 1);
     };
     window.addEventListener('fitness-show-refresh', handleRefresh);
     return () => window.removeEventListener('fitness-show-refresh', handleRefresh);
@@ -1116,8 +1120,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     return [...new Set(ids.map(String))].join(',');
   }, [showData]);
   useEffect(() => {
-    setEpisodeHistory({});
-    if (!historyEpisodeIds) return undefined;
+    if (!historyEpisodeIds) { setEpisodeHistory({}); return undefined; }
     let cancelled = false;
     const log = getLogger().child({ component: 'FitnessShow' });
     DaylightAPI(`/api/v1/fitness/sessions/episode-history?episodes=${encodeURIComponent(historyEpisodeIds)}`)
@@ -1125,13 +1128,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
         if (cancelled) return;
         const episodes = response?.episodes && typeof response.episodes === 'object' ? response.episodes : {};
         setEpisodeHistory(episodes);
-        log.debug('fitness.show.episode_history_loaded', { showId, episodes: Object.keys(episodes).length });
+        log.debug('fitness.show.episode_history_loaded', { showId: showIdRef.current, episodes: Object.keys(episodes).length, refresh: historyRefresh });
       })
       .catch((err) => {
-        if (!cancelled) log.warn('fitness.show.episode_history_failed', { showId, error: err?.message });
+        if (!cancelled) log.warn('fitness.show.episode_history_failed', { showId: showIdRef.current, error: err?.message });
       });
     return () => { cancelled = true; };
-  }, [historyEpisodeIds, showId]);
+    // Keyed on the loaded show's ids (not showId, which changes before its data
+    // arrives and would scan once with the previous show's ids) and on refreshes.
+  }, [historyEpisodeIds, historyRefresh]);
   const historyFor = useCallback((episode) => episodeHistory[episode?.id] || episodeHistory[`plex:${episode?.plex}`] || null, [episodeHistory]);
 
   const filteredItems = useMemo(() => {
