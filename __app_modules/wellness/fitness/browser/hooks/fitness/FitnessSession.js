@@ -1353,13 +1353,21 @@ export class FitnessSession {
     // A live sensor on any wheel wins. Otherwise, if the pipeline is stalled,
     // surface that (with the held rpm) rather than a bare "disconnected" — the
     // two are different states and only one means the rider stopped.
-    return best || stalled || disconnected;
+    const reading = best || stalled || disconnected;
+    // The crank counter comes from ONE sensor — the first configured that has
+    // one — whichever wheel won on rpm and whether or not it is "connected":
+    // cadence_floor counts turns between calls, and a counter that switches
+    // sensors (or vanishes on a quiet second) loses them.
+    const revSourceId = deviceIds.find((id) => Number.isFinite(this.deviceManager?.getDevice(id)?.revolutionCount));
+    if (revSourceId == null) return reading;
+    const { revolutions: _r, deviceId: _d, ...rest } = reading;
+    return { ...rest, revolutions: this.deviceManager.getDevice(revSourceId).revolutionCount, deviceId: revSourceId };
   }
 
   /**
    * Live cadence for every configured equipment, keyed by equipment id. The
    * governance engine reads this on timer pulses, which carry no sensor data.
-   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number }>}
+   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number, revolutions?: number, deviceId?: string }>}
    */
   getEquipmentCadenceMap() {
     const map = {};

@@ -986,6 +986,36 @@ zones:
 - `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
 - `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
 
+## Warning overlay observability
+
+The engine's `governance.phase_change` says what governance decided; it cannot
+say what the household saw. The warning overlay (life meter + offender chips,
+`GovernanceStateOverlay.jsx`) logs that itself, under
+`context.component: governance-warning-overlay`:
+
+| Event | Level | When |
+|---|---|---|
+| `governance.warning_overlay.shown` | info | meter + chips mount (`rows`: chip keys) |
+| `governance.warning_overlay.hidden` | info | they unmount, with `visibleMs` |
+| `governance.warning_overlay.rows_changed` | info | the riders named in the chips change |
+| `governance.warning_overlay.paint_check` | info | first check of each showing |
+| `governance.warning_overlay.dimmed` | **warn** | the meter/chips become dimmed |
+| `governance.warning_overlay.undimmed` | info | they are clean again |
+
+A run of short `shown`/`hidden` pairs is what a "thrashing" warning looks like
+on screen. The paint check (`overlayPaintCheck.js`, every 2s while shown) reports
+per target whether the warning scrim — the darken/blur/grayscale backdrop —
+paints **above** it (`coveredByScrim`), and every filter or opacity < 1 on it or
+an ancestor (`filters`). The overlay (z 60) sits inside the video host and the
+scrim (z 5) is a later sibling; the meter stays above it only while nothing
+between them starts a new stacking context. Verified clean in Chromium and
+Firefox, and verified to fire when the host is forced into its own context.
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="governance.warning_overlay" AND _time:24h' -d 'limit=200'
+```
+
 ## Cadence floor — holding a rider to the ride they started
 
 A `cadence_floor` requirement watches one cadence machine and locks playback when
@@ -1005,6 +1035,10 @@ requirements:
     arm_min_rpm: 30
     trip_after_seconds: 10
     require_rider_hr: true
+    # Optional — defaults shown:
+    window_seconds: 10        # rolling window that decides "pedaling"
+    moving_min_rpm: 30        # defaults to arm_min_rpm
+    or_zone: active           # HR zone that also satisfies it; `none` = RPM only
 ```
 
 ### Armed by evidence, not by roster
@@ -1024,9 +1058,41 @@ The gate is dormant until all of the following are true at once:
 3. The rider has accumulated **`arm_seconds` above `arm_min_rpm`** on this
    equipment during this session.
 
-Only then does it start watching for a stop. After `trip_after_seconds` of
-continuous zero RPM the requirement goes unsatisfied and the ordinary
-warning → grace → lock path runs; there are no new phases. It disarms the moment
+Only then does it start watching for a stop. The ordinary warning → grace →
+lock path runs when it trips; there are no new phases.
+
+### Pedal OR get active
+
+Once armed, the rider is in good standing while **either** holds:
+
+- **Pedaling** — the rolling `window_seconds` cadence is at least
+  `moving_min_rpm`, counted from the sensor's cumulative crank-revolution
+  counter (`revolutions` on the cadence map entry; 16-bit, wraps). A sensor that
+  sends no counter falls back to averaging its RPM samples over the window.
+  The window counts whole turns, so it reads in steps of `60 / window_seconds`
+  RPM (6 at the default): a steady 29 RPM is 4 turns = 24 and counts as idle.
+  Lower `moving_min_rpm` if a slow rider needs room below the arm threshold.
+- **Active** — the rider's committed HR zone is `or_zone` or above. Off the
+  bike doing jumping jacks at Active is fine.
+
+The idle clock starts at the last moment the rider was doing either (last
+revolution, or last sample in `or_zone`), and the requirement trips after
+`trip_after_seconds` idle. A trip clears only on the same terms.
+
+**Why a window and a counter, not the instant RPM:** an ANT+ cadence sensor
+holds its RPM for ~2.5s after every single push of the pedal (one revolution
+reads ~41 RPM for three packets). Judged on the instant reading, any non-zero
+sample cleared the trip and reset the 30s grace. On 2026-10-21 a rider stopped
+for 4.5 minutes, nudged the pedal one revolution every 10–30s, collected six
+warnings and never locked — while the same floor locked him for standing at 0
+RPM doing jumping jacks at 146 bpm. Both are replayed from the garage
+controller's packets in `GovernanceEngine.cadenceFloorEitherOr.test.js`.
+
+The summary carries `status` (`pedaling` | `active` | `idle` | `suspended`),
+`currentRate` (the window RPM), `orZone` and `orZoneLabel`. The display turns a
+missing rider into a row with `pedal` set; the warning chip and lock row then
+read **"Pedal or reach Active"** (or **"Start pedaling"** with no `or_zone`)
+instead of a heart rate, and the row's target pill is the `or_zone`. It disarms the moment
 the rider is unassigned, their strap drops, or a new rider takes over — a clean
 dismount can never lock the room, and evidence never transfers between riders.
 
@@ -1057,5 +1123,6 @@ that still has no map keeps the previous one. An omitted map must never become
 resetting the rider's evidence on every pulse
 (`GovernanceEngine.cadenceFloorPulse.test.js`).
 
-Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
-`.tripped`.
+Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`),
+`.idle_started`, `.tripped` (once per trip, with `windowRpm` and `riderZone`) and
+`.cleared` (with `reason: pedaling | active`).

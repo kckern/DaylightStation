@@ -136,20 +136,31 @@ function unit(rule, facts, ctx) {
   return { status: 'earned', count: matched.length, amount: price(rule, matched.length), evidence, note: null };
 }
 
+/**
+ * What `rings` in a week are worth under a ring-threshold rule (`rate` per
+ * whole N rings, plus every threshold crossed, times the multiplier). Takes
+ * the rule or a line's `priced` block. The payout prices each finished
+ * workout's running total with it, so a row and the board agree.
+ */
+export function ringAmount({ rate, thresholds = [], multiplier = 1 }, rings) {
+  const crossed = thresholds.filter((t) => rings >= t.at);
+  return {
+    silver: Math.round((Math.floor(rings / rate.rings) * rate.silver + crossed.reduce((s, t) => s + t.reward.silver, 0)) * multiplier),
+    gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
+  };
+}
+
 function ringThreshold(rule, facts) {
   const rings = facts.rings;
   if (!Number.isFinite(rings)) return { status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'Rings unavailable' };
-  const crossed = rule.thresholds.filter((t) => rings >= t.at);
   const next = rule.thresholds.find((t) => rings < t.at);
-  const amount = {
-    silver: Math.round((Math.floor(rings / rule.rate.rings) * rule.rate.silver + crossed.reduce((s, t) => s + t.reward.silver, 0)) * rule.multiplier),
-    gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
-  };
+  const amount = ringAmount(rule, rings);
   const evidence = rule.thresholds.map((t) => ({ threshold: t.at, reached: rings >= t.at }));
   const unpriced = rule.rate.silver === 0 && !rule.thresholds.length;
   const note = unpriced ? 'No ring rate set'
     : next ? `${next.at - rings} more to ${next.at}` : (rule.thresholds.length ? 'Every threshold reached' : null);
-  return { status: paid(amount) ? 'earned' : 'none', count: rings, amount, evidence, note };
+  // The week's workouts (live count above; the payout pays only the final ones, one entry each).
+  return { status: paid(amount) ? 'earned' : 'none', count: rings, amount, evidence, note, sessions: facts.ringSessions ?? [] };
 }
 
 function ringContest(rule, facts, ctx) {
@@ -228,7 +239,8 @@ function windowDates(window) {
  * @param {object} args
  * @param {object} args.ruleset - validated (`validateRuleset`)
  * @param {string} args.learnerId
- * @param {{sectionDays: object[], days: object[], week: object|null, units: object[], rings: number|null}} args.facts
+ * @param {{sectionDays: object[], days: object[], week: object|null, units: object[], rings: number|null, ringSessions?: object[]}} args.facts
+ *   `ringSessions`: the learner's award-week workouts (`fitnessRingsProvider.standings`)
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
@@ -241,7 +253,7 @@ function windowDates(window) {
  *   settles once its Friday has passed (Saturday is payday, D1).
  */
 export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
-  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ...(facts ?? {}) };
+  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const isOpen = (day) => today != null && day >= today;
   // A week's verdict is final only once its Friday has passed (or the week

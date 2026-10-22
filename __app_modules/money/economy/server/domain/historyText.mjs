@@ -4,7 +4,8 @@
  *   +2 silver · Isaiah 50–51 passed      a payout, named by its evidence line
  *   +5 silver · Scripture (whole week)   …or by its rule label, then "schoolwork"
  *   +2 silver · Korean · Tuesday         a per-day payout: the day(s) it paid for
- *   +4 silver · Rings · 540 this week    a ring payout: the week's rings when it paid
+ *   +6 silver · Rings · Sonic & Sega All Stars Racing · 7:19 pm · 588 rings
+ *                                        a ring payout: the workout it paid for
  *   −3 silver · early pass               a pass bought
  *   +3 silver · early pass refunded      its refund (both matched on `source: pass`)
  *   12 silver → 12 gold · Sunday         a week close: both convert halves, one line
@@ -120,9 +121,11 @@ const RING_KINDS = new Set(['ring-threshold', 'ring-contest']);
 /**
  * What each payout entry was for, by index, from its `meta`: the study days
  * it paid (a per-day line's days not already paid by an older entry of the
- * same ref and currency) or the week's ring count. Folded oldest first.
+ * same ref and currency), the workout a ring entry paid for (its title or
+ * "Workout", start time and rings), or, for a ring entry from before
+ * per-workout pay, the week's ring count. Folded oldest first.
  */
-function payoutDetails(list) {
+function payoutDetails(list, timezone) {
   const details = new Array(list.length).fill(null);
   const seen = new Map(); // `${currency}|${ref}` → days already paid
   for (let k = list.length - 1; k >= 0; k -= 1) {
@@ -135,11 +138,25 @@ function payoutDetails(list) {
       const fresh = meta.days.filter((d) => !before.has(d));
       seen.set(key, new Set([...before, ...meta.days]));
       if (fresh.length) details[k] = { days: fresh, text: fresh.map(dayName).join(', ') };
+    } else if (meta.kind === 'ring-threshold' && meta.session && Number.isFinite(meta.session.rings)) {
+      const { title, startMs, rings } = meta.session;
+      details[k] = { text: [title || 'Workout', clockTime(startMs, timezone), `${rings.toLocaleString('en-US')} rings`].filter(Boolean).join(' · ') };
     } else if (RING_KINDS.has(meta.kind) && Number.isFinite(meta.count)) {
       details[k] = { text: `${meta.count.toLocaleString('en-US')} this week` };
     }
   }
   return details;
+}
+
+/** "7:19 pm" in the household's timezone; null when the instant or zone is unreadable. */
+function clockTime(ms, timezone) {
+  if (!Number.isFinite(ms)) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', ...(timezone ? { timeZone: timezone } : {}) })
+      .format(new Date(ms)).replace(/\s?(AM|PM)$/, (m, p) => ` ${p.toLowerCase()}`);
+  } catch {
+    return null;
+  }
 }
 
 // "Korean (each day done)" says how the rule pays; once the line names the day, the bracket is noise.
@@ -171,7 +188,7 @@ export function entrySentence(t, opts = {}) {
 export function historyLines(entries, opts = {}) {
   const list = (entries ?? []).filter((t) => t && Number.isFinite(t.delta) && t.delta !== 0);
   const after = balancesAfter(list);
-  const details = payoutDetails(list);
+  const details = payoutDetails(list, opts.timezone);
   const used = new Set();
   const lines = [];
   list.forEach((t, i) => {

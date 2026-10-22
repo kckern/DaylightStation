@@ -8,22 +8,98 @@ import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
 import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
 import "./GovernanceStateOverlay.scss";
+import { checkOverlayPaint } from "./overlayPaintCheck.js";
 
 const TOTAL_NOTCHES = 56;
 const ROW_GROW_ANIMATION_MS = 220;
 
+// A cadence_floor row is about the pedal (or the zone that excuses it), never
+// the rider's heart rate — that number answers a question the rule isn't asking.
+const pedalInstruction = (pedal) => (pedal?.orZoneLabel
+  ? `Pedal or reach ${pedal.orZoneLabel}`
+  : 'Start pedaling');
+
+let _warningLogger;
+const warningLogger = () => {
+  if (!_warningLogger) _warningLogger = getLogger().child({ component: 'governance-warning-overlay' });
+  return _warningLogger;
+};
+const PAINT_CHECK_MS = 2000;
+
+/**
+ * Observability for the warning UI as the household SEES it — the engine's
+ * phase log cannot tell you the chips emptied while the phase held, or that
+ * the scrim's darken/blur landed on the meter instead of under it.
+ * - `shown` / `hidden` (with visibleMs): a run of short pairs IS the flicker.
+ * - `rows_changed`: who the chips name, as it changes.
+ * - `paint_check` once per showing, then `dimmed` (warn) / `undimmed` on change:
+ *   whether the scrim paints above the meter/chips or a filter/opacity applies.
+ */
+function useWarningOverlayObservability(containerRef, rowKeys) {
+  const rowKeysRef = useRef(rowKeys);
+  rowKeysRef.current = rowKeys;
+
+  useEffect(() => {
+    const shownAt = Date.now();
+    warningLogger().info('governance.warning_overlay.shown', { rows: rowKeysRef.current });
+    let lastDimmed = null;
+    const check = () => {
+      const root = containerRef.current;
+      if (!root) return;
+      const host = root.closest('.fitness-player-content') || root.ownerDocument;
+      const result = checkOverlayPaint({
+        meter: root.querySelector('.governance-life-meter__frame'),
+        chip: root.querySelector('.governance-progress-overlay__chip'),
+      }, host.querySelector('.governance-warning-scrim'));
+      const payload = { ...result, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt };
+      if (lastDimmed === null) warningLogger().info('governance.warning_overlay.paint_check', payload);
+      if (result.dimmed && lastDimmed !== true) {
+        warningLogger().warn('governance.warning_overlay.dimmed', payload);
+      } else if (!result.dimmed && lastDimmed === true) {
+        warningLogger().info('governance.warning_overlay.undimmed', payload);
+      }
+      lastDimmed = result.dimmed;
+    };
+    // After the first paint, then on a slow clock while the warning stands.
+    const frame = requestAnimationFrame(check);
+    const timer = setInterval(check, PAINT_CHECK_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearInterval(timer);
+      warningLogger().info('governance.warning_overlay.hidden', {
+        rows: rowKeysRef.current, visibleMs: Date.now() - shownAt,
+      });
+    };
+  }, [containerRef]);
+
+  const previousKeys = useRef(rowKeys);
+  useEffect(() => {
+    if (previousKeys.current === rowKeys) return;
+    warningLogger().info('governance.warning_overlay.rows_changed', { rows: rowKeys, previous: previousKeys.current });
+    previousKeys.current = rowKeys;
+  }, [rowKeys]);
+}
+
 const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
   // Use notches directly from the per-notch interval timer when available,
   // fall back to deriving from countdown for backward compatibility
+  // No countdown yet = the warning began this frame (the hook learns the
+  // deadline in an effect), so the meter is full — not an empty-bar flash.
   const visibleNotches = Number.isFinite(notches)
     ? Math.max(0, Math.min(TOTAL_NOTCHES, notches))
-    : Math.round(Math.max(0, Math.min(1, (Number.isFinite(countdown) ? Math.max(countdown, 0) : 0) / Math.max(countdownTotal || 1, 1))) * TOTAL_NOTCHES);
+    : (Number.isFinite(countdown)
+      ? Math.round(Math.max(0, Math.min(1, Math.max(countdown, 0) / Math.max(countdownTotal || 1, 1))) * TOTAL_NOTCHES)
+      : TOTAL_NOTCHES);
 
   // Support both new (rows) and legacy (offenders) format
   const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
 
+  const containerRef = useRef(null);
+  const rowKeys = items.map((item) => item.key).join(',');
+  useWarningOverlayObservability(containerRef, rowKeys);
+
   return (
-    <div className="governance-progress-overlay" aria-hidden="true">
+    <div className="governance-progress-overlay" aria-hidden="true" ref={containerRef}>
       {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
           {items.map((item) => {
@@ -61,9 +137,9 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                       {item.displayName || item.displayLabel || item.name}
                     </span>
                     <span className="governance-progress-overlay__chip-meta">
-                      {Number.isFinite(item.heartRate)
-                        ? item.heartRate
-                        : 'No HR data'}
+                      {item.pedal
+                        ? pedalInstruction(item.pedal)
+                        : (Number.isFinite(item.heartRate) ? item.heartRate : 'No HR data')}
                       {item.status === 'holding' ? ' · Holding' : null}
                     </span>
                     <GovernanceStartBadge statusBadge={{ status: item.status, zoneLabel: item.statusZoneLabel }} />
@@ -100,7 +176,10 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
 }, (prevProps, nextProps) => {
   // Skip re-render if countdown delta < 0.3s and rows/offenders reference unchanged
   const countdownDelta = Math.abs((prevProps.countdown || 0) - (nextProps.countdown || 0));
-  if (countdownDelta < 0.3 && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders) {
+  // `notches` steps every ~0.5s while `countdown` (whole seconds) steps every
+  // 1s — ignoring it dropped every other notch, so the meter fell two at a time.
+  if (countdownDelta < 0.3 && prevProps.notches === nextProps.notches
+    && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders) {
     return true; // props are equal, skip re-render
   }
   return false;
@@ -407,6 +486,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 
   const renderChipMeta = (row) => {
     const base = (() => {
+      if (row.pedal) return pedalInstruction(row.pedal);
       const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
       const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
       if (currentHr != null) {

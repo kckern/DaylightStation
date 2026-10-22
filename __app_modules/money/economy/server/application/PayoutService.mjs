@@ -22,6 +22,7 @@
  * unless something minted or a count moved.
  */
 import { PAID_KINDS } from "../domain/index.mjs";
+import { ringAmount } from "../domain/earnings/index.mjs";
 
 const CURRENCIES = ['silver', 'gems'];
 const HELD = new Set(['indeterminate', 'pending']);
@@ -32,6 +33,32 @@ export function payoutRef(lineRef, currency) {
 }
 
 const message = (err) => err?.message ?? String(err);
+
+/**
+ * What a ring-threshold line owes, one step per FINISHED workout: the line's
+ * final sessions in end order, each priced at the week's running ring total
+ * (`ringAmount` over the line's `priced` rule). Minted in order under the
+ * line's one ref, each step pays only what the steps before it (and anything
+ * already paid) left short, so every workout gets its own entry, a workout
+ * that crosses no new silver step writes nothing (its rings roll into the
+ * next), and a week already paid at live rates is never paid twice. A
+ * running workout, or one still inside the resume window, waits.
+ * @returns {Array<{amount: {silver: number, gems: number}, meta: object}>}
+ */
+export function ringSteps(line) {
+  const finals = (line.sessions ?? []).filter((s) => s?.final && Number.isFinite(s.rings) && s.rings > 0)
+    .sort((a, b) => (a.endMs ?? a.startMs) - (b.endMs ?? b.startMs));
+  let running = 0;
+  return finals.map((s) => {
+    running += s.rings;
+    return {
+      amount: ringAmount(line.priced, running),
+      meta: { kind: line.kind, count: running, session: { id: s.sessionId, title: s.title ?? null, startMs: s.startMs, rings: s.rings } },
+    };
+  });
+}
+
+const paysPerWorkout = (line) => line.kind === 'ring-threshold' && Array.isArray(line.sessions) && line.priced?.rate;
 
 // The evidence states that pay, for the line kinds that pay per day.
 const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met' };
@@ -158,16 +185,19 @@ export class PayoutService {
       }
       if (line.status !== 'earned' || !line.ref) continue;
       const kind = line.kind === 'ring-contest' ? 'prize' : 'earn';
-      for (const currency of CURRENCIES) {
-        const amount = line.amount?.[currency] ?? 0;
-        if (amount === 0) continue;
-        const ref = payoutRef(line.ref, currency);
-        if (!Number.isInteger(amount) || amount < 0) {
-          this.#logChange('warn', 'economy.payout.bad-amount', `${learnerId}|${ref}`, `bad|${amount}`,
-            { learnerId, ref, currency, amount, ruleId: line.ruleId });
-          continue;
+      const steps = paysPerWorkout(line) ? ringSteps(line) : [{ amount: line.amount, meta: payoutMeta(line) }];
+      for (const step of steps) {
+        for (const currency of CURRENCIES) {
+          const amount = step.amount?.[currency] ?? 0;
+          if (amount === 0) continue;
+          const ref = payoutRef(line.ref, currency);
+          if (!Number.isInteger(amount) || amount < 0) {
+            this.#logChange('warn', 'economy.payout.bad-amount', `${learnerId}|${ref}`, `bad|${amount}`,
+              { learnerId, ref, currency, amount, ruleId: line.ruleId });
+            continue;
+          }
+          owed.push({ ref, evidenceRef: line.ref, currency, amount, kind, ruleId: line.ruleId, timeliness: line.timeliness ?? null, meta: step.meta });
         }
-        owed.push({ ref, evidenceRef: line.ref, currency, amount, kind, ruleId: line.ruleId, timeliness: line.timeliness ?? null, meta: payoutMeta(line) });
       }
     }
 
@@ -188,8 +218,11 @@ export class PayoutService {
     const wouldMint = [];
     let skipped = 0;
     for (const entry of owed) {
-      const shortfall = entry.amount - (paid.get(`${entry.currency}|${entry.ref}`) ?? 0);
+      const key = `${entry.currency}|${entry.ref}`;
+      const shortfall = entry.amount - (paid.get(key) ?? 0);
       if (shortfall <= 0) { skipped += 1; continue; }
+      // A ring line's later steps share this ref: count what this step pays.
+      paid.set(key, entry.amount);
       if (mode === 'dry-run') {
         this.#logChange('info', 'economy.payout.would-mint', `${learnerId}|${entry.ref}`, `would-mint|${shortfall}`,
           { learnerId, ref: entry.ref, currency: entry.currency, amount: shortfall, ruleId: entry.ruleId });

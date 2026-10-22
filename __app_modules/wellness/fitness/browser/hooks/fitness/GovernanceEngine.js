@@ -1232,10 +1232,19 @@ export class GovernanceEngine {
             const armSeconds = Number(entry.arm_seconds ?? 30);
             const armMinRpm = Number(entry.arm_min_rpm ?? 30);
             const tripAfterSeconds = Number(entry.trip_after_seconds ?? 10);
+            const windowSeconds = Number(entry.window_seconds ?? 10);
+            const movingMinRpm = Number(entry.moving_min_rpm ?? armMinRpm);
+            // The zone that excuses a stop. `none`/false/null switches the
+            // alternative off, leaving a pure RPM floor.
+            const rawOrZone = entry.or_zone === undefined ? 'active' : entry.or_zone;
+            const orZone = rawOrZone && String(rawOrZone).toLowerCase() !== 'none'
+              ? String(rawOrZone).toLowerCase()
+              : null;
             const positive = (value) => Number.isFinite(value) && value > 0;
-            if (!equipment || !positive(armSeconds) || !positive(armMinRpm) || !positive(tripAfterSeconds)) {
+            if (!equipment || !positive(armSeconds) || !positive(armMinRpm) || !positive(tripAfterSeconds)
+              || !positive(windowSeconds) || !positive(movingMinRpm)) {
               getLogger().warn('governance.cadence_floor.config_rejected', {
-                policyId, requirementIndex, equipment, armSeconds, armMinRpm, tripAfterSeconds,
+                policyId, requirementIndex, equipment, armSeconds, armMinRpm, tripAfterSeconds, windowSeconds, movingMinRpm,
               });
               return null;
             }
@@ -1246,6 +1255,9 @@ export class GovernanceEngine {
               armSeconds,
               armMinRpm,
               tripAfterSeconds,
+              windowSeconds,
+              movingMinRpm,
+              orZone,
               enabled: entry.enabled !== false,
               requireRiderHr: entry.require_rider_hr !== false,
               label: entry.label ? String(entry.label) : null,
@@ -3347,6 +3359,7 @@ export class GovernanceEngine {
           equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
           hrInactiveUsers: this._latestInputs?.hrInactiveUsers || [],
           activeParticipants,
+          userZoneMap: userZoneMap || {},
           timestamp: Date.now(),
         });
         if (summary?.justEngaged) justEngaged = true;
@@ -3429,6 +3442,15 @@ export class GovernanceEngine {
    * not to excuse them from continuing an activity they visibly started.
    * This is the ONE place a non-subject can land in `missingUsers`.
    *
+   * PEDAL OR GET ACTIVE. Once armed, the rider is in good standing while EITHER
+   * the rolling `windowSeconds` cadence is at least `movingMinRpm` (counted
+   * from the crank's revolution counter — see `_cadenceFloorWindowRpm`), OR
+   * their heart rate is in `orZone` or above. The idle clock starts from the
+   * last moment they were doing either, and trips after `tripAfterSeconds`. A
+   * trip clears only on the same terms, so a lone push of the pedal neither
+   * resets the clock nor clears the warning (2026-10-21: a rider stopped for
+   * 4.5 minutes nudging one revolution at a time and never locked).
+   *
    * READING CADENCE HERE IS SUBTLE. `_readCadenceDevice` reports
    * `connected: false` within rpmZero (~1.2s) of the rider stopping, because
    * `lastSignificantActivity` only advances on non-zero cadence. So
@@ -3447,11 +3469,16 @@ export class GovernanceEngine {
     equipmentRiderMap = {},
     activeParticipants = [],
     hrInactiveUsers = [],
+    userZoneMap = {},
     timestamp = Date.now(),
   } = {}) {
     const id = requirement.id || `cadence_floor:${requirement.equipment}`;
-    const state = this._cadenceFloorState.get(id)
-      || { riderId: null, armedMs: 0, armed: false, lastTs: null, zeroSince: null };
+    const fresh = (riderId) => ({
+      riderId, armedMs: 0, armed: false, lastTs: null,
+      samples: [], lastRev: null, lastRevDevice: null,
+      lastMotionTs: null, lastActiveTs: null, idleSince: null, tripped: false,
+    });
+    const state = this._cadenceFloorState.get(id) || fresh(null);
 
     const standDown = (reason) => {
       if (state.armed) {
@@ -3459,9 +3486,7 @@ export class GovernanceEngine {
           requirementId: id, equipment: requirement.equipment, riderId: state.riderId, reason,
         });
       }
-      this._cadenceFloorState.set(id, {
-        riderId: state.riderId, armedMs: 0, armed: false, lastTs: null, zeroSince: null,
-      });
+      this._cadenceFloorState.set(id, fresh(state.riderId));
       this._activeRequirementIds.delete(id);
       return null;
     };
@@ -3470,13 +3495,7 @@ export class GovernanceEngine {
 
     const riderId = equipmentRiderMap?.[requirement.equipment] || null;
     // Evidence belongs to the person who produced it. A new rider starts over.
-    if (state.riderId !== riderId) {
-      state.riderId = riderId;
-      state.armedMs = 0;
-      state.armed = false;
-      state.lastTs = null;
-      state.zeroSince = null;
-    }
+    if (state.riderId !== riderId) Object.assign(state, fresh(riderId));
     if (!riderId) return standDown('unclaimed');
     if ((this._latestInputs.guestIds || []).includes(riderId)) return standDown('guest-rider');
 
@@ -3494,27 +3513,31 @@ export class GovernanceEngine {
       // Hold the latch — a starved pipeline says nothing about this rider — but
       // never accrue evidence or count down toward a lock on data we don't have.
       state.lastTs = timestamp;
-      state.zeroSince = null;
+      state.idleSince = null;
+      // Unknown is not idle: the idle clock restarts when data resumes.
+      state.lastMotionTs = timestamp;
       this._cadenceFloorState.set(id, state);
       if (!state.armed) return null;
-      return this._cadenceFloorSummary(requirement, id, riderId, 0, { suspended: true });
+      return this._cadenceFloorSummary(requirement, id, riderId, { suspended: true, windowRpm: 0 });
     }
 
     const rpm = Number(cadence.rpm) || 0;
     // `connected: false` without a stall = the cadence device went quiet = stopped.
-    const movingAboveArm = Boolean(cadence.connected) && rpm >= requirement.armMinRpm;
+    const liveRpm = cadence.connected ? rpm : 0;
     const elapsed = state.lastTs == null ? 0 : Math.max(0, timestamp - state.lastTs);
     state.lastTs = timestamp;
 
+    const windowRpm = this._cadenceFloorWindowRpm(requirement, state, cadence, liveRpm, timestamp);
+
     if (!state.armed) {
-      if (movingAboveArm) state.armedMs += elapsed;
+      if (cadence.connected && rpm >= requirement.armMinRpm) state.armedMs += elapsed;
       if (state.armedMs >= requirement.armSeconds * 1000) {
         state.armed = true;
         getLogger().info('governance.cadence_floor.armed', {
           requirementId: id, equipment: requirement.equipment, riderId, armSeconds: requirement.armSeconds,
         });
       }
-      state.zeroSince = null;
+      state.idleSince = null;
       this._cadenceFloorState.set(id, state);
       if (!state.armed) {
         this._activeRequirementIds.delete(id);
@@ -3522,28 +3545,104 @@ export class GovernanceEngine {
       }
     }
 
-    const stopped = !cadence.connected || rpm <= 0;
-    if (stopped) {
-      if (state.zeroSince == null) state.zeroSince = timestamp;
-    } else {
-      state.zeroSince = null;
-    }
-    this._cadenceFloorState.set(id, state);
+    // Either alternative keeps the rider in good standing: pedaling (judged on
+    // the rolling window, so a lone push of the pedal cannot pass) or a heart
+    // rate in `orZone` or above (off the bike, doing something else).
+    const pedaling = windowRpm >= requirement.movingMinRpm;
+    const riderZone = userZoneMap?.[riderId] || null;
+    const orRank = requirement.orZone ? this._getZoneRank(requirement.orZone) : null;
+    const riderRank = riderZone ? this._getZoneRank(riderZone) : null;
+    const active = Number.isFinite(orRank) && Number.isFinite(riderRank) && riderRank >= orRank;
+    if (active) state.lastActiveTs = timestamp;
 
-    const stoppedMs = state.zeroSince == null ? 0 : timestamp - state.zeroSince;
-    const tripped = stoppedMs >= requirement.tripAfterSeconds * 1000;
-    const justEngaged = !this._activeRequirementIds.has(id);
-    this._activeRequirementIds.add(id);
-    if (tripped && justEngaged) {
-      getLogger().info('governance.cadence_floor.tripped', {
-        requirementId: id, equipment: requirement.equipment, riderId, stoppedMs,
+    if (pedaling || active) {
+      state.idleSince = null;
+    } else if (state.idleSince == null) {
+      // The idle clock runs from the last moment the rider was actually doing
+      // something — the last revolution, or the last sample in `orZone` — not
+      // from when the rolling average sank, which lags a clean stop.
+      const lastDoing = Math.max(state.lastMotionTs ?? -Infinity, state.lastActiveTs ?? -Infinity);
+      state.idleSince = Number.isFinite(lastDoing) ? Math.min(lastDoing, timestamp) : timestamp;
+      getLogger().info('governance.cadence_floor.idle_started', {
+        requirementId: id, equipment: requirement.equipment, riderId,
+        windowRpm: Math.round(windowRpm), riderZone, idleForMs: timestamp - state.idleSince,
       });
     }
-    return this._cadenceFloorSummary(requirement, id, riderId, rpm, { tripped, justEngaged, stoppedMs });
+
+    const stoppedMs = state.idleSince == null ? 0 : timestamp - state.idleSince;
+    const tripped = stoppedMs >= requirement.tripAfterSeconds * 1000;
+    if (tripped && !state.tripped) {
+      getLogger().info('governance.cadence_floor.tripped', {
+        requirementId: id, equipment: requirement.equipment, riderId, stoppedMs,
+        windowRpm: Math.round(windowRpm), riderZone,
+      });
+    } else if (!tripped && state.tripped) {
+      getLogger().info('governance.cadence_floor.cleared', {
+        requirementId: id, equipment: requirement.equipment, riderId,
+        // `resumed`: a transport stall restarted the idle clock.
+        reason: pedaling ? 'pedaling' : (active ? 'active' : 'resumed'), windowRpm: Math.round(windowRpm), riderZone,
+      });
+    }
+    state.tripped = tripped;
+    this._cadenceFloorState.set(id, state);
+
+    const justEngaged = !this._activeRequirementIds.has(id);
+    this._activeRequirementIds.add(id);
+    const status = pedaling ? 'pedaling' : (active ? 'active' : 'idle');
+    return this._cadenceFloorSummary(requirement, id, riderId, {
+      tripped, justEngaged, stoppedMs, windowRpm, status, riderZone,
+    });
   }
 
-  _cadenceFloorSummary(requirement, id, riderId, rpm, { tripped = false, suspended = false, justEngaged = false, stoppedMs = 0 } = {}) {
+  /**
+   * Rolling-window cadence for a cadence_floor, in RPM. Counts real crank
+   * revolutions from the sensor's cumulative counter when it sends one: the
+   * instantaneous RPM is held by the sensor for ~2.5s after every single push
+   * (a lone nudge reads ~41 RPM for three packets), so it cannot tell a rider
+   * from a fidget. Without a counter, averages the RPM samples in the window.
+   * Records `state.lastMotionTs` for the idle clock either way.
+   */
+  _cadenceFloorWindowRpm(requirement, state, cadence, liveRpm, timestamp) {
+    const windowMs = requirement.windowSeconds * 1000;
+    const revs = Number(cadence.revolutions);
+    const hasRevs = Number.isFinite(revs) && cadence.revolutions !== null;
+    const device = cadence.deviceId ?? null;
+    let turns = 0;
+    if (hasRevs) {
+      if (state.lastRev != null && state.lastRevDevice === device) {
+        // 16-bit counter. A jump this large between samples is a resync, not riding.
+        const delta = (revs - state.lastRev + 65536) % 65536;
+        turns = delta <= 64 ? delta : 0;
+      }
+      state.lastRev = revs;
+      state.lastRevDevice = device;
+      if (turns > 0) state.lastMotionTs = timestamp;
+    } else if (liveRpm > 0) {
+      state.lastMotionTs = timestamp;
+    }
+    state.samples.push({ ts: timestamp, turns, rpm: liveRpm, counted: hasRevs });
+    const cutoff = timestamp - windowMs;
+    while (state.samples.length && state.samples[0].ts <= cutoff) state.samples.shift();
+
+    // Mode by history, not by this sample: one reading without a counter must
+    // not flip a counted window to the RPM average and read a rider as stopped.
+    if (state.samples.some((s) => s.counted)) {
+      const total = state.samples.reduce((sum, s) => sum + (s.counted ? s.turns : 0), 0);
+      return (total * 60_000) / windowMs;
+    }
+    const rpmSamples = state.samples.filter((s) => !s.counted);
+    if (!rpmSamples.length) return 0;
+    return rpmSamples.reduce((sum, s) => sum + s.rpm, 0) / rpmSamples.length;
+  }
+
+  _cadenceFloorSummary(requirement, id, riderId, {
+    tripped = false, suspended = false, justEngaged = false, stoppedMs = 0,
+    windowRpm = 0, status = 'pedaling', riderZone = null,
+  } = {}) {
     const label = requirement.label || 'Keep pedaling';
+    const orZoneLabel = requirement.orZone
+      ? (this._getZoneInfo(requirement.orZone)?.name || requirement.orZone)
+      : null;
     return {
       id,
       type: 'cadence_floor',
@@ -3552,15 +3651,21 @@ export class GovernanceEngine {
       zone: null,
       zoneLabel: requirement.label || 'Pedaling',
       targetZoneId: null,
+      // The alternative that also satisfies this requirement — the display
+      // targets it so a rider off the bike sees how close their HR is.
+      orZone: requirement.orZone,
+      orZoneLabel,
+      riderZone,
       severity: requirement.armMinRpm,
       rule: 'minimum',
       ruleLabel: suspended ? 'Sensor unavailable' : label,
       requiredCount: 1,
       actualCount: tripped ? 0 : 1,
-      currentRate: rpm,
-      targetRate: requirement.armMinRpm,
+      currentRate: Math.round(windowRpm),
+      targetRate: requirement.movingMinRpm,
       riderId,
       stoppedMs,
+      status: suspended ? 'suspended' : status,
       metUsers: tripped ? [] : [riderId],
       // The one deliberate exception to "an exempt rider is never blamed" — see
       // the evaluator's header for why the evidence latch makes this fair.
