@@ -16,6 +16,7 @@ import { teacherDateRange } from "../teacherDates.js";
 const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [], kind: 'enrichment' };
 
 export default function EnrichmentPanel({ kids = [] }) {
+  const nameFor = (id) => kids.find((kid) => kid.id === id)?.name ?? id;
   const entries = usePanelFetch(() => schoolApi.enrichment(), {
     panel: 'enrichment',
     isEmpty: (d) => !(d?.entries ?? []).length,
@@ -52,7 +53,7 @@ export default function EnrichmentPanel({ kids = [] }) {
                   <span className="teacher-enrichment__title">{e.title}{e.kind === 'absence' ? ' (excused absence)' : ''}</span>
                   <span className="teacher-enrichment__dates">{teacherDateRange(e.from, e.to)}</span>
                   <span className="teacher-enrichment__meta">
-                    {(e.learnerIds ?? []).join(', ')}{(e.subjectIds ?? []).length ? ` · ${(e.subjectIds ?? []).map(subjectLabel).join(', ')}` : ''}
+                    {(e.learnerIds ?? []).map(nameFor).join(', ')}{(e.subjectIds ?? []).length ? ` · ${(e.subjectIds ?? []).map(subjectLabel).join(', ')}` : ''}
                   </span>
                   {e.note && <span className="teacher-enrichment__note">{e.note}</span>}
                   <button type="button" disabled={busy === `retract:${e.id}`} onClick={() => retract(e)}>Retract</button>

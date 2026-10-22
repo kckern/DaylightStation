@@ -128,7 +128,9 @@ export default function CoinsPanel({ learnerId, learnerName }) {
             {(data.pending?.silver > 0 || data.pending?.gems > 0) && (
               <p className="teacher-coins__pending">+{amountText(data.pending).replace(' + ', ' and ')} pending</p>
             )}
-            <p className="teacher-coins__fine">Preview — nothing is paid yet · rules revision {data.rulesRevision}</p>
+            {/* The rules revision is for whoever reads the server log, not the
+                parent: it rides along as a tooltip, not as copy. */}
+            <p className="teacher-coins__fine" title={`Earning rules revision ${data.rulesRevision}`}>Preview — nothing is paid yet</p>
             {data.evidence?.school === 'unavailable' && <p className="teacher-panel__error">School records could not be read — school lines show “can’t tell”, not zero.</p>}
             {data.evidence?.rings === 'unavailable' && <p className="teacher-panel__error">Fitness rings could not be read — ring lines show “can’t tell”.</p>}
           </div>

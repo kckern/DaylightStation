@@ -80,4 +80,15 @@ describe('HistoryView', () => {
     await waitFor(() => expect(screen.getByText('Monday, Aug 24')).toBeInTheDocument());
     expect(screen.queryByText('Friday, Aug 28')).not.toBeInTheDocument();
   });
+
+  it('says where each lesson stands in words, never the lifecycle slug', async () => {
+    teacherWorkspaceApi.timeline.mockResolvedValue({ ok: true, status: 200, data: { items: [
+      { sessionId: 'ses_1', studyDay: '2026-08-25', lessonTitle: 'Psalms 62–66', subject: 'scripture', state: 'media_dispatched' },
+      { sessionId: 'ses_2', studyDay: '2026-08-25', lessonTitle: 'Psalms 49–51', subject: 'scripture', state: 'submitted' },
+    ] } });
+    render(<HistoryView learnerId="user_4" learnerName="User_4" onOpenSession={vi.fn()} />);
+    expect(await screen.findByText('In progress')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting review')).toBeInTheDocument();
+    expect(screen.queryByText(/Media Dispatched|media_dispatched/)).toBeNull();
+  });
 });

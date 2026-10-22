@@ -12,6 +12,7 @@ import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate } from "../teacherDates.js";
+import { useActorName } from "../useActorName.js";
 
 // `initialUnitId`: opened from a "needs a grown-up" link that named the
 // lesson, so the form opens with it already picked.
@@ -27,6 +28,7 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
     isEmpty: (d) => !(d?.units ?? []).length,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'attestations' });
+  const actorName = useActorName();
   const retract = (a) => run(`retract:${a.id}`, ({ actorId, pin }) => schoolApi.retract({
     kind: 'attestation', entryId: a.id, retractedBy: actorId, pin,
   }), { onSuccess: log.retry });
@@ -51,7 +53,7 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
               {[...log.data.entries].reverse().map((a) => (
                 <li key={a.id} className="teacher-enrichment__row">
                   <span className="teacher-enrichment__title">{titles.lesson(a.unitId)}</span>
-                  <span className="teacher-enrichment__dates">{teacherDate(a.at)} — {a.attestedBy}</span>
+                  <span className="teacher-enrichment__dates">{teacherDate(a.at)} — {actorName(a.attestedBy)}</span>
                   <span className="teacher-enrichment__note">{a.reason}</span>
                   <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Retract</button>
                   {errors[`retract:${a.id}`] && <p className="teacher-panel__error">{errors[`retract:${a.id}`]}</p>}

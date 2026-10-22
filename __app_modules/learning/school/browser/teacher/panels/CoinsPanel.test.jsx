@@ -65,7 +65,9 @@ describe('CoinsPanel', () => {
     expect(screen.getByText(/silver earned/i)).toBeInTheDocument();
     expect(screen.getByText(/\+5 silver and 1 gem pending/i)).toBeInTheDocument();
     expect(screen.getByText(/preview — nothing is paid yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/rules revision 3/i)).toBeInTheDocument();
+    // The revision number is not parent copy; it stays reachable as a tooltip.
+    expect(screen.queryByText(/rules revision/i)).toBeNull();
+    expect(screen.getByText(/preview — nothing is paid yet/i)).toHaveAttribute('title', 'Earning rules revision 3');
     expect(schoolApi.earningsPreview).toHaveBeenCalledWith('learner-a', null);
   });
 

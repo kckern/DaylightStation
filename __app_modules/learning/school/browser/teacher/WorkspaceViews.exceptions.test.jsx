@@ -104,6 +104,18 @@ describe('CurriculumExceptionPanel neutral defaults', () => {
     expect(teacherWorkspaceApi.retractCurriculumException.mock.calls[0][1]).toMatchObject({ reason: 'authored fix landed' });
     expect(promptSpy).not.toHaveBeenCalled();
   });
+
+  it('names the learner an exception applies to, and says Everyone for a global one', async () => {
+    teacherWorkspaceApi.curriculumExceptions.mockResolvedValueOnce({ ok: true, status: 200, data: { active: [
+      { exceptionId: 'ex1', kind: 'paused', learnerId: null, targetType: 'lesson', targetId: 'u1', reason: 'defective' },
+      { exceptionId: 'ex2', kind: 'skipped', learnerId: 'user_2', targetType: 'lesson', targetId: 'u1', reason: 'mastered' },
+    ] } });
+    render(<OperationsView kids={KIDS} />);
+    const list = (await screen.findByText(/· mastered/)).closest('ul');
+    expect(within(list).getByText(/· Everyone ·/)).toBeInTheDocument();
+    expect(within(list).getByText(/· User_2 ·/)).toBeInTheDocument();
+    expect(within(list).queryByText(/user_2/)).toBeNull();
+  });
 });
 
 // `curriculum-exception.apply` / `.retract` are the audit labels

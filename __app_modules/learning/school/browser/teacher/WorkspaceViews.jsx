@@ -43,6 +43,7 @@ import { teacherLog } from "./teacherLog.js";
 import { curriculumTitles } from "./curriculumTitles.js";
 import { localDay, shiftDay, humanDate, humanDateTime } from "./teacherDates.js";
 import { presentSessionState } from "./sessionPresentation.js";
+import { useActorName } from "./useActorName.js";
 import CoinsPanel from "./panels/CoinsPanel.jsx";
 import CoinsRosterPanel from "./panels/CoinsRosterPanel.jsx";
 
@@ -139,7 +140,7 @@ function SessionList({ learnerId, onOpenSession }) {
                       {/* No per-row date: the group heading owns the day (IA2). */}
                       {scoreLine(session) && <small>{scoreLine(session)}</small>}</span>
                     <span className={`teacher-status teacher-status--${stateOf(session)}`}>
-                      {session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
+                      {presentSessionState(session).label}</span>
                   </button>
                 </li>
               );
@@ -357,7 +358,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
   </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
-  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
+  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ? (kids.find((kid) => kid.id === exception.learnerId)?.name ?? exception.learnerId) : 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
     ? <span className="teacher-action-row">
       <input aria-label={`Retraction reason for ${exception.exceptionId}`} maxLength={240} placeholder="Why retract this?" value={retractReason} onChange={(event) => setRetractReason(event.target.value)} />
       <button type="button" disabled={busy || !retractReason.trim()} onClick={() => retract(exception)}>Confirm retraction</button>
@@ -485,6 +486,8 @@ export function WordsView({ learnerId, learnerName }) {
     isEmpty: (d) => !cardLadderEnrollments(d?.programs).length,
   });
   const decks = cardLadderEnrollments(assignment.data?.programs);
+  // Each panel's new-word pool lists decks by name, its siblings' included.
+  const deckTitles = Object.fromEntries(decks.filter((entry) => entry.title).map((entry) => [entry.deckId, entry.title]));
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Cards</p><h2>{learnerName}’s card ladder</h2><p>Every card this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
@@ -492,7 +495,7 @@ export function WordsView({ learnerId, learnerName }) {
         emptyCopy={`${learnerName ?? learnerId} is not enrolled in a card-ladder deck.`}
         unavailableCopy="Assignments are not enabled on this install.">
         {decks.map((entry) => (
-          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
+          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
         ))}
       </PanelFrame>
     </div>
@@ -976,6 +979,10 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
   const canSettleByHand = Boolean(settleLearnerId) && (capabilities.manualSettlement
     ?? (SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true));
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
+  // Who did each lifecycle step: a child by the roster's name, a grown-up by
+  // the teacher roster's — never the raw id when either knows it.
+  const actorName = useActorName();
+  const eventActor = (id) => (id ? kids.find((kid) => kid.id === id)?.name ?? actorName(id) : '');
   const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
     openedBy: actorId, pin,
   }), { onSuccess: () => setAttempt((n) => n + 1) });
@@ -1111,7 +1118,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <details className="teacher-panel teacher-fold">
             <summary><h3 className="teacher-panel__title">Activity history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
-            {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
+            {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{eventActor(event.by ?? event.actorId ?? event.gradedBy)}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
           </details>
         </>
       )}

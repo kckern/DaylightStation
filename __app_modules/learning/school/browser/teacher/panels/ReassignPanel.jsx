@@ -24,6 +24,8 @@ import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { curriculumTitles } from "../curriculumTitles.js";
+import { humanDate } from "../teacherDates.js";
+import { presentSessionState } from "../sessionPresentation.js";
 
 const RECENT_DAYS = 14;
 
@@ -126,7 +128,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
       {days.length > 0 && (
         <div className="teacher-reassign__days">
           {days.map((d) => (
-            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{d}</button>
+            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{humanDate(d) ?? d}</button>
           ))}
         </div>
       )}
@@ -175,7 +177,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [], initi
             {sessions.map((s) => (
               <li key={s.sessionId} className="teacher-quizreq__row">
                 <span>{labelFor(s)}</span>
-                <span className="teacher-quizreq__meta">{s.state ?? 'not started'}</span>
+                <span className="teacher-quizreq__meta">{s.state ? presentSessionState(s).label : 'Not started'}</span>
                 <button
                   type="button"
                   disabled={!target || !reason.trim() || busy === `session:${s.sessionId}`}

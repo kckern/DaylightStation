@@ -10,9 +10,13 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate } from "../teacherDates.js";
+import { useActorName } from "../useActorName.js";
+import { labelize } from "../labelize.js";
 
 export default function ActiveOverrides({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
+  // Learners by the roster's kid names, grown-ups by the teacher roster's.
+  const actorName = useActorName();
   const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'active-overrides', nullAs: 'empty' });
   const attestations = usePanelFetch(() => schoolApi.attestations(), { panel: 'active-attestations', nullAs: 'empty' });
   const bypasses = usePanelFetch(() => schoolApi.programDayBypasses(), { panel: 'active-program-bypasses', nullAs: 'empty', notFoundAs: 'unavailable' });
@@ -50,7 +54,7 @@ export default function ActiveOverrides({ kids = [] }) {
                 <span>{titles.lesson(o.unitId)}</span>
                 <span>
                   bar {o.percent}%
-                  {o.setBy ? ` · by ${o.setBy}` : ''}
+                  {o.setBy ? ` · by ${actorName(o.setBy)}` : ''}
                   {o.at ? ` · since ${teacherDate(o.at)}` : ''}
                 </span>
               </li>
@@ -64,9 +68,9 @@ export default function ActiveOverrides({ kids = [] }) {
           <ul>
             {bypassRows.map((b) => (
               <li key={b.bypassId}>
-                <span>{nameFor(b.learnerId)} · {b.programId}</span>
+                <span>{nameFor(b.learnerId)} · {labelize(b.programId)}</span>
                 <span>
-                  by {b.decidedBy ?? 'unknown'}
+                  by {actorName(b.decidedBy)}
                   {b.decidedAt ? ` · ${teacherDate(b.decidedAt)}` : ''}
                   {b.reason ? ` — ${b.reason}` : ''}
                 </span>
@@ -82,7 +86,7 @@ export default function ActiveOverrides({ kids = [] }) {
             {attestationRows.map((a) => (
               <li key={a.id}>
                 <span>{nameFor(a.learnerId)} · {titles.lesson(a.unitId)}</span>
-                <span>by {a.attestedBy ?? 'unknown'}{a.at ? ` · ${teacherDate(a.at)}` : ''}</span>
+                <span>by {actorName(a.attestedBy)}{a.at ? ` · ${teacherDate(a.at)}` : ''}</span>
               </li>
             ))}
           </ul>

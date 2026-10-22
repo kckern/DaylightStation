@@ -11,7 +11,9 @@ import { WordsView } from "./WorkspaceViews.jsx";
 vi.mock("../schoolApi.js", () => ({ schoolApi: { assignments: vi.fn() } }));
 vi.mock("./panels/CardLadderWordsPanel.jsx", () => ({
   __esModule: true,
-  default: ({ deckId, title }) => <div data-testid="card-ladder-panel">{title ?? deckId}</div>,
+  default: ({ deckId, title, deckTitles = {} }) => (
+    <div data-testid="card-ladder-panel" data-deck-titles={JSON.stringify(deckTitles)}>{title ?? deckId}</div>
+  ),
   cardLadderEnrollments: (programs) => (Array.isArray(programs) ? programs : [])
     .filter((entry) => entry?.programId === 'flashcards' && entry?.policy?.mode === 'card-ladder' && entry?.deckId),
 }));
@@ -40,4 +42,18 @@ it('names the empty state when there is no card-ladder enrollment', async () => 
   schoolApi.assignments.mockResolvedValue(ok({ programs: [] }));
   render(<WordsView learnerId="learner_a" learnerName="learner_a" />);
   expect(await screen.findByText(/not enrolled in a card-ladder deck/)).toBeTruthy();
+});
+
+it('hands every panel the titles of all the learner\'s card-ladder decks, for its new-word pool', async () => {
+  schoolApi.assignments.mockResolvedValue(ok({
+    programs: [
+      { programId: 'flashcards', deckId: 'deck-one', title: 'Deck One', policy: { mode: 'card-ladder' } },
+      { programId: 'flashcards', deckId: 'deck-two', title: 'Deck Two', policy: { mode: 'card-ladder' } },
+    ],
+  }));
+  render(<WordsView learnerId="learner_a" learnerName="learner_a" />);
+  await screen.findByText('Deck One');
+  for (const panel of screen.getAllByTestId('card-ladder-panel')) {
+    expect(JSON.parse(panel.dataset.deckTitles)).toEqual({ 'deck-one': 'Deck One', 'deck-two': 'Deck Two' });
+  }
 });

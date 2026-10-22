@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { SessionInspector, LearnerDayScreen } from "./WorkspaceViews.jsx";
 
 vi.mock("../schoolApi.js", () => ({
@@ -26,7 +26,7 @@ const teacherAuth = vi.hoisted(() => ({
   requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
 }));
 vi.mock("./TeacherProfileContext.jsx", () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }] }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
     pin: null,
@@ -185,6 +185,20 @@ describe('SessionInspector detail coherence', () => {
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const link = await screen.findByRole('link', { name: /another child’s work/ });
     expect(new URL(link.getAttribute('href'), 'http://x').searchParams.get('day')).toBe('2026-10-20');
+  });
+
+  it('names who did each lifecycle step — a child by kid name, a grown-up by teacher name', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION,
+      events: [
+        { type: 'submitted', at: '2026-10-20T15:00:00.000Z', by: 'user_2' },
+        { type: 'graded', at: '2026-10-21T15:00:00.000Z', gradedBy: 'teacher-a' },
+      ],
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const list = (await screen.findByText('Teacher A')).closest('ol');
+    expect(within(list).getByText('User_2')).toBeInTheDocument();
+    expect(within(list).queryByText(/teacher-a|user_2/)).toBeNull();
   });
 
   // With no owner both links are hidden; the disclosure must not open onto nothing.

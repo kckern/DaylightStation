@@ -10,6 +10,11 @@ vi.mock("../../schoolApi.js", () => ({
 }));
 import { schoolApi } from "../../schoolApi.js";
 
+// Who closed a period is named from the roster, never shown as the raw id.
+vi.mock("../TeacherProfileContext.jsx", () => ({
+  useTeacherProfileOptional: () => ({ teachers: [{ id: 'teacher-a', name: 'Teacher A' }], currentTeacher: null }),
+}));
+
 describe('FrozenHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -19,12 +24,12 @@ describe('FrozenHistory', () => {
   it('lists closed periods, newest concerns first as the read returns them', async () => {
     schoolApi.reportCardFrozen.mockResolvedValue({
       ok: true, status: 200, data: [
-        { periodId: 'fall-2026', period: { label: 'Fall 2026' }, closedBy: 'kckern', closedAt: '2026-12-20T00:00:00Z' },
+        { periodId: 'fall-2026', period: { label: 'Fall 2026' }, closedBy: 'teacher-a', closedAt: '2026-12-20T00:00:00Z' },
       ],
     });
     render(<FrozenHistory learnerId="user_4" />);
     expect(await screen.findByText('Fall 2026')).toBeInTheDocument();
-    expect(screen.getByText(/Closed by kckern/)).toBeInTheDocument();
+    expect(screen.getByText(/Closed by Teacher A/)).toBeInTheDocument();
   });
 
   // Point 3 of the System-health brief: frozen VERSIONS (what a supersede
