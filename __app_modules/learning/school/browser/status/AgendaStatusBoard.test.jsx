@@ -1352,10 +1352,12 @@ const priced = (learnerId, silver, { gems = 0, pending = {}, lines = [{ status: 
 const roster = (...learners) => ({ ok: true, status: 200, data: { windows: { school: WEEK }, learners } });
 
 describe('earningsByLearner', () => {
-  it('maps the roster preview by learner, with the week it prices', () => {
-    expect(earningsByLearner(roster(priced('user_4', 21), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
-      user_4: { silver: 21, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to },
-      user_5: { silver: 23, gems: 0, pendingSilver: 5, pendingGems: 1, from: WEEK.from, to: WEEK.to },
+  it('maps the roster preview by learner: earned silver, gems held (contest gem included)', () => {
+    // A ring-contest lead files 5 silver + 1 gem under `pending` until Saturday
+    // noon: the gem is held now, the silver is not shown.
+    expect(earningsByLearner(roster(priced('user_4', 21, { gems: 2 }), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
+      user_4: { silver: 21, gems: 2, from: WEEK.from, to: WEEK.to },
+      user_5: { silver: 23, gems: 1, from: WEEK.from, to: WEEK.to },
     });
   });
 
@@ -1392,7 +1394,7 @@ describe('AgendaStatusBoard silver earned this week', () => {
     expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
   });
 
-  it('pending is a faded +N after the number, gems a third line only when earned or pending', async () => {
+  it('one number per coin: no +N, and the contest gem shows as a held gem', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(
       priced('learner1', 23, { pending: { silver: 5, gems: 1 } }),
       priced('learner2', 10, { gems: 2 }),
@@ -1400,20 +1402,14 @@ describe('AgendaStatusBoard silver earned this week', () => {
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     const [one, two] = await waitFor(() => {
       const cells = screen.getAllByTestId('board-coins');
-      expect(within(cells[0]).getByRole('img', { name: '23 silver earned this week, 5 more possible' })).toBeTruthy();
+      expect(within(cells[0]).getByRole('img', { name: '23 silver earned this week' })).toBeTruthy();
       return cells;
     });
-    // Pending is part of the figure's ONE spoken name; the visible "+5" is
-    // decoration, hidden from the accessibility tree.
-    const silver = within(one).getByRole('img', { name: '23 silver earned this week, 5 more possible' });
-    const plus = silver.querySelector('.school-status-board__more');
-    expect(plus.textContent).toBe('+5');
-    expect(plus).toHaveAttribute('aria-hidden', 'true');
-    const gems = within(one).getByRole('img', { name: '0 gems this week, 1 more possible' });
-    expect(gems.querySelector('.school-status-board__more').textContent).toBe('+1');
+    // Leading the ring contest: no "+5" silver, and the gem reads 1, not "0 +1".
+    expect(one.textContent).not.toMatch(/\+/);
+    expect(within(one).getByRole('img', { name: '1 gem this week' })).toBeTruthy();
     expect(within(two).getByRole('img', { name: '10 silver earned this week' })).toBeTruthy();
     expect(within(two).getByRole('img', { name: '2 gems this week' })).toBeTruthy();
-    expect(within(two).queryByRole('img', { name: /more possible$/ })).toBeNull();
     // No visible captions anywhere in the cell.
     expect(one.textContent).not.toMatch(/silver|gold|gem/i);
   });
@@ -1454,7 +1450,7 @@ describe('AgendaStatusBoard silver earned this week', () => {
     // silver prices LAST week: the Coins week check alone must hide it.
     localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
-      earnings: { learner1: { silver: 99, gems: 0, pendingSilver: 0, pendingGems: 0, from: '2026-10-12', to: '2026-10-18' } },
+      earnings: { learner1: { silver: 99, gems: 0, from: '2026-10-12', to: '2026-10-18' } },
     }));
     schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
@@ -1465,7 +1461,7 @@ describe('AgendaStatusBoard silver earned this week', () => {
   it('a cached figure from this week paints before the read lands', async () => {
     localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
-      earnings: { learner1: { silver: 17, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to } },
+      earnings: { learner1: { silver: 17, gems: 0, from: WEEK.from, to: WEEK.to } },
     }));
     schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);

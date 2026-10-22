@@ -328,9 +328,13 @@ export function earningsByLearner(payload) {
     const week = learner.windows?.school ?? payload?.windows?.school ?? {};
     out[learner.learnerId] = {
       silver: totals.silver,
-      gems: Number.isFinite(totals.gems) ? totals.gems : 0,
-      pendingSilver: Number.isFinite(learner.pending?.silver) ? learner.pending.silver : 0,
-      pendingGems: Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0,
+      // GEMS ARE THE PROVISIONAL CURRENCY: the gems a child HOLDS this week,
+      // including the ring contest's gem while they lead it (the preview files
+      // that one under `pending` until Saturday noon). One number — it used to
+      // read "0 +1", the held gem drawn as a faded afterthought to a zero.
+      // Pending SILVER is not shown: silver is what was earned (2026-10-21).
+      gems: (Number.isFinite(totals.gems) ? totals.gems : 0)
+        + (Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0),
       from: week.from ?? null,
       to: week.to ?? null,
     };

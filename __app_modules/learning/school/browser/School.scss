@@ -3396,14 +3396,11 @@
   }
   &__coin-icon { justify-self: center; width: 100%; height: auto; }
   &__coin-icon--gold, &__coin-icon--gem { width: 58%; }
-  // `start`, so each number cell is only as wide as its number and the +N
-  // hangs after THAT number rather than at the end of the column.
-  &__figure { position: relative; justify-self: start; }
+  // `start`, so each number cell is only as wide as its number.
+  &__figure { justify-self: start; }
   &__figure--silver { font-size: var(--silver); }
   &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gold); }
   &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
-  // Hangs off the end of its number, so it never moves the column.
-  &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.15em; font-size: 0.5em; opacity: 0.45; }
 
   &__grid {
     // The day grid declares its own defaults on its root; the plot's values

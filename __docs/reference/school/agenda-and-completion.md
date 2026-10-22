@@ -213,9 +213,11 @@ its earned lines into the ledger only while the economy catalog is `live`.
 Gold is smaller beneath it: the wallet's `balances.gold`
 (`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
 close converts unspent silver.
-Gems are a third line only once earned or pending. A faded `+N` hangs after a
-number for what is still possible; it is decoration only, and the figure's one
-spoken name carries it ("27 silver this week, 5 more possible"). There are no
+Gems are a third line only while some are held. One number per coin, no faded
+`+N`: silver is what was earned; gems are what the child holds this week,
+including the ring contest's gem while they lead it (the preview files that one
+under `pending` until Saturday noon, beside a silver prize the board does not
+show). It used to read `0 +1`. There are no
 captions; icons carry the meaning and each figure is an image whose name says
 it. A wallet or roster read that comes back not-ok is logged
 (`status-board.wallet-failed` / `status-board.earnings-failed`).

@@ -277,16 +277,16 @@ function RestDayStatus({ restDay, pinned }) {
  */
 /**
  * THE COINS: silver (EARNED this week, from the earnings preview, big), gold
- * (lasting, smaller) and gems (only when earned or pending). This silver is
+ * (lasting, smaller) and gems (only while some are held). This silver is
  * not the bank: the Portal's bank strip shows what is IN the bank (the ledger
  * balance, less anything spent), so the two may differ and each is named for
- * what it is. as a two-column grid - icon cell, number cell - so
+ * what it is. As a two-column grid — icon cell, number cell — so
  * the coins centre on one line and the numbers start at one edge, down every
- * card. A faded +N hangs after a number without moving it. No captions: the
- * icon is the label; the words are for a screen reader — each figure is ONE
- * image whose name carries its pending too ("27 silver earned this week, 5 more
- * possible"), and the visible +N is hidden from that tree. Nothing until a
- * read lands, and nothing for a cached silver figure from another week.
+ * card. ONE NUMBER PER COIN, no faded "+N" (2026-10-21): silver is what was
+ * earned; gems are what is HELD this week, the contest gem included while its
+ * holder leads (see `earningsByLearner`). No captions: the icon is the
+ * label; the words are for a screen reader. Nothing until a read lands, and
+ * nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
   const [silverColor, silverRef] = useCoinColor('silver');
@@ -296,16 +296,14 @@ function Coins({ figure, gold, studyDay }) {
     && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
   const hasGold = Number.isFinite(gold);
   if (!inWeek && !hasGold) return null;
-  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-hidden="true">+{n}</span> : null);
-  const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
-  const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
+  const showGems = inWeek && figure.gems > 0;
   return (
     <div className="school-status-board__coin-grid" ref={(el) => { silverRef(el); goldRef(el); }}>
       {inWeek && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color={silverColor} />
-          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver earned this week`, figure.pendingSilver)}>
-            {figure.silver}{more(figure.pendingSilver)}
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={`${figure.silver} silver earned this week`}>
+            {figure.silver}
           </span>
         </>
       )}
@@ -318,8 +316,8 @@ function Coins({ figure, gold, studyDay }) {
       {showGems && (
         <>
           <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
-          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`, figure.pendingGems)}>
-            {figure.gems}{more(figure.pendingGems)}
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
+            {figure.gems}
           </span>
         </>
       )}
