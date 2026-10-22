@@ -12,6 +12,7 @@ import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
+import { DENSITIES, densityClassName, pickDensity } from "./riderListDensity.js";
 import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
@@ -64,14 +65,6 @@ const CONFIG = {
     // Grid and spacing
     grid: { gap: 10 },
     margin: { safety: 8 },
-    // Auto scaling limits
-    scale: { min: 0.4, max: 1.0, safetyFactor: 0.98 },
-    // Horizontal density scaling rules
-    horizontalScaleRules: [
-      { exactUsers: 3, className: 'horiz-scale-150' },
-      { exactUsers: 4, className: 'horiz-scale-130' }
-      // Threshold examples supported: { maxUsers: 4, className: 'horiz-scale-130' }
-    ]
   },
   rpm: {
     animationBase: 270, // used to compute spin speed
@@ -370,15 +363,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
-  const [scale, setScale] = useState(1);
+  const [density, setDensity] = useState(DENSITIES[0]);
   const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
-  const hrCounts = React.useMemo(() => {
-    if (!allDevices) return { all: 0, active: 0, candidate: 0 };
-    const hrAll = allDevices.filter(d => d.type === 'heart_rate');
-    const hrActive = hrAll.filter(d => d.isActive);
-    const candidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
-    return { all: hrAll.length, active: hrActive.length, candidate };
-  }, [allDevices]);
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   React.useRef(null); // Hidden ref for measurement
@@ -699,45 +685,43 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortedDevices, allDevices]);
 
-  // Auto-scale content to fit container
+  // Card size by fit (riderListDensity.js). Re-picked when anything that moves
+  // the list's height changes: the roster, the zone headers, the cards still in
+  // the DOM (a leaving card fades out in place) or the room itself.
+  const rosterKey = sortedDevices
+    .map((d) => (d.type === 'rpm-group' ? `rpm:${d.devices.length}` : `${d.type}:${d.deviceId ?? d.snapshot?.equipmentId ?? ''}`))
+    .join('|');
+  const [, setListResizes] = useState(0);
   useEffect(() => {
-    if (!containerRef.current || !contentRef.current) return;
-    
-    // Don't scale if showing empty state (no devices)
-    if (sortedDevices.length === 0) {
-      setScale(1);
-      return;
-    }
-    
-    const containerHeight = containerRef.current.clientHeight;
-    const naturalContentHeight = contentRef.current.scrollHeight;
-    
-    // Calculate ideal scale to fill container
-  const idealScale = containerHeight / naturalContentHeight;
-  const { min, max, safetyFactor } = CONFIG.layout.scale;
-  // Do not upscale above max so a single user matches multi-user sizing
-  const newScale = Math.max(min, Math.min(max, idealScale * safetyFactor));
-    
-    setScale(newScale);
-  }, [sortedDevices]); // Only recalculate when devices change, not on scale changes
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => setListResizes((n) => n + 1));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const densitySignatureRef = React.useRef('');
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content || layoutMode !== 'horiz') return;
+    const headers = [...content.querySelectorAll('.device-zone-info')].map((el) => el.textContent).join(',');
+    const cardsInDom = content.querySelectorAll('.fitness-device').length;
+    const signature = `${rosterKey}#${headers}#${cardsInDom}#${container.clientHeight}`;
+    if (signature === densitySignatureRef.current) return;
+    densitySignatureRef.current = signature;
+    const next = pickDensity(container, content);
+    if (next !== density) setDensity(next);
+  });
 
   return (
     <>
       <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
       
       <div className="fitness-devices" ref={containerRef}>
-        <div 
-          ref={contentRef}
-          style={{
-            transform: `scale(${scale})`,
-            transformOrigin: 'top center',
-            margin: '0 auto',
-            width: '100%'
-          }}
-        >
+        <div ref={contentRef} className="fitness-devices-content">
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' ? (CONFIG.layout.horizontalScaleRules.find(r => (r.exactUsers && r.exactUsers === hrCounts.candidate) || (r.maxUsers && hrCounts.candidate <= r.maxUsers))?.className || '') : ''}`}
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : `layout-horiz ${densityClassName(density)}`}`}
             duration={CONFIG.animation.flipMove.duration}
             easing={CONFIG.animation.flipMove.easing}
             staggerDelayBy={CONFIG.animation.flipMove.staggerDelayBy}
@@ -1012,7 +996,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                     )}
                   </div>
                   <div
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${hrCounts.candidate >= 5 ? 'card-compact' : ''}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${layoutMode === 'horiz' && density === 'compact' ? 'card-compact' : ''}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}

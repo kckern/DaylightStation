@@ -1286,7 +1286,9 @@
 
     .fitness-devices {
       flex: 1 1 auto;
-      overflow: hidden; // Changed from overflow-y: visible
+      // Past the compact card size the roster scrolls (riderListDensity.js).
+      overflow-x: hidden;
+      overflow-y: auto;
       width: 100%;
       position: relative;
       /* Align with treasure box horizontal margins */
@@ -1298,6 +1300,11 @@
       flex-direction: column;
       gap: 10px;
       width: 100%;
+    }
+
+    // Densest card size: tighter spacing so a full garage (8) still fits.
+    .device-grid.density-compact {
+      gap: 4px;
     }
 
     /* Increase inter-card spacing slightly in vertical layout */
@@ -1382,8 +1389,8 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.45);
     }
 
-    /* Compact variant applied when 5+ users are present so the full roster
-       fits the viewport without scrolling. Shrinks padding, gap, and avatar. */
+    /* Compact variant: the densest card size, used only when the larger ones
+       overflow the list (riderListDensity.js). */
     .fitness-device.card-compact {
       &.card-horizontal {
         gap: 8px;
