@@ -545,7 +545,7 @@
         font-size: 1.35rem;
       }
       & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-        font-size: 0.7rem;
+        font-size: 0.95rem;
       }
 
       & > .device-grid.horiz-scale-130 { gap: 12px; }
@@ -568,7 +568,7 @@
         font-size: 1.18rem;
       }
       & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-        font-size: 0.62rem;
+        font-size: 0.9rem;
       }
 
 
@@ -702,7 +702,7 @@
             
             .device-value { font-size: 1.05rem; font-weight: 700; color: #fff; }
             
-            .device-unit { font-size: 0.55rem; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing:.5px; }
+            .device-unit { font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
           }
         }
       }
@@ -780,7 +780,7 @@
 
       .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
 
-      .device-unit { font-size: 0.5rem; }
+      .device-unit { font-size: 0.875rem; }
 
       .card-avatar.clickable {
         cursor: pointer;
@@ -882,7 +882,7 @@
     align-items: center;
     justify-content: center;
     height: 100px;
-    opacity: 0.5;
+    opacity: 0.8; // the only thing on screen before anyone straps in
 
     .empty-icon {
       font-size: 32px;
@@ -892,108 +892,58 @@
   }
 }
 
-// RPM Group styling
+// RPM Group styling — one circle size at every bike count. Four bikes fit
+// one row of the 250px sidebar (4 x 46 + 3 x 10 = 214 of 218px); a fifth
+// wraps to a second row.
 .rpm-group-container {
-  display: flex;
-  align-items: center;
+  --rpm-cell: 46px;
+  --rpm-gap: 10px;
   width: 100%;
-  min-height: 3.2rem;
   background: rgba(34, 34, 34, 0.6);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 8px 6px 10px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-  gap: 4px;
-  
-  &.single-device .rpm-group-title {
-    display: block;
-  }
-  
-  &.multi-device .rpm-group-title {
-    display: none;
-  }
-  
-  .rpm-group-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    margin-right: 8px;
-    white-space: nowrap;
-    letter-spacing: 0.35px;
-  }
-  
+
   .rpm-devices {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex: 1;
-
-    // Single device - default layout
-    &.devicecount_1 {
-      justify-content: flex-start;
-    }
-
-    // 2-3 devices - horizontal row
-    &.devicecount_2,
-    &.devicecount_3 {
-      flex-direction: row;
-      justify-content: flex-start;
-      gap: 10px;
-    }
-
-    // 4+ devices - grid layout
-    &.devicecount_4,
-    &.devicecount_5,
-    &.devicecount_6 {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      justify-items: center;
-    }
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--rpm-cell));
+    justify-content: center;
+    gap: var(--rpm-gap);
   }
-  .rpm_devices.devicecount_4 {
-    .rpm-device-avatar {
-      width: 32px;
-      height: 32px;
-    }
-  }
-  
+
   .rpm-device-avatar {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
+    // RpmDeviceAvatar.scss sets its own 64px on the element; override it here.
+    --rpm-avatar-size: var(--rpm-cell);
     position: relative;
-    flex: 1;
-    min-width: 0;
-        padding-bottom: 1ex;
-    
+    width: var(--rpm-avatar-size);
+    height: var(--rpm-avatar-size);
+
     .rpm-avatar-wrapper {
       position: relative;
-      width: 58px;
-      height: 58px;
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-      
+
       .rpm-spinning-border {
         position: absolute;
-        inset: -4px;
+        inset: -3px;
         border-radius: 50%;
-        border: 5px dashed rgba(255, 146, 43, 0.7);
+        border: 3px dashed rgba(255, 146, 43, 0.7);
         animation: spin-rpm linear infinite;
         animation-duration: var(--spin-duration, 1s);
         transition: animation-duration 0.3s ease-out;
-        
+
         &.rpm-zero {
           border-color: rgba(255, 146, 43, 0.2);
           animation: none;
         }
       }
-      
+
       .rpm-avatar-content {
-        width: 58px;
-        height: 58px;
+        width: 100%;
+        height: 100%;
         border-radius: 50%;
         overflow: hidden;
         background: #333;
@@ -1002,18 +952,15 @@
         justify-content: center;
         position: relative;
         z-index: 1;
-        
+
         .rpm-device-image {
+          position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
           object-fit: cover;
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
         }
-        
+
         .rpm-value-overlay {
           position: absolute;
           bottom: 0;
@@ -1024,57 +971,17 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 1.2rem;
+          font-size: 1.1rem;
           font-weight: 800;
           color: #fff;
           letter-spacing: 0.5px;
           z-index: 1;
-          
+
           &.rpm-zero {
             background: rgba(100, 100, 100, 0.7);
           }
         }
       }
-    }
-    
-    .rpm-device-name {
-      font-size: 0.6rem;
-      color: rgba(255, 255, 255, 0.7);
-      text-align: center;
-      width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      padding: 0 1px;
-    }
-  }
-}
-
-/* Global: when there are exactly 4 RPM devices, shrink avatars to 32px everywhere.
-   Support both hyphen and underscore variants to be robust to class naming. */
-.rpm-devices.devicecount-4,
-.rpm-devices.devicecount_4,
-.rpm_devices.devicecount-4,
-.rpm_devices.devicecount_4 {
-  .rpm-device-avatar {
-    width: 32px;
-    height: 32px;
-
-    /* Ensure inner avatar elements also shrink from default 58px */
-    .rpm-avatar-wrapper,
-    .rpm-avatar-content {
-      width: 32px;
-      height: 32px;
-      font-style: 1ex;
-    }
-
-    .rpm-spinning-border {
-      inset: -3px;
-      border-width: 3px;
-    }
-
-    .rpm-value-overlay {
-      font-size: 0.8rem!important;
     }
   }
 }
@@ -1379,11 +1286,15 @@
 
     .fitness-devices {
       flex: 1 1 auto;
-      overflow: hidden; // Changed from overflow-y: visible
+      // Past the compact card size the roster scrolls (riderListDensity.js).
+      overflow-x: hidden;
+      overflow-y: auto;
       width: 100%;
       position: relative;
-      /* Align with treasure box horizontal margins */
-      padding: 0 1ex 1ex 1ex;
+      /* Align with treasure box horizontal margins. No bottom padding: the
+         camera panel below supplies the gap, and every pixel here decides
+         whether five riders get regular or compact cards. */
+      padding: 0 1ex;
     }
 
     .device-grid {
@@ -1391,6 +1302,11 @@
       flex-direction: column;
       gap: 10px;
       width: 100%;
+    }
+
+    // Densest card size: tighter spacing so a full garage (8) still fits.
+    .device-grid.density-compact {
+      gap: 4px;
     }
 
     /* Increase inter-card spacing slightly in vertical layout */
@@ -1416,7 +1332,7 @@
       font-size: 1.35rem;
     }
     .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.7rem;
+      font-size: 0.95rem;
     }
 
     /* Moderate enlargement for exactly 4 HR users (keep width constant) */
@@ -1440,7 +1356,7 @@
       font-size: 1.18rem;
     }
     .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.62rem;
+      font-size: 0.9rem;
     }
 
     .fitness-device.card-horizontal {
@@ -1475,8 +1391,8 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.45);
     }
 
-    /* Compact variant applied when 5+ users are present so the full roster
-       fits the viewport without scrolling. Shrinks padding, gap, and avatar. */
+    /* Compact variant: the densest card size, used only when the larger ones
+       overflow the list (riderListDensity.js). */
     .fitness-device.card-compact {
       &.card-horizontal {
         gap: 8px;
@@ -1497,7 +1413,7 @@
           object-fit: cover;
           border-radius: inherit;
         }
-        .device-info .device-name { font-size: 0.85rem; }
+        .device-info .device-name { font-size: 0.875rem; }
         .device-info .device-stats .device-value { font-size: 0.95rem; }
       }
       &.card-vertical {
@@ -1609,7 +1525,7 @@
         
         .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
         
-        .device-unit { font-size: 0.55rem; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing:.5px; }
+        .device-unit { font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
       }
     }
 
@@ -1619,7 +1535,7 @@
       align-items: center;
       justify-content: center;
       min-height: 150px;
-      opacity: 0.5;
+      opacity: 0.8;
       padding: 2rem 1rem;
 
       .empty-icon {
@@ -2268,16 +2184,6 @@
     }
   }
 
-  .sidebar-menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
   .fitness-sidebar-menu {
     position: absolute;
     top: 0;
@@ -2574,6 +2480,13 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.75rem;
+          }
+
+          // End Session / Ignore This Strap: destructive, so they read as such.
+          &.danger {
+            color: #ff8787;
+            background: rgba(255, 107, 107, 0.1);
+            border-color: rgba(255, 107, 107, 0.45);
           }
 
           padding: 0.75rem 1rem;
@@ -3182,7 +3095,6 @@
   border-radius: 4px;
   overflow: hidden;
   box-sizing: border-box;
-  --panel-percent: 10%;
   
   .media-video-section {
     /* Take the remaining width next to the fixed-width button panel */
@@ -3208,9 +3120,10 @@
   }
   
   .media-button-panel {
-    /* Exact percentage width; no min-width so 10% is honored precisely */
+    // Wide enough to hit from the bike (was 10% = ~24px). A row under the
+    // camera would take its height from the rider list instead.
     flex: 0 0 auto;
-    width: var(--panel-percent);
+    width: 52px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -4052,4 +3965,29 @@
 }
 .fitness-device.card-vertical .device-info .device-start-badge {
   align-self: center;
+}
+
+// Portalled to <body> by SidebarMenuScrim, so it lives outside the sidebar.
+// Above the fitness player's z-index 1000 wrapper; it stops at the sidebar's
+// left edge, so it never covers the menu inside that wrapper.
+.sidebar-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 100vw;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1001;
+}
+
+// Strap sticker colour, by the rider's name: identifies whose strap is whose.
+// The ring and heart carry the zone colour (FitnessUsers.jsx heartColorIcon).
+.fitness-device .device-name .strap-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  vertical-align: 0.12em;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
 }

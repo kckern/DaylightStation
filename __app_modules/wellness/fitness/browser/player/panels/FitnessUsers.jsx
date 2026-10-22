@@ -12,6 +12,7 @@ import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
+import { DENSITIES, densityClassName, pickDensity } from "./riderListDensity.js";
 import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
@@ -64,18 +65,9 @@ const CONFIG = {
     // Grid and spacing
     grid: { gap: 10 },
     margin: { safety: 8 },
-    // Auto scaling limits
-    scale: { min: 0.4, max: 1.0, safetyFactor: 0.98 },
-    // Horizontal density scaling rules
-    horizontalScaleRules: [
-      { exactUsers: 3, className: 'horiz-scale-150' },
-      { exactUsers: 4, className: 'horiz-scale-130' }
-      // Threshold examples supported: { maxUsers: 4, className: 'horiz-scale-130' }
-    ]
   },
   rpm: {
     animationBase: 270, // used to compute spin speed
-    scale: { min: 0.4, overflowFactor: 0.8 },
     colorMap: {
       red: '#ff6b6b',
       orange: '#ff922b',
@@ -89,7 +81,9 @@ const CONFIG = {
     luminanceThreshold: 0.6,
     fallbackTextDark: '#222',
     fallbackTextLight: '#fff',
-    zoneBadgeDefaultBg: '#555'
+    zoneBadgeDefaultBg: '#555',
+    // Heart before a rider has a zone: neutral, so it never reads as one.
+    heartNoZone: '#cbd5e1'
   },
   statusColors: {
     connected: '#51cf66',
@@ -371,20 +365,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
-  const [scale, setScale] = useState(1);
-  const [rpmScale, setRpmScale] = useState(1);
+  const [density, setDensity] = useState(DENSITIES[0]);
   const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
-  const hrCounts = React.useMemo(() => {
-    if (!allDevices) return { all: 0, active: 0, candidate: 0 };
-    const hrAll = allDevices.filter(d => d.type === 'heart_rate');
-    const hrActive = hrAll.filter(d => d.isActive);
-    const candidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
-    return { all: hrAll.length, active: hrActive.length, candidate };
-  }, [allDevices]);
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   React.useRef(null); // Hidden ref for measurement
-  const rpmGroupRef = React.useRef(null);
 
   // Build lookup maps for heart rate device colors and user assignments
   const hrColorMap = React.useMemo(() => {
@@ -457,7 +442,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (deviceId) => <HeartIcon color={hrColorMap[String(deviceId)]} deviceId={deviceId} />;
+  // The heart wears the rider's zone colour. Strap sticker colours share the
+  // zone hues (green, blue, yellow, red), so a strap-coloured heart read as a
+  // zone; the strap now gets its own dot by the name.
+  const heartColorIcon = (zoneColor) => <HeartIcon fill={zoneColor || CONFIG.color.heartNoZone} />;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -470,8 +458,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return `${hours}${UI_LABELS.TIME_HOURS_SUFFIX}`;
   };
 
-  const getDeviceIcon = (device) => {
-    if (device.type === 'heart_rate') return heartColorIcon(device.deviceId);
+  const getDeviceIcon = (device, zoneColor = null) => {
+    if (device.type === 'heart_rate') return heartColorIcon(zoneColor);
     return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
@@ -702,62 +690,46 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortedDevices, allDevices]);
 
-  // Auto-scale content to fit container
+  // Card size by fit (riderListDensity.js). Re-picked when anything that moves
+  // the list's height changes: the roster, the zone headers, the cards still in
+  // the DOM (a leaving card fades out in place) or the room itself.
+  const rosterKey = sortedDevices
+    .map((d) => (d.type === 'rpm-group' ? `rpm:${d.devices.length}` : `${d.type}:${d.deviceId ?? d.snapshot?.equipmentId ?? ''}`))
+    .join('|');
+  const [listResizes, setListResizes] = useState(0);
   useEffect(() => {
-    if (!containerRef.current || !contentRef.current) return;
-    
-    // Don't scale if showing empty state (no devices)
-    if (sortedDevices.length === 0) {
-      setScale(1);
-      return;
-    }
-    
-    const containerHeight = containerRef.current.clientHeight;
-    const naturalContentHeight = contentRef.current.scrollHeight;
-    
-    // Calculate ideal scale to fill container
-  const idealScale = containerHeight / naturalContentHeight;
-  const { min, max, safetyFactor } = CONFIG.layout.scale;
-  // Do not upscale above max so a single user matches multi-user sizing
-  const newScale = Math.max(min, Math.min(max, idealScale * safetyFactor));
-    
-    setScale(newScale);
-  }, [sortedDevices]); // Only recalculate when devices change, not on scale changes
-
-  // Auto-scale RPM group to fit width
-  useEffect(() => {
-    if (!rpmGroupRef.current || !containerRef.current) return;
-
-    const rpmContainer = rpmGroupRef.current;
-    const containerWidth = containerRef.current.clientWidth || 0;
-    const scrollWidth = rpmContainer.scrollWidth;
-
-    if (scrollWidth > containerWidth && containerWidth > 0) {
-      const idealRpmScale = containerWidth / scrollWidth;
-      const { min, overflowFactor } = CONFIG.rpm.scale;
-      setRpmScale(Math.max(min, idealRpmScale * overflowFactor));
-    } else {
-      setRpmScale(1);
-    }
-  }, [sortedDevices]);
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => setListResizes((n) => n + 1));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const densitySignatureRef = React.useRef('');
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content || layoutMode !== 'horiz') return;
+    // Runs every render (the list re-renders on each HR tick), so the
+    // signature uses only reads that don't force layout; the resize counter
+    // stands in for the room's height.
+    const headers = [...content.querySelectorAll('.device-zone-info')].map((el) => el.textContent).join(',');
+    const cardsInDom = content.querySelectorAll('.fitness-device').length;
+    const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}`;
+    if (signature === densitySignatureRef.current) return;
+    densitySignatureRef.current = signature;
+    const next = pickDensity(container, content);
+    if (next !== density) setDensity(next);
+  });
 
   return (
     <>
       <div className={`connection-indicator ${connected ? 'connected' : 'disconnected'}`}></div>
       
       <div className="fitness-devices" ref={containerRef}>
-        <div 
-          ref={contentRef}
-          style={{
-            transform: `scale(${scale})`,
-            transformOrigin: 'top center',
-            margin: '0 auto',
-            width: '100%'
-          }}
-        >
+        <div ref={contentRef} className="fitness-devices-content">
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'} ${layoutMode === 'horiz' ? (CONFIG.layout.horizontalScaleRules.find(r => (r.exactUsers && r.exactUsers === hrCounts.candidate) || (r.maxUsers && hrCounts.candidate <= r.maxUsers))?.className || '') : ''}`}
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : `layout-horiz ${densityClassName(density)}`}`}
             duration={CONFIG.animation.flipMove.duration}
             easing={CONFIG.animation.flipMove.easing}
             staggerDelayBy={CONFIG.animation.flipMove.staggerDelayBy}
@@ -771,19 +743,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
               return sortedDevices.map((device) => {
               if (device.type === 'rpm-group') {
                 const rpmDevices = device.devices;
-                const isMultiDevice = rpmDevices.length > 1;
-                
+
+                // One fixed circle size at every bike count; the grid wraps
+                // instead of shrinking (FitnessSidebar.scss .rpm-devices).
                 return (
-                  <div 
-                    key="rpm-group" 
-                    ref={rpmGroupRef}
-                    className={`rpm-group-container ${isMultiDevice ? 'multi-device' : 'single-device'}`}
-                    style={{
-                      transform: `scale(${rpmScale})`,
-                      transformOrigin: 'left center'
-                    }}
-                  >
-                    <div className={`rpm-devices devicecount_${rpmDevices.length}`}>
+                  <div key="rpm-group" className="rpm-group-container">
+                    <div className="rpm-devices">
                       {rpmDevices.map(rpmDevice => {
                         const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
                         const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
@@ -904,11 +869,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
               const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
                 ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
                 : profileId;
-              // §3: surface the physical sticker color as a saturated avatar ring.
-              // Configured color wins; unidentified cards (no user, no assignment)
-              // get a deterministic per-device hash color so simultaneous
-              // unknown straps are visually distinct.
-              const strapRingColor = isHeartRate
+              // §3: surface the physical sticker color as a dot by the name (the
+              // avatar ring and heart belong to the zone). Configured color wins;
+              // unidentified cards (no user, no assignment) get a deterministic
+              // per-device hash color so simultaneous unknown straps are distinct.
+              const strapDotColor = isHeartRate
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
@@ -1023,7 +988,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                           color: text,
                           border: `1px solid ${bg}`,
                           textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
+                          letterSpacing: '0.5px',
+                          // Mantine's xs badge is 9px; read from the bike.
+                          fontSize: '0.875rem',
+                          height: 'auto',
+                          padding: '2px 10px'
                         };
                         return (
                           <Badge 
@@ -1039,7 +1008,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                     )}
                   </div>
                   <div
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${hrCounts.candidate >= 5 ? 'card-compact' : ''}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${layoutMode === 'horiz' && density === 'compact' ? 'card-compact' : ''}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
@@ -1060,19 +1029,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                         />
                       </div>
                     )}
-                    <div
-                      className={`card-avatar ${zoneClass}`}
-                      // §3 ring uses outline, not box-shadow: every HR avatar
-                      // carries a zone-*/no-zone class whose box-shadow is
-                      // declared !important in FitnessSidebar.scss (it would
-                      // override any inline boxShadow). The ring is INSET
-                      // (negative offset) because card-horizontal has
-                      // padding: 0 + overflow: hidden — an outward ring gets
-                      // clipped to a partial arc at default density.
-                      style={strapRingColor
-                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '-3px' }
-                        : undefined}
-                    >
+                    <div className={`card-avatar ${zoneClass}`}>
                       {isHeartRate ? (
                         <img
                           src={DaylightMediaPath(`/static/img/users/${avatarImageId}`)}
@@ -1104,13 +1061,21 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                     </div>
                     <div className="device-info">
                       <div className="device-name">
-                        {deviceName} 
+                        {strapDotColor ? (
+                          <span
+                            className="strap-dot"
+                            style={{ background: strapDotColor }}
+                            title={strapLabel(hrColorMap[deviceIdStr]) || 'Strap'}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {deviceName}
                       </div>
                       {startBadge ? (
                         <GovernanceStartBadge statusBadge={startBadge} className="device-start-badge" />
                       ) : null}
                       <div className="device-stats">
-                        <span className="device-icon">{getDeviceIcon(device)}</span>
+                        <span className="device-icon">{getDeviceIcon(device, zoneBadgeColor)}</span>
                         <span className="device-value">{deviceValue}</span>
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>
@@ -1138,7 +1103,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 8,
-                fontSize: '12px',
+                fontSize: '1rem',
                 opacity: 0.95,
                 marginBottom: 6
               }}

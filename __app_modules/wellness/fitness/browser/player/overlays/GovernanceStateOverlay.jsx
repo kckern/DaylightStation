@@ -17,13 +17,16 @@ const ROW_GROW_ANIMATION_MS = 220;
 // the rider's heart rate — that number answers a question the rule isn't asking.
 // The rpm is the engine's 10s window of counted turns, so a single nudge of the
 // pedal doesn't flash a number the rule then ignores.
-const pedalInstruction = (pedal) => {
+// Split into the reading and the instruction, stacked on two lines on both the
+// lock row and the warning chip so neither truncates the instruction.
+const pedalParts = (pedal) => {
   const instruction = pedal?.orZoneLabel ? `Pedal or reach ${pedal.orZoneLabel}` : 'Start pedaling';
   const rpm = Number.isFinite(pedal?.rpm) ? Math.max(0, Math.round(pedal.rpm)) : null;
-  if (rpm == null) return instruction;
+  if (rpm == null) return { reading: null, instruction };
   const target = Number.isFinite(pedal?.targetRpm) ? ` / ${Math.round(pedal.targetRpm)}` : '';
-  return `${rpm}${target} RPM · ${instruction}`;
+  return { reading: `${rpm}${target} RPM`, instruction };
 };
+
 
 let _warningLogger;
 const warningLogger = () => {
@@ -119,6 +122,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const borderColor = item.currentZone?.color || item.zoneColor || null;
             const borderStyle = borderColor ? { borderColor } : undefined;
             const progressColor = item.currentZone?.color || item.zoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
+            const pedal = item.pedal ? pedalParts(item.pedal) : null;
             return (
               <div
                 className={`governance-progress-overlay__chip${item.status === 'holding' ? ' governance-progress-overlay__chip--holding' : ''}`}
@@ -143,11 +147,14 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                       {item.displayName || item.displayLabel || item.name}
                     </span>
                     <span className="governance-progress-overlay__chip-meta">
-                      {item.pedal
-                        ? pedalInstruction(item.pedal)
+                      {pedal
+                        ? (pedal.reading || pedal.instruction)
                         : (Number.isFinite(item.heartRate) ? item.heartRate : 'No HR data')}
                       {item.status === 'holding' ? ' · Holding' : null}
                     </span>
+                    {pedal?.reading ? (
+                      <span className="governance-progress-overlay__chip-hint">{pedal.instruction}</span>
+                    ) : null}
                     <GovernanceStartBadge statusBadge={{ status: item.status, zoneLabel: item.statusZoneLabel }} />
                   </div>
                 </div>
@@ -218,7 +225,12 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
   return null;
 }
 
-const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [], onUnlock = null }) {
+// A stable default: a fresh `[]` per render changed the `rows` memo every
+// render, and with two or more rows the sorted copy re-fired the row-animation
+// effect, which re-rendered, forever — a render loop on every multi-rider lock.
+const NO_LOCK_ROWS = [];
+
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = NO_LOCK_ROWS, onUnlock = null }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
   const requirements = useMemo(() => (
@@ -434,7 +446,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const clamped = Math.max(0, Math.min(1, rawProgress));
     const percentValue = Math.round(clamped * 100);
     const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
-    const showIndicator = widthPercent > 0;
     const progressClass = 'governance-lock__progress governance-lock__progress--inline';
     const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
     const currentColor = row.currentZone?.color || 'rgba(148, 163, 184, 0.6)';
@@ -475,16 +486,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
               />
             );
           })}
-          <div
-            className="governance-lock__progress-indicator"
-            style={{
-              left: `${widthPercent}%`,
-              opacity: showIndicator ? 1 : 0,
-              visibility: showIndicator ? 'visible' : 'hidden'
-            }}
-          >
-            {showIndicator ? <span>{percentValue}%</span> : null}
-          </div>
         </div>
       </div>
     );
@@ -492,7 +493,10 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 
   const renderChipMeta = (row) => {
     const base = (() => {
-      if (row.pedal) return pedalInstruction(row.pedal);
+      if (row.pedal) {
+        const { reading, instruction } = pedalParts(row.pedal);
+        return reading || instruction;
+      }
       const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
       const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
       if (currentHr != null) {
@@ -604,9 +608,12 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                     }}
                   />
                 </div>
-                <div className="governance-lock__chip-text governance-lock__chip-text--inline">
+                <div className="governance-lock__chip-text">
                   <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
+                  {row.pedal && pedalParts(row.pedal).reading ? (
+                    <span className="governance-lock__chip-hint">{pedalParts(row.pedal).instruction}</span>
+                  ) : null}
                   <GovernanceStartBadge statusBadge={{ status: row.status, zoneLabel: row.statusZoneLabel }} />
                 </div>
               </div>

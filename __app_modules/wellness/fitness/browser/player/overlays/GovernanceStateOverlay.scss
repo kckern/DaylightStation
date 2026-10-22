@@ -1,3 +1,5 @@
+@use '../../shared/styles/zones' as zones;
+
 .governance-overlay {
   --governance-overlay-gutter: clamp(4px, 0.9vw, 10px);
   --governance-overlay-avail-w: calc(100% - (var(--governance-overlay-gutter) * 2));
@@ -27,7 +29,10 @@
     height: auto;
     flex: 0 0 auto;
     max-width: none;
-    max-height: none;
+    // Never taller than the video frame: with every row stacking name,
+    // reading and instruction, a full garage outgrows it, and the overflow
+    // must scroll inside the table rather than clip the header and last row.
+    max-height: 100%;
     aspect-ratio: auto;
     background: rgba(17, 24, 39, 0.82);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -253,7 +258,8 @@
     // doesn't use instead of leaving dead space below it.
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    // safe: when rows overflow, start at the top so the first row stays reachable.
+    justify-content: safe center;
     flex: 1 1 auto;
     min-height: var(--governance-lock-table-min-h);
     overflow-y: auto;
@@ -440,30 +446,34 @@
     min-width: 0;
     position: relative;
     z-index: 1;
-
-    &--inline {
-      flex-direction: row;
-      align-items: baseline;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
   }
 
   &__chip-name {
     font-weight: 600;
-    font-size: clamp(0.84rem, 1.2vw, 0.98rem);
+    font-size: 1rem;
     color: #f8fafc;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  &__chip-meta {
-    font-size: clamp(0.68rem, 0.95vw, 0.76rem);
-    text-transform: none;
-    letter-spacing: 0.04em;
-    color: rgba(248, 250, 252, 0.75);
+  // Legibility floor: the lock panel is read from the bike, 2-3 m away.
+  &__chip-hint {
+    font-size: 0.875rem;
+    color: rgba(248, 250, 252, 0.65);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__chip-meta {
+    font-size: 0.875rem;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    color: rgba(248, 250, 252, 0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__pill {
@@ -560,25 +570,6 @@
     overflow: hidden;
   }
 
-  &__progress-indicator {
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 28px;
-    padding: 1px 5px;
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    font-size: 0.58rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: #f8fafc;
-    text-align: center;
-    pointer-events: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-    transition: left 0.5s ease-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
-  }
-
   &__zone-marker {
     position: absolute;
     top: 0;
@@ -633,18 +624,9 @@
       font-size: 0.95rem;
     }
 
-    .governance-lock__chip-meta {
-      font-size: 0.72rem;
-    }
 
     .governance-lock__progress-track {
       height: 8px;
-    }
-
-    .governance-lock__progress-indicator {
-      min-width: 28px;
-      padding: 1px 4px;
-      font-size: 0.58rem;
     }
 
     .governance-lock__progress--compact {
@@ -746,12 +728,16 @@
   }
 }
 
+// Heart-rate zones come from the shared palette (shared/styles/_zones.scss,
+// mirrored by shared/constants/fitness.js), so a lock row's pills match its
+// progress bar and the sidebar. This map used to say Warm = orange and
+// Hot = Fire = red.
 $lock-zone-hues: (
-  cool: #38bdf8,
-  active: #22c55e,
-  warm: #fb923c,
-  hot: #ef4444,
-  fire: #ef4444,
+  cool: zones.$zone-cool,
+  active: zones.$zone-active,
+  warm: zones.$zone-warm,
+  hot: zones.$zone-hot,
+  fire: zones.$zone-fire,
   cardio: #f97316,
   peak: #c084fc,
   "green": #22c55e,
@@ -818,10 +804,12 @@ $lock-zone-hues: (
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    max-width: min(560px, 100%);
+    // Three chips per row (3 x 224 + 2 x 10), so six riders form even rows.
+    // An explicit width: anchored at left 50%, a shrink-to-fit box only gets
+    // half the video's width and wrapped two to a row.
+    width: min(692px, calc(100% - 32px));
     justify-content: center;
-    align-items: center;
-    width: auto;
+    align-items: stretch;
   }
 
   &__chip {
@@ -834,8 +822,9 @@ $lock-zone-hues: (
     background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
-    min-width: 180px;
-    max-width: min(260px, 100%);
+    box-sizing: border-box;
+    width: 224px;
+    max-width: 100%;
   }
 
   &__chip-main {
@@ -864,7 +853,8 @@ $lock-zone-hues: (
     display: flex;
     flex-direction: column;
     gap: 2px;
-    line-height: 1.1;
+    line-height: 1.15;
+    min-width: 0;
 
     .governance-start-badge {
       align-self: flex-start;
@@ -876,19 +866,33 @@ $lock-zone-hues: (
     border-style: dashed;
   }
 
+  &__chip-name,
+  &__chip-meta,
+  &__chip-hint {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   &__chip-name {
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: #f8fafc;
   }
 
   &__chip-meta {
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
     color: rgba(248, 250, 252, 0.85);
   }
 
+  &__chip-hint {
+    font-size: 0.875rem;
+    color: rgba(248, 250, 252, 0.7);
+  }
+
   &__chip-progress {
+    margin-top: auto; // chips in a row stretch to one height; bar stays at the foot
     width: 100%;
     height: 4px;
     border-radius: 999px;

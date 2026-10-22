@@ -97,11 +97,10 @@ A guest arrives wanting to join the workout
     → They put the strap on. Within seconds a card appears:
       ├─ Strap is mapped to a household user → card shows THAT user's
       │   name/photo (wrong person!). Tap the card → pick the guest.
-      ├─ Strap is a color-allocated visitor slot → untagged placeholder card with the
-      │   matching heart emoji, a sticker-color avatar ring, and a
-      │   "Purple strap" label. Tap → tag it.
+      ├─ Strap is a color-allocated visitor slot → untagged placeholder card with a
+      │   sticker-color dot by a "Purple strap" label. Tap → tag it.
       └─ Strap is totally unknown → untagged placeholder card labeled #<deviceId>,
-          avatar ring in a deterministic hash color. Tap → tag it.
+          dot in a deterministic hash color. Tap → tag it.
 ```
 
 Step-by-step for the common borrow case:
@@ -203,7 +202,7 @@ deviceId → getDeviceAssignment(deviceId)
         → Avatar: /static/img/users/{profileId} (fallback to /user — untagged placeholder)
 ```
 
-Visual treatment for guests is **intentionally the same as owners** — same card layout (`.fitness-device.card-horizontal` / `.card-vertical`), same zone badge (`.device-zone-info`), same HR display. There is **no on-card "guest" badge**; the signals are the avatar (generic Guests show the `guest-adult`/`guest-kid` placeholder), the name (numbered "Guest N" for generics), and the strap-color ring that follows the device. The rest of the guest-specific UI lives inside the menu (the "Give back" restore option and the source badges in the picker).
+Visual treatment for guests is **intentionally the same as owners** — same card layout (`.fitness-device.card-horizontal` / `.card-vertical`), same zone badge (`.device-zone-info`), same HR display. There is **no on-card "guest" badge**; the signals are the avatar (generic Guests show the `guest-adult`/`guest-kid` placeholder), the name (numbered "Guest N" for generics), and the strap-color dot that follows the device. The rest of the guest-specific UI lives inside the menu (the "Give back" restore option and the source badges in the picker).
 
 ### Display name
 
@@ -244,13 +243,12 @@ Before loading, generic-Guest profileIds (prefix `guest_`) are swapped to a plac
 
 ### Color
 
-The physical-sticker mapping (`device_colors.heart_rate`) surfaces in three coordinated ways, all driven by the `strapColors.js` lib (single source of truth):
+The physical-sticker mapping (`device_colors.heart_rate`) surfaces in two coordinated ways, both driven by the `strapColors.js` lib (single source of truth):
 
-1. **Matching heart emoji** on the card — the full configured palette resolves (purple 💜, beige 🤎, teal 🩵, …). Previously only six colors mapped and the guest visitor slots all fell back to 🧡.
-2. **Saturated avatar ring** — a 3px *inset* outline around the avatar in the configured sticker color (inset because the horizontal card's `overflow: hidden` clips an outward ring). The ring follows the device, not the occupant — a guest wearing the "purple strap" keeps the purple ring whoever they are. Fully unidentified devices (no mapped user, no assignment) get a deterministic per-device **hash color** instead, so simultaneous unknown straps are visually distinct.
-3. **Color-name card label** — when nothing else resolves a name (DisplayNameResolver falls through to its device-ID fallback), a configured sticker color renders as "Purple strap" instead of `#10366`.
+1. **Strap dot** — a small dot in the configured sticker color before the name on the card (`.device-name .strap-dot`, titled "Purple strap"). The dot follows the device, not the occupant — a guest wearing the "purple strap" keeps the purple dot whoever they are. Fully unidentified devices (no mapped user, no assignment) get a deterministic per-device **hash color** instead, so simultaneous unknown straps are visually distinct.
+2. **Color-name card label** — when nothing else resolves a name (DisplayNameResolver falls through to its device-ID fallback), a configured sticker color renders as "Purple strap" instead of `#10366`.
 
-Guests have no static color of their own beyond the strap ring. Card/zone color remains **zone-driven** (live HR → zone → zone color), identical to household users. Design intent (2026-05-26 audit §3): sticker color must stay prominently visible so a human can match physical strap → on-screen card at a glance.
+Everything else on the card is **zone-driven** (live HR → zone → zone color), identical to household users: the avatar ring, the heart icon (neutral grey before a zone), the zone tag and the progress bar. Until 2026-10-22 the heart and an inset avatar ring wore the sticker color; sticker colors share the zone hues (green, blue, yellow, red), so a yellow-strap rider read as Warm whatever their zone. The sticker color moved to the dot so the ring and heart mean one thing.
 
 ### Menu (picker) UI
 
@@ -394,7 +392,7 @@ See [`assign-guest.md`](./assign-guest.md) § Continuous-Usage Threshold for the
 ## Considerations & Footguns
 
 - **Tag before strap-on when possible.** The threshold model forgives owner-then-guest handoffs under 5 minutes; it cannot forgive an untagged full workout. The picker's transfer note now tells you when a sub-threshold segment will move.
-- **Simultaneous Guests are numbered, not described.** "Guest" vs "Guest 2" plus the sticker-color avatar ring is usually enough to tell cards apart, but the numbers carry no meaning across sessions — if two strangers work out together regularly, prefer tagging them as named friends.
+- **Simultaneous Guests are numbered, not described.** "Guest" vs "Guest 2" plus the sticker-color dot is usually enough to tell cards apart, but the numbers carry no meaning across sessions — if two strangers work out together regularly, prefer tagging them as named friends.
 - **Kid guests need `guest_profiles` configured.** Without a `fitness.yml → guest_profiles.kid.zones` block, the kid Guest option doesn't appear and a kid on a borrowed adult strap inherits the owner's adult zone thresholds (wrong zones, inflated coins).
 - **A guest cannot block the video.** Guest and untagged-placeholder cards never enter `active: all` obligations or challenge failure thresholds. They can contribute toward challenge success and earn rings. Guest-only blocking challenges are skipped or cancelled without awarding a fabricated success.
 - **No guest badge on live sidebar cards.** Sidebar cards render guests identically to household members (intentional); the guest distinction surfaces in the session-detail timeline ("guest" marker) and in the saved data (`is_guest`, `guest_profile`).
