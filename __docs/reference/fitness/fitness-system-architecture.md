@@ -177,6 +177,34 @@ Season decisions emit structured `fitness.show.season_selected`,
 `fitness.show.season_explicit_restored` events with the source and destination
 season IDs so selection changes can be reconstructed from production logs.
 
+#### Who did an episode (per-rider history)
+
+The household watched state above is one shared mark: it can say an episode was
+done, not by whom. The session log can. `FitnessShow` asks
+`GET /api/fitness/sessions/episode-history?episodes=<ids>` once per show (all
+its episode ids, comma-separated) and gets, per episode, the sessions whose
+**primary** episode it was — newest first, each rider with `minutes` (sum of
+zone minutes), `rings` and `isGuest`. It reads the existing per-month session
+index (`QueryEpisodeHistory`); `isGuest` is in the index since `INDEX_VERSION` 7.
+
+**Credit rule** (`browser/lib/episodeHistory.js`): a rider did the episode when
+they rode at least **half** of it. A rider with no recorded zone minutes, or an
+episode with no duration, is credited — the session is the only evidence.
+
+- **Grid chip.** The green watched chip shows up to three overlapping avatars of
+  credited *household* riders (never guests), newest first, `+N` past three, in
+  place of the check mark, dated by the newest of them. With no credited
+  household rider — or if the history call fails — the chip is the plain
+  media-server one, unchanged. An in-progress episode keeps its % badge.
+- **Episode details.** Under the description, up to five credited sessions:
+  avatars, date, minutes (the longest credited rider), and rings when the row is
+  one rider. No history → nothing is shown.
+
+Only a session's primary episode counts, so a short episode played before the
+main one in the same session is not credited. Logs:
+`fitness.episode_history.query` (backend: requested, matched, scanned, totalMs),
+`fitness.show.episode_history_loaded` / `fitness.show.episode_history_failed`.
+
 ---
 
 ## Sequence Diagrams
@@ -1022,6 +1050,7 @@ All endpoints are under `GET/POST /api/fitness/...` (router: `__backend/src/4_ap
 | `POST` | `/api/fitness/kiosk_screenshot` | Store a whole-screen kiosk capture (garage keypad key 6) under `media/logs/fitness/screenshots/<date>/`; logs `fitness.kiosk_screenshot.saved` |
 | `GET` | `/api/fitness/sessions/dates` | List all dates with saved sessions |
 | `GET` | `/api/fitness/sessions` | Query sessions by date or date range |
+| `GET` | `/api/fitness/sessions/episode-history?episodes=` | Per-episode sessions and riders (minutes, rings, guest flag), newest first |
 | `GET` | `/api/fitness/sessions/:sessionId` | Session detail with decoded timeline |
 | `POST` | `/api/fitness/voice_memo` | Transcribe voice memo (Whisper → GPT-4o cleanup) |
 | `POST` | `/api/fitness/zone_led` | Sync ambient LED with current zone state |

@@ -286,6 +286,30 @@
             opacity: 0.85;
           }
 
+          // Who did this episode — a plain record under the description.
+          .episode-history {
+            list-style: none;
+            margin: 0.2rem 0 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+          }
+
+          .episode-history__row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            opacity: 0.75;
+          }
+
+          .episode-rider-avatar {
+            width: 20px;
+            height: 20px;
+            border: 1.5px solid rgba(15, 18, 24, 0.9);
+          }
+
           .episode-heading-row {
             display: flex;
             align-items: center;
@@ -1287,6 +1311,25 @@
       box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
       border-bottom-right-radius: 0;
       border-bottom-left-radius: 0;
+
+      // Same chip, with who did it in place of the check mark.
+      &.watched-date--riders {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding-left: 0.35ex;
+      }
+    }
+
+    .episode-rider-avatar {
+      width: 18px;
+      height: 18px;
+      border: 1.5px solid rgba(126, 214, 129, 0.95);
+    }
+
+    .episode-rider-overflow {
+      font-size: 0.65rem;
+      margin-left: 0.15rem;
     }
 
     &.progress-percent {
@@ -1396,4 +1439,20 @@
   }
 
   /* Season bar keeps fixed height on mobile as well */
+}
+// Shared by the grid chip and the detail history: overlapping round avatars.
+.episode-rider-stack {
+  display: inline-flex;
+  align-items: center;
+
+  .episode-rider-avatar {
+    border-radius: 50%;
+    object-fit: cover;
+    background: #1f2937;
+    flex: none;
+
+    & + .episode-rider-avatar {
+      margin-left: -5px;
+    }
+  }
 }

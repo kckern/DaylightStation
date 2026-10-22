@@ -159,6 +159,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
  * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
+ * @param {Object} [config.queryEpisodeHistory] - QueryEpisodeHistory use case (per-episode rider history)
  * @param {Object} [config.workoutCatalog] - Semantic workout catalog service
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
  * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
@@ -195,6 +196,7 @@ export function createFitnessRouter(config) {
     liveSessionAuthority = null,
     simulationService = null,
     querySessions = null,
+    queryEpisodeHistory = null,
     manageAccess = null,
     isScreenshotValidationError = (error) => error?.name === 'ScreenshotValidationError',
     emergencyOperations = null,
@@ -431,6 +433,18 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
     }
     return res.json(body);
+  }));
+
+  /**
+   * GET /api/fitness/sessions/episode-history?episodes=plex:1,plex:2
+   * Sessions that played each episode, newest first, with each rider's minutes,
+   * rings and guest flag. Episodes with no sessions are omitted.
+   */
+  router.get('/sessions/episode-history', asyncHandler(async (req, res) => {
+    if (!queryEpisodeHistory) return res.status(503).json({ error: 'episode history unavailable' });
+    const episodeIds = String(req.query.episodes || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (episodeIds.length === 0) return res.status(400).json({ error: 'episodes query param required' });
+    return res.json(await queryEpisodeHistory.execute({ episodeIds, household: req.query.household }));
   }));
 
   /**

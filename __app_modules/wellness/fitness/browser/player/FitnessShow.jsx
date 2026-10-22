@@ -12,10 +12,16 @@ import LockIcon from "./overlays/LockIcon.jsx";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { isGovernedContainer } from "../hooks/fitness/governedContent.js";
+import { gridBadge, detailRows } from "../lib/episodeHistory.js";
+import { RiderStack, EpisodeHistoryList } from "./EpisodeHistory.jsx";
 
-const formatWatchedDate = (dateString) => {
+// Accepts the media server's "YYYY-MM-DD hh:mm:ssa" string or a session's epoch ms.
+const formatWatchedDate = (dateInput) => {
   try {
-    const parsed = moment(dateString, 'YYYY-MM-DD hh:mm:ssa');
+    if (dateInput == null || dateInput === '') return '';
+    const parsed = typeof dateInput === 'number' || dateInput instanceof Date
+      ? moment(dateInput)
+      : moment(dateInput, 'YYYY-MM-DD hh:mm:ssa');
     const today = moment();
     const yesterday = moment().subtract(1, 'days');
     if (parsed.isSame(today, 'day')) return 'Today';
@@ -97,7 +103,7 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
 };
 
 // Episode Info Component - Rich layout for an episode with parent (season) context
-const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => {
+const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay, historyRows = null }) => {
   if (!episode) return null;
   const parentId = episode.parentId;
   // Try map first, then list
@@ -164,6 +170,7 @@ const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => 
             {durationText && <span className="duration-badge">{durationText}</span>}
           </div>
           {epDescription && <div className="episode-description"><p>{epDescription}</p></div>}
+          <EpisodeHistoryList rows={historyRows} formatDate={formatWatchedDate} />
         </div>
       </div>
       <div className="episode-actions center">
@@ -236,6 +243,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
+  // Bumped with every show refresh (an episode just ended) so the per-rider
+  // history refetches too — the episode ids alone don't change.
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
 
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
@@ -406,8 +416,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (typeof window === 'undefined') return undefined;
     const handleRefresh = (event) => {
       const targetId = event?.detail?.showId || event?.detail?.id || null;
-      if (targetId && String(targetId) !== String(showId)) return;
+      if (targetId && String(targetId).replace(/^[a-z]+:/i, '') !== String(showId)) return;
       fetchShowData();
+      setHistoryRefresh((n) => n + 1);
     };
     window.addEventListener('fitness-show-refresh', handleRefresh);
     return () => window.removeEventListener('fitness-show-refresh', handleRefresh);
@@ -1101,6 +1112,33 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     }
   }, [items, seasons, activeSeasonId, selectedEpisode]);
 
+  // Per-rider history for this show's episodes, from the session log. The
+  // media server's watched date stays the fallback when this is empty or fails.
+  const [episodeHistory, setEpisodeHistory] = useState({});
+  const historyEpisodeIds = useMemo(() => {
+    const ids = (showData?.items || []).map((ep) => ep?.id || ep?.plex).filter(Boolean);
+    return [...new Set(ids.map(String))].join(',');
+  }, [showData]);
+  useEffect(() => {
+    if (!historyEpisodeIds) { setEpisodeHistory({}); return undefined; }
+    let cancelled = false;
+    const log = getLogger().child({ component: 'FitnessShow' });
+    DaylightAPI(`/api/v1/fitness/sessions/episode-history?episodes=${encodeURIComponent(historyEpisodeIds)}`)
+      .then((response) => {
+        if (cancelled) return;
+        const episodes = response?.episodes && typeof response.episodes === 'object' ? response.episodes : {};
+        setEpisodeHistory(episodes);
+        log.debug('fitness.show.episode_history_loaded', { showId: showIdRef.current, episodes: Object.keys(episodes).length, refresh: historyRefresh });
+      })
+      .catch((err) => {
+        if (!cancelled) log.warn('fitness.show.episode_history_failed', { showId: showIdRef.current, error: err?.message });
+      });
+    return () => { cancelled = true; };
+    // Keyed on the loaded show's ids (not showId, which changes before its data
+    // arrives and would scan once with the previous show's ids) and on refreshes.
+  }, [historyEpisodeIds, historyRefresh]);
+  const historyFor = useCallback((episode) => episodeHistory[episode?.id] || episodeHistory[`plex:${episode?.plex}`] || null, [episodeHistory]);
+
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
       ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
@@ -1212,6 +1250,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               parentsMap={parentsMap}
               parentsList={seasons}
               onPlay={handlePlayEpisode}
+              historyRows={detailRows(historyFor(selectedInfo), selectedInfo?.duration)}
             />
           )}
           {!selectedInfo && info && (
@@ -1332,6 +1371,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                             ? episode.itemIndex
                             : null;
                           const isLocked = lockedEpisodeIds.has(episode.plex || episode.id);
+                          const riderBadge = showProgressBar ? null : gridBadge(historyFor(episode), episode.duration);
 
                           return (
                           <div
@@ -1364,7 +1404,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                                   <div className="badge duration">
                                     {episode.duration && formatDurationBadge(episode.duration)}
                                   </div>
-                                  {isWatched && watchedDate && (
+                                  {riderBadge ? (
+                                    <div className="badge watched-date watched-date--riders" data-testid="episode-rider-badge">
+                                      <RiderStack riders={riderBadge.riders} overflow={riderBadge.overflow} />
+                                      {formatWatchedDate(riderBadge.latestStartTime)}
+                                    </div>
+                                  ) : isWatched && watchedDate && (
                                     <div className="badge watched-date">
                                      ✔️ {formatWatchedDate(watchedDate)}
                                     </div>

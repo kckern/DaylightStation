@@ -41,7 +41,8 @@ const INDEX_DIR_NAME = '_index';
 //     so every cached list summary's title had to be re-derived.
 // v5: media.primary carries the episode's description (Health's exercise rows).
 // v6: each participant carries hrAvg (Health credits home sessions from it).
-const INDEX_VERSION = 6;
+// v7: each participant carries isGuest (the show screen's per-rider episode badge).
+const INDEX_VERSION = 7;
 
 /**
  * Derive session date from sessionId
@@ -440,6 +441,8 @@ export class YamlSessionDatastore extends ISessionDatastore {
           // Average heart rate over the session — what the Health budget needs
           // to credit a workout Strava has not caught up with yet.
           hrAvg: Number.isFinite(Number(p?.hr_avg)) && Number(p.hr_avg) > 0 ? Number(p.hr_avg) : null,
+          // Guests ride but never earn the household's per-episode badge.
+          isGuest: info?.is_guest === true,
         };
       }
 

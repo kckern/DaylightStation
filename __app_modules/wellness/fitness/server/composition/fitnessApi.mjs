@@ -44,6 +44,7 @@ import { GenerateSessionTimelapse } from "../application/usecases/GenerateSessio
 import { LogStrengthRun } from "../application/usecases/LogStrengthRun.mjs";
 import { PrepareWorkoutRun } from "../application/usecases/PrepareWorkoutRun.mjs";
 import { QuerySessions } from "../application/usecases/QuerySessions.mjs";
+import { QueryEpisodeHistory } from "../application/usecases/QueryEpisodeHistory.mjs";
 import { WorkoutCatalogService } from "../application/services/WorkoutCatalogService.mjs";
 import { FitnessContentService } from "../application/services/FitnessContentService.mjs";
 import { FitnessUserHydrator } from "../application/services/FitnessUserHydrator.mjs";
@@ -262,6 +263,10 @@ export function createFitnessApiRouter(config) {
     sessionGroupingService: fitnessServices.sessionGroupingService,
     logger
   });
+  const queryEpisodeHistory = new QueryEpisodeHistory({
+    sessionService: fitnessServices.sessionService,
+    logger
+  });
   const manageAccess = new ManageAccess({
     userService,
     fitnessConfigService,
@@ -417,6 +422,7 @@ export function createFitnessApiRouter(config) {
     liveSessionAuthority,
     simulationService,
     querySessions,
+    queryEpisodeHistory,
     manageAccess,
     isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
     fitnessHardwareService,
