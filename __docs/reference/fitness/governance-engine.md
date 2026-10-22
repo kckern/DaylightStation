@@ -1091,8 +1091,9 @@ controller's packets in `GovernanceEngine.cadenceFloorEitherOr.test.js`.
 The summary carries `status` (`pedaling` | `active` | `idle` | `suspended`),
 `currentRate` (the window RPM), `orZone` and `orZoneLabel`. The display turns a
 missing rider into a row with `pedal` set; the warning chip and lock row then
-read **"Pedal or reach Active"** (or **"Start pedaling"** with no `or_zone`)
-instead of a heart rate, and the row's target pill is the `or_zone`. It disarms the moment
+read the rider's window RPM against the floor and the instruction —
+**"0 / 30 RPM · Pedal or reach Active"** (or **"… · Start pedaling"** with no
+`or_zone`) — instead of a heart rate, and the row's target pill is the `or_zone`. It disarms the moment
 the rider is unassigned, their strap drops, or a new rider takes over — a clean
 dismount can never lock the room, and evidence never transfers between riders.
 
