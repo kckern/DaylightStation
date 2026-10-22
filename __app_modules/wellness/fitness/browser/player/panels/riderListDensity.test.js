@@ -12,6 +12,7 @@ function list({ room, heights }) {
   grid.appendChild(card);
   content.appendChild(grid);
   container.appendChild(content);
+  document.body.appendChild(container); // computed style needs a connected node
   Object.defineProperty(container, 'clientHeight', { get: () => room });
   Object.defineProperty(content, 'scrollHeight', {
     get: () => heights[DENSITIES.find((d) => densityClassName(d) && grid.classList.contains(densityClassName(d))) || 'regular'],
@@ -39,6 +40,14 @@ describe('rider list density', () => {
     pickDensity(l.container, l.content);
     expect(l.grid.className).toBe('device-grid layout-horiz horiz-scale-130');
     expect(l.card.classList.contains('card-compact')).toBe(false);
+  });
+
+  it('measures the room inside the list\'s padding', () => {
+    const l = list({ room: 535, heights });
+    l.container.style.paddingTop = '0px';
+    l.container.style.paddingBottom = '9px';
+    // 535 - 9 = 526 of room: regular (530) no longer fits, so compact.
+    expect(pickDensity(l.container, l.content)).toBe('compact');
   });
 
   it('maps each density to the card-size class the sidebar styles', () => {

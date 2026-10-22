@@ -11,6 +11,10 @@ export default function SidebarMenuScrim({ anchorRef, onClose }) {
   const left = anchorRef?.current?.getBoundingClientRect?.().left;
   const style = Number.isFinite(left) && left > 0 ? { width: `${Math.round(left)}px` } : undefined;
   const close = (event) => {
+    // The player toggles fullscreen on mousedown as well as pointerdown. Once
+    // this scrim unmounts, the browser's follow-on mousedown for the same press
+    // would land on the video; cancelling pointerdown suppresses it.
+    event.preventDefault();
     event.stopPropagation();
     onClose?.();
   };

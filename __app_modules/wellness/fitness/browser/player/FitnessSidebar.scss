@@ -1291,8 +1291,10 @@
       overflow-y: auto;
       width: 100%;
       position: relative;
-      /* Align with treasure box horizontal margins */
-      padding: 0 1ex 1ex 1ex;
+      /* Align with treasure box horizontal margins. No bottom padding: the
+         camera panel below supplies the gap, and every pixel here decides
+         whether five riders get regular or compact cards. */
+      padding: 0 1ex;
     }
 
     .device-grid {

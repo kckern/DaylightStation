@@ -29,7 +29,10 @@
     height: auto;
     flex: 0 0 auto;
     max-width: none;
-    max-height: none;
+    // Never taller than the video frame: with every row stacking name,
+    // reading and instruction, a full garage outgrows it, and the overflow
+    // must scroll inside the table rather than clip the header and last row.
+    max-height: 100%;
     aspect-ratio: auto;
     background: rgba(17, 24, 39, 0.82);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -255,7 +258,8 @@
     // doesn't use instead of leaving dead space below it.
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    // safe: when rows overflow, start at the top so the first row stays reachable.
+    justify-content: safe center;
     flex: 1 1 auto;
     min-height: var(--governance-lock-table-min-h);
     overflow-y: auto;

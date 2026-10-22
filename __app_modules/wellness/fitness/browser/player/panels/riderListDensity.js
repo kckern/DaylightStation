@@ -27,7 +27,13 @@ export function pickDensity(container, content) {
   const originalClass = grid.className;
   const originalCompact = cards.map((card) => card.classList.contains('card-compact'));
   const baseClasses = originalClass.split(/\s+/).filter((c) => c && !DENSITY_CLASSES.includes(c));
-  const room = container.clientHeight + 1;
+  // clientHeight includes the list's padding; the content only gets what is
+  // inside it. Accepting a size that overflows by the padding would show a
+  // scrollbar, which also narrows the RPM row below four circles.
+  const pad = typeof getComputedStyle === 'function' ? getComputedStyle(container) : null;
+  const room = container.clientHeight
+    - (parseFloat(pad?.paddingTop) || 0)
+    - (parseFloat(pad?.paddingBottom) || 0);
   let chosen = DENSITIES[DENSITIES.length - 1];
   try {
     for (const density of DENSITIES) {

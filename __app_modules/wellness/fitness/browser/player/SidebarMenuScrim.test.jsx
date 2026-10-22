@@ -27,4 +27,13 @@ describe('SidebarMenuScrim', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(outer).not.toHaveBeenCalled();
   });
+
+  it('cancels the pointer down so no follow-on mousedown reaches the video', () => {
+    render(<SidebarMenuScrim anchorRef={anchorAt(1131)} onClose={() => {}} />);
+    // fireEvent returns false when a handler called preventDefault(); cancelling
+    // pointerdown suppresses the compatibility mousedown that would otherwise
+    // land on the video after the scrim unmounts and toggle fullscreen.
+    const notCancelled = fireEvent.pointerDown(document.body.querySelector('.sidebar-menu-overlay'));
+    expect(notCancelled).toBe(false);
+  });
 });

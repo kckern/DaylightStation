@@ -696,7 +696,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
   const rosterKey = sortedDevices
     .map((d) => (d.type === 'rpm-group' ? `rpm:${d.devices.length}` : `${d.type}:${d.deviceId ?? d.snapshot?.equipmentId ?? ''}`))
     .join('|');
-  const [, setListResizes] = useState(0);
+  const [listResizes, setListResizes] = useState(0);
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
@@ -709,9 +709,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     const container = containerRef.current;
     const content = contentRef.current;
     if (!container || !content || layoutMode !== 'horiz') return;
+    // Runs every render (the list re-renders on each HR tick), so the
+    // signature uses only reads that don't force layout; the resize counter
+    // stands in for the room's height.
     const headers = [...content.querySelectorAll('.device-zone-info')].map((el) => el.textContent).join(',');
     const cardsInDom = content.querySelectorAll('.fitness-device').length;
-    const signature = `${rosterKey}#${headers}#${cardsInDom}#${container.clientHeight}`;
+    const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}`;
     if (signature === densitySignatureRef.current) return;
     densitySignatureRef.current = signature;
     const next = pickDensity(container, content);
