@@ -143,6 +143,13 @@ describe('rendering the word table', () => {
     expect(chip('책').textContent).toBe('Introduced');
   });
 
+  it('shows the due day as a date a person reads, not the stored ISO day', async () => {
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    expect(within(row).getByText('Sunday, Sep 20')).toBeTruthy();
+    expect(within(row).queryByText('2026-09-20')).toBeNull();
+  });
+
   it('an excluded word shows Include, not Exclude', async () => {
     mount();
     await screen.findByText('배');
@@ -161,11 +168,33 @@ describe('rendering the word table', () => {
 });
 
 describe('Reset', () => {
-  it('calls the write with learnerId, deckId and wordId', async () => {
+  // Reset throws away the word's whole ladder history, so it arms first: one
+  // tap offers "Confirm reset" and Cancel, and only the confirm writes.
+  it('one tap arms the reset and writes nothing', async () => {
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    expect(within(row).getByRole('button', { name: 'Confirm reset 사과' })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Cancel reset 사과' })).toBeTruthy();
+    expect(cardLadderAdminApi.reset).not.toHaveBeenCalled();
+  });
+
+  it('Cancel disarms without writing', async () => {
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Cancel reset 사과' }));
+    expect(within(row).getByRole('button', { name: 'Reset 사과' })).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: 'Confirm reset 사과' })).toBeNull();
+    expect(cardLadderAdminApi.reset).not.toHaveBeenCalled();
+  });
+
+  it('the confirm tap calls the write with learnerId, deckId and wordId', async () => {
     cardLadderAdminApi.reset.mockResolvedValue(ok({ learnerId: 'learner_a', package: 'korean-vocab', wordId: 'word_1', word: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reset 사과' }));
     await waitFor(() => expect(cardLadderAdminApi.reset).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_1' }),
     ));
@@ -198,6 +227,7 @@ describe('Mark mastered', () => {
     // picker must follow the fresh server value, not the value it was
     // seeded with on first mount.
     fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reset 사과' }));
     await waitFor(() => expect(cardLadderAdminApi.words).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(within(row).getByLabelText('Mastered stage for 사과').value).toBe('5'));
   });
@@ -298,18 +328,27 @@ describe('Deck pool', () => {
     cardLadderAdminApi.dropDeck.mockResolvedValue(ok({ learnerId: 'learner_a', decksSeen: ['language/korean/week-01-classroom'] }));
     mount();
     await screen.findByText('사과');
-    const currentRow = screen.getByText('language/korean/week-01-classroom').closest('li');
-    const droppableRow = screen.getByText('language/korean/week-02-food').closest('li');
+    const pool = screen.getByRole('heading', { name: 'New-word pool' }).parentElement;
+    const currentRow = within(pool).getByText('Week 1 · Classroom').closest('li');
+    const droppableRow = within(pool).getByText('Week 02 Food').closest('li');
     expect(within(currentRow).queryByRole('button', { name: /^Drop /})).toBeNull();
     expect(within(currentRow).getByText(/current/i)).toBeTruthy();
-    expect(within(droppableRow).getByRole('button', { name: 'Drop language/korean/week-02-food from pool' })).toBeTruthy();
+    expect(within(droppableRow).getByRole('button', { name: 'Drop Week 02 Food from pool' })).toBeTruthy();
+  });
+
+  it('names pool decks by title, never by deck id', async () => {
+    mount({ deckTitles: { 'language/korean/week-02-food': 'Week 2 · Food' } });
+    await screen.findByText('사과');
+    const pool = screen.getByRole('heading', { name: 'New-word pool' }).parentElement;
+    expect(within(pool).getByText('Week 2 · Food')).toBeTruthy();
+    expect(within(pool).queryByText(/language\/korean/)).toBeNull();
   });
 
   it('drops a droppable deck from the pool', async () => {
     cardLadderAdminApi.dropDeck.mockResolvedValue(ok({ learnerId: 'learner_a', decksSeen: ['language/korean/week-01-classroom'] }));
     mount();
     await screen.findByText('사과');
-    fireEvent.click(screen.getByRole('button', { name: 'Drop language/korean/week-02-food from pool' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Week 02 Food from pool' }));
     await waitFor(() => expect(cardLadderAdminApi.dropDeck).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', dropDeckId: 'language/korean/week-02-food' }),
     ));
@@ -331,9 +370,9 @@ describe('Tuning', () => {
   it('lists the history with Undo only on an undoable applied change', async () => {
     mount();
     const section = await screen.findByRole('region', { name: 'Tuning' });
-    expect(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' })).toBeTruthy();
+    expect(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on Monday, Sep 21' })).toBeTruthy();
     expect(within(section).queryByRole('button', { name: /Undo review\.gapScale/ })).toBeNull();
-    expect(within(section).getByText(/undone 2026-09-16 by Grown-up One/)).toBeTruthy();
+    expect(within(section).getByText(/undone Wednesday, Sep 16 by Grown-up One/)).toBeTruthy();
     // The teacher's display name, never the raw id; an unknown id reads as "a grown-up".
     expect(within(section).getByText(/grown-up undo by Grown-up One/)).toBeTruthy();
     expect(within(section).getByText(/grown-up undo by a grown-up/)).toBeTruthy();
@@ -345,7 +384,7 @@ describe('Tuning', () => {
     cardLadderAdminApi.undoTuning.mockResolvedValue(ok({ setting: 'batch.newPerDay', to: 4 }));
     mount();
     const section = await screen.findByRole('region', { name: 'Tuning' });
-    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' }));
+    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on Monday, Sep 21' }));
     await waitFor(() => expect(cardLadderAdminApi.undoTuning).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', setting: 'batch.newPerDay', pin: null }),
     ));
@@ -356,7 +395,7 @@ describe('Tuning', () => {
     cardLadderAdminApi.undoTuning.mockResolvedValue(fail('That setting has changed since.'));
     mount();
     const section = await screen.findByRole('region', { name: 'Tuning' });
-    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on 2026-09-21' }));
+    fireEvent.click(await within(section).findByRole('button', { name: 'Undo batch.newPerDay 4 → 3 on Monday, Sep 21' }));
     expect(await within(section).findByText('That setting has changed since.')).toBeTruthy();
   });
 

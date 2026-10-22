@@ -96,6 +96,28 @@ describe('EVENT_TYPES', () => {
   });
 });
 
+describe('the pass bar on outcome_recorded (Task 16)', () => {
+  it('fills gradedPassingPercent when the graded event stamped none', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      outcome_recorded: { passingPercent: 40 },
+    }));
+    expect(state.errors).toEqual([]);
+    expect(state.gradedPassingPercent).toBe(40);
+  });
+
+  it('never overwrites the bar the graded event stamped', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { passingPercent: 70 }, outcome_recorded: { passingPercent: 40 },
+    }));
+    expect(state.gradedPassingPercent).toBe(70);
+  });
+
+  it('refuses a bar outside 1-100', () => {
+    const { errors } = createEvent({ type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: 'out:x', result: 'passed', passingPercent: 0 });
+    expect(errors.join(' ')).toMatch(/passingPercent/);
+  });
+});
+
 describe('append-only teacher grade corrections', () => {
   it('records a retained result receipt without advancing the learning state', () => {
     const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'result_receipt_captured'], {

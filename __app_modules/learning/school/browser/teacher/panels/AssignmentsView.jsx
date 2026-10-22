@@ -14,7 +14,7 @@ import { useTeacherWrite } from "../useTeacherWrite.js";
 import { useTeacherProfile } from "../TeacherProfileContext.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { labelize } from "../labelize.js";
-import { teacherSectionPath } from "../teacherUrl.js";
+import { teacherLearnerPath, teacherSectionPath } from "../teacherUrl.js";
 import { idsOf, mergeEntries } from "./assignmentEntries.js";
 import {
   chooseReadingProgram,
@@ -23,9 +23,14 @@ import {
   readingEnrollments,
 } from "../../readingPrograms.js";
 
-export default function AssignmentsView({ learnerId, learnerName }) {
+/**
+ * `refreshKey` / `onSaved` couple this panel to a sibling that writes the same
+ * record — the Courses tab's enrollment grid — so the two never disagree on
+ * one screen: a change there re-reads here, a save here is reported there.
+ */
+export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0, onSaved }) {
   const record = usePanelFetch(() => schoolApi.assignments(learnerId), {
-    deps: [learnerId],
+    deps: [learnerId, refreshKey],
     panel: 'assignments',
     notFoundAs: 'empty',
     isEmpty: (d) => !(d?.courses ?? []).length && !(d?.units ?? []).length && !(d?.programs ?? []).length,
@@ -84,7 +89,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
     // Concurrent-edit guard (B14): what we LOADED; a stale save is refused
     // with a friendly reload message instead of silently clobbering.
     baseUpdatedAt: record.data?.updatedAt ?? null,
-  }), { onSuccess: () => { setEditing(false); record.retry(); } });
+  }), { onSuccess: () => { setEditing(false); record.retry(); onSaved?.(); } });
 
   return (
     <PanelFrame title="Assignments" state={record.state} retry={record.retry} alwaysRender>
@@ -97,7 +102,11 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               {(record.data.courses ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Courses</h3>
-                  <ul>{idsOf(record.data.courses, 'courseId').map((c) => <li key={c}>{titles.course(c)}</li>)}</ul>
+                  {/* Each course opens its own progress page ("X of Y lessons
+                      complete"), which nothing linked to before. */}
+                  <ul>{idsOf(record.data.courses, 'courseId').map((c) => (
+                    <li key={c}><a href={teacherLearnerPath(learnerId, 'courses', c)}>{titles.course(c)}</a></li>
+                  ))}</ul>
                 </div>
               )}
               {(record.data.units ?? []).length > 0 && (

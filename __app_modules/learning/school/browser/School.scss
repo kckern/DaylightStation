@@ -259,8 +259,7 @@
   &__cheer { font-size: 1.15rem; font-weight: 800; margin: 0; }
   &__passbar { margin: 0; font-weight: 700; }
   &__skipped, &__flag { color: var(--school-muted); margin: 0; }
-  &__retake { color: var(--school-accent); font-weight: 700; margin: 0; }
-  &__retake-btn, &__flag-btn {
+  &__flag-btn {
     min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 10px;
     background: var(--school-surface); color: var(--school-fg); font-weight: 700; cursor: pointer;
   }

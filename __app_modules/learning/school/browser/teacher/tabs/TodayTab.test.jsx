@@ -30,6 +30,8 @@ vi.mock("../../schoolApi.js", () => ({
     printApprove: vi.fn(),
     printDeny: vi.fn(),
     quizRequestDismiss: vi.fn(),
+    // The queue names each review row's lesson from the catalog.
+    curriculumUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
   },
 }));
 const { schoolApi } = await import("../../schoolApi.js");
@@ -51,8 +53,11 @@ const mount = (ui) => render(
 
 beforeEach(() => {
   sessionStorage.clear();
+  // The open roster card lives in the URL (`?open=`); a test that opened one
+  // must not start the next with that learner already open.
+  window.history.replaceState({}, '', window.location.pathname);
   vi.clearAllMocks();
-  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }));
+  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }));
   schoolApi.resolveReview.mockResolvedValue(ok({ verdict: 'correct' }));
   schoolApi.printApprove.mockResolvedValue(ok({ decision: 'printed' }));
   schoolApi.printDeny.mockResolvedValue(ok({ decision: 'denied' }));
@@ -130,6 +135,17 @@ describe('TodayTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
     const link = await screen.findByRole('link', { name: /Open the full day record/ });
     expect(link.getAttribute('href')).toContain('2026-08-26');
+  });
+
+  it('keeps the open learner in the URL, and reopens it from the URL', async () => {
+    window.history.replaceState({}, '', '/school/teacher/dashboard');
+    const first = mount(<TodayTab kids={KIDS} />);
+    const card = await screen.findByRole('button', { name: /User_4/ });
+    act(() => fireEvent.click(card));
+    expect(new URLSearchParams(window.location.search).get('open')).toBe('user_4');
+    first.unmount();
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ }).getAttribute('aria-expanded')).toBe('true'));
   });
 
   // Both used to sit absolutely positioned in the same corner of the row,
@@ -401,26 +417,34 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/lifecycle is not enabled/i)).toBe(null);
   });
 
+  // The strip draws the shell's `useBacklog` counts (one count for badge and
+  // dashboard); it no longer reads the queue endpoints itself.
+  const BACKLOG = (over = {}) => ({ review: 0, prints: 0, quizzes: 0, total: 0, failed: false, refresh: vi.fn(), ...over });
+
   it('hides the backlog strip when there is no backlog', async () => {
-    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [] }));
-    schoolApi.printPending.mockResolvedValue(ok([]));
-    schoolApi.quizRequests.mockResolvedValue(ok([]));
-    schoolApi.teacherDay.mockResolvedValue(ok({ learners: [] }));
-    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} />);
-    // Gate on the three backlog reads having SETTLED — asserting absence on
-    // the first paint would pass vacuously, before the strip could exist.
-    await waitFor(() => expect(schoolApi.quizRequests).toHaveBeenCalled());
-    await act(async () => { await Promise.resolve(); });
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG()} />);
+    // Gate on the page having rendered — asserting absence on the first
+    // paint would pass vacuously, before the strip could exist.
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
     expect(screen.queryByTestId('backlog-strip')).not.toBeInTheDocument();
   });
 
   it('shows the backlog strip as soon as anything is waiting', async () => {
-    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{ id: 'r1' }] }));
-    schoolApi.printPending.mockResolvedValue(ok([]));
-    schoolApi.quizRequests.mockResolvedValue(ok([]));
-    schoolApi.teacherDay.mockResolvedValue(ok({ learners: [] }));
-    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} />);
-    await waitFor(() => expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review'));
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ review: 1, total: 1 })} />);
+    expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review · 0 prints · 0 requests →');
+  });
+
+  it('leaves a feature this install lacks out of the strip', async () => {
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ prints: 1, quizzes: null, total: 1 })} />);
+    expect(screen.getByTestId('backlog-strip')).toHaveTextContent('0 to review · 1 print →');
+    expect(screen.getByTestId('backlog-strip')).not.toHaveTextContent(/request/);
+  });
+
+  it('the strip reads no backlog endpoints of its own', async () => {
+    mount(<TodayTab kids={KIDS} onOpenQueue={vi.fn()} backlog={BACKLOG({ review: 2, total: 2 })} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_4/ })).toBeTruthy());
+    expect(schoolApi.printPending).not.toHaveBeenCalled();
+    expect(schoolApi.quizRequests).not.toHaveBeenCalled();
   });
 
   it('pending prints and quiz requests render their rows (queue)', async () => {
@@ -441,7 +465,7 @@ describe('TodayTab', () => {
       expect(screen.queryByTestId('grownup-strip')).not.toBeInTheDocument();
     });
 
-    it('counts a fault and an actionable excuse across BOTH learners, and links to the first', async () => {
+    it('counts a fault and an actionable excuse across BOTH learners, one link per subject', async () => {
       schoolApi.agendaPreview.mockImplementation(async (learnerId) => ok({ sections: learnerId === 'user_4'
         ? [
           { subject: 'civilization', next: { unitId: 'unit-illinois', title: 'Illinois' } },
@@ -451,9 +475,16 @@ describe('TodayTab', () => {
       mount(<TodayTab kids={KIDS} />);
       const strip = await screen.findByTestId('grownup-strip');
       expect(strip).toHaveTextContent('2 subjects need a grown-up');
-      // user_4's own fault is first in roster order, so the strip lands
-      // on School Operations, not user_2's Courses page.
-      expect(strip).toHaveAttribute('href', '/school/teacher/operations');
+      // One link per affected subject, each landing on that child's own
+      // page with the problem named — not one href for the first learner.
+      const links = within(strip).getAllByRole('link');
+      expect(links).toHaveLength(2);
+      expect(links[0]).toHaveTextContent('User_4 · Science — This program can’t start →');
+      // The day rides along too; this digest names none, so it is today's.
+      expect(links[0]).toHaveAttribute('href', expect.stringMatching(
+        /^\/school\/teacher\/students\/user_4\/operations\?reason=program_unavailable&subject=science&day=\d{4}-\d{2}-\d{2}$/));
+      expect(links[1]).toHaveTextContent('User_2 · Math — This course has no more lessons →');
+      expect(links[1]).toHaveAttribute('href', '/school/teacher/students/user_2/courses');
     });
 
     // A DOWN PLANNER MUST NOT LOOK LIKE A QUIET MORNING.
@@ -499,20 +530,23 @@ describe('TodayTab', () => {
 describe('wave-2 mutations', () => {
   const claim = async () => {
     // Claim the teacher via the persisted-session path the provider restores.
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
   };
 
-  const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('kckern'));
+  const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
   it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
     await claim();
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3',
-      { verdict: 'correct', note: null, gradedBy: 'kckern', pin: null }));
+      { verdict: 'correct', note: null, gradedBy: 'teacher_1', pin: null }));
     await waitFor(() => expect(schoolApi.lifecycleReview.mock.calls.length).toBeGreaterThan(1));
+    // …and the shell's badge count re-reads at once, not on the next poll.
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('a 403 opens the PIN prompt and marks only that item', async () => {
@@ -553,13 +587,15 @@ describe('wave-2 mutations', () => {
 
   it('print approve/deny post the approver and refresh', async () => {
     await claim();
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
     await waitFor(() => expect(schoolApi.printApprove).toHaveBeenCalledWith('pr_1',
-      { approver: 'kckern', pin: null }));
+      { approver: 'teacher_1', pin: null }));
     await waitFor(() => expect(schoolApi.printPending.mock.calls.length).toBeGreaterThan(1));
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('dismissing a quiz request demands a reason and sends it (advocacy A5)', async () => {
@@ -567,7 +603,8 @@ describe('wave-2 mutations', () => {
     schoolApi.quizRequests.mockResolvedValue(ok([
       { at: 't', userId: 'user_2', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
     ]));
-    mount(<QueueView kids={KIDS} />);
+    const onChanged = vi.fn();
+    mount(<QueueView kids={KIDS} onChanged={onChanged} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' })); });
@@ -579,7 +616,8 @@ describe('wave-2 mutations', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'teacher_1', pin: null, reason: 'We will do this one together' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
   it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {
@@ -597,7 +635,7 @@ describe('wave-2 mutations', () => {
 describe('advocacy wave 6A', () => {
 
   it('review items show rubric, reason, and wait-age', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{
       sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_4', prompt: 'Explain photosynthesis',
       given: 'plants eat light', questionNumber: 3, reason: 'free_response',
@@ -610,7 +648,7 @@ describe('advocacy wave 6A', () => {
   });
 
   it('an expired capability REPLAYS once after unlock without retaining the PIN', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.resolveReview
       .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
       .mockResolvedValue(ok({ verdict: 'correct' }));
@@ -623,7 +661,7 @@ describe('advocacy wave 6A', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('kckern', '7410');
+    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('teacher_1', '7410');
     expect(schoolApi.resolveReview).toHaveBeenLastCalledWith('ses_1', 'q3',
       expect.objectContaining({ pin: null }));
   });

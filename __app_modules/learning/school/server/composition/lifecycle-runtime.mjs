@@ -664,6 +664,7 @@ try {
         sessions: dependencies.schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
         passOverrides: dependencies.schoolLifecycle.passOverrides ?? null,
+        assignments: dependencies.schoolLifecycle.stores.assignments ?? null,
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: dependencies.schoolLifecycle.stores.curriculum ?? null,
@@ -684,6 +685,9 @@ try {
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         curriculumExceptions: dependencies.schoolLifecycle.stores.curriculumExceptionStore ?? null,
         printDocuments: dependencies.schoolLifecycle.stores.printDocuments ?? null,
+        // Built only where a receipt printer is wired; without it a receipt
+        // reprint is a dead button (reprint_unconfigured).
+        receiptReprints: Boolean(dependencies.schoolLifecycle.useCases?.reprintResultReceiptArtifact),
       }) : null,
     launchPreviewTokens: dependencies.schoolLaunchPreviewTokens,
     // Built inside the lifecycle module, where the companion code store and the
@@ -713,6 +717,7 @@ try {
         sessions: dependencies.schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
         passOverrides: dependencies.schoolLifecycle.passOverrides ?? null,
+        assignments: dependencies.schoolLifecycle.stores.assignments ?? null,
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: dependencies.schoolLifecycle.stores.curriculum ?? null,

@@ -1,0 +1,86 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, waitFor, act } from '@testing-library/react';
+
+vi.mock("../schoolApi.js", () => ({ schoolApi: {
+  lifecycleReview: vi.fn(), printPending: vi.fn(), quizRequests: vi.fn(),
+} }));
+const { schoolApi } = await import("../schoolApi.js");
+const { useBacklog } = await import("./useBacklog.js");
+const ok = (data) => ({ ok: true, status: 200, data });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{}, {}] }));
+  schoolApi.printPending.mockResolvedValue(ok([{}]));
+  schoolApi.quizRequests.mockResolvedValue(ok([{}, {}, {}]));
+});
+
+describe('useBacklog', () => {
+  it('counts review, prints and quiz requests into one total', async () => {
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(6));
+    expect(result.current).toMatchObject({ review: 2, prints: 1, quizzes: 3, failed: false });
+  });
+  it('treats a missing endpoint as absent, not as a failure', async () => {
+    schoolApi.quizRequests.mockResolvedValue({ ok: false, status: 404, data: null });
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(3));
+    expect(result.current).toMatchObject({ quizzes: null, failed: false });
+  });
+  it('flags a real failure', async () => {
+    schoolApi.printPending.mockResolvedValue({ ok: false, status: 500, data: null });
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+  });
+  // A read that throws (network down) must flag the strip, not leave an
+  // unhandled rejection and a count that never changes.
+  it('flags a read that throws', async () => {
+    schoolApi.printPending.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+  });
+  it('refresh() re-reads at once', async () => {
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(6));
+    schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [] }));
+    await act(() => result.current.refresh());
+    expect(result.current.total).toBe(4);
+  });
+  it('refreshIfStale() skips a read the hook just made, and re-reads an old one', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+      await waitFor(() => expect(result.current.total).toBe(6));
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(1);
+      // The dashboard mounting in the same moment as the shell: no second read.
+      await act(() => result.current.refreshIfStale());
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(1);
+      // A dashboard visit a minute later reads again.
+      now.mockReturnValue(1_060_000);
+      await act(() => result.current.refreshIfStale());
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+  it('a slow older read never overwrites a newer one', async () => {
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(6));
+    let releaseOld;
+    schoolApi.lifecycleReview
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOld = () => resolve(ok({ items: [{}, {}, {}, {}, {}] })); }))
+      .mockResolvedValueOnce(ok({ items: [] }));
+    let older;
+    act(() => { older = result.current.refresh(); });
+    await act(() => result.current.refresh());
+    expect(result.current.review).toBe(0);
+    await act(async () => { releaseOld(); await older; });
+    expect(result.current).toMatchObject({ review: 0, total: 4 });
+  });
+  it('counts quiz requests only when the server sends the array the queue renders', async () => {
+    schoolApi.quizRequests.mockResolvedValue(ok({ requests: [{}, {}] }));
+    const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+    await waitFor(() => expect(result.current.total).toBe(3));
+    expect(result.current.quizzes).toBe(0);
+  });
+});

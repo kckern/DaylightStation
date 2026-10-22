@@ -20,6 +20,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { teacherDate } from "../teacherDates.js";
+import { useActorName } from "../useActorName.js";
 
 /** What the live gate read means, in a parent's words. */
 function statusLine(gate) {
@@ -38,6 +39,7 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
     deps: [learnerId], panel: 'program-day-bypass-gate', notFoundAs: 'unavailable',
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'program-day-bypass' });
+  const actorName = useActorName();
   const [reason, setReason] = useState('');
   const [retractReason, setRetractReason] = useState('');
 
@@ -69,7 +71,7 @@ export default function ProgramDayBypassPanel({ learnerId, learnerName }) {
         <ul className="teacher-enrichment">
           <li className="teacher-enrichment__row">
             <span className="teacher-enrichment__title">
-              Excused by {active.decidedBy}
+              Excused by {actorName(active.decidedBy)}
             </span>
             <span className="teacher-enrichment__dates">
               {active.decidedAt ? teacherDate(active.decidedAt) : active.studyDate}

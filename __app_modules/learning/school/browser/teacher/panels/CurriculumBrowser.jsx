@@ -198,7 +198,7 @@ export default function CurriculumBrowser({ courseId = null }) {
             <ul>{standalone.map(row)}</ul>
           </div>
         )}
-        {languageCourses.state === 'ready' && (languageCourses.data ?? []).length > 0 && (
+        {languageCourses.state === 'ok' && (languageCourses.data ?? []).length > 0 && (
           <section className="teacher-curriculum__sandbox" aria-label="Guest previews">
             <h3>Try as guest</h3>
             <p>Open a Sentence Ladder lesson without a learner, history, or saved work.</p>

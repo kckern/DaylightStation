@@ -52,6 +52,7 @@ import { worksheetPresentation } from "../../domain/curriculum/worksheetPresenta
 // handlers that can actually release a finish code. See its doc comment.
 import { COMPANION_COMPLETION_HANDLERS } from "../../domain/curriculum/unitValidation.mjs";
 import { resolveScripturePlaylist } from "../readalong/resolveScripturePlaylist.mjs";
+import { resolvePassingPercent, courseEntryFor } from "../passBar.mjs";
 
 /**
  * States in which handing over a sheet still means something — DERIVED from the
@@ -259,7 +260,7 @@ const FAILURE_COPY = Object.freeze({
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader; #realtime;
   #printDocuments; #renderPrintDocument; #allocationStore;
-  #assignments; #worksheetInstances; #publishPrintDocument; #companions;
+  #assignments; #worksheetInstances; #publishPrintDocument; #companions; #passOverrides;
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
@@ -318,6 +319,9 @@ export class IssueDocument {
     // a disc on the status board should turn amber, and until this the
     // board only learned of it on its five-minute poll.
     realtime = null,
+    // Optional per-lesson pass overrides — read with the enrollment so the
+    // bar printed on the sheet is the one `GradeSubmission` will stamp.
+    passOverrides = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -337,6 +341,7 @@ export class IssueDocument {
     this.#renderPrintDocument = renderPrintDocument;
     this.#allocationStore = allocationStore;
     this.#assignments = assignments;
+    this.#passOverrides = passOverrides;
     this.#worksheetInstances = worksheetInstances;
     this.#companions = companions;
     this.#companionCodes = companionCodes;
@@ -729,15 +734,19 @@ export class IssueDocument {
       return this.#unavailable(sessionId, 'worksheet-instance-not-configured', 'There is no sheet to print for this one.');
     }
     const assignment = await this.#assignments.get(state.learnerId);
-    const course = (assignment?.courses ?? []).find((entry) => (
-      entry.courseId === unit.courseId || entry.enrollment?.lessonOrder
-        && Object.values(entry.enrollment.lessonOrder).flat().includes(unit.unitId)
-    ));
+    // Matched the way the pass bar below is (`courseEntryFor`): an exact
+    // course id wins over a lesson-order match.
+    const course = courseEntryFor(assignment, unit);
     const enrollmentId = course?.enrollment?.enrollmentId;
     const profile = course?.profile ?? course?.enrollment?.profile;
     if (!enrollmentId || !profile) {
       return this.#unavailable(sessionId, 'no-enrollment', 'This lesson is not enrolled for this learner.');
     }
+    // The bar printed on the sheet (lesson card and header manifest) is the
+    // one grading will stamp: override → enrollment → the unit's own (Task 16).
+    const passPercent = (await resolvePassingPercent({
+      passOverrides: this.#passOverrides, assignments: this.#assignments, learnerId: state.learnerId, unit,
+    })) ?? null;
     const works = await this.#curriculum.listWorks?.() ?? [];
     const work = works.find((candidate) => candidate?.work === unit.courseId) ?? null;
     const presentation = worksheetPresentation({ unit, work, enrollment: course?.enrollment });
@@ -786,7 +795,7 @@ export class IssueDocument {
             subjectIcon: unit.subject ?? 'school',
             subjectName: unit.subject ?? 'School',
             breadcrumb: presentation.breadcrumb,
-            passPercent: unit.passing?.percent ?? null,
+            passPercent,
             progress: await this.#lessonProgress({ state, unit, nowIso }),
             companionCode: companion?.accessCode ?? null,
             // TWO CODES, NEVER THE SAME FIELD. `companionCode` above is the
@@ -816,14 +825,12 @@ export class IssueDocument {
     const learnerName = deriveLearnerName(instance.learnerId);
     const issueDate = deriveIssueDate(instance.issuedAt);
     // Header manifest (Task 2, RenderPrintDocument's `context.passPercent`):
-    // `unit.passing.percent` is the SAME field `GradeSubmission`/
-    // `CloseSessionOutcome` already read as the authoritative pass bar for
-    // closing this exact lesson's session — reading anything else here (a
-    // course-level default, a hand-copied constant) would risk the printed
-    // sheet disagreeing with what actually grades it. `?? null` (no
-    // `passing` authored for this unit) prints the question count alone —
+    // `passPercent` above comes from `resolvePassingPercent`, the SAME
+    // resolver `GradeSubmission` stamps and `CloseSessionOutcome` falls back
+    // to — reading anything else here (the unit's bare percent, a hand-copied
+    // constant) would risk the printed sheet disagreeing with what actually
+    // grades it. `null` (no bar anywhere) prints the question count alone —
     // see `RenderPrintDocument`'s `buildManifestText`.
-    const passPercent = unit.passing?.percent ?? null;
     const renderContext = existingInstance && instance.omr?.cardId && !existingAllocationCancelled
       ? {
         cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start,

@@ -33,7 +33,7 @@ export const teacherLog = {
   // them; the pair reads as one story in a log filtered to teacher.write.*
   write: (detail, data) => emit('write', detail, data),                 // attempted | saved
   writeRefused: (detail, data) => emit('write', detail, data, 'warn'),  // refused | blocked | stash-dropped
-  // A render-time copy map (e.g. `RosterStrip.jsx`'s `GROWN_UP_ACTION`,
+  // A render-time copy map (e.g. `obligationCopy.js`'s `GROWN_UP_ACTION`,
   // `MUTED_EXCUSE_FALLBACK`) missed a value the data model actually produced
   // — the map has drifted from its source of truth (`learnerDay.js`'s
   // `NEEDS_GROWN_UP`, itself mirroring `agenda.mjs`'s excuse ladder). The UI

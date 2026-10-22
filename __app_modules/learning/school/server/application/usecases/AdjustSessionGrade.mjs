@@ -2,6 +2,7 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
+import { sessionPassingPercent } from "../passBar.mjs";
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
@@ -15,11 +16,11 @@ function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, c
 
 /** Append-only, preview-first correction of one settled session's grade. */
 export class AdjustSessionGrade {
-  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger; #receiptIssuer; #passOverrides; #realtime;
+  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger; #receiptIssuer; #passOverrides; #realtime; #assignments;
 
   constructor({ sessions, teacherGate, worksheetInstances = null, reviewQueue = null,
     curriculum = null, economy = null, economyEnabled = false,
-    receiptIssuer = null, passOverrides = null, realtime = null, clock = () => new Date(), logger = console } = {}) {
+    receiptIssuer = null, passOverrides = null, assignments = null, realtime = null, clock = () => new Date(), logger = console } = {}) {
     if (!sessions) throw new Error('AdjustSessionGrade requires sessions');
     if (!teacherGate) throw new Error('AdjustSessionGrade requires teacherGate');
     this.#sessions = sessions;
@@ -32,6 +33,7 @@ export class AdjustSessionGrade {
     this.#receiptIssuer = receiptIssuer;
     this.#realtime = realtime;
     this.#passOverrides = passOverrides;
+    this.#assignments = assignments;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -83,9 +85,16 @@ export class AdjustSessionGrade {
     }
     // Pre-stamp machine grades need an explicit rule for the corrected outcome.
     // Pin it on the annotation so later curriculum edits cannot change the result.
+    // A card scan's bar is the one its close stamped on `outcome_recorded`
+    // (folded into `gradedPassingPercent`). With no stamp anywhere,
+    // `sessionPassingPercent` answers: a session settled before the close
+    // stamped reads override ?? the unit's own percent, which decided it then;
+    // an unsettled one resolves in grading's order (Task 16).
     const passingPercent = state.machineGrade.passingPercent
-      ?? state.gradedPassingPercent ?? this.#passOverrides?.percentFor?.(state.unitId)
-      ?? (await this.#curriculum?.getUnit?.(state.unitId))?.passing?.percent;
+      ?? await sessionPassingPercent({
+        state, passOverrides: this.#passOverrides, assignments: this.#assignments,
+        unit: { unitId: state.unitId, ...((await this.#curriculum?.getUnit?.(state.unitId)) ?? {}) },
+      });
     const built = createEvent({
       type: 'grade_adjusted', at: this.#clock().toISOString(), sessionId,
       adjustmentId: id, ...normalized,

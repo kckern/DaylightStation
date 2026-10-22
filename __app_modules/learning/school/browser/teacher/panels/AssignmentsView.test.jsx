@@ -17,7 +17,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -102,6 +102,40 @@ describe('AssignmentsView — the enrolled note points at its actual source', ()
     expect(screen.queryByText(/edited from The whole school/)).toBeNull();
   });
 
+  it('links each enrolled course to its progress page', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { courses: [ENROLLED], units: [], updatedAt: '2026-08-13T00:00:00Z' },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
+
+    render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
+    const link = await screen.findByRole('link', { name: 'Young People’s Atlas of the US' });
+    expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/courses/young-peoples-atlas-us');
+  });
+
+  it('re-reads the record when a sibling panel changes it, and reports its own saves', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { courses: [ENROLLED], units: [], updatedAt: '2026-08-13T00:00:00Z' },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue(CATALOG);
+    schoolApi.putAssignments.mockResolvedValue({ ok: true, status: 200, data: {} });
+    const onSaved = vi.fn();
+
+    const { rerender } = render(<AssignmentsView learnerId="user_4" learnerName="User_4" refreshKey={0} onSaved={onSaved} />);
+    await screen.findByRole('link', { name: 'Young People’s Atlas of the US' });
+    expect(schoolApi.assignments).toHaveBeenCalledTimes(1);
+    rerender(<AssignmentsView learnerId="user_4" learnerName="User_4" refreshKey={1} onSaved={onSaved} />);
+    await waitFor(() => expect(schoolApi.assignments).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
   it('names it hand-authored and links nowhere when the enrollment carries no syllabusId', async () => {
     schoolApi.assignments.mockResolvedValue({
       ok: true,
@@ -126,12 +160,12 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
   it('resolves assignedBy to a display name, never the raw user id', async () => {
     schoolApi.assignments.mockResolvedValue({
       ok: true, status: 200,
-      data: { courses: [ENROLLED], units: [], assignedBy: 'kckern', updatedAt: '2026-08-13T00:00:00Z' },
+      data: { courses: [ENROLLED], units: [], assignedBy: 'teacher_1', updatedAt: '2026-08-13T00:00:00Z' },
     });
     schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
     render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
-    await waitFor(() => expect(screen.getByText('Assigned by KC')).toBeTruthy());
-    expect(screen.queryByText('Assigned by kckern')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Assigned by Teacher One')).toBeTruthy());
+    expect(screen.queryByText('Assigned by teacher_1')).toBeNull();
   });
 
   it('round-trips an enrolled course unchanged when saved without edits', async () => {

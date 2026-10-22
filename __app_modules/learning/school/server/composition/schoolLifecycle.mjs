@@ -1104,7 +1104,7 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore, publishPrintDocument,
-    assignments: stores.assignments, worksheetInstances, companions,
+    assignments: stores.assignments, worksheetInstances, companions, passOverrides,
     // `householdId` is the first third of a finish code's scope — the reason
     // two houses on the same published lesson never share a code.
     companionCodes, householdId,
@@ -1123,7 +1123,7 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, assignments: stores.assignments,
     worksheetInstances, bankReader, printDocuments, renderPrintDocument, publishPrintDocument,
     allocationStore, printer: laserPrinter, issuedArtifacts, answerSheetPolicy: cfg.answer_sheets ?? null,
-    teacherGate, clock, logger,
+    teacherGate, passOverrides, clock, logger,
   });
   const { ReprintIssuedArtifact } = await import("../application/usecases/ReprintIssuedArtifact.mjs");
   const reprintIssuedArtifact = new ReprintIssuedArtifact({
@@ -1159,7 +1159,7 @@ export async function createSchoolLifecycle({
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
     grader: schoolService, bankReader, worksheetInstances,
-    grownUps, teacherGate, passOverrides, clock, logger,
+    grownUps, teacherGate, passOverrides, assignments: stores.assignments, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     practiceAssessments,

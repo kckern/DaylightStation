@@ -18,6 +18,7 @@ import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 import { teacherDate } from "../teacherDates.js";
 import { teacherSectionPath } from "../teacherUrl.js";
+import { useActorName } from "../useActorName.js";
 
 function FrozenRecord({ learnerId, periodId, titles }) {
   const record = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
@@ -54,6 +55,7 @@ function FrozenRecord({ learnerId, periodId, titles }) {
 
 export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
   const [openPeriodId, setOpenPeriodId] = useState(null);
+  const actorName = useActorName();
   const frozen = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId }), {
     deps: [learnerId, refreshKey],
     panel: 'frozen-history',
@@ -74,7 +76,7 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
               >
                 <span className="teacher-frozen__period">{rec.period?.label ?? 'Academic period'}</span>
                 <span className="teacher-frozen__meta">
-                  FROZEN — Closed by {rec.closedBy ?? 'unknown'}{rec.closedAt ? ` on ${teacherDate(rec.closedAt)}` : ''}
+                  FROZEN — Closed by {actorName(rec.closedBy)}{rec.closedAt ? ` on ${teacherDate(rec.closedAt)}` : ''}
                 </span>
               </button>
               {openPeriodId === rec.periodId && <FrozenRecord learnerId={learnerId} periodId={rec.periodId} titles={titles} />}

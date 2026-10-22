@@ -77,6 +77,19 @@ describe('usePanelFetch', () => {
     rerender({ id: 'two' });
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   });
+
+  it('hands the fetcher a signal that aborts when its answer would be thrown away', async () => {
+    const signals = [];
+    const fetcher = (args) => { signals.push(args.signal); return new Promise(() => {}); };
+    const { rerender, unmount } = renderHook(({ id }) => usePanelFetch(fetcher, { panel: 'x', deps: [id] }), {
+      initialProps: { id: 'one' },
+    });
+    expect(signals[0].aborted).toBe(false);
+    rerender({ id: 'two' });
+    expect(signals[0].aborted).toBe(true);
+    unmount();
+    expect(signals[1].aborted).toBe(true);
+  });
 });
 
 describe('allUnavailable', () => {

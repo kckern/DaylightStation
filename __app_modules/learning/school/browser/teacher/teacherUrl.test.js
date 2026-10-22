@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
+import { consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerOpsPath, teacherLearnerPath, teacherReadingPath, teacherSessionPath } from "./teacherUrl.js";
 
 describe('teacher workspace URL model', () => {
   it('lands roots on the dashboard and rejects malformed paths', () => {
@@ -107,5 +107,87 @@ describe('teacherReadingPath — the open reading is part of the URL', () => {
   it('encodes both, so an id with a slash cannot invent a route', () => {
     expect(teacherReadingPath('learner a', 'rd/1'))
       .toBe('/school/teacher/students/learner%20a/reading?reading=rd%2F1');
+  });
+});
+
+describe('consoleLinkTarget', () => {
+  const anchor = (href, attrs = {}) => {
+    const a = document.createElement('a');
+    a.setAttribute('href', href);
+    Object.entries(attrs).forEach(([k, v]) => a.setAttribute(k, v));
+    const child = document.createElement('span');
+    a.appendChild(child);
+    document.body.appendChild(a);
+    return child; // clicks usually land on a child of the anchor
+  };
+  const click = (target, extra = {}) => ({ target, button: 0, defaultPrevented: false,
+    metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...extra });
+
+  it('routes a plain click on an in-console link, keeping its query', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher/students/a/reading?reading=r1'))))
+      .toBe('/school/teacher/students/a/reading?reading=r1');
+  });
+  it('routes the bare console root', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher')))).toBe('/school/teacher');
+  });
+  it('leaves modified clicks, new tabs, downloads and other buttons to the browser', () => {
+    const t = anchor('/school/teacher/queue');
+    expect(consoleLinkTarget(click(t, { metaKey: true }))).toBeNull();
+    expect(consoleLinkTarget(click(t, { button: 1 }))).toBeNull();
+    expect(consoleLinkTarget(click(t, { defaultPrevented: true }))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue', { target: '_blank' })))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue', { download: '' })))).toBeNull();
+  });
+  it('leaves links outside the console alone', () => {
+    expect(consoleLinkTarget(click(anchor('/api/v1/school/transcript?format=pdf')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('/school/teacherish')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('https://example.com/school/teacher')))).toBeNull();
+  });
+  it('leaves a same-page hash link to the browser so it can scroll', () => {
+    window.history.pushState({}, '', '/school/teacher/queue?x=1');
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue?x=1#prints')))).toBeNull();
+    expect(consoleLinkTarget(click(anchor('#prints')))).toBeNull();
+    window.history.pushState({}, '', '/');
+  });
+  it('keeps the hash on a link to another console page', () => {
+    expect(consoleLinkTarget(click(anchor('/school/teacher/queue#prints')))).toBe('/school/teacher/queue#prints');
+  });
+  it('routes an SVG anchor, whose href is not a string', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const a = document.createElementNS('http://www.w3.org/2000/svg', 'a');
+    a.setAttribute('href', '/school/teacher/students/a/day');
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    a.appendChild(shape);
+    svg.appendChild(a);
+    document.body.appendChild(svg);
+    expect(consoleLinkTarget(click(shape))).toBe('/school/teacher/students/a/day');
+  });
+  it('ignores clicks that are not inside an anchor', () => {
+    expect(consoleLinkTarget(click(document.createElement('div')))).toBeNull();
+  });
+});
+
+describe('teacherLearnerOpsPath', () => {
+  it('builds a learner operations link that carries why it was opened', () => {
+    expect(teacherLearnerOpsPath('user_2', { reason: 'program_unavailable', subject: 'arts', unit: 'u 1', day: '2026-10-21' }))
+      .toBe('/school/teacher/students/user_2/operations?reason=program_unavailable&subject=arts&unit=u+1&day=2026-10-21');
+    expect(teacherLearnerOpsPath('user_2')).toBe('/school/teacher/students/user_2/operations');
+  });
+});
+
+// Older Safari has URLSearchParams without `.size`; a query built there must
+// still reach the URL instead of being dropped as "empty".
+describe('query strings without URLSearchParams.size', () => {
+  it('keeps the query on the ops and session paths', () => {
+    const desc = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+    Object.defineProperty(URLSearchParams.prototype, 'size', { configurable: true, get: () => undefined });
+    try {
+      expect(teacherLearnerOpsPath('user_2', { reason: 'r' })).toBe('/school/teacher/students/user_2/operations?reason=r');
+      expect(teacherSessionPath('user_2', 's1', '/school/teacher', { from: 'today' }))
+        .toBe('/school/teacher/students/user_2/history/sessions/s1?from=today');
+    } finally {
+      if (desc) Object.defineProperty(URLSearchParams.prototype, 'size', desc);
+      else delete URLSearchParams.prototype.size;
+    }
   });
 });

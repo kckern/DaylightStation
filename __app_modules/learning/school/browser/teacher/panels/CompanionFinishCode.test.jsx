@@ -14,7 +14,7 @@ vi.mock("../teacherWorkspaceApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -54,7 +54,7 @@ describe('CompanionFinishCode', () => {
     expect(await screen.findByText('ACE')).toBeInTheDocument();
     expect(screen.getByText(/nobody has listened/i)).toBeInTheDocument();
     expect(teacherWorkspaceApi.revealCompanionFinishCode).toHaveBeenCalledWith(
-      'ses_1', { revealedBy: 'kckern', pin: null }, 'grant-1',
+      'ses_1', { revealedBy: 'teacher_1', pin: null }, 'grant-1',
     );
   });
 

@@ -247,7 +247,8 @@ export const schoolApi = {
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   allAssignments: () => req('/lifecycle/assignments'),
-  staleSessions: () => req('/lifecycle/sessions/stale'),
+  // `olderThanDays` omitted → the server's default (7).
+  staleSessions: (olderThanDays = null) => req(`/lifecycle/sessions/stale${olderThanDays ? `?${new URLSearchParams({ olderThanDays: String(olderThanDays) })}` : ''}`),
   abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
   // Settling stuck work by hand (session inspector). Two calls because they
   // are two events — `submitted → graded → outcome_recorded` is the whole
@@ -341,7 +342,9 @@ export const schoolApi = {
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),
-  requestRetake: (body) => req('/retake-requests', body),
+  // No `requestRetake`: on-screen quizzes retake until passed (2026-10-21), so
+  // no browser surface files a retake ask. The server route stays for the
+  // legacy rows still on the backlog (`teacher.md` §12).
   flagConcern: (body) => req('/flags', body),
   // --- Self-service access codes (design §4) -------------------------------
   // `/resolve` NEVER answers with an error status for a bad code: an unknown,

@@ -4,9 +4,9 @@ import FeedbackNotes from "./FeedbackNotes.jsx";
 
 vi.mock("../../schoolApi.js", () => ({ schoolApi: { reviewLearner: vi.fn(), retract: vi.fn() } }));
 vi.mock("../TeacherProfileContext.jsx", () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -43,13 +43,15 @@ describe('FeedbackNotes roll-up', () => {
     schoolApi.reviewLearner.mockResolvedValue({
       ok: true, status: 200,
       data: [
-        verdictRow(1, { gradedBy: 'kckern' }),
-        { itemId: 'n1', sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note', note: 'Nice work', gradedBy: 'kckern', gradedAt: '2026-08-23T10:00:00Z' },
+        verdictRow(1, { gradedBy: 'teacher_1' }),
+        { itemId: 'n1', sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note', note: 'Nice work', gradedBy: 'teacher_1', gradedAt: '2026-08-23T10:00:00Z' },
       ],
     });
     render(<FeedbackNotes learnerId="user_2" learnerName="User_2" />);
     await waitFor(() => expect(screen.getByText('Nice work')).toBeTruthy());
-    expect(screen.getAllByText(/kckern/).length).toBeGreaterThan(0);
+    // Who marked it, by name — never the raw teacher id.
+    expect(screen.getAllByText(/Teacher One/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/teacher_1/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Retract' })).toBeTruthy();
   });
 });

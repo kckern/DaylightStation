@@ -101,7 +101,10 @@ for another attempt. Once the server has accepted that PIN and still refused
 the action, no PIN can help: the prompt closes and the caller is settled with
 the server's own words, which surface as the panel's error. A refusal that
 neither settles nor retries would leave the teacher with a dialog nothing can
-close over a write that never resolves, and no error anywhere.
+close over a write that never resolves, and no error anywhere. An install with
+no PIN configured skips the prompt and unlocks on its own, and that path keeps
+the same promise: a refused unlock or step-up settles the write with
+`refused: true` and the server's words.
 
 ---
 
@@ -109,6 +112,13 @@ close over a write that never resolves, and no error anywhere.
 
 Every URL is complete workspace state — deep-linkable, refresh-safe,
 back-button-safe.
+
+Console links are real anchors (middle-click and long-press still open a new
+tab), and the shell routes a plain left-click on one in-app through a single
+delegated handler (`consoleLinkTarget`), so following a link does not reload
+the console. Which learner is open on the dashboard is in the URL as
+`?open=<learnerId>`, so coming back from a lesson re-opens the roster card it
+came from.
 
 ```mermaid
 flowchart TD
@@ -132,6 +142,7 @@ flowchart TD
     DASH -->|learner row| DAY
     DASH -->|backlog strip| QUEUE
     DASH -->|lesson card| SESSION
+    QUEUE -->|review row| SESSION
     DAY -->|lesson row| SESSION
     HIST -->|session row| SESSION
     HIST -->|day heading| DAY
@@ -201,14 +212,30 @@ day never writes, for today or any other day.
 
 The Day uses one compact row per subject. The progress chip is the state; the
 lesson identity is not itself a hidden navigation target. **Open details** is
-the explicit route into the session record, **Preview** opens the launch card,
-and paper controls appear directly only when an issued artifact actually
-exists. A subject with no planned offer is **No assignment**, not **Not
+the explicit route into the session record, **Preview** opens the launch card
+(today's rows only: the card is what the child would open now, so a past day
+has none), and paper controls appear directly only when an issued artifact
+actually exists. The printed-agenda block mentions sending today's agenda to
+the printer only when the day shown is today. A subject with no planned offer is **No assignment**, not **Not
 started**, and is excluded from the unfinished count.
+
+**This week** sits above the Day: a subject × day grid of the seven days
+ending today (`WeekGrid`, built by `learnerWeek.js`). It makes the same two
+reads once per day (14 GETs, none recording), but waits its turn: it starts
+after the page has painted and the browser is idle, so the Day's own two reads
+go first, and reads at most three days (six GETs) at once. It joins each day with the same
+`joinLearnerDay`, so a cell cannot disagree with the Day it opens. A cell shows
+the subject's least-finished row that day, with its percent when one was
+recorded; a column header gives "done of planned" and opens that day. A day
+that will not load shows `?` rather than hiding. The week always ends today,
+so stepping back through days moves the highlight, not the reads.
 
 Opening a session from a Day records `from=day&studyDay=YYYY-MM-DD` in the URL.
 The inspector's Back control returns to that exact date; a session opened from
-History returns to History. The browser's incidental navigation stack is not
+History returns to History, and one opened from the action queue
+(`from=queue`) or from Operations' stuck sessions (`from=operations`) returns
+there. One opened from a dashboard lesson card (`from=today`) returns to the
+dashboard with that learner open (`?open=`). The browser's incidental navigation stack is not
 the source of this promise.
 
 ### The code-free door, and a program's own test mode
@@ -537,9 +564,27 @@ the last non-retracted one is the effective interpretation that reports and
 gates read. If both an effective percent and a passing bar exist, the *outcome*
 re-derives too — a correction can turn `needs_remediation` into `passed`.
 
+**Which bar grades a child.** One resolver (`resolvePassingPercent`,
+`server/application/passBar.mjs`) decides it, in this order: a per-lesson
+pass override → the learner's enrollment `passing` for the lesson's course
+(copied from the syllabus at enroll time; see
+[enrollment](./enrollment.md#the-pass-bar)) → the lesson's own
+`passing.percent`. A failed enrollment read falls through to the lesson's bar
+rather than blocking a grade. The printed sheet shows the same resolved bar.
+
 **The bar cannot move under a graded child.** `graded` stamps
-`passingPercent` — the bar in effect at grading time. A later pass-override
-edit is read by `CloseSessionOutcome` only for work not yet graded.
+`passingPercent` — the bar in effect at grading time. A later override or
+enrollment edit is read by `CloseSessionOutcome` only for a `graded` event that
+carries no stamp: work graded before stamping existed, and every card scan
+(`RecordCardScanOutcome` stamps none). The first close of such a session
+resolves the live bar in the same order and writes it onto `outcome_recorded`
+as `passingPercent`; the reducer folds it into `gradedPassingPercent`. Every
+later look reads that stamp: a re-close after a gate repair, a grade correction
+(`AdjustSessionGrade`), the resettle receipt, course-outcome recovery. A
+session settled before the close stamped its bar has no stamp anywhere, and is
+read the way it was decided then: override, else the lesson's own
+`passing.percent`, never today's enrollment
+(`sessionPassingPercent`, same file).
 
 **Regrade is a different animal.** It re-runs the same `gradeAnswer` over
 recorded attempts against the bank's *current* content, and appends corrective
@@ -639,6 +684,15 @@ is `regenerable`: PDF, thumbnail, postview, and reprint are generated from the
 artifact YAML by the current renderer while preserving the recorded Student
 No. and rows. Historical replay never calls the allocation store.
 
+**Paper controls appear only where they work.** The session read marks each
+issued worksheet `reprintable` only in a state that accepts `reprinted`, and
+never while the lesson is paused. A result receipt is offered for reprint only
+when its retained artifact is a PNG whose manifest names this session, and only
+on an install with a receipt printer wired (`GetTeacherSession`, mirroring
+`ReprintResultReceiptArtifact`'s own checks). **See the marked sheet** — the
+postview, the child's sheet with the marks drawn on it — is offered once the
+session is `graded` or later, behind the `artifact.postview` step-up.
+
 **The print cooldown arms from confirmed prints only.** A `failed` annotation
 never touches it, and an `issued` event carrying `confirmed: false` — a
 simulator or preview path saying "I did not send this anywhere" — does not arm
@@ -709,6 +763,15 @@ and impossible to finish.
 
 **Structural changes are two-tap.** Enroll, re-materialize, and unenroll each
 arm first with a sentence naming the consequence, then act.
+
+**Where the grid lives.** The whole-school grid sits on the Curriculum page,
+above Syllabi, because enrolling is the common job and syllabus admin the rare
+one. The same grid, scoped to one child, sits on that learner's Courses tab
+under Assignments, so enrolling is next to the courses it changes. The scoped
+grid drops the school-wide notes (orphans, zero-enrollment courses), which
+mean nothing for one child; the two panels re-read each other after a change.
+Each course name in Assignments links to its progress page,
+`/students/:learnerId/courses/:courseId` ("X of Y lessons complete").
 
 **Three pathologies only the whole-school grid can see:**
 
@@ -798,14 +861,19 @@ so a repair day still offers the work.
 
 Retracting an attestation re-locks the gates it opened *by construction* —
 every reader folds retractions out. The child hears about it, rather than
-discovering a lock reappeared.
+discovering a lock reappeared. Because it re-locks work, the Attestations
+panel's Retract arms first: one tap shows Confirm retract and Cancel, and only
+the second tap writes.
 
 **Pass-criteria overrides** are the fourth override surface: a per-unit bar
 that beats the authored `passing.percent`. It is read at **grading** time and
 stamped onto the `graded` event (`GradeSubmission`), so the bar cannot move
 under a child who has already been graded; the close reads that stamp first and
-falls back to the live override only for sessions graded before stamping
-existed (`CloseSessionOutcome`). §7 states the same rule. A course-level bar is a bulk write over the same
+falls back to the live bar only for an unstamped `graded` event (pre-stamp work
+and card scans, `CloseSessionOutcome`). That first close writes the bar it used
+onto `outcome_recorded`, so raising an override afterwards does not re-decide a
+settled card scan either (§5). An override beats the learner's
+enrollment bar; §5 gives the full order. A course-level bar is a bulk write over the same
 per-unit store — one concept, not two. Garbage input must never become a
 silent *clear* of a real override, so the field validates 1–100 before it
 writes.
@@ -869,8 +937,19 @@ stateDiagram-v2
 ```
 
 The confirm is honest *before* the act: it names the period and says how many
-items still await a mark. Freezing lives below the live card, with the closed
-periods — the most destructive verb on the page does not sit above the fold.
+items still await a mark.
+
+**The Reports tab leads with where the child is weak.** In order: the period
+picker, the live report card, progress and pacing, curriculum history, tutor
+insights. Below them, one fold, **Records and closing the period**, closed by
+default, holds the transcript PDF, the closed periods and the close button —
+the most destructive verb on the page does not sit in the default view.
+Closing a period refreshes both the closed-periods list and the card's label.
+
+**The live card says when its period is closed.** It reads `DRAFT` while the
+period is open. For a frozen period it reads *Closed*, and says it is still a
+live recompute: the frozen copy is the row under Closed periods, and the two
+can differ if grades moved after the close.
 
 **Editing the calendar preserves boundaries.** Period instants carry a
 timezone-offset time of day. An untouched date round-trips the original instant
@@ -895,23 +974,39 @@ diplomas.
 
 ## 12. What a child can ask for
 
-Children file three kinds of request, and every one of them ends in a sentence
+Children file two kinds of request, and every one of them ends in a sentence
 from a grown-up. This is the *no silent verbs about children* contract.
 
 ```mermaid
 flowchart TD
-    K1["Retake — 'I want another try'"] --> BL["Teacher backlog"]
-    K2["Flag — 'something seems wrong'"] --> BL
+    K2["Flag — 'something seems wrong'"] --> BL["Teacher backlog"]
     K3["Quiz request — a gated unit with no bank"] --> BL
+    K1["Retake ask (legacy rows only)"] -.-> BL
     BL --> F{"Resolution"}
     F -->|"a bank bound to the unit now exists"| AUTO["Auto-badged 'bank authored'"]
     F -->|"teacher dismisses"| DIS["Reason REQUIRED<br/>delivered to the child as a note"]
 ```
 
-**Granting a retake does not clear the row.** `OpenRemediation` opens the fresh
+**On-screen quizzes retake until passed, with no grown-up** (decision
+2026-10-21). A failed summary offers *Try again*, which reopens the sitting
+fresh — at every runner mount: library and catalog quizzes, catalog drills
+(`problems` modules), and the materials gate quiz. A failed catalog module shows
+it above the reflection prompt; a pass keeps the prompt alone. The runner no
+longer files a retake ask, so a child is never left waiting on a grown-up to
+set up another try. Each restart is logged as `session` `restart`.
+
+**Retake asks still on file are dismiss-only.** Rows of `kind: 'retake'` filed
+before that decision still show in the backlog and are cleared the same way as
+any other row — *Dismiss…* with a reason. The `POST /retake-requests` route
+and `SchoolService.requestRetake` stay so those rows keep reading; nothing in
+the browser calls them any more. A grown-up who wants to open a retry on a
+graded attempt (`outcome_recorded` → `remediation_opened`) does it from the
+session inspector, *Offer another try* (§3).
+
+**Opening a retry does not clear a row.** `OpenRemediation` opens the fresh
 session but removes nothing from the backlog; a dismissal is the only thing
-that removes a row. Pre-existing behaviour, stated here so a row that outlives
-its own grant does not read as a bug.
+that removes a row. Stated here so a legacy retake row that is still listed
+after a retry was opened from the session inspector does not read as a bug.
 
 A dismissal without a reason is not possible: the reason *is* the delivery. The
 dismissal targets exactly one row — kind and session id ride along, because a
@@ -923,7 +1018,7 @@ retake ask and a flag on the same bank are different sentences.
 
 ```mermaid
 flowchart LR
-    S["Non-terminal, untouched for 7+ days"] --> LIST["Stuck sessions — roster-wide"]
+    S["Non-terminal, untouched for 3+ days"] --> LIST["Stuck sessions — roster-wide"]
     LIST --> C{"Does the state accept 'abandoned'?"}
     C -->|yes| A["Abandon with a mandatory reason"]
     C -->|"no — submitted, graded, outcome_recorded"| G["Settle by hand → · session inspector"]
@@ -934,8 +1029,18 @@ flowchart LR
 
 Household-scoped by design, not per-learner: a wedged session is an operational
 leak whoever it belongs to, and the point is that somebody finally notices. A
-nightly sweep closes out work that was handed to a child and never came back;
-before it existed, the threshold on the manual route was never once consulted.
+nightly sweep (`SchoolMaintenanceExecutor`) abandons work that was handed to a
+child and never came back once it has sat untouched for 14 days (the default; a
+job's config may set its own `olderThanDays`). That is a separate threshold
+from the three-day list below, which only shows stuck work to a grown-up and
+closes nothing.
+
+The Operations panel asks the server for sessions quiet for three days
+(`olderThanDays=3`); the endpoint's own default of seven hid a stuck lesson for
+a week after the family already felt it. The count is calendar days, not
+school days, so a weekend alone can put Friday's sheet on the list by Monday. Each row names its state in words
+(`presentSessionState`), and "Settle by hand" opens the inspector with
+`?from=operations`, so its Back returns to Operations.
 
 ---
 
@@ -975,7 +1080,8 @@ write is attributed and auditable.
    corrections and their retractions, regrades, agenda dispatch. Nothing
    consequential happens on a first tap. Review verdicts are deliberately not
    in this list (§5): `correct`/`incorrect` is the whole decision. Reprint is
-   *documented* as preview-first but its apply half does not work — see §16.
+   preview-first too (*Print another copy…*, then *Print now*), and is offered
+   only where it works (§6).
 3. **Append-only, always.** Nothing is edited in place. A correction is a new
    fact that outranks an old one; the old one stays readable.
 4. **The record is not the presentation.** The machine grade survives under

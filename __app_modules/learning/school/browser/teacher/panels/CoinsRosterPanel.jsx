@@ -59,7 +59,8 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
               ))}
             </tbody>
           </table>
-          <p className="teacher-coins__fine">Preview — nothing is paid yet · rules revision {data.rulesRevision}</p>
+          {/* The rules revision rides along as a tooltip, not as copy. */}
+          <p className="teacher-coins__fine" title={`Earning rules revision ${data.rulesRevision}`}>Preview — nothing is paid yet</p>
         </div>
       )}
     </PanelFrame>

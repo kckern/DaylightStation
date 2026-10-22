@@ -11,6 +11,32 @@
  */
 export const TEACHER_BASE = '/school/teacher';
 
+/**
+ * The console path a click on an `<a>` should route to in-app, or null to let
+ * the browser have it. Console links stay real anchors — middle-click and
+ * long-press keep working — and the shell takes only the plain left-click.
+ * Every one of them used to be a full page load that also threw away the
+ * dashboard's open learner (audit 2026-10-21 §0.1).
+ */
+export function consoleLinkTarget(event) {
+  if (!event || event.defaultPrevented || event.button !== 0) return null;
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const anchor = event.target?.closest?.('a[href]');
+  if (!anchor) return null;
+  const target = anchor.getAttribute('target');
+  if ((target && target !== '_self') || anchor.hasAttribute('download')) return null;
+  // The attribute, not `anchor.href`: an SVG `<a>`'s href is an
+  // SVGAnimatedString, not a URL string.
+  let url;
+  try { url = new URL(anchor.getAttribute('href'), globalThis.location?.href); } catch { return null; }
+  if (url.origin !== globalThis.location?.origin) return null;
+  if (url.pathname !== TEACHER_BASE && !url.pathname.startsWith(`${TEACHER_BASE}/`)) return null;
+  // A hash on this same page is a scroll, which only the browser does; a hash
+  // on another console page rides along with the route.
+  if (url.hash && url.pathname === globalThis.location?.pathname && url.search === globalThis.location?.search) return null;
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'coins', 'operations'];
 export const LEARNER_SECTIONS = ['day', 'courses', 'history', 'reading', 'words', 'debriefs', 'coins', 'reports', 'operations'];
 
@@ -89,6 +115,24 @@ export function teacherLearnerPath(learnerId, section = 'day', detailId = null, 
   return `${base}/students/${encodeURIComponent(learnerId)}/${safe}${suffix}`;
 }
 
+/**
+ * A learner's Operations page, told why it was opened. The page reads these
+ * to name the problem and preselect its repair tools (audit 2026-10-21 §2,
+ * "Heal / unstick") — the link used to land on a generic page that knew none
+ * of it.
+ */
+export function teacherLearnerOpsPath(learnerId, { reason = null, subject = null, unit = null, day = null } = {}, base = TEACHER_BASE) {
+  const path = teacherLearnerPath(learnerId, 'operations', null, base);
+  const query = new URLSearchParams();
+  if (reason) query.set('reason', reason);
+  if (subject) query.set('subject', subject);
+  if (unit) query.set('unit', unit);
+  if (day) query.set('day', day);
+  // `toString()`, not `.size`: older Safari has no `URLSearchParams.size`.
+  const qs = query.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 /** The day record for one learner. An omitted day means "today" to the view. */
 export function teacherDayPath(learnerId, studyDay = null, base = TEACHER_BASE) {
   if (!learnerId) return teacherSectionPath('dashboard', base);
@@ -119,5 +163,7 @@ export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { 
   const query = new URLSearchParams();
   if (from) query.set('from', from);
   if (studyDay && STUDY_DAY.test(studyDay)) query.set('studyDay', studyDay);
-  return query.size ? `${path}?${query}` : path;
+  // `toString()`, not `.size`: older Safari has no `URLSearchParams.size`.
+  const qs = query.toString();
+  return qs ? `${path}?${qs}` : path;
 }

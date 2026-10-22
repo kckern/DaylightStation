@@ -17,11 +17,17 @@
  * note stops being optional the moment the verdict is `void`, so tapping the
  * button opens the sentence the child will read rather than firing a write
  * that the server would (rightly) refuse for having nothing to say.
+ *
+ * WHICH LESSON. Every row names its lesson (`titleFor`, from the catalog) and
+ * links to the session, opened with `?from=queue` so Back returns here. A
+ * card-scan written answer arrives with `given: null` — the words are on the
+ * paper, not in the record — so the row says so instead of showing nothing.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { waitAge } from "./waitAge.js";
+import { teacherSessionPath, TEACHER_BASE } from "../teacherUrl.js";
 
 const REASON_COPY = {
   ambiguous: 'the scanner could not tell which bubble was meant',
@@ -30,7 +36,7 @@ const REASON_COPY = {
   'key-alignment-suspected': 'the marked answers might be shifted by a row — check the note below before marking',
 };
 
-export default function ReviewQueueView({ items, kids, onResolved }) {
+export default function ReviewQueueView({ items, kids, onResolved, titleFor = () => null }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id ?? 'Unknown';
   const { run, busy, errors } = useTeacherWrite({ panel: 'review-queue' });
   const [notes, setNotes] = useState({});
@@ -70,6 +76,12 @@ export default function ReviewQueueView({ items, kids, onResolved }) {
               const noteWritten = Boolean((notes[key] ?? '').trim());
               return (
                 <li key={key} className="teacher-review__item">
+                  {item.sessionId && (
+                    <a className="teacher-review__lesson"
+                      href={teacherSessionPath(item.learnerId, item.sessionId, TEACHER_BASE, { from: 'queue' })}>
+                      {titleFor(item.unitId) ?? 'Open the lesson'} →
+                    </a>
+                  )}
                   {item.questionNumber != null && <span className="teacher-review__qnum">Q{item.questionNumber}</span>}
                   <span className="teacher-review__prompt">{item.prompt ?? 'Question text unavailable'}</span>
                   {waitAge(item.enqueuedAt) && (
@@ -78,7 +90,11 @@ export default function ReviewQueueView({ items, kids, onResolved }) {
                   {item.reason && (
                     <span className="teacher-review__reason">{REASON_COPY[item.reason] ?? item.reason}</span>
                   )}
-                  {item.given != null && <blockquote className="teacher-review__given">{String(item.given)}</blockquote>}
+                  {item.given != null
+                    ? <blockquote className="teacher-review__given">{String(item.given)}</blockquote>
+                    : item.reason === 'free_response' && (
+                      <p className="teacher-review__given teacher-review__given--paper">Written on the paper sheet — open the lesson to see it.</p>
+                    )}
                   {item.rubric && (
                     <p className="teacher-review__rubric">Marking guide: {item.rubric}</p>
                   )}

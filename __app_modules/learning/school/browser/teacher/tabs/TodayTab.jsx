@@ -11,29 +11,24 @@ import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch, allUnavailable } from "../usePanelFetch.js";
 import PanelFrame from "../panels/PanelFrame.jsx";
 import RosterStrip from "../panels/RosterStrip.jsx";
+import { labelize } from "../labelize.js";
 
 /**
  * Compact backlog counts linking to the queue — the dashboard summarizes,
  * the Action queue owns the item-level lists (UX audit F26: the same three
- * full panels used to render on both).
+ * full panels used to render on both). The counts are the shell's
+ * `useBacklog`, the same numbers as the rail badge; a `null` count is a
+ * feature this install does not have, so it is left out of the sentence.
  */
-function BacklogStrip({ onOpenQueue }) {
-  const review = usePanelFetch(() => schoolApi.lifecycleReview(), { panel: 'backlog-review', notFoundAs: 'unavailable' });
-  const prints = usePanelFetch(() => schoolApi.printPending(), { panel: 'backlog-prints', notFoundAs: 'unavailable' });
-  const quizzes = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'backlog-quizzes', notFoundAs: 'unavailable' });
-  const count = (panel, pick) => (panel.state === 'ok' || panel.state === 'empty' ? pick(panel.data ?? null) : null);
-  const reviews = count(review, (d) => (d?.items ?? []).length);
-  const printJobs = count(prints, (d) => (Array.isArray(d) ? d.length : 0));
-  const quizAsks = count(quizzes, (d) => (Array.isArray(d) ? d.length : (d?.requests ?? []).length));
+function BacklogStrip({ backlog, onOpenQueue }) {
   const parts = [
-    reviews != null ? `${reviews} to review` : null,
-    printJobs != null ? `${printJobs} print${printJobs === 1 ? '' : 's'}` : null,
-    quizAsks != null ? `${quizAsks} quiz request${quizAsks === 1 ? '' : 's'}` : null,
+    backlog.review != null ? `${backlog.review} to review` : null,
+    backlog.prints != null ? `${backlog.prints} print${backlog.prints === 1 ? '' : 's'}` : null,
+    backlog.quizzes != null ? `${backlog.quizzes} request${backlog.quizzes === 1 ? '' : 's'}` : null,
   ].filter(Boolean);
   // An empty queue advertised twice (heading CTA + this strip) was the
   // emptiest possible state shouting for attention (UX audit IA5).
-  const waiting = (reviews ?? 0) + (printJobs ?? 0) + (quizAsks ?? 0);
-  if (!parts.length || waiting === 0) return null;
+  if (!parts.length || backlog.total === 0) return null;
   return (
     <button type="button" className="teacher-backlog-strip" data-testid="backlog-strip" onClick={onOpenQueue}>
       {parts.join(' · ')} →
@@ -57,15 +52,28 @@ function BacklogStrip({ onOpenQueue }) {
  * visible on a collapsed roster — the "couldn't load the day's plan" notice is
  * inside the day grid, which nobody has opened. A silent strip over a down
  * planner would say the morning is fine when nothing was checked.
+ *
+ * `items` is one entry per affected subject, each with its own link to that
+ * child's repair tools (or the failed lesson, or Courses) — the strip used to
+ * carry a single href to the first learner's problem, so the second child's
+ * broken subject was a tap and a hunt away. Open by default while the list
+ * is short enough to read at a glance.
  */
-function GrownUpStrip({ count, href, unknown = 0 }) {
+function GrownUpStrip({ count, items = [], unknown = 0 }) {
   if (!count && !unknown) return null;
   return (
     <div className="teacher-grownup">
       {count > 0 && (
-        <a className="teacher-grownup-strip" data-testid="grownup-strip" href={href}>
-          {count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up →
-        </a>
+        <details className="teacher-grownup-strip" data-testid="grownup-strip" open={count <= 3}>
+          <summary>{count} subject{count === 1 ? '' : 's'} need{count === 1 ? 's' : ''} a grown-up</summary>
+          <ul>
+            {items.map((item) => (
+              <li key={`${item.learnerId}:${item.subject}:${item.reason}`}>
+                <a href={item.href}>{item.name} · {labelize(item.subject ?? 'lesson')} — {item.headline} →</a>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {unknown > 0 && (
         <p className="teacher-grownup-strip teacher-grownup-strip--unknown" data-testid="grownup-strip-unknown">
@@ -76,7 +84,7 @@ function GrownUpStrip({ count, href, unknown = 0 }) {
   );
 }
 
-export default function TodayTab({ kids = [], onOpenQueue = null }) {
+export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null }) {
   // The v2 day projection is the board contract: it preserves the actual
   // session/taxonomy/artifact context rather than flattening rows into the
   // legacy digest's title-only compatibility shape.
@@ -94,14 +102,14 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
     () => (Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])),
     [today.data],
   );
-  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, href: null });
+  const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, items: [] });
 
   return (
     <div className="teacher-tab teacher-tab--today">
       {lifecycleDown && (
         <p className="teacher-banner">School lifecycle is not enabled on this install — the daily digest needs it.</p>
       )}
-      <GrownUpStrip count={needsGrownUp.count} href={needsGrownUp.href} unknown={needsGrownUp.unknown ?? 0} />
+      <GrownUpStrip count={needsGrownUp.count} items={needsGrownUp.items ?? []} unknown={needsGrownUp.unknown ?? 0} />
       <PanelFrame
         title="Today"
         state={rosterState}
@@ -114,7 +122,7 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
           studyDay={Array.isArray(today.data) ? null : (today.data?.studyDay ?? null)}
           onNeedsGrownUp={setNeedsGrownUp} />
       </PanelFrame>
-      {onOpenQueue && <BacklogStrip onOpenQueue={onOpenQueue} />}
+      {onOpenQueue && backlog && <BacklogStrip backlog={backlog} onOpenQueue={onOpenQueue} />}
     </div>
   );
 }

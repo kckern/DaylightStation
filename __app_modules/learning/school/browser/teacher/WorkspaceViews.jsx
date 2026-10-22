@@ -33,14 +33,18 @@ import CompanionFinishCode from "./panels/CompanionFinishCode.jsx";
 import LaunchPreviewAction from "./panels/LaunchPreviewAction.jsx";
 import GradedWorksheet from "./panels/GradedWorksheet.jsx";
 import LearnerDayView from "./panels/LearnerDayView.jsx";
+import WeekGrid from "./panels/WeekGrid.jsx";
 import ReadingShelfPanel from "./panels/ReadingShelfPanel.jsx";
 import ReadingDetailPanel from "./panels/ReadingDetailPanel.jsx";
 import CardLadderWordsPanel, { cardLadderEnrollments } from "./panels/CardLadderWordsPanel.jsx";
 import { LessonIdentity, SubjectIdentity } from "./CurriculumIdentity.jsx";
-import { teacherBaseFor, teacherDayPath } from "./teacherUrl.js";
+import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacherUrl.js";
+import { grownUpActionFor } from "./obligationCopy.js";
+import { teacherLog } from "./teacherLog.js";
 import { curriculumTitles } from "./curriculumTitles.js";
-import { localDay, humanDate, humanDateTime } from "./teacherDates.js";
+import { localDay, shiftDay, humanDate, humanDateTime } from "./teacherDates.js";
 import { presentSessionState } from "./sessionPresentation.js";
+import { useActorName } from "./useActorName.js";
 import CoinsPanel from "./panels/CoinsPanel.jsx";
 import CoinsRosterPanel from "./panels/CoinsRosterPanel.jsx";
 
@@ -137,7 +141,7 @@ function SessionList({ learnerId, onOpenSession }) {
                       {/* No per-row date: the group heading owns the day (IA2). */}
                       {scoreLine(session) && <small>{scoreLine(session)}</small>}</span>
                     <span className={`teacher-status teacher-status--${stateOf(session)}`}>
-                      {session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
+                      {presentSessionState(session).label}</span>
                   </button>
                 </li>
               );
@@ -150,35 +154,50 @@ function SessionList({ learnerId, onOpenSession }) {
   );
 }
 
-export function DashboardView({ kids, onSelectLearner: _onSelectLearner, onOpenQueue }) {
+export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog = null, onOpenQueue }) {
   // The sidebar/students nav already navigates to workspaces; a duplicate
   // card grid promising "agenda … and repair" (names the tabs don't use)
   // was pure drift (UX audit F25/F26). The dashboard is the Today digest
   // plus a compact backlog summary — the queue owns the full lists.
+  // Re-read on arrival: counts change elsewhere too (an inspector settle, a
+  // reprint), and the dashboard should not show them a poll late.
+  // Unless the shell just read them (a cold load): `refreshIfStale` skips that.
+  useEffect(() => { (backlog?.refreshIfStale ?? backlog?.refresh)?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading">
         <div><p className="teacher-view__eyebrow">Household school</p><h2>Today at a glance</h2><p>Start with what needs a grown-up, then move into a learner’s day.</p></div>
         <button type="button" className="teacher-primary" onClick={onOpenQueue}>Open action queue</button>
       </div>
-      <TodayTab kids={kids} onOpenQueue={onOpenQueue} />
+      <TodayTab kids={kids} backlog={backlog} onOpenQueue={onOpenQueue} />
     </div>
   );
 }
 
-export function QueueView({ kids }) {
+/**
+ * `onChanged` is the shell's `backlog.refresh`: every resolve, print and
+ * dismiss here re-reads the badge count at once instead of on the next poll.
+ */
+export function QueueView({ kids, onChanged }) {
   const review = usePanelFetch(() => schoolApi.lifecycleReview(), { panel: 'queue-review', notFoundAs: 'unavailable', isEmpty: (d) => !(d?.items ?? []).length });
+  // Rows name their lesson. No catalog (or an unknown unit) leaves the row's
+  // link reading "Open the lesson" rather than a placeholder title.
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'queue-catalog', notFoundAs: 'unavailable' });
+  const titleFor = useMemo(() => {
+    const titles = curriculumTitles(catalog.data?.units ?? []);
+    return (unitId) => { const t = unitId ? titles.lesson(unitId) : null; return t === 'Lesson title unavailable' ? null : t; };
+  }, [catalog.data]);
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Action queue</p><h2>Needs a grown-up</h2><p>Review, print, and learner requests in one interruption-friendly list.</p></div></div>
       <PanelFrame title="Grading & review" state={review.state} retry={review.retry} emptyCopy="Nothing is waiting for a mark." unavailableCopy="The review queue is unavailable.">
-        <ReviewQueueView items={review.data?.items ?? []} kids={kids} onResolved={review.retry} />
+        <ReviewQueueView items={review.data?.items ?? []} kids={kids} titleFor={titleFor} onResolved={() => { review.retry(); onChanged?.(); }} />
       </PanelFrame>
       <PanelFrame title="Answer-sheet pairing" state="ok">
-        <AnswerSheetPairingQueue />
+        <AnswerSheetPairingQueue kids={kids} />
       </PanelFrame>
-      <PrintPendingView kids={kids} />
-      <QuizRequestBacklog kids={kids} />
+      <PrintPendingView kids={kids} onChanged={onChanged} />
+      <QuizRequestBacklog kids={kids} onChanged={onChanged} />
     </div>
   );
 }
@@ -196,6 +215,9 @@ export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay()
         <h2>{learnerName}&rsquo;s day</h2>
         <p>What was planned, what got done, and what is still open — for any school day.</p>
       </div></div>
+      {/* The week always ends today, so stepping back through days below
+          moves the highlight, not the reads. */}
+      <WeekGrid learnerId={learnerId} endDay={localDay()} selectedDay={studyDay} onSelectDay={onChangeStudyDay} />
       <LearnerDayView
         learnerId={learnerId}
         learnerName={learnerName}
@@ -254,7 +276,7 @@ function CourseContext({ courseId, lessonId = null, learnerId = null }) {
   );
 }
 
-function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
+function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', learnerId = '' }) {
   const authorizedRead = useAuthorizedTeacherRead();
   const [refresh, setRefresh] = useState(0);
   const exceptions = usePanelFetch(() => authorizedRead(() => teacherWorkspaceApi.curriculumExceptions()), {
@@ -269,8 +291,33 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   const modules = [...new Set(units.map((unit) => unit.module).filter(Boolean))];
   // Neutral by default: the most drastic decision and a preselected reason
   // must never be the zero-interaction path.
-  const [form, setForm] = useState({ kind: '', learnerId: '', targetType: 'lesson',
+  // A `?learner` seeds the Student pick only if that learner is on the roster;
+  // an unknown id would satisfy `valid` behind a select that names nobody.
+  const seededLearner = kids.some((kid) => kid.id === learnerId) ? learnerId : '';
+  const [form, setForm] = useState({ kind: '', learnerId: seededLearner, targetType: 'lesson',
     targetId: lessonId, courseId, replacementLessonId: '', reason: '' });
+  // The roster can land after mount: seed once it does, and never overwrite a pick.
+  useEffect(() => {
+    if (!learnerId || form.learnerId) return;
+    if (kids.some((kid) => kid.id === learnerId)) setForm((current) => ({ ...current, learnerId }));
+  }, [kids, learnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A preselected lesson's course comes from the catalog, which a user pick
+  // (`change('targetId')`) would otherwise have filled.
+  useEffect(() => {
+    if (!lessonId || form.courseId) return;
+    const unit = units.find((candidate) => candidate.unitId === lessonId);
+    if (unit?.courseId) setForm((current) => ({ ...current, courseId: unit.courseId }));
+  }, [lessonId, units.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sent here for a lesson: bring the form into view once, after it and its
+  // catalog have loaded. Scrolling on mount let the panels settling above and
+  // this one's own skeleton push the form back below the fold.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (!lessonId || scrolled.current) return;
+    if (exceptions.state === 'loading' || catalog.state === 'loading') return;
+    scrolled.current = true;
+    document.getElementById('curriculum-exceptions')?.scrollIntoView?.({ block: 'start' });
+  }, [lessonId, exceptions.state, catalog.state]);
   const [preview, setPreview] = useState(null);
   const [retracting, setRetracting] = useState(null);
   const [retractReason, setRetractReason] = useState('');
@@ -302,7 +349,7 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
       { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }),
     { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); } });
   };
-  return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
+  return <div id="curriculum-exceptions"><PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
     <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
     {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
     <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
@@ -313,23 +360,31 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview exception</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
-  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
+  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ? (kids.find((kid) => kid.id === exception.learnerId)?.name ?? exception.learnerId) : 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
     ? <span className="teacher-action-row">
       <input aria-label={`Retraction reason for ${exception.exceptionId}`} maxLength={240} placeholder="Why retract this?" value={retractReason} onChange={(event) => setRetractReason(event.target.value)} />
       <button type="button" disabled={busy || !retractReason.trim()} onClick={() => retract(exception)}>Confirm retraction</button>
       <button type="button" onClick={() => { setRetracting(null); setRetractReason(''); }}>Cancel</button>
     </span>
     : <button type="button" disabled={busy} onClick={() => { setRetracting(exception.exceptionId); setRetractReason(''); }}>Retract</button>}</li>)}</ul>
-  </div></PanelFrame>;
+  </div></PanelFrame></div>;
 }
 
-export function CoursesView({ learnerId, learnerName, courseId, kids: _kids, PianoProgramsPanel }) {
+export function CoursesView({ learnerId, learnerName, courseId, kids, PianoProgramsPanel }) {
   if (!PianoProgramsPanel) throw new Error("Installed teacher courses require the Piano programs panel");
+  // Both panels below write this learner's assignment record; each bump
+  // re-reads the other, so one screen never shows two versions of it.
+  const [assignmentsRefresh, setAssignmentsRefresh] = useState(0);
+  const [matrixRefresh, setMatrixRefresh] = useState(0);
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? 'Course details' : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
       {courseId && <CourseContext courseId={courseId} learnerId={learnerId} />}
-      <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
+      <AssignmentsView learnerId={learnerId} learnerName={learnerName} refreshKey={assignmentsRefresh} onSaved={() => setMatrixRefresh((n) => n + 1)} />
+      {/* Enrolling used to live only on the Curriculum page's whole-school
+          grid; the same grid, scoped to this child, puts it next to the
+          courses it changes. */}
+      <SchoolMatrix kids={kids} learnerId={learnerId} title={`Enroll ${learnerName} in courses`} refreshKey={matrixRefresh} onChanged={() => setAssignmentsRefresh((n) => n + 1)} />
       <PianoProgramsPanel learnerId={learnerId} />
       <MilestonesPanel learnerId={learnerId} />
     </div>
@@ -433,6 +488,8 @@ export function WordsView({ learnerId, learnerName }) {
     isEmpty: (d) => !cardLadderEnrollments(d?.programs).length,
   });
   const decks = cardLadderEnrollments(assignment.data?.programs);
+  // Each panel's new-word pool lists decks by name, its siblings' included.
+  const deckTitles = Object.fromEntries(decks.filter((entry) => entry.title).map((entry) => [entry.deckId, entry.title]));
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Cards</p><h2>{learnerName}’s card ladder</h2><p>Every card this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
@@ -440,7 +497,7 @@ export function WordsView({ learnerId, learnerName }) {
         emptyCopy={`${learnerName ?? learnerId} is not enrolled in a card-ladder deck.`}
         unavailableCopy="Assignments are not enabled on this install.">
         {decks.map((entry) => (
-          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? entry.deckId} />
+          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
         ))}
       </PanelFrame>
     </div>
@@ -478,15 +535,38 @@ export function ReportsView({ learnerId, kids }) {
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Reports & diagnosis</p><h2>Progress, grades, and pacing</h2><p>Live evidence, frozen records, mastery signals, retries, and blockers—without comparing siblings.</p></div></div><RecordsTab learnerId={learnerId} kids={kids} /></div>;
 }
 
+/**
+ * `?reason`, `?subject`, `?unit` and `?day` say why the page was opened (see
+ * `teacherLearnerOpsPath`): the problem is named and its repair preselected.
+ */
 export function LearnerOperationsView({ learnerId, learnerName, kids }) {
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  const focus = { reason: params.get('reason'), subject: params.get('subject'), unit: params.get('unit'), day: params.get('day') };
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student operations</p><h2>Repair {learnerName}’s record</h2><p>Use the narrowest intervention that matches what actually happened. Every write is attributed and auditable.</p></div></div>
+      {focus.reason && <OpsFocusNotice focus={focus} learnerId={learnerId} learnerName={learnerName} />}
       <InterventionsIndex learnerId={learnerId} />
-      <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
+      <AttestationPanel learnerId={learnerId} learnerName={learnerName} initialUnitId={focus.unit} />
       <ProgramDayBypassPanel learnerId={learnerId} learnerName={learnerName} />
-      <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
+      <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} initialDay={focus.day} />
     </div>
+  );
+}
+
+/** Why this page was opened, in words, with the two repairs that fit. */
+function OpsFocusNotice({ focus, learnerId, learnerName }) {
+  const action = grownUpActionFor(focus.reason);
+  const schoolFix = `${teacherBaseFor(globalThis.location?.pathname ?? '')}/operations?${new URLSearchParams({
+    ...(focus.unit ? { unit: focus.unit } : {}), learner: learnerId })}`;
+  return (
+    <section className="teacher-panel teacher-ops-focus" role="status">
+      <h3 className="teacher-panel__title">{labelize(focus.subject ?? 'Lesson')}: {action.headline}</h3>
+      <ul>
+        <li>{learnerName} did the work, but the tech lost it? <strong>Give credit</strong> below{focus.unit ? ' — the lesson is already picked' : ''}.</li>
+        <li>The lesson itself is the problem? <a href={schoolFix}>Excuse or pause {focus.unit ? 'this' : 'a'} lesson for everyone →</a></li>
+      </ul>
+    </section>
   );
 }
 
@@ -504,20 +584,34 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
       <CurriculumBrowser courseId={courseId} />
     </> : <>
       <CurriculumCatalog />
-      <SyllabiPanel />
+      {/* Enrolling is the common job here; syllabus admin is the rare one. */}
       <SchoolMatrix kids={kids} />
+      <SyllabiPanel />
       <EnrichmentPanel kids={kids} />
     </>}
   </div>;
 }
 
+/**
+ * `?unit` and `?learner` come from a child's "excuse or pause this lesson for
+ * everyone" link: the exception form opens on them and, once loaded, scrolls
+ * into view (CurriculumExceptionPanel owns the scroll).
+ */
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
+  const params = new URLSearchParams(globalThis.location?.search ?? '');
+  const unit = params.get('unit') ?? '';
+  const learner = params.get('learner') ?? '';
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={learner} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
 }
 
 function BulkRegradePanel() {
   const today = localDay();
-  const [form, setForm] = useState({ bankId: '', fromDay: today, toDay: today, reason: '' });
+  // A systematic regrade is about work already done: default to the last 30
+  // days, not to an empty range ending today. A linked `?bank=` arrives filled
+  // in; the shell keys this view by its query, so a new link is a fresh form.
+  const monthAgo = shiftDay(today, -30);
+  const bankFromUrl = new URLSearchParams(window.location.search).get('bank') ?? '';
+  const [form, setForm] = useState({ bankId: bankFromUrl, fromDay: monthAgo, toDay: today, reason: '' });
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'bulk-regrade' });
   const key = 'bulk-regrade';
@@ -782,6 +876,56 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
+/**
+ * The child's sheet as it came back, marked. Two steps on purpose: the
+ * step-up PIN first, then a link — opening a tab after an async PIN prompt
+ * is what popup blockers refuse.
+ */
+// The states a sheet carries marks in (sessionEvents TRANSITIONS: graded and
+// everything after it). An allowlist, not "anything past issued": submitted is
+// handed in but unmarked, abandoned/failed never came back, and a state added
+// later stays hidden until someone decides it has marks.
+const MARKED_SHEET_STATES = new Set(['graded', 'outcome_recorded', 'remediation_opened', 'rewarded']);
+
+// The postview route's own error text names entity ids (EntityNotFoundError
+// and friends); a teacher reads a sentence instead. Statuses not listed keep
+// useTeacherWrite's default handling — 403 in particular, which it retries.
+const MARKED_SHEET_ERRORS = {
+  404: 'This sheet is no longer on file.',
+  400: "This sheet can't be drawn with marks.",
+  501: "Marked sheets aren't set up on this install.",
+};
+
+function MarkedSheet({ artifactId }) {
+  const [url, setUrl] = useState(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-postview' });
+  const key = `postview:${artifactId}`;
+  // A fetch can outlive the inspector (the teacher navigates away while the
+  // PDF renders); its blob URL is then revoked, never put into state.
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => () => { if (url) URL.revokeObjectURL?.(url); }, [url]);
+  if (url) return <a href={url} target="_blank" rel="noreferrer">Open the marked sheet (PDF)</a>;
+  const fetchSheet = async ({ stepUpToken }) => {
+    const response = await teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken);
+    const copy = !response.ok && MARKED_SHEET_ERRORS[response.status];
+    return copy ? { ...response, data: { error: copy } } : response;
+  };
+  const opened = (blob) => {
+    const next = URL.createObjectURL(blob);
+    if (!mountedRef.current) { URL.revokeObjectURL?.(next); return; }
+    setUrl(next);
+    teacherLog.nav('postview-open', { artifactId });
+  };
+  return <>
+    <button type="button" disabled={busy === key} onClick={() => run(key, fetchSheet,
+      { stepUp: { action: 'artifact.postview', resource: artifactId }, onSuccess: opened })}>
+      See the marked sheet
+    </button>
+    {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
+  </>;
+}
+
 export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel = 'Back' }) {
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
@@ -846,6 +990,10 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
   const canSettleByHand = Boolean(settleLearnerId) && (capabilities.manualSettlement
     ?? (SETTLEABLE_STATES.has(sessionState?.state) && sessionState?.terminal !== true));
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
+  // Who did each lifecycle step: a child by the roster's name, a grown-up by
+  // the teacher roster's — never the raw id when either knows it.
+  const actorName = useActorName();
+  const eventActor = (id) => (id ? kids.find((kid) => kid.id === id)?.name ?? actorName(id) : '');
   const offerRetake = () => run(sessionId, ({ actorId, pin }) => schoolApi.offerRetake(sessionId, {
     openedBy: actorId, pin,
   }), { onSuccess: () => setAttempt((n) => n + 1) });
@@ -853,6 +1001,12 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
   const events = useMemo(() => session?.events ?? sessionState?.events ?? sessionState?.history ?? [], [session, sessionState]);
   const updatedAt = dateOf(session) ?? session?.updatedAt ?? events.at(-1)?.at ?? null;
   const previewSubject = session?.taxonomy?.subject ?? sessionState?.subject ?? null;
+  // The study day a reassign should open on. `updatedAt` is last ACTIVITY —
+  // a lesson rescanned on Friday would file Monday's work under Friday — so
+  // the fallback is when the session was opened, and with neither, no day.
+  const createdAt = events.find((event) => event.type === 'created')?.at ?? null;
+  const sessionDay = sessionState?.studyDay
+    ?? (createdAt && !Number.isNaN(Date.parse(createdAt)) ? localDay(new Date(createdAt)) : null);
 
   return (
     <div className="teacher-view teacher-session-inspector">
@@ -887,12 +1041,19 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               {canOfferRetake && <button type="button" className="teacher-btn" disabled={busy === sessionId}
                 onClick={offerRetake}>Offer another try</button>}
             </div>
-            <details className="teacher-session-more-actions">
-              <summary>More actions</summary>
-              <a href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>
-                Give credit for work completed offline →
-              </a>
-            </details>
+            {(result.ownerId ?? learnerId) && (
+              <details className="teacher-session-more-actions">
+                <summary>More actions</summary>
+                {/* Each lands on the child's Operations page with its repair
+                    preselected: the lesson for credit, the day for a reassign. */}
+                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { unit: sessionState?.unitId ?? null })}>
+                  Give credit for work completed offline →
+                </a>
+                <a href={teacherLearnerOpsPath(result.ownerId ?? learnerId, { day: sessionDay })}>
+                  This was another child’s work →
+                </a>
+              </details>
+            )}
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {/* Below the repair a teacher came for, never above it: settling
@@ -905,6 +1066,15 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
             <SettleByHand sessionId={sessionId} learnerId={settleLearnerId}
               learnerName={ownerName} currentPercent={effectiveGrade}
               onSettled={() => setAttempt((n) => n + 1)} />
+          )}
+          {/* Answers still waiting for a mark: the server would refuse the
+              settle as `awaiting_review` after the PIN, so the read model
+              withholds it and this says where the work actually is. */}
+          {!canSettleByHand && (capabilities.pendingReview ?? 0) > 0 && (
+            <CapabilityNotice>
+              {capabilities.pendingReview} answer{capabilities.pendingReview === 1 ? ' is' : 's are'} waiting for your mark.{' '}
+              <a href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/queue`}>Mark {capabilities.pendingReview === 1 ? 'it' : 'them'} in the action queue →</a>
+            </CapabilityNotice>
           )}
           {/* The escape hatch for a required read-along that will not play.
               The read model exposes the capability only for lessons whose
@@ -940,16 +1110,26 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
                 key={artifact.artifactId}
                 artifact={artifact}
                 lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'}
-                action={['exact', 'regenerable'].includes(artifact.availability)
-                  ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
-                  : null}
+                // The read model says which paper the server will reprint;
+                // offering any other is a button that only ever refuses.
+                action={<>
+                  {artifact.reprintable === true
+                    && <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />}
+                  {/* The marked sheet exists only once the work has been marked
+                      (MARKED_SHEET_STATES), and only for the child's own sheet — a receipt is the
+                      result, not the work, and a sheet with no bytes on file
+                      cannot be drawn on. */}
+                  {artifact.role !== 'result-receipt' && artifact.availability !== 'unavailable'
+                    && MARKED_SHEET_STATES.has(sessionState?.state)
+                    && <MarkedSheet artifactId={artifact.artifactId} />}
+                </>}
               />
             ))}</div>
           </section>}
-          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
+          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{actorName(adjustment.adjustedBy)}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <details className="teacher-panel teacher-fold">
             <summary><h3 className="teacher-panel__title">Activity history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
-            {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
+            {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{eventActor(event.by ?? event.actorId ?? event.gradedBy)}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
           </details>
         </>
       )}

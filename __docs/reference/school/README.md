@@ -2632,10 +2632,13 @@ what didn't save.
   row and the "N of M correct" line. Both must be integers or the line is
   dropped, so a producer that omits them prints a receipt with no count at
   all.
-- **Kids can talk back.** Kid-safe (ungated) requests: `POST
-  /retake-requests` from a failed quiz summary and `POST /flags` ("Something
-  seem wrong? Tell a grown-up") — both land as `kind:'retake'` / `kind:'flag'`
-  rows in the quiz-request backlog with badges on the teacher's Today tab.
+- **Kids can talk back.** Kid-safe (ungated) requests: `POST /flags`
+  ("Something seem wrong? Tell a grown-up") and quiz requests for a gated unit
+  with no bank — both land as rows in the quiz-request backlog with badges on
+  the teacher's Today tab. A failed on-screen quiz no longer files a retake ask
+  (`POST /retake-requests`): since 2026-10-21 it offers *Try again* and retakes
+  until passed, no grown-up needed. The route stays for the `kind:'retake'`
+  rows already on file, which are dismiss-only.
   Dismissing ANY backlog row requires a reason, delivered to the child as a
   note. Reassignment, attestation, and attestation-retraction auto-write
   child-readable notes.

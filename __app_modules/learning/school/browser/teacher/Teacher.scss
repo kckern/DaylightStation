@@ -4,6 +4,11 @@
   box-sizing: border-box;
   min-height: 100vh;
   background: #ece5d6;   // a darkened sibling of the console cream — never raw #000 gutters
+  // The console paints itself light, so it must say so. The app root runs a
+  // dark color-scheme, under which a button with no colour of its own takes
+  // the UA's dark `buttontext` — white — and the roster's learner names and
+  // the teacher chip rendered white on white.
+  color-scheme: light;
   --ds-background: #f6f2e9;
   --ds-surface: #fffdf8;
   --ds-surface-alt: #f3eee5;
@@ -535,8 +540,9 @@
 }
 .teacher-session-more-actions { margin-top: 10px;
   summary { min-height: 44px; color: #654318; cursor: pointer; font-size: 13px; font-weight: 700; }
-  a { display: inline-flex; min-height: 44px; align-items: center; color: #5a3d18; font-weight: 700; }
+  a { display: flex; min-height: 44px; align-items: center; color: #5a3d18; font-weight: 700; }
 }
+.teacher-ops-focus { ul { margin: 6px 0 0; padding-left: 18px; } li { margin: 4px 0; line-height: 1.45; } }
 .teacher-session-materials { > .teacher-muted { margin: -3px 0 10px; } &__cards { display: grid; gap: 10px; } &__card { display: grid; gap: 7px; } &__print { display: flex; justify-content: flex-end; } &__print > button { border: 1px solid #d4c6af; border-radius: 6px; padding: 5px 8px; background: white; color: #604521; font: inherit; font-size: 12px; font-weight: 700; } }
 .teacher-curriculum__preview { display: inline-block; margin-top: 8px; color: #604521; font-size: 12px; font-weight: 700; text-decoration: none; }
 .teacher-curriculum__sandbox { margin-top: 20px; padding: 16px; border: 1px solid #e2d8c7; border-radius: 12px; background: #fffdf8; }
@@ -1332,6 +1338,9 @@
   padding: 1px 6px;
 }
 
+.teacher-review__lesson { display: block; font-weight: 700; color: #6e4b20; text-decoration: none; margin-bottom: 2px; }
+.teacher-review__given--paper { font-style: italic; color: #6d6455; }
+
 .teacher-review__reason {
   display: block;
   font-size: 12px;
@@ -1680,6 +1689,12 @@
   border: 1px solid #e3b7a6; border-radius: 12px; background: #fbe4de;
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #813927;
   &:hover, &:focus-visible { background: #f8dfd8; }
+  // One link per affected subject under the count. The list is the strip's
+  // content, so an open strip keeps its colour under the pointer.
+  > summary { cursor: pointer; }
+  &[open]:hover { background: #fbe4de; }
+  ul { margin: 0.5rem 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+  li a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   // "We couldn't read the plan" — a caution, not a fault, and not a link:
   // there is nowhere useful to send a parent whose planner read failed. Amber
   // rather than the strip's red so an unknown never reads as a known problem.
@@ -1844,6 +1859,12 @@
   summary::-webkit-details-marker { display: none; }
   summary::after { content: '▸'; margin-left: auto; color: #8d8474; }
   &[open] summary::after { content: '▾'; }
+}
+/* Reports' period-admin fold holds whole panels; inside the fold they lose
+   their own card chrome so it reads as one card, not cards in a card. */
+.teacher-period-admin {
+  > :not(summary) { margin-top: 12px; }
+  > .teacher-panel { padding: 0; border: 0; background: transparent; }
 }
 .teacher-score-provenance { display: block; margin-top: 2px; color: #8a7d68; font-size: 12px; font-weight: 400; }
 
@@ -2475,8 +2496,10 @@
   grid-column: 2; grid-row: 1; justify-self: end;
   display: inline-flex; align-items: center;
   .teacher-agenda-dispatch { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  button { border: 0; border-radius: 8px; padding: 7px 11px; cursor: pointer; font-weight: 650; white-space: nowrap;
-    background: #3d3326; color: #fdfbf6; }
+  // Secondary, not primary: reading the day is the common job, printing it the
+  // occasional one — and this one drives a physical printer behind a PIN.
+  button { border: 1px solid #c9b896; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-weight: 650; white-space: nowrap;
+    background: transparent; color: #3d3326; }
   button:disabled { opacity: .55; cursor: progress; }
   .teacher-agenda-dispatch__ready, .teacher-agenda-dispatch__blocked { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; }
   .teacher-agenda-dispatch__ready button:last-child,
@@ -2966,4 +2989,49 @@
     border-radius: 0;
     padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
   }
+}
+
+// Phone: the row card takes the full width on its own line; the print button
+// and the agenda icon sit under it. Before this the card was squeezed into
+// one grid column, the day dots stacked into a vertical column, and "Print
+// agenda" overlapped the card (audit 2026-10-21 F2).
+@media (max-width: 760px) {
+  .teacher-roster__entry { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .teacher-roster__card { grid-column: 1 / -1; grid-row: 1; flex-wrap: wrap; }
+  .teacher-roster__identity { flex: 1 1 auto; }
+  .teacher-roster__dots { order: 3; flex: 1 0 100%; margin-right: 0; }
+  .teacher-roster__agenda-print { grid-column: 1; grid-row: 2; justify-self: start; }
+  .teacher-roster__agenda-link { grid-column: 2; grid-row: 2; }
+  .teacher-roster__plan-link { margin-left: 0; }
+}
+
+// The week at a glance (WeekGrid): state colours match the roster day dots.
+// The scroll wrapper is what keeps a phone's page from scrolling sideways —
+// seven day columns plus a subject name do not fit 360px, so the TABLE
+// scrolls inside the panel instead.
+.teacher-week__scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.teacher-week {
+  width: 100%; min-width: 520px; border-collapse: separate; border-spacing: 3px; font-size: 13px;
+  th, td { padding: 0; text-align: center; }
+  tbody th { padding: 0 6px 0 0; text-align: left; font-weight: 600; color: #5d5647; white-space: nowrap; }
+  thead button {
+    display: grid; gap: 1px; width: 100%; min-height: 44px; border: 1px solid #e0d8c8; border-radius: 8px;
+    background: #fff; padding: 4px; cursor: pointer; font: inherit; color: #3b352b;
+    small { color: #6d6455; }
+    &[aria-pressed="true"] { border-color: #6e4b20; box-shadow: inset 0 0 0 1px #6e4b20; }
+    &:focus-visible { outline: 2px solid #6e4b20; outline-offset: 2px; }
+  }
+  &__cell {
+    height: 30px; border-radius: 6px;
+    button {
+      width: 100%; height: 100%; min-height: 30px; border: 0; border-radius: inherit; background: transparent;
+      font: inherit; font-weight: 700; font-size: 12px; color: inherit; cursor: pointer;
+    }
+    &--done { background: #e4f0e0; color: #2e6b34; }
+    &--in-progress { background: #fdf7e8; color: #8a6a2a; outline: 1px dashed #c9a35c; outline-offset: -3px; }
+    &--planned { background: #f3eee5; color: #8a8272; }
+    &--blocked { background: #fbe4de; color: #9a3b26; }
+    &--deferred { background: repeating-linear-gradient(45deg, #f3eee5 0 4px, #fff 4px 8px); color: #866526; }
+  }
+  &__empty { padding: 8px; color: #6d6455; text-align: left; }
 }

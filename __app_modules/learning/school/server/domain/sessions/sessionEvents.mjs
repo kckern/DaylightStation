@@ -341,9 +341,20 @@ const SCHEMA = {
   // moves the lifecycle nowhere: the work did not un-happen, its verdict on one
   // row simply changed.
   companion_gate_read: { fields: ['companionGate'], validate: gateField },
+  // `passingPercent` (optional) is the bar the close decided this with, written
+  // when the `graded` event stamped none — every card scan. Without it a later
+  // look (a re-close after a gate repair, a grade correction, a reprint) had to
+  // resolve the bar again, from an enrollment that may have moved since
+  // (advocacy A4). The reducer fills `gradedPassingPercent` from it only when
+  // nothing earlier did.
   outcome_recorded: {
-    fields: ['outcomeId', 'result', 'reason'],
-    validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
+    fields: ['outcomeId', 'result', 'reason', 'passingPercent'],
+    validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS), (raw, push) => {
+      if (raw.passingPercent !== undefined && (typeof raw.passingPercent !== 'number'
+          || !Number.isFinite(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {
+        push('passingPercent: must be a number from 1-100 when present');
+      }
+    }),
   },
   // `paidTo` (optional) is WHICH CHILD actually holds these coins. It is not
   // redundant with the session's credited learner: `reassigned` is legal at
@@ -1011,6 +1022,9 @@ const APPLY = {
       ...(isNonEmptyString(e.reason) ? { reason: e.reason } : {}),
     };
     s.machineOutcome = { ...s.outcome };
+    if (s.gradedPassingPercent == null && typeof e.passingPercent === 'number') {
+      s.gradedPassingPercent = e.passingPercent;
+    }
   },
   rewarded(s, e) {
     s.rewardTxn = e.txnId ?? null;

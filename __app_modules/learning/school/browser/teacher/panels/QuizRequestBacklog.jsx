@@ -1,11 +1,13 @@
 /**
  * QuizRequestBacklog — units children flagged as quiz-gated with no bank,
- * plus kid-filed retake asks (kind:'retake'). The backlog shrinks two ways
+ * plus kid-filed retake asks (kind:'retake') and flags. The backlog shrinks two ways
  * (wave 2, teacher.quizrequests.clear): a request shows a "bank authored"
  * badge once a bank bound to its unit exists, and any request can be
  * dismissed through the gate — but a dismissal REQUIRES a reason, which is
  * delivered to the child as a note (advocacy A5: no silent verbs about
- * children).
+ * children). Retake asks are dismiss-only: since 2026-10-21 an on-screen
+ * quiz retakes until passed and the runner files no new ones, so the rows
+ * left are legacy and clear like any other.
  */
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -13,7 +15,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
 
-export default function QuizRequestBacklog({ kids }) {
+export default function QuizRequestBacklog({ kids, onChanged }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests', notFoundAs: 'unavailable' });
   // A degraded/older endpoint must leave this auxiliary panel empty, never
@@ -30,7 +32,7 @@ export default function QuizRequestBacklog({ kids }) {
       unitId: r.unitId ?? null, bankId: r.bankId ?? null,
       kind: r.kind ?? null, sessionId: r.sessionId ?? null, userId: r.userId,
       dismissedBy: actorId, pin, reason: reason.trim(),
-    }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); } });
+    }), { onSuccess: () => { setAsking(null); setReason(''); requests.retry(); onChanged?.(); } });
   };
 
   return (
@@ -81,9 +83,9 @@ export default function QuizRequestBacklog({ kids }) {
       </ul>
       {items.length > 0 && (
         <p className="teacher-panel__empty">
-          Fulfilling a request means authoring a quiz bank YAML bound to that
-          unit (data/content/quizzes/, `unit:` backlink) — the badge flips the
-          moment one exists. Dismissing one sends your reason to the child.
+          A quiz request is fulfilled by authoring a bank for that unit (ask
+          whoever maintains the curriculum files); the badge flips the moment
+          one exists. Dismissing one sends your reason to the child.
         </p>
       )}
     </PanelFrame>

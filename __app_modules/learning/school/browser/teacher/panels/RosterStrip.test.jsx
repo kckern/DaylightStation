@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
-import RosterStrip from "./RosterStrip.jsx";
+import RosterStrip, { grownUpHref } from "./RosterStrip.jsx";
 import { teacherLog } from "../teacherLog.js";
 
 // RosterStrip's only network dependency is the agenda preview read (per
@@ -9,6 +9,10 @@ vi.mock("../../schoolApi.js", () => ({ schoolApi: { agendaPreview: vi.fn() } }))
 const { schoolApi } = await import("../../schoolApi.js");
 
 const ok = (data) => ({ ok: true, status: 200, data });
+
+// The open card lives in the URL (`?open=`); a test that expanded a learner
+// must not hand the next one a card that is already open.
+beforeEach(() => { window.history.replaceState({}, '', window.location.pathname); });
 const KIDS = [{ id: 'user_4', name: 'User_4' }];
 const ROW = { learnerId: 'user_4', sessions: [], pendingReview: 0 };
 
@@ -29,13 +33,15 @@ describe('RosterStrip — a faulted subject looks like a fault (plan 3.2)', () =
   it.each([
     ['program_unavailable', 'This program can’t start'],
     ['blocked_unreachable', 'Locked behind work nothing can reach'],
-  ])('renders the fault card treatment and the Operations link for %s', async (reason, headline) => {
+  ])('renders the fault card treatment and the learner\'s own repair tools for %s', async (reason, headline) => {
     const grid = await mountExpanded(section({ state: 'faulted', reason }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).toMatch(/teacher-lesson-card--faulted/);
     expect(grid.getByText(headline)).toBeInTheDocument();
-    const link = grid.getByRole('link', { name: 'School → Operations' });
-    expect(link).toHaveAttribute('href', '/school/teacher/operations');
+    // The learner's own Operations page, told the reason and subject — not
+    // the generic school page that knew neither.
+    const link = grid.getByRole('link', { name: 'Open repair tools' });
+    expect(link).toHaveAttribute('href', `/school/teacher/students/user_4/operations?reason=${reason}&subject=math&day=2026-08-26`);
     // Never the schema's own word for itself.
     expect(grid.queryByText(reason)).toBeNull();
   });
@@ -51,12 +57,13 @@ describe('RosterStrip — actionable excuses say so (plan 3.3)', () => {
     expect(link).toHaveAttribute('href', '/school/teacher/students/user_4/courses');
   });
 
-  it('awaiting_grown_up links to School → Operations, using the dormant-unit sentence', async () => {
+  it('awaiting_grown_up links to the learner\'s repair tools, using the dormant-unit sentence', async () => {
     const grid = await mountExpanded(section({ state: 'excused', reason: 'awaiting_grown_up' }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).not.toMatch(/--faulted/);
     expect(grid.getByText('Ask a grown-up to continue or reschedule this work.')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'School → Operations' })).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'Open repair tools' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=awaiting_grown_up&subject=math&day=2026-08-26');
   });
 
   // Table-driven, and the absence of a link is asserted as deliberately as
@@ -116,7 +123,7 @@ describe('RosterStrip — the collapsed roster row (DayDots)', () => {
 });
 
 describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (plan 3.4)', () => {
-  it('counts faults and actionable excuses across every learner, and links to the first in roster order', async () => {
+  it('counts faults and actionable excuses across every learner, one named link per affected subject', async () => {
     const kids = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
     const rows = [{ learnerId: 'user_4', sessions: [] }, { learnerId: 'user_2', sessions: [] }];
     schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
@@ -127,10 +134,14 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     await screen.findByRole('button', { name: /User_4/ });
     await screen.findByRole('button', { name: /User_2/ });
     // Both learners' agenda reads settle asynchronously; the LAST report,
-    // once both have landed, must count only user_2's fault and link to
-    // the first (in roster order) learner who has one.
+    // once both have landed, must count only user_2's fault and carry one
+    // link to that child's own repair tools, named.
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 0, href: '/school/teacher/operations',
+      count: 1, unknown: 0, items: [{
+        learnerId: 'user_2', name: 'User_2', reason: 'program_unavailable', subject: 'math',
+        headline: 'This program can’t start',
+        href: '/school/teacher/students/user_2/operations?reason=program_unavailable&subject=math&day=2026-08-26',
+      }],
     }));
   });
 
@@ -139,7 +150,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
-    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, href: null }));
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 0, items: [] }));
   });
 
   // A FAILED PLANNER READ IS NOT A ZERO.
@@ -157,7 +168,7 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     const onNeedsGrownUp = vi.fn();
     render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
-    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, href: null }));
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, items: [] }));
   });
 
   it('counts a readable learner and an unreadable one separately', async () => {
@@ -170,8 +181,38 @@ describe('RosterStrip — reports the dashboard’s "needs a grown-up" tally (pl
     render(<RosterStrip rows={rows} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_2/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 1, href: '/school/teacher/operations',
+      count: 1, unknown: 1, items: [expect.objectContaining({
+        learnerId: 'user_4', href: '/school/teacher/students/user_4/operations?reason=program_unavailable&subject=math&day=2026-08-26',
+      })],
     }));
+  });
+
+  // The count, the unknowns and the links are one set: a learner who has
+  // left the roster must drop out of all three, not only the links.
+  it('drops a learner who left the roster from the count and the unknowns, not only the links', async () => {
+    const kids = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
+    const both = [{ learnerId: 'user_4', sessions: [] }, { learnerId: 'user_2', sessions: [] }];
+    schoolApi.agendaPreview.mockImplementation(async (learnerId) => (learnerId === 'user_4'
+      ? ok({ sections: [section({ state: 'faulted', reason: 'program_unavailable' })] })
+      : { ok: false, status: 500, data: null }));
+    const onNeedsGrownUp = vi.fn();
+    const view = render(<RosterStrip rows={both} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith(expect.objectContaining({ count: 1, unknown: 1 })));
+    view.rerender(<RosterStrip rows={[both[1]]} kids={kids} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({ count: 0, unknown: 1, items: [] }));
+  });
+
+  it('renames a child in the strip when the roster renames them', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [section({ state: 'faulted', reason: 'program_unavailable' })] }));
+    const onNeedsGrownUp = vi.fn();
+    const view = render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({ name: 'User_4' })],
+    })));
+    view.rerender(<RosterStrip rows={[ROW]} kids={[{ id: 'user_4', name: 'Renamed' }]} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({ name: 'Renamed' })],
+    })));
   });
 
   it('suppresses the collapsed card summary and dots when the plan could not be read', async () => {
@@ -215,7 +256,9 @@ describe('RosterStrip — a section\'s obligation is stated once, not once per r
     render(<RosterStrip rows={[rowWithTwoSessions]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
     await screen.findByRole('button', { name: /User_4/ });
     await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
-      count: 1, unknown: 0, href: '/school/teacher/students/user_4/courses',
+      count: 1, unknown: 0, items: [expect.objectContaining({
+        learnerId: 'user_4', reason: 'caught_up', href: '/school/teacher/students/user_4/courses',
+      })],
     }));
   });
 
@@ -254,7 +297,8 @@ describe('RosterStrip — a copy-gap never renders blank (drift safety net)', ()
     expect(card.className).toMatch(/--faulted/);
     expect(grid.queryByText('unforeseen_fault')).toBeNull();
     expect(grid.getByText('This needs a grown-up (Unforeseen Fault).')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'School → Operations' })).toBeInTheDocument();
+    expect(grid.getByRole('link', { name: 'Open repair tools' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/operations?reason=unforeseen_fault&subject=math&day=2026-08-26');
     expect(warn).toHaveBeenCalledWith('grown-up-reason-unmapped', { reason: 'unforeseen_fault' });
     warn.mockRestore();
   });
@@ -273,14 +317,36 @@ describe('RosterStrip — a copy-gap never renders blank (drift safety net)', ()
 });
 
 describe('RosterStrip — teacher hold (remediation cap)', () => {
-  it('teacher_hold says a grown-up is needed and links to the learner\'s History', async () => {
+  it('teacher_hold with no session on the row falls back to the learner\'s History', async () => {
     const grid = await mountExpanded(section({ state: 'excused', reason: 'teacher_hold' }));
     const card = grid.getByTestId('lesson-card');
     expect(card.className).not.toMatch(/--faulted/);
     expect(grid.getByText('Stuck on a failed lesson — this one needs you.')).toBeInTheDocument();
-    expect(grid.getByRole('link', { name: 'Open History' }))
+    expect(grid.getByRole('link', { name: 'Open the lesson' }))
       .toHaveAttribute('href', '/school/teacher/students/user_4/history');
     expect(grid.queryByText('teacher_hold')).toBeNull();
+  });
+
+  // The real shape of a hold: agenda.mjs makes the held entry the section's
+  // `next`, and its failed attempt is from an earlier day, so no session of
+  // today's joins the row. The digest's `attention` item for that unit is
+  // what still knows the session — the link used to stop at History.
+  it('teacher_hold links to the failed session the attention item names', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [{
+      subject: 'math', next: { unitId: 'm1', title: 'Math A' }, obligation: { state: 'excused', reason: 'teacher_hold' },
+    }] }));
+    const row = { ...ROW, attention: [{ kind: 'remediation-cap', learnerId: 'user_4', unitId: 'm1', sessionId: 'ses_9', unitTitle: 'Math A' }] };
+    const onNeedsGrownUp = vi.fn();
+    render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-08-26" onNeedsGrownUp={onNeedsGrownUp} />);
+    fireEvent.click(await screen.findByRole('button', { name: /User_4/ }));
+    const grid = within(await screen.findByTestId('lesson-grid'));
+    expect(grid.getByRole('link', { name: 'Open the lesson' }))
+      .toHaveAttribute('href', '/school/teacher/students/user_4/history/sessions/ses_9?from=today');
+    await waitFor(() => expect(onNeedsGrownUp).toHaveBeenLastCalledWith({
+      count: 1, unknown: 0, items: [expect.objectContaining({
+        reason: 'teacher_hold', href: '/school/teacher/students/user_4/history/sessions/ses_9?from=today',
+      })],
+    }));
   });
 
   it('names each remediation-cap item on the card, linked to the session that can offer another try', async () => {
@@ -317,5 +383,36 @@ describe('RosterStrip — teacher hold (remediation cap)', () => {
     render(<RosterStrip rows={[{ ...ROW, attention: [] }]} kids={KIDS} studyDay="2026-10-02" />);
     await screen.findByRole('button', { name: /User_4/ });
     expect(screen.queryByTestId('attention')).toBeNull();
+  });
+});
+
+describe('RosterStrip — the open card follows the URL', () => {
+  it('re-reads `?open=` on popstate, so back/forward and same-page links move it', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    window.history.replaceState({}, '', `${window.location.pathname}?open=user_4`);
+    render(<RosterStrip rows={[ROW]} kids={KIDS} studyDay="2026-08-26" />);
+    const card = await screen.findByRole('button', { name: /User_4/ });
+    expect(card).toHaveAttribute('aria-expanded', 'true');
+    window.history.pushState({}, '', window.location.pathname);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await waitFor(() => expect(card).toHaveAttribute('aria-expanded', 'false'));
+  });
+});
+
+// One unit for both destinations: the history link and the repair-tools link
+// used to read offer/session in opposite orders, so a row whose offer and
+// session named different units sent the two links to different lessons.
+describe('grownUpHref — one unitId for every destination', () => {
+  const row = { subject: 'math', obligation: { reason: 'awaiting_grown_up' }, offer: { unitId: 'unit-offer' }, session: { unitId: 'unit-session', sessionId: 'ses_old' } };
+
+  it('the repair-tools link names the offered unit, as the history link does', () => {
+    expect(grownUpHref('learner-operations', 'user_4', undefined, row, { studyDay: '2026-08-26' }))
+      .toBe('/school/teacher/students/user_4/operations?reason=awaiting_grown_up&subject=math&unit=unit-offer&day=2026-08-26');
+  });
+
+  it('the history link opens the held lesson of the offered unit', () => {
+    const attention = [{ unitId: 'unit-offer', sessionId: 'ses_held' }, { unitId: 'unit-session', sessionId: 'ses_other' }];
+    expect(grownUpHref('history', 'user_4', undefined, row, { attention }))
+      .toMatch(/\/sessions\/ses_held/);
   });
 });

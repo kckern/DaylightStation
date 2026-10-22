@@ -6,7 +6,7 @@
  * it happened on was not even offerable in the picker.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import ReassignPanel from "./ReassignPanel.jsx";
 
 vi.mock("../../schoolApi.js", () => ({
@@ -22,7 +22,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -33,9 +33,12 @@ vi.mock("../TeacherProfileContext.jsx", () => ({
   }),
 }));
 import { schoolApi } from "../../schoolApi.js";
+import { humanDate } from "../teacherDates.js";
 
 const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
 const ok = (data) => ({ ok: true, status: 200, data });
+// A day chip reads as a date, not the stored ISO day.
+const chip = (day) => humanDate(day);
 
 /** A quiz with recorded answers, and a program lesson with none. */
 const seed = ({ sessions = null } = {}) => {
@@ -64,13 +67,47 @@ const seed = ({ sessions = null } = {}) => {
 };
 
 const loadTheDay = async (d = '2026-08-26') => {
-  await waitFor(() => expect(screen.getByText(d)).toBeTruthy());
-  fireEvent.click(screen.getByText(d));
+  await waitFor(() => expect(screen.getByText(chip(d))).toBeTruthy());
+  fireEvent.click(screen.getByText(chip(d)));
   fireEvent.click(screen.getByText('Load that day'));
 };
 
 describe('ReassignPanel — work with no machine attempts', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // Opened from a lesson ("this was another child's work"): its day is known,
+  // so the panel loads it without a second tap.
+  it('loads the day it was opened for without a click', async () => {
+    seed();
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} initialDay="2026-10-20" />);
+    await waitFor(() => expect(schoolApi.attemptsSummary).toHaveBeenCalledWith('user_4', '2026-10-20'));
+  });
+
+  it('loads a day chip on the tap that picks it', async () => {
+    seed();
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(chip('2026-08-26'))).toBeTruthy());
+    fireEvent.click(screen.getByText(chip('2026-08-26')));
+    await waitFor(() => expect(schoolApi.attemptsSummary).toHaveBeenCalledWith('user_4', '2026-08-26'));
+  });
+
+  // Chips load on tap: a slow reply for an earlier tap must not replace the
+  // day the teacher tapped last (the chip and the list would disagree).
+  it('shows the day tapped last even when an earlier tap answers later', async () => {
+    seed();
+    schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-10-20', '2026-10-19'] }));
+    let releaseFirst;
+    schoolApi.attemptsSummary
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = () => resolve(ok({ assessments: [{ assessmentId: 'a-old', title: 'Old day work', count: 1 }] })); }))
+      .mockImplementationOnce(async () => ok({ assessments: [{ assessmentId: 'a-new', title: 'New day work', count: 1 }] }));
+    render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: chip('2026-10-19') }));
+    fireEvent.click(screen.getByRole('button', { name: chip('2026-10-20') }));
+    await screen.findByText('New day work');
+    await act(async () => { releaseFirst(); });
+    expect(screen.queryByText('Old day work')).toBeNull();
+    expect(screen.getByText('New day work')).toBeTruthy();
+  });
 
   it('lists a lesson with no recorded answers and moves it, with a reason, to the sibling', async () => {
     seed();
@@ -91,6 +128,10 @@ describe('ReassignPanel — work with no machine attempts', () => {
     expect(screen.queryByText('Creatures — lesson 1')).toBeNull();
     expect(screen.queryByText('Korean — day 11')).toBeNull();
 
+    // Where the lesson stands, in words — never the lifecycle slug.
+    expect(within(sessionRows[0]).getByText('Completed')).toBeTruthy();
+    expect(within(sessionRows[0]).queryByText('rewarded')).toBeNull();
+
     const row = sessionRows[0];
     const recredit = within(row).getByText('Re-credit');
     // No target and no reason: the verb is not offerable yet.
@@ -105,7 +146,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
       sessionId: 'ses_program',
       toLearnerId: 'user_2',
       reason: 'User_2 sat at the wrong station',
-      reassignedBy: 'kckern',
+      reassignedBy: 'teacher-a',
       pin: null,
     }));
     // The attempt-event repair is a different verb over different evidence and
@@ -139,9 +180,9 @@ describe('ReassignPanel — work with no machine attempts', () => {
   it('keeps the recent-days picker — typing dates blind was a fixed defect', async () => {
     seed();
     render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(chip('2026-08-26'))).toBeTruthy());
     expect(schoolApi.attemptDays).toHaveBeenCalledWith('user_4');
-    expect(screen.getByText('2026-08-25')).toBeTruthy();
+    expect(screen.getByText(chip('2026-08-25'))).toBeTruthy();
   });
 
   it('buckets an evening lesson by its study day, not by the UTC date it was opened', async () => {
@@ -151,8 +192,8 @@ describe('ReassignPanel — work with no machine attempts', () => {
     // is told about in their own note.
     seed();
     render(<ReassignPanel learnerId="user_4" learnerName="User_4" kids={KIDS} />);
-    await waitFor(() => expect(screen.getByText('2026-08-26')).toBeTruthy());
-    expect(screen.queryByText('2026-08-27')).toBeNull();
+    await waitFor(() => expect(screen.getByText(chip('2026-08-26'))).toBeTruthy());
+    expect(screen.queryByText(chip('2026-08-27'))).toBeNull();
     await loadTheDay('2026-08-26');
     await waitFor(() => expect(screen.getByText('Korean — day 12')).toBeTruthy());
   });

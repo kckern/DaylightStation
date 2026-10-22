@@ -14,8 +14,9 @@ import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { teacherLog } from "./teacherLog.js";
+import { useBacklog } from "./useBacklog.js";
 import {
-  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
+  consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from "./teacherUrl.js";
 import { humanDate, localDay } from "./teacherDates.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
@@ -57,8 +58,10 @@ function TeacherShell({ PianoProgramsPanel }) {
   const initial = useMemo(() => parseTeacherPath(window.location.pathname), []);
   const [route, setRoute] = useState(initial);
   const [kids, setKids] = useState([]);
-  const [backlog, setBacklog] = useState(0);
-  const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
+  // One count for the rail badge, the phone tab bar and the dashboard strip;
+  // the queue's panels call `backlog.refresh` when the teacher acts.
+  const backlog = useBacklog();
+  const [shellWarnings, setShellWarnings] = useState({ roster: false });
   const [railOpen, setRailOpen] = useState(false);
   const [logBookOpen, setLogBookOpen] = useState(false);
   // Where focus goes when "Log a book" closes: the control that opened it,
@@ -77,12 +80,31 @@ function TeacherShell({ PianoProgramsPanel }) {
   };
 
   const navigate = useCallback((path, replace = false) => {
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
-    const next = parseTeacherPath(new URL(path, window.location.origin).pathname);
+    const before = { pathname: window.location.pathname, search: window.location.search };
+    if (`${before.pathname}${before.search}${window.location.hash}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    const target = new URL(path, window.location.origin);
+    // Same page, different query (`?reading=`, `?open=`): the route below does
+    // not change, so nothing re-renders. Views that keep query state already
+    // resync on popstate, so tell them. The shell's own popstate listener
+    // re-parses the same pathname and sets an equivalent route — harmless.
+    if (target.pathname === before.pathname && target.search !== before.search) {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    const next = parseTeacherPath(target.pathname);
     setRoute(next);
     setRailOpen(false);
+    // A new page starts at its top; a replace (a canonicalized URL) does not move.
+    if (!replace) { try { window.scrollTo(0, 0); } catch { /* jsdom */ } }
     teacherLog.nav('workspace', { kind: next.kind, section: next.section, learnerId: next.learnerId, sessionId: next.sessionId });
   }, []);
+
+  // One delegated handler for every console link (see `consoleLinkTarget`).
+  const onLinkClick = useCallback((event) => {
+    const path = consoleLinkTarget(event);
+    if (!path) return;
+    event.preventDefault();
+    navigate(path);
+  }, [navigate]);
 
   useEffect(() => {
     teacherLog.nav('mounted', { kind: initial.kind, section: initial.section, learnerId: initial.learnerId });
@@ -99,25 +121,6 @@ function TeacherShell({ PianoProgramsPanel }) {
     });
     return () => { alive = false; };
   }, [initial]);
-
-  useEffect(() => {
-    let alive = true;
-    const poll = async () => {
-      // A hidden tab polls nothing; visibilitychange below catches up on return.
-      if (document.visibilityState === 'hidden') return;
-      const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
-      if (!alive) return;
-      setBacklog((review.ok ? (review.data?.items ?? []).length : 0) + (prints.ok && Array.isArray(prints.data) ? prints.data.length : 0));
-      const failed = !review.ok || !prints.ok;
-      setShellWarnings((value) => ({ ...value, backlog: failed }));
-      if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status });
-    };
-    poll();
-    const timer = setInterval(poll, 60_000);
-    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, []);
 
   useEffect(() => {
     const onPop = () => setRoute(parseTeacherPath(window.location.pathname));
@@ -149,17 +152,24 @@ function TeacherShell({ PianoProgramsPanel }) {
     view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
   } else if (route.kind === 'session') {
     // Back returns to the view that opened the session (?from=today → the
-    // dashboard digest), not always History.
+    // dashboard digest), not always History. The dashboard return carries the
+    // learner as `?open=`, so the roster card the lesson came from is open again.
     const origin = new URLSearchParams(window.location.search);
     const from = origin.get('from');
     const originDay = origin.get('studyDay');
-    const backToDay = from === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '');
-    const backLabel = backToDay ? `Back to ${humanDate(originDay)}`
-      : from === 'today' || !route.learnerId ? 'Back to dashboard' : 'Back to history';
+    const dashboardBack = () => navigate(`${teacherSectionPath('dashboard', route.base)}${route.learnerId ? `?open=${encodeURIComponent(route.learnerId)}` : ''}`);
+    // Where Back goes, by the view that opened the session (`?from=`).
+    const ORIGINS = {
+      day: /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '') ? [`Back to ${humanDate(originDay)}`, () => goDay(originDay)] : null,
+      today: ['Back to dashboard', dashboardBack],
+      queue: ['Back to action queue', () => goGlobal('queue')],
+      operations: ['Back to operations', () => goGlobal('operations')],
+    };
+    // Own keys only: `?from=constructor` must not reach Object.prototype.
+    const [backLabel, onBack] = (Object.hasOwn(ORIGINS, from ?? '') ? ORIGINS[from] : null)
+      ?? (route.learnerId ? ['Back to history', () => goLearner(route.learnerId, 'history')] : ['Back to dashboard', dashboardBack]);
     view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
-      backLabel={backLabel}
-      onBack={() => (backToDay ? goDay(originDay)
-        : (from === 'today' || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history')))} />;
+      backLabel={backLabel} onBack={onBack} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
       day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
@@ -172,23 +182,25 @@ function TeacherShell({ PianoProgramsPanel }) {
       debriefs: <DebriefsView learnerId={learner.id} learnerName={learner.name} />,
       coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
-      operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
+      // Keyed by the query: a different `?reason/unit/day` is a different
+      // repair context, and the panels below seed from it only on mount.
+      operations: <LearnerOperationsView key={`${learner.id}${window.location.search}`} learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };
     view = views[route.section] ?? views.day;
   } else {
     const views = {
-      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,
-      queue: <QueueView kids={kids} />,
+      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} backlog={backlog} onOpenQueue={() => goGlobal('queue')} />,
+      queue: <QueueView kids={kids} onChanged={backlog.refresh} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
-      operations: <OperationsView kids={kids} />,
+      operations: <OperationsView key={window.location.search} kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;
   }
 
   return (
     /* Grown-up admin: dates, bank ids, reasons. Never Hangul. */
-    <div className="teacher-console-page" data-ime="off">
+    <div className="teacher-console-page" data-ime="off" onClick={onLinkClick}>
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
           <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
@@ -211,7 +223,7 @@ function TeacherShell({ PianoProgramsPanel }) {
             <nav className="teacher-workspace__global" aria-label="Workspace">
               {GLOBAL_NAV.map((item) => (
                 <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
-                  <span>{item.label}</span>{item.id === 'queue' && backlog > 0 && <b aria-label={`${backlog} items waiting`}>{backlog}</b>}
+                  <span>{item.label}</span>{item.id === 'queue' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
                 </button>
               ))}
               <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
@@ -230,10 +242,10 @@ function TeacherShell({ PianoProgramsPanel }) {
           {railOpen && <button type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
 
           <div className="teacher-workspace__main">
-            {(shellWarnings.roster || shellWarnings.backlog) && (
+            {(shellWarnings.roster || backlog.failed) && (
               <div className="teacher-workspace__alerts" role="status">
                 {shellWarnings.roster && <span>Student roster unavailable. Navigation may be incomplete.</span>}
-                {shellWarnings.backlog && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
+                {backlog.failed && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
               </div>
             )}
             {learner && route.kind !== 'session' && (
@@ -252,7 +264,7 @@ function TeacherShell({ PianoProgramsPanel }) {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
+          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
           <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />

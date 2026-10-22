@@ -1,15 +1,26 @@
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
-import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
+import { reduceSession, statesAccepting } from "../../domain/sessions/sessionEvents.mjs";
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
 
+// The same rules `ReprintIssuedArtifact` enforces: paper still out can be
+// reprinted; once it is handed in the server refuses with SESSION_NOT_REPRINTABLE,
+// and a paused lesson is refused with CURRICULUM_PAUSED whatever its state.
+const REPRINTABLE = statesAccepting('reprinted');
+// The kinds `SchoolArtifactService.reprint` routes to `ReprintResultReceiptArtifact`,
+// which reprints the retained PNG with no session-state gate.
+const RECEIPT_KINDS = ['result-receipt', 'result-correction'];
+
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
-  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions; #printDocuments;
+  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions; #printDocuments; #receiptReprints;
   constructor({
     sessions, curriculum = null, issuedArtifacts = null, reviewQueue = null,
     allocationStore = null, worksheetInstances = null, curriculumExceptions = null,
     printDocuments = null,
+    // False where composition built no ReprintResultReceiptArtifact (no
+    // receipt printer wired): the reprint would answer reprint_unconfigured.
+    receiptReprints = true,
   } = {}) {
     if (!sessions) throw new Error('GetTeacherSession requires sessions');
     this.#sessions = sessions;
@@ -20,6 +31,7 @@ export class GetTeacherSession {
     this.#worksheets = worksheetInstances;
     this.#exceptions = curriculumExceptions;
     this.#printDocuments = printDocuments;
+    this.#receiptReprints = receiptReprints !== false;
   }
 
   async execute({ sessionId } = {}) {
@@ -27,7 +39,7 @@ export class GetTeacherSession {
     const events = await this.#sessions.readEvents(sessionId);
     if (!events.length) throw new EntityNotFoundError('session', sessionId);
     const state = reduceSession(events);
-    const [unit, works, worksheet, reviewEvidence, issuedArtifactRows, receiptArtifactRows, learnerSessions, exceptions] = await Promise.all([
+    const [unit, works, worksheet, reviewEvidence, issuedArtifactCandidates, receiptArtifactRows, learnerSessions, exceptions] = await Promise.all([
       this.#curriculum?.getUnit?.(state.unitId) ?? null,
       this.#curriculum?.listWorks?.() ?? [],
       this.#worksheets?.findBySession?.(sessionId) ?? null,
@@ -35,7 +47,7 @@ export class GetTeacherSession {
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
         return artifact ? { ...artifact.manifest, availability: 'regenerable', exactBytesRetained: false,
-          generatedAtRequest: true,
+          generatedAtRequest: true, reprintable: REPRINTABLE.has(state.state),
           originalPdfUrl: schoolArtifactRef(artifactId, 'original.pdf'),
           thumbnailUrl: (artifact.manifest.representation?.mediaType ?? 'application/pdf') === 'application/pdf'
             ? schoolArtifactRef(artifactId, 'thumbnail.png') : null }
@@ -43,15 +55,29 @@ export class GetTeacherSession {
       })),
       Promise.all((state.resultReceiptArtifacts ?? []).map(async (receipt) => {
         const artifact = await this.#artifacts?.get?.(receipt.artifactId);
+        // The same check `ReprintResultReceiptArtifact` makes before it prints;
+        // it does not care whether the work has been handed in.
         return artifact ? {
           ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
+          // Mirrors ReprintResultReceiptArtifact: it reads the manifest's own
+          // session and refuses a receipt that session does not list. A manifest
+          // with no session reads no events there, so it is refused too.
+          reprintable: this.#receiptReprints
+            && RECEIPT_KINDS.includes(artifact.manifest.kind)
+            && artifact.manifest.representation?.mediaType === 'image/png'
+            && artifact.manifest.sessionId === sessionId,
           originalUrl: schoolArtifactRef(receipt.artifactId, 'original'),
           printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
-        } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false };
+        } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false, reprintable: false };
       })),
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
     ]);
+    const lessonPaused = exceptions.some((exception) => exception.kind === 'paused'
+      && exception.resolvedLessonIds?.includes(state.unitId));
+    const issuedArtifactRows = lessonPaused
+      ? issuedArtifactCandidates.map((row) => ('reprintable' in row ? { ...row, reprintable: false } : row))
+      : issuedArtifactCandidates;
     // The published revision and worksheet instance are durable semantic
     // inputs. The PDF is deliberately regenerated from them with the current
     // renderer instead of being treated as historical state of its own.
@@ -75,6 +101,9 @@ export class GetTeacherSession {
       const card = await this.#allocations?.describeCard?.(cardId, { expectedLearnerId: state.learnerId });
       if (card) answerSheets.push(card);
     }
+    // Synthetic key-alignment rows are not questions; grading never waits on them.
+    const pendingReview = reviewEvidence
+      .filter((item) => !isSyntheticReviewItem(item) && item.verdict == null).length;
     const progressUnits = courseUnits.map((candidate) => ({ unitId: candidate.unitId, title: candidate.title,
       module: candidate.module ?? null,
       status: progressStatus(candidate.unitId, state.learnerId, completedIds, exceptions) }));
@@ -99,8 +128,15 @@ export class GetTeacherSession {
         companionRecovery: Boolean(unit?.companion?.enabled !== false
           && unit?.companion?.participation === 'required'),
         offerRetake: state.outcome?.result === 'needs_remediation' && !state.remediation,
+        // A handed-in sheet with a question still waiting on a person: settling
+        // now is refused as `awaiting_review` AFTER the step-up PIN, so it is not
+        // offered. GradeSubmission only says that from `submitted`; a marked
+        // session settles as a `duplicate`, which the console accepts. For units
+        // with no printed sheet GradeSubmission blocks on roster items, not these
+        // queue rows, so for those this is an approximation.
         manualSettlement: ['submitted', 'graded', 'outcome_recorded'].includes(state.state)
-          && state.terminal !== true,
+          && state.terminal !== true && !(state.state === 'submitted' && pendingReview > 0),
+        pendingReview,
       },
       scores: {
         machine: state.machineGrade,

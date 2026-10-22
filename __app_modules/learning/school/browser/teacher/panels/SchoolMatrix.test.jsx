@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import SchoolMatrix from "./SchoolMatrix.jsx";
 import { deriveMatrix } from "./schoolMatrixModel.js";
 
@@ -11,7 +11,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -166,5 +166,51 @@ describe('SchoolMatrix — transposed render', () => {
     await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
     const cell = screen.getByRole('button', { name: 'User_4, Creature Basics' });
     expect(cell.textContent).toBe('—');
+  });
+});
+
+describe('SchoolMatrix — scoped to one learner (the Courses tab)', () => {
+  const ROSTER = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Every learner's record comes back from the one school-wide read; the
+    // other learner's must not read as an orphan, nor their enrollments here.
+    schoolApi.allAssignments.mockResolvedValue({ ok: true, status: 200, data: { assignments: [
+      { learnerId: 'user_4', courses: ['history-capitals'] },
+      { learnerId: 'user_2', courses: ['creature-basics'] },
+    ] } });
+    schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [
+      { unitId: 'caps.01', courseId: 'history-capitals', courseTitle: 'History Capitals' },
+      { unitId: 'poke.01', courseId: 'creature-basics', courseTitle: 'Creature Basics' },
+      { unitId: 'frac.01', courseId: 'math-fractions', courseTitle: 'Math Fractions' },
+    ] } });
+    schoolApi.syllabi.mockResolvedValue({ ok: true, status: 200, data: { syllabi: [] } });
+  });
+
+  it('titles itself for the learner and shows one learner column', async () => {
+    render(<SchoolMatrix kids={ROSTER} learnerId="user_4" title="Enroll User_4 in courses" />);
+    await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Enroll User_4 in courses' })).toBeInTheDocument();
+    expect(screen.queryByText('The whole school')).toBeNull();
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Course', 'User_4']);
+  });
+
+  it('keeps school-wide notes off a single learner\'s grid', async () => {
+    render(<SchoolMatrix kids={ROSTER} learnerId="user_4" title="Enroll User_4 in courses" />);
+    await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
+    // user_2's record is not an orphan; it is just someone else's.
+    expect(screen.queryByTestId('matrix-orphans')).toBeNull();
+    // "Unassigned" means nobody in the school; here it would only mean
+    // "not this child", which the — cells already say.
+    expect(screen.queryByTestId('matrix-unenrolled')).toBeNull();
+    expect(document.querySelector('.is-unenrolled')).toBeNull();
+    expect(screen.getByText(/Tap a — to enroll User_4/)).toBeInTheDocument();
+  });
+
+  it('opens the drawer on the learner from the roster', async () => {
+    render(<SchoolMatrix kids={ROSTER} learnerId="user_4" title="Enroll User_4 in courses" />);
+    await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'User_4, Math Fractions' }));
+    expect(await screen.findByRole('dialog', { name: 'User_4 — Math Fractions' })).toBeInTheDocument();
   });
 });

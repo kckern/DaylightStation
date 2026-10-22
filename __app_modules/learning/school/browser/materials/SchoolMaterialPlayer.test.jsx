@@ -59,14 +59,24 @@ vi.mock("../../../../../__capabilities/playback/browser/player/Player.jsx", asyn
   };
 });
 
-vi.mock("../quiz/QuizRunner.jsx", () => ({
-  default: ({ bank, onExit }) => (
-    <div data-testid="quiz-runner">
-      <span data-testid="quiz-bank-id">{bank?.id}</span>
-      <button type="button" onClick={onExit}>quiz-done</button>
-    </div>
-  ),
-}));
+// Counts real mounts (an empty-deps effect), so a Try again remount is
+// observable rather than inferred from a prop change.
+const quizMountMock = vi.fn();
+vi.mock("../quiz/QuizRunner.jsx", async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: ({ bank, fresh, onExit, onRestart }) => {
+      useEffect(() => { quizMountMock({ fresh }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      return (
+        <div data-testid="quiz-runner">
+          <span data-testid="quiz-bank-id">{bank?.id}</span>
+          <button type="button" onClick={onExit}>quiz-done</button>
+          {onRestart && <button type="button" onClick={() => onRestart({ fresh: true })}>quiz-restart</button>}
+        </div>
+      );
+    },
+  };
+});
 
 const material = { id: 'plex:1', title: 'Bill Nye', medium: 'video' };
 const unit = { id: 'plex:10', title: 'Air', quiz: null };
@@ -163,6 +173,27 @@ describe('SchoolMaterialPlayer', () => {
     expect(screen.getByTestId('quiz-bank-id').textContent).toBe('bank_1');
     expect(materialsMock).toHaveBeenCalledWith('quiz-handoff', { bankId: 'bank_1' });
 
+    fireEvent.click(screen.getByText('quiz-done'));
+    expect(onExit).toHaveBeenCalledWith({ refetch: true });
+  });
+
+  // 2026-10-21: the gate quiz retakes until passed. Nothing is reported to the
+  // player on a fail (the sitting itself is the record), so Try again simply
+  // remounts the runner fresh; Done still exits with {refetch:true}.
+  it('the gate quiz Try again remounts the runner fresh without leaving the player', async () => {
+    quizMountMock.mockClear();
+    const onExit = vi.fn();
+    render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={onExit} />);
+    await findPlayer();
+    fireEvent.click(screen.getByText('simulate-end'));
+    await screen.findByTestId('quiz-runner');
+    expect(quizMountMock).toHaveBeenCalledTimes(1);
+    expect(quizMountMock).toHaveBeenLastCalledWith({ fresh: false });
+    fireEvent.click(screen.getByText('quiz-restart'));
+    await waitFor(() => expect(quizMountMock).toHaveBeenCalledTimes(2));
+    expect(quizMountMock).toHaveBeenLastCalledWith({ fresh: true });
+    expect(onExit).not.toHaveBeenCalled();
+    expect(bankMock).toHaveBeenCalledTimes(1); // the bank is not refetched
     fireEvent.click(screen.getByText('quiz-done'));
     expect(onExit).toHaveBeenCalledWith({ refetch: true });
   });

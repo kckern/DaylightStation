@@ -40,6 +40,13 @@ describe('CoinsRosterPanel', () => {
     expect(screen.getByText(/Week of Sep 21 – 27/)).toBeInTheDocument();
   });
 
+  it('keeps the rules revision out of the copy', async () => {
+    render(<CoinsRosterPanel onSelectLearner={() => {}} />);
+    const fine = await screen.findByText(/preview — nothing is paid yet/i);
+    expect(fine).toHaveAttribute('title', 'Earning rules revision 2');
+    expect(screen.queryByText(/rules revision/i)).toBeNull();
+  });
+
   it('a row opens that learner\'s Coins tab', async () => {
     const onSelectLearner = vi.fn();
     render(<CoinsRosterPanel onSelectLearner={onSelectLearner} />);
