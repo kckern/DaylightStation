@@ -17,11 +17,9 @@ const logger = getLogger().child({ component: 'fitness-momentum' });
 
 // Low → high intensity, stacked bottom → top within a bar.
 const ZONE_STACK = ['fire', 'hot', 'warm', 'active']; // DOM order = top → bottom
-// The week's gem (the ring contest): slate while someone only leads it, full
-// sapphire once Saturday noon makes it theirs. Colour, not a CSS filter. GemIcon
-// keeps only the hue and SATURATION of the colour (each facet sets its own
-// lightness), so "not yet" has to be a low-saturation colour, not a light one.
-const GEM_COLOR = { leading: '#6b8299', won: '#1e88e5' };
+// The week's gem (the ring contest) is the bank's sapphire in both states:
+// faded (static opacity, .is-leading) while someone only leads it, full once
+// Saturday noon makes it theirs. A different colour read as a different gem.
 
 const ZONE_VAR = {
   active: 'var(--zone-active)',
@@ -176,6 +174,8 @@ export default function FitnessMomentum() {
         {members.map((m) => (
           <div key={m.id} className="fitness-momentum__card">
             <Avatar id={m.avatarId} name={m.name} />
+            {/* Name and purse share a row, so a card with no purse is the same height. */}
+            <span className="fitness-momentum__namerow">
             <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
             {purseById.has(m.id) && (() => {
               const purse = purseById.get(m.id);
@@ -186,7 +186,6 @@ export default function FitnessMomentum() {
                   {purse.gem && (
                     <GemIcon
                       className={`fitness-momentum__gem is-${purse.gem}`}
-                      color={GEM_COLOR[purse.gem]}
                       size="1.1em"
                       label={purse.gem === 'won' ? 'Won the week’s gem' : 'Leading for the week’s gem'}
                     />
@@ -194,6 +193,7 @@ export default function FitnessMomentum() {
                 </span>
               );
             })()}
+            </span>
             <WeekBars weeks={m.weeks} loading={loading} />
           </div>
         ))}

@@ -37,15 +37,25 @@ export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }
     log.info('fitness.coin_ceremony.shown', { sessionId, learners: learners.length, totalSilver });
     learners.filter((l) => l.gained?.silver > 0).forEach(() => playRingCelebrationCue(COIN_SOUND));
     const timer = setTimeout(() => finish('timeout'), ceremonyDurationMs(learners.length));
-    const onKey = (e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') finish('key'); };
-    window.addEventListener('keydown', onKey);
-    return () => { clearTimeout(timer); window.removeEventListener('keydown', onKey); };
+    // Capture phase, consumed: the menu underneath also listens on window
+    // (Escape pops it, Enter activates the focused tile).
+    const onKey = (e) => {
+      if (e.repeat || !(e.key === 'Enter' || e.key === ' ' || e.key === 'Escape')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      finish('key');
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => { clearTimeout(timer); window.removeEventListener('keydown', onKey, true); };
     // Once per mount: the ceremony is for one finished session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="workout-coin-ceremony" data-testid="workout-coin-ceremony" role="dialog" aria-label="Workout coins" onPointerDown={() => finish('tap')}>
+    <div className="workout-coin-ceremony" data-testid="workout-coin-ceremony" role="dialog" aria-label="Workout coins"
+      // Dismiss on click, not pointerdown: gone before pointerup, the tap would
+      // land on whatever is underneath.
+      onClick={() => finish('tap')}>
       <div className="workout-coin-ceremony__cards">
         {learners.map((l) => (
           <div key={l.learnerId} className="workout-coin-ceremony__card">
@@ -56,16 +66,20 @@ export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }
                 <div className="workout-coin-ceremony__gain">
                   <CoinIcon metal="silver" size="1em" label="silver" />
                   <span>+{l.gained.silver}</span>
-                  {l.gained.gems > 0 ? (
-                    <GemIcon className="workout-coin-ceremony__gem" size="0.8em" label={`${l.gained.gems} gem`} />
-                  ) : null}
                 </div>
+                {l.gained.gems > 0 ? (
+                  <div className="workout-coin-ceremony__gems">
+                    <GemIcon className="workout-coin-ceremony__gem" size="1.2em" />
+                    {`+${l.gained.gems} gem${l.gained.gems > 1 ? 's' : ''}`}
+                  </div>
+                ) : null}
                 <div className="workout-coin-ceremony__total">→ {l.total?.silver ?? 0} silver</div>
               </>
             ) : (
-              <div className="workout-coin-ceremony__next">
-                {l.rings} rings{l.nextCoinIn ? ` · ${l.nextCoinIn} more rings to the next coin` : ''}
-              </div>
+              <>
+                <div className="workout-coin-ceremony__rings">{l.rings} rings</div>
+                {l.nextCoinIn ? <div className="workout-coin-ceremony__next">{l.nextCoinIn} more to the next coin</div> : null}
+              </>
             )}
           </div>
         ))}

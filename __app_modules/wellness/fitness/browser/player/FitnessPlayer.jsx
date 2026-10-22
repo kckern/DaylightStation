@@ -1,6 +1,6 @@
 import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
-import { WORKOUT_FINISHED_EVENT } from './overlays/useWorkoutCoinCeremony.js';
+import { announceWorkoutFinished } from './overlays/useWorkoutCoinCeremony.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -1260,15 +1260,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         // Same shape as the normal close: FitnessApp reads view/screenId, and a
         // bare { to: 'home' } set currentView to undefined — a blank screen.
         const sid = fitnessSessionInstance?.sessionId ?? null;
+        const redirect = resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid });
         try {
           onSessionEndRedirect({
-            ...resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid }),
+            ...redirect,
             reason: 'close-watchdog-fired',
             context: ctx,
           });
         } catch (err) {
           // best effort; we're already in a recovery path
         }
+        // A forced close still finished a workout; the hook's per-session
+        // guard keeps it from doubling a ceremony the normal path already showed.
+        announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
       }
     }
   });
@@ -1339,14 +1343,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     }
 
     // The coin ceremony: what the ride was worth. Only when the close lands on
-    // the finished session (not a short browse-out back to the show), and only
-    // once its final save has landed so the economy prices the whole ride.
-    if (sid && redirect && !redirect.returnToShow) {
-      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
-        .finally(() => {
-          window.dispatchEvent(new CustomEvent(WORKOUT_FINISHED_EVENT, { detail: { sessionId: String(sid) } }));
-        });
-    }
+    // the finished session (not a short browse-out back to the show). Closing
+    // the player does not end the session, so this waits for the LAST AUTOSAVE
+    // (≤15 s old), not a final save: the ride is priced as of then, and the
+    // bank entry that lands later may be a few rings higher.
+    announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
 
     // School assessment starts only after Fitness has finished its own final
     // persistence. The callback carries playback coordination facts; the

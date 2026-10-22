@@ -27,7 +27,9 @@ describe('WorkoutCoinCeremony', () => {
     expect(cards).toHaveLength(2);
     expect(cards[0].textContent).toContain('+3');
     expect(cards[0].textContent).toContain('27 silver');
-    expect(cards[1].textContent).toContain('23 more rings to the next coin');
+    // Two short lines, not one long wrapping sentence.
+    expect(cards[1].querySelector('.workout-coin-ceremony__rings').textContent).toBe('240 rings');
+    expect(cards[1].querySelector('.workout-coin-ceremony__next').textContent).toBe('23 more to the next coin');
     expect(cards[1].querySelector('.workout-coin-ceremony__gain')).toBeNull();
   });
 
@@ -40,12 +42,35 @@ describe('WorkoutCoinCeremony', () => {
   it('shows a gem when the ride paid one', () => {
     const { container } = render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 5, 30, { gained: { silver: 5, gems: 1 } })]} onDone={() => {}} />);
     expect(container.querySelector('.workout-coin-ceremony__gem')).toBeTruthy();
+    // Said in words too, so it reads as an award, not decoration.
+    expect(container.querySelector('.workout-coin-ceremony__gems').textContent).toBe('+1 gem');
+  });
+
+  it('dismisses on click, not pointerdown, so the tap cannot land on the screen underneath', () => {
+    const onDone = vi.fn();
+    const { container } = render(<WorkoutCoinCeremony sessionId="s9" learners={[L('learner-a', 3, 27)]} onDone={onDone} />);
+    fireEvent.pointerDown(container.querySelector('[data-testid="workout-coin-ceremony"]'));
+    expect(onDone).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector('[data-testid="workout-coin-ceremony"]'));
+    expect(onDone).toHaveBeenCalledWith('tap');
+  });
+
+  it('consumes the dismiss key so the menu underneath never sees it', () => {
+    const below = vi.fn();
+    window.addEventListener('keydown', below);
+    try {
+      const onDone = vi.fn();
+      render(<WorkoutCoinCeremony sessionId="s8" learners={[L('learner-a', 3, 27)]} onDone={onDone} />);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onDone).toHaveBeenCalledWith('key');
+      expect(below).not.toHaveBeenCalled();
+    } finally { window.removeEventListener('keydown', below); }
   });
 
   it('dismisses on tap, on Enter, and on timeout — once', () => {
     const onDone = vi.fn();
     const { container, unmount } = render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27)]} onDone={onDone} />);
-    fireEvent.pointerDown(container.querySelector('[data-testid="workout-coin-ceremony"]'));
+    fireEvent.click(container.querySelector('[data-testid="workout-coin-ceremony"]'));
     act(() => { vi.advanceTimersByTime(20000); });
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith('tap');

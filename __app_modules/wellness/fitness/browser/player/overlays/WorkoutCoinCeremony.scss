@@ -1,22 +1,46 @@
 // Fixed over the whole fitness screen; legible from the bike (kiosk: 1 CSS px ≈ 1 mm).
+// z-index 1900: above the player and the navbar (1000), below the voice memo
+// (2000), feedback (2100) and toasts (2200). It mounts outside
+// .fitness-app-viewport, so it sets its own colour and face.
 .workout-coin-ceremony {
-  position: fixed; inset: 0; z-index: 900;
-  display: grid; place-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  display: grid;
+  place-items: center;
   background: rgba(6, 8, 12, 0.72);
+  color: #f8fafc;
+  font-family: 'Roboto Condensed', sans-serif;
   animation: workout-coin-in 240ms ease-out;
 
-  &__cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; max-width: 90vw; }
+  // One row whatever the count: equal columns that shrink rather than wrap.
+  &__cards {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 15rem);
+    gap: 1.25rem;
+    max-width: 92vw;
+  }
   &__card {
-    display: grid; justify-items: center; gap: 0.5rem;
-    min-width: 12rem; padding: 1.5rem 2rem;
-    border-radius: 24px; background: rgba(24, 28, 36, 0.95);
+    display: grid;
+    grid-template-rows: auto auto auto auto;
+    align-content: start;
+    justify-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 1.5rem 1rem;
+    border-radius: 24px;
+    background: rgba(24, 28, 36, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.12);
+    text-align: center;
   }
   &__avatar { width: 5rem; height: 5rem; border-radius: 50%; object-fit: cover; }
-  &__name { font-size: 1.4rem; font-weight: 700; }
+  &__name { font-size: 1.4rem; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__gain { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 3rem; font-weight: 800; line-height: 1; }
-  &__total { font-size: 1.25rem; opacity: 0.85; }
-  &__next { font-size: 1.1rem; opacity: 0.85; text-align: center; max-width: 14rem; }
+  &__gems { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 1.4rem; font-weight: 700; }
+  &__total { font-size: 1.4rem; }
+  &__rings { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+  &__next { font-size: 1.3rem; }
 }
 
 @keyframes workout-coin-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }

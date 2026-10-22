@@ -42,13 +42,21 @@ describe('FitnessMomentum', () => {
     expect(cards[1].querySelector('.fitness-momentum__purse')).toBeNull();
   });
 
-  it('renders the won gem in full colour, the leading gem muted', () => {
+  it('shows the same sapphire for both states, the leading one marked to fade', () => {
     const fills = (root) => [...root.querySelectorAll('.fitness-momentum__gem path')].map((p) => p.getAttribute('fill')).join(',');
-    const leading = fills(render(<FitnessMomentum />).container);
+    const leading = render(<FitnessMomentum />).container;
+    expect(leading.querySelector('.fitness-momentum__gem.is-leading')).toBeTruthy();
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], gem: 'won' }] };
     const won = render(<FitnessMomentum />).container;
     expect(won.querySelector('.fitness-momentum__gem.is-won')).toBeTruthy();
-    expect(fills(won)).not.toBe(leading);
+    expect(fills(won)).toBe(fills(leading));
+  });
+
+  it('puts the purse on the name row so cards keep one height', () => {
+    const { container } = render(<FitnessMomentum />);
+    const cards = container.querySelectorAll('.fitness-momentum__card');
+    expect(cards[0].querySelector('.fitness-momentum__namerow .fitness-momentum__purse')).toBeTruthy();
+    expect(cards[1].querySelector('.fitness-momentum__namerow .fitness-momentum__name')).toBeTruthy();
   });
 
   it('hides the coin column when standings are missing or the economy is off', () => {
