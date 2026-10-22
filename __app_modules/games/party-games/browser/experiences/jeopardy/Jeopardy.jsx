@@ -7,6 +7,7 @@ import { resolveJeopardyKey } from "./keymap.js";
 import Scoreboard from "../../../../../../__capabilities/gaming/browser/platform/ui/Scoreboard.jsx";
 import { fetchSession } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
 import { sendJeopardyCommand } from "./jeopardyClient.js";
+import { JEOPARDY_PACK, actionCue, phaseCues } from "./jeopardyCues.js";
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import WagerPanel from "./ui/WagerPanel.jsx";
 import Board from "./Board.jsx";
@@ -15,7 +16,7 @@ import FinalRound from "./FinalRound.jsx";
 import ShowHeader from "../../../../../../__capabilities/gaming/browser/platform/ui/ShowHeader.jsx";
 import GameButton from "../../../../../../__capabilities/gaming/browser/platform/ui/GameButton.jsx";
 
-const SILENT_AUDIO = Object.freeze({ play() {} });
+const SILENT_AUDIO = Object.freeze({ play() {}, stopChannel() {} });
 const NO_BUZZERS = Object.freeze({
   locked: null,
   arm() {},
@@ -43,7 +44,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
 
   useEffect(() => {
     return buzzers.subscribe((teamId) => {
-      audio.play('buzz');
+      audio.play('buzz', { pack: JEOPARDY_PACK });
       actionRef.current({ type: 'BUZZ', teamId });
     });
   }, [audio, buzzers]);
@@ -64,10 +65,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // call this. Reads live state via ref so it stays referentially stable.
   const applyAction = useCallback(async (action) => {
     if (!action || !stateRef.current) return;
-    if (action.type === 'JUDGE' || action.type === 'JUDGE_FINAL') audio.play(action.correct ? 'correct' : 'wrong');
-    else if (action.type === 'SELECT_TILE' || action.type === 'SELECT_AT') audio.play('reveal');
-    else if (action.type === 'START_ROUND') audio.play('board-fill');
-    else if (action.type === 'TIMEOUT') audio.play('wrong');
+    const cue = actionCue(action); if (cue) audio.play(cue, { pack: JEOPARDY_PACK });
     try { const result = await sendJeopardyCommand(sessionId, action); setState(result.state); setSet(result.state.set); setCompletion(result.result || null); setError(null); }
     catch (cause) { setError(cause.message); }
   }, [audio, sessionId]);
@@ -93,10 +91,21 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   useEffect(() => {
     if (state?.phase === 'done' && completion && !finishedRef.current) {
       finishedRef.current = true;
-      audio.play('win');
+      audio.play('win', { pack: JEOPARDY_PACK });
       onComplete?.(completion);
     }
   }, [state?.phase, completion, audio, onComplete]);
+
+  // Phase music (theme on the round title card, think music under Final) and
+  // phase stings (Daily Double). Music stops when the phase moves on.
+  useEffect(() => {
+    if (!state?.phase) return undefined;
+    const { music, sting } = phaseCues(state.phase);
+    if (sting) audio.play(sting, { pack: JEOPARDY_PACK });
+    if (!music) return undefined;
+    audio.play(music, { pack: JEOPARDY_PACK, channel: 'music', loop: music === 'theme', volume: music === 'theme' ? 0.5 : 1 });
+    return () => audio.stopChannel('music');
+  }, [state?.phase, audio]);
 
   // Host keyboard (also fed by GamepadAdapter synthetic keys).
   useEffect(() => {
