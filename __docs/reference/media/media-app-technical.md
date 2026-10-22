@@ -1708,8 +1708,8 @@ Hybrid model:
 
 - **Reactive push** on any state change (play/pause/stop, seek, item advance,
   queue mutation, config change, adoption completion). Debounced 500ms.
-- **Heartbeat** every 5s while in any non-idle state. Every 30s (or suppressed)
-  while idle.
+- **Heartbeat** every 5s, idle included (`useSessionStatePublisher`,
+  `HEARTBEAT_INTERVAL_MS`).
 - **On subscription**: backend MUST replay the last known snapshot.
 
 Payload:
@@ -1725,8 +1725,9 @@ Payload:
 
 **Verified by:**
 - `shared/contracts/media/envelopes.test.mjs` — `buildDeviceStateBroadcast` + `validateDeviceStateBroadcast`
-- `frontend/src/screen-framework/publishers/useSessionStatePublisher.test.jsx` — reactive + heartbeat + debounce
-- `frontend/src/screen-framework/publishers/SessionSource.test.js` — source factory contract
+- `__capabilities/screen-host/browser/publishers/useSessionStatePublisher.test.jsx` — reactive + heartbeat + debounce
+- `__capabilities/playback/browser/sessions/SessionSource.test.js` — source factory contract
+- `__capabilities/playback/browser/sessions/registrySessionSource.audience.test.js` — the declared audience rides every snapshot
 - `__backend/tests/unit/suite/3_applications/devices/DeviceLivenessService.test.mjs` — last-snapshot cache + replay on subscribe
 - `__backend/tests/unit/suite/3_applications/devices/DeviceLiveness.integration.test.mjs` — end-to-end reason:offline + reason:initial synthesis
 
@@ -2126,9 +2127,39 @@ Central portable type.
     "ownerId": "<deviceId>" | "<clientId>",
     "origin": { /* optional — who last commanded it, §6.2.7 */ }
   },
-  "controls": { /* optional — screen session controls, §9.14 */ }
+  "controls": { /* optional — screen session controls, §9.14 */ },
+  "audience": { /* optional — who is using the device, below */ }
 }
 ```
+
+**`audience`** (optional) — who is using the device, so the fleet card can show
+their faces. Absent means nobody declared.
+
+```json
+{
+  "activity": "workout" | "story" | "lesson" | "game" | "video" | "music",
+  "people": [ { "id": "<user id>", "name": "<display name>" | null, "role": "rider" | "learner" | "player" | "viewer", "guest": false } ]
+}
+```
+
+- `id` is a household user id: the avatar is `/static/img/users/<id>` (fallback
+  `user`). No image URLs travel. A guest has `guest: true`, `name: null`, and
+  is shown as the generic face labelled "Guest" — never named.
+- Validated by `validateAudience` (`shared/contracts/media/shapes.mjs`) inside
+  `validateSessionSnapshot`.
+- **Who fills it:** any component on the device calls `useDeviceAudience(audience)`
+  (`__capabilities/playback/browser/sessions.mjs`). Declarations stack — the
+  latest live one wins and withdrawing it reveals the one beneath — and are
+  keyed by activity + people, so a roster that changes every heart-rate tick
+  never re-publishes. `createRegistrySessionSource` attaches the current one to
+  every snapshot (idle ones too) and re-publishes when it changes. Today: the
+  garage during a workout (riders), the living room while a reading session is
+  open (the credited child, story playing or not), the piano tablet (the
+  current player; `game` while a game is mounted, `lesson` otherwise). Server
+  producers (speakers, arcade) send none.
+- The relay passes `snapshot` through untouched; a field outside the snapshot
+  would be dropped (`ClientIngressService`), and browser `currentItem` keeps
+  only six fields — which is why `audience` lives here.
 
 Queue items added by "keep similar things playing" carry
 `addedBy: "auto-continue"` and the batch's `itemActionId`.
