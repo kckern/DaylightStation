@@ -155,6 +155,22 @@ wraps at phone width, so nothing is lost to a narrow screen.
   started is the original stopped (it shows "Moved by …"). If the
   destination can't confirm, the original keeps playing and the outcome says
   so. Moving to this device opens Now Playing.
+- **Play on a screen** (fling). While something plays (or is paused) on this
+  device, the handle and Now Playing's transport carry one cast icon: **Play
+  on a screen**. It opens a short list of screens (the Move to… list: content
+  screens, never browsers); one tap on a screen starts the same item there —
+  no search, no menus. The screen starts **from the beginning**. Once this
+  device is past 10% of the item, the panel also offers **Start where I am
+  (m:ss)**; the beginning stays first and selected. Live items never ask. It
+  is the same hand-off as Now Playing's "Send to another device": the screen
+  adopts first (waking it if it is idle), and only then does this device
+  stop, so there are never two copies. If the screen does not confirm, this
+  device keeps playing and the panel says so ("Office TV did not confirm.
+  Still playing here."), with the screens still there to try again; the tray
+  records the outcome either way. It starts **playing** there even if it was
+  paused here. Like Move to…, the whole local queue goes with it: the screen
+  starts this item and carries on with what follows. On a phone the handle
+  hides Next when there is nothing next, so the title keeps its width.
 - **Several screens.** The screen picker's **Choose several screens** aims at
   more than one; the aim then reads "Kitchen + Living Room". Screens chosen
   in the same room, or in rooms marked as neighbours in screen admin, warn
@@ -683,7 +699,9 @@ adopts its item, position, queue, and config, and resumes seamlessly.
 
 ### J7. Hand off local to a remote
 Push the local session to a device, Transfer or Fork. The device adopts the
-full session state and resumes within seconds of where local was.
+full session state and resumes within seconds of where local was. The fast
+path is **Play on a screen** on the handle: one tap on a screen moves what plays
+here, starting from the beginning unless "Start where I am" is chosen.
 
 ### J8. Resume after disruption
 Refresh, crash, or network blip → the session restores from persisted state.
@@ -717,7 +735,8 @@ and a **canvas** that shows exactly one view at a time:
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
 │ outcome rows (overlay: one per attempt, never in the page)  │
-│ handle: art · title + state · Resume/Pause · next · stop · ⋯ │
+│ handle: art · title + state · Resume/Pause · next · stop ·  │
+│         Play on a screen (while playing here) · ⋯            │
 │ phone only: tab bar  Home · Browse · Devices · Search       │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -760,7 +779,8 @@ Below the canvas, at every width, the shell stacks:
   casts, with each failure row retrying only its original target, content,
   options, and hand-off snapshot,
 - the **mini player** — current local item, live progress strip, queue
-  position counter, play/pause/next/stop (a small live picture for video);
+  position counter, play/pause/next/stop, **Play on a screen** while
+  something plays here (a small live picture for video);
   tapping the title opens Now Playing. Stop retains a ready handle while the
   queue has items so the queue can be opened or restarted; clear/reset removes
   the handle once both the current item and queue are empty.
@@ -785,7 +805,13 @@ hand-off when the screen has a playback owner to capture, else (an idle
 screen, which answers `INVALID_CAPTURE`) the ordinary adopt load, counted as
 adopted only once the screen itself reports the same item playing
 (`cast/screenMove.js` `createScreenMoveDestination`, shared by `useHandOff`).
-The screen's copy starts at this device's spot, not at 0:00 (PLACE.8a/AC2).
+The screen's copy starts at this device's spot, not at 0:00 (PLACE.8a/AC2),
+unless the hand-off names a start: **Play on a screen** (`shell/FlingButton.jsx`)
+calls `useHandOff(id, { mode: 'transfer', startAt })` with `startAt: 0` (from
+the beginning, the default) or the hot-tier position read at the tap ("Start
+where I am", offered at ≥ 10% of a known duration, `cast/flingStart.js`). The
+start rides the snapshot `position`, which both destinations already honour —
+no new wire field.
 
 Aim labels always read the one persisted global aim, including while a person
 is steering a different screen in Peek. A busy origin is shown only when a

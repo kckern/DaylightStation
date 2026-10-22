@@ -1,7 +1,8 @@
 // frontend/src/modules/Media/shell/MiniPlayer.jsx
 // The handle on the ambient local session while one exists: a bottom bar with
 // a thin live progress strip along its top edge, the current item (tap → Now
-// Playing), queue position, play/pause, next, and stop. A stopped session with
+// Playing), queue position, play/pause, next, stop, and "Play on a screen"
+// (FlingButton.jsx) while something plays here. A stopped session with
 // retained queue items keeps a ready handle; an actually empty session renders
 // nothing instead of wasting phone space on dead "Idle" chrome.
 import React, { useCallback, useContext, useRef, useSyncExternalStore } from 'react';
@@ -20,6 +21,7 @@ import { usePlayerHost } from "../session/usePlayerHost.js";
 import { useSessionControls, useSecondTick, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
 import { HandleHouseMenu } from "../house/HouseQuietControls.jsx";
+import { FlingButton } from "./FlingButton.jsx";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { displayDeviceName } from "../fleet/deviceDisplay.js";
 import { presentTitle } from "../browse/tilePresentation.js";
@@ -199,7 +201,8 @@ export function MiniPlayer() {
         <button
           type="button"
           data-testid="mini-next"
-          className="np-icon-btn"
+          // Nowhere to go: a phone hides it (MediaShell.scss) so the title keeps its width.
+          className={`np-icon-btn${hasNext ? '' : ' mini-next--none'}`}
           aria-label="Next"
           disabled={!hasNext}
           onClick={() => transport.skipNext?.()}
@@ -216,6 +219,8 @@ export function MiniPlayer() {
         >
           <IconPlayerStopFilled size={18} />
         </button>
+        {/* Fling: the same item on a screen, one step (only while it plays here). */}
+        <FlingButton position="top-end" />
         {/* RQ-STEER-13: Pause all / Stop all / Resume all on the handle. */}
         <HandleHouseMenu />
       </div>

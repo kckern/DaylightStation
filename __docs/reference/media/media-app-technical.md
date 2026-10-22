@@ -1380,6 +1380,25 @@ destination is adopted and the source still has the same owner revision is
 the source stopped, by `POST /session/claim` (stop with `intent: "move"`, so
 the source shows "Moved by …"). Any other result leaves the source playing.
 
+**Fling: this device → a screen** (`shell/FlingButton.jsx`, on the handle and
+the local transport). The same destination as above through `useHandOff(id,
+{ mode: 'transfer', startAt })`: the local capture is the source, the screen
+adopts first (typed hand-off `positionPolicy: { kind: 'absolute', seconds }`,
+or the adopt load's snapshot `position`), and `portability.stopIfCurrent`
+stops this device only for the same owner revision. The fling passes
+`play: true`, so the sent snapshot's `state` is `playing` (a paused item here
+starts playing there; a plain move keeps `paused`). The whole captured queue
+travels, as with Move to…. `startAt` overwrites the captured `position` and
+marks the started queue entry and `currentItem` `resume: false` (SinglePlayer
+forwards it to `/play`, so the library's saved spot never overrides the
+explicit start): `0` by default; with "Start where I am" (offered when
+the hot position is ≥ 10% of a known, non-live duration — `cast/flingStart.js`
+`FLING_CHOICE_FRACTION`) the hot-tier position read at the tap. Targets are
+`moveDestinations(devices)` (content screens, no browsers); the control is
+absent without a current item in `playing | paused | buffering | stalled` or
+without a target. The outcome is a `kind: "move"` local record with the title
+only, so the tray offers no plain-play Retry; the panel stays open on failure.
+
 **Player completion guard.** `Player.beginRendererBoundary` (a new owner
 operation on the mounted content: sleep resume, Put it back, a same-item
 adopt) resets the duplicate-completion key, so the resumed item's next
@@ -2430,7 +2449,7 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `takeover.initiated` | info | Take Over started. | `deviceId`, `sessionId` |
 | `takeover.succeeded` | info | Take Over completed. | `deviceId`, `sessionId`, `position` |
 | `takeover.failed` | warn | Take Over failed. | `deviceId`, `error` |
-| `handoff.initiated` | info | Hand Off started. | `deviceId`, `mode` |
+| `handoff.initiated` | info | Hand Off started. | `deviceId`, `mode`, `operationId`, `startAt` (when the hand-off names a start) |
 | `handoff.succeeded` | info | Hand Off completed. | `deviceId`, `mode` |
 | `handoff.failed` | warn | Hand Off failed. | `deviceId`, `error` |
 | `ws.connected` / `ws.disconnected` / `ws.reconnected` | info | WS lifecycle. | `attempt?` |
@@ -2468,6 +2487,11 @@ Screen session controls (component `ScreenSessionControls` / `ScreenSessionContr
 | `line-up.requested` / `.failed` | info/warn | Line up with another screen. | `target`, `withId`, `contentId`, `seconds` |
 | `aim.drift-warned` | info | Several screens chosen in one or neighbouring rooms (or the registry was unreadable). | `targetIds`, `rooms`, `neighbouringRooms`, `state` |
 | `screen-move.initiated` / `.succeeded` / `.failed` | info/warn | Move to… between screens / to this device. | `sourceId`, `destinationId`, `operationId`, `path`, `status`, `reason`, `sourceStopped` |
+| `fling.opened` | info | **Play on a screen** opened from the handle or the local transport. | `contentId`, `targetIds`, `position`, `duration`, `offerChoice` |
+| `fling.start-mode-changed` | info | Start choice changed (offered at ≥ 10%). | `contentId`, `startMode` (`beginning` \| `current`) |
+| `fling.target-chosen` | info | A screen tapped; the hand-off starts. | `targetId`, `contentId`, `startMode`, `startAt` |
+| `fling.dispatched` / `fling.failed` | info/warn | The screen adopted / did not confirm (local untouched on failure). | `targetId`, `contentId`, `startMode`, `startAt` / `status`, `error`, `sourceStopped` |
+| `fling.local-stopped` | info | This device stopped after the screen adopted. | `targetId`, `contentId`, `sourceStopped` |
 
 ### 10.2 Sampling
 

@@ -1,7 +1,7 @@
 // frontend/src/modules/Media/shell/TransportBar.jsx
 // Transport controls bound to any session controller — used by Now Playing
 // (local). Two rows: primary (prev · rew 10s · play/pause · ffw 10s · next)
-// and secondary (speed · volume · stop). Every command is
+// and secondary (speed · volume · stop · Play on a screen, local only). Every command is
 // issued through the selected session controller. The optional command adapter
 // lets Peek retain its pending-state policy without creating a second surface.
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,6 +18,7 @@ import {
 import { useSessionController } from "../controller/useSessionController.js";
 import { playbackRateLabel } from "./stateCopy.js";
 import { PlayerFeatureControls, useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
+import { FlingButton } from "./FlingButton.jsx";
 import "./NowPlaying.scss";
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
@@ -241,6 +242,8 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
         >
           <IconPlayerStopFilled size={20} />
         </button>
+        {/* Fling: local playback only — a remote screen's transport has Move to… */}
+        {target === 'local' && <FlingButton position="top-end" variant="outline" />}
       </div>
       {(!controlsAvailable || !hasPlayableItem) && (
         <div className="np-control-unavailable" role="status">{unavailableReason}</div>
