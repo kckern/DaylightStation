@@ -49,13 +49,13 @@ describe('GovernanceStateOverlay — unattended start and hold statuses on rows'
       show: true, status: 'warning', deadline: Date.now() + 30_000, gracePeriodTotal: 30, rows: [pedalRow],
     }} />);
     const meta = warning.container.querySelector('.governance-progress-overlay__chip-meta').textContent;
-    expect(meta).toBe('Pedal or reach Active');
+    expect(meta).toBe('0 / 30 RPM · Pedal or reach Active');
     warning.unmount();
 
     const locked = render(<GovernanceStateOverlay display={{
       show: true, status: 'locked', videoLocked: true, activeUserCount: 1, requirements: [], rows: [pedalRow],
     }} />);
-    expect(locked.container.querySelector('.governance-lock__chip-meta').textContent).toBe('Pedal or reach Active');
+    expect(locked.container.querySelector('.governance-lock__chip-meta').textContent).toBe('0 / 30 RPM · Pedal or reach Active');
   });
 
   it('a pure RPM floor just says to pedal', () => {
@@ -63,6 +63,20 @@ describe('GovernanceStateOverlay — unattended start and hold statuses on rows'
       show: true, status: 'warning', deadline: Date.now() + 30_000, gracePeriodTotal: 30,
       rows: [row({ userId: 'rider-a', displayName: 'Rider A', targetZone: null, pedal: { rpm: 0, targetRpm: 30, orZoneLabel: null } })],
     }} />);
-    expect(container.querySelector('.governance-progress-overlay__chip-meta').textContent).toBe('Start pedaling');
+    expect(container.querySelector('.governance-progress-overlay__chip-meta').textContent).toBe('0 / 30 RPM · Start pedaling');
+  });
+
+  it('shows the window rpm as it climbs, and just the instruction when no rpm is known', () => {
+    const show = (pedal) => render(<GovernanceStateOverlay display={{
+      show: true, status: 'warning', deadline: Date.now() + 30_000, gracePeriodTotal: 30,
+      rows: [row({ userId: 'rider-a', displayName: 'Rider A', pedal })],
+    }} />);
+    const climbing = show({ rpm: 18.4, targetRpm: 30, orZoneLabel: 'Active' });
+    expect(climbing.container.querySelector('.governance-progress-overlay__chip-meta').textContent)
+      .toBe('18 / 30 RPM · Pedal or reach Active');
+    climbing.unmount();
+    const unknown = show({ rpm: null, targetRpm: 30, orZoneLabel: 'Active' });
+    expect(unknown.container.querySelector('.governance-progress-overlay__chip-meta').textContent)
+      .toBe('Pedal or reach Active');
   });
 });

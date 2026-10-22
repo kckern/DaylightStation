@@ -15,9 +15,15 @@ const ROW_GROW_ANIMATION_MS = 220;
 
 // A cadence_floor row is about the pedal (or the zone that excuses it), never
 // the rider's heart rate — that number answers a question the rule isn't asking.
-const pedalInstruction = (pedal) => (pedal?.orZoneLabel
-  ? `Pedal or reach ${pedal.orZoneLabel}`
-  : 'Start pedaling');
+// The rpm is the engine's 10s window of counted turns, so a single nudge of the
+// pedal doesn't flash a number the rule then ignores.
+const pedalInstruction = (pedal) => {
+  const instruction = pedal?.orZoneLabel ? `Pedal or reach ${pedal.orZoneLabel}` : 'Start pedaling';
+  const rpm = Number.isFinite(pedal?.rpm) ? Math.max(0, Math.round(pedal.rpm)) : null;
+  if (rpm == null) return instruction;
+  const target = Number.isFinite(pedal?.targetRpm) ? ` / ${Math.round(pedal.targetRpm)}` : '';
+  return `${rpm}${target} RPM · ${instruction}`;
+};
 
 let _warningLogger;
 const warningLogger = () => {
