@@ -371,6 +371,7 @@ Prevents rapid visual toggling when HR hovers near zone boundaries (e.g., 99-101
 
 ```
 For each HR update:
+  0. No reading (HR null/0) → report rawZoneId, commit nothing
   1. Derive rawZoneId from HR + zone thresholds
   2. If rawZoneId === committedZoneId → no change
   3. If timeSinceLastCommit > 5000ms → commit immediately (first transition)
@@ -382,6 +383,12 @@ For each HR update:
 - Cooldown window: 5 seconds after last zone commit
 - Stability requirement: 3 seconds of continuous new zone
 - First transition: instant (no stability wait)
+- A sample with no reading never commits. A strap that drops out is not a
+  rider who cooled down: when a loss is confirmed the session clears the
+  smoothing (`resetZoneState`), and committing the resulting "Cool" stamped the
+  cooldown, so a strap restored at 170 bpm read Cool for up to 3s and
+  governance flashed 0.1s warnings (2026-10-21). The first real reading after a
+  gap is a first sighting and commits instantly.
 
 ### Layer 2: GovernanceEngine (Phase Flap Prevention)
 

@@ -356,3 +356,54 @@ describe('resolveGovernanceDisplay — unattended start state and challenge hold
     expect(result.participantStatuses).toEqual({});
   });
 });
+
+// ---------------------------------------------------------------------------
+// cadence_floor rows: the rule is "pedal OR reach Active", not a heart rate
+// ---------------------------------------------------------------------------
+
+describe('resolveGovernanceDisplay — cadence_floor rows', () => {
+  const zoneMeta = {
+    map: {
+      cool: { id: 'cool', name: 'Cool', rank: 0 },
+      active: { id: 'active', name: 'Active', rank: 1 },
+    },
+  };
+  const displayMap = new Map([
+    ['rider_a', { displayName: 'Rider A', heartRate: 104, zoneId: 'cool', avatarSrc: '/a.png' }],
+  ]);
+  const floor = (overrides = {}) => ({
+    id: 'trike_floor',
+    type: 'cadence_floor',
+    zone: null,
+    orZone: 'active',
+    orZoneLabel: 'Active',
+    currentRate: 0,
+    targetRate: 30,
+    status: 'idle',
+    missingUsers: ['rider_a'],
+    metUsers: [],
+    satisfied: false,
+    ...overrides,
+  });
+
+  it('tags the row as a pedal row and targets the alternative zone', () => {
+    const result = resolveGovernanceDisplay(
+      makeGovState({ status: 'warning', requirements: [floor()] }),
+      displayMap,
+      zoneMeta,
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].pedal).toEqual({ rpm: 0, targetRpm: 30, orZoneLabel: 'Active' });
+    expect(result.rows[0].targetZone?.id).toBe('active');
+  });
+
+  it('a pure RPM floor (no alternative zone) has no target zone', () => {
+    const result = resolveGovernanceDisplay(
+      makeGovState({ status: 'warning', requirements: [floor({ orZone: null, orZoneLabel: null })] }),
+      displayMap,
+      zoneMeta,
+    );
+    expect(result.rows[0].pedal).toEqual({ rpm: 0, targetRpm: 30, orZoneLabel: null });
+    expect(result.rows[0].targetZone).toBeNull();
+  });
+});
