@@ -2473,6 +2473,13 @@
             gap: 0.75rem;
           }
 
+          // End Session / Ignore This Strap: destructive, so they read as such.
+          &.danger {
+            color: #ff8787;
+            background: rgba(255, 107, 107, 0.1);
+            border-color: rgba(255, 107, 107, 0.45);
+          }
+
           padding: 0.75rem 1rem;
           margin-bottom: 0.5rem;
           background: rgba(255, 255, 255, 0.05);
