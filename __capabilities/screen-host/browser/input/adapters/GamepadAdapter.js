@@ -14,6 +14,15 @@ let sharedHost = null;
 let sharedHostConsumers = 0;
 export function bindNextGamepadPress(role) { pendingRole = role; }
 export function gamepadRoleBindings() { return Object.fromEntries(roleBindings); }
+export function cancelPendingGamepadBind() { pendingRole = null; }
+/** Release every controller from its team role (game over / exit). */
+export function clearGamepadRoleBindings() { roleBindings.clear(); pendingRole = null; logger().info('gamepad.role-bindings-cleared', {}); }
+/** Rebuild roles from buzzer-arbiter bindings ({ 'gamepad:<controllerId>': teamId, slot_1: … }). */
+export function restoreGamepadRoleBindings(slotToTeam = {}) {
+  for (const [slot, teamId] of Object.entries(slotToTeam || {})) {
+    if (slot.startsWith('gamepad:')) roleBindings.set(slot.slice('gamepad:'.length), teamId);
+  }
+}
 
 /** One browser-tab gamepad poller, shared by screens and direct app routes. */
 export function acquireGamepadInputHost(actionBus, options = {}) {
@@ -263,7 +272,9 @@ export class GamepadAdapter {
       this._invalidateAllSeeds();
       return;
     }
-    const gamepads = getActiveGamepads();
+    // Team-bound controllers poll first: a phantom twin (one physical pad at
+    // two indices) then loses the same-id dedupe and cannot navigate.
+    const gamepads = getActiveGamepads().sort((a, b) => Number(roleBindings.has(`${b.index}:${b.id}`)) - Number(roleBindings.has(`${a.index}:${a.id}`)));
     for (const gp of gamepads) {
       this._pollOne(gp);
     }
@@ -294,6 +305,13 @@ export class GamepadAdapter {
 
     const prev = this._prevButtons[gpIdx];
     const prevStick = this._prevStick[gpIdx];
+
+    // A controller bound to a team (or the next press while a bind is pending)
+    // is a buzzer: every input is a semantic press, nothing navigates the UI.
+    if (pendingRole !== null || roleBindings.has(`${gpIdx}:${gp.id}`)) {
+      this._pollBuzzer(gp, prev, prevStick);
+      return;
+    }
 
     // --- Mapped buttons ---
     for (const [indexStr, mapping] of Object.entries(BUTTON_MAP)) {
@@ -354,6 +372,28 @@ export class GamepadAdapter {
     }
   }
 
+  _pollBuzzer(gp, prev, prevStick) {
+    for (const key of Object.keys(this._repeatTimers)) {
+      if (key.startsWith(`${gp.index}__`)) this._stopRepeat(key);
+    }
+    for (let idx = 0; idx < gp.buttons.length; idx++) {
+      const pressed = !!gp.buttons[idx]?.pressed;
+      if (pressed !== !!prev[idx] && this._claimFire(gp.id, `btn${idx}${pressed ? '' : ':release'}`)) {
+        this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
+      }
+      prev[idx] = pressed; prev[`unmapped_${idx}`] = pressed;
+    }
+    for (const dir of STICK_DIRECTIONS) {
+      const value = gp.axes[dir.axis] || 0;
+      const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
+      const stickKey = `stick_${dir.key}`;
+      if (active && !prevStick[stickKey] && this._claimFire(gp.id, stickKey)) {
+        this._emitSemantic(gp, null, 'press', `stick.${dir.payload.direction}`);
+      }
+      prevStick[stickKey] = active;
+    }
+  }
+
   /**
    * Phantom-enumeration suppression: returns true if this (id, key) hasn't
    * fired within the dedupe window. The same physical 8Bitdo enumerated at
@@ -391,12 +431,12 @@ export class GamepadAdapter {
     window.dispatchEvent(event);
   }
 
-  _emitSemantic(gamepad, buttonIndex, phase) {
+  _emitSemantic(gamepad, buttonIndex, phase, action = SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`) {
     const controllerId = `${gamepad.index}:${gamepad.id}`;
-    if (phase === 'press' && pendingRole) { roleBindings.set(controllerId, pendingRole); pendingRole = null; }
-    const button = gamepad.buttons[buttonIndex];
+    if (phase === 'press' && pendingRole) { roleBindings.set(controllerId, pendingRole); logger().info('gamepad.role-bound', { controllerId, role: pendingRole }); pendingRole = null; }
+    const button = buttonIndex == null ? null : gamepad.buttons[buttonIndex];
     const intent = interactionIntent({
-      action: SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`,
+      action,
       phase,
       value: button?.value ?? Number(phase === 'press'),
       source: 'gamepad',

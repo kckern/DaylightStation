@@ -14,7 +14,8 @@ import "./PartyGamesApp.scss";
 import { useScopedRemoteControls } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import getLogger from '@/lib/logging/Logger.js';
 import "../../../../../__capabilities/gaming/browser/platform/ui/fonts.js";
-import { acquireGamepadInputHost, bindNextGamepadPress } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { acquireGamepadInputHost, bindNextGamepadPress, cancelPendingGamepadBind, clearGamepadRoleBindings } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { saveBuzzerBindings, loadBuzzerBindings, forgetBuzzerBindings } from "./buzzerBindingStore.js";
 import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import EffectOverlay from "../effects/EffectOverlay.jsx";
 import PartyGamesExperience from "./PartyGamesExperience.jsx";
@@ -37,6 +38,10 @@ function BuzzerBind({ seats, onDone, onBack }) {
     const boundByGamepad = (event) => { if (event.detail?.phase === 'press' && event.detail.role_binding) setBound((value) => ({ ...value, [event.detail.role_binding]: true })); };
     window.addEventListener('gaming:interaction', boundByGamepad); return () => window.removeEventListener('gaming:interaction', boundByGamepad);
   }, []);
+  // A pending gamepad bind swallows the next controller press. Drop it once the
+  // team is bound by any source (key, WS, gamepad) and when this screen leaves.
+  useEffect(() => { if (!bindingTeamId) cancelPendingGamepadBind(); }, [bindingTeamId]);
+  useEffect(() => () => cancelPendingGamepadBind(), []);
   // Bindings live in THIS phase's arbiter; onDone hands them to the flow so
   // the game's own arbiter can restore them (they'd be lost otherwise).
   return (
@@ -50,7 +55,7 @@ function BuzzerBind({ seats, onDone, onBack }) {
           {team.name}: {bindingTeamId === team.id ? 'Press your buzzer…' : (bound[team.id] ? 'Bound ✓' : `Buzzer ${team.slot?.replace('slot_', '') || '?'}`)}
         </button>
       ))}</div>
-      <div className="party-games__bind-actions"><GameButton tone="quiet" onClick={onBack}>Back</GameButton><GameButton tone="primary" autoFocus onClick={() => onDone(arbiter.bindings())}>Start game</GameButton></div>
+      <div className="party-games__bind-actions"><GameButton tone="quiet" onClick={() => { clearGamepadRoleBindings(); onBack(); }}>Back</GameButton><GameButton tone="primary" autoFocus onClick={() => onDone(arbiter.bindings())}>Start game</GameButton></div>
     </div>
   );
 }
@@ -197,6 +202,13 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     } catch { /* URL attachment still preserves refresh recovery when storage is unavailable. */ }
   }, [flow.definitionId, flow.phase, flow.sessionId, launch.historyPolicy]);
 
+  useEffect(() => {
+    if (flow.phase === 'playing' && flow.sessionId && flow.buzzerBindings) saveBuzzerBindings(flow.sessionId, flow.buzzerBindings);
+    else if (flow.phase === 'results' && flow.sessionId) forgetBuzzerBindings(flow.sessionId);
+  }, [flow.phase, flow.sessionId, flow.buzzerBindings]);
+  // A refreshed page has no flow bindings; the saved ones keep controllers bound.
+  const buzzerBindings = useMemo(() => flow.buzzerBindings ?? loadBuzzerBindings(flow.sessionId), [flow.buzzerBindings, flow.sessionId]);
+
   // Reuse the pending creation during StrictMode effect replay; obsolete flows
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
@@ -265,7 +277,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       )}
 
       {flow.phase === 'buzzer-bind' && (
-        <BuzzerBind seats={flow.seats} onBack={playAgain} onDone={(bindings) => dispatchFlow({ type: 'BIND_DONE', bindings })} />
+        <BuzzerBind seats={flow.seats} onBack={playAgain} onDone={(bindings) => { logger.info('party-games.buzzers.bound', { count: Object.keys(bindings).length }); dispatchFlow({ type: 'BIND_DONE', bindings }); }} />
       )}
 
       {flow.phase === 'playing' && Game && flow.sessionId && (
@@ -276,7 +288,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
               setId={flow.setId}
               seats={flow.seats}
               sessionId={flow.sessionId}
-              buzzerBindings={flow.buzzerBindings}
+              buzzerBindings={buzzerBindings}
               config={flow.config}
               registerBackAction={registerBackAction}
               registerForwardAction={registerForwardAction}

@@ -9,6 +9,8 @@ const log = () => getLogger().child({ component: 'party-games-buzzers' });
  * Wires buzz sources into a BuzzerArbiter:
  *  - WS `party-games`/`buzz` events (MQTT relay or the debug POST /buzz endpoint)
  *  - fallback keyboard digits 1..9 → slot_1..slot_9 (playable with no hardware)
+ *  - gamepads → slot `gamepad:<controllerId>` (GamepadAdapter reports every input
+ *    from a team-bound controller as a semantic `gaming:interaction` press)
  * onLock(teamId) fires exactly once per armed window.
  */
 export function useBuzzers({ teams, onLock }) {
@@ -46,6 +48,18 @@ export function useBuzzers({ teams, onLock }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [handleSlot]);
+
+  // Gamepads are buzzer slots keyed by controller identity. GamepadAdapter
+  // reports every input from a team-bound controller as a semantic press.
+  useEffect(() => {
+    const onInteraction = (event) => {
+      const intent = event.detail;
+      if (intent?.source !== 'gamepad' || intent.phase !== 'press' || !intent.controller_id) return;
+      handleSlot(`gamepad:${intent.controller_id}`, 'gamepad');
+    };
+    window.addEventListener('gaming:interaction', onInteraction);
+    return () => window.removeEventListener('gaming:interaction', onInteraction);
   }, [handleSlot]);
 
   return {
