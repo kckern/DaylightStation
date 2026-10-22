@@ -1742,8 +1742,9 @@ are the only things in the board pane that take a tap; the strip sets `pointer-e
   *earned* (the earnings preview), read out as "N silver earned this week".
   The strip's is what is *in the bank* (the ledger, less what was spent). They
   differ after a pass purchase or before a payout lands, which is why each is
-  named. Both coin colours come from School tokens (`--school-coin-silver`,
-  `--school-coin-gold`), read for `CoinIcon` by `shared/useCoinColor.js`.
+  named. The coin icons are the standard `CoinIcon` (`metal="silver"` / `"gold"`); the
+  figures' text colours are the School tokens `--school-coin-silver` and
+  `--school-coin-gold`.
 - **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
   field is the silver figure, never gold.
 - **Before coins are live** (the bank's `mode` is not `live`) the chip says

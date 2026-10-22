@@ -52,6 +52,24 @@ a later phase), so the ledger is append-only and auditable.
 An entry written before currencies existed has no `currency` and is silver.
 Each currency is folded on its own (`foldBalances`) and floored at 0 for display.
 
+### How a coin looks (`CoinIcon`)
+
+Every coin drawn on a screen is `frontend/src/lib/icons/CoinIcon.jsx`: the
+Twemoji coin (CC-BY 4.0, attribution in the file header). Printed receipts are
+text and draw no coin.
+
+- `metal: 'gold' | 'silver'` picks a palette in `COIN_PALETTES`. Each palette
+  fills five named roles of the art: rim, inner, face, light, highlight. Gold is
+  the default.
+- `color` (a hex) is the escape hatch shared with `TicketIcon` and `GemIcon`. It
+  rebuilds the five roles as a tint ladder around that one colour and wins over
+  `metal`.
+- Gems are `GemIcon`, a separate component with the same conventions.
+- The coin FIGURES' text colours are not part of the icon: they stay the School
+  tokens `--school-coin-silver` and `--school-coin-gold`.
+- Add a coin only through this component. Never draw one as an emoji, a unicode
+  glyph or a CSS circle (kiosk icons are SVG components).
+
 ## Ledger
 
 The backend is the single source of truth. A balance is **derived by folding an
@@ -602,7 +620,16 @@ one read the Portal bank strip and bank screen, the piano kiosk and its lock
 screen share.
 
 **History** is the last 50 ledger lines in plain words, newest first
-(`{ text, at, kind, ids }`, from `domain/historyText.mjs`): "+2 silver · Green
+(`{ text, at, kind, ids, source, label, legs, balanceAfter }`, from
+`domain/historyText.mjs`). `text` is the sentence; the rest is the same line
+broken into parts so a client can lay it out as a table. `source` is
+`entrySource`: `payout`, `earn`, `prize`, `refund`, `spend`, `deposit`,
+`correction`, `withdraw`, `conversion` (or `other`). `label` is the words after
+the amount, `legs` the signed amounts per currency (a conversion has two), and
+`balanceAfter` the `{ silver, gold, gems }` balances once the line landed. It is
+folded oldest first over the whole ledger read, before the 50-line cut, each
+currency floored at 0, so line 50 still knows what older lines left behind. An
+older client reads `text` only. The sentences: "+2 silver · Green
 day", "−3 silver · early pass", "+3 silver · early pass refunded", "12 silver →
 12 gold · Sunday". A payout is named by the current week's preview line it paid
 for (its `evidenceRef`), then by the ruleset's label for its `ruleId`, then
