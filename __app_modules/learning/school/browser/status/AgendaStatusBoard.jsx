@@ -457,14 +457,27 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       });
   }, []);
 
+  // Earnings reads overlap (scans, school events, gate events and the coins
+  // burst all fire one), so they can land out of order. Each is numbered and a
+  // response older than the last one APPLIED is dropped: otherwise a stale
+  // lower figure would flicker the card back and reset the ceremony's
+  // baseline, and the next read would pop the same rise twice.
+  const earningsSentRef = useRef(0);
+  const earningsAppliedRef = useRef(0);
   const refreshCoins = useCallback(() => {
     if (schoolApi.earningsRoster) {
       // One roster read prices everyone. Fired alongside the plans, never
       // awaited; a failed read keeps the figures already on the cards.
+      const seq = ++earningsSentRef.current;
       Promise.resolve(schoolApi.earningsRoster(day ?? null))
         .then((res) => {
           if (!aliveRef.current) return;
+          if (res?.ok && seq < earningsAppliedRef.current) {
+            schoolLog.selfService('status-board.earnings-stale-dropped', { seq, applied: earningsAppliedRef.current });
+            return;
+          }
           if (res?.ok) {
+            earningsAppliedRef.current = seq;
             const next = earningsByLearner(res.data);
             setEarnings(next);
             observeCoinsRef.current(next);

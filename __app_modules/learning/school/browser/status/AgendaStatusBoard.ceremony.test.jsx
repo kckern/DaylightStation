@@ -155,4 +155,68 @@ describe('the coin ceremony on the board', () => {
     await settle();
     expect(result.current.toast?.kid.id).toBe('test-learner-2');
   });
+
+  it('reads that land out of order: the older one is dropped, so one pop and the figure stays new', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12)));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    await waitFor(() => expect(silverShown(12)).toBeTruthy());
+    await settle();
+    let resolveA; let resolveB;
+    schoolApi.earningsRoster
+      .mockReturnValueOnce(new Promise((r) => { resolveA = r; }))
+      .mockReturnValueOnce(new Promise((r) => { resolveB = r; }));
+    await poke();
+    await poke();
+    expect(resolveA).toBeTypeOf('function');
+    expect(resolveB).toBeTypeOf('function');
+    await act(async () => { resolveB(roster(priced('test-learner', 15))); });
+    await screen.findByTestId('coin-ceremony');
+    await act(async () => { resolveA(roster(priced('test-learner', 12))); });
+    await settle();
+    expect(silverShown(15)).toBeTruthy();
+    expect(silverShown(12)).toBeNull();
+    // A later poll at 15 is no news: the stale 12 never became the baseline.
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 15)));
+    await poke();
+    await settle();
+    expect(h.cues).toHaveLength(1);
+    expect(within(screen.getByTestId('coin-ceremony')).getByText('+3')).toBeTruthy();
+  });
+
+  it('a same-week reload (seed equals the first read) then a rise pops once', async () => {
+    localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
+      studyDay: DAY, learners: {}, rings: {},
+      earnings: { 'test-learner': { silver: 12, gems: 0, pendingSilver: 0, pendingGems: 0, ...WEEK } },
+    }));
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12)));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    await waitFor(() => expect(schoolApi.earningsRoster).toHaveBeenCalled());
+    await settle();
+    expect(screen.queryByTestId('coin-ceremony')).toBeNull();
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 15)));
+    await poke();
+    const pop = await screen.findByTestId('coin-ceremony');
+    expect(within(pop).getByText('+3')).toBeTruthy();
+    await settle();
+    expect(h.cues).toHaveLength(1);
+  });
+
+  it('unmounting mid-pop clears its timers and plays no further cue', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12), priced('test-learner-2', 4)));
+    const { unmount } = render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={{ ...NOW, durationMs: 1000 }} />);
+    await waitFor(() => expect(silverShown(12)).toBeTruthy());
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 14), priced('test-learner-2', 9)));
+    await poke();
+    await screen.findByTestId('coin-ceremony');
+    await settle();
+    expect(h.cues).toHaveLength(1);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    unmount();
+    // Past the first pop's duration + exit: Beta's pop would have come by now.
+    await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
+    expect(h.cues).toHaveLength(1);
+    expect(screen.queryByTestId('coin-ceremony')).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
 });
