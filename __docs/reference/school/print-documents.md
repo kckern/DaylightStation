@@ -743,9 +743,12 @@ Use `shadow` until the legacy audit is clean and shadow logs have no unexplained
 matches. In `enforce`, the School panel says: **Two answer sheets are active.
 Ask a grown-up to check this scan.** The teacher console shows a separate
 answer-sheet pairing queue (not the item grading queue) with both icons,
-numbers, worksheet titles, ranges, timestamps, and original marks. A grown-up
+numbers, worksheet titles, ranges, timestamps, and original marks. Each case
+names the child and says why it was held in words (two sheets out at once, or
+an already-replaced sheet), never the reason code or raw ISO time. A grown-up
 may confirm the scanned allocation, ordinally reassign a compatible contiguous
-window, or request a redo without a grade. Reassignment preserves blanks and
+window, or request a redo without a grade (a refused redo shows its reason
+under the button, as confirm and reassign do). Reassignment preserves blanks and
 multi-marks, records `manual-wrong-card-reassignment` with the exact row map,
 and quarantines the accidentally marked source rows until verified erased or
 superseded by a clean reprint.

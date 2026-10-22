@@ -305,7 +305,8 @@ describe('LearnerDayView — past days', () => {
   it('offers a launch-card Preview on today\'s rows only', async () => {
     const today = mount({ studyDay: '2026-08-25' });
     await screen.findByText('Tuesday, Aug 25');
-    expect(screen.getAllByRole('button', { name: /^Preview ↗$/ }).length).toBeGreaterThan(0);
+    // The day heading paints before the rows' fetches land; wait for the rows.
+    expect((await screen.findAllByRole('button', { name: /^Preview ↗$/ })).length).toBeGreaterThan(0);
     today.unmount();
 
     mount({ studyDay: '2026-08-24' });

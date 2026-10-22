@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
+import { humanDateTime } from "../teacherDates.js";
 
 function Identicon({ icon }) {
   if (!Array.isArray(icon?.cells)) return null;
@@ -17,7 +18,17 @@ const marksText = (rows) => (rows ?? []).map((row) => (
   `${row.row}: ${row.marks?.length ? row.marks.join('+') : 'blank'}`
 )).join(' · ');
 
-export default function AnswerSheetPairingQueue() {
+// Why the scan was held, in words. The codes are `ResolveCardScan`'s
+// (`multiple-delivered-live-answer-sheets` / `activity-on-historical-answer-sheet`).
+const REASON_COPY = {
+  'multiple-delivered-live-answer-sheets': 'Two answer sheets were out at once, so the scan could belong to either',
+  'activity-on-historical-answer-sheet': 'This answer sheet had already been replaced by a newer one',
+};
+const reasonCopy = (reason) => REASON_COPY[reason] ?? 'The scan could not be matched to one worksheet';
+const when = (value) => humanDateTime(value) ?? 'at an unknown time';
+
+export default function AnswerSheetPairingQueue({ kids = [] }) {
+  const nameFor = (id) => kids.find((kid) => kid.id === id)?.name ?? id ?? 'Unknown learner';
   const { run, busy, errors } = useTeacherWrite({ panel: 'answer-sheet-pairing' });
   const [items, setItems] = useState(null);
 
@@ -48,11 +59,15 @@ export default function AnswerSheetPairingQueue() {
 
   return (
     <div className="answer-sheet-pairing">
-      {items.map((held) => (
+      {items.map((held) => {
+        // `resolve` keys a redo as `${heldScanId}:redo:none`; its refusal and
+        // its in-flight state belong under its own button like the others'.
+        const redoKey = `${held.heldScanId}:redo:none`;
+        return (
         <article key={held.heldScanId} className="answer-sheet-pairing__case">
           <header>
-            <h3>{held.evidence.learnerId}</h3>
-            <p>{held.evidence.reason} · scanned {held.createdAt}</p>
+            <h3>{nameFor(held.evidence.learnerId)}</h3>
+            <p>{reasonCopy(held.evidence.reason)} · scanned {when(held.createdAt)}</p>
             <p><strong>Original marks:</strong> {marksText(held.evidence.rawRows)}</p>
           </header>
           <div className="answer-sheet-pairing__candidates">
@@ -65,7 +80,7 @@ export default function AnswerSheetPairingQueue() {
                   <div>
                     <h4>{candidate.title}</h4>
                     <p>Student No. {candidate.cardId} · rows {candidate.rowRange.start}–{candidate.rowRange.end}</p>
-                    <p>Printed {candidate.renderedAt}</p>
+                    <p>Printed {when(candidate.renderedAt)}</p>
                   </div>
                   <div className="answer-sheet-pairing__actions">
                     {candidate.cardId === held.evidence.rawCardId && (
@@ -86,9 +101,11 @@ export default function AnswerSheetPairingQueue() {
               );
             })}
           </div>
-          <button type="button" onClick={() => resolve(held, 'redo')}>Redo without a grade</button>
+          <button type="button" disabled={busy === redoKey} onClick={() => resolve(held, 'redo')}>Redo without a grade</button>
+          {errors[redoKey] && <p className="teacher-panel__error">{errors[redoKey]}</p>}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

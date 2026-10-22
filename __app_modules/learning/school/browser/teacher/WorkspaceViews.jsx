@@ -192,7 +192,7 @@ export function QueueView({ kids, onChanged }) {
         <ReviewQueueView items={review.data?.items ?? []} kids={kids} titleFor={titleFor} onResolved={() => { review.retry(); onChanged?.(); }} />
       </PanelFrame>
       <PanelFrame title="Answer-sheet pairing" state="ok">
-        <AnswerSheetPairingQueue />
+        <AnswerSheetPairingQueue kids={kids} />
       </PanelFrame>
       <PrintPendingView kids={kids} onChanged={onChanged} />
       <QuizRequestBacklog kids={kids} onChanged={onChanged} />
