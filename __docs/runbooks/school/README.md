@@ -372,7 +372,13 @@ media root, beside the other School UI cues.
   page loaded (kiosk browsers refuse sound before a gesture), the master volume
   must not be muted, and the file must exist. Check the log store for
   `school.coin_cue.play` (it played), `.rejected` (the browser refused),
-  `.muted` (master volume was 0).
+  `.muted` (master volume was 0), `.threw` (setting up the audio element
+  failed), `.unlock_rejected` (the first-touch prime was refused; a
+  `NotAllowedError` waits for the next touch, anything else, such as a missing
+  file, does not retry until reload).
+- **Coin cell does not open the bank?** Look for `economy.bank.door-opened`
+  (the open was accepted) or `economy.bank.door-open-failed` (refused, with the
+  status; the panel shows the refusal under "Whose bank?").
 - Screen YAML is read when the Portal loads, so reload the Portal after editing.
   Details: `__docs/reference/school/agenda-and-completion.md`, "The coin ceremony".
 

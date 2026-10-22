@@ -242,8 +242,11 @@ this week's. Cards stay in roster order; the economy never ranks.
 The coin cell on a card is a native button (so keyboard and OK reach it). It
 opens that learner's bank screen directly; there is no popup between. Opening it
 starts no tracked work (it logs `status-board.bank-open`), and the Portal wires it
-to the same bank launch the bank strip's chips use, with the learner already
-known so no face picker is shown. The cell is a plain figure, not a button, when
+to the panel's bank door (`bank/BankDoor.jsx`, `POST /school/bank/open`), with
+the learner already known so no face picker is shown. The coin cell is the only
+way into the bank on the Portal; there is no bank strip. A refused open shows
+the "Whose bank?" sheet with the refusal under the faces. The door logs
+`economy.bank.door-opened` and `economy.bank.door-open-failed`. The cell is a plain figure, not a button, when
 the board has no `onOpenBank` or the learner has no coin figure yet. Its spoken
 name carries the week: "<name>'s bank, N silver this week".
 
@@ -276,10 +279,14 @@ child's face and name, and the standard silver `CoinIcon`.
 
 **What counts as a rise.** The same learner's silver going up between two
 network reads of the same week (`coinCeremonyModel.observeEarnings`). Not
-celebrated: the board-cache seed and the first network read after mount (both
-are baselines, so a reload never replays an old rise); a change of week; a drop;
+celebrated: the board-cache seed and the first network read per learner since
+the page loaded (both are baselines, so a reload never replays an old rise); a
+change of week; a drop;
 no change; a learner off the roster. A learner missing from one read keeps their
-baseline. The baseline advances even while the ceremony is disabled.
+baseline. The baseline advances even while the ceremony is disabled. It lives
+for the life of the page, not the board: the board unmounts while a code, runner,
+section or bank screen is open, and coins earned there pop when the board comes
+back.
 
 **Bursts.** A rise waits `coalesceWindowMs` before it shows, and further rises
 for that learner merge into it (the gains add). A rise for the child already on
@@ -313,7 +320,11 @@ the Portal with the rest of the screen config:
 
 **Logs.** `status-board.coin-rise`, `status-board.coin-ceremony.shown`,
 `.dismissed` (reason `tap` or `timeout`), `.dropped` (learner left the roster),
-and the sound's `school.coin_cue.play` / `.rejected` / `.muted`.
+and the sound's `school.coin_cue.play` / `.rejected` / `.muted` / `.threw`
+(setting up the element failed) / `.unlock_rejected` (the first-gesture prime
+was refused; only `NotAllowedError` re-arms it for the next tap) /
+`.unlock_threw`. The bank door logs `economy.bank.door-opened` and
+`economy.bank.door-open-failed`.
 
 ## Physical education on the status board
 

@@ -616,8 +616,8 @@ missing privilege or coin, or a `playedMs` that is not a non-negative number →
 ### The bank (`BankService`)
 
 `GET …/bank` (`application/BankService.mjs`, `Cache-Control: no-store`) is the
-one read the Portal bank strip and bank screen, the piano kiosk and its lock
-screen share.
+one read the Portal bank screen (opened from the board's coin cell), the piano
+kiosk and its lock screen share.
 
 **History** is the last 50 ledger lines in plain words, newest first
 (`{ text, at, kind, ids, source, label, legs, balanceAfter }`, from
@@ -699,8 +699,8 @@ School and piano import no economy code. Composition hands them duck-typed ports
 built from `economyApi` (`composition/economyApi.mjs`).
 
 - **School: what a sheet is worth (`rewardFor`).** School's "print my next sheet"
-  dry run (`GET /api/v1/school/self-service/learners/:id/next`, behind the Portal
-  bank strip, the bank screen's ways to earn, the agenda tape's `Next: Math +2`
+  dry run (`GET /api/v1/school/self-service/learners/:id/next`, behind the
+  Portal bank screen's ways to earn, the agenda tape's `Next: Math +2`
   and the piano lock's button) asks `rewardFor({learnerId, unit})` for
   `{silver, gems}` or null. `createEconomyApi` hands School a late-bound thunk
   (`economyApi.rewardFor`, passed by `lifecycle-runtime.mjs`); the earnings
@@ -745,7 +745,7 @@ built from `economyApi` (`composition/economyApi.mjs`).
   (an `economyMode` reader, `() => configProjection.catalog().mode`, is handed
   to `createSchoolLifecycle`). School's composition (`agendaEconomy.mjs`)
   builds a `bankSummary(learnerId)` port over `economyService.peekBalance(id).silver`:
-  the *unspent* silver in the bank (the figure the Portal bank strip shows and
+  the *unspent* silver in the bank (the figure the Portal bank screen shows and
   the week close converts), not the week's mints. `peekBalance` is the pure
   read: `#assertUser`, then `foldBalances` over the ledger, with no wallet
   write and no session reap (unlike `getBalance`). The port checks `hasUser`
@@ -767,8 +767,10 @@ built from `economyApi` (`composition/economyApi.mjs`).
   `zero_days_alert` and `mode` are read on every run, and null turns the alert
   off. In `dry-run` the digest shows no silver figure and ends `Coins not live
   yet`; with `off` coins are not mentioned.
-- **School: Portal bank strip, bank screen and bank door.** All read
-  `GET …/bank`; see the School README ("The bank strip", "The bank screen").
+- **School: Portal coin cell, bank door and bank screen.** The board's coin
+  cell opens the bank door, and the bank screen reads `GET …/bank`; there is no
+  bank strip. See the School README ("The coin cell is the bank's door", "The
+  bank screen").
   School forwards `economy.coins-changed` to the Portal's `school` topic
   (`EventBusSchoolRealtimeAdapter.relayCoinsChanged`, see
   [Events](#events-and-logging)).
@@ -844,7 +846,8 @@ Portal's `school` topic as `{event: 'coins-changed', learnerId}`.
 | School reward port | `economy.sheet-reward.failed` (warn, once per learner) |
 | Events | `economy.coins-changed.no-publish`, `economy.coins-changed.publish-failed` |
 
-Client-side events (`economy.strip.*`, `economy.bank.door-*`, `economy.bank.opened`,
+Client-side events (`economy.bank.door-opened`, `economy.bank.door-open-failed`,
+`economy.bank.opened`,
 `piano.early-pass.*`) are listed with their surfaces in the School README and
 games-budget-gate.md.
 
@@ -888,7 +891,7 @@ the old snapshot when the file is missing.
    surface), and the digest ends `Coins not live yet`. No balance moves. No pass
    can be bought before live (`PASS_NOT_SOLD`) and the bank offers nothing.
    The kid surfaces show no silver figure: the agenda prints no economy line,
-   and the Portal bank strip and bank screen say "Coins start soon".
+   and the Portal bank screen says "Coins start soon".
    With `passes` in the catalog, a school-locked kid's piano Games tile is
    enabled and opens SchoolLock (today's progress and the Print button). That
    is intended, not the gate failing open: SchoolLock sells nothing until live.

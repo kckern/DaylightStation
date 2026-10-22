@@ -53,7 +53,7 @@ mint. See [economy.md § Payouts](../economy/economy.md#payouts).
 
 **Reward labels.** School surfaces show what the next sheet is worth through
 the optional `rewardFor({learnerId, unit})` port, wired to the economy: the
-Portal bank strip ("+2 silver · Math 4-02"), the bank screen's ways to earn, the
+Portal bank screen's ways to earn ("+2 silver · Math 4-02"), the
 agenda tape's `Next: Math +2`, and the piano lock's Print button. The amount is
 what passing the sheet would add to the week's payout at the learner's own
 rate. It is null, and no amount is shown, unless the economy is `live` and
