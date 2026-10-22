@@ -12,18 +12,26 @@
  * A failed enrollment read falls through to (3): a storage hiccup must never
  * block a grade, and the unit's bar is what grading used before (2) existed.
  */
+/**
+ * The learner's course entry for one lesson: an exact course id wins, else the
+ * entry whose enrollment lists the lesson in its lesson order. The issuers
+ * (`IssueDocument`, `IssueComposedWorksheet`) and the resolver below all use
+ * this, so the enrollment a sheet is issued against is the one its bar came
+ * from. Null when nothing claims the lesson.
+ */
+export function courseEntryFor(record, unit) {
+  const courses = (record?.courses ?? []).filter((entry) => entry && typeof entry === 'object');
+  return courses.find((entry) => unit?.courseId && entry.courseId === unit.courseId)
+    ?? courses.find((entry) => Object.values(entry.enrollment?.lessonOrder ?? {}).flat().includes(unit?.unitId))
+    ?? null;
+}
+
 export async function resolvePassingPercent({ passOverrides = null, assignments = null, learnerId = null, unit = null } = {}) {
   const override = passOverrides?.percentFor?.(unit?.unitId);
   if (Number.isInteger(override)) return override;
   if (assignments && learnerId && unit?.unitId) {
     try {
-      const record = await assignments.get(learnerId);
-      const courses = (record?.courses ?? []).filter((entry) => entry && typeof entry === 'object');
-      // The course this lesson belongs to, matched the way `IssueDocument` and
-      // `IssueComposedWorksheet` match it: by course id, else by the lesson
-      // appearing in the enrollment's lesson order. An exact id wins.
-      const course = courses.find((entry) => unit.courseId && entry.courseId === unit.courseId)
-        ?? courses.find((entry) => Object.values(entry.enrollment?.lessonOrder ?? {}).flat().includes(unit.unitId));
+      const course = courseEntryFor(await assignments.get(learnerId), unit);
       if (Number.isInteger(course?.passing)) return course.passing;
     } catch { /* fall through to the unit's own bar */ }
   }

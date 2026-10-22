@@ -115,7 +115,7 @@ describe('IssueComposedWorksheet', () => {
   });
 
   it('prints the bar grading will use: override → enrollment → the unit\'s own (Task 16)', async () => {
-    const run = async ({ passOverrides = null }) => {
+    const run = async ({ passOverrides = null, courses = null, read = 'passPercent' }) => {
       const sessions = fakeSessions();
       const instances = new Map();
       const published = new Map();
@@ -123,7 +123,7 @@ describe('IssueComposedWorksheet', () => {
       const useCase = new IssueComposedWorksheet({
         curriculum: { async getUnit(id) { return { unitId: id, title: id, subject: 'science', courseId: 'chemistry', bank: `bank-${id}`, passing: { percent: 80 } }; } },
         sessions,
-        assignments: { async get() { return { courses: [{ courseId: 'chemistry', profile: 'lower', passing: 70, enrollment: { enrollmentId: 'enr-1' } }] }; } },
+        assignments: { async get() { return { courses: courses ?? [{ courseId: 'chemistry', profile: 'lower', passing: 70, enrollment: { enrollmentId: 'enr-1' } }] }; } },
         worksheetInstances: {
           async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
           async put(instance) { instances.set(instance.id, instance); return instance; },
@@ -144,10 +144,20 @@ describe('IssueComposedWorksheet', () => {
         clock: () => new Date('2026-08-21T09:00:00.000Z'), logger: { info() {} },
       });
       await useCase.execute({ sessionIds: ['s-one', 's-two'] });
+      if (read === 'enrollmentId') return [...instances.values()][0].enrollmentId;
       return [...published.values()].find((source) => source.id.startsWith('composed/')).blocks[0].passPercent;
     };
     expect(await run({})).toBe(70);
     expect(await run({ passOverrides: { percentFor: () => 65 } })).toBe(65);
+    // Two entries could claim the lesson: one by lesson order, one by course
+    // id. The issuer picks the one the bar came from — the exact id wins
+    // (`courseEntryFor`), so the sheet's enrollment and its bar agree.
+    const courses = [
+      { courseId: 'older', profile: 'lower', passing: 50, enrollment: { enrollmentId: 'enr-0', lessonOrder: { m: ['one', 'two'] } } },
+      { courseId: 'chemistry', profile: 'lower', passing: 70, enrollment: { enrollmentId: 'enr-1' } },
+    ];
+    expect(await run({ courses })).toBe(70);
+    expect(await run({ courses, read: 'enrollmentId' })).toBe('enr-1');
   });
 
   it('splits a teacher selection at the physical 50-row OMR-card boundary', async () => {

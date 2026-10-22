@@ -7,14 +7,16 @@
  * Pure: no fetching, no React. `WeekGrid` owns the reads.
  */
 import { joinLearnerDay } from "./learnerDay.js";
+import { shiftDay } from "./teacherDates.js";
 
-/** `count` ISO days ending on `endDay`, oldest first. Noon UTC keeps DST out of it. */
+/**
+ * `count` ISO days ending on `endDay`, oldest first — `shiftDay`'s arithmetic,
+ * so the grid and the Day record's prev/next agree on what "a day back" is.
+ * A day that will not parse gives no days.
+ */
 export function weekDays(endDay, count = 7) {
-  const end = new Date(`${endDay}T12:00:00Z`);
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(end); d.setUTCDate(end.getUTCDate() - (count - 1 - i));
-    return d.toISOString().slice(0, 10);
-  });
+  if (!shiftDay(endDay, 0)) return [];
+  return Array.from({ length: count }, (_, i) => shiftDay(endDay, i - (count - 1)));
 }
 
 // When a subject has two rows on one day, the cell shows the least-finished:

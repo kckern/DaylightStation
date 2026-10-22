@@ -52,7 +52,7 @@ import { worksheetPresentation } from "../../domain/curriculum/worksheetPresenta
 // handlers that can actually release a finish code. See its doc comment.
 import { COMPANION_COMPLETION_HANDLERS } from "../../domain/curriculum/unitValidation.mjs";
 import { resolveScripturePlaylist } from "../readalong/resolveScripturePlaylist.mjs";
-import { resolvePassingPercent } from "../passBar.mjs";
+import { resolvePassingPercent, courseEntryFor } from "../passBar.mjs";
 
 /**
  * States in which handing over a sheet still means something — DERIVED from the
@@ -734,10 +734,9 @@ export class IssueDocument {
       return this.#unavailable(sessionId, 'worksheet-instance-not-configured', 'There is no sheet to print for this one.');
     }
     const assignment = await this.#assignments.get(state.learnerId);
-    const course = (assignment?.courses ?? []).find((entry) => (
-      entry.courseId === unit.courseId || entry.enrollment?.lessonOrder
-        && Object.values(entry.enrollment.lessonOrder).flat().includes(unit.unitId)
-    ));
+    // Matched the way the pass bar below is (`courseEntryFor`): an exact
+    // course id wins over a lesson-order match.
+    const course = courseEntryFor(assignment, unit);
     const enrollmentId = course?.enrollment?.enrollmentId;
     const profile = course?.profile ?? course?.enrollment?.profile;
     if (!enrollmentId || !profile) {

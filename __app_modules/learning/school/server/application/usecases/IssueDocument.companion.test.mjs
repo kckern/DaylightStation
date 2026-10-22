@@ -99,7 +99,7 @@ function issuer({
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
   cardRequests = [], printer: suppliedPrinter = null, allocationStore: suppliedAllocationStore = null,
   issuedArtifacts = null, renderAllocation = null, publishPrintDocument: suppliedPublish = null,
-  coursePassing = undefined, passOverrides = null,
+  coursePassing = undefined, passOverrides = null, extraCourses = [],
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
@@ -133,7 +133,7 @@ function issuer({
               moduleOrder: ['w35-aug24'],
               lessonOrder: { 'w35-aug24': units.map((u) => u.unitId) },
             },
-          }],
+          }, ...extraCourses],
         };
       },
     },
@@ -701,6 +701,21 @@ describe('IssueDocument — the printed pass bar is the one that will grade it (
     expect(cardRequests[0].passPercent).toBe(70);
     // The lesson card on the sheet says the same number the header does.
     expect(JSON.stringify([...published.values()][0])).toContain('"passPercent":70');
+  });
+
+  it('issues against the entry the bar came from: an exact course id beats a lesson-order match', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const exact = {
+      courseId: unit.courseId, profile: 'lower', passing: 55,
+      enrollment: { enrollmentId: 'enr-exact', moduleOrder: ['w35-aug24'], lessonOrder: {} },
+    };
+    const { issueDocument, sessions, cardRequests, instances } = issuer({
+      companionCodes: codeStore(), units: [unit], coursePassing: 70, extraCourses: [exact],
+    });
+    await seedSession(sessions, { sessionId: 'ses-bar3', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar3' });
+    expect(cardRequests[0].passPercent).toBe(55);
+    expect([...instances.values()][0].enrollmentId).toBe('enr-exact');
   });
 
   it('prints a per-lesson override over both', async () => {

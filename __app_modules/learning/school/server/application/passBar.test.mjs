@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePassingPercent, sessionPassingPercent } from "./passBar.mjs";
+import { resolvePassingPercent, sessionPassingPercent, courseEntryFor } from "./passBar.mjs";
 
 const unit = { unitId: 'u1', courseId: 'c1', passing: { percent: 80 } };
 const assignments = (courses) => ({ get: async () => ({ courses }) });
@@ -47,5 +47,21 @@ describe('sessionPassingPercent', () => {
     const state = { learnerId: 'k', gradedPassingPercent: null, outcome: { result: 'needs_remediation' } };
     expect(await sessionPassingPercent({ state, assignments: raised, unit })).toBe(80);
     expect(await sessionPassingPercent({ state, passOverrides: { percentFor: () => 60 }, assignments: raised, unit })).toBe(60);
+  });
+});
+
+describe('courseEntryFor', () => {
+  const byOrder = { courseId: 'renamed', enrollment: { lessonOrder: { m1: ['u0', 'u1'] } } };
+  const exact = { courseId: 'c1' };
+  it('an exact course id wins over a lesson-order match, wherever it is listed', () => {
+    expect(courseEntryFor({ courses: [byOrder, exact] }, unit)).toBe(exact);
+  });
+  it('falls back to the lesson appearing in an enrollment\'s lesson order', () => {
+    expect(courseEntryFor({ courses: [byOrder] }, unit)).toBe(byOrder);
+  });
+  it('answers null for no record, string-only course lists, or no match', () => {
+    expect(courseEntryFor(null, unit)).toBeNull();
+    expect(courseEntryFor({ courses: ['c1'] }, unit)).toBeNull();
+    expect(courseEntryFor({ courses: [{ courseId: 'other' }] }, unit)).toBeNull();
   });
 });

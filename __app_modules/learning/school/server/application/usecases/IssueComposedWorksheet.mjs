@@ -13,7 +13,7 @@ import { slugify } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { worksheetPresentation } from "../../domain/curriculum/worksheetPresentation.mjs";
-import { resolvePassingPercent } from "../passBar.mjs";
+import { resolvePassingPercent, courseEntryFor } from "../passBar.mjs";
 
 // Derived from the transition table, not hand-copied — see `IssueDocument`'s
 // own ISSUABLE for why the answer is the union of these two events' states.
@@ -151,8 +151,9 @@ export class IssueComposedWorksheet {
       throw new Error(`lesson '${unit.unitId}' has a required read-along, so it has to be printed on its own`);
     }
     const assignment = await this.#assignments.get(state.learnerId);
-    const course = (assignment?.courses ?? []).find((entry) => entry.courseId === unit.courseId
-      || Object.values(entry.enrollment?.lessonOrder ?? {}).flat().includes(unit.unitId));
+    // The same entry the pass bar comes from (`courseEntryFor`): an exact
+    // course id wins over a lesson-order match.
+    const course = courseEntryFor(assignment, unit);
     const enrollmentId = course?.enrollment?.enrollmentId;
     const profile = course?.profile ?? course?.enrollment?.profile;
     if (!enrollmentId || !profile) throw new Error(`session '${sessionId}' has no active enrollment`);

@@ -8,6 +8,9 @@ describe('weekDays', () => {
   it('crosses a month and a DST change cleanly', () => {
     expect(weekDays('2026-11-02', 3)).toEqual(['2026-10-31', '2026-11-01', '2026-11-02']);
   });
+  it('answers no days for a day it cannot read, rather than throwing', () => {
+    expect(weekDays('not-a-day')).toEqual([]);
+  });
 });
 
 describe('buildWeek', () => {

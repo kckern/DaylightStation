@@ -182,6 +182,17 @@ describe('the outcome', () => {
     expect(sessions.derive(SID).gradedPassingPercent).toBe(40);
   });
 
+  it('reads the learner\'s assignment record once for the bar and the receipt, not once each', async () => {
+    const assignments = new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]);
+    const get = vi.spyOn(assignments, 'get');
+    build({ assignments });
+    await graded({ percent: 50 });
+    await close.execute({ sessionId: SID });
+    // One for the plan projection (its own use case), one shared by the bar
+    // and the receipt's course labels.
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
   /** A card-scanned sheet with no bar on `graded`, stopped by its finish-code row. */
   const gateBlockedScan = async () => {
     await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });

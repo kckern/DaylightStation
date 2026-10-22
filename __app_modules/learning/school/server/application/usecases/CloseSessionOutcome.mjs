@@ -203,8 +203,10 @@ export class CloseSessionOutcome {
       return refused('not_access_veto');
     if (state.state !== 'outcome_recorded') return refused('settlement_already_advanced');
     const unit = await this.#curriculum.getUnit(state.unitId);
-    // Settled, so this is the stamp (or, for a pre-stamp log, the old order).
-    const bar = await this.#sessionBar({ state, unit });
+    // Settled, so this is the stamp (or, for a pre-stamp log, the old order) —
+    // read from the log alone; no enrollment is consulted here.
+    const assignments = this.#assignmentReads();
+    const bar = await this.#sessionBar({ state, unit, assignments });
     const gradeValid = (s) => evaluateOutcome({ gradedPercent: s.gradedPercent,
       passingPercent: s.gradedPassingPercent ?? bar,
       companionGate: s.companionGate }).result === 'passed';
@@ -220,7 +222,7 @@ export class CloseSessionOutcome {
     if (current?.stage !== 'completed') return refused('current_paper_incomplete');
     if (!apply) return { sessionId, eligible: true, applied: false, reason: 'academic_access_veto' };
     const settled = await this.#recordOutcomeAndSettle({ sessionId, state, unit,
-      nowIso: this.#clock().toISOString(), signedOff: false, passingPercent: bar,
+      nowIso: this.#clock().toISOString(), signedOff: false, passingPercent: bar, assignments,
       result: 'passed', reason: 'course_academic_access_recovered', expectedSeq: checkedSeq, printReceipt: false });
     return { sessionId, eligible: true, applied: true, settlement: settled };
   }
@@ -249,6 +251,7 @@ export class CloseSessionOutcome {
 
     const unit = await this.#curriculum.getUnit(state.unitId);
     if (state.practiceAssessment) await this.#practiceAssessments?.recordFeedback({ state });
+    const assignments = this.#assignmentReads();
 
     if (state.outcome) {
       // ...UNLESS THE GATE HAS SINCE BEEN READ AGAIN (Task 11). A sheet the
@@ -258,17 +261,17 @@ export class CloseSessionOutcome {
       // grown-up, and only ever in the narrow case `#reviseAfterGateRead`
       // allows: the gate — never the score — is what blocked it, and the rule
       // that decides has genuinely changed its answer.
-      const revised = await this.#reviseAfterGateRead({ state, unit });
+      const revised = await this.#reviseAfterGateRead({ state, unit, assignments });
       if (revised) {
         return this.#recordOutcomeAndSettle({
           sessionId, state, unit, nowIso, signedOff, rewardOverride,
-          result: revised.result, reason: revised.reason, passingPercent: revised.passingPercent,
+          result: revised.result, reason: revised.reason, passingPercent: revised.passingPercent, assignments,
         });
       }
       // A second close-out is a retry, not a second result. It re-prints and —
       // crucially — still routes through the reward step, whose own guard sees
       // the existing txn and skips.
-      return this.#settle({ sessionId, state, unit, outcome: state.outcome, signedOff, rewardOverride, nowIso, resettling: true });
+      return this.#settle({ sessionId, state, unit, outcome: state.outcome, signedOff, rewardOverride, nowIso, resettling: true, assignments });
     }
 
     if (honorClose) {
@@ -284,7 +287,7 @@ export class CloseSessionOutcome {
       }
       return this.#recordOutcomeAndSettle({
         sessionId, state, unit, nowIso, signedOff, rewardOverride, result: 'passed',
-        reason: state.state === 'program_dispatched' ? 'program_complete' : 'launch_dispatched',
+        reason: state.state === 'program_dispatched' ? 'program_complete' : 'launch_dispatched', assignments,
       });
     }
 
@@ -292,7 +295,7 @@ export class CloseSessionOutcome {
       return this.#recordOutcomeAndSettle({
         sessionId, state, unit, nowIso, signedOff, rewardOverride,
         result: state.externalActivity?.result ?? 'needs_remediation',
-        reason: 'external_activity_assessed',
+        reason: 'external_activity_assessed', assignments,
       });
     }
 
@@ -309,7 +312,7 @@ export class CloseSessionOutcome {
     // no bar — take the live one, in grading's order (`#sessionBar`), and
     // this close writes it onto `outcome_recorded` so no later look has to
     // resolve it again against an enrollment that may have moved.
-    const passingPercent = await this.#sessionBar({ state, unit });
+    const passingPercent = await this.#sessionBar({ state, unit, assignments });
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
       passingPercent,
@@ -326,7 +329,7 @@ export class CloseSessionOutcome {
       if (progress && progress.stage !== 'completed') { evaluated.result = 'needs_remediation'; evaluated.reason = 'course_questions_unresolved'; }
     }
     return this.#recordOutcomeAndSettle({
-      sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason, passingPercent,
+      sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason, passingPercent, assignments,
     });
   }
 
@@ -338,11 +341,33 @@ export class CloseSessionOutcome {
    * before the close stamped its bar, override ?? the unit's own percent,
    * which is what decided it then.
    */
-  #sessionBar({ state, unit }) {
+  #sessionBar({ state, unit, assignments = this.#assignments }) {
     return sessionPassingPercent({
-      state, passOverrides: this.#passOverrides, assignments: this.#assignments,
+      state, passOverrides: this.#passOverrides, assignments,
       unit: unit ?? { unitId: state.unitId },
     });
+  }
+
+  /**
+   * The assignment store, read at most once per learner for one close: the
+   * bar and the receipt's course labels ask for the same record. A failed
+   * read is not kept, so the next asker tries again. (The plan projection is
+   * its own use case and reads for itself.)
+   */
+  #assignmentReads() {
+    const store = this.#assignments;
+    const reads = new Map();
+    return {
+      get(learnerId) {
+        if (!reads.has(learnerId)) {
+          reads.set(learnerId, Promise.resolve().then(() => store.get(learnerId)).catch((error) => {
+            reads.delete(learnerId);
+            throw error;
+          }));
+        }
+        return reads.get(learnerId);
+      },
+    };
   }
 
   /**
@@ -364,10 +389,10 @@ export class CloseSessionOutcome {
    * @returns {{result: string, reason: string, passingPercent: number|undefined}|null}
    *   the superseding outcome, and the bar that decided it
    */
-  async #reviseAfterGateRead({ state, unit }) {
+  async #reviseAfterGateRead({ state, unit, assignments }) {
     const blockedByGate = companionVetoStatus(state.outcome?.reason ?? null);
     if (!blockedByGate) return null;
-    const passingPercent = await this.#sessionBar({ state, unit });
+    const passingPercent = await this.#sessionBar({ state, unit, assignments });
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent, passingPercent, companionGate: state.companionGate,
     });
@@ -379,7 +404,7 @@ export class CloseSessionOutcome {
    * one path a graded close and an honor-close both funnel through, so the
    * reward guard, unlock line and result receipt stay uniform between them.
    */
-  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true }) {
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true, assignments = this.#assignments }) {
     const outcomeId = outcomeIdFor(sessionId);
     // The bar rides on the event only when a bar decided it and `graded`
     // stamped none — a launch or honor close has no bar to write down.
@@ -403,10 +428,10 @@ export class CloseSessionOutcome {
     // `state` predates the event just appended; carry its stamp forward so the
     // receipt prints the bar that decided it rather than resolving one again.
     const settledState = stampBar ? { ...state, gradedPassingPercent: passingPercent } : state;
-    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt });
+    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt, assignments });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true, assignments = this.#assignments }) {
     // Unconditional on pass/fail and on resettling: a fail settle changes no
     // section's `obligation`, and a resettle republishing an unchanged fact
     // is harmless — `SchoolCompletionBridge` only acts on an actual state
@@ -568,7 +593,7 @@ export class CloseSessionOutcome {
 
     const notes = await this.#collectNotes(sessionId);
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
-    const learnerAssignment = await this.#assignments.get(state.learnerId);
+    const learnerAssignment = await assignments.get(state.learnerId);
     const enrollment = learnerAssignment?.courses?.find((course) => course.courseId === unit?.courseId)?.enrollment;
     const courseLabel = courseDisplay({ work, enrollment, fallback: unit?.courseId ?? 'Independent study' });
     const moduleLabel = moduleDisplay({
@@ -618,7 +643,7 @@ export class CloseSessionOutcome {
       marks,
       // The bar that decided it: the stamp, or (a settle with no bar of its
       // own, like an honor close) whatever `#sessionBar` reads.
-      passingPercent: (await this.#sessionBar({ state, unit })) ?? null,
+      passingPercent: (await this.#sessionBar({ state, unit, assignments })) ?? null,
       // Named, never implied (Task 10): a sheet that answered everything right
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.
