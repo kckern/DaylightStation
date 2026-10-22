@@ -976,6 +976,16 @@ persists in localStorage (see Screen Framework → Data Coordination), so the ba
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
 
+Each person's card also shows their **bank silver** and, for the ring-contest
+holder, the week's **gem** — slate while they only lead it, sapphire once
+Saturday noon makes it theirs (the gem's colour, set on `GemIcon`; it keeps
+only hue and saturation, so "not yet" is low saturation). The data is the
+`standings` screen source, `GET /api/v1/earnings/standings`, injected by
+FitnessApp when the layout uses `fitness:momentum`, persisted like `sessions`
+and refetched after a workout. People without a wallet get no coin; with the
+economy off, or the call failing, the coin column is hidden and the ring bars
+stand alone.
+
 ### Leaving the player → the session just finished
 
 Closing the player (X, Escape, end of queue, or the close watchdog) resolves a

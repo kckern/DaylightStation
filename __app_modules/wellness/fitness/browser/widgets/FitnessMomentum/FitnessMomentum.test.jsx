@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const sessions = [{
   startTime: Date.now() - 3_600_000,
@@ -12,8 +12,10 @@ const sessions = [{
     },
   },
 }];
+const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading' }] };
+let standings = STANDINGS;
 vi.mock("../../../../../../__capabilities/screen-host/browser/data/useScreenData.js", () => ({
-  useScreenData: () => ({ sessions, total: 1 }),
+  useScreenData: (key) => (key === 'standings' ? standings : { sessions, total: 1 }),
 }));
 vi.mock("../../useFitnessScreen.js", () => ({
   useFitnessScreen: () => ({
@@ -30,6 +32,32 @@ vi.mock("../../useFitnessScreen.js", () => ({
 import FitnessMomentum from "./FitnessMomentum.jsx";
 
 describe('FitnessMomentum', () => {
+  beforeEach(() => { standings = STANDINGS; });
+
+  it('shows silver and the leading gem on the learner card only', () => {
+    const { container } = render(<FitnessMomentum />);
+    const cards = container.querySelectorAll('.fitness-momentum__card');
+    expect(cards[0].querySelector('.fitness-momentum__purse').textContent).toContain('27');
+    expect(cards[0].querySelector('.fitness-momentum__gem.is-leading')).toBeTruthy();
+    expect(cards[1].querySelector('.fitness-momentum__purse')).toBeNull();
+  });
+
+  it('renders the won gem in full colour, the leading gem muted', () => {
+    const fills = (root) => [...root.querySelectorAll('.fitness-momentum__gem path')].map((p) => p.getAttribute('fill')).join(',');
+    const leading = fills(render(<FitnessMomentum />).container);
+    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], gem: 'won' }] };
+    const won = render(<FitnessMomentum />).container;
+    expect(won.querySelector('.fitness-momentum__gem.is-won')).toBeTruthy();
+    expect(fills(won)).not.toBe(leading);
+  });
+
+  it('hides the coin column when standings are missing or the economy is off', () => {
+    standings = null;
+    expect(render(<FitnessMomentum />).container.querySelector('.fitness-momentum__purse')).toBeNull();
+    standings = { mode: 'off', contestClosed: false, learners: [] };
+    expect(render(<FitnessMomentum />).container.querySelector('.fitness-momentum__purse')).toBeNull();
+  });
+
   it('labels the hard Monday window and renders one card per member', () => {
     const { container, getByText } = render(<FitnessMomentum />);
     expect(getByText(/Kern Family/)).toBeTruthy();

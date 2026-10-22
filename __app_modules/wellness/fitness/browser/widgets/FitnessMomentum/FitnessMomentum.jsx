@@ -7,6 +7,8 @@ import { useScreenData } from "../../../../../../__capabilities/screen-host/brow
 import { useFitnessScreen } from "../../useFitnessScreen.js";
 import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.js";
 import RingIcon from '@/lib/icons/RingIcon.jsx';
+import CoinIcon from '@/lib/icons/CoinIcon.jsx';
+import GemIcon from '@/lib/icons/GemIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import { computeMomentum } from "./momentum.js";
 import "./FitnessMomentum.scss";
@@ -15,6 +17,12 @@ const logger = getLogger().child({ component: 'fitness-momentum' });
 
 // Low → high intensity, stacked bottom → top within a bar.
 const ZONE_STACK = ['fire', 'hot', 'warm', 'active']; // DOM order = top → bottom
+// The week's gem (the ring contest): slate while someone only leads it, full
+// sapphire once Saturday noon makes it theirs. Colour, not a CSS filter. GemIcon
+// keeps only the hue and SATURATION of the colour (each facet sets its own
+// lightness), so "not yet" has to be a low-saturation colour, not a light one.
+const GEM_COLOR = { leading: '#6b8299', won: '#1e88e5' };
+
 const ZONE_VAR = {
   active: 'var(--zone-active)',
   warm: 'var(--zone-warm)',
@@ -104,6 +112,15 @@ export default function FitnessMomentum() {
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
   const loading = rawSessions == null;
+  // Bank silver and the week's gem per learner (/api/v1/earnings/standings).
+  // Missing, failed or economy-off → no coin column; the ring bars stand alone.
+  const rawStandings = useScreenData('standings');
+  const purseById = useMemo(() => {
+    const map = new Map();
+    if (!rawStandings || rawStandings.mode === 'off') return map;
+    for (const l of rawStandings.learners || []) map.set(l.learnerId, l);
+    return map;
+  }, [rawStandings]);
   const { roster, householdLabel, compareWeeks, zoneRingRates } = useFitnessScreen();
 
   // Short, family-friendly names via the device-agnostic resolver ("Dad" etc.).
@@ -160,6 +177,23 @@ export default function FitnessMomentum() {
           <div key={m.id} className="fitness-momentum__card">
             <Avatar id={m.avatarId} name={m.name} />
             <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
+            {purseById.has(m.id) && (() => {
+              const purse = purseById.get(m.id);
+              return (
+                <span className="fitness-momentum__purse" title="Silver in the bank">
+                  <CoinIcon metal="silver" size="1.1em" label="silver" />
+                  <span>{purse.silver}</span>
+                  {purse.gem && (
+                    <GemIcon
+                      className={`fitness-momentum__gem is-${purse.gem}`}
+                      color={GEM_COLOR[purse.gem]}
+                      size="1.1em"
+                      label={purse.gem === 'won' ? 'Won the week’s gem' : 'Leading for the week’s gem'}
+                    />
+                  )}
+                </span>
+              );
+            })()}
             <WeekBars weeks={m.weeks} loading={loading} />
           </div>
         ))}

@@ -69,6 +69,17 @@
     &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
   }
   &__name { font-weight: 700; font-size: 1.1rem; }
+  // Bank silver + the week's gem, under the name. The gem's leading/won state
+  // is its colour (set on the icon), not opacity.
+  &__purse {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+  }
+  &__gem { margin-left: 0.2rem; }
 
   // Monday-aligned weekly ring chart: same-scale vertical bars, oldest →
   // newest, each with an M/d x-axis label. The current week is highlighted.
