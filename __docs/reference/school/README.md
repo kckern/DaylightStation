@@ -1788,26 +1788,25 @@ are the only things in the board pane that take a tap; the strip sets `pointer-e
   keypad instead. It is mounted once, in one place or the other (`useNarrowPortal`).
 - **A chip is a door.** Its name-and-coins line is a button ("Open Ay's bank",
   with the coins as its description) into that kid's bank screen (below),
-  through the same bank door as the header's coin button. Print stays its own
+  through the same bank door as the board's coin cell. Print stays its own
   button.
 
 **The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
 kid's bank, full screen over the locked panel.
 
-- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. A
-  coin button ("My bank") sits beside "Log a book" in the board header and asks
-  "Whose bank?" with the shelf's own face grid (`LearnerChoice`). A tap on a
-  strip chip already names the kid, so it skips the faces and sends the same
-  request. Both post `POST /api/v1/school/bank/open {screenId, learnerId}`
+- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. The
+  coin cell on each kid's board card and a tap on a strip chip both name the
+  kid, so each sends the request straight away. There is no header button.
+  Both post `POST /api/v1/school/bank/open {screenId, learnerId}`
   (`OpenBankAtPanel`): the learner must be on the current roster and a School
   panel must be configured (`resolveBookScanTarget`), or it refuses with 400 /
   403 / 503 and a kid-readable `error` (any other failure reads "Could not open
   the bank. Try again."). It answers
   `{ launchTarget: { kind: 'program', program: 'economy-bank', learnerId } }`.
-  The "Whose bank?" screen is drawn by the panel, outside the board header,
-  because below 820 px the board pane is hidden and a chip in the keypad column
-  can still need it to show a refusal. It takes focus on its Back button, hands
-  focus back to the coin button or chip when it closes, closes itself after the
+  A refusal is shown on "Whose bank?" (the shelf's own face grid,
+  `LearnerChoice`), drawn by the panel outside the board, because below 820 px
+  the board pane is hidden and a chip in the keypad column can still need it. It takes focus on its Back button, hands
+  focus back to the coin cell or chip when it closes, closes itself after the
   panel's idle time, and is closed by `goHome` and whenever the panel leaves
   its resting keypad-and-board view, so a refusal never waits for the next
   child. Logs: `school.bank.panel-opened {screenId, learnerId}` on the server;
@@ -1833,10 +1832,19 @@ kid's bank, full screen over the locked panel.
   zone says the same thing: "tonight" on the close's day, "tomorrow night" the
   day before, "in 7 days" between the close and 4 am. `weekEndsAt` (the
   instant) is read only to say "becoming gold now" once it has passed.
-- **History.** The bank's plain-words lines, newest first, grouped by the
-  panel's local calendar day (split at local midnight, not the 4 am study
-  boundary) under Today, Yesterday or the date.
-- **Ways to spend.** Each privilege the bank quotes for sale, with its price in
+- **Tabs.** History (open by default), How to earn, How to spend: a
+  `tablist` with arrow/Home/End keys, a tap or Enter selecting. Esc is bound to
+  nothing. A tab change logs `economy.bank.tab-changed {learnerId, tab}`.
+- **History** is the primary job, "here is the balance, how did it get here":
+  the balances above, then "This week, not yet paid" (the board's weekly figure
+  for that kid, read with `earningsRoster` and kept only while it prices the
+  current week, `figureInWeek`), then the ledger (`bank/BankLedger.jsx`) as a
+  table grouped by the panel's local calendar day (split at local midnight, not
+  the 4 am study boundary), newest day first, under Today, Yesterday or the
+  date. Columns: coin icon (a conversion shows both), signed amount,
+  description (`ledgerEntry`'s source word, then its label; never a raw ref) and
+  the balance after the entry.
+- **How to spend.** Each privilege the bank quotes for sale, with its price in
   each coin and "can buy at the piano" or "N more silver" (or gold). The
   server's `affordable` decides; the local balance only fills in a row without
   one, and a server "no" over a balance that looks enough reads "not enough
@@ -1850,15 +1858,15 @@ kid's bank, full screen over the locked panel.
   `/lifecycle/learners/:id/completion` folds, so one read serves this and Ways
   to earn. Nothing on sale (every price 0, the shipped config) says "Nothing to
   spend on yet." There is no buy button: buying is at the piano kiosk.
-- **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
+- **How to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
   then every agenda section still `obligated`, by title. A reward shows only
   when the economy prices it (`reward` is null unless the economy is `live`).
 - **Coins start soon.** Before the economy is live (the bank's `mode` is not
   `live`) the screen shows "Coins start soon." in place of the balances,
-  history and prices, so no "0 silver" is ever shown. Ways to earn still shows.
+  history and prices, so no "0 silver" is ever shown. How to earn still shows.
 - **Napping.** A failed bank read shows "The bank is napping. Try again soon."
   and no numbers: no balances, history or prices, and no cache or earlier read
-  (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
+  (`economy.bank.unavailable`, warn). How to earn does not come from the bank,
   so it still shows.
 - **Refresh** is the strip's: the `school` topic's events for that kid,
   coalesced; a read that lands after a newer one is dropped. Opening logs

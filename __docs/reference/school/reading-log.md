@@ -153,7 +153,7 @@ hallway screen is worth nothing by the time anyone finds it. The other bound is
 the roster: the server, not the client, decides that the learner named is one
 of today's.
 
-The coin bank has a door of the same kind beside this one ("My bank",
+The coin bank has a door of the same kind (the coin cell on the board,
 `BankDoor`, `OpenBankAtPanel`): the same roster and panel checks, but no grant.
 The bank read is unauthenticated in slice 1, so that door is the roster check
 plus the face tap and nothing more. See the bank screen in the School README.
