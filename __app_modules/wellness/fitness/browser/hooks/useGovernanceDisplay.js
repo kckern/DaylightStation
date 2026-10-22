@@ -152,14 +152,24 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   // Base requirements
   normalizedRequirements.forEach((req) => {
     if (req.satisfied) return;
-    const targetZoneId = req.zone || null;
+    // A cadence_floor is satisfied by pedaling OR by reaching its `orZone`, so
+    // its row targets that zone (how close the rider's HR is) and carries the
+    // pedal reading — its heart rate alone is not what the rule is about.
+    const pedal = req.type === 'cadence_floor'
+      ? {
+        rpm: Math.max(0, Math.round(Number(req.currentRate) || 0)),
+        targetRpm: Number.isFinite(req.targetRate) ? req.targetRate : null,
+        orZoneLabel: req.orZoneLabel || null
+      }
+      : null;
+    const targetZoneId = pedal ? (req.orZone || null) : (req.zone || null);
     (req.missingUsers || []).forEach((userId) => {
       const key = normalize(userId);
       if (hrInactiveSet.has(key)) return;
       if (isZeroHrInDisplay(key)) return;
       const existing = userTargets.get(key);
       if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
-        userTargets.set(key, { userId, targetZoneId, source: 'requirement' });
+        userTargets.set(key, { userId, targetZoneId, source: 'requirement', pedal });
       }
     });
   });
@@ -183,7 +193,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   const challengeHolding = new Set(
     (Array.isArray(challenge?.holding) ? challenge.holding : []).map(normalize)
   );
-  for (const [key, { userId, targetZoneId, source }] of userTargets) {
+  for (const [key, { userId, targetZoneId, source, pedal = null }] of userTargets) {
     const display = displayMap.get(key);
     const targetZone = targetZoneId ? (zoneMap[targetZoneId] || null) : null;
     const currentZoneId = display?.zoneId || null;
@@ -237,7 +247,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
       progress: resolvedProgress,
       intermediateZones,
       targetHeartRate: display?.targetHeartRate ?? null,
-      groupLabel: display?.groupLabel || null
+      groupLabel: display?.groupLabel || null,
+      pedal
     });
   }
 

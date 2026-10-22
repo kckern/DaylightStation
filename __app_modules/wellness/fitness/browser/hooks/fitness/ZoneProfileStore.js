@@ -370,7 +370,17 @@ export class ZoneProfileStore {
       return z && Number.isFinite(z.min) ? z.min : null;
     };
 
+    // No reading is not a zone change. Never commit it:
+    // a commit here stamped lastCommitTs, so a strap restored within the
+    // cooldown had its real zone held back for HYSTERESIS_STABILITY_MS — 170 bpm
+    // read as Cool and governance flashed a warning (2026-10-21, arcade).
     let state = this._hysteresis.get(userId);
+    if (!(Number.isFinite(heartRate) && heartRate > 0)) {
+      // Hold the last real zone through a gap; with none (smoothing reset on a
+      // confirmed loss), report the raw zone without starting any state.
+      const shown = state ? state.committedZoneId : rawZoneId;
+      return { ...lookupZone(shown), ...lookupRawZone(rawZoneId) };
+    }
 
     // First time seeing this user — commit whatever we have, no delay
     if (!state) {
