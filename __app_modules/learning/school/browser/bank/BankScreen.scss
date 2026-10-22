@@ -82,24 +82,8 @@
   color: var(--school-muted); font-size: .8rem; white-space: nowrap;
 }
 
-// History tab: the unpaid week, then the ledger table.
+// History tab: the ledger table.
 .school-bank-ledger__icon { width: 1.4rem; height: 1.4rem; flex: 0 0 auto; }
-.school-bank-ledger__pending {
-  display: flex; flex-direction: column; gap: .3rem;
-  padding: .6rem 1.1rem;
-  border: 1px dashed var(--school-border); border-radius: 14px;
-}
-.school-bank-ledger__pending-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.school-bank-ledger__so-far {
-  margin: 0; display: flex; align-items: center; gap: .4em;
-  font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums;
-}
-.school-bank-ledger__pending-lines {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .15rem 1.5rem; font-size: 1rem;
-}
-.school-bank-ledger__fine { font-size: .9rem; }
-
 .school-bank-screen__history { padding: .25rem 1.1rem .75rem; }
 .school-bank-ledger__table {
   width: 100%; table-layout: fixed; border-collapse: collapse;
@@ -111,9 +95,10 @@
     color: var(--school-muted); font-size: .8rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: .04em; text-align: left;
   }
-  thead th:nth-child(2) { text-align: right; }
+  thead th:nth-child(3) { text-align: right; }
   thead th:last-child { text-align: right; }
 }
+.school-bank-ledger__col-time { width: 6.5rem; }
 .school-bank-ledger__col-icon { width: 4.2rem; }
 .school-bank-ledger__col-amount { width: 5rem; }
 .school-bank-ledger__col-balance { width: 11rem; }
@@ -133,5 +118,7 @@
 .school-bank-ledger__amount { font-weight: 800; }
 .school-bank-ledger__amount.is-plus { color: var(--school-accent); }
 .school-bank-ledger__amount.is-minus { color: var(--school-muted); }
+.school-bank-ledger__cell--time { color: var(--school-muted); line-height: 1.8rem; white-space: nowrap; }
 .school-bank-ledger__cell--what { overflow-wrap: anywhere; line-height: 1.8rem; }
+.school-bank-ledger__detail { color: var(--school-muted); }
 .school-bank-ledger__cell--balance { text-align: right; color: var(--school-muted); line-height: 1.8rem; overflow-wrap: anywhere; }

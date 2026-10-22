@@ -330,8 +330,9 @@ is the preview's current study day, `currentStudyDay()`).
   missing is not evidence of work, and an open period is not over.
 - A line that pays both currencies writes one entry per currency: silver under the
   line's `ref`, gems under `<ref>:gems`. Each entry carries `ruleId`,
-  `timeliness` (the line's), `evidenceRef` (the line's `ref`), `source: payout`
-  and `action: payout:<ruleId>`, a namespace `earn()`'s per-action daily cap never
+  `timeliness` (the line's), `evidenceRef` (the line's `ref`), `source: payout`,
+  `meta` (`payoutMeta`: what the line looked like when it paid, so the bank can
+  say what the entry was for) and `action: payout:<ruleId>`, a namespace `earn()`'s per-action daily cap never
   counts. The ring contest is kind `prize`; every other rule is `earn`.
 - **Top-up.** `EconomyService.mint(userId, { currency, amount, kind, ref, ... })`
   treats `amount` as what the ref is worth in total and pays only the shortfall,
@@ -620,18 +621,26 @@ one read the Portal bank screen (opened from the board's coin cell), the piano
 kiosk and its lock screen share.
 
 **History** is the last 50 ledger lines in plain words, newest first
-(`{ text, at, kind, ids, source, label, legs, balanceAfter }`, from
+(`{ text, at, kind, ids, source, label, detail, legs, balanceAfter }`, from
 `domain/historyText.mjs`). `text` is the sentence; the rest is the same line
 broken into parts so a client can lay it out as a table. `source` is
 `entrySource`: `payout`, `earn`, `prize`, `refund`, `spend`, `deposit`,
 `correction`, `withdraw`, `conversion` (or `other`). `label` is the words after
-the amount, `legs` the signed amounts per currency (a conversion has two), and
+the amount, `detail` what a payout was for (below, or null), `legs` the signed amounts per currency (a conversion has two), and
 `balanceAfter` the `{ silver, gold, gems }` balances once the line landed. It is
 folded oldest first over the whole ledger read, before the 50-line cut, each
 currency floored at 0, so line 50 still knows what older lines left behind. An
 older client reads `text` only. The sentences: "+2 silver · Green
 day", "−3 silver · early pass", "+3 silver · early pass refunded", "12 silver →
-12 gold · Sunday". A payout is named by the current week's preview line it paid
+12 gold · Sunday", "+2 silver · Korean · Tuesday", "+4 silver · Rings · 540
+this week". A payout's `detail` comes from the `meta` the payout keeps on the
+entry (`payoutMeta`: the line's `kind`, `count` and, for `section-day` and
+`day-met`, the study `days` that paid so far). A week line pays its growth in
+several entries under one ref, so a per-day entry's detail is the weekday(s) in
+its `days` that no older entry of the same ref and currency had; a ring entry's
+is the week's ring count when it paid. With a day detail the rule's trailing
+bracket ("(each day done)") is dropped from `label`. An entry minted before
+`meta` existed has no detail and reads as its label. A payout is named by the current week's preview line it paid
 for (its `evidenceRef`), then by the ruleset's label for its `ruleId`, then
 "schoolwork" (`economy.bank.labels-unavailable` when a label source fails). The
 preview labels are cached per learner and week for 60 s (`cachedWeekPreview`,

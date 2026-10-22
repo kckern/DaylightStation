@@ -8,10 +8,9 @@
  * here", so History opens first and the other two are a tap away:
  *
  *   1. History. The balances (silver "becomes gold in N days"; gold and gems
- *      "yours for good"), this week's not-yet-paid earnings (the board's
- *      weekly figure, read here with `earningsRoster`: the launch path carries
- *      no figure, and one roster read is what the board makes), then the ledger
- *      as a table grouped by day (`BankLedger.jsx`).
+ *      "yours for good"), then the ledger as a table grouped by day
+ *      (`BankLedger.jsx`). Earnings are paid in as they are earned, so the
+ *      ledger is the whole story: there is no "not yet paid" panel.
  *   2. How to earn. Today's remaining work: the next sheet (`/next`) and the
  *      agenda's still-owed sections. Titles only unless the economy prices one.
  *   3. How to spend. Each privilege on sale, its price in each coin and
@@ -45,9 +44,8 @@ import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvata
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
-import { earningsByLearner, figureInWeek } from "../status/agendaStatusModel.js";
 import { NAPPING, earnItems, goldCountdown, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
-import { LedgerTable, UnpaidWeek } from "./BankLedger.jsx";
+import { LedgerTable } from "./BankLedger.jsx";
 import './BankScreen.scss';
 
 export { NAPPING };
@@ -83,7 +81,6 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
   const [bank, setBank] = useState({ status: 'loading', data: null });
   const [agenda, setAgenda] = useState(null);
   const [next, setNext] = useState(null);
-  const [figure, setFigure] = useState(null); // this kid's weekly earnings figure (the board's)
   const [tab, setTab] = useState('history');
   const tabRefs = useRef({});
   const aliveRef = useRef(true);
@@ -117,17 +114,6 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
     Promise.resolve().then(() => schoolApi.agendaPreview(learnerId))
       .then((res) => { if (latest()) setAgenda(res?.ok ? (res.data ?? null) : null); })
       .catch(() => { if (latest()) setAgenda(null); });
-    Promise.resolve().then(() => schoolApi.earningsRoster?.())
-      .then((res) => {
-        if (!latest()) return;
-        if (res && !res.ok) log.warn('economy.bank.earnings-failed', { learnerId, status: res.status ?? null });
-        setFigure(res?.ok ? (earningsByLearner(res.data)[learnerId] ?? null) : null);
-      })
-      .catch((error) => {
-        if (!latest()) return;
-        log.warn('economy.bank.earnings-failed', { learnerId, error: error?.message ?? String(error) });
-        setFigure(null);
-      });
     Promise.resolve().then(() => schoolApi.nextItem(learnerId))
       .then((res) => { if (latest()) setNext(res?.ok ? (res.data ?? null) : null); })
       .catch(() => { if (latest()) setNext(null); });
@@ -165,7 +151,6 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
   const schoolDone = schoolDoneFrom(agenda);
   const spend = data ? spendItems({ offers: data.offers, pass: data.pass, balances: data.balances, schoolDone }) : null;
   const earn = earnItems({ agenda, next });
-  const unpaid = data ? figureInWeek(figure, data.studyDay) : null;
 
   const selectTab = useCallback((id, { focus = false } = {}) => {
     setTab((prev) => {
@@ -248,7 +233,6 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
                   trend="yours for good"
                 />
               </section>
-              <UnpaidWeek figure={unpaid} />
               <section className="school-bank-screen__section school-bank-screen__history" aria-label="History" data-testid="bank-history">
                 <LedgerTable history={data.history} now={at} />
               </section>

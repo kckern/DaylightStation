@@ -256,20 +256,21 @@ The bank screen (`bank/BankScreen.jsx`) has three tabs, History (the default),
 How to earn and How to spend; Back returns to the board. History shows:
 
 1. The balances: silver (with when it becomes gold), gold and gems.
-2. "This week, not yet paid": the same weekly silver the card shows, its earned
-   lines, and "+N more possible" (`bank/BankLedger.jsx`, `UnpaidWeek`). It is
-   hidden when the figure prices another week.
-3. The ledger as a table grouped by day, newest first, with the columns icon,
-   amount, description (source word, then label) and the balance after
-   (`LedgerTable`). Wording and grouping are `bank/bankScreenModel.js`
+2. The ledger as a table grouped by day, newest first, with the columns time,
+   icon, amount, description and the balance after (`bank/BankLedger.jsx`,
+   `LedgerTable`). The description is the label, then what the line was for:
+   "Korean · Tuesday", "Green day · Monday", "Rings · 540 this week". There is
+   no "Earned"/"Spent" word (the sign says it) and no "not yet paid" panel:
+   payouts land in the bank as soon as they are earned, so the ledger is the
+   whole week. Wording and grouping are `bank/bankScreenModel.js`
    (`historyByDay`, `ledgerEntry`), read from the bank's structured fields; see
    "The bank" in `__docs/reference/economy/economy.md`.
 
-Data: `GET /api/v1/economy/users/:id/bank` plus the roster earnings read, both
-refreshed on this learner's `school` events. A failed bank read shows "The bank
+Data: `GET /api/v1/economy/users/:id/bank`, refreshed on this learner's
+`school` events. A failed bank read shows "The bank
 is napping" and no numbers; before coins are live the screen says "Coins start
 soon". The screen has its own idle exit. Log events are `economy.bank.*`
-(`opened`, `tab-changed`, `unavailable`, `earnings-failed`, `idle-exit`).
+(`opened`, `tab-changed`, `unavailable`, `idle-exit`).
 
 ## The coin ceremony
 
