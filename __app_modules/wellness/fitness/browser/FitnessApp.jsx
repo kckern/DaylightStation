@@ -24,6 +24,8 @@ import useDayOfWeek from "../../../../frontend/src/hooks/useDayOfWeek.js";
 import VoiceMemoOverlay from "./player/overlays/VoiceMemoOverlay.jsx";
 import FitnessToast from "./player/overlays/FitnessToast.jsx";
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
+import { useDeviceAudience } from "../../../../__capabilities/playback/browser/sessions.mjs";
+import { rosterAudience } from "./fitnessAudience.js";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
 import { useFitnessContext } from "./context/FitnessContext.jsx";
@@ -1580,6 +1582,7 @@ const FitnessApp = () => {
           <GlobalOverlays />
           <PressureMatEventBridge logger={logger} />
           <FitnessFleetPublisher />
+          <FitnessAudienceDeclarer />
           {urlInitialized && <GarageHumanActivityPublisher
             deviceId={FLEET_DEVICE_ID}
             emulationOpen={currentView === 'module' && activeModule?.id === 'emulator'}
@@ -1850,6 +1853,14 @@ const FLEET_DEVICE_ID = (() => {
     return null;
   }
 })();
+
+// Who is in the garage: the workout's riders, on the fleet heartbeat
+// (snapshot.audience). Nothing while no session is running.
+const FitnessAudienceDeclarer = () => {
+  const ctx = useFitnessContext();
+  useDeviceAudience(rosterAudience(ctx?.participantRoster));
+  return null;
+};
 
 const FitnessFleetPublisher = () => {
   return <DeviceStatePublisher deviceId={FLEET_DEVICE_ID} />;
