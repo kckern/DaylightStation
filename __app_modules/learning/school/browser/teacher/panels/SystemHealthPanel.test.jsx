@@ -9,6 +9,9 @@ vi.mock("../../schoolApi.js", () => ({
     reportCardFrozenVersions: vi.fn(),
   },
 }));
+vi.mock("../TeacherProfileContext.jsx", () => ({
+  useTeacherProfileOptional: () => ({ teachers: [{ id: 'teacher_1', name: 'Teacher One' }], currentTeacher: null }),
+}));
 import { schoolApi } from "../../schoolApi.js";
 
 const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
@@ -61,7 +64,7 @@ describe('SystemHealthPanel', () => {
     const list = await screen.findByTestId('system-health-frozen-versions');
     expect(list.textContent).toContain('Fall 2026');
     expect(list.textContent).toContain('v1');
-    expect(list.textContent).toContain('Closed by teacher_1');
+    expect(list.textContent).toContain('Closed by Teacher One');
   });
 
   it('a failed bank-health read does not blank the versions section', async () => {

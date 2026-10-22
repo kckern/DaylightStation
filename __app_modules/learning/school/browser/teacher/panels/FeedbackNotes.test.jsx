@@ -4,7 +4,7 @@ import FeedbackNotes from "./FeedbackNotes.jsx";
 
 vi.mock("../../schoolApi.js", () => ({ schoolApi: { reviewLearner: vi.fn(), retract: vi.fn() } }));
 vi.mock("../TeacherProfileContext.jsx", () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }),
   useTeacherProfile: () => ({
     currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
@@ -49,7 +49,9 @@ describe('FeedbackNotes roll-up', () => {
     });
     render(<FeedbackNotes learnerId="user_2" learnerName="User_2" />);
     await waitFor(() => expect(screen.getByText('Nice work')).toBeTruthy());
-    expect(screen.getAllByText(/teacher_1/).length).toBeGreaterThan(0);
+    // Who marked it, by name — never the raw teacher id.
+    expect(screen.getAllByText(/Teacher One/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/teacher_1/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Retract' })).toBeTruthy();
   });
 });

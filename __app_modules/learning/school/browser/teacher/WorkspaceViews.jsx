@@ -160,7 +160,8 @@ export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog
   // plus a compact backlog summary — the queue owns the full lists.
   // Re-read on arrival: counts change elsewhere too (an inspector settle, a
   // reprint), and the dashboard should not show them a poll late.
-  useEffect(() => { backlog?.refresh?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Unless the shell just read them (a cold load): `refreshIfStale` skips that.
+  useEffect(() => { (backlog?.refreshIfStale ?? backlog?.refresh)?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading">
@@ -1115,7 +1116,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack, backLabel
               />
             ))}</div>
           </section>}
-          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
+          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{actorName(adjustment.adjustedBy)}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <details className="teacher-panel teacher-fold">
             <summary><h3 className="teacher-panel__title">Activity history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
             {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{eventActor(event.by ?? event.actorId ?? event.gradedBy)}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}

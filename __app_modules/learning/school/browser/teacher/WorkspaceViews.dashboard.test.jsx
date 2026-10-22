@@ -15,6 +15,12 @@ describe('DashboardView', () => {
     rerender(<DashboardView kids={[]} backlog={{ ...backlog }} onOpenQueue={() => {}} />);
     expect(backlog.refresh).toHaveBeenCalledTimes(1);
   });
+  it('prefers refreshIfStale, so a cold load does not read the backlog twice', () => {
+    const backlog = { total: 0, refresh: vi.fn(), refreshIfStale: vi.fn() };
+    render(<DashboardView kids={[]} backlog={backlog} onOpenQueue={() => {}} />);
+    expect(backlog.refreshIfStale).toHaveBeenCalledTimes(1);
+    expect(backlog.refresh).not.toHaveBeenCalled();
+  });
   it('renders without a backlog', () => {
     expect(() => render(<DashboardView kids={[]} onOpenQueue={() => {}} />)).not.toThrow();
   });

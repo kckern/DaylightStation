@@ -12,6 +12,7 @@ import { teacherLog } from "./teacherLog.js";
 const countOf = (response, pick) => (response.ok ? pick(response.data) : null);
 // A 404 is an install without that feature — absent, not broken.
 const broken = (response) => !response.ok && response.status !== 404;
+const STALE_AFTER_MS = 2_000;
 
 export function useBacklog({ pollMs = 60_000 } = {}) {
   const [counts, setCounts] = useState({ review: null, prints: null, quizzes: null, total: 0, failed: false });
@@ -19,11 +20,14 @@ export function useBacklog({ pollMs = 60_000 } = {}) {
   // The 60s poll and an onChanged refresh can overlap; only the latest read
   // may land, or a slow older answer puts back a count the teacher cleared.
   const seq = useRef(0);
+  // When the last read STARTED — `refreshIfStale` skips a read that young.
+  const startedAt = useRef(0);
 
   const refresh = useCallback(async () => {
     // A hidden tab polls nothing; visibilitychange below catches up on return.
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     const mine = ++seq.current;
+    startedAt.current = Date.now();
     let review; let prints; let quizzes;
     try {
       [review, prints, quizzes] = await Promise.all([
@@ -51,12 +55,21 @@ export function useBacklog({ pollMs = 60_000 } = {}) {
 
   useEffect(() => {
     alive.current = true;
-    refresh();
+    // A child's effects run before this one: on a cold load the dashboard has
+    // usually just asked already, so the shell's own first read skips.
+    if (Date.now() - startedAt.current >= STALE_AFTER_MS) refresh();
     const timer = pollMs > 0 ? setInterval(refresh, pollMs) : null;
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { alive.current = false; if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [refresh, pollMs]);
 
-  return { ...counts, refresh };
+  // For a VISIT (the dashboard mounting), not an action: a cold load mounts
+  // the dashboard in the same moment the shell reads, and re-reading then was
+  // three duplicate GETs. An action calls `refresh`, which always reads.
+  const refreshIfStale = useCallback((maxAgeMs = STALE_AFTER_MS) => (
+    Date.now() - startedAt.current < maxAgeMs ? Promise.resolve() : refresh()
+  ), [refresh]);
+
+  return { ...counts, refresh, refreshIfStale };
 }

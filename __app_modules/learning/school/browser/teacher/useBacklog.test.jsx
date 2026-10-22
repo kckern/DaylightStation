@@ -46,6 +46,23 @@ describe('useBacklog', () => {
     await act(() => result.current.refresh());
     expect(result.current.total).toBe(4);
   });
+  it('refreshIfStale() skips a read the hook just made, and re-reads an old one', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
+      await waitFor(() => expect(result.current.total).toBe(6));
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(1);
+      // The dashboard mounting in the same moment as the shell: no second read.
+      await act(() => result.current.refreshIfStale());
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(1);
+      // A dashboard visit a minute later reads again.
+      now.mockReturnValue(1_060_000);
+      await act(() => result.current.refreshIfStale());
+      expect(schoolApi.lifecycleReview).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
   it('a slow older read never overwrites a newer one', async () => {
     const { result } = renderHook(() => useBacklog({ pollMs: 0 }));
     await waitFor(() => expect(result.current.total).toBe(6));
