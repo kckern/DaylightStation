@@ -2175,16 +2175,6 @@
     }
   }
 
-  .sidebar-menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
-  }
-
   .fitness-sidebar-menu {
     position: absolute;
     top: 0;
@@ -3959,4 +3949,17 @@
 }
 .fitness-device.card-vertical .device-info .device-start-badge {
   align-self: center;
+}
+
+// Portalled to <body> by SidebarMenuScrim, so it lives outside the sidebar.
+// Above the fitness player's z-index 1000 wrapper; it stops at the sidebar's
+// left edge, so it never covers the menu inside that wrapper.
+.sidebar-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 100vw;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1001;
 }

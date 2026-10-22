@@ -1,10 +1,11 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from "../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { useRenderProfiler } from "../hooks/fitness/useRenderProfiler.js";
 import FitnessTreasureBox from "./panels/FitnessTreasureBox.jsx";
 import FitnessUsersList from "./panels/FitnessUsers.jsx";
 import FitnessSidebarMenu from "./panels/FitnessSidebarMenu.jsx";
+import SidebarMenuScrim from "./SidebarMenuScrim.jsx";
 import FitnessVoiceMemo from "./panels/FitnessVoiceMemo.jsx";
 import FitnessMusicPlayer from "./panels/FitnessMusicPlayer.jsx";
 import FitnessGovernance from "./panels/FitnessGovernance.jsx";
@@ -18,6 +19,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });
+  const sidebarRef = useRef(null);
   const [visibility, setVisibility] = useState(() => ({
     governance: governanceDisabled ? false : isGovernedInitial,
     treasureBox: governanceDisabled ? true : !isGovernedInitial,
@@ -207,7 +209,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
   };
 
   return (
-    <div className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
+    <div ref={sidebarRef} className={`fitness-sidebar-container fitness-sidebar-mode-${mode}`}>
       {/* Treasure Box */}
       {visibility.treasureBox && (
         <div
@@ -303,7 +305,10 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
       {/* Menu Overlay */}
       {menuOpen && (
         <>
-          <div className="sidebar-menu-overlay" onClick={() => setMenuState({ open: false, mode: 'settings', target: null })} />
+          <SidebarMenuScrim
+            anchorRef={sidebarRef}
+            onClose={() => setMenuState({ open: false, mode: 'settings', target: null })}
+          />
           <FitnessSidebarMenu 
             onClose={() => setMenuState({ open: false, mode: 'settings', target: null })}
             appMode={mode}
