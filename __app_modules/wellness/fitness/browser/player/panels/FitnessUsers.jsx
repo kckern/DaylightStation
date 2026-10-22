@@ -985,7 +985,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                           color: text,
                           border: `1px solid ${bg}`,
                           textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
+                          letterSpacing: '0.5px',
+                          // Mantine's xs badge is 9px; read from the bike.
+                          fontSize: '0.875rem',
+                          height: 'auto',
+                          padding: '2px 10px'
                         };
                         return (
                           <Badge 
@@ -1096,7 +1100,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 8,
-                fontSize: '12px',
+                fontSize: '1rem',
                 opacity: 0.95,
                 marginBottom: 6
               }}

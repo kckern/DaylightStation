@@ -545,7 +545,7 @@
         font-size: 1.35rem;
       }
       & > .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-        font-size: 0.7rem;
+        font-size: 0.95rem;
       }
 
       & > .device-grid.horiz-scale-130 { gap: 12px; }
@@ -568,7 +568,7 @@
         font-size: 1.18rem;
       }
       & > .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-        font-size: 0.62rem;
+        font-size: 0.9rem;
       }
 
 
@@ -702,7 +702,7 @@
             
             .device-value { font-size: 1.05rem; font-weight: 700; color: #fff; }
             
-            .device-unit { font-size: 0.55rem; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing:.5px; }
+            .device-unit { font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
           }
         }
       }
@@ -780,7 +780,7 @@
 
       .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
 
-      .device-unit { font-size: 0.5rem; }
+      .device-unit { font-size: 0.875rem; }
 
       .card-avatar.clickable {
         cursor: pointer;
@@ -882,7 +882,7 @@
     align-items: center;
     justify-content: center;
     height: 100px;
-    opacity: 0.5;
+    opacity: 0.8; // the only thing on screen before anyone straps in
 
     .empty-icon {
       font-size: 32px;
@@ -1330,7 +1330,7 @@
       font-size: 1.35rem;
     }
     .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.7rem;
+      font-size: 0.95rem;
     }
 
     /* Moderate enlargement for exactly 4 HR users (keep width constant) */
@@ -1354,7 +1354,7 @@
       font-size: 1.18rem;
     }
     .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.62rem;
+      font-size: 0.9rem;
     }
 
     .fitness-device.card-horizontal {
@@ -1411,7 +1411,7 @@
           object-fit: cover;
           border-radius: inherit;
         }
-        .device-info .device-name { font-size: 0.85rem; }
+        .device-info .device-name { font-size: 0.875rem; }
         .device-info .device-stats .device-value { font-size: 0.95rem; }
       }
       &.card-vertical {
@@ -1523,7 +1523,7 @@
         
         .device-value { font-size: 0.95rem; font-weight: 700; color: #fff; line-height:1; margin-bottom:1px; }
         
-        .device-unit { font-size: 0.55rem; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing:.5px; }
+        .device-unit { font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.75); text-transform: uppercase; letter-spacing:.5px; }
       }
     }
 
@@ -1533,7 +1533,7 @@
       align-items: center;
       justify-content: center;
       min-height: 150px;
-      opacity: 0.5;
+      opacity: 0.8;
       padding: 2rem 1rem;
 
       .empty-icon {
