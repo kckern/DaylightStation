@@ -996,6 +996,23 @@ no active session, browser Back from a session URL, or starting a video from hom
 Opening stays selection-driven, so the guarantee is one-way: a closed pane never
 survives in a session-less URL.
 
+**The coin ceremony.** After the final persist, FitnessPlayer also refetches the
+`standings` source and — when the close lands on the finished session, not a
+short browse-out back to the show — fires `fitness-workout-finished
+{sessionId}` (`WORKOUT_FINISHED_EVENT`). `useWorkoutCoinCeremony` (mounted in
+`GlobalOverlays`) asks `GET /api/v1/earnings/workout/:sessionId` and shows
+`WorkoutCoinCeremony`: one card per kid in the ride, "+N" silver with the new
+total ("→ 27 silver"), or "N rings · M more rings to the next coin" for a ride
+that crossed no coin; a gem when a threshold paid one. The coin sound plays
+through fitness's own cue element (`ringCelebrationAudio.js`, already unlocked
+on the kiosk) with School's `school/_ux/coin.mp3`. Tap, Enter/Space/Escape or
+the clock (4 s + 1.5 s per extra card, max 10 s) dismisses it. A session is
+shown once (sessionStorage `fitness.coinCeremony.shown`, last 20 ids), never on
+a reload (the event fires only on a live close), and not at all when the
+economy is off, nobody earned anything, or the call fails. Logs:
+`fitness.coin_ceremony.shown {sessionId, learners, totalSilver}`,
+`.dismissed {reason}`, `.skipped {reason: economy-off | no-earnings | fetch-failed}`.
+
 ---
 
 ## Render Update Model

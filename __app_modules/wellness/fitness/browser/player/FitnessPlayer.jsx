@@ -1,5 +1,6 @@
 import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
+import { WORKOUT_FINISHED_EVENT } from './overlays/useWorkoutCoinCeremony.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -1332,6 +1333,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           // The suggestions snapshot went stale with this workout's saves; this
           // request waits for its rebuild, so home lands on fresh Resume / Next Up.
           refetchScreenData('suggestions');
+          // The home cards' silver and gem moved with this workout's rings.
+          refetchScreenData('standings');
+        });
+    }
+
+    // The coin ceremony: what the ride was worth. Only when the close lands on
+    // the finished session (not a short browse-out back to the show), and only
+    // once its final save has landed so the economy prices the whole ride.
+    if (sid && redirect && !redirect.returnToShow) {
+      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+        .finally(() => {
+          window.dispatchEvent(new CustomEvent(WORKOUT_FINISHED_EVENT, { detail: { sessionId: String(sid) } }));
         });
     }
 

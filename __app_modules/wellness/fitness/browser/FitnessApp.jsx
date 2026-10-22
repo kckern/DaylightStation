@@ -48,6 +48,8 @@ import MenuMusicController from "./nav/MenuMusicController.jsx";
 import EmergencyPlaybackController from "./player/EmergencyPlaybackController.jsx";
 import { FitnessFeedback, FeedbackCornerButton } from "./feedback/index.js";
 import { installRingCelebrationAudioUnlock } from "./player/overlays/ringCelebrationAudio.js";
+import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
+import { useWorkoutCoinCeremony } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
 
@@ -1877,6 +1879,8 @@ const PressureMatEventBridge = ({ logger }) => {
 const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
+  // After a finished workout: what the ride was worth (FitnessPlayer fires it).
+  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
   if (!fitnessCtx) return null;
 
   return (
@@ -1896,6 +1900,14 @@ const GlobalOverlays = () => {
         preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
       />
       <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
+      {ceremony && (
+        <WorkoutCoinCeremony
+          key={ceremony.sessionId}
+          sessionId={ceremony.sessionId}
+          learners={ceremony.learners}
+          onDone={dismissCeremony}
+        />
+      )}
     </>
   );
 };
