@@ -14,7 +14,7 @@ vi.mock("./coinCeremonyAudio.js", () => ({
 }));
 import { schoolApi } from "../schoolApi.js";
 import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
-import { useCoinCeremony } from "./useCoinCeremony.js";
+import { useCoinCeremony, __resetCoinBaselineForTest } from "./useCoinCeremony.js";
 import { BOARD_CACHE_KEY } from "./boardCache.js";
 
 const DAY = '2026-10-21';
@@ -37,6 +37,7 @@ const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 30
 
 beforeEach(() => {
   localStorage.clear();
+  __resetCoinBaselineForTest();
   h.ws.length = 0;
   h.cues.length = 0;
   h.unlocks.length = 0;
@@ -218,5 +219,23 @@ describe('the coin ceremony on the board', () => {
     expect(screen.queryByTestId('coin-ceremony')).toBeNull();
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
+  });
+
+  it('a rise earned while the board was unmounted (child on a runner) pops once on remount', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 9)));
+    const first = render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    await waitFor(() => expect(silverShown(9)).toBeTruthy());
+    await settle();
+    first.unmount();
+    // The child finishes work on the Portal; the board comes back (its
+    // cache seed still says 9, and the seed is never news).
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12)));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    const pop = await screen.findByTestId('coin-ceremony');
+    expect(within(pop).getByText('+3')).toBeTruthy();
+    expect(within(pop).getByText('12 this week')).toBeTruthy();
+    await settle();
+    expect(screen.getAllByTestId('coin-ceremony')).toHaveLength(1);
+    expect(h.cues).toEqual([{ sound: 'school/_ux/coin.mp3', volume: 0.8 }]);
   });
 });

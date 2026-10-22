@@ -2,7 +2,11 @@
  * The coin ceremony's state, for the status board: feed it every NETWORK
  * read of the week's earnings (`observe`), never the board-cache seed, and
  * render `toast` with `CoinCeremony` (keyed on `toast.id`). The first network
- * read after mount is a baseline. Rules live in `coinCeremonyModel.js`; this
+ * read per learner since the PAGE loaded is a baseline: the baseline lives at
+ * module scope, not in the component, because the board unmounts whenever a
+ * code, runner, section or bank screen is open, and the coins a child earns
+ * there must still pop when the board comes back. Only a reload clears it
+ * (and a change of week still never pops). Rules live in `coinCeremonyModel.js`; this
  * hook owns the timers, the roster lookup and the sound (once per pop).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,19 +16,22 @@ import {
 } from "./coinCeremonyModel.js";
 import { playCoinCue, installCoinCueUnlock } from "./coinCeremonyAudio.js";
 
+// Per-learner baseline ({ silver, from, to }), shared by every mount of the
+// board for the life of the page.
+let baseline = {};
+
 export function useCoinCeremony({ kids = [], config = null } = {}) {
   const cfg = useMemo(() => normalizeCoinCeremonyConfig(config), [config]);
   const rosterKey = kids.map((k) => k.id).join('|');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rosterIds = useMemo(() => new Set(kids.map((k) => k.id)), [rosterKey]);
-  const seenRef = useRef({});
   const [queue, setQueue] = useState(emptyQueue);
 
   const observe = useCallback((byLearner) => {
     // Always advance the baseline, even when disabled, so turning the
     // ceremony on later never replays an old rise.
-    const { seen, rises } = observeEarnings(seenRef.current, byLearner, rosterIds);
-    seenRef.current = seen;
+    const { seen, rises } = observeEarnings(baseline, byLearner, rosterIds);
+    baseline = seen;
     if (!cfg.enabled || !rises.length) return;
     const now = Date.now();
     for (const r of rises) schoolLog.selfService('status-board.coin-rise', { learnerId: r.learnerId, gained: r.gained, total: r.total });
@@ -77,3 +84,5 @@ export function useCoinCeremony({ kids = [], config = null } = {}) {
 }
 
 export default useCoinCeremony;
+
+export function __resetCoinBaselineForTest() { baseline = {}; }
