@@ -114,7 +114,7 @@ describe('FlingButton picker', () => {
     expect(log.calls.flingOpened?.[0]?.[0]).toMatchObject({ contentId: 'plex:42', targetIds: ['office-tv', 'den-tv'], offerChoice: false });
 
     await act(async () => { fireEvent.click(screen.getByTestId('fling-target-office-tv')); });
-    expect(handOff).toHaveBeenCalledWith('office-tv', { mode: 'transfer', startAt: 0 });
+    expect(handOff).toHaveBeenCalledWith('office-tv', { mode: 'transfer', startAt: 0, play: true });
     expect(log.calls.flingTargetChosen?.[0]?.[0]).toMatchObject({ targetId: 'office-tv', startMode: 'beginning', startAt: 0 });
   });
 
@@ -132,7 +132,7 @@ describe('FlingButton picker', () => {
     expect(beginning.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await act(async () => { fireEvent.click(screen.getByTestId('fling-target-den-tv')); });
-    expect(handOff).toHaveBeenCalledWith('den-tv', { mode: 'transfer', startAt: 0 });
+    expect(handOff).toHaveBeenCalledWith('den-tv', { mode: 'transfer', startAt: 0, play: true });
   });
 
   it('"Start where I am" passes the current position', async () => {
@@ -145,7 +145,7 @@ describe('FlingButton picker', () => {
     expect(log.calls.flingStartModeChanged?.[0]?.[0]).toMatchObject({ startMode: 'current' });
     state.position = { seconds: 1240.5, ts: 1 }; // still playing while choosing
     await act(async () => { fireEvent.click(screen.getByTestId('fling-target-office-tv')); });
-    expect(handOff).toHaveBeenCalledWith('office-tv', { mode: 'transfer', startAt: 1240.5 });
+    expect(handOff).toHaveBeenCalledWith('office-tv', { mode: 'transfer', startAt: 1240.5, play: true });
     expect(log.calls.flingTargetChosen?.[0]?.[0]).toMatchObject({ startMode: 'current', startAt: 1241 });
   });
 

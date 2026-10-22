@@ -1,4 +1,4 @@
-// frontend/src/modules/Media/shell/FlingButton.jsx
+// __app_modules/media/media/browser/shell/FlingButton.jsx
 // Fling: the local player is a staging area. While something plays here, the
 // handle (MiniPlayer) and the local transport offer "Play on a screen": pick a
 // screen and the SAME item starts there, with no search and no menus.
@@ -133,7 +133,7 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
     }) ?? null;
     let result;
     try {
-      result = await handOff(device.id, { mode: 'transfer', startAt });
+      result = await handOff(device.id, { mode: 'transfer', startAt, play: true });
     } catch (err) {
       result = { ok: false, status: 'uncertain', error: err?.message ?? 'fling-failed' };
     }
