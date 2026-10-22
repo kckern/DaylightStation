@@ -767,7 +767,9 @@ describe('TeacherConsole workspace', () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/courses');
     render(<TeacherConsole />);
     const heading = await screen.findByRole('heading', { name: 'Enroll User_4 in courses' });
-    const matrix = within(heading.closest('section') ?? document.body).getByTestId('school-matrix');
+    // The heading paints with the panel's loading skeleton; the grid follows
+    // its fetch, so wait for it rather than reading it in the same tick.
+    const matrix = await within(heading.closest('section') ?? document.body).findByTestId('school-matrix');
     expect(within(matrix).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Course', 'User_4']);
   });
 
