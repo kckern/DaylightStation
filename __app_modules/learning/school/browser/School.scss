@@ -3060,6 +3060,8 @@
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
 .school-status-board {
+  // The coin ceremony is absolutely placed over the board pane (never the keypad).
+  position: relative;
   color: var(--school-board-ink);
   display: flex; flex-direction: column;
   width: 100%; height: 100%; min-height: 0;
@@ -3447,6 +3449,45 @@
 
     .school-status-board__status { color: var(--school-board-done); opacity: 1; }
   }
+}
+// THE COIN CEREMONY: a short pop-up over the BOARD PANE only (CoinCeremony.jsx).
+// The backdrop passes taps through; only the card takes them.
+.school-coin-ceremony {
+  position: absolute; inset: 0; z-index: 140;
+  display: grid; place-items: center;
+  pointer-events: none;
+  &__live {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  &__card {
+    pointer-events: auto;
+    display: grid; justify-items: center; gap: clamp(0.25rem, 1vh, 0.6rem);
+    padding: clamp(1rem, 3vh, 1.8rem) clamp(1.6rem, 4vw, 3rem);
+    border: 1px solid var(--school-border); border-radius: 24px;
+    background: var(--school-surface); color: var(--school-text);
+    font: inherit; cursor: pointer;
+    box-shadow: 0 1.2rem 3rem color-mix(in srgb, #000 45%, transparent);
+    animation: school-coin-ceremony-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+    &.is-exiting { animation: school-coin-ceremony-out 320ms ease-in both; }
+    &:focus-visible { outline: 3px solid var(--school-coin-silver); outline-offset: 4px; }
+  }
+  &__coin { width: clamp(4rem, 14vh, 7rem); height: auto; }
+  &__gained {
+    font-size: clamp(3rem, 12vh, 6rem); font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--school-coin-silver);
+  }
+  &__total { font-size: clamp(1.1rem, 3.2vh, 1.6rem); font-weight: 700; color: var(--school-muted); font-variant-numeric: tabular-nums; }
+  &__who {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: clamp(1.1rem, 3vh, 1.5rem); font-weight: 800;
+    .piano-avatar { width: clamp(2.6rem, 7vh, 3.6rem); height: clamp(2.6rem, 7vh, 3.6rem); }
+  }
+}
+@keyframes school-coin-ceremony-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+@keyframes school-coin-ceremony-out { to { opacity: 0; transform: scale(0.92); } }
+@media (prefers-reduced-motion: reduce) {
+  .school-coin-ceremony__card, .school-coin-ceremony__card.is-exiting { animation: none; }
 }
 
 @keyframes school-board-shimmer {
