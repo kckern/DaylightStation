@@ -12,6 +12,8 @@
  *   GET /preview?week=YYYY-MM-DD              → the roster's week
  *   GET /preview/:learnerId?week=YYYY-MM-DD   → one learner's week
  *   GET /rules                                → { ruleset, kinds }
+ *   GET /workout/:sessionId                   → one workout's ring silver per learner in it
+ *   GET /standings                            → per learner: bank silver, week rings, gem
  *
  * `week` is any study day inside the wanted Monday→Sunday week; omitted means
  * the current one. Use cases arrive built (api-no-apps / api-no-domains).
@@ -19,7 +21,7 @@
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
-export function createEarningsRouter({ earningsPreview, earnRules, logger = console } = {}) {
+export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnings = null, logger = console } = {}) {
   if (!earningsPreview?.preview || !earningsPreview?.roster) throw new Error('createEarningsRouter requires earningsPreview');
   if (!earnRules?.describe) throw new Error('createEarningsRouter requires earnRules');
   const router = express.Router();
@@ -35,6 +37,22 @@ export function createEarningsRouter({ earningsPreview, earnRules, logger = cons
 
   router.get('/rules', asyncHandler(async (_req, res) => {
     res.set('Cache-Control', 'no-store').json(await earnRules.describe());
+  }));
+
+  const needWorkout = (res) => {
+    if (workoutEarnings?.workout && workoutEarnings?.standings) return false;
+    res.status(503).json({ error: 'workout earnings unavailable' });
+    return true;
+  };
+
+  router.get('/workout/:sessionId', asyncHandler(async (req, res) => {
+    if (needWorkout(res)) return;
+    res.set('Cache-Control', 'no-store').json(await workoutEarnings.workout(String(req.params.sessionId)));
+  }));
+
+  router.get('/standings', asyncHandler(async (_req, res) => {
+    if (needWorkout(res)) return;
+    res.set('Cache-Control', 'no-store').json(await workoutEarnings.standings());
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string', logger }));

@@ -357,6 +357,18 @@ is the preview's current study day, `currentStudyDay()`).
   week already paid at live rates is not paid twice. A running workout waits
   for a later hourly reconcile, so the bank trails the board by up to about
   90 minutes after a workout ends.
+- **What a workout was worth, before the bank has it.** `WorkoutEarningsService`
+  (`application/WorkoutEarningsService.mjs`) prices one ride with the same steps
+  as the payout — the ring line's sessions in end order, this one counted even
+  before it is final — so the fitness coin ceremony's "+N" matches the entry
+  that lands later. Its `total` is the wallet plus the ring silver still owed
+  under the line's ref, i.e. what the bank will hold once the payouts land.
+  `GET /api/v1/earnings/workout/:sessionId` (learners in that session only;
+  one failing wallet omits that learner, `economy.workout-earnings.learner-failed`)
+  and `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
+  `gem: 'leading' | 'won' | null` from the `ring-contest` line). Both read-only,
+  `no-store`; with the catalog `off` they return no learners. Logged
+  `economy.workout-earnings.query`.
 - A corrupt shard throws `CORRUPT_LEDGER` inside `mint` and nothing is written;
   the payout logs it at `error`.
 - A learner on the roster who is not a household user (no wallet) logs

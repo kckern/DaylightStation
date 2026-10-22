@@ -97,6 +97,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     const { createEarningsRouter } = await import("../api/earnings.mjs");
     const { PayoutService } = await import("../application/PayoutService.mjs");
     const { WeekCloseService } = await import("../application/WeekCloseService.mjs");
+    const { WorkoutEarningsService } = await import("../application/WorkoutEarningsService.mjs");
     const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
     const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
     const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
@@ -163,12 +164,21 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       listUsers: () => economyApi.configProjection.users(),
       logger: rootLogger.child({ module: 'economy-week-close' }),
     });
+    // What one workout was worth (the fitness coin ceremony) and the week's
+    // standings (the fitness home cards). Read-only over the same preview.
+    const workoutEarnings = new WorkoutEarningsService({
+      preview: earningsPreview,
+      economy: economyApi.economyService,
+      config: economyApi.configProjection,
+      logger: rootLogger.child({ module: 'economy-workout-earnings' }),
+    });
     const router = createEarningsRouter({
       earningsPreview,
       earnRules: economyApi.earnRulesService,
+      workoutEarnings,
       logger: rootLogger.child({ module: 'economy-earnings-api' }),
     });
-    return { router, earningsPreview, payoutService, weekCloseService };
+    return { router, earningsPreview, payoutService, weekCloseService, workoutEarnings };
 }
 
 const PAYOUT_TOPICS = ['school.session.outcome-recorded', 'piano.lesson.completed'];
