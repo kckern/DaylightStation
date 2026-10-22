@@ -112,6 +112,28 @@ renderer does not flash the clue or change its visibility over time.
 
 `GamepadAdapter` preserves ABXY/LR identity and binds a stable controller ID to a semantic role on press. The Gaming platform's `DrawingTabletAdapter` emits Pointer Event pressure and eraser metadata with touch/mouse normalization. It converts responsive CSS coordinates into the canvas backing-store coordinate system, clamps captured strokes to the canvas, and preserves independent pointer identities. Browser input is hosted by screen-framework and translated to `InteractionIntent` before experience code sees it.
 
+### Gamepad buzzers
+
+On the Buzzer check screen, choosing a team and pressing any controller button binds that controller to the team. The controller becomes buzzer slot `gamepad:<index>:<id>` in `BuzzerArbiter`, beside Zigbee buttons (`slot_N` over the `gaming` WebSocket) and the number keys. A team-bound controller is a buzzer only. Every input it reports (face, shoulder, d-pad, stick clicks, Home, stick deflection) is a semantic press, and none of it navigates the UI, so a buzz can never pick a board tile. Binding a controller replaces that team's number-key slot, but the phone host's "[Team] answers" button still works. Bindings are saved per session in local storage, so a refresh restores them. They are released when the experience unmounts (results, play again or exit), and the controllers then navigate menus again. A bind that is started but never pressed is cancelled when the Buzzer check screen closes.
+
+### Jeopardy sound pack
+
+Jeopardy plays its cues from the `jeopardy` pack, `media/games/party-games/jeopardy/<cue>.mp3`, served at `/api/v1/gaming/media/jeopardy/<cue>.mp3`.
+
+| Cue | Channel | When |
+|---|---|---|
+| `theme` | music (loops, 50%) | round title card |
+| `board-fill` | sfx | the board fills |
+| `reveal` | sfx | a clue is picked |
+| `daily-double` | sfx | the wager screen opens |
+| `buzz` | sfx | a team buzzes in |
+| `correct` / `wrong` | sfx | the host judges, including Final Jeopardy |
+| `time-up` | sfx | the clue timer runs out |
+| `think` | music | Final Jeopardy clue |
+| `win` | sfx | game over |
+
+A missing or unplayable file logs `party-games.audio.play_failed` and the game continues silently.
+
 Drawing checkpoints contain strokes rather than raster images. The client serializes checkpoint writes, the API authorizes them against the active performer, and the repository bounds stroke and point counts. Checkpoints are transient recovery state: terminal challenge events delete them, and they never enter the deterministic Gaming journal.
 
 Dice outcomes commit before animation. Standard polyhedra may use Three.js, d100 uses percentile dice, and arbitrary sides or unavailable WebGL use deterministic 2D output. Household selection uses the same seeded mechanic without depending on party-games.
