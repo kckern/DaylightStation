@@ -201,7 +201,8 @@ export function MiniPlayer() {
         <button
           type="button"
           data-testid="mini-next"
-          className="np-icon-btn"
+          // Nowhere to go: a phone hides it (MediaShell.scss) so the title keeps its width.
+          className={`np-icon-btn${hasNext ? '' : ' mini-next--none'}`}
           aria-label="Next"
           disabled={!hasNext}
           onClick={() => transport.skipNext?.()}

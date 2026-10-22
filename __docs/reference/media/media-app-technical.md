@@ -1370,8 +1370,13 @@ the local transport). The same destination as above through `useHandOff(id,
 { mode: 'transfer', startAt })`: the local capture is the source, the screen
 adopts first (typed hand-off `positionPolicy: { kind: 'absolute', seconds }`,
 or the adopt load's snapshot `position`), and `portability.stopIfCurrent`
-stops this device only for the same owner revision. `startAt` overwrites the
-captured `position`: `0` by default; with "Start where I am" (offered when
+stops this device only for the same owner revision. The fling passes
+`play: true`, so the sent snapshot's `state` is `playing` (a paused item here
+starts playing there; a plain move keeps `paused`). The whole captured queue
+travels, as with Move to…. `startAt` overwrites the captured `position` and
+marks the started queue entry and `currentItem` `resume: false` (SinglePlayer
+forwards it to `/play`, so the library's saved spot never overrides the
+explicit start): `0` by default; with "Start where I am" (offered when
 the hot position is ≥ 10% of a known, non-live duration — `cast/flingStart.js`
 `FLING_CHOICE_FRACTION`) the hot-tier position read at the tap. Targets are
 `moveDestinations(devices)` (content screens, no browsers); the control is

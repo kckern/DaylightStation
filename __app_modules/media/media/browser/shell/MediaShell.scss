@@ -508,7 +508,7 @@ $amber-ink: #1a1300;
   }
 }
 
-// Phone: four 44 px controls leave a 390 px handle no room for its own title
+// Phone: four (now five, with Play on a screen) 44 px controls leave a 390 px handle no room for its own title
 // (it measured 40 px wide). A narrower video dock and tighter gaps give the
 // title back about 100 px without hiding or shrinking any control.
 @media (max-width: 480px) {
@@ -519,6 +519,10 @@ $amber-ink: #1a1300;
     padding-right: var(--mantine-spacing-xs);
 
     .mini-player-controls { gap: 2px; }
+
+    // A disabled Next (no next item, e.g. one film) is dead width on a phone:
+    // hidden there so the title stays readable beside Play on a screen.
+    .mini-player-controls .mini-next--none { display: none; }
   }
 }
 

@@ -167,7 +167,10 @@ wraps at phone width, so nothing is lost to a narrow screen.
   stop, so there are never two copies. If the screen does not confirm, this
   device keeps playing and the panel says so ("Office TV did not confirm.
   Still playing here."), with the screens still there to try again; the tray
-  records the outcome either way.
+  records the outcome either way. It starts **playing** there even if it was
+  paused here. Like Move to…, the whole local queue goes with it: the screen
+  starts this item and carries on with what follows. On a phone the handle
+  hides Next when there is nothing next, so the title keeps its width.
 - **Several screens.** The screen picker's **Choose several screens** aims at
   more than one; the aim then reads "Kitchen + Living Room". Screens chosen
   in the same room, or in rooms marked as neighbours in screen admin, warn

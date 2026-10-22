@@ -68,6 +68,17 @@ beforeEach(() => {
 });
 
 describe('MiniPlayer', () => {
+  it('marks Next as having nowhere to go (hidden on a phone) only when there is no next item', () => {
+    state.snapshot = makeSnapshot({ index: 0, count: 1 });
+    const { unmount } = renderMiniPlayer();
+    expect(screen.getByTestId('mini-next')).toBeDisabled();
+    expect(screen.getByTestId('mini-next')).toHaveClass('mini-next--none');
+    unmount();
+    state.snapshot = makeSnapshot({ index: 0, count: 3 });
+    renderMiniPlayer();
+    expect(screen.getByTestId('mini-next')).not.toHaveClass('mini-next--none');
+  });
+
   it('offers the fling (Play on a screen) among the handle controls, opening upward', () => {
     renderMiniPlayer();
     const stub = screen.getByTestId('fling-stub');
