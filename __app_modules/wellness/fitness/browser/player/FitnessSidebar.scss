@@ -3093,7 +3093,6 @@
   border-radius: 4px;
   overflow: hidden;
   box-sizing: border-box;
-  --panel-percent: 10%;
   
   .media-video-section {
     /* Take the remaining width next to the fixed-width button panel */
@@ -3119,9 +3118,10 @@
   }
   
   .media-button-panel {
-    /* Exact percentage width; no min-width so 10% is honored precisely */
+    // Wide enough to hit from the bike (was 10% = ~24px). A row under the
+    // camera would take its height from the rider list instead.
     flex: 0 0 auto;
-    width: var(--panel-percent);
+    width: 52px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;

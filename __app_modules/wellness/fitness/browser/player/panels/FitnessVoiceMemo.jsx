@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
+import { IconMicrophone, IconSettings } from '@tabler/icons-react';
 import "../FitnessSidebar.scss";
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import FitnessVideo from "./FitnessVideo.jsx";
@@ -51,28 +52,34 @@ const FitnessVoiceMemo = ({ onToggleMenu }) => {
         <div className="media-button-panel">
           {/* Config Button - Top */}
           <button
+            type="button"
             className="media-config-btn"
             onClick={onToggleMenu}
-            title="Open menu"
+            aria-label="Settings"
+            title="Settings"
           >
-            ⋮
+            <IconSettings size={26} stroke={2} aria-hidden="true" />
           </button>
           
           {/* Record Button - opens overlay/recorder */}
           <button
+            type="button"
             className="media-record-btn"
             onClick={handleStartRecording}
             disabled={overlayOpen}
+            aria-label="Record a voice memo"
             title={UI_LABELS.RECORD_TOOLTIP}
           >
-            ●
+            <IconMicrophone size={26} stroke={2} aria-hidden="true" />
           </button>
           
           {/* Counter Button - Bottom (when memos exist) */}
           {memoCount > 0 && (
             <button
+              type="button"
               className="media-counter-btn"
               onClick={handleOpenList}
+              aria-label={`${memoCount} voice memo${memoCount === 1 ? '' : 's'}`}
               title={UI_LABELS.SHOW_MEMOS_TOOLTIP}
             >
               {memoCountLabel}
