@@ -1,6 +1,7 @@
 /**
  * Who is using a device, from its heartbeat's `snapshot.audience`: up to four
- * small avatars and a short label. Guests are never named.
+ * small avatars and a short label that carries the count ("Rider A & 5 others").
+ * Guests are never named.
  */
 import React from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
@@ -27,7 +28,6 @@ export default function AudienceRow({ audience, deviceId }) {
             src={DaylightMediaPath(p.guest ? '/static/img/users/user' : `/static/img/users/${p.id}`)}
             onError={(e) => { const img = e.currentTarget; if (img.dataset.fallback) return; img.dataset.fallback = '1'; img.src = DaylightMediaPath('/static/img/users/user'); }} />
         ))}
-        {people.length > MAX ? <span className="fleet-card-audience__more">+{people.length - MAX}</span> : null}
       </span>
       <span className="fleet-card-audience__label">{audienceLabel(people)}</span>
     </div>

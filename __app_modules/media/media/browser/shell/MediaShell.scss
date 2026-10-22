@@ -1411,8 +1411,9 @@ html:has(.media-app) .mantine-Input-input:not(:focus):not([data-expanded="true"]
   &__faces { display: inline-flex; align-items: center; }
   &__faces img {
     width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--mantine-color-body);
+    // The card's own colour, so the overlap reads as a cutout, not a halo.
+    border: 2px solid var(--mantine-color-dark-5);
     & + img { margin-left: -6px; }
   }
-  &__more { margin-left: 0.25rem; }
+  &__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
