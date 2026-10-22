@@ -66,8 +66,9 @@ function PendingReviewCount({ sessionId }) {
   );
 }
 
-// A lesson three school days quiet is already stuck to the family; the
-// server's default of seven hid it for a week.
+// A lesson three days quiet is already stuck to the family; the server's
+// default of seven hid it for a week. The server counts calendar days, not
+// school days, so a sheet handed out on a Friday can land here on Monday.
 const STALE_AFTER_DAYS = 3;
 
 export default function StaleSessions({ kids = [] }) {

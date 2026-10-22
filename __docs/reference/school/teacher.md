@@ -998,7 +998,8 @@ before it existed, the threshold on the manual route was never once consulted.
 
 The Operations panel asks the server for sessions quiet for three days
 (`olderThanDays=3`); the endpoint's own default of seven hid a stuck lesson for
-a week after the family already felt it. Each row names its state in words
+a week after the family already felt it. The count is calendar days, not
+school days, so a weekend alone can put Friday's sheet on the list by Monday. Each row names its state in words
 (`presentSessionState`), and "Settle by hand" opens the inspector with
 `?from=operations`, so its Back returns to Operations.
 
