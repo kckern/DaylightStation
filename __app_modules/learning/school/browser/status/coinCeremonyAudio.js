@@ -68,12 +68,17 @@ export function installCoinCueUnlock(
   if (!target || unlocked || !sound) return () => {};
   if (installed) return installed.off;
   const events = ['pointerdown', 'touchstart', 'keydown', 'click'];
+  let cancelled = false;
   const arm = () => events.forEach((name) => target.addEventListener(name, onGesture, { passive: true }));
   const disarm = () => events.forEach((name) => target.removeEventListener(name, onGesture));
-  const off = () => { disarm(); if (installed?.off === off) installed = null; };
+  const off = () => { cancelled = true; disarm(); if (installed?.off === off) installed = null; };
+  const release = () => { disarm(); if (installed?.off === off) installed = null; };
   function onGesture() {
     const el = element();
     if (!el) return;
+    // A cue on the air already proves the element is unlocked; priming now
+    // would reset its source and cut it off.
+    if (el.paused === false) { unlocked = true; release(); return; }
     try {
       el.src = DaylightMediaPath(`/media/${sound}`);
       el.muted = true;
@@ -82,12 +87,18 @@ export function installCoinCueUnlock(
       el.currentTime = 0;
       el.muted = false;
       unlocked = true;
-      off();
+      release();
       if (result?.catch) {
         result.catch((err) => {
-          // A rejected prime re-arms, so a later tap gets another chance.
-          unlocked = false;
+          // The prime's own pause() rejects play() with AbortError: the
+          // gesture was accepted, so that is success. Only an autoplay
+          // refusal (NotAllowedError) re-arms, and never after off(); any
+          // other failure (e.g. a missing file) is logged and left alone, so
+          // taps do not keep resetting the element.
+          if (err?.name === 'AbortError') return;
           logger().warn('school.coin_cue.unlock_rejected', { sound, name: err?.name ?? null, message: err?.message ?? null });
+          if (cancelled || err?.name !== 'NotAllowedError') return;
+          unlocked = false;
           installed = { off };
           arm();
         });
