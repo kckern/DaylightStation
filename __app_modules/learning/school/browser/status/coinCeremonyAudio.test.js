@@ -42,4 +42,37 @@ describe('installCoinCueUnlock', () => {
     expect(FakeAudio.last.plays).toBe(1);
     off();
   });
+  it('sets the cue source before the muted prime play()', () => {
+    const order = [];
+    class OrderAudio extends FakeAudio {
+      set src(v) { order.push('src'); this._src = v; }
+      get src() { return this._src; }
+      play() { order.push('play'); return super.play(); }
+    }
+    vi.stubGlobal('Audio', OrderAudio);
+    const target = new EventTarget();
+    installCoinCueUnlock(target, { sound: 'school/_ux/coin.mp3' });
+    target.dispatchEvent(new Event('click'));
+    expect(order.slice(-2)).toEqual(['src', 'play']);
+    expect(FakeAudio.last.src).toBe(DaylightMediaPath('/media/school/_ux/coin.mp3'));
+  });
+  it('repeated installs share one listener set', () => {
+    const target = new EventTarget();
+    const add = vi.spyOn(target, 'addEventListener');
+    const off1 = installCoinCueUnlock(target);
+    const off2 = installCoinCueUnlock(target);
+    expect(off2).toBe(off1);
+    expect(add).toHaveBeenCalledTimes(4);
+    off1();
+  });
+  it('a rejected prime re-arms the listeners', async () => {
+    class RejectAudio extends FakeAudio { play() { this.plays += 1; return Promise.reject(Object.assign(new Error('x'), { name: 'NotSupportedError' })); } }
+    vi.stubGlobal('Audio', RejectAudio);
+    const target = new EventTarget();
+    installCoinCueUnlock(target);
+    target.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve(); await Promise.resolve();
+    target.dispatchEvent(new Event('pointerdown'));
+    expect(FakeAudio.last.plays).toBe(2);
+  });
 });

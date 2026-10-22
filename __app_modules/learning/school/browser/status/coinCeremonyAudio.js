@@ -12,6 +12,7 @@
  */
 import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
 import { getEffectiveMaster } from "../../../../../frontend/src/lib/volume/ScreenVolumeContext.js";
+import { COIN_CEREMONY_DEFAULTS } from "./coinCeremonyModel.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 let audio = null;
@@ -53,32 +54,51 @@ export function playCoinCue({ sound, volume = 0.8 } = {}) {
   }
 }
 
-/** Prime the element from a real gesture so a kiosk WebView lets it play later. */
-export function installCoinCueUnlock(target = typeof window !== 'undefined' ? window : null) {
-  if (!target || unlocked) return () => {};
+/**
+ * Prime the element from a real gesture so a kiosk WebView lets it play later.
+ * play() on a source-less element rejects (NotSupportedError), so the prime
+ * loads the real cue (`sound`, default from the model) first, muted.
+ * Repeated installs before the first gesture share one set of listeners.
+ */
+let installed = null;
+export function installCoinCueUnlock(
+  target = typeof window !== 'undefined' ? window : null,
+  { sound = COIN_CEREMONY_DEFAULTS.sound } = {},
+) {
+  if (!target || unlocked || !sound) return () => {};
+  if (installed) return installed.off;
   const events = ['pointerdown', 'touchstart', 'keydown', 'click'];
-  const onGesture = () => {
+  const arm = () => events.forEach((name) => target.addEventListener(name, onGesture, { passive: true }));
+  const disarm = () => events.forEach((name) => target.removeEventListener(name, onGesture));
+  const off = () => { disarm(); if (installed?.off === off) installed = null; };
+  function onGesture() {
     const el = element();
     if (!el) return;
     try {
+      el.src = DaylightMediaPath(`/media/${sound}`);
       el.muted = true;
       const result = el.play();
       el.pause();
       el.currentTime = 0;
       el.muted = false;
       unlocked = true;
-      events.forEach((name) => target.removeEventListener(name, onGesture));
+      off();
       if (result?.catch) {
-        result.catch(() => {
+        result.catch((err) => {
           // A rejected prime re-arms, so a later tap gets another chance.
           unlocked = false;
-          events.forEach((name) => target.addEventListener(name, onGesture, { passive: true }));
+          logger().warn('school.coin_cue.unlock_rejected', { sound, name: err?.name ?? null, message: err?.message ?? null });
+          installed = { off };
+          arm();
         });
       }
-    } catch { /* retry on the next gesture */ }
-  };
-  events.forEach((name) => target.addEventListener(name, onGesture, { passive: true }));
-  return () => events.forEach((name) => target.removeEventListener(name, onGesture));
+    } catch (err) {
+      logger().warn('school.coin_cue.unlock_threw', { sound, message: err?.message ?? null });
+    }
+  }
+  installed = { off };
+  arm();
+  return off;
 }
 
-export function __resetCoinCueForTest() { audio = null; unlocked = false; _logger = null; }
+export function __resetCoinCueForTest() { audio = null; unlocked = false; _logger = null; installed = null; }
