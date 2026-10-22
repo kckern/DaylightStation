@@ -49,6 +49,13 @@
  * (TermModal) and the coin cell opens that kid's bank screen through
  * `onOpenBank(learnerId)`, which the Portal wires to its economy-bank launch.
  * Neither starts tracked work. Without `onOpenBank` the cell is plain.
+ *
+ * THE COIN CEREMONY (2026-10-21). When a child's coin-column silver rises
+ * between two network reads of the same week, a short "+N" pop with their
+ * face and the week's new total appears over the board pane (never the
+ * keypad) and the coin cue plays (`useCoinCeremony`, `coinCeremonyModel.js`).
+ * It is the one moving thing, and it is transient. The cards themselves still
+ * do not move.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -65,6 +72,8 @@ import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
+import CoinCeremony from "./CoinCeremony.jsx";
+import { useCoinCeremony } from "./useCoinCeremony.js";
 import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
 
 const REFRESH_MS = 5 * 60_000;
@@ -329,7 +338,7 @@ function Coins({ figure, gold, studyDay }) {
 
 const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null }) {
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, coinCeremony = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -347,6 +356,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
+  // THE COIN CEREMONY: fed by the network reads in `refreshCoins` only, never
+  // by the cache seed, so a reload never replays a pop. Called through a ref
+  // so `refreshCoins` keeps its identity (its identity drives the first-read
+  // effect).
+  const ceremony = useCoinCeremony({ kids, config: coinCeremony });
+  const observeCoinsRef = useRef(ceremony.observe);
+  observeCoinsRef.current = ceremony.observe;
   const openBank = useCallback((kidId) => {
     schoolLog.selfService('status-board.bank-open', { learnerId: kidId });
     onOpenBank?.(kidId);
@@ -448,8 +464,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       Promise.resolve(schoolApi.earningsRoster(day ?? null))
         .then((res) => {
           if (!aliveRef.current) return;
-          if (res?.ok) setEarnings(earningsByLearner(res.data));
-          else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
+          if (res?.ok) {
+            const next = earningsByLearner(res.data);
+            setEarnings(next);
+            observeCoinsRef.current(next);
+          } else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
@@ -817,6 +836,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           term={terms[termFor]}
           onClose={closeTerm}
         />
+      )}
+      {ceremony.toast && (
+        <CoinCeremony key={ceremony.toast.id} toast={ceremony.toast} durationMs={ceremony.durationMs} onDone={ceremony.done} />
       )}
     </div>
   );

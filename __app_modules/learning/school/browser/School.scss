@@ -3505,6 +3505,8 @@
 @media (max-width: 820px) {
   .school-lock-split { grid-template-columns: 1fr; }
   .school-lock-split__board { display: none; }
+  // The ceremony belongs to the board pane: no pane, no pop.
+  .school-coin-ceremony { display: none; }
 }
 
 // Bulk variant — one code covers every subject with a print left today, so

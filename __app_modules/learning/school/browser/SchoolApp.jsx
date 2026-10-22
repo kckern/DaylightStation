@@ -116,26 +116,26 @@ const configuredSeconds = (value) => (
     : null
 );
 
-function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
+export function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
   // A standalone mount resolves synchronously — there is no screen config to
   // fetch — and it defaults to LOCKED so the keypad is what opens.
   const browserLocked = () => (browserModeFromUrl() ?? 'locked') === 'locked';
   const [state, setState] = useState(() => (
     explicit
-      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
       : !isPanelSurface(screenId)
-        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
-        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
+        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
   ));
 
   useEffect(() => {
     if (explicit) {
-      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     if (!isPanelSurface(screenId)) {
-      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     let alive = true;
@@ -147,6 +147,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
         locked: cfg?.mode === 'locked',
         idleTimeoutSeconds: configuredSeconds(cfg?.idleTimeoutSeconds),
         screenOffTimeoutSeconds: configuredSeconds(cfg?.screenOffTimeoutSeconds),
+        coinCeremony: cfg && cfg.coinCeremony && typeof cfg.coinCeremony === 'object' ? cfg.coinCeremony : null,
       });
     });
     return () => { alive = false; };
@@ -164,6 +165,8 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
     screenOffTimeoutSeconds: configuredSeconds(screenOffTimeoutSeconds) !== null
       ? configuredSeconds(screenOffTimeoutSeconds)
       : (state.screenOffTimeoutSeconds ?? 0),
+    // The screen YAML's school.coinCeremony block (sound, volume, duration); null = the board's defaults.
+    coinCeremony: state.coinCeremony ?? null,
   };
 }
 
@@ -1139,7 +1142,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} coinCeremony={lock.coinCeremony} />
               </div>
               {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
                   the board: below 820px the board pane is hidden, and a chip
