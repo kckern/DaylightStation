@@ -17,7 +17,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -160,12 +160,12 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
   it('resolves assignedBy to a display name, never the raw user id', async () => {
     schoolApi.assignments.mockResolvedValue({
       ok: true, status: 200,
-      data: { courses: [ENROLLED], units: [], assignedBy: 'kckern', updatedAt: '2026-08-13T00:00:00Z' },
+      data: { courses: [ENROLLED], units: [], assignedBy: 'teacher_1', updatedAt: '2026-08-13T00:00:00Z' },
     });
     schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
     render(<AssignmentsView learnerId="user_4" learnerName="User_4" />);
-    await waitFor(() => expect(screen.getByText('Assigned by KC')).toBeTruthy());
-    expect(screen.queryByText('Assigned by kckern')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Assigned by Teacher One')).toBeTruthy());
+    expect(screen.queryByText('Assigned by teacher_1')).toBeNull();
   });
 
   it('round-trips an enrolled course unchanged when saved without edits', async () => {

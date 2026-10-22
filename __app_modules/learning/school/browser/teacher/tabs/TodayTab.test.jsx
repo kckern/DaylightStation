@@ -57,7 +57,7 @@ beforeEach(() => {
   // must not start the next with that learner already open.
   window.history.replaceState({}, '', window.location.pathname);
   vi.clearAllMocks();
-  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] }));
+  schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }));
   schoolApi.resolveReview.mockResolvedValue(ok({ verdict: 'correct' }));
   schoolApi.printApprove.mockResolvedValue(ok({ decision: 'printed' }));
   schoolApi.printDeny.mockResolvedValue(ok({ decision: 'denied' }));
@@ -530,10 +530,10 @@ describe('TodayTab', () => {
 describe('wave-2 mutations', () => {
   const claim = async () => {
     // Claim the teacher via the persisted-session path the provider restores.
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
   };
 
-  const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('kckern'));
+  const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
   it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
     await claim();
@@ -543,7 +543,7 @@ describe('wave-2 mutations', () => {
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3',
-      { verdict: 'correct', note: null, gradedBy: 'kckern', pin: null }));
+      { verdict: 'correct', note: null, gradedBy: 'teacher_1', pin: null }));
     await waitFor(() => expect(schoolApi.lifecycleReview.mock.calls.length).toBeGreaterThan(1));
     // …and the shell's badge count re-reads at once, not on the next poll.
     expect(onChanged).toHaveBeenCalled();
@@ -593,7 +593,7 @@ describe('wave-2 mutations', () => {
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
     await waitFor(() => expect(schoolApi.printApprove).toHaveBeenCalledWith('pr_1',
-      { approver: 'kckern', pin: null }));
+      { approver: 'teacher_1', pin: null }));
     await waitFor(() => expect(schoolApi.printPending.mock.calls.length).toBeGreaterThan(1));
     expect(onChanged).toHaveBeenCalled();
   });
@@ -616,7 +616,7 @@ describe('wave-2 mutations', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Dismiss & tell them/ })); });
     await waitFor(() => expect(schoolApi.quizRequestDismiss).toHaveBeenCalledWith(
-      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'kckern', pin: null, reason: 'We will do this one together' }));
+      { unitId: 'plex:123', bankId: null, kind: null, sessionId: null, userId: 'user_2', dismissedBy: 'teacher_1', pin: null, reason: 'We will do this one together' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
@@ -635,7 +635,7 @@ describe('wave-2 mutations', () => {
 describe('advocacy wave 6A', () => {
 
   it('review items show rubric, reason, and wait-age', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{
       sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_4', prompt: 'Explain photosynthesis',
       given: 'plants eat light', questionNumber: 3, reason: 'free_response',
@@ -648,7 +648,7 @@ describe('advocacy wave 6A', () => {
   });
 
   it('an expired capability REPLAYS once after unlock without retaining the PIN', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.resolveReview
       .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
       .mockResolvedValue(ok({ verdict: 'correct' }));
@@ -661,7 +661,7 @@ describe('advocacy wave 6A', () => {
     });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledTimes(2));
-    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('kckern', '7410');
+    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('teacher_1', '7410');
     expect(schoolApi.resolveReview).toHaveBeenLastCalledWith('ses_1', 'q3',
       expect.objectContaining({ pin: null }));
   });

@@ -18,7 +18,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -200,7 +200,7 @@ describe('SyllabiPanel — archive requires the second tap', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.archiveSyllabus).toHaveBeenCalledWith('atlas-upper', {
-      archivedBy: 'kckern', pin: null,
+      archivedBy: 'teacher_1', pin: null,
     }));
   });
 

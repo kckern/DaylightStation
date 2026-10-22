@@ -6,7 +6,7 @@ vi.mock("../../schoolApi.js", () => ({ schoolApi: { reviewLearner: vi.fn(), retr
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -43,13 +43,13 @@ describe('FeedbackNotes roll-up', () => {
     schoolApi.reviewLearner.mockResolvedValue({
       ok: true, status: 200,
       data: [
-        verdictRow(1, { gradedBy: 'kckern' }),
-        { itemId: 'n1', sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note', note: 'Nice work', gradedBy: 'kckern', gradedAt: '2026-08-23T10:00:00Z' },
+        verdictRow(1, { gradedBy: 'teacher_1' }),
+        { itemId: 'n1', sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note', note: 'Nice work', gradedBy: 'teacher_1', gradedAt: '2026-08-23T10:00:00Z' },
       ],
     });
     render(<FeedbackNotes learnerId="user_2" learnerName="User_2" />);
     await waitFor(() => expect(screen.getByText('Nice work')).toBeTruthy());
-    expect(screen.getAllByText(/kckern/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/teacher_1/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Retract' })).toBeTruthy();
   });
 });

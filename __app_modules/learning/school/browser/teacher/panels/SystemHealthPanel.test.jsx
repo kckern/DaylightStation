@@ -54,14 +54,14 @@ describe('SystemHealthPanel', () => {
     schoolApi.bankHealth.mockResolvedValue({ ok: true, status: 200, data: { warmedAt: null, banks: 1, failed: [] } });
     schoolApi.reportCardFrozenVersions.mockResolvedValue({
       ok: true, status: 200, data: { versions: [
-        { version: 1, record: { period: { label: 'Fall 2026' }, closedBy: 'kckern', closedAt: '2026-09-01T00:00:00Z' } },
+        { version: 1, record: { period: { label: 'Fall 2026' }, closedBy: 'teacher_1', closedAt: '2026-09-01T00:00:00Z' } },
       ] },
     });
     render(<SystemHealthPanel kids={KIDS} />);
     const list = await screen.findByTestId('system-health-frozen-versions');
     expect(list.textContent).toContain('Fall 2026');
     expect(list.textContent).toContain('v1');
-    expect(list.textContent).toContain('Closed by kckern');
+    expect(list.textContent).toContain('Closed by teacher_1');
   });
 
   it('a failed bank-health read does not blank the versions section', async () => {

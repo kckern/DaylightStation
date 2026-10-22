@@ -28,7 +28,7 @@ const teacherAuth = vi.hoisted(() => ({
 vi.mock("./TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }] }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),

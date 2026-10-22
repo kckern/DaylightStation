@@ -14,7 +14,7 @@ vi.mock("../../schoolApi.js", () => ({ schoolApi: { resolveReview: vi.fn() } }))
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -70,7 +70,7 @@ describe('ReviewQueueView — "Can\'t mark this"', () => {
     fireEvent.change(noteBox(), { target: { value: 'The scan tore across this one.' } });
     fireEvent.click(screen.getByRole('button', { name: /tell them/ }));
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3', expect.objectContaining({
-      verdict: 'void', note: 'The scan tore across this one.', gradedBy: 'kckern',
+      verdict: 'void', note: 'The scan tore across this one.', gradedBy: 'teacher_1',
     })));
   });
 
