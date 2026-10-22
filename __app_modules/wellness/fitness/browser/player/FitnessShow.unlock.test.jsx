@@ -311,7 +311,9 @@ describe('FitnessShow — season selection authority', () => {
         />
       );
     });
-    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    // Count show-data fetches only — the episode-history lookup is a separate call.
+    const playableCalls = () => DaylightAPI.mock.calls.filter(([url]) => String(url).includes('/playable'));
+    await waitFor(() => expect(playableCalls()).toHaveLength(2));
     await waitFor(() => expect(seasonButton('Alpha')?.className).toContain('active'));
     expect(seasonButton('Gamma')?.className).not.toContain('active');
     expect(container.querySelector('[data-plex-id="301"]')).toBeTruthy();
