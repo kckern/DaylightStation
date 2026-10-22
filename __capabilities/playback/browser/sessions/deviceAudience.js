@@ -15,7 +15,9 @@ const logger = () => (_logger ||= getLogger().child({ component: 'device-audienc
 export function audienceKey(audience) {
   if (!audience) return '';
   const people = (audience.people || [])
-    .map((p) => `${p?.id}|${p?.role}|${p?.guest ? 1 : 0}`)
+    // The name counts: the reader learns a child's name after the session
+    // opens, and a card stuck on "Someone" is wrong. It changes rarely.
+    .map((p) => `${p?.id}|${p?.role}|${p?.guest ? 1 : 0}|${p?.name ?? ''}`)
     .sort()
     .join(',');
   return `${audience.activity}:${people}`;
@@ -30,8 +32,10 @@ export function createAudienceStore() {
       const key = audienceKey(audience);
       const at = entries.findIndex((e) => e.token === token);
       if (at >= 0 && entries[at].key === key) { entries[at].audience = audience; return; }
-      if (at >= 0) entries.splice(at, 1);
-      entries.push({ token, audience, key });
+      // A known token keeps its place in the stack: a game declared over the
+      // piano shell stays on top even if the shell's player changes meanwhile.
+      if (at >= 0) entries[at] = { token, audience, key };
+      else entries.push({ token, audience, key });
       logger().debug('device-audience.declared', { activity: audience?.activity, count: audience?.people?.length ?? 0 });
       notify();
     },
@@ -58,10 +62,16 @@ export function useDeviceAudience(audience, { store } = {}) {
   const key = audienceKey(audience);
   const latest = useRef(audience);
   latest.current = audience;
+  // Declare (or replace in place) on every key change; withdraw only when the
+  // audience goes null or the declarer unmounts — a withdraw-then-declare on
+  // each change would re-stack it above a newer, live declaration.
   useEffect(() => {
     const token = tokenRef.current;
-    if (!key) { s.withdraw(token); return undefined; }
-    s.declare(token, latest.current);
-    return () => s.withdraw(token);
+    if (!key) s.withdraw(token);
+    else s.declare(token, latest.current);
   }, [key, s]);
+  useEffect(() => {
+    const token = tokenRef.current;
+    return () => s.withdraw(token);
+  }, [s]);
 }

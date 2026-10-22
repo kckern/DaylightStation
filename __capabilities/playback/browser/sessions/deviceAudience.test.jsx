@@ -19,6 +19,25 @@ describe('audience store', () => {
     expect(seen).toHaveBeenCalledTimes(4);
   });
 
+  it("a name arriving later re-publishes (the reader learns the child's name after the session opens)", () => {
+    const s = createAudienceStore();
+    const seen = vi.fn(); s.subscribe(seen);
+    s.declare('reader', { activity: 'story', people: [{ id: 'learner-a', name: null, role: 'learner', guest: false }] });
+    s.declare('reader', { activity: 'story', people: [{ id: 'learner-a', name: 'Learner A', role: 'learner', guest: false }] });
+    expect(s.get().people[0].name).toBe('Learner A');
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-declaring keeps the stack position: an outer change never jumps over a live inner one', () => {
+    const s = createAudienceStore();
+    s.declare('shell', A('rider-a', 'lesson'));
+    s.declare('game', A('rider-a', 'game'));
+    s.declare('shell', A('rider-b', 'lesson'));
+    expect(s.get().activity).toBe('game');
+    s.withdraw('game');
+    expect(s.get().people[0].id).toBe('rider-b');
+  });
+
   it('re-declaring the same token with an identical key does not notify', () => {
     const s = createAudienceStore();
     const seen = vi.fn(); s.subscribe(seen);

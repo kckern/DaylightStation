@@ -9,6 +9,10 @@ describe('readingAudience', () => {
     expect(readingAudience({ learner: { id: 'learner-a', name: 'A' }, pick: { learner: { id: 'learner-b', name: 'B' } } }).people[0].id)
       .toBe('learner-b');
   });
+  it('falls back to the child at the reader when the pick carries no learner id', () => {
+    expect(readingAudience({ learner: { id: 'learner-a', name: 'A' }, pick: { learner: { id: null, name: null } } }).people[0].id)
+      .toBe('learner-a');
+  });
   it('is null with no open session', () => {
     expect(readingAudience({ learner: null, pick: null })).toBeNull();
     expect(readingAudience(null)).toBeNull();
