@@ -3977,3 +3977,15 @@
   background: rgba(0, 0, 0, 0.5);
   z-index: 1001;
 }
+
+// Strap sticker colour, by the rider's name: identifies whose strap is whose.
+// The ring and heart carry the zone colour (FitnessUsers.jsx heartColorIcon).
+.fitness-device .device-name .strap-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  vertical-align: 0.12em;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}

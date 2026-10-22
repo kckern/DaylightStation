@@ -81,7 +81,9 @@ const CONFIG = {
     luminanceThreshold: 0.6,
     fallbackTextDark: '#222',
     fallbackTextLight: '#fff',
-    zoneBadgeDefaultBg: '#555'
+    zoneBadgeDefaultBg: '#555',
+    // Heart before a rider has a zone: neutral, so it never reads as one.
+    heartNoZone: '#cbd5e1'
   },
   statusColors: {
     connected: '#51cf66',
@@ -440,7 +442,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (deviceId) => <HeartIcon color={hrColorMap[String(deviceId)]} deviceId={deviceId} />;
+  // The heart wears the rider's zone colour. Strap sticker colours share the
+  // zone hues (green, blue, yellow, red), so a strap-coloured heart read as a
+  // zone; the strap now gets its own dot by the name.
+  const heartColorIcon = (zoneColor) => <HeartIcon fill={zoneColor || CONFIG.color.heartNoZone} />;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -453,8 +458,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return `${hours}${UI_LABELS.TIME_HOURS_SUFFIX}`;
   };
 
-  const getDeviceIcon = (device) => {
-    if (device.type === 'heart_rate') return heartColorIcon(device.deviceId);
+  const getDeviceIcon = (device, zoneColor = null) => {
+    if (device.type === 'heart_rate') return heartColorIcon(zoneColor);
     return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
@@ -861,11 +866,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
               const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
                 ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
                 : profileId;
-              // §3: surface the physical sticker color as a saturated avatar ring.
-              // Configured color wins; unidentified cards (no user, no assignment)
-              // get a deterministic per-device hash color so simultaneous
-              // unknown straps are visually distinct.
-              const strapRingColor = isHeartRate
+              // §3: surface the physical sticker color as a dot by the name (the
+              // avatar ring and heart belong to the zone). Configured color wins;
+              // unidentified cards (no user, no assignment) get a deterministic
+              // per-device hash color so simultaneous unknown straps are distinct.
+              const strapDotColor = isHeartRate
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
@@ -1017,19 +1022,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                         />
                       </div>
                     )}
-                    <div
-                      className={`card-avatar ${zoneClass}`}
-                      // §3 ring uses outline, not box-shadow: every HR avatar
-                      // carries a zone-*/no-zone class whose box-shadow is
-                      // declared !important in FitnessSidebar.scss (it would
-                      // override any inline boxShadow). The ring is INSET
-                      // (negative offset) because card-horizontal has
-                      // padding: 0 + overflow: hidden — an outward ring gets
-                      // clipped to a partial arc at default density.
-                      style={strapRingColor
-                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '-3px' }
-                        : undefined}
-                    >
+                    <div className={`card-avatar ${zoneClass}`}>
                       {isHeartRate ? (
                         <img
                           src={DaylightMediaPath(`/static/img/users/${avatarImageId}`)}
@@ -1061,13 +1054,21 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                     </div>
                     <div className="device-info">
                       <div className="device-name">
-                        {deviceName} 
+                        {strapDotColor ? (
+                          <span
+                            className="strap-dot"
+                            style={{ background: strapDotColor }}
+                            title={strapLabel(hrColorMap[deviceIdStr]) || 'Strap'}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {deviceName}
                       </div>
                       {startBadge ? (
                         <GovernanceStartBadge statusBadge={startBadge} className="device-start-badge" />
                       ) : null}
                       <div className="device-stats">
-                        <span className="device-icon">{getDeviceIcon(device)}</span>
+                        <span className="device-icon">{getDeviceIcon(device, zoneBadgeColor)}</span>
                         <span className="device-value">{deviceValue}</span>
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>
