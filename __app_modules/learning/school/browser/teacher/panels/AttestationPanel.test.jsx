@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AttestationPanel from "./AttestationPanel.jsx";
 import { schoolApi } from "../../schoolApi.js";
 
@@ -49,5 +49,32 @@ describe('AttestationPanel', () => {
     mount();
     expect(await screen.findByText(/Teacher B/)).toBeInTheDocument();
     expect(screen.queryByText(/teacher-b/)).toBeNull();
+  });
+
+  // Retract un-unlocks the lesson after it, so it arms first: one tap offers
+  // "Confirm retract" and Cancel, and only the confirm writes.
+  it('one tap on Retract arms it and writes nothing', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Retract' }));
+    expect(screen.getByRole('button', { name: 'Confirm retract' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(schoolApi.retract).not.toHaveBeenCalled();
+  });
+
+  it('Cancel disarms without writing', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Retract' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Retract' })).toBeInTheDocument();
+    expect(schoolApi.retract).not.toHaveBeenCalled();
+  });
+
+  it('the confirm tap retracts as the claimed teacher', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Retract' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm retract' }));
+    await waitFor(() => expect(schoolApi.retract).toHaveBeenCalledWith({
+      kind: 'attestation', entryId: 'att_1', retractedBy: 'teacher-a', pin: null,
+    }));
   });
 });

@@ -29,9 +29,13 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'attestations' });
   const actorName = useActorName();
+  // The one row whose Retract is armed. Retracting re-locks the lesson after
+  // the attested one, so it takes a second, deliberate tap (ReviewQueueView's
+  // `voiding` arm).
+  const [retracting, setRetracting] = useState(null);
   const retract = (a) => run(`retract:${a.id}`, ({ actorId, pin }) => schoolApi.retract({
     kind: 'attestation', entryId: a.id, retractedBy: actorId, pin,
-  }), { onSuccess: log.retry });
+  }), { onSuccess: () => { setRetracting((armed) => (armed === a.id ? null : armed)); log.retry(); } });
   const [open, setOpen] = useState(Boolean(initialUnitId));
   const [unitId, setUnitId] = useState(initialUnitId ?? '');
   const [reason, setReason] = useState('');
@@ -55,7 +59,14 @@ export default function AttestationPanel({ learnerId, learnerName, initialUnitId
                   <span className="teacher-enrichment__title">{titles.lesson(a.unitId)}</span>
                   <span className="teacher-enrichment__dates">{teacherDate(a.at)} — {actorName(a.attestedBy)}</span>
                   <span className="teacher-enrichment__note">{a.reason}</span>
-                  <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Retract</button>
+                  {retracting === a.id ? (
+                    <>
+                      <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Confirm retract</button>
+                      <button type="button" onClick={() => setRetracting(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => setRetracting(a.id)}>Retract</button>
+                  )}
                   {errors[`retract:${a.id}`] && <p className="teacher-panel__error">{errors[`retract:${a.id}`]}</p>}
                 </li>
               ))}

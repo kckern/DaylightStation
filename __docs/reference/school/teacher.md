@@ -829,7 +829,9 @@ so a repair day still offers the work.
 
 Retracting an attestation re-locks the gates it opened *by construction* —
 every reader folds retractions out. The child hears about it, rather than
-discovering a lock reappeared.
+discovering a lock reappeared. Because it re-locks work, the Attestations
+panel's Retract arms first: one tap shows Confirm retract and Cancel, and only
+the second tap writes.
 
 **Pass-criteria overrides** are the fourth override surface: a per-unit bar
 that beats the authored `passing.percent`. It is read at **grading** time and

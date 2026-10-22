@@ -168,11 +168,33 @@ describe('rendering the word table', () => {
 });
 
 describe('Reset', () => {
-  it('calls the write with learnerId, deckId and wordId', async () => {
+  // Reset throws away the word's whole ladder history, so it arms first: one
+  // tap offers "Confirm reset" and Cancel, and only the confirm writes.
+  it('one tap arms the reset and writes nothing', async () => {
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    expect(within(row).getByRole('button', { name: 'Confirm reset 사과' })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Cancel reset 사과' })).toBeTruthy();
+    expect(cardLadderAdminApi.reset).not.toHaveBeenCalled();
+  });
+
+  it('Cancel disarms without writing', async () => {
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Cancel reset 사과' }));
+    expect(within(row).getByRole('button', { name: 'Reset 사과' })).toBeTruthy();
+    expect(within(row).queryByRole('button', { name: 'Confirm reset 사과' })).toBeNull();
+    expect(cardLadderAdminApi.reset).not.toHaveBeenCalled();
+  });
+
+  it('the confirm tap calls the write with learnerId, deckId and wordId', async () => {
     cardLadderAdminApi.reset.mockResolvedValue(ok({ learnerId: 'learner_a', package: 'korean-vocab', wordId: 'word_1', word: {} }));
     mount();
     const row = (await screen.findByText('사과')).closest('tr');
     fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reset 사과' }));
     await waitFor(() => expect(cardLadderAdminApi.reset).toHaveBeenCalledWith(
       expect.objectContaining({ learnerId: 'learner_a', deckId: 'language/korean/week-01-classroom', wordId: 'word_1' }),
     ));
@@ -205,6 +227,7 @@ describe('Mark mastered', () => {
     // picker must follow the fresh server value, not the value it was
     // seeded with on first mount.
     fireEvent.click(within(row).getByRole('button', { name: 'Reset 사과' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Confirm reset 사과' }));
     await waitFor(() => expect(cardLadderAdminApi.words).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(within(row).getByLabelText('Mastered stage for 사과').value).toBe('5'));
   });

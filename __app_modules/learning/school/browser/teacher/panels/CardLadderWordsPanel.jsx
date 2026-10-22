@@ -98,9 +98,15 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   const excludeKey = `exclude:${word.wordId}`;
   const regradeKey = (answer) => `regrade:${word.wordId}:${answer.day}:${answer.itemId}`;
 
-  const reset = () => run(resetKey, ({ actorId }) => cardLadderAdminApi.reset({
-    learnerId, deckId, wordId: word.wordId, actorId, pin: null,
-  }));
+  // Reset wipes the word's ladder history, so it arms first and writes only
+  // on the second tap (ReviewQueueView's `voiding` arm).
+  const [resetArmed, setResetArmed] = useState(false);
+  const reset = async () => {
+    const saved = await run(resetKey, ({ actorId }) => cardLadderAdminApi.reset({
+      learnerId, deckId, wordId: word.wordId, actorId, pin: null,
+    }));
+    if (saved) setResetArmed(false);
+  };
 
   const markMastered = () => run(masteredKey, ({ actorId }) => cardLadderAdminApi.markMastered({
     learnerId, deckId, wordId: word.wordId, stage: Number(stagePick), actorId, pin: null,
@@ -156,7 +162,14 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
       </td>
       <td className="teacher-card-ladder__actions">
         <div className="teacher-action-row">
-          <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={reset}>Reset</button>
+          {resetArmed ? (
+            <>
+              <button type="button" aria-label={`Confirm reset ${term}`} disabled={busy === resetKey} onClick={reset}>Confirm reset</button>
+              <button type="button" aria-label={`Cancel reset ${term}`} onClick={() => setResetArmed(false)}>Cancel</button>
+            </>
+          ) : (
+            <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={() => setResetArmed(true)}>Reset</button>
+          )}
           <label className="teacher-card-ladder__stage-pick">
             Mastered stage
             <select
