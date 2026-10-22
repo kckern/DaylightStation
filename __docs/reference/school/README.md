@@ -1532,8 +1532,7 @@ then the child has pressed a button.
 
 #### Print my next sheet (no code)
 
-The Portal's bank strip and the piano kiosk's lock screen print a child's next
-worksheet without a code, through `IssueSubjectNext`
+The piano kiosk's lock screen prints a child's next worksheet without a code, through `IssueSubjectNext`
 (`application/usecases/IssueSubjectNext.mjs`):
 
 These routes are on the self-service router, the locked panel's sanctioned
@@ -1592,8 +1591,8 @@ reworded per surface: the Portal and the kiosk have no code to type, so their
 **A 20-second debounce per learner and subject** (`learnerId:subject`), armed
 after validation, so a foreign subject is always a `400` and Math then Reading
 a moment apart both print. It is separate from `IssueDocument`'s per-session
-`printCooldownMinutes` and catches one child tapping the strip and the kiosk,
-or one button twice, for the same sheet.
+`printCooldownMinutes` and catches one child tapping one button twice for the
+same sheet.
 
 - A tap that lands while a print for that key is running awaits it. It answers
   "It's already on its way — give it a minute." only if that print went out,
@@ -1723,91 +1722,53 @@ burn-in without losing a half-typed code. The board component lives at
 `frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
 same agenda-preview + teacher-day models the teacher console uses.
 
-**The bank strip** (`__app_modules/learning/school/browser/bank/BankStrip.jsx`)
-sits between the board header and the board: one chip per kid, in roster
-order, never sorted or ranked. Each chip shows the kid's silver captioned "in
-the bank" (read out as "12 silver in the bank"), a gem when
-they have gems, and a "sneak used" tick when today's `piano.games` pass is
-active or consumed or its cap is used. Under it is the next sheet they can earn
-with ("+2 silver · Math 4-02", or just the unit title when `reward` is null)
-and a **Print** button. The strip and the header's two doors (bank and books)
-are the only things in the board pane that take a tap; the strip sets `pointer-events: auto` itself.
+**The coin cell is the bank's door.** There is no bank strip on the Portal
+(owner ruling 2026-10-21; the old `BankStrip` component is gone). Each kid's
+board card carries a coin cell, the week's EARNED silver from the earnings
+preview, read out as "<name>'s bank, N silver this week". It is a native button
+and the only thing on a card that takes a tap besides the term rows; it opens
+that kid's bank screen (below) directly. Details, and the coin ceremony that
+pops when the figure rises: `__docs/reference/school/agenda-and-completion.md`
+("The coin window", "The coin ceremony").
 
-- **Silver** is `balances.silver` from `GET /api/v1/economy/users/:id/bank`.
-  The week close converts the whole silver balance to gold, so the balance is
-  this week's unspent silver. A pass bought today shows as silver spent. The gem
-  is `balances.gems > 0`. Gems never convert, so the gem means the kid has
-  gems, not that they earned one this week.
 - **Two silvers, two names.** The board's silver is what the week's work
-  *earned* (the earnings preview), read out as "N silver earned this week".
-  The strip's is what is *in the bank* (the ledger, less what was spent). They
-  differ after a pass purchase or before a payout lands, which is why each is
-  named. Both coin colours come from School tokens (`--school-coin-silver`,
-  `--school-coin-gold`), read for `CoinIcon` by `shared/useCoinColor.js`.
+  *earned* (the earnings preview). The bank screen's silver is what is *in the
+  bank* (the ledger, less what was spent). They differ after a pass purchase or
+  before a payout lands, which is why each is named. The coin icons are the
+  standard `CoinIcon` (`metal="silver"` / `"gold"`); the figures' text colours
+  are the School tokens `--school-coin-silver` and `--school-coin-gold`.
 - **The board's gold** is the wallet's `balances.gold`. The wallet's `balance`
   field is the silver figure, never gold.
-- **Before coins are live** (the bank's `mode` is not `live`) the chip says
-  "Coins start soon" with no number, gem or tick: every bank reads 0 until
-  then. The next item and Print still show.
-- **A failed bank read** shows "bank is napping" and no number, for that kid
-  only (`economy.balance.unavailable`, warn). No figure ever comes from the
-  board's cache. A pass `state: 'unknown'` shows no tick.
-- **The next item** is `GET /self-service/learners/:id/next`. No unit, or a unit
-  that is not paper, shows nothing and no button.
-- **Print** posts `print-next {subject, deviceId}`, with the subject from the
-  preview and the device set to the panel's screen id (`portal` when there is
-  none). The button is disabled while the request is in flight. The reply's
-  `sentence` is shown as a toast; a 404, a 400 or no network shows "Can't print
-  right now. Ask a grown-up." That kid's bank and next item are then read again.
-  Each tap logs `economy.strip.print-tapped` under component `school-bank-strip`.
-  A remounted strip has no memory of a tap in flight; the server's 20-second
-  debounce per learner and subject catches the repeat.
-- **Nothing moves the board.** The `role="status"` toast element is always in
-  the tree (hidden when empty) and overlays the top of the board when it
-  speaks, taking no room. Each chip's balance line and next-item line keep a
-  fixed height whether they hold a number, "bank is napping" or nothing.
-- **Reads never wait on the board.** Each kid's bank and next item are separate
-  requests, fired and never awaited by the board's reads. Each carries a
-  per-kid sequence number, so an older reply that lands late is dropped.
-- **Refresh:** the board's `school` topic events (`status/schoolRefreshEvents.js`)
-  for that kid, coalesced over 750 ms of quiet but never more than 3 s after a
-  burst's first event, plus a five-minute poll. Events other than
-  `coins-changed` re-read the bank too, on purpose: graded work is what a
-  payout follows.
-  `coins-changed` is one of those events. The economy publishes
-  `economy.coins-changed {userId, reason}` on the internal bus after every
-  write that moves coins or a pass: deposit, adjust, earn, mint, convert, and a
-  pass bought, consumed or refunded, once the write's user lock is released. A
-  dry run, a duplicate or a refusal publishes nothing.
-  `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started by
-  `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
+- **`coins-changed`.** The economy publishes `economy.coins-changed {userId,
+  reason}` on the internal bus after every write that moves coins or a pass:
+  deposit, adjust, earn, mint, convert, and a pass bought, consumed or refunded,
+  once the write's user lock is released. A dry run, a duplicate or a refusal
+  publishes nothing. `EventBusSchoolRealtimeAdapter.relayCoinsChanged`, started
+  by `createSchoolLifecycle`, forwards it as `school {event: 'coins-changed',
   learnerId}`. The lifecycle returns it as `coinsChangedRelay` (`{stop}`, null
-  when there is no subscribable bus), and `app.mjs` stops it on SIGTERM. A payout run mints entry by entry, so the events come in bursts.
-  The board re-reads only its coin figures on it, also coalesced.
-- **Below 820 px** the board pane is hidden, so the strip renders under the
-  keypad instead. It is mounted once, in one place or the other (`useNarrowPortal`).
-- **A chip is a door.** Its name-and-coins line is a button ("Open Ay's bank",
-  with the coins as its description) into that kid's bank screen (below),
-  through the same bank door as the header's coin button. Print stays its own
-  button.
+  when there is no subscribable bus), and `app.mjs` stops it on SIGTERM. A
+  payout run mints entry by entry, so the events come in bursts; the board
+  re-reads only its coin figures on it, coalesced (`status/schoolRefreshEvents.js`:
+  750 ms of quiet, never more than 3 s after a burst's first event).
+- **Below 820 px** the board pane is hidden, and with it the coin cells and the
+  ceremony; a narrow panel has no way into the bank.
 
 **The bank screen** (`browser/bank/BankScreen.jsx`, economy slice 1, C3) is one
 kid's bank, full screen over the locked panel.
 
-- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. A
-  coin button ("My bank") sits beside "Log a book" in the board header and asks
-  "Whose bank?" with the shelf's own face grid (`LearnerChoice`). A tap on a
-  strip chip already names the kid, so it skips the faces and sends the same
-  request. Both post `POST /api/v1/school/bank/open {screenId, learnerId}`
+- **The door** (`browser/bank/BankDoor.jsx`) mirrors the shelf's panel door. The
+  coin cell on each kid's board card names the kid, so it sends the request
+  straight away. There is no header button and no strip.
+  It posts `POST /api/v1/school/bank/open {screenId, learnerId}`
   (`OpenBankAtPanel`): the learner must be on the current roster and a School
   panel must be configured (`resolveBookScanTarget`), or it refuses with 400 /
   403 / 503 and a kid-readable `error` (any other failure reads "Could not open
   the bank. Try again."). It answers
   `{ launchTarget: { kind: 'program', program: 'economy-bank', learnerId } }`.
-  The "Whose bank?" screen is drawn by the panel, outside the board header,
-  because below 820 px the board pane is hidden and a chip in the keypad column
-  can still need it to show a refusal. It takes focus on its Back button, hands
-  focus back to the coin button or chip when it closes, closes itself after the
+  A refusal is shown on "Whose bank?" (the shelf's own face grid,
+  `LearnerChoice`), drawn by the panel outside the board pane. It takes focus
+  on its Back button, hands focus back to the coin cell when it closes, closes
+  itself after the
   panel's idle time, and is closed by `goHome` and whenever the panel leaves
   its resting keypad-and-board view, so a refusal never waits for the next
   child. Logs: `school.bank.panel-opened {screenId, learnerId}` on the server;
@@ -1833,10 +1794,19 @@ kid's bank, full screen over the locked panel.
   zone says the same thing: "tonight" on the close's day, "tomorrow night" the
   day before, "in 7 days" between the close and 4 am. `weekEndsAt` (the
   instant) is read only to say "becoming gold now" once it has passed.
-- **History.** The bank's plain-words lines, newest first, grouped by the
-  panel's local calendar day (split at local midnight, not the 4 am study
-  boundary) under Today, Yesterday or the date.
-- **Ways to spend.** Each privilege the bank quotes for sale, with its price in
+- **Tabs.** History (open by default), How to earn, How to spend: a
+  `tablist` with arrow/Home/End keys, a tap or Enter selecting. Esc is bound to
+  nothing. A tab change logs `economy.bank.tab-changed {learnerId, tab}`.
+- **History** is the primary job, "here is the balance, how did it get here":
+  the balances above, then "This week, not yet paid" (the board's weekly figure
+  for that kid, read with `earningsRoster` and kept only while it prices the
+  current week, `figureInWeek`), then the ledger (`bank/BankLedger.jsx`) as a
+  table grouped by the panel's local calendar day (split at local midnight, not
+  the 4 am study boundary), newest day first, under Today, Yesterday or the
+  date. Columns: coin icon (a conversion shows both), signed amount,
+  description (`ledgerEntry`'s source word, then its label; never a raw ref) and
+  the balance after the entry.
+- **How to spend.** Each privilege the bank quotes for sale, with its price in
   each coin and "can buy at the piano" or "N more silver" (or gold). The
   server's `affordable` decides; the local balance only fills in a row without
   one, and a server "no" over a balance that looks enough reads "not enough
@@ -1850,23 +1820,25 @@ kid's bank, full screen over the locked panel.
   `/lifecycle/learners/:id/completion` folds, so one read serves this and Ways
   to earn. Nothing on sale (every price 0, the shipped config) says "Nothing to
   spend on yet." There is no buy button: buying is at the piano kiosk.
-- **Ways to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
+- **How to earn.** The next sheet (`GET /self-service/learners/:id/next`) first,
   then every agenda section still `obligated`, by title. A reward shows only
   when the economy prices it (`reward` is null unless the economy is `live`).
 - **Coins start soon.** Before the economy is live (the bank's `mode` is not
   `live`) the screen shows "Coins start soon." in place of the balances,
-  history and prices, so no "0 silver" is ever shown. Ways to earn still shows.
+  history and prices, so no "0 silver" is ever shown. How to earn still shows.
 - **Napping.** A failed bank read shows "The bank is napping. Try again soon."
   and no numbers: no balances, history or prices, and no cache or earlier read
-  (`economy.bank.unavailable`, warn). Ways to earn does not come from the bank,
+  (`economy.bank.unavailable`, warn). How to earn does not come from the bank,
   so it still shows.
-- **Refresh** is the strip's: the `school` topic's events for that kid,
-  coalesced; a read that lands after a newer one is dropped. Opening logs
+- **Refresh:** the `school` topic's events for that kid (including
+  `coins-changed`), coalesced as on the board; a read that lands after a newer
+  one is dropped. Opening logs
   `economy.bank.opened {learnerId}` under component `school-bank-screen`.
-- **Contract test:** `npm run test:bank-ui`
-  (`tests/live/flow/school/bank-strip-contract.runtime.test.mjs`, a Vite dev
-  server with every `/api/v1/**` call stubbed): strip, chip, door, bank screen,
-  back.
+- **Contract test:** `npm run test:coins-ui`
+  (`tests/live/flow/school/coin-window-ceremony.runtime.test.mjs`, a Vite dev
+  server with every `/api/v1/**` call stubbed): coin cell, bank screen and its
+  History tab, back, a napping bank, a refused open on "Whose bank?", and the
+  coin ceremony.
 
 A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
 only screen in the house that mounts School, so ignoring them would break the
@@ -2148,7 +2120,7 @@ the section is the retry's only way back in.
 is wired and its mode is `live`, the tape opens with one centred line: `In the
 bank: 7 silver · Next: Math`, with ` +2` appended when the next item's reward pays silver. The silver
 is the *unspent* silver in the bank, not the week's mints: the figure the
-Portal strip shows and the week close converts on Sunday. It is read with
+Portal bank screen shows and the week close converts on Sunday. It is read with
 `EconomyService.peekBalance(id).silver`, a pure ledger fold that writes no
 wallet and reaps no session, at print time, so a morning tape shows the bank
 before that day's payouts. "Next" is the title `IssueSubjectNext.preview`

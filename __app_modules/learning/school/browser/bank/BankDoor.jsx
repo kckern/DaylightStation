@@ -1,19 +1,16 @@
 /**
- * BankDoor — "show me my bank", asked from the panel's resting state
- * (school economy slice 1, C3). The shelf's panel door (`BookShelfDoor`)
- * pattern: a button beside the board, a "Whose bank?" screen of faces
- * (`LearnerChoice`, the shelf's own grid), and `POST /school/bank/open`, which
- * checks the roster and answers an `economy-bank` launch target
- * (`OpenBankAtPanel`). No grant: the door is the roster check plus the face
- * tap, and the bank read itself is unauthenticated in slice 1.
+ * BankDoor — the one way into a kid's bank on the locked panel (school economy
+ * slice 1, C3). The board's coin cell (a button on the kid's own card) names
+ * the kid, so it goes straight to
+ * `choose(learnerId, via)`: `POST /school/bank/open`, which checks the roster
+ * and answers an `economy-bank` launch target (`OpenBankAtPanel`). No grant:
+ * the door is the roster check, and the bank read itself is unauthenticated in
+ * slice 1.
  *
- * TWO WAYS IN, ONE DOOR. The coin button in the board header asks who first.
- * A tap on a kid's chip on the bank strip already names the kid, so it goes
- * straight to `choose(learnerId)`: the same request and the same proof as
- * tapping that face. That is why the door is a hook with two views:
- * the strip can sit in the keypad column (narrow panels), where the board
- * header and anything inside it is hidden, so the "who" screen is drawn by
- * the panel itself (`BankDoorSheet`), not inside the header.
+ * The door is a hook plus a sheet. A REFUSAL is drawn by the panel itself,
+ * outside the board pane (`BankDoorSheet`: the shelf door's
+ * "Whose bank?" screen of faces, `LearnerChoice`, with the refusal under it),
+ * not inside the board. The faces there choose again through the same request.
  *
  * A LATE ANSWER OPENS NOTHING. Closing the sheet bumps a generation and the
  * reply is dropped, as on the shelf door. SchoolApp closes the door whenever
@@ -21,16 +18,14 @@
  * on screen for the next child; the sheet also closes itself when idle.
  *
  * FOCUS. The sheet moves focus to its Back button when it opens and hands it
- * back to whatever opened it (the coin button or a chip) when it closes, if
+ * back to whatever opened it (the coin cell) when it closes, if
  * that is still on the page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { schoolApi } from "../schoolApi.js";
 import LearnerChoice from "../books/LearnerChoice.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
-import { useCoinColor } from "../shared/useCoinColor.js";
 
 export const OPEN_FAILED = 'Could not open the bank. Try again.';
 
@@ -47,7 +42,7 @@ const refusalText = (result) => {
 
 /**
  * @param {{screenId: string|null, onLaunch: (target: object, learnerId: string) => unknown}} args
- * @returns {{asking: boolean, busy: boolean, error: string|null, ask: () => void, close: () => void, choose: (learnerId: string, via?: string) => Promise<void>}}
+ * @returns {{asking: boolean, busy: boolean, error: string|null, close: () => void, choose: (learnerId: string, via?: string) => Promise<void>}}
  */
 export function useBankDoor({ screenId = null, onLaunch }) {
   const log = useMemo(() => getLogger().child({ component: 'school-bank-door' }), []);
@@ -74,13 +69,6 @@ export function useBankDoor({ screenId = null, onLaunch }) {
     if (el?.isConnected && typeof el.focus === 'function') el.focus();
   }, []);
 
-  const ask = useCallback(() => {
-    log.info('economy.bank.door-asked', {});
-    noteTrigger();
-    setError(null);
-    setAsking(true);
-  }, [log, noteTrigger]);
-
   const choose = useCallback(async (learnerId, via = 'face') => {
     if (inFlight.current || !learnerId) return;
     if (via !== 'face') noteTrigger();
@@ -100,7 +88,7 @@ export function useBankDoor({ screenId = null, onLaunch }) {
     const target = result?.ok ? result.data?.launchTarget : null;
     if (target?.program !== 'economy-bank' || target.learnerId !== learnerId) {
       log.warn('economy.bank.door-open-failed', { learnerId, via, status: result?.status ?? null });
-      // From a chip there was no sheet up; the refusal needs somewhere to stand.
+      // From a coin cell there was no sheet up; the refusal needs somewhere to stand.
       setError(refusalText(result));
       setAsking(true);
       return;
@@ -111,27 +99,7 @@ export function useBankDoor({ screenId = null, onLaunch }) {
     onLaunch(target, learnerId);
   }, [screenId, onLaunch, log, noteTrigger]);
 
-  return useMemo(() => ({ asking, busy, error, ask, close, choose }), [asking, busy, error, ask, close, choose]);
-}
-
-/**
- * The coin button in the board header. It stays mounted under the sheet, so
- * focus has somewhere to go back to when the sheet closes.
- */
-export function BankDoorButton({ door }) {
-  const [gold, goldRef] = useCoinColor('gold');
-  return (
-    <button
-      type="button"
-      ref={goldRef}
-      className="school-book-door school-bank-door"
-      data-testid="bank-door"
-      onClick={door.ask}
-    >
-      <CoinIcon className="school-bank-door__icon" color={gold} />
-      <span className="school-book-door__label">My bank</span>
-    </button>
-  );
+  return useMemo(() => ({ asking, busy, error, close, choose }), [asking, busy, error, close, choose]);
 }
 
 /**

@@ -239,6 +239,95 @@ failed re-read keeps what is shown, and a learner the preview cannot price
 figures with the week they price, so last week's total is never painted as
 this week's. Cards stay in roster order; the economy never ranks.
 
+## The coin window
+
+The coin cell on a card is a native button (so keyboard and OK reach it). It
+opens that learner's bank screen directly; there is no popup between. Opening it
+starts no tracked work (it logs `status-board.bank-open`), and the Portal wires it
+to the panel's bank door (`bank/BankDoor.jsx`, `POST /school/bank/open`), with
+the learner already known so no face picker is shown. The coin cell is the only
+way into the bank on the Portal; there is no bank strip. A refused open shows
+the "Whose bank?" sheet with the refusal under the faces. The door logs
+`economy.bank.door-opened` and `economy.bank.door-open-failed`. The cell is a plain figure, not a button, when
+the board has no `onOpenBank` or the learner has no coin figure yet. Its spoken
+name carries the week: "<name>'s bank, N silver this week".
+
+The bank screen (`bank/BankScreen.jsx`) has three tabs, History (the default),
+How to earn and How to spend; Back returns to the board. History shows:
+
+1. The balances: silver (with when it becomes gold), gold and gems.
+2. "This week, not yet paid": the same weekly silver the card shows, its earned
+   lines, and "+N more possible" (`bank/BankLedger.jsx`, `UnpaidWeek`). It is
+   hidden when the figure prices another week.
+3. The ledger as a table grouped by day, newest first, with the columns icon,
+   amount, description (source word, then label) and the balance after
+   (`LedgerTable`). Wording and grouping are `bank/bankScreenModel.js`
+   (`historyByDay`, `ledgerEntry`), read from the bank's structured fields; see
+   "The bank" in `__docs/reference/economy/economy.md`.
+
+Data: `GET /api/v1/economy/users/:id/bank` plus the roster earnings read, both
+refreshed on this learner's `school` events. A failed bank read shows "The bank
+is napping" and no numbers; before coins are live the screen says "Coins start
+soon". The screen has its own idle exit. Log events are `economy.bank.*`
+(`opened`, `tab-changed`, `unavailable`, `earnings-failed`, `idle-exit`).
+
+## The coin ceremony
+
+When a child's coin figure rises, a short "+N" pop appears over the board.
+
+**What is celebrated.** The coin column's weekly silver (the earnings preview),
+not the bank balance. The pop reads `+N` large, `<total> this week` smaller, the
+child's face and name, and the standard silver `CoinIcon`.
+
+**What counts as a rise.** The same learner's silver going up between two
+network reads of the same week (`coinCeremonyModel.observeEarnings`). Not
+celebrated: the board-cache seed and the first network read per learner since
+the page loaded (both are baselines, so a reload never replays an old rise); a
+change of week; a drop;
+no change; a learner off the roster. A learner missing from one read keeps their
+baseline. The baseline advances even while the ceremony is disabled. It lives
+for the life of the page, not the board: the board unmounts while a code, runner,
+section or bank screen is open, and coins earned there pop when the board comes
+back.
+
+**Bursts.** A rise waits `coalesceWindowMs` before it shows, and further rises
+for that learner merge into it (the gains add). A rise for the child already on
+screen updates that pop in place and restarts its clock. Different children
+queue and show one at a time.
+
+**Where and how long.** Over the board pane only, never the keypad, so a child
+typing a code is never blocked; below the narrow breakpoint the board pane is
+hidden and so is the ceremony. It auto-dismisses after `durationMs`; a tap, or
+OK once tabbed to, dismisses it early. It never takes focus. Motion is one enter
+and one exit, with none under `prefers-reduced-motion`; the cards themselves
+still do not move.
+
+**Sound.** The coin cue plays once per pop (not per merge): `coin.mp3` on the
+media mount at `school/_ux/coin.mp3` by default, resolved through
+`DaylightMediaPath`. It rides the screen's master volume (volume times
+`getEffectiveMaster()`), a muted master plays nothing, and the audio element is
+primed muted from the first touch or key on the page, because a kiosk browser
+refuses sound before a gesture. See the School runbook, "Coin ceremony sound".
+
+**Config.** The screen YAML's optional `school.coinCeremony` block, read by
+the Portal with the rest of the screen config:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | `false` turns the pop and its sound off |
+| `sound` | `school/_ux/coin.mp3` | media-relative path; `''` or `none` is silent |
+| `volume` | `0.8` | 0 to 1, before the master volume |
+| `durationMs` | `3500` | 1000 to 15000 |
+| `coalesceWindowMs` | `1500` | 0 to 10000 |
+
+**Logs.** `status-board.coin-rise`, `status-board.coin-ceremony.shown`,
+`.dismissed` (reason `tap` or `timeout`), `.dropped` (learner left the roster),
+and the sound's `school.coin_cue.play` / `.rejected` / `.muted` / `.threw`
+(setting up the element failed) / `.unlock_rejected` (the first-gesture prime
+was refused; only `NotAllowedError` re-arms it for the next tap) /
+`.unlock_threw`. The bank door logs `economy.bank.door-opened` and
+`economy.bank.door-open-failed`.
+
 ## Physical education on the status board
 
 Available `fitnessActivity` with `hasActivity: true` adds one supplemental
@@ -304,7 +393,8 @@ Refreshes are scoped to what changed:
 | `school` event (`session-issued`, `story-read`, …) | That learner |
 | `fitness.weekly-rings` State Gate event | Rings + that learner |
 
-A failed re-read keeps what the card already shows; only a card with nothing on
+The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
+does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner
 generation counter drops a slow read that a newer one has overtaken.
 

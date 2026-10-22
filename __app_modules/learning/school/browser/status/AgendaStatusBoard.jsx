@@ -44,6 +44,18 @@
  * teacher console uses: the agenda dry-run preview (the plan) and the teacher
  * day digest (what's done). Exported for reuse by adult surfaces that may
  * mount a more interactive variant later.
+ *
+ * Two read-only doors are the exceptions: the two weeks open the term popup
+ * (TermModal) and the coin cell opens that kid's bank screen through
+ * `onOpenBank(learnerId)`, which the Portal wires to its economy-bank launch.
+ * Neither starts tracked work. Without `onOpenBank` the cell is plain.
+ *
+ * THE COIN CEREMONY (2026-10-21). When a child's coin-column silver rises
+ * between two network reads of the same week, a short "+N" pop with their
+ * face and the week's new total appears over the board pane (never the
+ * keypad) and the coin cue plays (`useCoinCeremony`, `coinCeremonyModel.js`).
+ * It is the one moving thing, and it is transient. The cards themselves still
+ * do not move.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -55,13 +67,14 @@ import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
+import CoinCeremony from "./CoinCeremony.jsx";
+import { useCoinCeremony } from "./useCoinCeremony.js";
 import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
-import { useCoinColor } from "../shared/useCoinColor.js";
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -289,35 +302,31 @@ function RestDayStatus({ restDay, pinned }) {
  * nothing for a cached silver figure from another week.
  */
 function Coins({ figure, gold, studyDay }) {
-  const [silverColor, silverRef] = useCoinColor('silver');
-  // The gold icon and the gold figure share --school-coin-gold.
-  const [goldColor, goldRef] = useCoinColor('gold');
-  const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
-    && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
+  const week = figureInWeek(figure, studyDay);
   const hasGold = Number.isFinite(gold);
-  if (!inWeek && !hasGold) return null;
-  const showGems = inWeek && figure.gems > 0;
+  if (!week && !hasGold) return null;
+  const showGems = week && week.gems > 0;
   return (
-    <div className="school-status-board__coin-grid" ref={(el) => { silverRef(el); goldRef(el); }}>
-      {inWeek && (
+    <div className="school-status-board__coin-grid">
+      {week && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color={silverColor} />
-          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={`${figure.silver} silver earned this week`}>
-            {figure.silver}
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" metal="silver" />
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={`${week.silver} silver earned this week`}>
+            {week.silver}
           </span>
         </>
       )}
       {hasGold && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" color={goldColor} />
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" metal="gold" />
           <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
         </>
       )}
       {showGems && (
         <>
           <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
-          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`}>
-            {figure.gems}
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={`${week.gems} gem${week.gems === 1 ? '' : 's'} this week`}>
+            {week.gems}
           </span>
         </>
       )}
@@ -325,7 +334,9 @@ function Coins({ figure, gold, studyDay }) {
   );
 }
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
+const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
+
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, coinCeremony = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -343,6 +354,17 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
+  // THE COIN CEREMONY: fed by the network reads in `refreshCoins` only, never
+  // by the cache seed, so a reload never replays a pop. Called through a ref
+  // so `refreshCoins` keeps its identity (its identity drives the first-read
+  // effect).
+  const ceremony = useCoinCeremony({ kids, config: coinCeremony });
+  const observeCoinsRef = useRef(ceremony.observe);
+  observeCoinsRef.current = ceremony.observe;
+  const openBank = useCallback((kidId) => {
+    schoolLog.selfService('status-board.bank-open', { learnerId: kidId });
+    onOpenBank?.(kidId);
+  }, [onOpenBank]);
   // Whose term popup is open (a learner id), or null.
   const [termFor, setTermFor] = useState(null);
   const openTerm = useCallback((kidId) => {
@@ -433,15 +455,31 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       });
   }, []);
 
+  // Earnings reads overlap (scans, school events, gate events and the coins
+  // burst all fire one), so they can land out of order. Each is numbered and a
+  // response older than the last one APPLIED is dropped: otherwise a stale
+  // lower figure would flicker the card back and reset the ceremony's
+  // baseline, and the next read would pop the same rise twice.
+  const earningsSentRef = useRef(0);
+  const earningsAppliedRef = useRef(0);
   const refreshCoins = useCallback(() => {
     if (schoolApi.earningsRoster) {
       // One roster read prices everyone. Fired alongside the plans, never
       // awaited; a failed read keeps the figures already on the cards.
+      const seq = ++earningsSentRef.current;
       Promise.resolve(schoolApi.earningsRoster(day ?? null))
         .then((res) => {
           if (!aliveRef.current) return;
-          if (res?.ok) setEarnings(earningsByLearner(res.data));
-          else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
+          if (res?.ok && seq < earningsAppliedRef.current) {
+            schoolLog.selfService('status-board.earnings-stale-dropped', { seq, applied: earningsAppliedRef.current });
+            return;
+          }
+          if (res?.ok) {
+            earningsAppliedRef.current = seq;
+            const next = earningsByLearner(res.data);
+            setEarnings(next);
+            observeCoinsRef.current(next);
+          } else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
@@ -754,7 +792,22 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               )}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
-              <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+              {onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
+                // The coin cell is the door to this kid's bank screen: a real
+                // button, so keyboard/OK reach it. Opening the bank starts no
+                // tracked work; the bank screen's Back returns to the keypad.
+                <button
+                  type="button"
+                  className="school-status-board__coins-door"
+                  data-testid="board-coins-door"
+                  aria-label={coinDoorLabel(kid.name, figureInWeek(earnings[kid.id], studyDay))}
+                  onClick={() => openBank(kid.id)}
+                >
+                  <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+                </button>
+              ) : (
+                <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+              )}
             </div>
             {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.
                 Rings render only once the number has arrived — a placeholder
@@ -794,6 +847,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           term={terms[termFor]}
           onClose={closeTerm}
         />
+      )}
+      {ceremony.toast && (
+        <CoinCeremony key={ceremony.toast.id} toast={ceremony.toast} durationMs={ceremony.durationMs} onDone={ceremony.done} />
       )}
     </div>
   );

@@ -130,4 +130,12 @@ describe('BankService.bank', () => {
     expect(res.history.slice(0, 2).map((l) => l.text)).toEqual(['+2 silver · schoolwork', '+1 silver · schoolwork']);
     expect(logger.warn).toHaveBeenCalledWith('economy.bank.labels-unavailable', expect.objectContaining({ source: 'evidence' }));
   });
+  it('every history line carries the running balance, the newest equal to the balances, even past the 50-line cut', async () => {
+    const res = await new BankService({ economy: makeEconomy(), config, rules, clock }).bank('kid');
+    expect(res.history[0].balanceAfter).toEqual(res.balances);
+    expect(res.history[1].balanceAfter).toEqual({ silver: 61, gold: 0, gems: 0 });
+    // Line 49 is deposit d47: it sits on the 12 older deposits the cut leaves out (d48..d59), plus itself.
+    expect(res.history[49].balanceAfter).toEqual({ silver: 13, gold: 0, gems: 0 });
+    expect(res.history[0]).toMatchObject({ source: 'payout', legs: [{ currency: 'silver', delta: 2 }] });
+  });
 });

@@ -52,6 +52,24 @@ a later phase), so the ledger is append-only and auditable.
 An entry written before currencies existed has no `currency` and is silver.
 Each currency is folded on its own (`foldBalances`) and floored at 0 for display.
 
+### How a coin looks (`CoinIcon`)
+
+Every coin drawn on a screen is `frontend/src/lib/icons/CoinIcon.jsx`: the
+Twemoji coin (CC-BY 4.0, attribution in the file header). Printed receipts are
+text and draw no coin.
+
+- `metal: 'gold' | 'silver'` picks a palette in `COIN_PALETTES`. Each palette
+  fills five named roles of the art: rim, inner, face, light, highlight. Gold is
+  the default.
+- `color` (a hex) is the escape hatch shared with `TicketIcon` and `GemIcon`. It
+  rebuilds the five roles as a tint ladder around that one colour and wins over
+  `metal`.
+- Gems are `GemIcon`, a separate component with the same conventions.
+- The coin FIGURES' text colours are not part of the icon: they stay the School
+  tokens `--school-coin-silver` and `--school-coin-gold`.
+- Add a coin only through this component. Never draw one as an emoji, a unicode
+  glyph or a CSS circle (kiosk icons are SVG components).
+
 ## Ledger
 
 The backend is the single source of truth. A balance is **derived by folding an
@@ -598,11 +616,20 @@ missing privilege or coin, or a `playedMs` that is not a non-negative number →
 ### The bank (`BankService`)
 
 `GET …/bank` (`application/BankService.mjs`, `Cache-Control: no-store`) is the
-one read the Portal bank strip and bank screen, the piano kiosk and its lock
-screen share.
+one read the Portal bank screen (opened from the board's coin cell), the piano
+kiosk and its lock screen share.
 
 **History** is the last 50 ledger lines in plain words, newest first
-(`{ text, at, kind, ids }`, from `domain/historyText.mjs`): "+2 silver · Green
+(`{ text, at, kind, ids, source, label, legs, balanceAfter }`, from
+`domain/historyText.mjs`). `text` is the sentence; the rest is the same line
+broken into parts so a client can lay it out as a table. `source` is
+`entrySource`: `payout`, `earn`, `prize`, `refund`, `spend`, `deposit`,
+`correction`, `withdraw`, `conversion` (or `other`). `label` is the words after
+the amount, `legs` the signed amounts per currency (a conversion has two), and
+`balanceAfter` the `{ silver, gold, gems }` balances once the line landed. It is
+folded oldest first over the whole ledger read, before the 50-line cut, each
+currency floored at 0, so line 50 still knows what older lines left behind. An
+older client reads `text` only. The sentences: "+2 silver · Green
 day", "−3 silver · early pass", "+3 silver · early pass refunded", "12 silver →
 12 gold · Sunday". A payout is named by the current week's preview line it paid
 for (its `evidenceRef`), then by the ruleset's label for its `ruleId`, then
@@ -672,8 +699,8 @@ School and piano import no economy code. Composition hands them duck-typed ports
 built from `economyApi` (`composition/economyApi.mjs`).
 
 - **School: what a sheet is worth (`rewardFor`).** School's "print my next sheet"
-  dry run (`GET /api/v1/school/self-service/learners/:id/next`, behind the Portal
-  bank strip, the bank screen's ways to earn, the agenda tape's `Next: Math +2`
+  dry run (`GET /api/v1/school/self-service/learners/:id/next`, behind the
+  Portal bank screen's ways to earn, the agenda tape's `Next: Math +2`
   and the piano lock's button) asks `rewardFor({learnerId, unit})` for
   `{silver, gems}` or null. `createEconomyApi` hands School a late-bound thunk
   (`economyApi.rewardFor`, passed by `lifecycle-runtime.mjs`); the earnings
@@ -718,7 +745,7 @@ built from `economyApi` (`composition/economyApi.mjs`).
   (an `economyMode` reader, `() => configProjection.catalog().mode`, is handed
   to `createSchoolLifecycle`). School's composition (`agendaEconomy.mjs`)
   builds a `bankSummary(learnerId)` port over `economyService.peekBalance(id).silver`:
-  the *unspent* silver in the bank (the figure the Portal bank strip shows and
+  the *unspent* silver in the bank (the figure the Portal bank screen shows and
   the week close converts), not the week's mints. `peekBalance` is the pure
   read: `#assertUser`, then `foldBalances` over the ledger, with no wallet
   write and no session reap (unlike `getBalance`). The port checks `hasUser`
@@ -740,8 +767,10 @@ built from `economyApi` (`composition/economyApi.mjs`).
   `zero_days_alert` and `mode` are read on every run, and null turns the alert
   off. In `dry-run` the digest shows no silver figure and ends `Coins not live
   yet`; with `off` coins are not mentioned.
-- **School: Portal bank strip, bank screen and bank door.** All read
-  `GET …/bank`; see the School README ("The bank strip", "The bank screen").
+- **School: Portal coin cell, bank door and bank screen.** The board's coin
+  cell opens the bank door, and the bank screen reads `GET …/bank`; there is no
+  bank strip. See the School README ("The coin cell is the bank's door", "The
+  bank screen").
   School forwards `economy.coins-changed` to the Portal's `school` topic
   (`EventBusSchoolRealtimeAdapter.relayCoinsChanged`, see
   [Events](#events-and-logging)).
@@ -817,7 +846,8 @@ Portal's `school` topic as `{event: 'coins-changed', learnerId}`.
 | School reward port | `economy.sheet-reward.failed` (warn, once per learner) |
 | Events | `economy.coins-changed.no-publish`, `economy.coins-changed.publish-failed` |
 
-Client-side events (`economy.strip.*`, `economy.bank.door-*`, `economy.bank.opened`,
+Client-side events (`economy.bank.door-opened`, `economy.bank.door-open-failed`,
+`economy.bank.opened`,
 `piano.early-pass.*`) are listed with their surfaces in the School README and
 games-budget-gate.md.
 
@@ -861,7 +891,7 @@ the old snapshot when the file is missing.
    surface), and the digest ends `Coins not live yet`. No balance moves. No pass
    can be bought before live (`PASS_NOT_SOLD`) and the bank offers nothing.
    The kid surfaces show no silver figure: the agenda prints no economy line,
-   and the Portal bank strip and bank screen say "Coins start soon".
+   and the Portal bank screen says "Coins start soon".
    With `passes` in the catalog, a school-locked kid's piano Games tile is
    enabled and opens SchoolLock (today's progress and the Print button). That
    is intended, not the gate failing open: SchoolLock sells nothing until live.

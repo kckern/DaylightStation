@@ -51,7 +51,7 @@ import Keypad from "./selfService/Keypad.jsx";
 import AgendaStatusBoard from "./status/AgendaStatusBoard.jsx";
 import BoardHeader from "./status/BoardHeader.jsx";
 import BankScreen from "./bank/BankScreen.jsx";
-import { useBankDoor, BankDoorButton, BankDoorSheet } from "./bank/BankDoor.jsx";
+import { useBankDoor, BankDoorSheet } from "./bank/BankDoor.jsx";
 import LaunchCard from "./selfService/LaunchCard.jsx";
 import LaunchCardPreview from "./selfService/LaunchCardPreview.jsx";
 import ScanCeremony from "./selfService/ScanCeremony.jsx";
@@ -116,26 +116,26 @@ const configuredSeconds = (value) => (
     : null
 );
 
-function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
+export function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
   // A standalone mount resolves synchronously — there is no screen config to
   // fetch — and it defaults to LOCKED so the keypad is what opens.
   const browserLocked = () => (browserModeFromUrl() ?? 'locked') === 'locked';
   const [state, setState] = useState(() => (
     explicit
-      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
       : !isPanelSurface(screenId)
-        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
-        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
+        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
   ));
 
   useEffect(() => {
     if (explicit) {
-      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     if (!isPanelSurface(screenId)) {
-      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     let alive = true;
@@ -147,6 +147,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
         locked: cfg?.mode === 'locked',
         idleTimeoutSeconds: configuredSeconds(cfg?.idleTimeoutSeconds),
         screenOffTimeoutSeconds: configuredSeconds(cfg?.screenOffTimeoutSeconds),
+        coinCeremony: cfg && cfg.coinCeremony && typeof cfg.coinCeremony === 'object' ? cfg.coinCeremony : null,
       });
     });
     return () => { alive = false; };
@@ -164,6 +165,8 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
     screenOffTimeoutSeconds: configuredSeconds(screenOffTimeoutSeconds) !== null
       ? configuredSeconds(screenOffTimeoutSeconds)
       : (state.screenOffTimeoutSeconds ?? 0),
+    // The screen YAML's school.coinCeremony block (sound, volume, duration); null = the board's defaults.
+    coinCeremony: state.coinCeremony ?? null,
   };
 }
 
@@ -670,8 +673,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
-  // Below 820px the board pane is hidden, so the bank strip moves under the
-  // keypad. One mount either way: the strip's reads are not doubled.
+  // The bank opens from the board's coin cells (`onOpenBank`); there is no
+  // bank strip. Below 820px the board pane, and with it the coin cells, is
+  // hidden.
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -695,16 +699,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     deviceId: deviceIdFor(screenId),
   });
 
-  // The panel's bank door: the coin button in the board header asks whose
-  // bank; a tap on a strip chip opens that kid's straight through the same
-  // request. Like the shelf door, it claims the kid and lands in
-  // `onPortalLaunch`.
+  // The panel's bank door: a tap on a kid's coin cell on the board opens that
+  // kid's bank through `POST /school/bank/open`. Like the shelf
+  // door, it claims the kid and lands in `onPortalLaunch`.
   const launchFromBankDoor = useCallback((target, learnerId) => {
     claim(learnerId);
     return onPortalLaunch(target, learnerId);
   }, [claim, onPortalLaunch]);
   const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
   const { choose: chooseBank, close: closeBankDoor } = bankDoor;
+  // The board's coin cell: the kid is known, so no face picker.
+  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-cell'); }, [chooseBank]);
   // The door belongs to the locked panel's resting view (keypad + board).
   // Anything that leaves it (a code's card, a runner, a section) closes it.
   const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
@@ -1125,23 +1130,23 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
               {/* The board itself stays read-only — see AgendaStatusBoard's own
-                  header. The door rides in the HEADER, which is the board's
+                  header. The book door rides in the HEADER, which is the board's
                   neighbour rather than a row on it, so the pane's
                   `pointer-events: none` is re-enabled on the button alone and
-                  both survive a day the board draws nothing. */}
+                  it survives a day the board draws nothing. The bank's door
+                  is the coin cell on each kid's own card (`onOpenBank`). */}
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
                   <div className="school-board-header__doors">
-                    <BankDoorButton door={bankDoor} />
                     <BookShelfDoor screenId={screenId} roster={roster}
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} coinCeremony={lock.coinCeremony} />
               </div>
-              {/* "Whose bank?" is drawn by the panel, not inside the board
-                  header: below 820px the board pane is hidden, and a chip in
-                  the keypad column can still need it for a refusal. */}
+              {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
+                  the board pane, so it is never clipped by or stacked under
+                  the board. */}
               <BankDoorSheet door={bankDoor} roster={roster} idleTimeoutSeconds={lock.idleTimeoutSeconds} />
             </div>
           ) : (
