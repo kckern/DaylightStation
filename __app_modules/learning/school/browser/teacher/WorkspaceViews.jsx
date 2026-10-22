@@ -367,13 +367,21 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '', lea
   </div></PanelFrame></div>;
 }
 
-export function CoursesView({ learnerId, learnerName, courseId, kids: _kids, PianoProgramsPanel }) {
+export function CoursesView({ learnerId, learnerName, courseId, kids, PianoProgramsPanel }) {
   if (!PianoProgramsPanel) throw new Error("Installed teacher courses require the Piano programs panel");
+  // Both panels below write this learner's assignment record; each bump
+  // re-reads the other, so one screen never shows two versions of it.
+  const [assignmentsRefresh, setAssignmentsRefresh] = useState(0);
+  const [matrixRefresh, setMatrixRefresh] = useState(0);
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? 'Course details' : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
       {courseId && <CourseContext courseId={courseId} learnerId={learnerId} />}
-      <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
+      <AssignmentsView learnerId={learnerId} learnerName={learnerName} refreshKey={assignmentsRefresh} onSaved={() => setMatrixRefresh((n) => n + 1)} />
+      {/* Enrolling used to live only on the Curriculum page's whole-school
+          grid; the same grid, scoped to this child, puts it next to the
+          courses it changes. */}
+      <SchoolMatrix kids={kids} learnerId={learnerId} title={`Enroll ${learnerName} in courses`} refreshKey={matrixRefresh} onChanged={() => setAssignmentsRefresh((n) => n + 1)} />
       <PianoProgramsPanel learnerId={learnerId} />
       <MilestonesPanel learnerId={learnerId} />
     </div>
@@ -562,8 +570,9 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
       <CurriculumBrowser courseId={courseId} />
     </> : <>
       <CurriculumCatalog />
-      <SyllabiPanel />
+      {/* Enrolling is the common job here; syllabus admin is the rare one. */}
       <SchoolMatrix kids={kids} />
+      <SyllabiPanel />
       <EnrichmentPanel kids={kids} />
     </>}
   </div>;

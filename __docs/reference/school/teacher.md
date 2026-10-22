@@ -732,6 +732,15 @@ and impossible to finish.
 **Structural changes are two-tap.** Enroll, re-materialize, and unenroll each
 arm first with a sentence naming the consequence, then act.
 
+**Where the grid lives.** The whole-school grid sits on the Curriculum page,
+above Syllabi, because enrolling is the common job and syllabus admin the rare
+one. The same grid, scoped to one child, sits on that learner's Courses tab
+under Assignments, so enrolling is next to the courses it changes. The scoped
+grid drops the school-wide notes (orphans, zero-enrollment courses), which
+mean nothing for one child; the two panels re-read each other after a change.
+Each course name in Assignments links to its progress page,
+`/students/:learnerId/courses/:courseId` ("X of Y lessons complete").
+
 **Three pathologies only the whole-school grid can see:**
 
 | Pathology | What it looks like | Why it matters |

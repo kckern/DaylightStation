@@ -762,4 +762,20 @@ describe('TeacherConsole workspace', () => {
     expect(tabs[0]).toHaveTextContent('Day');
     expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reading', 'Cards', 'Coins', 'Reports', 'Operations']);
   });
+
+  it('enrolls from the learner\'s Courses tab, on a grid of that learner alone', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/courses');
+    render(<TeacherConsole />);
+    const heading = await screen.findByRole('heading', { name: 'Enroll User_4 in courses' });
+    const matrix = within(heading.closest('section') ?? document.body).getByTestId('school-matrix');
+    expect(within(matrix).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Course', 'User_4']);
+  });
+
+  it('puts the enrollment grid above syllabus admin on the Curriculum page', async () => {
+    window.history.pushState({}, '', '/school/teacher/curriculum');
+    render(<TeacherConsole />);
+    const matrix = await screen.findByRole('heading', { name: 'The whole school' });
+    const syllabi = await screen.findByRole('heading', { name: 'Syllabi' });
+    expect(matrix.compareDocumentPosition(syllabi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

@@ -13,6 +13,12 @@
  * silently omits that subject from the child's day). Each cell also carries
  * its enrollment (syllabus, profile, managed vs. hand-authored) for the
  * enrollment editor built on top of this model.
+ *
+ * With `learnerId` the same grid is scoped to one child — the learner's
+ * Courses tab, where enrolling is a step away from the courses it lists.
+ * The school-wide notes go: another child's record is not an orphan, and a
+ * course "nobody" takes only means "not this child", which the — cells say.
+ * `refreshKey` / `onChanged` keep it in step with that tab's Assignments panel.
  */
 import { useMemo, useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
@@ -23,18 +29,20 @@ import { curriculumTitles } from "../curriculumTitles.js";
 import { labelize } from "../labelize.js";
 import { deriveMatrix } from "./schoolMatrixModel.js";
 
-export default function SchoolMatrix({ kids }) {
-  const assignments = usePanelFetch(() => schoolApi.allAssignments(), { panel: 'matrix-assignments' });
+export default function SchoolMatrix({ kids, title = 'The whole school', learnerId = null, refreshKey = 0, onChanged }) {
+  const assignments = usePanelFetch(() => schoolApi.allAssignments(), { deps: [refreshKey], panel: 'matrix-assignments' });
   const units = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'matrix-units', notFoundAs: 'unavailable' });
   const syllabi = usePanelFetch(() => schoolApi.syllabi(), { panel: 'matrix-syllabi', nullAs: 'empty' });
   const [open, setOpen] = useState(null); // { learnerId, courseId }
+  const scoped = Boolean(learnerId);
+  const shown = useMemo(() => (scoped ? (kids ?? []).filter((kid) => kid.id === learnerId) : kids), [kids, learnerId, scoped]);
 
   const model = useMemo(() => deriveMatrix({
     assignments: assignments.data?.assignments ?? [],
     units: units.data?.units ?? (Array.isArray(units.data) ? units.data : []),
     syllabi: syllabi.data?.syllabi ?? [],
-    kids,
-  }), [assignments.data, units.data, syllabi.data, kids]);
+    kids: shown,
+  }), [assignments.data, units.data, syllabi.data, shown]);
 
   const state = assignments.state === 'ok' && units.state === 'ok' ? 'ok'
     : assignments.state === 'loading' || units.state === 'loading' ? 'loading'
@@ -45,7 +53,7 @@ export default function SchoolMatrix({ kids }) {
   // Transposed, full course titles read left-aligned and the student columns
   // stay narrow at any catalog size (UX audit C11).
   return (
-    <PanelFrame title="The whole school" state={state} retry={() => { assignments.retry(); units.retry(); }} emptyCopy="No courses published yet.">
+    <PanelFrame title={title} state={state} retry={() => { assignments.retry(); units.retry(); }} emptyCopy="No courses published yet.">
       <div className="teacher-matrix" data-testid="school-matrix">
         <table className="teacher-matrix__grid teacher-matrix__grid--courses-as-rows">
           <thead>
@@ -56,7 +64,7 @@ export default function SchoolMatrix({ kids }) {
           </thead>
           <tbody>
             {model.courseIds.map((id) => (
-              <tr key={id} className={model.unenrolled.includes(id) ? 'is-unenrolled' : ''}>
+              <tr key={id} className={!scoped && model.unenrolled.includes(id) ? 'is-unenrolled' : ''}>
                 <th scope="row" className="teacher-matrix__course-title">{titles.course(id)}</th>
                 {model.rows.map((row) => {
                   const cell = row.cells[id];
@@ -83,14 +91,14 @@ export default function SchoolMatrix({ kids }) {
         {open && (
           <EnrollmentDrawer
             key={`${open.learnerId}:${open.courseId}`}
-            learner={kids.find((k) => k.id === open.learnerId) ?? { id: open.learnerId, name: open.learnerId }}
+            learner={(kids ?? []).find((k) => k.id === open.learnerId) ?? { id: open.learnerId, name: open.learnerId }}
             courseId={open.courseId}
             courseTitle={titles.course(open.courseId)}
             cell={model.rows.find((r) => r.learnerId === open.learnerId)?.cells[open.courseId] ?? null}
             syllabi={syllabi.data?.syllabi ?? []}
             baseUpdatedAt={(assignments.data?.assignments ?? []).find((a) => a.learnerId === open.learnerId)?.updatedAt ?? null}
             onClose={() => setOpen(null)}
-            onChanged={() => { assignments.retry(); }}
+            onChanged={() => { assignments.retry(); onChanged?.(); }}
           />
         )}
         {model.rows.some((r) => r.deadRefs.length > 0) && (
@@ -103,12 +111,15 @@ export default function SchoolMatrix({ kids }) {
             </ul>
           </div>
         )}
-        {model.unenrolled.length > 0 && (
+        {scoped && model.rows.length === 1 && model.courseIds.length > 0 && (
+          <p className="teacher-matrix__note">Tap a — to enroll {model.rows[0].name} in that course.</p>
+        )}
+        {!scoped && model.unenrolled.length > 0 && (
           <p className="teacher-matrix__note" data-testid="matrix-unenrolled">
             Unassigned courses ({model.unenrolled.length}) — tap a — cell above to enroll someone.
           </p>
         )}
-        {model.orphanLearners.length > 0 && (
+        {!scoped && model.orphanLearners.length > 0 && (
           <p className="teacher-matrix__note teacher-matrix__note--orphan" data-testid="matrix-orphans">
             Assignment records exist for ids not on the roster: {model.orphanLearners.join(', ')}
           </p>
