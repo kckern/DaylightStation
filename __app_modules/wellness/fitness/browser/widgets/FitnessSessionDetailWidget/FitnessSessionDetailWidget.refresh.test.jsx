@@ -219,10 +219,12 @@ it('shows saved playback and resets selected evidence when loading another sessi
   try {
     await waitFor(() => expect(container.querySelector('.playback-strip')).not.toBeNull());
     fireEvent.click(container.querySelector('button[aria-label^="Video started"]'));
-    expect(container.querySelector('.playback-strip__detail').textContent).toContain('165 BPM');
+    // The explanation opens in a modal (portalled to the body), not in the chart.
+    const details = () => document.querySelector('[role="dialog"][aria-label="Playback details"]');
+    expect(details().querySelector('[role="status"]').textContent).toContain('165 BPM');
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => detail('20270115080500', false) });
     rerender(<FitnessSessionDetailWidget sessionId="20270115080500" />);
     await waitFor(() => expect(container.querySelector('button[aria-label^="Playback not recorded"]')).not.toBeNull());
-    expect(container.querySelector('.playback-strip__detail').textContent).not.toContain('165 BPM');
+    expect(details()).toBeNull();
   } finally { unmount(); size.mockRestore(); }
 });
