@@ -1,5 +1,6 @@
 import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
+import { announceWorkoutFinished } from './overlays/useWorkoutCoinCeremony.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -1259,15 +1260,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         // Same shape as the normal close: FitnessApp reads view/screenId, and a
         // bare { to: 'home' } set currentView to undefined — a blank screen.
         const sid = fitnessSessionInstance?.sessionId ?? null;
+        const redirect = resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid });
         try {
           onSessionEndRedirect({
-            ...resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid }),
+            ...redirect,
             reason: 'close-watchdog-fired',
             context: ctx,
           });
         } catch (err) {
           // best effort; we're already in a recovery path
         }
+        // A forced close still finished a workout; the hook's per-session
+        // guard keeps it from doubling a ceremony the normal path already showed.
+        announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
       }
     }
   });
@@ -1332,8 +1337,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           // The suggestions snapshot went stale with this workout's saves; this
           // request waits for its rebuild, so home lands on fresh Resume / Next Up.
           refetchScreenData('suggestions');
+          // The home cards' silver and gem moved with this workout's rings.
+          refetchScreenData('standings');
         });
     }
+
+    // The coin ceremony: what the ride was worth. Only when the close lands on
+    // the finished session (not a short browse-out back to the show). Closing
+    // the player does not end the session, so this waits for the LAST AUTOSAVE
+    // (≤15 s old), not a final save: the ride is priced as of then, and the
+    // bank entry that lands later may be a few rings higher.
+    announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
 
     // School assessment starts only after Fitness has finished its own final
     // persistence. The callback carries playback coordination facts; the

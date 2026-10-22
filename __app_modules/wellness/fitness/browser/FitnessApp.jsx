@@ -48,6 +48,8 @@ import MenuMusicController from "./nav/MenuMusicController.jsx";
 import EmergencyPlaybackController from "./player/EmergencyPlaybackController.jsx";
 import { FitnessFeedback, FeedbackCornerButton } from "./feedback/index.js";
 import { installRingCelebrationAudioUnlock } from "./player/overlays/ringCelebrationAudio.js";
+import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
+import { useWorkoutCoinCeremony } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
 
@@ -56,10 +58,12 @@ registerBuiltinWidgets();
 // momentum chart, the sessions list and the calendar — all of which otherwise
 // showed skeletons on every return from the player. Deliberately NOT
 // `suggestions`: a stale "up next" flashing then changing is worse than a wait.
-const SCREEN_PERSISTED_SOURCES = ['sessions'];
+const SCREEN_PERSISTED_SOURCES = ['sessions', 'standings'];
 // Widgets that read the injected `dashboard` screen-data source.
 const DASHBOARD_WIDGETS = new Set(['fitness:coach', 'fitness:upnext']);
 const FITNESS_CHART_WIDGETS = new Set(['fitness:chart']);
+// The momentum cards' bank silver + week's gem (economy standings).
+const MOMENTUM_WIDGETS = new Set(['fitness:momentum']);
 
 function layoutUsesWidget(node, widgets) {
   if (!node || typeof node !== 'object') return false;
@@ -844,6 +848,9 @@ const FitnessApp = () => {
     if (primaryUser && layoutUsesWidget(screenCfg.layout, DASHBOARD_WIDGETS)) {
       const userId = primaryUser.id || primaryUser.profileId;
       sources.dashboard = { source: `/api/v1/health-dashboard/${userId}`, refresh: 300 };
+    }
+    if (layoutUsesWidget(screenCfg.layout, MOMENTUM_WIDGETS)) {
+      sources.standings = { source: '/api/v1/earnings/standings', refresh: 300 };
     }
     return sources;
   }, [activeScreen, screensConfig, fitnessConfiguration]);
@@ -1877,6 +1884,8 @@ const PressureMatEventBridge = ({ logger }) => {
 const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
+  // After a finished workout: what the ride was worth (FitnessPlayer fires it).
+  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
   if (!fitnessCtx) return null;
 
   return (
@@ -1896,6 +1905,14 @@ const GlobalOverlays = () => {
         preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
       />
       <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
+      {ceremony && (
+        <WorkoutCoinCeremony
+          key={ceremony.sessionId}
+          sessionId={ceremony.sessionId}
+          learners={ceremony.learners}
+          onDone={dismissCeremony}
+        />
+      )}
     </>
   );
 };

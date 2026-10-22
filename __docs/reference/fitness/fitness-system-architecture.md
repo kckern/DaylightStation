@@ -976,6 +976,16 @@ persists in localStorage (see Screen Framework → Data Coordination), so the ba
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
 
+Each person's card also shows their **bank silver** and, for the ring-contest
+holder, the week's **gem** — the bank's sapphire, faded (`.is-leading`,
+opacity 0.4) while they only lead it, full once Saturday noon makes it theirs;
+silver and gem share the name's row so every card keeps one height. The data is the
+`standings` screen source, `GET /api/v1/earnings/standings`, injected by
+FitnessApp when the layout uses `fitness:momentum`, persisted like `sessions`
+and refetched after a workout. People without a wallet get no coin; with the
+economy off, or the call failing, the coin column is hidden and the ring bars
+stand alone.
+
 ### Leaving the player → the session just finished
 
 Closing the player (X, Escape, end of queue, or the close watchdog) resolves a
@@ -995,6 +1005,32 @@ no active session, browser Back from a session URL, or starting a video from hom
 (`/fitness/play/{id}`) — the widget closes the pane and clears the selection.
 Opening stays selection-driven, so the guarantee is one-way: a closed pane never
 survives in a session-less URL.
+
+**The coin ceremony.** After the last save, FitnessPlayer also refetches the
+`standings` source. Every close that lands on the finished session — X,
+Escape, end of queue, the voice-memo-deferred close and the close watchdog; not
+a short browse-out back to the show — calls `announceWorkoutFinished`, which
+waits for the session's last save to settle and fires `fitness-workout-finished
+{sessionId}`. Closing the player does not end the session, so that save is the
+latest autosave (≤15 s old): the ride is priced as of then, and the bank entry
+that lands later may be a few rings higher. `useWorkoutCoinCeremony` (mounted
+in `GlobalOverlays`) asks `GET /api/v1/earnings/workout/:sessionId` and shows
+`WorkoutCoinCeremony` (z-index 1900, above the navbar): one card per kid in one
+row, "+N" silver with the new total ("→ 27 silver") and "+1 gem" when a
+threshold paid one, or "N rings / M more to the next coin" for a ride that
+crossed no coin. One coin sound plays through fitness's own cue element
+(`ringCelebrationAudio.js`, already unlocked on the kiosk) with School's
+`school/_ux/coin.mp3` — one element, so several silver cards still make one
+sound. A click (not pointerdown, so the tap cannot land underneath),
+Enter/Space/Escape (consumed in the capture phase, so the menu underneath
+never sees it) or the clock (4 s + 1.5 s per extra card, max 10 s) dismisses
+it. sessionStorage `fitness.coinCeremony.shown` keeps, per session (last 20),
+the rings last shown: the same close reported twice is skipped
+(`already-shown`), a second video in the same session (more rings) is shown
+again. Never on a reload (the event fires only on a live close), and not when
+the economy is off, nobody earned anything, or the call fails. Logs:
+`fitness.coin_ceremony.shown {sessionId, learners, totalSilver}`,
+`.dismissed {reason}`, `.skipped {reason: economy-off | no-earnings | already-shown | fetch-failed}`.
 
 ---
 
