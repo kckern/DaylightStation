@@ -179,6 +179,13 @@ export const mediaLog = {
   screenHandleCommand:    info('screen-handle.command'),
   screenHandleFailed:     warn('screen-handle.failed'),
   shownHere:              info('find.shown-here'),
+  // Fling: send what plays here to a screen from the handle (shell/FlingButton.jsx)
+  flingOpened:            info('fling.opened'),
+  flingStartModeChanged:  info('fling.start-mode-changed'),
+  flingTargetChosen:      info('fling.target-chosen'),
+  flingDispatched:        info('fling.dispatched'),
+  flingFailed:            warn('fling.failed'),
+  flingLocalStopped:      info('fling.local-stopped'),
 };
 
 export default mediaLog;

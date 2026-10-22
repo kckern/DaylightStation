@@ -9,6 +9,8 @@ const nav = { push, view: 'home' };
 // The handle's house menu (Mantine) is covered in house/HouseQuietControls.test.jsx.
 vi.mock("../house/HouseQuietControls.jsx", () => ({ HandleHouseMenu: () => null }));
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => nav }));
+// The fling control itself is covered in FlingButton.test.jsx.
+vi.mock("./FlingButton.jsx", () => ({ FlingButton: (props) => <span data-testid="fling-stub" data-position={props.position} /> }));
 
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { createLocalSessionController } from "../session/LocalSessionController.js";
@@ -66,6 +68,13 @@ beforeEach(() => {
 });
 
 describe('MiniPlayer', () => {
+  it('offers the fling (Play on a screen) among the handle controls, opening upward', () => {
+    renderMiniPlayer();
+    const stub = screen.getByTestId('fling-stub');
+    expect(stub.closest('.mini-player-controls')).not.toBeNull();
+    expect(stub).toHaveAttribute('data-position', 'top-end');
+  });
+
   // Task 16 (spec D7): the mini player used to render a permanent ~60px
   // "Idle" strip even with no local session — dead chrome eating screen
   // space on a 360px phone. It now renders nothing until there's an actual
