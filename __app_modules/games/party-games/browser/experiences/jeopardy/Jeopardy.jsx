@@ -2,8 +2,9 @@
 // the shared ruleset and remote Gaming coordinator.
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
+import getLogger from '@/lib/logging/Logger.js';
 import { currentRound } from "../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/stateMachine.mjs";
-import { resolveJeopardyKey } from "./keymap.js";
+import { resolveJeopardyKey, remoteActionKey } from "./keymap.js";
 import Scoreboard from "../../../../../../__capabilities/gaming/browser/platform/ui/Scoreboard.jsx";
 import { fetchSession } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
 import { sendJeopardyCommand } from "./jeopardyClient.js";
@@ -26,8 +27,9 @@ const NO_BUZZERS = Object.freeze({
 
 const roundMultiplier = (round) => Number(round?.multiplier ?? 1);
 
-export default function Jeopardy({ setId, seats = [], sessionId, config, gamingServices, onComplete }) {
+export default function Jeopardy({ setId, seats = [], sessionId, config, gamingServices, onComplete, registerRemoteAction }) {
   const teams = seats;
+  const logger = useMemo(() => getLogger().child({ component: 'jeopardy', sessionId }), [sessionId]);
   const teamIds = useMemo(() => teams.map((t) => t.id), [teams]);
   const [set, setSet] = useState(null);
   const [error, setError] = useState(null);
@@ -117,6 +119,19 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [state?.phase, state?.revealed, state, applyAction]);
+
+  // Inside Party Games the shell captures remote keys; it offers each action here
+  // first. Claim only what this phase's key matrix uses, so wager and intro
+  // buttons keep ordinary focus navigation.
+  useEffect(() => registerRemoteAction?.((remote) => {
+    if (!state) return false;
+    const key = remoteActionKey(remote);
+    const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, key });
+    if (!action) return false;
+    logger.debug('jeopardy.remote-action', { phase: state.phase, key, type: action.type });
+    applyAction(action);
+    return true;
+  }), [registerRemoteAction, state, applyAction, logger]);
 
   if (error) return <div className="party-games__error">{error}</div>;
   if (!set || !state) return <TitleCard title="Loading…" />;

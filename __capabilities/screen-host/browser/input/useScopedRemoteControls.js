@@ -3,7 +3,10 @@ import { getActionBus } from './ActionBus.js';
 
 // Modal apps own their native remote keys before the legacy menu and browser
 // default click handlers. Other adapters can use the ordinary semantic bus.
-export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight } = {}) {
+// onAction({ action, direction, repeat }) sees every remote action first; returning
+// true claims it (e.g. a game board with its own cursor and judging keys).
+export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight, onAction } = {}) {
+  const actionRef = useRef(onAction); actionRef.current = onAction;
   const escapeRef = useRef(onEscape); escapeRef.current = onEscape;
   const leftRef = useRef(onLeft); leftRef.current = onLeft;
   const rightRef = useRef(onRight); rightRef.current = onRight;
@@ -17,6 +20,7 @@ export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight } =
       .filter(node => node instanceof HTMLElement && !node.closest('[hidden], [aria-hidden="true"]'));
     const focus = () => { if (!root.contains(document.activeElement)) (root.querySelector('[autofocus]:not(:disabled)') || buttons()[0])?.focus(); };
     const handle = ({ action, direction, repeat } = {}) => {
+      if (actionRef.current?.({ action, direction, repeat: Boolean(repeat) }) === true) return;
       if (action === 'escape') { if (!repeat) escapeRef.current?.(); return; }
       if (action === 'navigate' && direction === 'left' && leftRef.current) {
         if (repeat || leftRef.current() !== false) return;

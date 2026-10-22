@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveJeopardyKey } from "./keymap.js";
+import { resolveJeopardyKey, remoteActionKey } from "./keymap.js";
 
 describe('resolveJeopardyKey', () => {
   it('board: arrows move, enter selects', () => {
@@ -21,5 +21,16 @@ describe('resolveJeopardyKey', () => {
     expect(resolveJeopardyKey({ phase: 'final-clue', key: 'Enter' })).toEqual({ type: 'REVEAL' });
     expect(resolveJeopardyKey({ phase: 'wager', key: 'Enter' })).toBe(null);
     expect(resolveJeopardyKey({ phase: 'board', key: 'x' })).toBe(null);
+  });
+});
+
+describe('remoteActionKey', () => {
+  it('maps shell remote actions back to the host keys', () => {
+    expect(remoteActionKey({ action: 'navigate', direction: 'up' })).toBe('ArrowUp');
+    expect(remoteActionKey({ action: 'navigate', direction: 'right' })).toBe('ArrowRight');
+    expect(remoteActionKey({ action: 'select' })).toBe('Enter');
+    expect(remoteActionKey({ action: 'escape' })).toBe('Escape');
+    expect(remoteActionKey({ action: 'select', repeat: true })).toBe(null);
+    expect(remoteActionKey({ action: 'other' })).toBe(null);
   });
 });
