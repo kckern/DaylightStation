@@ -272,7 +272,9 @@ export class GamepadAdapter {
       this._invalidateAllSeeds();
       return;
     }
-    const gamepads = getActiveGamepads();
+    // Team-bound controllers poll first: a phantom twin (one physical pad at
+    // two indices) then loses the same-id dedupe and cannot navigate.
+    const gamepads = getActiveGamepads().sort((a, b) => Number(roleBindings.has(`${b.index}:${b.id}`)) - Number(roleBindings.has(`${a.index}:${a.id}`)));
     for (const gp of gamepads) {
       this._pollOne(gp);
     }

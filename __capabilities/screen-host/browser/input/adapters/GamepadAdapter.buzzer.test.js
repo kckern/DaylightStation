@@ -77,4 +77,19 @@ describe('GamepadAdapter team buzzers', () => {
     expect(h.emitted).toHaveBeenCalledWith('select', {});
     h.done();
   });
+
+  it('a phantom twin of a bound controller cannot navigate (bound one is polled first)', async () => {
+    const h = harness();
+    const phantom = pad(0, 'Twin Pad'); const real = pad(1, 'Twin Pad');
+    restoreGamepadRoleBindings({ 'gamepad:1:Twin Pad': 'team_1' });
+    const filtering = await import('../gamepadFiltering.js');
+    const spy = vi.spyOn(filtering, 'getActiveGamepads').mockReturnValue([phantom, real]);
+    h.adapter._pollGamepad();                                // seed both
+    press(phantom, 0); press(real, 0);                       // mirrored state
+    h.adapter._pollGamepad();
+    expect(h.emitted).not.toHaveBeenCalled();
+    expect(h.keys).toEqual([]);
+    expect(h.intents.filter((i) => i.phase === 'press').map((i) => i.controller_id)).toEqual(['1:Twin Pad']);
+    spy.mockRestore(); h.done();
+  });
 });
