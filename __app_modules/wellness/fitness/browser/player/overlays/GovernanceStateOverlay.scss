@@ -1,3 +1,5 @@
+@use '../../shared/styles/zones' as zones;
+
 .governance-overlay {
   --governance-overlay-gutter: clamp(4px, 0.9vw, 10px);
   --governance-overlay-avail-w: calc(100% - (var(--governance-overlay-gutter) * 2));
@@ -722,12 +724,16 @@
   }
 }
 
+// Heart-rate zones come from the shared palette (shared/styles/_zones.scss,
+// mirrored by shared/constants/fitness.js), so a lock row's pills match its
+// progress bar and the sidebar. This map used to say Warm = orange and
+// Hot = Fire = red.
 $lock-zone-hues: (
-  cool: #38bdf8,
-  active: #22c55e,
-  warm: #fb923c,
-  hot: #ef4444,
-  fire: #ef4444,
+  cool: zones.$zone-cool,
+  active: zones.$zone-active,
+  warm: zones.$zone-warm,
+  hot: zones.$zone-hot,
+  fire: zones.$zone-fire,
   cardio: #f97316,
   peak: #c084fc,
   "green": #22c55e,
