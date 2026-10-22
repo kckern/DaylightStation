@@ -38,6 +38,33 @@ describe('WeekGrid', () => {
     expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner-a', '2026-10-15');
   });
 
+  it('waits for the Day record to go first: nothing is read in the mounting frame', () => {
+    mount();
+    expect(schoolApi.agendaPreview).not.toHaveBeenCalled();
+    expect(schoolApi.teacherDay).not.toHaveBeenCalled();
+  });
+
+  it('reads at most three days at once (six GETs, the browser\'s per-host socket count)', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const pending = [];
+    schoolApi.agendaPreview.mockImplementation(() => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise((resolve) => pending.push(() => { inFlight -= 1; resolve(ok({ sections: [] })); }));
+    });
+    mount();
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(3));
+    // Release one day at a time; a fourth never starts until one finishes.
+    while (pending.length) {
+      expect(inFlight).toBeLessThanOrEqual(3);
+      pending.shift()();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(7);
+    expect(peak).toBe(3);
+  });
+
   it('has a column button for each of the seven days, today pressed', async () => {
     mount();
     await screen.findByText('Wed 21');

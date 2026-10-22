@@ -8,6 +8,14 @@
  * cannot disagree with the day it opens. A day that will not load is marked
  * as unknown in its column; it never takes the other six down with it.
  *
+ * IT WAITS ITS TURN. Fourteen GETs fired beside the Day record's two used to
+ * fill the browser's six sockets per host, and every `/teacher/day` builds the
+ * whole household, so the record the grown-up came for loaded behind the week.
+ * Two rules, both kept inside this file so the Day record knows nothing about
+ * the week: the reads start only once the browser has painted and gone idle
+ * (the Day record's GETs, issued in the same mount, are queued by then), and
+ * at most three days — six GETs — are in flight at once.
+ *
  * On a phone the table scrolls sideways inside the panel; the page does not.
  */
 import { schoolApi } from "../../schoolApi.js";
@@ -22,6 +30,37 @@ import PanelFrame from "./PanelFrame.jsx";
 // The cell's mark, so its state never rides on colour alone. A percent, when
 // there is one, says more than any of these.
 const STATUS_MARK = { done: '✓', 'in-progress': '…', blocked: '!', deferred: '–', planned: '' };
+
+// Three days, two GETs each: the browser's six sockets per host, and the Day
+// record's own pair already ahead of them in the queue.
+export const WEEK_DAY_CONCURRENCY = 3;
+
+/**
+ * Run `fn` over `items` with at most `limit` running at once, results in order.
+ * An aborted `signal` starts nothing further; what is already running finishes.
+ */
+export async function mapWithConcurrency(items, limit, fn, signal = null) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length && !signal?.aborted) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+// After the mounting frame has painted and the main thread is free; a browser
+// without `requestIdleCallback` (Safari) gets a short timeout instead.
+function afterFirstPaint() {
+  return new Promise((resolve) => {
+    if (typeof globalThis.requestIdleCallback === 'function') globalThis.requestIdleCallback(() => resolve(), { timeout: 1000 });
+    else setTimeout(resolve, 50);
+  });
+}
 
 async function readDay(learnerId, studyDay) {
   try {
@@ -52,8 +91,12 @@ function dayName(total) {
 }
 
 export default function WeekGrid({ learnerId, endDay, selectedDay, onSelectDay }) {
-  const week = usePanelFetch(async () => {
-    const days = await Promise.all(weekDays(endDay).map((studyDay) => readDay(learnerId, studyDay)));
+  const week = usePanelFetch(async ({ signal } = {}) => {
+    await afterFirstPaint();
+    // Unmounted, or moved to another learner, while waiting: read nothing.
+    if (signal?.aborted) return { ok: false, status: 0, data: null };
+    const days = await mapWithConcurrency(weekDays(endDay), WEEK_DAY_CONCURRENCY, (studyDay) => readDay(learnerId, studyDay), signal);
+    if (signal?.aborted) return { ok: false, status: 0, data: null };
     // Every day failed: that is the panel failing, not seven unknown days.
     // All-404 is the lifecycle routes missing on this install.
     if (days.every((day) => !day.known)) {

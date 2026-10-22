@@ -38,6 +38,9 @@ export function usePanelFetch(fetcher, {
 
   useEffect(() => {
     let alive = true;
+    // Handed to the fetcher so a read that is not one request (the week grid's
+    // seven days) can stop between them once its answer would be thrown away.
+    const controller = new AbortController();
     // Deps changed = a different query (new learner/day) — stale data from
     // the old query must never show under the new one.
     const depsKey = JSON.stringify(deps);
@@ -46,7 +49,7 @@ export function usePanelFetch(fetcher, {
     setResult(stale
       ? { state: stale.state, data: stale.data, refreshing: true }
       : { state: 'loading', data: null, refreshing: false });
-    fetcherRef.current().then(({ ok, status, data }) => {
+    fetcherRef.current({ signal: controller.signal }).then(({ ok, status, data }) => {
       if (!alive) return;
       if (!ok) {
         if (status === 404 && notFoundAs !== 'error') {
@@ -80,7 +83,7 @@ export function usePanelFetch(fetcher, {
         ? { state: stale.state, data: stale.data, refreshing: false }
         : { state: 'error', data: null, refreshing: false });
     });
-    return () => { alive = false; };
+    return () => { alive = false; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, ...deps]);
 
