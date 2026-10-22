@@ -201,9 +201,11 @@ day never writes, for today or any other day.
 
 The Day uses one compact row per subject. The progress chip is the state; the
 lesson identity is not itself a hidden navigation target. **Open details** is
-the explicit route into the session record, **Preview** opens the launch card,
-and paper controls appear directly only when an issued artifact actually
-exists. A subject with no planned offer is **No assignment**, not **Not
+the explicit route into the session record, **Preview** opens the launch card
+(today's rows only: the card is what the child would open now, so a past day
+has none), and paper controls appear directly only when an issued artifact
+actually exists. The printed-agenda block mentions sending today's agenda to
+the printer only when the day shown is today. A subject with no planned offer is **No assignment**, not **Not
 started**, and is excluded from the unfinished count.
 
 **This week** sits above the Day: a subject × day grid of the seven days

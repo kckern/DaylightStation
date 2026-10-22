@@ -296,3 +296,33 @@ describe('LearnerDayView — agenda dispatch', () => {
     expect(screen.queryByRole('button', { name: /^Print it now$/i })).not.toBeInTheDocument();
   });
 });
+
+// --- A past day is a record, not a launch pad -------------------------------
+describe('LearnerDayView — past days', () => {
+  beforeEach(() => { vi.setSystemTime(new Date('2026-08-25T12:00:00Z')); });
+  afterEach(() => vi.useRealTimers());
+
+  it('offers a launch-card Preview on today\'s rows only', async () => {
+    const today = mount({ studyDay: '2026-08-25' });
+    await screen.findByText('Tuesday, Aug 25');
+    expect(screen.getAllByRole('button', { name: /^Preview ↗$/ }).length).toBeGreaterThan(0);
+    today.unmount();
+
+    mount({ studyDay: '2026-08-24' });
+    await screen.findByText('Monday, Aug 24');
+    await screen.findByText('Fractions 3');
+    expect(screen.queryByRole('button', { name: /^Preview ↗$/ })).toBeNull();
+  });
+
+  it('mentions sending today\'s agenda to the printer only on today', async () => {
+    const today = mount({ studyDay: '2026-08-25' });
+    await screen.findByText('Tuesday, Aug 25');
+    expect(screen.getByText(/Printing sends today.s agenda/)).toBeInTheDocument();
+    today.unmount();
+
+    mount({ studyDay: '2026-08-24' });
+    await screen.findByText('Monday, Aug 24');
+    expect(screen.queryByText(/today.s agenda/)).toBeNull();
+    expect(screen.getByText(/Printing is offered for today only/)).toBeInTheDocument();
+  });
+});

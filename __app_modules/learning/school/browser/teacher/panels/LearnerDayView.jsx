@@ -68,7 +68,7 @@ export function PrintedAgenda({ learnerId, studyDay }) {
   );
 }
 
-function DayRow({ row, learnerId, onOpenSession }) {
+function DayRow({ row, learnerId, isToday, onOpenSession }) {
   const session = row.session;
   // The SESSION's subject wins over the section's. The planner buckets
   // non-canonical subjects into 'other', so a unit-matched piano lesson
@@ -122,7 +122,10 @@ function DayRow({ row, learnerId, onOpenSession }) {
         {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
         <div className="teacher-day-row__actions">
           {session?.sessionId && <button type="button" className="teacher-btn" onClick={() => onOpenSession(session.sessionId)}>Open details</button>}
-          <LaunchPreviewAction learnerId={learnerId} subject={subject} label="Preview" />
+          {/* The launch card is what the child would open NOW, so it only
+              answers a question on today's rows; on a past day it would show
+              today's lesson under yesterday's row. */}
+          {isToday && <LaunchPreviewAction learnerId={learnerId} subject={subject} label="Preview" />}
           {session && <DigestArtifactButtons session={session} onOpen={(kind, openedSession) => {
             teacherLog.nav('artifact-open', { learnerId, sessionId: openedSession.sessionId, kind });
           }} />}
@@ -139,6 +142,9 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
   const day = usePanelFetch(() => schoolApi.teacherDay(studyDay), {
     deps: [learnerId, studyDay], panel: 'learner-day-record', notFoundAs: 'unavailable',
   });
+  // A past (or future) day is a record to read, not a launch pad: no launch
+  // preview, and no promise that printing sends this day's agenda.
+  const isToday = studyDay === localDay();
 
   const learnerRow = useMemo(
     () => (day.data?.learners ?? (Array.isArray(day.data) ? day.data : [])).find((row) => row.learnerId === learnerId) ?? null,
@@ -203,7 +209,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
           </ul>
         )}
         <ul className="teacher-day-rows">
-          {joined.rows.map((row) => <DayRow key={row.key} row={row} learnerId={learnerId} onOpenSession={onOpenSession} />)}
+          {joined.rows.map((row) => <DayRow key={row.key} row={row} learnerId={learnerId} isToday={isToday} onOpenSession={onOpenSession} />)}
         </ul>
       </PanelFrame>
       {/* Outside the PanelFrame deliberately: PanelFrame renders children
@@ -212,7 +218,11 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
       <section className="teacher-day-print-tools" aria-labelledby="teacher-day-print-title">
         <div>
           <h2 id="teacher-day-print-title">Printed agenda</h2>
-          <p>Preview is inert. Printing sends today&rsquo;s agenda to the physical printer.</p>
+          <p>
+            {isToday
+              ? <>Preview is inert. Printing sends today&rsquo;s agenda to the physical printer.</>
+              : 'Preview is inert. Printing is offered for today only.'}
+          </p>
         </div>
         <div className="teacher-action-row">
           <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
