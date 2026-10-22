@@ -43,7 +43,7 @@ const learnerWeek = (learnerId, silver, pendingSilver = 0) => ({
   ],
 });
 
-async function installWorld(page) {
+async function installWorld(page, { bankFails = false, openRefusal = null } = {}) {
   const writes = [];
   // The test flips `silver` right before it advances the poll. The board reads
   // earnings twice at load (the roster arrives after the first render), so a
@@ -61,6 +61,7 @@ async function installWorld(page) {
     if (pathname === '/api/v1/school/roster') return json(ROSTER);
     if (pathname === '/api/v1/school/book-scans/pending') return json({ intent: null });
     if (pathname === '/api/v1/school/bank/open' && method === 'POST') {
+      if (openRefusal) return json({ error: openRefusal }, 403);
       return json({ launchTarget: { kind: 'program', program: 'economy-bank', learnerId: request.postDataJSON().learnerId } });
     }
     if (pathname === '/api/v1/earnings/preview') {
@@ -68,7 +69,7 @@ async function installWorld(page) {
       return json({ windows: { school: WEEK }, learners: [learnerWeek('test-learner', world.silver, 2), learnerWeek('test-learner-2', 4)] });
     }
     if (/^\/api\/v1\/economy\/users\/[^/]+\/wallet$/.test(pathname)) return json({ balance: 5, balances: { silver: 5, gold: 12, gems: 1 } });
-    if (/^\/api\/v1\/economy\/users\/[^/]+\/bank$/.test(pathname)) return json(BANK);
+    if (/^\/api\/v1\/economy\/users\/[^/]+\/bank$/.test(pathname)) return bankFails ? json({ error: 'down' }, 503) : json(BANK);
     if (pathname.endsWith('/agenda/preview')) {
       return json({ studyDay: STUDY_DAY, errors: [], entries: [{ unitId: 'math.01', subject: 'math' }],
         sections: [{ subject: 'math', next: { unitId: 'math.01', title: 'Fractions' }, obligation: { state: 'obligated' } }] });
@@ -133,4 +134,39 @@ test('coin cells open the bank screen, and a silver rise pops the ceremony over 
   await shot(page, '03-ceremony');
 
   expect(world.writes.filter((w) => /economy|earnings/.test(w))).toEqual([]);
+});
+
+test('a bank that cannot be read naps, with no numbers', async ({ page }) => {
+  await page.setViewportSize(VIEWPORT);
+  await installWorld(page, { bankFails: true });
+  await page.goto('/school');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole('button', { name: /^Alpha's bank/ }).click();
+  const bank = page.getByTestId('bank-screen');
+  await expect(bank.getByTestId('bank-napping')).toHaveText('The bank is napping. Try again soon.');
+  await expect(bank.getByTestId('bank-balances')).toHaveCount(0);
+  await expect(bank.getByTestId('bank-ledger-row')).toHaveCount(0);
+  await shot(page, '04-napping');
+});
+
+test('a refused open shows the refusal on "Whose bank?", outside the board, and Back returns', async ({ page }) => {
+  await page.setViewportSize(VIEWPORT);
+  await installWorld(page, { openRefusal: 'Choose a current School learner.' });
+  await page.goto('/school');
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible({ timeout: 20_000 });
+
+  const door = page.getByRole('button', { name: /^Alpha's bank/ });
+  await door.click();
+  const who = page.getByRole('dialog', { name: 'Whose bank' });
+  await expect(who).toBeVisible();
+  await expect(who.getByRole('alert')).toHaveText('Choose a current School learner.');
+  await expect(page.getByTestId('bank-screen')).toHaveCount(0);
+  expect(await page.getByTestId('agenda-status-board').evaluate((board, el) => board.contains(el), await who.elementHandle())).toBe(false);
+  await shot(page, '05-refusal');
+
+  await who.getByTestId('screen-header-back').click();
+  await expect(who).toHaveCount(0);
+  await expect(page.getByTestId('selfservice-keypad')).toBeVisible();
+  await expect(door).toBeFocused();
 });
