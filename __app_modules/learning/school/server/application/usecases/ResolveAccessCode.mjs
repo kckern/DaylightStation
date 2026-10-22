@@ -134,6 +134,27 @@ function expiredCard(weekday, ageHours) {
   };
 }
 
+/**
+ * Today's card, opened from an old sheet, with the sheet's day named on it so
+ * the child knows the buttons are for today and not what the paper says.
+ * A refusal (spent, faulted) passes through unchanged.
+ */
+function oldSheetCard(card, weekday, ageHours) {
+  if (!card?.ok) return card;
+  const day = weekday && Number.isFinite(ageHours) && ageHours >= LAST_WEEKDAY_AGE_HOURS
+    ? `last ${weekday}` : weekday;
+  const note = day
+    ? `That sheet is from ${day}. Here's today's work.`
+    : "That sheet is from another day. Here's today's work.";
+  const join = (message) => (message ? `${note} ${message}` : note);
+  return {
+    ...card,
+    sentence: join(card.sentence),
+    ...(card.presentation ? { presentation: { ...card.presentation, message: join(card.presentation.message) } } : {}),
+    oldSheet: { weekday: day ?? null },
+  };
+}
+
 const WEEKDAYS = Object.freeze(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']);
 
 /**
@@ -319,6 +340,45 @@ export class ResolveAccessCode {
       return { card: this.#faulted('lookup', { error: error?.message ?? String(error) }), resolution: null };
     }
 
+    // Not live — but was it ever? An old sheet still names its learner and
+    // subject, so it opens TODAY's card for them instead of refusing. The 4am
+    // rollover (design D5) still means the code no longer opens what the
+    // paper says; it now opens what is next, and the card says so. Refusing
+    // here sent children to a grown-up for what the panel can answer itself.
+    // Costs no throttle allowance: the child is reading paper, not guessing.
+    if (!record) {
+      const expired = await this.#expiredRecord(code);
+      if (expired) {
+        const issuedAt = expired.issuedAt ?? null;
+        const issuedMs = Date.parse(issuedAt ?? '');
+        const ageHours = Number.isFinite(issuedMs)
+          ? Math.round((this.#clock().getTime() - issuedMs) / 360_000) / 10
+          : null;
+        const weekday = sheetWeekday(expired, this.#timezone);
+        const learnerId = expired.subject?.learnerId ?? null;
+        if (!learnerId) {
+          this.#logger.info?.('school.selfservice.code.rejected', {
+            reason: 'expired', learnerId, issuedAt, ageHours,
+          });
+          this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
+          return { card: expiredCard(weekday, ageHours), resolution: null };
+        }
+        this.#logger.info?.('school.selfservice.code.old-sheet', {
+          learnerId,
+          subject: expired.subject?.subject ?? null,
+          tokenClass: expired.tokenClass ?? null,
+          issuedAt,
+          ageHours,
+        });
+        const result = await this.#resolveRecord(expired, deviceId);
+        return { ...result, card: oldSheetCard(result.card, weekday, ageHours) };
+      }
+    }
+
+    return this.#resolveRecord(record, deviceId);
+  }
+
+  async #resolveRecord(record, deviceId) {
     if (record?.tokenClass === 'worksheet_companion') {
       try {
         return await this.#resolveCompanion(record);
@@ -362,27 +422,6 @@ export class ResolveAccessCode {
       // code-specific mechanism (that is what `#strikeAttempt` below is for).
       this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
       return { card: USED_UP, resolution: null };
-    }
-
-    // Not live — but was it ever? An old sheet gets its day named and costs
-    // no throttle allowance: the child is reading paper, not guessing.
-    if (!record) {
-      const expired = await this.#expiredRecord(code);
-      if (expired) {
-        const issuedAt = expired.issuedAt ?? null;
-        const issuedMs = Date.parse(issuedAt ?? '');
-        const ageHours = Number.isFinite(issuedMs)
-          ? Math.round((this.#clock().getTime() - issuedMs) / 360_000) / 10
-          : null;
-        this.#logger.info?.('school.selfservice.code.rejected', {
-          reason: 'expired',
-          learnerId: expired.subject?.learnerId ?? null,
-          issuedAt,
-          ageHours,
-        });
-        this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
-        return { card: expiredCard(sheetWeekday(expired, this.#timezone), ageHours), resolution: null };
-      }
     }
 
     const learnerId = record?.subject?.learnerId ?? null;

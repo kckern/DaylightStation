@@ -84,6 +84,7 @@ const build = async ({
       expiresAt: new Date(clock.epoch() + 168 * 3_600_000).toISOString(),
       accessCode: seed.code,
       accessCodeExpiresAt: seed.accessCodeExpiresAt ?? TOMORROW,
+      ...(seed.maxUses ? { maxUses: seed.maxUses } : {}),
     });
     // eslint-disable-next-line no-await-in-loop
     await tokens.put(record);
@@ -296,14 +297,20 @@ describe('a code that does not work', () => {
     expect(card.actions).toEqual([]);
   });
 
-  it('says which day the sheet is from when its study day has rolled over', async () => {
+  it("opens today's card for an old sheet, naming the sheet's day", async () => {
     await build({ codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }] });
-    const card = await useCase.execute({ code: CODE });
-    expect(card.ok).toBe(false);
-    expect(card.reason).toBe('expired');
+    const { card, resolution } = await useCase.resolve({ code: CODE });
+    expect(card.ok).toBe(true);
+    expect(card.learner).toBe('kid1');
+    expect(card.subject).toBe('math');
     // Expired at 2026-07-27T04:00Z, so it belonged to Sunday the 26th.
-    expect(card.sentence).toBe("That sheet is from Sunday. Tap your card for today's.");
-    expect(card.actions).toEqual([]);
+    expect(card.sentence).toMatch(/^That sheet is from Sunday\. Here's today's work\./);
+    expect(card.oldSheet).toEqual({ weekday: 'Sunday' });
+    expect(card.actions.some((a) => a.kind !== 'exit')).toBe(true);
+    // Something `/act` can run: the resolution is today's, not null.
+    expect(resolution).not.toBeNull();
+    // Still read-only.
+    expect(appended).toEqual([]);
   });
 
   it('names the sheet day in the household timezone, not UTC', async () => {
@@ -315,7 +322,7 @@ describe('a code that does not work', () => {
       clockIso: '2026-07-27T18:00:00.000Z',
     });
     const card = await useCase.execute({ code: CODE });
-    expect(card.sentence).toBe("That sheet is from Sunday. Tap your card for today's.");
+    expect(card.sentence).toMatch(/^That sheet is from Sunday\./);
   });
 
   it('logs who typed the old sheet and how old it was, never the digits', async () => {
@@ -325,10 +332,11 @@ describe('a code that does not work', () => {
       logger: { ...silentLogger, info: (event, data) => events.push([event, data]) },
     });
     await useCase.execute({ code: CODE });
-    const rejected = events.filter(([event]) => event === 'school.selfservice.code.rejected');
-    expect(rejected).toHaveLength(1);
-    const [, data] = rejected[0];
-    expect(data).toMatchObject({ reason: 'expired', learnerId: 'kid1' });
+    expect(events.filter(([event]) => event === 'school.selfservice.code.rejected')).toEqual([]);
+    const old = events.filter(([event]) => event === 'school.selfservice.code.old-sheet');
+    expect(old).toHaveLength(1);
+    const [, data] = old[0];
+    expect(data).toMatchObject({ learnerId: 'kid1', subject: 'math' });
     // The fake clock mints and reads at the same instant, so the paper is 0h old.
     expect(data.issuedAt).toBe('2026-07-27T09:00:00.000Z');
     expect(data.ageHours).toBe(0);
@@ -343,19 +351,30 @@ describe('a code that does not work', () => {
     });
     clock.advanceMs(26 * 3_600_000 + 7 * 60_000);
     await useCase.execute({ code: CODE });
-    const [, data] = events.find(([event]) => event === 'school.selfservice.code.rejected');
-    expect(data.reason).toBe('expired');
+    const [, data] = events.find(([event]) => event === 'school.selfservice.code.old-sheet');
     expect(data.ageHours).toBe(26.1);
   });
 
-  it('still counts an old sheet as kiosk friction', async () => {
+  it('does not count an old sheet as kiosk friction', async () => {
     const calls = [];
     await build({
       codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY }],
       kioskFrictionTracker: { recordFriction: async (call) => { calls.push(call); } },
     });
     await useCase.execute({ code: CODE, deviceId: 'panel-1' });
-    expect(calls).toEqual([{ deviceId: 'panel-1', kind: 'code-rejected' }]);
+    expect(calls).toEqual([]);
+  });
+
+  it('still refuses an old sheet once its uses are spent', async () => {
+    await build({ codes: [{ code: CODE, learnerId: 'kid1', subject: 'math', accessCodeExpiresAt: YESTERDAY, maxUses: 3 }] });
+    const { record } = await tokens.lookupAccessCode(CODE);
+    for (let i = 0; i < 3; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await tokens.recordUse(record.token, { at: clock.iso() });
+    }
+    const card = await useCase.execute({ code: CODE });
+    expect(card.ok).toBe(false);
+    expect(card.reason).toBe('used_up');
   });
 
   it('falls back to a plain try again when the explaining lookup throws', async () => {
@@ -379,8 +398,8 @@ describe('a code that does not work', () => {
     });
     clock.advanceDays(7);
     const card = await useCase.execute({ code: CODE });
-    expect(card.reason).toBe('expired');
-    expect(card.sentence).toBe("That sheet is from last Monday. Tap your card for today's.");
+    expect(card.ok).toBe(true);
+    expect(card.sentence).toMatch(/^That sheet is from last Monday\./);
   });
 
   it('keeps the bare weekday just under six days', async () => {
@@ -389,7 +408,7 @@ describe('a code that does not work', () => {
     });
     clock.advanceHours(143.9);
     const card = await useCase.execute({ code: CODE });
-    expect(card.sentence).toBe("That sheet is from Monday. Tap your card for today's.");
+    expect(card.sentence).toMatch(/^That sheet is from Monday\./);
   });
 
   it('never throttles an old sheet, however many times it is typed', async () => {
@@ -401,7 +420,7 @@ describe('a code that does not work', () => {
     for (let i = 0; i < 12; i += 1) {
       // eslint-disable-next-line no-await-in-loop
       const card = await useCase.execute({ code: CODE, deviceId: 'panel-1' });
-      expect(card.reason).toBe('expired');
+      expect(card.ok).toBe(true);
     }
     // The child is not guessing; spending their allowance would turn the
     // next real typo into "slow down".
