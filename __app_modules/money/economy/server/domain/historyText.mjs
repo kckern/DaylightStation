@@ -3,11 +3,17 @@
  *
  *   +2 silver · Isaiah 50–51 passed      a payout, named by its evidence line
  *   +5 silver · Scripture (whole week)   …or by its rule label, then "schoolwork"
+ *   +2 silver · Korean · Tuesday         a per-day payout: the day(s) it paid for
+ *   +4 silver · Rings · 540 this week    a ring payout: the week's rings when it paid
  *   −3 silver · early pass               a pass bought
  *   +3 silver · early pass refunded      its refund (both matched on `source: pass`)
  *   12 silver → 12 gold · Sunday         a week close: both convert halves, one line
  *
- * Each line also carries `source`, `label`, signed `legs` and `balanceAfter`,
+ * The part after the label (`detail`) comes from the `meta` PayoutService
+ * keeps on the entry (`payoutMeta`); an entry minted before that has none and
+ * reads as its label alone.
+ *
+ * Each line also carries `source`, `label`, `detail`, signed `legs` and `balanceAfter`,
  * so a surface can show where coins came from and the running balance
  * without parsing the sentence or the ledger ref.
  *
@@ -106,6 +112,39 @@ function phrase(t, { ruleLabels, evidenceLabels }) {
   }
 }
 
+const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dayName = (day) => WEEKDAY[new Date(`${day}T12:00:00.000Z`).getUTCDay()];
+const DAY_KINDS = new Set(['section-day', 'day-met']);
+const RING_KINDS = new Set(['ring-threshold', 'ring-contest']);
+
+/**
+ * What each payout entry was for, by index, from its `meta`: the study days
+ * it paid (a per-day line's days not already paid by an older entry of the
+ * same ref and currency) or the week's ring count. Folded oldest first.
+ */
+function payoutDetails(list) {
+  const details = new Array(list.length).fill(null);
+  const seen = new Map(); // `${currency}|${ref}` → days already paid
+  for (let k = list.length - 1; k >= 0; k -= 1) {
+    const t = list[k];
+    const meta = t.meta;
+    if (!meta || typeof meta !== 'object') continue;
+    if (DAY_KINDS.has(meta.kind) && Array.isArray(meta.days)) {
+      const key = `${t.currency ?? 'silver'}|${t.ref}`;
+      const before = seen.get(key) ?? new Set();
+      const fresh = meta.days.filter((d) => !before.has(d));
+      seen.set(key, new Set([...before, ...meta.days]));
+      if (fresh.length) details[k] = { days: fresh, text: fresh.map(dayName).join(', ') };
+    } else if (RING_KINDS.has(meta.kind) && Number.isFinite(meta.count)) {
+      details[k] = { text: `${meta.count.toLocaleString('en-US')} this week` };
+    }
+  }
+  return details;
+}
+
+// "Korean (each day done)" says how the rule pays; once the line names the day, the bracket is noise.
+const withoutRuleNote = (label) => label.replace(/\s*\([^)]*\)\s*$/, '') || label;
+
 /** One entry as a sentence ("+2 silver · Isaiah 50–51 passed"). Convert halves read alone. */
 export function entrySentence(t, opts = {}) {
   const currency = t.currency ?? 'silver';
@@ -118,7 +157,7 @@ export function entrySentence(t, opts = {}) {
 
 /**
  * The entries (newest first, as `getHistory` returns them) as lines:
- * `{ text, at, kind, ids, source, label, legs, balanceAfter }`. The two halves
+ * `{ text, at, kind, ids, source, label, detail, legs, balanceAfter }`. The two halves
  * of a conversion, sharing an `evidenceRef` with opposite signs, become one
  * line: "12 silver → 12 gold · Sunday", placed where the first half appears,
  * with both legs (spend half first). `at` is not compared, so a pair whose
@@ -132,6 +171,7 @@ export function entrySentence(t, opts = {}) {
 export function historyLines(entries, opts = {}) {
   const list = (entries ?? []).filter((t) => t && Number.isFinite(t.delta) && t.delta !== 0);
   const after = balancesAfter(list);
+  const details = payoutDetails(list);
   const used = new Set();
   const lines = [];
   list.forEach((t, i) => {
@@ -149,15 +189,20 @@ export function historyLines(entries, opts = {}) {
         const text = `${-out.delta} ${from} → ${back.delta} ${to}${day ? ` · ${day}` : ''}`;
         lines.push({
           text, at: t.at, kind: 'convert', ids: [t.id, list[j].id],
-          source: 'conversion', label: `${from} → ${to}`, legs: [leg(out), leg(back)], balanceAfter: after[Math.min(i, j)],
+          source: 'conversion', label: `${from} → ${to}`, detail: null, legs: [leg(out), leg(back)], balanceAfter: after[Math.min(i, j)],
         });
         return;
       }
     }
+    const detail = details[i];
+    const label = t.kind === 'convert' ? (t.delta < 0 ? 'converted' : 'from a conversion') : phrase(t, opts);
+    const named = detail?.days ? withoutRuleNote(label) : label;
     lines.push({
-      text: entrySentence(t, opts), at: t.at, kind: t.kind, ids: [t.id],
+      text: detail ? `${amount(t.delta, t.currency ?? 'silver')} · ${named} · ${detail.text}` : entrySentence(t, opts),
+      at: t.at, kind: t.kind, ids: [t.id],
       source: entrySource(t),
-      label: t.kind === 'convert' ? (t.delta < 0 ? 'converted' : 'from a conversion') : phrase(t, opts),
+      label: named,
+      detail: detail?.text ?? null,
       legs: [leg(t)], balanceAfter: after[i],
     });
   });

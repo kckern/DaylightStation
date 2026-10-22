@@ -329,8 +329,9 @@ export class EconomyService {
    * @param {string|null} [args.timeliness]
    * @param {string|null} [args.evidenceRef] - the earning line the entry pays for
    * @param {string} [args.source='payout']
+   * @param {object|null} [args.meta] - what the line looked like when it paid (`payoutMeta`)
    */
-  async mint(userId, { currency = 'silver', amount, kind = 'earn', ref, ruleId = null, timeliness = null, evidenceRef = null, source = 'payout' }) {
+  async mint(userId, { currency = 'silver', amount, kind = 'earn', ref, ruleId = null, timeliness = null, evidenceRef = null, source = 'payout', meta = null }) {
     this.#assertUser(userId);
     if (!['earn', 'prize'].includes(kind)) throw new ValidationError(`mint kind must be earn or prize, got ${kind}`);
     if (!Number.isInteger(amount) || amount <= 0) throw new ValidationError('mint amount must be a positive integer');
@@ -345,7 +346,7 @@ export class EconomyService {
         const wallet = this.#snapshot(userId);
         return { userId, minted: 0, duplicate: true, paid, txnId: null, balance: wallet.balance, balances: wallet.balances };
       }
-      const txn = createTransaction({ id: this.#newTransactionId(), kind, currency, delta: owed, action: `payout:${ruleId ?? kind}`, source, ref, ruleId, timeliness, evidenceRef, at: this.#now() });
+      const txn = createTransaction({ id: this.#newTransactionId(), kind, currency, delta: owed, action: `payout:${ruleId ?? kind}`, source, ref, ruleId, timeliness, evidenceRef, meta, at: this.#now() });
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy.mint', { userId, kind, currency, minted: owed, ref, ruleId, balance: wallet.balance });

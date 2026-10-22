@@ -125,3 +125,24 @@ describe('historyLines: structured fields for the coin window', () => {
     expect(line).toMatchObject({ source: 'conversion', label: 'converted', legs: [{ currency: 'silver', delta: -12 }], balanceAfter: { silver: 0, gold: 0, gems: 0 } });
   });
 });
+
+describe('historyLines: what a payout was for', () => {
+  const pay = (over) => tx({ kind: 'earn', action: `payout:${over.ruleId}`, source: 'payout', ...over });
+  const o = { ...opts, ruleLabels: { 'korean-daily': 'Korean (each day done)', rings: 'Rings', 'green-day': 'Green day' } };
+  it('a per-day payout names the days it paid, not the days an older entry of the same ref paid', () => {
+    const ref = 'earn:kid:korean-daily:2026-10-19:on-time';
+    const first = pay({ id: '1', ruleId: 'korean-daily', ref, delta: 4, meta: { kind: 'section-day', count: 2, days: ['2026-10-19', '2026-10-20'] } });
+    const second = pay({ id: '2', ruleId: 'korean-daily', ref, delta: 2, meta: { kind: 'section-day', count: 3, days: ['2026-10-19', '2026-10-20', '2026-10-21'] } });
+    const lines = historyLines([second, first], o);
+    expect(lines.map((l) => l.text)).toEqual(['+2 silver · Korean · Wednesday', '+4 silver · Korean · Monday, Tuesday']);
+    expect(lines[0]).toMatchObject({ label: 'Korean', detail: 'Wednesday' });
+  });
+  it('a ring payout says the week\'s rings when it paid', () => {
+    const line = historyLines([pay({ ruleId: 'rings', ref: 'r', delta: 4, meta: { kind: 'ring-threshold', count: 1240 } })], o)[0];
+    expect(line).toMatchObject({ text: '+4 silver · Rings · 1,240 this week', label: 'Rings', detail: '1,240 this week' });
+  });
+  it('an entry minted before meta reads as its label alone', () => {
+    const line = historyLines([pay({ ruleId: 'korean-daily', ref: 'k', delta: 2 })], o)[0];
+    expect(line).toMatchObject({ text: '+2 silver · Korean (each day done)', label: 'Korean (each day done)', detail: null });
+  });
+});

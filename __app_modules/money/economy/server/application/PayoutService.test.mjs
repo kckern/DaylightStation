@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
 import { EconomyService } from "./EconomyService.mjs";
-import { PayoutService } from "./PayoutService.mjs";
+import { PayoutService, payoutMeta } from "./PayoutService.mjs";
 import { EarningsPreviewService } from "./EarningsPreviewService.mjs";
 import { validateRuleset } from "../domain/earnings/index.mjs";
 
@@ -323,5 +323,18 @@ describe('PayoutService with the real EarningsPreviewService', () => {
     const ledgerA = new YamlEconomyDatastore({ configService }).readAllTransactions('learner-a');
     expect(ledgerA.find((t) => t.ruleId === 'contest' && t.currency === 'silver')).toMatchObject({ kind: 'prize', timeliness: 'on-time', ref: 'earn:learner-a:contest:2026-09-21:on-time' });
     expect(ledgerA.some((t) => t.ruleId === 'math-week')).toBe(false); // indeterminate: held
+  });
+});
+
+describe('payoutMeta', () => {
+  it('keeps the kind, the count and, for a per-day line, the days that pay', () => {
+    expect(payoutMeta({ kind: 'section-day', count: 2, evidence: [
+      { day: '2026-10-20', state: 'served' }, { day: '2026-10-19', state: 'served' }, { day: '2026-10-21', state: 'obligated' },
+    ] })).toEqual({ kind: 'section-day', count: 2, days: ['2026-10-19', '2026-10-20'] });
+    expect(payoutMeta({ kind: 'day-met', count: 1, evidence: [{ day: '2026-10-19', state: 'met' }, { day: '2026-10-20', state: 'not_met' }] }))
+      .toEqual({ kind: 'day-met', count: 1, days: ['2026-10-19'] });
+  });
+  it('a ring line keeps its rings and no days', () => {
+    expect(payoutMeta({ kind: 'ring-threshold', count: 540, evidence: [{ threshold: 250, reached: true }] })).toEqual({ kind: 'ring-threshold', count: 540 });
   });
 });

@@ -54,17 +54,6 @@ const AGENDA = {
   errors: [],
 };
 
-// The board's roster read: Kay's week so far, two earned lines.
-const ROSTER_EARNINGS = {
-  windows: { school: { from: '2026-10-19', to: '2026-10-25' } },
-  learners: [{
-    learnerId: 'kid', totals: { silver: 9, gems: 0 }, pending: { silver: 2, gems: 0 },
-    lines: [
-      { ruleId: 'korean-daily', label: 'Korean (each day done)', status: 'earned', amount: { silver: 6, gems: 0 } },
-      { ruleId: 'green-day', label: 'Green day', status: 'earned', amount: { silver: 3, gems: 0 } },
-    ],
-  }],
-};
 const tab = (id) => fireEvent.click(screen.getByTestId(`bank-tab-${id}`));
 
 async function renderScreen(props = {}) {
@@ -77,7 +66,7 @@ beforeEach(() => {
   wsHandlers.length = 0;
   logged.length = 0;
   schoolApi.economyBank.mockReset().mockResolvedValue(ok(bankData()));
-  schoolApi.earningsRoster.mockReset().mockResolvedValue(ok(ROSTER_EARNINGS));
+  schoolApi.earningsRoster.mockReset();
   schoolApi.agendaPreview.mockReset().mockResolvedValue(ok(AGENDA));
   schoolApi.nextItem.mockReset().mockResolvedValue(ok({ subject: 'math', unit: { unitId: 'm1', title: 'Fractions 4-03' }, printable: true, reward: null }));
 });
@@ -214,7 +203,6 @@ describe('BankScreen', () => {
     expect(stats[1]).toHaveTextContent('yours for good');
     expect(stats[2]).toHaveTextContent('yours for good');
 
-    expect(screen.getByTestId('bank-pending')).toHaveTextContent('9 silver so far');
     expect(screen.getByTestId('bank-history')).toBeInTheDocument();
     expect(screen.queryByTestId('bank-spend')).toBeNull();
     expect(screen.queryByTestId('bank-earn')).toBeNull();
@@ -282,7 +270,7 @@ describe('BankScreen history table', () => {
   it('has the four column headers, once', async () => {
     await renderScreen();
     const table = screen.getByTestId('bank-ledger');
-    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Coin', 'Amount', 'Description', 'Balance']);
+    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Time', 'Coin', 'Amount', 'Description', 'Balance']);
     expect(table.querySelectorAll('thead')).toHaveLength(1);
   });
 
@@ -296,27 +284,28 @@ describe('BankScreen history table', () => {
     expect(rowsOf(days[2])).toHaveLength(1);
   });
 
-  it('each row: icon, signed amount, source and label, balance after', async () => {
+  it('each row: time, icon, signed amount, label, balance after', async () => {
     await renderScreen();
     const [today, yesterday, sunday] = screen.getAllByTestId('bank-ledger-day');
     const [earned, spent] = rowsOf(today);
-    expect(earned.querySelectorAll('td')[0].querySelector('svg.coin-icon')).toHaveAttribute('data-metal', 'silver');
-    expect(earned.querySelectorAll('td')[1]).toHaveTextContent('+2');
-    expect(earned.querySelectorAll('td')[1].querySelector('.is-plus')).not.toBeNull();
-    expect(earned.querySelectorAll('td')[2]).toHaveTextContent('Earned \u00b7 Math 4-02 passed');
-    expect(earned.querySelectorAll('td')[3]).toHaveTextContent('7 silver');
-    expect(spent.querySelectorAll('td')[1]).toHaveTextContent('\u22123');
-    expect(spent.querySelectorAll('td')[1].querySelector('.is-minus')).not.toBeNull();
-    expect(spent.querySelectorAll('td')[2]).toHaveTextContent('Spent \u00b7 early pass');
-    expect(spent.querySelectorAll('td')[3]).toHaveTextContent('5 silver');
+    expect(earned.querySelectorAll('td')[1].querySelector('svg.coin-icon')).toHaveAttribute('data-metal', 'silver');
+    expect(earned.querySelectorAll('td')[2]).toHaveTextContent('+2');
+    expect(earned.querySelectorAll('td')[2].querySelector('.is-plus')).not.toBeNull();
+    expect(earned.querySelectorAll('td')[0].textContent).toMatch(/\d:\d\d/);
+    expect(earned.querySelectorAll('td')[3].textContent).toBe('Math 4-02 passed');
+    expect(earned.querySelectorAll('td')[4]).toHaveTextContent('7 silver');
+    expect(spent.querySelectorAll('td')[2]).toHaveTextContent('\u22123');
+    expect(spent.querySelectorAll('td')[2].querySelector('.is-minus')).not.toBeNull();
+    expect(spent.querySelectorAll('td')[3]).toHaveTextContent('early pass');
+    expect(spent.querySelectorAll('td')[4]).toHaveTextContent('5 silver');
     // A conversion shows both coins and both signed amounts.
     const [convert] = rowsOf(sunday);
     const cells = convert.querySelectorAll('td');
-    expect(cells[0].querySelector('svg[data-metal="silver"]')).not.toBeNull();
-    expect(cells[0].querySelector('svg[data-metal="gold"]')).not.toBeNull();
-    expect(cells[1]).toHaveTextContent('\u221212');
-    expect(cells[1]).toHaveTextContent('+12');
-    expect(cells[3]).toHaveTextContent('7 silver \u00b7 12 gold');
+    expect(cells[1].querySelector('svg[data-metal="silver"]')).not.toBeNull();
+    expect(cells[1].querySelector('svg[data-metal="gold"]')).not.toBeNull();
+    expect(cells[2]).toHaveTextContent('\u221212');
+    expect(cells[2]).toHaveTextContent('+12');
+    expect(cells[4]).toHaveTextContent('7 silver \u00b7 12 gold');
     expect(yesterday).toBeTruthy();
   });
 
@@ -326,27 +315,25 @@ describe('BankScreen history table', () => {
     const [row] = rowsOf(yesterday);
     expect(row).toHaveTextContent('Green day');
     expect(row.textContent).not.toMatch(/mystery-ref/);
-    expect(row.querySelectorAll('td')[2].textContent).toBe('Green day');
+    expect(row.querySelectorAll('td')[3].textContent).toBe('Green day');
   });
 
-  it('lists the unpaid week\'s lines; hidden for a stale week and for no figure', async () => {
-    await renderScreen();
-    const pending = screen.getByTestId('bank-pending');
-    expect([...pending.querySelectorAll('li')].map((li) => li.textContent))
-      .toEqual(['+6 silver \u00b7 Korean (each day done)', '+3 silver \u00b7 Green day']);
-    // No pending-silver line: that was the ring-contest standing, not pay (2026-10-21).
-    expect(pending.textContent).not.toMatch(/more possible/);
-    cleanup();
-
-    schoolApi.economyBank.mockResolvedValue(ok(bankData({ studyDay: '2026-11-03' })));
+  it('shows no "not yet paid" panel and does not read the earnings roster: payouts land as they are earned', async () => {
     await renderScreen();
     expect(screen.queryByTestId('bank-pending')).toBeNull();
-    cleanup();
+    expect(screen.getByTestId('bank-screen').textContent).not.toMatch(/not yet paid|payday/i);
+    expect(schoolApi.earningsRoster).not.toHaveBeenCalled();
+  });
 
-    schoolApi.earningsRoster.mockResolvedValue({ ok: false, status: 500, data: null });
+  it('a payout row names what it was for after its label', async () => {
+    schoolApi.economyBank.mockResolvedValue(ok(bankData({ history: [{
+      text: '+2 silver · Korean · Tuesday', at: new Date(NOW - 60_000).toISOString(), kind: 'earn', ids: ['k'],
+      source: 'payout', label: 'Korean', detail: 'Tuesday', legs: [{ currency: 'silver', delta: 2 }], balanceAfter: { silver: 2, gold: 0, gems: 0 },
+    }] })));
     await renderScreen();
-    expect(screen.queryByTestId('bank-pending')).toBeNull();
-    expect(screen.getByTestId('bank-ledger')).toBeInTheDocument();
+    const [row] = rowsOf(screen.getAllByTestId('bank-ledger-day')[0]);
+    expect(row.querySelectorAll('td')[3].textContent).toBe('Korean \u00b7 Tuesday');
+    expect(row.querySelector('.school-bank-ledger__detail')).toHaveTextContent('Tuesday');
   });
 
   it('an empty history says so', async () => {

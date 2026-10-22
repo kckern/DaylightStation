@@ -1798,14 +1798,16 @@ kid's bank, full screen over the locked panel.
   `tablist` with arrow/Home/End keys, a tap or Enter selecting. Esc is bound to
   nothing. A tab change logs `economy.bank.tab-changed {learnerId, tab}`.
 - **History** is the primary job, "here is the balance, how did it get here":
-  the balances above, then "This week, not yet paid" (the board's weekly figure
-  for that kid, read with `earningsRoster` and kept only while it prices the
-  current week, `figureInWeek`), then the ledger (`bank/BankLedger.jsx`) as a
-  table grouped by the panel's local calendar day (split at local midnight, not
-  the 4 am study boundary), newest day first, under Today, Yesterday or the
-  date. Columns: coin icon (a conversion shows both), signed amount,
-  description (`ledgerEntry`'s source word, then its label; never a raw ref) and
-  the balance after the entry.
+  the balances above, then the ledger (`bank/BankLedger.jsx`) as a table
+  grouped by the panel's local calendar day (split at local midnight, not the
+  4 am study boundary), newest day first, under Today, Yesterday or the date.
+  Columns: time (the panel's clock), coin icon (a conversion shows both), signed
+  amount, description (`ledgerEntry`'s label, then its `detail`: the day(s) a
+  per-day payout paid for, the week's rings; never a raw ref, never an
+  "Earned"/"Spent" word the sign already says) and the balance after the entry.
+  There is no "not yet paid" panel: payouts are minted as they are earned (see
+  Payouts in `__docs/reference/economy/economy.md`), so the board's weekly
+  figure would only repeat the ledger.
 - **How to spend.** Each privilege the bank quotes for sale, with its price in
   each coin and "can buy at the piano" or "N more silver" (or gold). The
   server's `affordable` decides; the local balance only fills in a row without

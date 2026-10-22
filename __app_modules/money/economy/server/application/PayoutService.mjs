@@ -33,6 +33,25 @@ export function payoutRef(lineRef, currency) {
 
 const message = (err) => err?.message ?? String(err);
 
+// The evidence states that pay, for the line kinds that pay per day.
+const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met' };
+
+/**
+ * What the line looked like when it paid, kept on the entry so the bank can
+ * say what a payout was for (`historyText`): the line's kind and count (the
+ * week's rings for a ring line) and, for the per-day kinds, the days that
+ * paid so far. A week line pays its growth in several entries; the days new
+ * since the ref's previous entry are the ones this entry paid for.
+ */
+export function payoutMeta(line) {
+  const meta = { kind: line.kind ?? null, count: Number.isFinite(line.count) ? line.count : null };
+  const state = PAYING_DAY_STATE[line.kind];
+  if (state) {
+    meta.days = (line.evidence ?? []).filter((e) => e?.state === state && typeof e.day === 'string').map((e) => e.day).sort();
+  }
+  return meta;
+}
+
 export class PayoutService {
   #preview; #economy; #config; #logger;
   #lastLogged = new Map(); // `${learnerId}|${ref}` → the status/amount last logged
@@ -148,7 +167,7 @@ export class PayoutService {
             { learnerId, ref, currency, amount, ruleId: line.ruleId });
           continue;
         }
-        owed.push({ ref, evidenceRef: line.ref, currency, amount, kind, ruleId: line.ruleId, timeliness: line.timeliness ?? null });
+        owed.push({ ref, evidenceRef: line.ref, currency, amount, kind, ruleId: line.ruleId, timeliness: line.timeliness ?? null, meta: payoutMeta(line) });
       }
     }
 
@@ -179,7 +198,7 @@ export class PayoutService {
       }
       const res = await this.#economy.mint(learnerId, {
         currency: entry.currency, amount: entry.amount, kind: entry.kind, ref: entry.ref,
-        ruleId: entry.ruleId, timeliness: entry.timeliness, evidenceRef: entry.evidenceRef, source: 'payout',
+        ruleId: entry.ruleId, timeliness: entry.timeliness, evidenceRef: entry.evidenceRef, source: 'payout', meta: entry.meta,
       });
       if (res.minted > 0) minted.push({ ...entry, amount: res.minted, txnId: res.txnId });
       else skipped += 1;
