@@ -48,10 +48,15 @@ test('FHE Jeremiah Jeopardy: three teams, picture clue, buzz and judge', async (
   await expect(picture).toBeVisible();
   await expect.poll(() => picture.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
   await expect(clue.locator('.jp-clue__media-error')).toHaveCount(0);
+  // The prompt must sit below the picture, not on top of it.
+  const [pictureBox, promptBox] = await Promise.all([picture.boundingBox(), clue.locator('.gp-reveal__prompt').boundingBox()]);
+  expect(promptBox.y).toBeGreaterThanOrEqual(pictureBox.y + pictureBox.height - 1);
 
   await page.keyboard.press('1');
   const firstTeam = page.locator('.gp-scoreboard__team').first();
   await expect(firstTeam).toHaveClass(/is-locked/);
+  // The local lock shows first; judging keys apply once the server's BUZZ lands.
+  await expect(page.locator('.jeopardy')).toHaveAttribute('data-phase', 'judging');
   await page.keyboard.press('ArrowUp');
   await expect(firstTeam.locator('.gp-scoreboard__score')).toContainText('100');
 
