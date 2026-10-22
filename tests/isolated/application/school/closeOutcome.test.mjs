@@ -172,6 +172,56 @@ describe('the outcome', () => {
     expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
   });
 
+  it('the FIRST close of an unstamped graded event stamps the bar it used on `outcome_recorded` (Task 16)', async () => {
+    // A card scan's `graded` carries no bar, so the close is where the bar is
+    // decided — and it is written down there, so no later look re-decides it.
+    build({ assignments: new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]) });
+    await graded({ percent: 50 });
+    await close.execute({ sessionId: SID });
+    expect(sessions.events(SID).find((e) => e.type === 'outcome_recorded')).toMatchObject({ passingPercent: 40 });
+    expect(sessions.derive(SID).gradedPassingPercent).toBe(40);
+  });
+
+  /** A card-scanned sheet with no bar on `graded`, stopped by its finish-code row. */
+  const gateBlockedScan = async () => {
+    await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+    await sessions.appendEvent(SID, {
+      type: 'graded', at: clock.iso(), sessionId: SID, attemptIds: ['att_1'], percent: 50,
+      companionGate: { status: 'blank' },
+    });
+  };
+
+  it('a settled card scan keeps its bar when the enrollment bar is raised afterwards (Task 16, A4)', async () => {
+    const assignments = new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]);
+    build({ assignments });
+    await gateBlockedScan();
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'needs_remediation' });
+    expect(sessions.derive(SID).outcome.reason).toBe('companion_incomplete');
+    // The grown-up raises the course bar; the child then repairs the code row.
+    await assignments.put({ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 60 }] });
+    await sessions.appendEvent(SID, { type: 'companion_gate_read', at: clock.iso(), sessionId: SID, companionGate: { status: 'satisfied' } });
+    // The re-close reads the bar the first close used (40), not today's 60.
+    expect(await close.execute({ sessionId: SID })).toMatchObject({ result: 'passed' });
+  });
+
+  it('a session settled BEFORE the stamp existed falls back to override ?? the unit bar, never the enrollment (Task 16)', async () => {
+    // No bar on `graded`, none on `outcome_recorded`: what decided this sheet
+    // at the time was the pre-Task-16 order, so that is what a later look uses.
+    build({ assignments: new FakeAssignmentStore([{ learnerId: 'kid1', courses: [{ courseId: COURSE_ID, passing: 40 }] }]) });
+    await gateBlockedScan();
+    await sessions.appendEvent(SID, {
+      type: 'outcome_recorded', at: clock.iso(), sessionId: SID, outcomeId: `out:${SID}`,
+      result: 'needs_remediation', reason: 'companion_incomplete',
+    });
+    await sessions.appendEvent(SID, { type: 'companion_gate_read', at: clock.iso(), sessionId: SID, companionGate: { status: 'satisfied' } });
+    // 50% clears the enrollment's 40 but not the unit's own bar.
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ result: 'needs_remediation' });
+    expect(sessions.derive(SID).outcome.reason).toBe('below_passing');
+  });
+
   it('a null override falls through to the authored percent (W3-2)', async () => {
     build({ passOverrides: { percentFor: () => null } });
     await graded({ percent: 50 });

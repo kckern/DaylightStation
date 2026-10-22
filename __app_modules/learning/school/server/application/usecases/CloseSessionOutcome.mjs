@@ -54,7 +54,7 @@ import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
 import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf } from "../remediationDepth.mjs";
-import { resolvePassingPercent } from "../passBar.mjs";
+import { sessionPassingPercent } from "../passBar.mjs";
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
@@ -203,9 +203,10 @@ export class CloseSessionOutcome {
       return refused('not_access_veto');
     if (state.state !== 'outcome_recorded') return refused('settlement_already_advanced');
     const unit = await this.#curriculum.getUnit(state.unitId);
-    const liveBar = await this.#liveBar({ state, unit });
+    // Settled, so this is the stamp (or, for a pre-stamp log, the old order).
+    const bar = await this.#sessionBar({ state, unit });
     const gradeValid = (s) => evaluateOutcome({ gradedPercent: s.gradedPercent,
-      passingPercent: s.gradedPassingPercent ?? liveBar,
+      passingPercent: s.gradedPassingPercent ?? bar,
       companionGate: s.companionGate }).result === 'passed';
     const outcomeIndex = events.findIndex((e) => e.type === 'outcome_recorded' && e.reason === 'course_questions_unresolved');
     if (outcomeIndex < 0 || !Number.isFinite(Date.parse(events[outcomeIndex].at))) return refused('missing_original_settlement');
@@ -219,7 +220,7 @@ export class CloseSessionOutcome {
     if (current?.stage !== 'completed') return refused('current_paper_incomplete');
     if (!apply) return { sessionId, eligible: true, applied: false, reason: 'academic_access_veto' };
     const settled = await this.#recordOutcomeAndSettle({ sessionId, state, unit,
-      nowIso: this.#clock().toISOString(), signedOff: false,
+      nowIso: this.#clock().toISOString(), signedOff: false, passingPercent: bar,
       result: 'passed', reason: 'course_academic_access_recovered', expectedSeq: checkedSeq, printReceipt: false });
     return { sessionId, eligible: true, applied: true, settlement: settled };
   }
@@ -261,7 +262,7 @@ export class CloseSessionOutcome {
       if (revised) {
         return this.#recordOutcomeAndSettle({
           sessionId, state, unit, nowIso, signedOff, rewardOverride,
-          result: revised.result, reason: revised.reason,
+          result: revised.result, reason: revised.reason, passingPercent: revised.passingPercent,
         });
       }
       // A second close-out is a retry, not a second result. It re-prints and —
@@ -303,12 +304,15 @@ export class CloseSessionOutcome {
     // here. A reward waiting on a parent must not also hold the pass back —
     // that would leave the next unit locked behind a coin. Sign-off gates the
     // payment (in `rewardDecision`), not the result.
+    // The bar stamped AT GRADING wins (advocacy A4). Unstamped events —
+    // pre-stamp sessions, and every card scan, whose `graded` event carries
+    // no bar — take the live one, in grading's order (`#sessionBar`), and
+    // this close writes it onto `outcome_recorded` so no later look has to
+    // resolve it again against an enrollment that may have moved.
+    const passingPercent = await this.#sessionBar({ state, unit });
     const evaluated = evaluateOutcome({
       gradedPercent: state.gradedPercent,
-      // The bar stamped AT GRADING wins (advocacy A4). Unstamped events —
-      // pre-stamp sessions, and every card scan, whose `graded` event carries
-      // no bar — take the live one, in grading's order (`#liveBar`).
-      passingPercent: state.gradedPassingPercent ?? await this.#liveBar({ state, unit }),
+      passingPercent,
       // The scan's own verdict on the finish-code row (Task 10), stamped onto
       // the `graded` event by `RecordCardScanOutcome`. Read from the session,
       // never from the companion record: the question is "did THIS sheet's
@@ -322,21 +326,22 @@ export class CloseSessionOutcome {
       if (progress && progress.stage !== 'completed') { evaluated.result = 'needs_remediation'; evaluated.reason = 'course_questions_unresolved'; }
     }
     return this.#recordOutcomeAndSettle({
-      sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
+      sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason, passingPercent,
     });
   }
 
   /**
-   * The bar for a `graded` event that stamped none: per-lesson override → the
-   * learner's enrollment for the unit's course → the unit's own percent, the
-   * same order `GradeSubmission` stamps (Task 16). A card scan never stamps,
-   * so without this a scanned card ignored the enrollment bar that a screen
-   * or hand-marked sheet of the same lesson honored.
+   * The bar that decides this session (`sessionPassingPercent`): its stamp
+   * when it has one; for an unsettled unstamped event (every card scan) the
+   * live bar in grading's order — override → enrollment → the unit's own
+   * percent, as `GradeSubmission` stamps (Task 16); for a session settled
+   * before the close stamped its bar, override ?? the unit's own percent,
+   * which is what decided it then.
    */
-  #liveBar({ state, unit }) {
-    return resolvePassingPercent({
-      passOverrides: this.#passOverrides, assignments: this.#assignments,
-      learnerId: state.learnerId, unit: unit ?? { unitId: state.unitId },
+  #sessionBar({ state, unit }) {
+    return sessionPassingPercent({
+      state, passOverrides: this.#passOverrides, assignments: this.#assignments,
+      unit: unit ?? { unitId: state.unitId },
     });
   }
 
@@ -356,17 +361,17 @@ export class CloseSessionOutcome {
    *      still-wrong code of the same shape — resettles and reprints, and does
    *      not file a second outcome saying what the first already said.
    *
-   * @returns {{result: string, reason: string}|null} the superseding outcome
+   * @returns {{result: string, reason: string, passingPercent: number|undefined}|null}
+   *   the superseding outcome, and the bar that decided it
    */
   async #reviseAfterGateRead({ state, unit }) {
     const blockedByGate = companionVetoStatus(state.outcome?.reason ?? null);
     if (!blockedByGate) return null;
+    const passingPercent = await this.#sessionBar({ state, unit });
     const evaluated = evaluateOutcome({
-      gradedPercent: state.gradedPercent,
-      passingPercent: state.gradedPassingPercent ?? await this.#liveBar({ state, unit }),
-      companionGate: state.companionGate,
+      gradedPercent: state.gradedPercent, passingPercent, companionGate: state.companionGate,
     });
-    return evaluated.reason === state.outcome.reason ? null : evaluated;
+    return evaluated.reason === state.outcome.reason ? null : { ...evaluated, passingPercent };
   }
 
   /**
@@ -374,10 +379,14 @@ export class CloseSessionOutcome {
    * one path a graded close and an honor-close both funnel through, so the
    * reward guard, unlock line and result receipt stay uniform between them.
    */
-  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, expectedSeq = null, printReceipt = true }) {
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason, passingPercent = null, expectedSeq = null, printReceipt = true }) {
     const outcomeId = outcomeIdFor(sessionId);
+    // The bar rides on the event only when a bar decided it and `graded`
+    // stamped none — a launch or honor close has no bar to write down.
+    const stampBar = state.gradedPassingPercent == null && typeof passingPercent === 'number';
     const { errors, event } = createEvent({
       type: 'outcome_recorded', at: nowIso, sessionId, outcomeId, result, reason,
+      ...(stampBar ? { passingPercent } : {}),
     });
     if (errors.length) throw new Error(`CloseSessionOutcome: could not record the outcome: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event, expectedSeq == null ? {} : { expectedSeq });
@@ -391,7 +400,10 @@ export class CloseSessionOutcome {
     // resettle reads the same field back off `state.outcome` (`sessionEvents`'
     // `outcome_recorded` reducer), so both paths reach `#settle` alike.
     const outcome = { outcomeId, result, reason, at: nowIso };
-    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt });
+    // `state` predates the event just appended; carry its stamp forward so the
+    // receipt prints the bar that decided it rather than resolving one again.
+    const settledState = stampBar ? { ...state, gradedPassingPercent: passingPercent } : state;
+    return this.#settle({ sessionId, state: settledState, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false, printReceipt });
   }
 
   async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling, printReceipt = true }) {
@@ -604,8 +616,9 @@ export class CloseSessionOutcome {
       totalCount: state.gradedTotalCount,
       questionStart: worksheet?.omr?.rowRange?.start ?? null,
       marks,
-      // The bar that decided it — for an unstamped event that is the live one.
-      passingPercent: state.gradedPassingPercent ?? (await this.#liveBar({ state, unit })) ?? null,
+      // The bar that decided it: the stamp, or (a settle with no bar of its
+      // own, like an honor close) whatever `#sessionBar` reads.
+      passingPercent: (await this.#sessionBar({ state, unit })) ?? null,
       // Named, never implied (Task 10): a sheet that answered everything right
       // and still says TRY AGAIN has to say WHY, in words the child can act
       // on. The label is the companion's own (`unit.companion.label`, e.g.

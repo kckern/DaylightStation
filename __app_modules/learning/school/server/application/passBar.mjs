@@ -29,3 +29,25 @@ export async function resolvePassingPercent({ passOverrides = null, assignments 
   }
   return unit?.passing?.percent;
 }
+
+/**
+ * The bar that decides one SESSION — every look after grading reads this, so
+ * the bar never moves under a child already graded (advocacy A4).
+ *
+ * 1. A stamp: `graded` (screen and hand-marked grading stamp one) or, for a
+ *    card scan whose `graded` carries none, the `outcome_recorded` its first
+ *    close wrote (both fold into `gradedPassingPercent`).
+ * 2. Settled with no stamp anywhere — a session closed before the close
+ *    stamped its bar. What decided it then was the pre-Task-16 order,
+ *    override ?? the unit's own bar, so that is what a re-close or a grade
+ *    correction reads. Reading today's enrollment would re-decide it.
+ * 3. Not settled yet: the live bar, in grading's order (`resolvePassingPercent`).
+ */
+export async function sessionPassingPercent({ state = null, passOverrides = null, assignments = null, unit = null } = {}) {
+  if (typeof state?.gradedPassingPercent === 'number') return state.gradedPassingPercent;
+  if (state?.outcome) {
+    const override = passOverrides?.percentFor?.(unit?.unitId);
+    return Number.isInteger(override) ? override : unit?.passing?.percent;
+  }
+  return resolvePassingPercent({ passOverrides, assignments, learnerId: state?.learnerId ?? null, unit });
+}

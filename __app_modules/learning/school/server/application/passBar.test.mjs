@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePassingPercent } from "./passBar.mjs";
+import { resolvePassingPercent, sessionPassingPercent } from "./passBar.mjs";
 
 const unit = { unitId: 'u1', courseId: 'c1', passing: { percent: 80 } };
 const assignments = (courses) => ({ get: async () => ({ courses }) });
@@ -30,5 +30,22 @@ describe('resolvePassingPercent', () => {
   });
   it('answers undefined when nothing sets a bar', async () => {
     expect(await resolvePassingPercent({ unit: { unitId: 'u2' } })).toBeUndefined();
+  });
+});
+
+describe('sessionPassingPercent', () => {
+  const raised = assignments([{ courseId: 'c1', passing: 90 }]);
+  it('reads the session\'s stamp before anything live', async () => {
+    expect(await sessionPassingPercent({ state: { gradedPassingPercent: 40, outcome: { result: 'passed' } },
+      passOverrides: { percentFor: () => 60 }, assignments: raised, unit })).toBe(40);
+  });
+  it('an unsettled, unstamped session takes the live bar in grading\'s order', async () => {
+    expect(await sessionPassingPercent({ state: { learnerId: 'k', gradedPassingPercent: null, outcome: null },
+      assignments: raised, unit })).toBe(90);
+  });
+  it('a session settled with no stamp anywhere takes override ?? the unit bar, never the enrollment', async () => {
+    const state = { learnerId: 'k', gradedPassingPercent: null, outcome: { result: 'needs_remediation' } };
+    expect(await sessionPassingPercent({ state, assignments: raised, unit })).toBe(80);
+    expect(await sessionPassingPercent({ state, passOverrides: { percentFor: () => 60 }, assignments: raised, unit })).toBe(60);
   });
 });

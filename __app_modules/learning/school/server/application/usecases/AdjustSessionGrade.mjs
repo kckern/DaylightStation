@@ -2,7 +2,7 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createEvent, reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
-import { resolvePassingPercent } from "../passBar.mjs";
+import { sessionPassingPercent } from "../passBar.mjs";
 
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
@@ -85,13 +85,14 @@ export class AdjustSessionGrade {
     }
     // Pre-stamp machine grades need an explicit rule for the corrected outcome.
     // Pin it on the annotation so later curriculum edits cannot change the result.
-    // An unstamped grade (pre-stamp, or any card scan) resolves the bar in
-    // grading's order: override → enrollment for the unit's course → the
-    // unit's own percent (Task 16).
+    // A card scan's bar is the one its close stamped on `outcome_recorded`
+    // (folded into `gradedPassingPercent`). With no stamp anywhere,
+    // `sessionPassingPercent` answers: a session settled before the close
+    // stamped reads override ?? the unit's own percent, which decided it then;
+    // an unsettled one resolves in grading's order (Task 16).
     const passingPercent = state.machineGrade.passingPercent
-      ?? state.gradedPassingPercent
-      ?? await resolvePassingPercent({
-        passOverrides: this.#passOverrides, assignments: this.#assignments, learnerId: state.learnerId,
+      ?? await sessionPassingPercent({
+        state, passOverrides: this.#passOverrides, assignments: this.#assignments,
         unit: { unitId: state.unitId, ...((await this.#curriculum?.getUnit?.(state.unitId)) ?? {}) },
       });
     const built = createEvent({
