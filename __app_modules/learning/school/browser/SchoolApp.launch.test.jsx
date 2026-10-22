@@ -87,6 +87,7 @@ vi.mock("./schoolApi.js", () => ({
     selfServiceAct: (...a) => actMock(...a),
     selfServicePrinterStatus: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
+    earningsRoster: (...a) => earningsRosterMock(...a),
     teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
     directLaunch: (...a) => directLaunchMock(...a),
     // The coin bank door and screen (economy slice 1, C3), and the strip.
@@ -99,6 +100,13 @@ vi.mock("./schoolApi.js", () => ({
 }));
 const directLaunchMock = vi.fn();
 const bankOpenMock = vi.fn();
+// What prices the board's coin cell, the door to a kid's bank. A wide window
+// so the figure is "this week" whatever the clock says.
+const earningsRosterMock = vi.fn(async () => ({ ok: false, status: 0, data: null }));
+const pricedKid1 = () => ({ ok: true, status: 200, data: {
+  windows: { school: { from: '2000-01-01', to: '2999-12-31' } },
+  learners: [{ learnerId: 'kid1', totals: { silver: 4, gems: 0 }, pending: { silver: 0, gems: 0 }, lines: [{ status: 'earned' }], windows: { school: { from: '2000-01-01', to: '2999-12-31' } } }],
+} });
 const economyBankMock = vi.fn(async () => ({ ok: false, status: 503, data: null }));
 const resolveMock = vi.fn();
 const actMock = vi.fn();
@@ -570,6 +578,7 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
 describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel', () => {
   const BANK_TARGET = { kind: 'program', program: 'economy-bank', learnerId: 'kid1' };
   beforeEach(() => {
+    earningsRosterMock.mockReset().mockImplementation(async () => pricedKid1());
     bankOpenMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { launchTarget: BANK_TARGET } });
     economyBankMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {
       mode: 'live', balances: { silver: 6, gold: 3, gems: 0 }, history: [], pass: {}, offers: {},
@@ -581,12 +590,11 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
   async function openBankFromDoor() {
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    fireEvent.click(screen.getByTestId('bank-door'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
     return screen.findByTestId('bank-screen');
   }
 
-  it('door → face → the kid\'s bank, with no Done overlay and no path of its own', async () => {
+  it('coin cell → the kid\'s bank, with no Done overlay and no path of its own', async () => {
     const path = window.location.pathname;
     const bank = await openBankFromDoor();
     expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
@@ -631,8 +639,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    fireEvent.click(screen.getByTestId('bank-door'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
 
     // Something else takes the panel (a reading shelf, here), then goes home.
@@ -658,8 +665,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     } });
     render(<SchoolApp mode="locked" />);
     await screen.findByTestId('selfservice-keypad');
-    fireEvent.click(screen.getByTestId('bank-door'));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Alpha' })));
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
     expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
     for (const d of '123456') {
       const key = screen.getByRole('button', { name: d });

@@ -13,6 +13,58 @@ export const PRIVILEGE_LABELS = Object.freeze({
   'piano.games': 'One early piano game',
 });
 
+/** The bank could not be read (any surface that shows the bank). */
+export const NAPPING = 'The bank is napping. Try again soon.';
+
+/** The word for where a ledger line's coins came from or went (`historyText.entrySource`). */
+export const LEDGER_SOURCE_LABELS = Object.freeze({
+  payout: 'Earned',
+  earn: 'Earned',
+  prize: 'Prize',
+  refund: 'Refunded',
+  spend: 'Spent',
+  deposit: 'Deposit',
+  correction: 'Correction',
+  withdraw: 'Taken out',
+  conversion: 'Converted',
+});
+
+const MINUS = '\u2212';
+// Server wording lives in __app_modules/money/economy/server/domain/historyText.mjs (the browser cannot import it).
+/** Singular/plural coin word: silver and gold never change, one gem is "gem". */
+export const coinWord = (currency, n) => (currency === 'gems' && Math.abs(n) === 1 ? 'gem' : currency);
+
+/**
+ * One bank history line, worded for a ledger: where it came from (`sourceLabel`),
+ * what it was (`label`), each signed amount, and the balance after it in the
+ * coin(s) it moved. Reads only the structured fields the bank sends
+ * (`source`, `label`, `legs`, `balanceAfter`); a line from an older server
+ * without them falls back to its sentence, with no amounts and no balance.
+ */
+export function ledgerEntry(line) {
+  const legs = (Array.isArray(line?.legs) ? line.legs : [])
+    .filter((l) => l && Number.isFinite(l.delta) && l.delta !== 0)
+    .map((l) => ({ currency: l.currency ?? 'silver', delta: l.delta }));
+  const source = typeof line?.source === 'string' && line.source ? line.source : null;
+  const after = line?.balanceAfter && typeof line.balanceAfter === 'object' ? line.balanceAfter : null;
+  const currencies = [...new Set(legs.map((l) => l.currency))];
+  const balanceText = after && currencies.length
+    ? currencies.map((c) => {
+      const n = Number.isFinite(after[c]) ? after[c] : 0;
+      return `${n} ${coinWord(c, n)}`;
+    }).join(' \u00b7 ')
+    : null;
+  return {
+    key: (line?.ids ?? []).join('|') || `${line?.at ?? ''}:${line?.text ?? ''}`,
+    source,
+    sourceLabel: source ? (LEDGER_SOURCE_LABELS[source] ?? null) : null,
+    label: typeof line?.label === 'string' && line.label ? line.label : (line?.text ?? ''),
+    amounts: legs.map(({ currency, delta }) => ({ currency, delta, text: `${delta < 0 ? MINUS : '+'}${Math.abs(delta)} ${coinWord(currency, delta)}` })),
+    sign: legs.length === 1 ? Math.sign(legs[0].delta) : 0,
+    balanceText,
+  };
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 /** The browser's local calendar date. Used only to group history lines. */
 export const localDay = (ms) => {

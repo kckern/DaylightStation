@@ -235,7 +235,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
-| Household economy (coins, payouts, early pass) | `__docs/reference/economy/economy.md` |
+| Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |
 | Nutrition (scan-enriched food logging) | `__docs/reference/nutrition/README.md` |
@@ -252,6 +252,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `__docs/reference/school/reading-log.md` |
 | Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `__docs/reference/school/reading-sessions.md` |
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `__docs/reference/school/term-grid.md` |
+| School status board coins (coin cell → bank screen, coin ceremony, coin.mp3) | `__docs/reference/school/agenda-and-completion.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |
 | School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
 | School after-school debrief (outside-school learner: voice/typed day account, AI follow-ups, preview silver) | `__docs/reference/school/school-debrief.md` |

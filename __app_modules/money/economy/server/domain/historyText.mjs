@@ -7,6 +7,15 @@
  *   +3 silver · early pass refunded      its refund (both matched on `source: pass`)
  *   12 silver → 12 gold · Sunday         a week close: both convert halves, one line
  *
+ * Each line also carries `source`, `label`, signed `legs` and `balanceAfter`,
+ * so a surface can show where coins came from and the running balance
+ * without parsing the sentence or the ledger ref.
+ *
+ * Wording lives in two places on purpose: this file words the server's
+ * sentences; the browser words its own screens in
+ * `__app_modules/learning/school/browser/bank/bankScreenModel.js`. The browser
+ * cannot import server code, so keep the two in step by hand.
+ *
  * Pure: the caller supplies the labels. `evidenceLabels` maps an entry's
  * `evidenceRef` (a preview line's ref) to what that line says; `ruleLabels`
  * maps a rule id to the ruleset's label, for lines older than the current
@@ -27,6 +36,46 @@ const coinName = (currency, n) => (currency === 'gems' && Math.abs(n) === 1 ? 'g
 const amount = (delta, currency) => `${delta < 0 ? MINUS : '+'}${Math.abs(delta)} ${coinName(currency, delta)}`;
 const words = (action) => String(action ?? '').replace(/^payout:/, '').replace(/[-_]+/g, ' ').trim() || 'entry';
 const withNote = (phrase, note) => (typeof note === 'string' && note.trim() ? `${phrase}: ${note.trim()}` : phrase);
+
+const leg = (t) => ({ currency: t.currency ?? 'silver', delta: t.delta });
+
+/**
+ * What kind of line this is, for a surface that names where coins came from
+ * or went: a payout, a plain earn, a prize, a pass refund, a spend, a deposit,
+ * a correction, a withdrawal or a conversion.
+ */
+export function entrySource(t) {
+  switch (t?.kind) {
+    case 'convert': return 'conversion';
+    case 'earn':
+    case 'prize':
+      if (typeof t.action === 'string' && t.action.startsWith('payout:')) return 'payout';
+      if (t.kind === 'earn' && t.source === PASS_SOURCE) return 'refund';
+      return t.kind;
+    case 'spend': return 'spend';
+    case 'deposit': return 'deposit';
+    case 'adjust': return 'correction';
+    case 'withdraw': return 'withdraw';
+    default: return 'other';
+  }
+}
+
+/**
+ * The balance after each entry of a newest-first list (same index), folded
+ * oldest first over the WHOLE read, each currency floored at 0 like
+ * `foldBalances`. Computed before any cut, so line 50 still knows what the
+ * 51st and older entries left behind.
+ */
+function balancesAfter(list) {
+  const sums = { silver: 0, gold: 0, gems: 0 };
+  const after = new Array(list.length);
+  for (let k = list.length - 1; k >= 0; k -= 1) {
+    const currency = list[k].currency ?? 'silver';
+    if (currency in sums) sums[currency] += list[k].delta;
+    after[k] = { silver: Math.max(0, sums.silver), gold: Math.max(0, sums.gold), gems: Math.max(0, sums.gems) };
+  }
+  return after;
+}
 
 function weekday(at, timezone) {
   const ms = Date.parse(at);
@@ -69,16 +118,20 @@ export function entrySentence(t, opts = {}) {
 
 /**
  * The entries (newest first, as `getHistory` returns them) as lines:
- * `{ text, at, kind, ids }`. The two halves of a conversion, sharing an
- * `evidenceRef` with opposite signs, become one line: "12 silver → 12 gold ·
- * Sunday", placed where the first half appears. `at` is not compared, so a
- * pair whose second half a repair wrote later still reads as one; the weekday
- * is the spending half's. Zero-delta entries are skipped.
+ * `{ text, at, kind, ids, source, label, legs, balanceAfter }`. The two halves
+ * of a conversion, sharing an `evidenceRef` with opposite signs, become one
+ * line: "12 silver → 12 gold · Sunday", placed where the first half appears,
+ * with both legs (spend half first). `at` is not compared, so a pair whose
+ * second half a repair wrote later still reads as one; the weekday is the
+ * spending half's. Zero-delta entries are skipped. `label` is the words after
+ * the amount, `source` is `entrySource`, and `balanceAfter` the balances once
+ * the line (both halves of a pair) has landed.
  * @param {object[]} entries
  * @param {{ruleLabels?: object|Map, evidenceLabels?: object|Map, timezone?: string|null}} [opts]
  */
 export function historyLines(entries, opts = {}) {
   const list = (entries ?? []).filter((t) => t && Number.isFinite(t.delta) && t.delta !== 0);
+  const after = balancesAfter(list);
   const used = new Set();
   const lines = [];
   list.forEach((t, i) => {
@@ -91,12 +144,22 @@ export function historyLines(entries, opts = {}) {
         used.add(j);
         const [out, back] = t.delta < 0 ? [t, list[j]] : [list[j], t];
         const day = weekday(out.at, opts.timezone);
-        const text = `${-out.delta} ${coinName(out.currency ?? 'silver', out.delta)} → ${back.delta} ${coinName(back.currency ?? 'silver', back.delta)}${day ? ` · ${day}` : ''}`;
-        lines.push({ text, at: t.at, kind: 'convert', ids: [t.id, list[j].id] });
+        const from = coinName(out.currency ?? 'silver', out.delta);
+        const to = coinName(back.currency ?? 'silver', back.delta);
+        const text = `${-out.delta} ${from} → ${back.delta} ${to}${day ? ` · ${day}` : ''}`;
+        lines.push({
+          text, at: t.at, kind: 'convert', ids: [t.id, list[j].id],
+          source: 'conversion', label: `${from} → ${to}`, legs: [leg(out), leg(back)], balanceAfter: after[Math.min(i, j)],
+        });
         return;
       }
     }
-    lines.push({ text: entrySentence(t, opts), at: t.at, kind: t.kind, ids: [t.id] });
+    lines.push({
+      text: entrySentence(t, opts), at: t.at, kind: t.kind, ids: [t.id],
+      source: entrySource(t),
+      label: t.kind === 'convert' ? (t.delta < 0 ? 'converted' : 'from a conversion') : phrase(t, opts),
+      legs: [leg(t)], balanceAfter: after[i],
+    });
   });
   return lines;
 }

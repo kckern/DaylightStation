@@ -164,7 +164,7 @@
     "rt:fitness": "npx playwright test --config tests/_infrastructure/config/playwright.config.mjs tests/runtime/fitness-session --headed",
     "test:teacher-ui": "npx playwright test -c tests/_infrastructure/config/playwright.teacher.config.mjs",
     "test:reading-ui": "npx playwright test -c tests/_infrastructure/config/playwright.reading.config.mjs",
-    "test:bank-ui": "npx playwright test -c tests/_infrastructure/config/playwright.bank.config.mjs",
+    "test:coins-ui": "npx playwright test -c tests/_infrastructure/config/playwright.coins.config.mjs",
     "rt:finance": "npx playwright test --config tests/_infrastructure/config/playwright.config.mjs tests/runtime/finance --headed",
     "test:slot-machine": "npx playwright test --config tests/_infrastructure/config/playwright.config.mjs tests/live/flow/admin/content-search-combobox/11-slot-machine.runtime.test.mjs --reporter=line",
     "ingest:health-archive": "node cli/ingest-health-archive.cli.mjs",
