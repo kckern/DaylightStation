@@ -1,15 +1,14 @@
 /**
  * BankDoor — the one way into a kid's bank on the locked panel (school economy
- * slice 1, C3). The board's coin cell (a button on the kid's own card) and a
- * kid's chip on the bank strip both name the kid, so each goes straight to
+ * slice 1, C3). The board's coin cell (a button on the kid's own card) names
+ * the kid, so it goes straight to
  * `choose(learnerId, via)`: `POST /school/bank/open`, which checks the roster
  * and answers an `economy-bank` launch target (`OpenBankAtPanel`). No grant:
  * the door is the roster check, and the bank read itself is unauthenticated in
  * slice 1.
  *
- * The door is a hook plus a sheet. The strip can sit in the keypad column
- * (narrow panels), where the board and anything inside it is hidden, so a
- * REFUSAL is drawn by the panel itself (`BankDoorSheet`: the shelf door's
+ * The door is a hook plus a sheet. A REFUSAL is drawn by the panel itself,
+ * outside the board pane (`BankDoorSheet`: the shelf door's
  * "Whose bank?" screen of faces, `LearnerChoice`, with the refusal under it),
  * not inside the board. The faces there choose again through the same request.
  *
@@ -19,7 +18,7 @@
  * on screen for the next child; the sheet also closes itself when idle.
  *
  * FOCUS. The sheet moves focus to its Back button when it opens and hands it
- * back to whatever opened it (the coin cell or a chip) when it closes, if
+ * back to whatever opened it (the coin cell) when it closes, if
  * that is still on the page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -89,7 +88,7 @@ export function useBankDoor({ screenId = null, onLaunch }) {
     const target = result?.ok ? result.data?.launchTarget : null;
     if (target?.program !== 'economy-bank' || target.learnerId !== learnerId) {
       log.warn('economy.bank.door-open-failed', { learnerId, via, status: result?.status ?? null });
-      // From a chip there was no sheet up; the refusal needs somewhere to stand.
+      // From a coin cell there was no sheet up; the refusal needs somewhere to stand.
       setError(refusalText(result));
       setAsking(true);
       return;

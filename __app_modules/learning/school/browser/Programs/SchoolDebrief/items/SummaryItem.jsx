@@ -1,6 +1,6 @@
 import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
 import Icon from "../../../home/icons/Icon.jsx";
-import { COINS_SOON } from "../../../bank/BankStrip.jsx";
+import { COINS_SOON } from "../../../bank/coinsSoon.js";
 import { useSchoolDebriefKeys } from "../useSchoolDebriefKeys.js";
 
 /** What they told, how the questions went, on time or late, and what moved in this week's (preview) earnings. */

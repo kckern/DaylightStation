@@ -673,8 +673,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
-  // Below 820px the board pane is hidden, so the bank strip moves under the
-  // keypad. One mount either way: the strip's reads are not doubled.
+  // The bank opens from the board's coin cells (`onOpenBank`); there is no
+  // bank strip. Below 820px the board pane, and with it the coin cells, is
+  // hidden.
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -698,8 +699,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     deviceId: deviceIdFor(screenId),
   });
 
-  // The panel's bank door: a tap on a kid's coin cell on the board, or on a
-  // strip chip, opens that kid's bank through the same request. Like the shelf
+  // The panel's bank door: a tap on a kid's coin cell on the board opens that
+  // kid's bank through `POST /school/bank/open`. Like the shelf
   // door, it claims the kid and lands in `onPortalLaunch`.
   const launchFromBankDoor = useCallback((target, learnerId) => {
     claim(learnerId);
@@ -708,7 +709,6 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
   const { choose: chooseBank, close: closeBankDoor } = bankDoor;
   // The board's coin cell: the kid is known, so no face picker.
-  // Same request and proof as a strip chip.
   const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-cell'); }, [chooseBank]);
   // The door belongs to the locked panel's resting view (keypad + board).
   // Anything that leaves it (a code's card, a runner, a section) closes it.
@@ -1145,8 +1145,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} coinCeremony={lock.coinCeremony} />
               </div>
               {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
-                  the board: below 820px the board pane is hidden, and a chip
-                  in the keypad column can still need it. */}
+                  the board pane, so it is never clipped by or stacked under
+                  the board. */}
               <BankDoorSheet door={bankDoor} roster={roster} idleTimeoutSeconds={lock.idleTimeoutSeconds} />
             </div>
           ) : (
