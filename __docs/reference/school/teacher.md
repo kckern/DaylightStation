@@ -901,8 +901,19 @@ stateDiagram-v2
 ```
 
 The confirm is honest *before* the act: it names the period and says how many
-items still await a mark. Freezing lives below the live card, with the closed
-periods — the most destructive verb on the page does not sit above the fold.
+items still await a mark.
+
+**The Reports tab leads with where the child is weak.** In order: the period
+picker, the live report card, progress and pacing, curriculum history, tutor
+insights. Below them, one fold, **Records and closing the period**, closed by
+default, holds the transcript PDF, the closed periods and the close button —
+the most destructive verb on the page does not sit in the default view.
+Closing a period refreshes both the closed-periods list and the card's label.
+
+**The live card says when its period is closed.** It reads `DRAFT` while the
+period is open. For a frozen period it reads *Closed*, and says it is still a
+live recompute: the frozen copy is the row under Closed periods, and the two
+can differ if grades moved after the close.
 
 **Editing the calendar preserves boundaries.** Period instants carry a
 timezone-offset time of day. An untouched date round-trips the original instant

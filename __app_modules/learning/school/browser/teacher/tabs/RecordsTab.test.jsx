@@ -205,6 +205,56 @@ describe('RecordsTab', () => {
     });
   });
 
+  it('leads with progress and folds the period admin below it', async () => {
+    const { container } = mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
+    const history = await screen.findByRole('heading', { name: 'Curriculum history' });
+    const insights = await screen.findByRole('heading', { name: 'Tutor insights' });
+    const closed = await screen.findByRole('heading', { name: 'Closed periods' });
+    const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(screen.getByRole('heading', { name: 'Report card' }), history)).toBe(true);
+    expect(before(history, closed)).toBe(true);
+    expect(before(insights, closed)).toBe(true);
+    // Transcript, closed periods and the close button live in one fold.
+    const fold = container.querySelector('details.teacher-period-admin');
+    expect(fold).toBeTruthy();
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector('summary').textContent).toMatch(/Records and closing the period/);
+    expect(fold.contains(closed)).toBe(true);
+    expect(fold.contains(screen.getByRole('link', { name: 'PDF · Transcript' }))).toBe(true);
+    await waitFor(() => expect(fold.querySelector('.teacher-close-period')).toBeTruthy());
+  });
+
+  it('labels the card Closed when the selected period is frozen', async () => {
+    schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
+      ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
+      : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
+    await waitFor(() => expect(document.querySelector('.teacher-reportcard__mode')?.textContent).toMatch(/^Closed/));
+    expect(screen.queryByText('DRAFT')).toBeNull();
+  });
+
+  it('closing the period relabels the live card and lists the close', async () => {
+    const { fireEvent, act } = await import('@testing-library/react');
+    let frozenFall = false;
+    schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => {
+      if (periodId) return Promise.resolve({ ok: false, status: 404, data: null });
+      return Promise.resolve(ok(frozenFall ? [{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }] : []));
+    });
+    schoolApi.closePeriod.mockImplementation(async () => { frozenFall = true; return ok({ closedBy: 'kckern', closedAt: 't' }); });
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
+    await waitFor(() => expect(document.querySelector('.teacher-reportcard__mode')?.textContent).toBe('DRAFT'));
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Close this period' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
+    await waitFor(() => expect(document.querySelector('.teacher-reportcard__mode').textContent).toMatch(/^Closed/));
+    expect(screen.getByText(/Closed by kckern/)).toBeTruthy();
+  });
+
+  it('labels the card DRAFT when only another period is frozen', async () => {
+    mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('.teacher-reportcard__mode')?.textContent).toBe('DRAFT'));
+  });
+
   it('certificate links render only for graded courses', async () => {
     mount(<RecordsTab learnerId="user_4" kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('link', { name: 'Certificate' })).toBeTruthy());

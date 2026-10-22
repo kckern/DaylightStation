@@ -1860,6 +1860,12 @@
   summary::after { content: '▸'; margin-left: auto; color: #8d8474; }
   &[open] summary::after { content: '▾'; }
 }
+/* Reports' period-admin fold holds whole panels; inside the fold they lose
+   their own card chrome so it reads as one card, not cards in a card. */
+.teacher-period-admin {
+  > :not(summary) { margin-top: 12px; }
+  > .teacher-panel { padding: 0; border: 0; background: transparent; }
+}
 .teacher-score-provenance { display: block; margin-top: 2px; color: #8a7d68; font-size: 12px; font-weight: 400; }
 
 /* --- Interventions index (UX audit IA4) -------------------------------- */
