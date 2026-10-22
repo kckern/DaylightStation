@@ -32,7 +32,7 @@ import { Player as Player } from "../../../../media/media/browser/playback.mjs";
 import SurroundFrame from "../../../../../__capabilities/playback/browser/surround-frame.mjs";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
-import { useSessionSourceContext } from "../../../../../__capabilities/playback/browser/sessions.mjs";
+import { useSessionSourceContext, usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { resolveAdoptablePlayback } from "./adoptForeignPlayback.js";
 import { playScanCeremonyTone } from "../selfService/scanCeremonySound.js";
@@ -133,6 +133,10 @@ const EMPTY_READING = Object.freeze({
  *   1. THE CLOCK. `SurroundFrame` samples nothing; it takes position/duration/
  *      playing/seeking as props. So this runs `useMediaClockState` itself.
  *   2. THE REGISTRATIONS — see the side-effect import at the top of this file.
+ *   3. FLEET VISIBILITY. `ScreenPlayer` registers its Player with the screen's
+ *      playback registry; a direct mount must do it itself, or the screen's
+ *      state publisher reports the TV idle for the whole story and /media
+ *      fleet never shows it.
  *
  * @param {{get: Function, subscribe: Function}} props.store live session state.
  * @param {object} props.play the Player's `play` object — ONE object, built once
@@ -148,6 +152,8 @@ export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCo
     () => logger ?? getLogger().child({ app: 'school', component: 'reading-stage' }),
     [logger],
   );
+  const playerRef = useRef(null);
+  usePlayerSessionBinding(() => playerRef.current);
 
   const { position, duration, playing, seeking } = useMediaClockState({
     getMediaEl, contentId, logger: log,
@@ -172,6 +178,7 @@ export function ReadingStage({ store, play, getMediaEl, onMediaRef, onPlaybackCo
       logger={log}
     >
       <Player
+        ref={playerRef}
         play={play}
         onMediaRef={onMediaRef}
         onPlaybackCompleted={onPlaybackCompleted}

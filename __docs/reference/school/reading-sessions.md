@@ -482,18 +482,19 @@ flowchart TD
 
 | Piece | Path |
 |---|---|
-| Session store (in-memory, per location, idle sweep) | `__backend/src/3_applications/school/ReadingSessionService.mjs` |
-| Content interceptor (claim, `suppressEnd`, `noteUnknownTag`) | `__backend/src/3_applications/school/readingSessionInterceptor.mjs` |
-| The interceptor seam + D8 suppression | `__backend/src/3_applications/trigger/responseHandlers.mjs` (`content`) |
-| The unknown-tag observer | `__backend/src/3_applications/trigger/TriggerDispatchService.mjs` |
-| The `reading-session` learner action (D2 lives here) | `__backend/src/5_composition/modules/learnerCardActions.mjs` |
-| Evidence | `__backend/src/3_applications/school/usecases/RecordStoryRead.mjs` |
-| HTTP door | `__backend/src/4_api/v1/routers/reading.mjs` (the `END_REASONS` allowlist lives here) |
-| What the door calls | `__backend/src/3_applications/school/ReadingApiService.mjs` (`summary`, `ack`, `end`, `events`) |
-| Launch card, shelf, slots, ceremony | `frontend/src/modules/School/reading/ReadingSessionScreen.jsx` + `.scss` (`reading-slot-breathe`, `reading-slot-idle-out`) |
-| Shelf covers, sized and cached | `frontend/src/modules/School/reading/bookCovers.js`, `School/plexImage.js` (`ART_BOX.readingShelf`) |
-| Screen state machine | `frontend/src/modules/School/reading/useReadingSession.js` |
-| TV-side adoption proof | `frontend/src/modules/School/reading/adoptForeignPlayback.js` |
+| Session store (in-memory, per location, idle sweep) | `__app_modules/learning/school/server/application/ReadingSessionService.mjs` |
+| Content interceptor (claim, `suppressEnd`, `noteUnknownTag`) | `__app_modules/learning/school/server/application/readingSessionInterceptor.mjs` |
+| The interceptor seam + D8 suppression | `__capabilities/device-dispatch/server/application/responseHandlers.mjs` (`content`) |
+| The unknown-tag observer | `__capabilities/device-dispatch/server/application/TriggerDispatchService.mjs` |
+| The `reading-session` learner action (D2 lives here) | `__app_modules/learning/school/server/composition/learnerCardActions.mjs` |
+| Evidence | `__app_modules/learning/school/server/application/usecases/RecordStoryRead.mjs` |
+| HTTP door | `__app_modules/learning/school/server/api/reading.mjs` (the `END_REASONS` allowlist lives here) |
+| What the door calls | `__app_modules/learning/school/server/application/ReadingApiService.mjs` (`summary`, `ack`, `end`, `events`) |
+| Launch card, shelf, slots, ceremony | `__app_modules/learning/school/browser/reading/ReadingSessionScreen.jsx` + `.scss` (`reading-slot-breathe`, `reading-slot-idle-out`) |
+| Shelf covers, sized and cached | `__app_modules/learning/school/browser/reading/bookCovers.js`, `__app_modules/learning/school/browser/plexImage.js` (`ART_BOX.readingShelf`) |
+| Screen state machine | `__app_modules/learning/school/browser/reading/useReadingSession.js` |
+| TV-side adoption proof | `__app_modules/learning/school/browser/reading/adoptForeignPlayback.js` |
+| Fleet visibility — the story's Player registers with the screen's playback registry (`usePlayerSessionBinding` in `ReadingStage`), so /media fleet shows what the living room is reading | `__app_modules/learning/school/browser/reading/ReadingSessionScreen.jsx` |
 | Composition | `__backend/src/app.mjs` (search `Living-room reading sessions`) |
 | Mount | `data/household/screens/living-room.yml` → `widget: school-reading` |
 
