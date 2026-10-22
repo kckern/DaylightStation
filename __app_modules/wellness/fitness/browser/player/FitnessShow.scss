@@ -862,12 +862,12 @@
           border-color: rgba(46, 204, 113, 0.65);
           box-shadow: 0 0 12px rgba(46, 204, 113, 0.25);
 
-          .episode-thumbnail img {
+          .episode-thumbnail img.episode-img {
             filter: grayscale(0.6) brightness(0.7);
           }
 
           &:hover {
-            .episode-thumbnail img {
+            .episode-thumbnail img.episode-img {
               filter: none;
             }
           }
@@ -882,7 +882,7 @@
           border-color: rgba(240, 194, 70, 0.65);
           box-shadow: 0 0 12px rgba(240, 194, 70, 0.25);
 
-          .episode-thumbnail img {
+          .episode-thumbnail img.episode-img {
             filter: grayscale(0.3) brightness(0.8) saturate(0.9);
           }
 
@@ -921,7 +921,10 @@
 
           /* Hover removed */
 
-          img {
+          // The thumbnail's own image only — the rider avatars on the watched
+          // chip are images inside this box too, and must not inherit the
+          // full-bleed size, the load fade (opacity 0 until .loaded) or the dim.
+          img.episode-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
