@@ -695,18 +695,18 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     deviceId: deviceIdFor(screenId),
   });
 
-  // The panel's bank door: the coin window's "Open my bank" and a tap on a
-  // strip chip open that kid's bank through the same request. Like the shelf door, it claims the kid and lands in
-  // `onPortalLaunch`.
+  // The panel's bank door: a tap on a kid's coin cell on the board, or on a
+  // strip chip, opens that kid's bank through the same request. Like the shelf
+  // door, it claims the kid and lands in `onPortalLaunch`.
   const launchFromBankDoor = useCallback((target, learnerId) => {
     claim(learnerId);
     return onPortalLaunch(target, learnerId);
   }, [claim, onPortalLaunch]);
   const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
   const { choose: chooseBank, close: closeBankDoor } = bankDoor;
-  // The coin window's "Open my bank": the kid is known, so no face picker.
+  // The board's coin cell: the kid is known, so no face picker.
   // Same request and proof as a strip chip.
-  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-window'); }, [chooseBank]);
+  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-cell'); }, [chooseBank]);
   // The door belongs to the locked panel's resting view (keypad + board).
   // Anything that leaves it (a code's card, a runner, a section) closes it.
   const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
@@ -1127,10 +1127,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
               {/* The board itself stays read-only — see AgendaStatusBoard's own
-                  header. The door rides in the HEADER, which is the board's
+                  header. The book door rides in the HEADER, which is the board's
                   neighbour rather than a row on it, so the pane's
                   `pointer-events: none` is re-enabled on the button alone and
-                  both survive a day the board draws nothing. */}
+                  it survives a day the board draws nothing. The bank's door
+                  is the coin cell on each kid's own card (`onOpenBank`). */}
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
                   <div className="school-board-header__doors">
@@ -1140,9 +1141,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 </BoardHeader>
                 <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} />
               </div>
-              {/* "Whose bank?" is drawn by the panel, not inside the board
-                  header: below 820px the board pane is hidden, and a chip in
-                  the keypad column can still need it for a refusal. */}
+              {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
+                  the board: below 820px the board pane is hidden, and a chip
+                  in the keypad column can still need it. */}
               <BankDoorSheet door={bankDoor} roster={roster} idleTimeoutSeconds={lock.idleTimeoutSeconds} />
             </div>
           ) : (

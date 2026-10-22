@@ -1,28 +1,34 @@
 /**
  * BankScreen — one kid's coin bank on the Portal (school economy slice 1, C3).
- * Opened through `BankDoor` (a face tap, or a tap on the kid's chip on the
- * bank strip), which checks the roster and puts an identity on the panel. The
- * bank read itself is unauthenticated in slice 1.
+ * Opened from the board's coin cell (SchoolApp's bank door), which checks the
+ * roster and puts an identity on the panel. The bank read itself is
+ * unauthenticated in slice 1.
  *
- * FOUR SECTIONS, in the order a kid asks them:
+ * THREE TABS. The screen's primary job is "here is the balance, how did it get
+ * here", so History opens first and the other two are a tap away:
  *
- *   1. Balances. Silver (the one emphasized stat) "becomes gold in N days";
- *      gold and gems are "yours for good".
- *   2. History. The bank's own plain-words lines, grouped by day.
- *   3. Ways to spend. Each privilege on sale, its price in each coin and
+ *   1. History. The balances (silver "becomes gold in N days"; gold and gems
+ *      "yours for good"), this week's not-yet-paid earnings (the board's
+ *      weekly figure, read here with `earningsRoster`: the launch path carries
+ *      no figure, and one roster read is what the board makes), then the ledger
+ *      as a table grouped by day (`BankLedger.jsx`).
+ *   2. How to earn. Today's remaining work: the next sheet (`/next`) and the
+ *      agenda's still-owed sections. Titles only unless the economy prices one.
+ *   3. How to spend. Each privilege on sale, its price in each coin and
  *      whether it can be bought ("can buy at the piano", "3 more silver",
  *      "after school is done"). No buy button: buying is at the piano kiosk.
- *   4. Ways to earn. Today's remaining work: the next sheet (`/next`) and the
- *      agenda's still-owed sections. Titles only unless the economy prices one.
+ *
+ * The tabs are a roving-tabindex tablist: Left/Right/Home/End move and select,
+ * a tap or Enter selects. Esc is bound to nothing.
  *
  * COINS START SOON. Before the economy is live (the bank's `mode` is not
- * `live`), the screen says "Coins start soon." in place of the balances,
- * history and prices: every bank reads 0 until then, and a kid must not be
- * shown "0 silver" for a day's work. Ways to earn still shows.
+ * `live`), History and How to spend say "Coins start soon." in place of the
+ * balances, history and prices: every bank reads 0 until then, and a kid must
+ * not be shown "0 silver" for a day's work. How to earn still shows.
  *
  * NAPPING. A bank read that fails shows "The bank is napping. Try again soon."
  * and NO numbers: no balance, no history, no prices. Nothing falls back to an
- * earlier read or a cache. Ways to earn does not come from the bank, so it
+ * earlier read or a cache. How to earn does not come from the bank, so it
  * still shows.
  *
  * Refreshes on the `school` topic's events for this kid (coalesced, as the
@@ -39,7 +45,9 @@ import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvata
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { SCHOOL_REFRESH_EVENTS, coalescer } from "../status/schoolRefreshEvents.js";
-import { NAPPING, earnItems, goldCountdown, historyByDay, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
+import { earningsByLearner, figureInWeek } from "../status/agendaStatusModel.js";
+import { NAPPING, earnItems, goldCountdown, schoolDoneFrom, spendItems } from "./bankScreenModel.js";
+import { LedgerTable, UnpaidWeek } from "./BankLedger.jsx";
 import './BankScreen.scss';
 
 export { NAPPING };
@@ -57,6 +65,12 @@ function Identity({ learner }) {
   );
 }
 
+export const TABS = Object.freeze([
+  { id: 'history', label: 'History' },
+  { id: 'earn', label: 'How to earn' },
+  { id: 'spend', label: 'How to spend' },
+]);
+
 // A balance's label: the standard icon, then the word.
 const coinLabel = (icon, text) => (
   <span className="school-bank-screen__stat-label">{icon}{text}</span>
@@ -69,6 +83,9 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
   const [bank, setBank] = useState({ status: 'loading', data: null });
   const [agenda, setAgenda] = useState(null);
   const [next, setNext] = useState(null);
+  const [figure, setFigure] = useState(null); // this kid's weekly earnings figure (the board's)
+  const [tab, setTab] = useState('history');
+  const tabRefs = useRef({});
   const aliveRef = useRef(true);
   const seqRef = useRef(0);
 
@@ -100,6 +117,17 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
     Promise.resolve().then(() => schoolApi.agendaPreview(learnerId))
       .then((res) => { if (latest()) setAgenda(res?.ok ? (res.data ?? null) : null); })
       .catch(() => { if (latest()) setAgenda(null); });
+    Promise.resolve().then(() => schoolApi.earningsRoster?.())
+      .then((res) => {
+        if (!latest()) return;
+        if (res && !res.ok) log.warn('economy.bank.earnings-failed', { learnerId, status: res.status ?? null });
+        setFigure(res?.ok ? (earningsByLearner(res.data)[learnerId] ?? null) : null);
+      })
+      .catch((error) => {
+        if (!latest()) return;
+        log.warn('economy.bank.earnings-failed', { learnerId, error: error?.message ?? String(error) });
+        setFigure(null);
+      });
     Promise.resolve().then(() => schoolApi.nextItem(learnerId))
       .then((res) => { if (latest()) setNext(res?.ok ? (res.data ?? null) : null); })
       .catch(() => { if (latest()) setNext(null); });
@@ -137,7 +165,30 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
   const schoolDone = schoolDoneFrom(agenda);
   const spend = data ? spendItems({ offers: data.offers, pass: data.pass, balances: data.balances, schoolDone }) : null;
   const earn = earnItems({ agenda, next });
-  const days = data ? historyByDay(data.history, at) : [];
+  const unpaid = data ? figureInWeek(figure, data.studyDay) : null;
+
+  const selectTab = useCallback((id, { focus = false } = {}) => {
+    setTab((prev) => {
+      if (prev !== id) log.info('economy.bank.tab-changed', { learnerId, tab: id });
+      return id;
+    });
+    if (focus) tabRefs.current[id]?.focus();
+  }, [learnerId, log]);
+  const onTabKeyDown = (event, index) => {
+    const last = TABS.length - 1;
+    const target = event.key === 'ArrowRight' ? (index === last ? 0 : index + 1)
+      : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
+        : event.key === 'Home' ? 0 : event.key === 'End' ? last : null;
+    if (target == null) return;
+    event.preventDefault();
+    selectTab(TABS[target].id, { focus: true });
+  };
+  // Shown in a tab that needs the bank when it has nothing to say.
+  const bankNote = bank.status === 'loading'
+    ? <p className="school-bank-screen__quiet" role="status">Opening your bank…</p>
+    : bank.status === 'unavailable'
+      ? <p className="school-bank-screen__napping" role="status" data-testid="bank-napping">{NAPPING}</p>
+      : soon ? <p className="school-bank-screen__soon" role="status" data-testid="bank-soon">{COINS_SOON}</p> : null;
 
   return (
     <section
@@ -152,91 +203,101 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
         identity={<Identity learner={learner} />}
         onBack={() => onExit?.('back')}
       />
-      <div className="school-bank-screen__body">
-        {bank.status === 'loading' && <p className="school-bank-screen__quiet" role="status">Opening your bank…</p>}
-        {bank.status === 'unavailable' && (
-          <p className="school-bank-screen__napping" role="status" data-testid="bank-napping">{NAPPING}</p>
-        )}
-        {soon && (
-          <p className="school-bank-screen__soon" role="status" data-testid="bank-soon">{COINS_SOON}</p>
-        )}
-        {data && (
-          <>
-            <section className="school-bank-screen__section school-bank-screen__balances" aria-label="Balances" data-testid="bank-balances">
-              <StatCard
-                emphasis
-                label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="silver" />, 'Silver')}
-                value={data.balances.silver}
-                trend={goldCountdown({ weekEndsOn: data.weekEndsOn, studyDay: data.studyDay, weekEndsAt: data.weekEndsAt, now: at })}
-              />
-              <StatCard
-                label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="gold" />, 'Gold')}
-                value={Number.isFinite(data.balances.gold) ? data.balances.gold : 0}
-                trend="yours for good"
-              />
-              <StatCard
-                label={coinLabel(<GemIcon className="school-bank-screen__stat-icon" />, 'Gems')}
-                value={Number.isFinite(data.balances.gems) ? data.balances.gems : 0}
-                trend="yours for good"
-              />
-            </section>
-
-            <section className="school-bank-screen__section" aria-labelledby="bank-history-title" data-testid="bank-history">
-              <h3 id="bank-history-title" className="school-bank-screen__heading">History</h3>
-              {days.length ? days.map((group) => (
-                <div key={group.key} className="school-bank-screen__day">
-                  <h4 className="school-bank-screen__day-label">{group.label}</h4>
-                  <ul className="school-bank-screen__lines">
-                    {group.lines.map((line, i) => (
-                      <li key={(line.ids ?? []).join('|') || `${group.key}:${i}`} className="school-bank-screen__line">{line.text}</li>
-                    ))}
-                  </ul>
-                </div>
-              )) : <p className="school-bank-screen__quiet">Nothing here yet.</p>}
-            </section>
-
-            <section className="school-bank-screen__section" aria-labelledby="bank-spend-title" data-testid="bank-spend">
-              <h3 id="bank-spend-title" className="school-bank-screen__heading">Ways to spend</h3>
-              {spend.empty ? <p className="school-bank-screen__quiet">{NOTHING_TO_SPEND}</p> : (
-                <ul className="school-bank-screen__offers">
-                  {spend.items.map((item) => (
-                    <li key={item.privilege} className="school-bank-screen__offer" data-testid="bank-offer">
-                      <span className="school-bank-screen__offer-label">{item.label}</span>
-                      <ul className="school-bank-screen__prices">
-                        {item.prices.map((row) => (
-                          <li key={row.coin} className={`school-bank-screen__price school-bank-screen__price--${row.coin}`}>
-                            <span className="school-bank-screen__price-amount">{`${row.price} ${row.coin}`}</span>
-                            {row.state && <span className="school-bank-screen__price-state">{row.state}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                      {item.note && <p className="school-bank-screen__offer-note">{item.note}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </>
+      <div className="school-bank-screen__tabs" role="tablist" aria-label="Bank" data-testid="bank-tabs">
+        {TABS.map((t, i) => (
+          <button
+            key={t.id}
+            ref={(el) => { tabRefs.current[t.id] = el; }}
+            type="button"
+            role="tab"
+            id={`bank-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`bank-panel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            className={`school-bank-screen__tab${tab === t.id ? ' is-selected' : ''}`}
+            data-testid={`bank-tab-${t.id}`}
+            onClick={() => selectTab(t.id)}
+            onKeyDown={(event) => onTabKeyDown(event, i)}
+          >{t.label}</button>
+        ))}
+      </div>
+      <div
+        className="school-bank-screen__body"
+        role="tabpanel"
+        id={`bank-panel-${tab}`}
+        aria-labelledby={`bank-tab-${tab}`}
+      >
+        {tab === 'history' && (
+          data ? (
+            <>
+              <section className="school-bank-screen__balances" aria-label="Balances" data-testid="bank-balances">
+                <StatCard
+                  emphasis
+                  label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="silver" />, 'Silver')}
+                  value={data.balances.silver}
+                  trend={goldCountdown({ weekEndsOn: data.weekEndsOn, studyDay: data.studyDay, weekEndsAt: data.weekEndsAt, now: at })}
+                />
+                <StatCard
+                  label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="gold" />, 'Gold')}
+                  value={Number.isFinite(data.balances.gold) ? data.balances.gold : 0}
+                  trend="yours for good"
+                />
+                <StatCard
+                  label={coinLabel(<GemIcon className="school-bank-screen__stat-icon" />, 'Gems')}
+                  value={Number.isFinite(data.balances.gems) ? data.balances.gems : 0}
+                  trend="yours for good"
+                />
+              </section>
+              <UnpaidWeek figure={unpaid} />
+              <section className="school-bank-screen__section school-bank-screen__history" aria-label="History" data-testid="bank-history">
+                <LedgerTable history={data.history} now={at} />
+              </section>
+            </>
+          ) : bankNote
         )}
 
-        <section className="school-bank-screen__section" aria-labelledby="bank-earn-title" data-testid="bank-earn">
-          <h3 id="bank-earn-title" className="school-bank-screen__heading">Ways to earn</h3>
-          {earn.items.length ? (
-            <ul className="school-bank-screen__earn">
-              {earn.items.map((item) => (
-                <li key={item.key} className={`school-bank-screen__earn-item${item.next ? ' school-bank-screen__earn-item--next' : ''}`}>
-                  <span className="school-bank-screen__earn-title">{item.title}</span>
-                  {item.reward && <span className="school-bank-screen__earn-reward">{item.reward}</span>}
-                  {item.next && <span className="school-bank-screen__earn-tag">next</span>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="school-bank-screen__quiet">
-              {earn.done ? 'All done for today.' : earn.status === 'unavailable' ? "Can't see today's list right now." : 'Nothing left on today’s list.'}
-            </p>
-          )}
-        </section>
+        {tab === 'spend' && (data ? (
+          <section className="school-bank-screen__section" aria-label="How to spend" data-testid="bank-spend">
+            {spend.empty ? <p className="school-bank-screen__quiet">{NOTHING_TO_SPEND}</p> : (
+              <ul className="school-bank-screen__offers">
+                {spend.items.map((item) => (
+                  <li key={item.privilege} className="school-bank-screen__offer" data-testid="bank-offer">
+                    <span className="school-bank-screen__offer-label">{item.label}</span>
+                    <ul className="school-bank-screen__prices">
+                      {item.prices.map((row) => (
+                        <li key={row.coin} className={`school-bank-screen__price school-bank-screen__price--${row.coin}`}>
+                          <span className="school-bank-screen__price-amount">{`${row.price} ${row.coin}`}</span>
+                          {row.state && <span className="school-bank-screen__price-state">{row.state}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    {item.note && <p className="school-bank-screen__offer-note">{item.note}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : bankNote)}
+
+        {tab === 'earn' && (
+          <section className="school-bank-screen__section" aria-label="How to earn" data-testid="bank-earn">
+            {earn.items.length ? (
+              <ul className="school-bank-screen__earn">
+                {earn.items.map((item) => (
+                  <li key={item.key} className={`school-bank-screen__earn-item${item.next ? ' school-bank-screen__earn-item--next' : ''}`}>
+                    <span className="school-bank-screen__earn-title">{item.title}</span>
+                    {item.reward && <span className="school-bank-screen__earn-reward">{item.reward}</span>}
+                    {item.next && <span className="school-bank-screen__earn-tag">next</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="school-bank-screen__quiet">
+                {earn.done ? 'All done for today.' : earn.status === 'unavailable' ? "Can't see today's list right now." : 'Nothing left on today’s list.'}
+              </p>
+            )}
+          </section>
+        )}
       </div>
     </section>
   );

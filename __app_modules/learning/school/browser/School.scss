@@ -3050,7 +3050,6 @@
 .school-book-door__icon { font-size: 1.75rem; line-height: 1; }
 // The header's doors side by side: the coin bank, then the book shelf.
 .school-board-header__doors { flex: 0 0 auto; display: flex; align-items: center; gap: .6rem; }
-.school-bank-door__icon { width: 1.75rem; height: 1.75rem; flex: 0 0 auto; }
 .school-book-door__label { font-size: 1rem; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
 // No reserved lane any more: "Turn off screen" used to be pinned to the
@@ -3768,49 +3767,5 @@
     li { overflow: visible; white-space: nowrap; }
   }
   &__grid { --grid-cell: inherit; --grid-gap: inherit; --grid-radius: 4px; }
-}
-
-// THE COIN WINDOW: TermModal's shell (the dialog carries both classes), sized
-// for a ledger. Read-only; a tap anywhere closes it (CoinModal.jsx).
-.school-coin-modal {
-  &__sheet { width: min(94vw, 46rem); align-items: stretch; overflow: auto; }
-  &__balances {
-    list-style: none; margin: 0; padding: 0;
-    display: flex; justify-content: center; gap: clamp(1rem, 3vw, 2.2rem);
-  }
-  &__balance {
-    display: flex; align-items: center; gap: 0.35em;
-    font-size: clamp(1.3rem, 3.6vh, 1.9rem); font-weight: 900; font-variant-numeric: tabular-nums;
-    svg { width: 1.4em; height: 1.4em; }
-  }
-  &__balance--gold { color: var(--school-coin-gold); }
-  &__unit { font-size: 0.55em; font-weight: 700; color: var(--school-muted); }
-  &__section { display: flex; flex-direction: column; gap: 0.35rem; }
-  &__heading { margin: 0; font-size: clamp(1rem, 2.6vh, 1.25rem); font-weight: 800; }
-  &__pending { border: 1px dashed var(--school-border); border-radius: 12px; padding: 0.6rem 1rem; }
-  &__so-far {
-    margin: 0; display: flex; align-items: center; gap: 0.4em;
-    font-size: clamp(1.1rem, 3vh, 1.5rem); font-weight: 800; font-variant-numeric: tabular-nums;
-    svg { width: 1.3em; height: 1.3em; }
-  }
-  &__day-label {
-    margin: 0.5rem 0 0.15rem; font-size: 0.85rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.04em; color: var(--school-muted);
-  }
-  &__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-  &__line {
-    display: grid; grid-template-columns: 6rem minmax(0, 1fr) auto minmax(8.5rem, max-content);
-    align-items: baseline; gap: 0.6rem;
-    font-size: clamp(0.95rem, 2.3vh, 1.1rem);
-  }
-  &__source { font-size: 0.85em; font-weight: 700; color: var(--school-muted); }
-  &__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__amounts { display: flex; gap: 0.5em; white-space: nowrap; }
-  &__amount { font-weight: 800; font-variant-numeric: tabular-nums; }
-  &__amount.is-plus { color: var(--school-coin-silver); }
-  &__amount--gold.is-plus { color: var(--school-coin-gold); }
-  &__amount.is-minus { color: var(--school-muted); }
-  &__after { text-align: right; white-space: nowrap; color: var(--school-muted); font-variant-numeric: tabular-nums; }
-  &__quiet { margin: 0; color: var(--school-muted); }
 }
 
