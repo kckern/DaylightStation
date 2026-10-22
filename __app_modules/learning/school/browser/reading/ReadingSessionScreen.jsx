@@ -32,7 +32,8 @@ import { Player as Player } from "../../../../media/media/browser/playback.mjs";
 import SurroundFrame from "../../../../../__capabilities/playback/browser/surround-frame.mjs";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import { useScreenOverlay } from "../../../../../__capabilities/screen-host/browser/overlays.mjs";
-import { useSessionSourceContext, usePlayerSessionBinding } from "../../../../../__capabilities/playback/browser/sessions.mjs";
+import { useSessionSourceContext, usePlayerSessionBinding, useDeviceAudience } from "../../../../../__capabilities/playback/browser/sessions.mjs";
+import { readingAudience } from "./readingAudience.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { resolveAdoptablePlayback } from "./adoptForeignPlayback.js";
 import { playScanCeremonyTone } from "../selfService/scanCeremonySound.js";
@@ -682,6 +683,10 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   // The summary is refetched on completion, so the pips tick over WITHOUT the
   // story restarting — which is the whole reason the store exists rather than a
   // second `showOverlay`.
+  // Who is at the reader, on the living room's fleet heartbeat
+  // (snapshot.audience) — while a session is open, story playing or not.
+  useDeviceAudience(readingAudience({ learner: session.learner, pick: session.pick }));
+
   const readingSnapshot = useMemo(() => ({
     // THE CHILD CREDITED, not the child at the reader: a story queued for a
     // sibling plays under that sibling's face. The two are the same child

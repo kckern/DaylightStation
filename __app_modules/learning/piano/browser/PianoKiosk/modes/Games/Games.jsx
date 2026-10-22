@@ -1,6 +1,8 @@
 import { useMemo, useCallback, useContext, useEffect, useRef, useState, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { useDeviceAudience } from '../../../../../../../__capabilities/playback/browser/sessions.mjs';
+import { pianoAudience } from '../../../pianoAudience.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
@@ -44,6 +46,10 @@ import { addressingPolicyFor } from '../../../game-platform/addressing/addressin
  * render one. `key` is the match, so a rematch is a new mount and says so.
  */
 function GameMountWitness({ gameId, matchId, learnerId, logger, onMount = null }) {
+  // While the game is on screen the tablet's audience is a game, declared over
+  // the shell's 'lesson' and withdrawn when the game unmounts.
+  const pianoUser = useContext(PianoUserContext);
+  useDeviceAudience(pianoAudience(pianoUser?.currentProfile ?? null, 'game'));
   useEffect(() => {
     const startedAt = Date.now();
     // The early pass's clock starts here, at the game, not at the lock.

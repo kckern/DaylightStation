@@ -30,6 +30,8 @@ import { usePianoPlayback } from './PianoKiosk/usePianoPlayback.js';
 import { PianoChrome } from './PianoKiosk/PianoChrome.jsx';
 import { PianoFullscreenProvider, usePianoFullscreen } from './PianoKiosk/PianoFullscreenContext.jsx';
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
+import { useDeviceAudience } from "../../../../__capabilities/playback/browser/sessions.mjs";
+import { pianoAudience } from "./pianoAudience.js";
 import { PianoBreadcrumbProvider } from './PianoKiosk/PianoBreadcrumbContext.jsx';
 import { PianoSoundProvider } from './PianoKiosk/PianoSoundContext.jsx';
 import { PianoPresetProvider } from './PianoKiosk/usePianoPreset.js';
@@ -167,7 +169,10 @@ function PianoShell() {
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   const { playing, videoActive, playerLocks = [] } = usePianoPlayback();
-  const { users, currentUser, setCurrentUser } = usePianoUser();
+  const { users, currentUser, currentProfile, setCurrentUser } = usePianoUser();
+  // Who is at the piano, on the tablet's fleet heartbeat (a mounted game
+  // declares over this as 'game').
+  useDeviceAudience(pianoAudience(currentProfile, 'lesson'));
   const [whoOpen, setWhoOpen] = useState(false);
   const { fullscreen } = usePianoFullscreen();
   const curfewActive = usePianoCurfew(config.curfew);

@@ -1400,3 +1400,20 @@ html:has(.media-app) .mantine-Input-input:not(:focus):not([data-expanded="true"]
 .media-app .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]) {
   --input-bd: var(--media-control-line);
 }
+
+// Who is using the device (snapshot.audience), under the card's item.
+.fleet-card-audience {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  &__faces { display: inline-flex; align-items: center; }
+  &__faces img {
+    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+    // The card's own colour, so the overlap reads as a cutout, not a halo.
+    border: 2px solid var(--mantine-color-dark-5);
+    & + img { margin-left: -6px; }
+  }
+  &__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

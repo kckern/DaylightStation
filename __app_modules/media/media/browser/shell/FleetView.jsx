@@ -18,6 +18,7 @@ import { useDevice } from "../fleet/useDevice.js";
 import { FleetPlayPicker } from "../fleet/FleetPlayPicker.jsx";
 import { deviceName, deviceLocation } from "../fleet/deviceDisplay.js";
 import { DeviceIcon } from "../fleet/DeviceIcon.jsx";
+import AudienceRow from "../fleet/AudienceRow.jsx";
 import { useNav } from "./NavProvider.jsx";
 import { usePeek } from "../peek/usePeek.js";
 import { stateColor } from "../theme/mediaTheme.js";
@@ -123,6 +124,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
         // that has not reported yet explains itself.
         <Text size="xs" c="dimmed" className="fleet-card-hint">This device hasn't reported yet</Text>
       ) : null}
+      <AudienceRow audience={snap?.audience} deviceId={deviceId} />
       {isActive && <StartedByLine deviceId={deviceId} info={startedBy ?? null} />}
       <AddOnlyNotice deviceId={deviceId} name={name} controls={controls} />
       {!canShowNotes(device) && <RowNotes deviceId={deviceId} name={name} controls={controls} />}

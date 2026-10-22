@@ -323,6 +323,11 @@ carries a card.
 The Devices view is the house at a glance; each row adds, beyond state, item
 and progress:
 
+- **Who is using it**, when the device says (`snapshot.audience`): up to four
+  small faces and "Rider A" or "Rider A & 2 others" — the riders in a workout,
+  the child at the living-room reader, the player at the piano. Guests show the
+  generic face as "Guest". Nothing when nobody is declared.
+
 - **Start progress or last failure, to everyone** (RQ-HOUSE-04): "Starting:
   Turning on TV…", "Started", "Added to its queue", or
   "Couldn't start at 7:02: <reason>" — whichever device sent it. The row reads
