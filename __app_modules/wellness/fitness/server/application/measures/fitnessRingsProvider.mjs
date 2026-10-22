@@ -12,6 +12,14 @@
  * `kckern` is a fitness participant but not a school learner, which is fine:
  * this is asked per learner, so a non-learner is simply never asked about.
  */
+import { evaluateRecapReadiness } from "../sessionConsolidationPolicy.mjs";
+
+/** A summary's end: its `endTime`, else start + duration. Null when neither is known. */
+function endOf(session, start) {
+  const end = typeof session.endTime === 'number' ? session.endTime : Date.parse(session.endTime ?? '');
+  if (Number.isFinite(end)) return end;
+  return Number.isFinite(session.durationMs) ? start + session.durationMs : null;
+}
 
 /**
  * @param {object} deps
@@ -19,7 +27,7 @@
  *   anything exposing the session-summary list the fitness API already serves
  * @param {string} [deps.timezone]
  */
-export function createFitnessRingsProvider({ sessions, timezone = 'UTC', studyDayFor, isInWindow }) {
+export function createFitnessRingsProvider({ sessions, timezone = 'UTC', studyDayFor, isInWindow, now = () => Date.now() }) {
   if (!sessions?.listSessions) {
     throw new Error('fitnessRingsProvider requires a sessions source with listSessions()');
   }
@@ -54,7 +62,14 @@ export function createFitnessRingsProvider({ sessions, timezone = 'UTC', studyDa
      * the economy's ring award week (Mon 04:00 → Sat 12:00, taxonomy D10),
      * which is an instant window, not whole study days. One listing for the
      * whole roster; a learner with no session reads 0.
-     * @returns {Promise<Array<{learnerId: string, rings: number}>>}
+     *
+     * `sessions` lists the learner's sessions with rings, oldest first:
+     * `{ sessionId, startMs, endMs, rings, title, final }`. `title` is the
+     * primary media's (null when nothing played). `final` is the consolidation
+     * policy's "settled" (finalized, or ended longer ago than the resume
+     * window): until then the workout can still grow or be merged, so the
+     * economy pays its rings only once it is final.
+     * @returns {Promise<Array<{learnerId: string, rings: number, sessions: object[]}>>}
      */
     async standings({ learnerIds = [], fromMs, toMs }) {
       // List the study days the window touches, one day early for margin,
@@ -64,15 +79,27 @@ export function createFitnessRingsProvider({ sessions, timezone = 'UTC', studyDa
       const to = studyDayFor(new Date(toMs - 1), { timezone });
       const all = await sessions.listSessions({ from, to });
       const totals = new Map(learnerIds.map((id) => [id, 0]));
+      const mine = new Map(learnerIds.map((id) => [id, []]));
+      const at = now();
       for (const session of all ?? []) {
         const start = typeof session.startTime === 'number' ? session.startTime : Date.parse(session.startTime ?? '');
         if (!Number.isFinite(start) || start < fromMs || start >= toMs) continue;
+        const endMs = endOf(session, start);
+        const final = evaluateRecapReadiness({ finalized: session.finalized === true, endTime: endMs, now: at }).settled;
+        const title = typeof session.media?.primary?.title === 'string' && session.media.primary.title.trim()
+          ? session.media.primary.title.trim() : null;
         for (const id of learnerIds) {
           const rings = session.participants?.[id]?.rings;
-          if (Number.isFinite(rings)) totals.set(id, totals.get(id) + rings);
+          if (!Number.isFinite(rings)) continue;
+          totals.set(id, totals.get(id) + rings);
+          if (rings > 0) mine.get(id).push({ sessionId: String(session.sessionId ?? ''), startMs: start, endMs, rings, title, final });
         }
       }
-      return learnerIds.map((learnerId) => ({ learnerId, rings: totals.get(learnerId) }));
+      return learnerIds.map((learnerId) => ({
+        learnerId,
+        rings: totals.get(learnerId),
+        sessions: mine.get(learnerId).sort((a, b) => a.startMs - b.startMs),
+      }));
     },
   };
 }

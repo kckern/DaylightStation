@@ -344,6 +344,19 @@ is the preview's current study day, `currentStudyDay()`).
   a clawback is an `adjust` under its own ref (e.g. `<ref>:clawback`), and even
   an adjust that reuses the line's ref does not count, so a correction never
   makes the payout mint again.
+- **Rings pay per finished workout.** A `ring-threshold` line's `count` and
+  `amount` stay live (the board and its pop count rings as they happen), but the
+  payout mints only for its FINISHED workouts: the line's `sessions`
+  (`fitnessRingsProvider.standings`), kept when `final` (finalized, or ended
+  longer ago than the 30-minute resume window, `evaluateRecapReadiness`), taken
+  in end order and each priced at the week's running ring total with
+  `ringAmount` (`ringSteps`). Each step mints under the line's one ref, so it
+  pays only what is still short: one entry per workout, with
+  `meta.session = { id, title, startMs, rings }`; a workout that crosses no
+  new silver step writes nothing and its rings roll into the next entry; a
+  week already paid at live rates is not paid twice. A running workout waits
+  for a later hourly reconcile, so the bank trails the board by up to about
+  90 minutes after a workout ends.
 - A corrupt shard throws `CORRUPT_LEDGER` inside `mint` and nothing is written;
   the payout logs it at `error`.
 - A learner on the roster who is not a household user (no wallet) logs
@@ -632,10 +645,14 @@ folded oldest first over the whole ledger read, before the 50-line cut, each
 currency floored at 0, so line 50 still knows what older lines left behind. An
 older client reads `text` only. The sentences: "+2 silver · Green
 day", "−3 silver · early pass", "+3 silver · early pass refunded", "12 silver →
-12 gold · Sunday", "+2 silver · Korean · Tuesday", "+4 silver · Rings · 540
-this week". A payout's `detail` comes from the `meta` the payout keeps on the
-entry (`payoutMeta`: the line's `kind`, `count` and, for `section-day` and
-`day-met`, the study `days` that paid so far). A week line pays its growth in
+12 gold · Sunday", "+2 silver · Korean · Tuesday", "+6 silver · Rings · Sonic &
+Sega All Stars Racing · 7:19 pm · 588 rings". A payout's `detail` comes from the
+`meta` the payout keeps on the entry (`payoutMeta`: the line's `kind`, `count`
+and, for `section-day` and `day-met`, the study `days` that paid so far; for a
+ring entry, `ringSteps`' `session`). A ring entry names its workout: the media
+title (or "Workout" when nothing played), its start time in the household
+timezone and the kid's rings in it. A ring entry from before per-workout pay
+reads "N this week". A week line pays its growth in
 several entries under one ref, so a per-day entry's detail is the weekday(s) in
 its `days` that no older entry of the same ref and currency had; a ring entry's
 is the week's ring count when it paid. With a day detail the rule's trailing

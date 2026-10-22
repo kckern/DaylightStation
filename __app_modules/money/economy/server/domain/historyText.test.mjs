@@ -141,6 +141,16 @@ describe('historyLines: what a payout was for', () => {
     const line = historyLines([pay({ ruleId: 'rings', ref: 'r', delta: 4, meta: { kind: 'ring-threshold', count: 1240 } })], o)[0];
     expect(line).toMatchObject({ text: '+4 silver · Rings · 1,240 this week', label: 'Rings', detail: '1,240 this week' });
   });
+  it('a per-workout ring payout names the workout, its local start time and its rings; untitled reads Workout', () => {
+    const titled = pay({ ruleId: 'rings', ref: 'r', delta: 6, meta: { kind: 'ring-threshold', count: 622,
+      session: { id: '20261021191956', title: 'Sonic & Sega All Stars Racing', startMs: Date.parse('2026-10-22T02:19:56Z'), rings: 588 } } });
+    const untitled = pay({ ruleId: 'rings', ref: 'r', delta: 1, meta: { kind: 'ring-threshold', count: 34,
+      session: { id: '20261021180513', title: null, startMs: Date.parse('2026-10-22T01:05:13Z'), rings: 34 } } });
+    expect(historyLines([titled, untitled], o).map((l) => l.text)).toEqual([
+      '+6 silver · Rings · Sonic & Sega All Stars Racing · 7:19 pm · 588 rings',
+      '+1 silver · Rings · Workout · 6:05 pm · 34 rings',
+    ]);
+  });
   it('an entry minted before meta reads as its label alone', () => {
     const line = historyLines([pay({ ruleId: 'korean-daily', ref: 'k', delta: 2 })], o)[0];
     expect(line).toMatchObject({ text: '+2 silver · Korean (each day done)', label: 'Korean (each day done)', detail: null });

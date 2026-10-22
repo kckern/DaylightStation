@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { YamlEconomyDatastore } from "../adapters/persistence/YamlEconomyDatastore.mjs";
 import { EconomyConfigProjection } from '../adapters/config/EconomyConfigProjection.mjs';
 import { EconomyService } from "./EconomyService.mjs";
-import { PayoutService, payoutMeta } from "./PayoutService.mjs";
+import { PayoutService, payoutMeta, ringSteps } from "./PayoutService.mjs";
 import { EarningsPreviewService } from "./EarningsPreviewService.mjs";
 import { validateRuleset } from "../domain/earnings/index.mjs";
 
@@ -336,5 +336,52 @@ describe('payoutMeta', () => {
   });
   it('a ring line keeps its rings and no days', () => {
     expect(payoutMeta({ kind: 'ring-threshold', count: 540, evidence: [{ threshold: 250, reached: true }] })).toEqual({ kind: 'ring-threshold', count: 540 });
+  });
+});
+
+describe('PayoutService: rings pay one entry per finished workout', () => {
+  const priced = { revision: 0, multiplier: 1, rate: { rings: 100, silver: 1 }, thresholds: [{ at: 250, reward: { silver: 2, gems: 0 } }, { at: 500, reward: { silver: 3, gems: 0 } }] };
+  const workout = (sessionId, rings, endMs, over = {}) => ({ sessionId, startMs: endMs - 3_600_000, endMs, rings, title: null, final: true, ...over });
+  const ringLine = (sessions) => ({
+    ...line('learner-a', 'rings', 'ring-threshold', 'earned', { silver: 99, gems: 0 }), priced, sessions,
+  });
+  const weekWith = (sessions) => ({ 'learner-a': { learnerId: 'learner-a', windows: { school: { from: '2026-09-21', to: '2026-09-27' } }, lines: [ringLine(sessions)] } });
+  const ringsOf = (ledger) => ledger('learner-a').filter((t) => t.ruleId === 'rings');
+
+  it('ringSteps prices each final workout at the running total, in end order, skipping running ones', () => {
+    const steps = ringSteps(ringLine([workout('b', 300, 2000), workout('c', 50, 3000, { final: false }), workout('a', 120, 1000, { title: 'Ride' })]));
+    expect(steps.map((s) => [s.meta.session.id, s.meta.count, s.amount.silver])).toEqual([['a', 120, 1], ['b', 420, 6]]);
+    expect(steps[0].meta).toEqual({ kind: 'ring-threshold', count: 120, session: { id: 'a', title: 'Ride', startMs: 1000 - 3_600_000, rings: 120 } });
+  });
+
+  it('mints one entry per workout, each carrying its session; a resettle writes nothing', async () => {
+    const { payout, ledger, state } = setup({ weeks: weekWith([workout('a', 120, 1000, { title: 'Ride' }), workout('b', 588, 2000)]) });
+    await payout.settle({ learnerId: 'learner-a' });
+    const rows = ringsOf(ledger);
+    // 120 rings → 1; 708 rings → 7 + 2 + 3 = 12, so the second pays 11.
+    expect(rows.map((t) => [t.delta, t.meta.session.id, t.meta.count])).toEqual([[1, 'a', 120], [11, 'b', 708]]);
+    // The live line said 99: only finished workouts are paid.
+    expect(rows.reduce((n, t) => n + t.delta, 0)).toBe(12);
+    await payout.settle({ learnerId: 'learner-a' });
+    expect(ringsOf(ledger)).toHaveLength(2);
+    // The running workout finishes: it gets its own entry.
+    state.weeks = weekWith([workout('a', 120, 1000), workout('b', 588, 2000), workout('c', 300, 3000)]);
+    await payout.settle({ learnerId: 'learner-a' });
+    expect(ringsOf(ledger).map((t) => [t.delta, t.meta.session.id])).toEqual([[1, 'a'], [11, 'b'], [3, 'c']]);
+  });
+
+  it('a workout that crosses no new silver step writes nothing; its rings roll into the next one\'s entry', async () => {
+    const { payout, ledger } = setup({ weeks: weekWith([workout('a', 34, 1000), workout('b', 80, 2000)]) });
+    await payout.settle({ learnerId: 'learner-a' });
+    expect(ringsOf(ledger).map((t) => [t.delta, t.meta.session.id, t.meta.count])).toEqual([[1, 'b', 114]]);
+  });
+
+  it('a week already paid at live rates is never paid twice', async () => {
+    const { payout, ledger, economy } = setup({ weeks: weekWith([workout('a', 600, 1000)]) });
+    // Paid before per-workout pay: 10 silver under the week's ref.
+    await economy.mint('learner-a', { currency: 'silver', amount: 10, ref: ref('learner-a', 'rings'), ruleId: 'rings', evidenceRef: ref('learner-a', 'rings') });
+    await payout.settle({ learnerId: 'learner-a' });
+    // 600 rings → 6 + 2 + 3 = 11: one more silver, not 11.
+    expect(ringsOf(ledger).map((t) => t.delta)).toEqual([10, 1]);
   });
 });

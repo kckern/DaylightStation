@@ -129,12 +129,14 @@ export class EarningsPreviewService {
       schoolOk = false;
       this.#logger.warn?.('economy.earnings.school-unavailable', { learnerId: learner.id, error: err?.message ?? String(err) });
     }
-    const rings = Array.isArray(ctx.standings) ? (ctx.standings.find((s) => s.learnerId === learner.id)?.rings ?? 0) : null;
+    const standing = Array.isArray(ctx.standings) ? ctx.standings.find((s) => s.learnerId === learner.id) : null;
+    const rings = Array.isArray(ctx.standings) ? (standing?.rings ?? 0) : null;
+    const ringSessions = Array.isArray(standing?.sessions) ? standing.sessions : [];
     const outsideTerm = schoolOk && school.coverage === 'outside-term';
     const result = evaluateEarnings({
       ruleset: ctx.ruleset,
       learnerId: learner.id,
-      facts: { ...school, rings },
+      facts: { ...school, rings, ringSessions },
       standings: ctx.standings,
       contestClosed: ctx.contestClosed,
       windows: ctx.windows,

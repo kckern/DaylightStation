@@ -259,9 +259,11 @@ How to earn and How to spend; Back returns to the board. History shows:
 2. The ledger as a table grouped by day, newest first, with the columns time,
    icon, amount, description and the balance after (`bank/BankLedger.jsx`,
    `LedgerTable`). The description is the label, then what the line was for:
-   "Korean · Tuesday", "Green day · Monday", "Rings · 540 this week". There is
+   "Korean · Tuesday", "Green day · Monday", "Rings · Sonic & Sega All Stars Racing ·
+   7:19 pm · 588 rings" (one ring row per finished workout). There is
    no "Earned"/"Spent" word (the sign says it) and no "not yet paid" panel:
-   payouts land in the bank as soon as they are earned, so the ledger is the
+   payouts land in the bank as soon as they are earned (rings once the workout
+   has finished), so the ledger is the
    whole week. Wording and grouping are `bank/bankScreenModel.js`
    (`historyByDay`, `ledgerEntry`), read from the bank's structured fields; see
    "The bank" in `__docs/reference/economy/economy.md`.

@@ -1,5 +1,5 @@
 export {
   RULE_KINDS, CURRENCIES, DEFAULT_RULESET, normalizeReward, validateRuleset, resolveRules, withUserOverride,
 } from "./ruleset.mjs";
-export { evaluateEarnings, earningRef } from "./evaluate.mjs";
+export { evaluateEarnings, earningRef, ringAmount } from "./evaluate.mjs";
 export { sheetReward } from "./sheetReward.mjs";

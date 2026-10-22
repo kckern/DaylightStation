@@ -1803,9 +1803,10 @@ kid's bank, full screen over the locked panel.
   4 am study boundary), newest day first, under Today, Yesterday or the date.
   Columns: time (the panel's clock), coin icon (a conversion shows both), signed
   amount, description (`ledgerEntry`'s label, then its `detail`: the day(s) a
-  per-day payout paid for, the week's rings; never a raw ref, never an
+  per-day payout paid for, the workout a ring payout paid for; never a raw ref, never an
   "Earned"/"Spent" word the sign already says) and the balance after the entry.
-  There is no "not yet paid" panel: payouts are minted as they are earned (see
+  There is no "not yet paid" panel: payouts are minted as they are earned,
+  rings once each workout has finished (see
   Payouts in `__docs/reference/economy/economy.md`), so the board's weekly
   figure would only repeat the ledger.
 - **How to spend.** Each privilege the bank quotes for sale, with its price in
