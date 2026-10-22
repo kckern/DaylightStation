@@ -58,3 +58,14 @@ it('never treats an SVG href as a control — select with nothing focused activa
  const action=vi.fn(); render(<SvgFirstControls action={action}/>); document.activeElement?.blur?.();
  fireEvent.keyDown(window,{key:'Enter'}); expect(action).toHaveBeenCalledTimes(1);
 });
+
+function ClaimingControls({ claim, exit, action }) { const ref=useRef(null); useScopedRemoteControls(ref,{onEscape:exit,onAction:claim}); return <div ref={ref}><button onClick={action}>One</button><button onClick={action}>Two</button></div>; }
+it('offers each remote action to onAction first; a claimed action skips focus, select and escape', () => {
+ const claim=vi.fn(({action,direction})=>action==='navigate'&&direction==='up' || action==='escape'), exit=vi.fn(), action=vi.fn();
+ render(<ClaimingControls claim={claim} exit={exit} action={action}/>);
+ fireEvent.keyDown(window,{key:'ArrowUp'}); expect(screen.getByText('One')).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Escape'}); expect(exit).not.toHaveBeenCalled();
+ expect(claim).toHaveBeenCalledWith({action:'navigate',direction:'up',repeat:false});
+ fireEvent.keyDown(window,{key:'ArrowDown'}); expect(screen.getByText('Two')).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Enter'}); expect(action).toHaveBeenCalledTimes(1);
+});

@@ -23,3 +23,15 @@ export function resolveJeopardyKey({ phase, revealed = false, key }) {
   if (phase === 'final-clue' && key === 'Enter') return { type: 'REVEAL' };
   return null;
 }
+
+// The Party Games shell captures remote keys and hands them to the experience as
+// semantic actions; translate back so one key matrix serves both paths.
+const DIRECTION_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+
+export function remoteActionKey({ action, direction, repeat = false } = {}) {
+  if (action === 'navigate') return DIRECTION_KEYS[direction] || null;
+  if (repeat) return null;
+  if (action === 'select') return 'Enter';
+  if (action === 'escape') return 'Escape';
+  return null;
+}
