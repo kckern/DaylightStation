@@ -101,7 +101,10 @@ for another attempt. Once the server has accepted that PIN and still refused
 the action, no PIN can help: the prompt closes and the caller is settled with
 the server's own words, which surface as the panel's error. A refusal that
 neither settles nor retries would leave the teacher with a dialog nothing can
-close over a write that never resolves, and no error anywhere.
+close over a write that never resolves, and no error anywhere. An install with
+no PIN configured skips the prompt and unlocks on its own, and that path keeps
+the same promise: a refused unlock or step-up settles the write with
+`refused: true` and the server's words.
 
 ---
 
@@ -109,6 +112,13 @@ close over a write that never resolves, and no error anywhere.
 
 Every URL is complete workspace state — deep-linkable, refresh-safe,
 back-button-safe.
+
+Console links are real anchors (middle-click and long-press still open a new
+tab), and the shell routes a plain left-click on one in-app through a single
+delegated handler (`consoleLinkTarget`), so following a link does not reload
+the console. Which learner is open on the dashboard is in the URL as
+`?open=<learnerId>`, so coming back from a lesson re-opens the roster card it
+came from.
 
 ```mermaid
 flowchart TD
@@ -132,6 +142,7 @@ flowchart TD
     DASH -->|learner row| DAY
     DASH -->|backlog strip| QUEUE
     DASH -->|lesson card| SESSION
+    QUEUE -->|review row| SESSION
     DAY -->|lesson row| SESSION
     HIST -->|session row| SESSION
     HIST -->|day heading| DAY
@@ -210,7 +221,9 @@ started**, and is excluded from the unfinished count.
 
 **This week** sits above the Day: a subject × day grid of the seven days
 ending today (`WeekGrid`, built by `learnerWeek.js`). It makes the same two
-reads once per day (14 GETs, none recording) and joins each day with the same
+reads once per day (14 GETs, none recording), but waits its turn: it starts
+after the page has painted and the browser is idle, so the Day's own two reads
+go first, and reads at most three days (six GETs) at once. It joins each day with the same
 `joinLearnerDay`, so a cell cannot disagree with the Day it opens. A cell shows
 the subject's least-finished row that day, with its percent when one was
 recorded; a column header gives "done of planned" and opens that day. A day
@@ -221,7 +234,8 @@ Opening a session from a Day records `from=day&studyDay=YYYY-MM-DD` in the URL.
 The inspector's Back control returns to that exact date; a session opened from
 History returns to History, and one opened from the action queue
 (`from=queue`) or from Operations' stuck sessions (`from=operations`) returns
-there. The browser's incidental navigation stack is not
+there. One opened from a dashboard lesson card (`from=today`) returns to the
+dashboard with that learner open (`?open=`). The browser's incidental navigation stack is not
 the source of this promise.
 
 ### The code-free door, and a program's own test mode
@@ -562,8 +576,15 @@ rather than blocking a grade. The printed sheet shows the same resolved bar.
 `passingPercent` — the bar in effect at grading time. A later override or
 enrollment edit is read by `CloseSessionOutcome` only for a `graded` event that
 carries no stamp: work graded before stamping existed, and every card scan
-(`RecordCardScanOutcome` stamps none). Those resolve the live bar in the same
-order, and so does a correction (`AdjustSessionGrade`) of an unstamped grade.
+(`RecordCardScanOutcome` stamps none). The first close of such a session
+resolves the live bar in the same order and writes it onto `outcome_recorded`
+as `passingPercent`; the reducer folds it into `gradedPassingPercent`. Every
+later look reads that stamp: a re-close after a gate repair, a grade correction
+(`AdjustSessionGrade`), the resettle receipt, course-outcome recovery. A
+session settled before the close stamped its bar has no stamp anywhere, and is
+read the way it was decided then: override, else the lesson's own
+`passing.percent`, never today's enrollment
+(`sessionPassingPercent`, same file).
 
 **Regrade is a different animal.** It re-runs the same `gradeAnswer` over
 recorded attempts against the bank's *current* content, and appends corrective
@@ -662,6 +683,15 @@ would make one worksheet look like two pieces of work. Worksheet availability
 is `regenerable`: PDF, thumbnail, postview, and reprint are generated from the
 artifact YAML by the current renderer while preserving the recorded Student
 No. and rows. Historical replay never calls the allocation store.
+
+**Paper controls appear only where they work.** The session read marks each
+issued worksheet `reprintable` only in a state that accepts `reprinted`, and
+never while the lesson is paused. A result receipt is offered for reprint only
+when its retained artifact is a PNG whose manifest names this session, and only
+on an install with a receipt printer wired (`GetTeacherSession`, mirroring
+`ReprintResultReceiptArtifact`'s own checks). **See the marked sheet** — the
+postview, the child's sheet with the marks drawn on it — is offered once the
+session is `graded` or later, behind the `artifact.postview` step-up.
 
 **The print cooldown arms from confirmed prints only.** A `failed` annotation
 never touches it, and an `issued` event carrying `confirmed: false` — a
@@ -840,7 +870,9 @@ that beats the authored `passing.percent`. It is read at **grading** time and
 stamped onto the `graded` event (`GradeSubmission`), so the bar cannot move
 under a child who has already been graded; the close reads that stamp first and
 falls back to the live bar only for an unstamped `graded` event (pre-stamp work
-and card scans, `CloseSessionOutcome`). An override beats the learner's
+and card scans, `CloseSessionOutcome`). That first close writes the bar it used
+onto `outcome_recorded`, so raising an override afterwards does not re-decide a
+settled card scan either (§5). An override beats the learner's
 enrollment bar; §5 gives the full order. A course-level bar is a bulk write over the same
 per-unit store — one concept, not two. Garbage input must never become a
 silent *clear* of a real override, so the field validates 1–100 before it
@@ -997,8 +1029,11 @@ flowchart LR
 
 Household-scoped by design, not per-learner: a wedged session is an operational
 leak whoever it belongs to, and the point is that somebody finally notices. A
-nightly sweep closes out work that was handed to a child and never came back;
-before it existed, the threshold on the manual route was never once consulted.
+nightly sweep (`SchoolMaintenanceExecutor`) abandons work that was handed to a
+child and never came back once it has sat untouched for 14 days (the default; a
+job's config may set its own `olderThanDays`). That is a separate threshold
+from the three-day list below, which only shows stuck work to a grown-up and
+closes nothing.
 
 The Operations panel asks the server for sessions quiet for three days
 (`olderThanDays=3`); the endpoint's own default of seven hid a stuck lesson for
@@ -1045,7 +1080,8 @@ write is attributed and auditable.
    corrections and their retractions, regrades, agenda dispatch. Nothing
    consequential happens on a first tap. Review verdicts are deliberately not
    in this list (§5): `correct`/`incorrect` is the whole decision. Reprint is
-   *documented* as preview-first but its apply half does not work — see §16.
+   preview-first too (*Print another copy…*, then *Print now*), and is offered
+   only where it works (§6).
 3. **Append-only, always.** Nothing is edited in place. A correction is a new
    fact that outranks an old one; the old one stays readable.
 4. **The record is not the presentation.** The machine grade survives under

@@ -23,9 +23,14 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 | Green ✓ / red ✗ marks + percent | `ScoreMarks` | `panels/RosterStrip.jsx` |
 | The PDF / receipt square buttons | `ArtifactButtons` | `panels/RosterStrip.jsx` |
 | "CIVILIZATION" / "SCRIPTURE & GOSPEL" subject label + icon | `SubjectIdentity` | `CurriculumIdentity.jsx` (labels: `../home/subjects.js`, icons: `../home/icons/svg/*.svg`) |
-| "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` |
+| "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` (counts: `useBacklog.js`) |
+| The backlog count on the rail badge, the phone tab bar and the dashboard strip (one count for all three, polled every 60 s, refreshed when the teacher acts) | `useBacklog` | `useBacklog.js` (called once, in `TeacherConsole.jsx`) |
+| The words and link on a "needs a grown-up" row or card (never a raw reason slug) | `GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK` | `obligationCopy.js` (read by `panels/RosterStrip.jsx`, whose links also feed `tabs/TodayTab.jsx`'s `GrownUpStrip`, and by `WorkspaceViews.jsx`) |
+| A teacher's name where a record stores their id ("Assigned by …", "decided by …") | `useActorName` | `useActorName.js` (falls back to the id, then "someone") |
 | "N subjects need a grown-up" strip, above the roster, with one "child · subject — problem →" link per affected subject | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally and links reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
+| "This week" grid above a student's Day (subjects × the seven days ending today) | `WeekGrid` | `panels/WeekGrid.jsx` (cells built by `learnerWeek.js`; starts after the Day's reads, three days at a time) |
+| "See the marked sheet" in the session inspector (the postview PDF, behind the `artifact.postview` step-up) | `MarkedSheet` | `WorkspaceViews.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
 | The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, and how the server's counted window and undo refusals are read: `panels/readingDetail.js`) |
 | A student's **Cards** tab (id `words`) — one table per card-ladder deck (term, gloss, state chip, stage, due, streak, tricky, excluded, typed answers), Reset / Mark mastered / Exclude / Re-grade, and the deck pool's Drop from pool | `WordsView` → `CardLadderWordsPanel` | `WorkspaceViews.jsx`, `panels/CardLadderWordsPanel.jsx` (enrollments filtered from the learner's `programs` — `cardLadderEnrollments`; writes through `cardLadderAdminApi.js`, a separate client from `teacherWorkspaceApi.js`/`schoolApi.js` because the admin routes are mounted at `/api/v1/school/card-ladder/admin`, not `/api/v1/school/teacher`) |
@@ -37,6 +42,21 @@ to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a f
 beside the status, never a status value) `learnerDay.js` (`joinLearnerDay`). Pure
 function, no fetching — this is where card status and titles are actually
 decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
+
+**Links route in-app through one handler.** Console links are plain `<a href>`
+anchors; `TeacherConsole.jsx`'s `onLinkClick` takes a plain left-click on one
+(`consoleLinkTarget` in `teacherUrl.js` decides which clicks qualify) and
+navigates without a reload. Middle-click and long-press still open a new tab.
+A same-page query change dispatches `popstate` so views that keep query state
+resync.
+
+**Where Back goes from a session** is in its URL: `teacherSessionPath(…, { from,
+studyDay })` adds `?from=`, and the shell's `ORIGINS` map reads it —
+`today` (a dashboard lesson card → back to the dashboard with `?open=<learnerId>`,
+so that roster card is open again), `day` (with `studyDay` → that day),
+`queue` (the action queue), `operations` (stuck sessions). Anything else falls
+back to History. `?open=` itself is read by `RosterStrip.jsx` and kept in sync
+on popstate.
 
 **All styling:** `Teacher.scss` (single file, ~1500 lines). Card bands are
 `.teacher-lesson-card__header / __body / __foot`; grid is

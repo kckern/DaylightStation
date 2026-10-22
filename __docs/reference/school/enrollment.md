@@ -121,14 +121,19 @@ order:
 1. a per-lesson pass override (the household override store);
 2. the learner's enrollment `passing` for the lesson's course — matched by
    `courseId`, else by the lesson appearing in the enrollment's lesson order;
+   an exact id wins (`courseEntryFor`);
 3. the lesson's own authored `passing.percent`.
 
 `GradeSubmission` stamps the result onto the `graded` event, so the bar never
-moves under a graded child. A card scan stamps no bar, so the close
-(`CloseSessionOutcome`) and a later correction (`AdjustSessionGrade`) resolve
-it the same way. The printed sheet (`IssueDocument`, `IssueComposedWorksheet`)
-prints the same resolved bar. Changing a syllabus's `passing` reaches a learner
-only on re-materialize.
+moves under a graded child. A card scan stamps no bar, so its first close
+(`CloseSessionOutcome`) resolves it the same way and writes it onto
+`outcome_recorded`; a re-close or a later correction (`AdjustSessionGrade`)
+reads that stamp, not today's enrollment. A session settled before that stamp
+existed is read as override, else the lesson's own bar — the order that decided
+it then (`sessionPassingPercent`). The printed sheet (`IssueDocument`,
+`IssueComposedWorksheet`) prints the same resolved bar and is issued against the
+same course entry (`courseEntryFor`). Changing a syllabus's `passing` reaches a
+learner only on re-materialize.
 
 ## Runtime behavior
 
