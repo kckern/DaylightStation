@@ -25,6 +25,43 @@ export function terrainOverlappingCraft(course, courseTime, geometry = SKYLINE_C
     && Number(segment.end_s ?? segment.start_s) >= from);
 }
 
+/** First terrain segment the craft at `altitude` is touching, or null. */
+export function terrainContact(course, courseTime, altitude, geometry = SKYLINE_CRAFT_GEOMETRY) {
+  return terrainOverlappingCraft(course, courseTime, geometry).find((segment) => {
+    const bounds = terrainBounds(segment);
+    return altitude - geometry.radius < bounds.top || altitude + geometry.radius > bounds.bottom;
+  }) || null;
+}
+
+/** The open band between every terrain segment under the craft. */
+export function safeBandAt(course, courseTime, geometry = SKYLINE_CRAFT_GEOMETRY) {
+  return terrainOverlappingCraft(course, courseTime, geometry)
+    .map(terrainBounds)
+    .reduce((band, bounds) => ({ top: Math.max(band.top, bounds.top), bottom: Math.min(band.bottom, bounds.bottom) }), { top: 0, bottom: 1 });
+}
+
+/** Entities stand on their `altitude`: they occupy [altitude - height, altitude]. */
+export function entityBounds(entity) {
+  const halfWidth = Number(entity.width_s) / 2;
+  return {
+    start: Number(entity.at_s) - halfWidth,
+    end: Number(entity.at_s) + halfWidth,
+    top: Number(entity.altitude) - Number(entity.height),
+    bottom: Number(entity.altitude),
+  };
+}
+
+export function entitiesTouchingCraft(course, courseTime, altitude, geometry = SKYLINE_CRAFT_GEOMETRY) {
+  const from = courseTime - geometry.rearSeconds;
+  const to = courseTime + geometry.frontSeconds;
+  return (course?.entities || []).filter((entity) => {
+    if (entity.class === 'scenery') return false;
+    const bounds = entityBounds(entity);
+    return bounds.start <= to && bounds.end >= from
+      && altitude + geometry.radius > bounds.top && altitude - geometry.radius < bounds.bottom;
+  });
+}
+
 export function pointOverlapsCraft(pointTime, courseTime, geometry = SKYLINE_CRAFT_GEOMETRY) {
   return pointTime >= courseTime - geometry.rearSeconds
     && pointTime <= courseTime + geometry.frontSeconds;

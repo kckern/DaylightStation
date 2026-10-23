@@ -83,7 +83,9 @@ export function collectFlightTelemetry({
       data: {
         count: next.collisions,
         lives: next.lives,
-        segmentId: next.lastCollisionSegmentId || activeTerrainId(course, next.courseTime),
+        kind: next.phase === 'crashed' ? 'crash' : 'breakable',
+        segmentId: next.lastCollisionSegmentId || (next.lastCollisionEntityId ? null : activeTerrainId(course, next.courseTime)),
+        entityId: next.lastCollisionEntityId || null,
       },
     });
   }
@@ -105,7 +107,14 @@ export function collectFlightTelemetry({
     });
   }
   if (next.phase === 'crashed' && previous.phase !== 'crashed') {
-    events.push({ type: 'crashed', data: {} });
+    events.push({
+      type: 'crashed',
+      data: {
+        cause: next.crashCause || null,
+        segmentId: next.lastCollisionSegmentId || null,
+        entityId: next.lastCollisionEntityId || null,
+      },
+    });
   }
   if (next.restarts > previous.restarts) {
     events.push({

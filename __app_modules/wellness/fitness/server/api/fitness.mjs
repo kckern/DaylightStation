@@ -189,6 +189,7 @@ export function createFitnessRouter(config) {
     cycleRaceApi = null,
     skylineGliderCourses = null,
     skylineGliderRuns = null,
+    skylineGliderProgress = null,
     // Session lock + simulation supervision are constructed at the composition
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
@@ -226,6 +227,36 @@ export function createFitnessRouter(config) {
   router.get('/skyline-glider/courses', asyncHandler(async (req, res) => {
     if (!skylineGliderCourses) return res.status(503).json({ error: 'Skyline Glider courses unavailable' });
     return res.json({ courses: skylineGliderCourses.list(req.query.household || defaultHouseholdId) });
+  }));
+
+  // World map for one rider: zones -> acts with locked/open/completed status.
+  // With no rider the map shows the progression a new rider would start from.
+  router.get('/skyline-glider/world', asyncHandler(async (req, res) => {
+    if (!skylineGliderCourses || !skylineGliderProgress) return res.status(503).json({ error: 'Skyline Glider world unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const world = skylineGliderCourses.world(householdId);
+    const riderId = typeof req.query.rider === 'string' && req.query.rider ? req.query.rider : null;
+    try {
+      return res.json({ riderId, ...await skylineGliderProgress.worldFor(world, riderId, householdId) });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  // Admin skip-ahead. The browser collects the admin fingerprint before calling.
+  router.post('/skyline-glider/progress/:riderId/unlock', asyncHandler(async (req, res) => {
+    if (!skylineGliderCourses || !skylineGliderProgress) return res.status(503).json({ error: 'Skyline Glider world unavailable' });
+    const householdId = req.body?.household || defaultHouseholdId;
+    const actId = req.body?.actId;
+    if (!skylineGliderCourses.list(householdId).some((act) => act.id === actId)) return res.status(404).json({ error: 'act not found' });
+    try {
+      const progress = await skylineGliderProgress.unlock(req.params.riderId, actId, req.body?.unlockedBy || null, householdId);
+      return res.json({ progress });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
   }));
 
   router.post('/skyline-glider/runs', asyncHandler(async (req, res) => {

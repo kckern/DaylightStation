@@ -1,0 +1,6 @@
+# Zone order for Skyline Glider progression. Act n of a zone opens once act n-1
+# is completed; act 1 opens once the previous zone's last act is completed.
+# Zones not listed here sort after these, alphabetically.
+schema: skyline-glider-world/v1
+zones:
+  - alpine

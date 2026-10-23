@@ -17,9 +17,11 @@ describe('SkylineGliderCourseCatalog', () => {
   it('always exposes the validated bundled Mountain Pass course', () => {
     const catalog = new SkylineGliderCourseCatalog({ configService: configService() });
     const courses = catalog.list('home');
-    expect(courses).toHaveLength(1);
+    expect(courses.map((item) => item.id)).toEqual(['mountain-pass', 'cloud-ridge']);
     const course = courses[0];
-    expect(course).toMatchObject({ id: 'mountain-pass', version: 3, schema: 'skyline-glider-course/v1', duration_s: 300 });
+    expect(course).toMatchObject({ id: 'mountain-pass', version: 4, act: 1, schema: 'skyline-glider-course/v1', duration_s: 300 });
+    expect(course.zone).toMatchObject({ id: 'alpine', name: 'Alpine', asset_root: 'fitness/skyline-glider/alpine' });
+    expect(course.zone.sounds.bell).toBe('fitness/skyline-glider/alpine/sounds/bell.mp3');
     expect(course.motion).toMatchObject({
       filter_s: 0.25, response_s: 0.6, max_climb_rate: 0.3, max_descent_rate: 0.3,
       slow_signal_grace_s: 5, inferred_slowdown_s: 0.5,
@@ -57,16 +59,54 @@ describe('SkylineGliderCourseCatalog', () => {
     }
   });
 
-  it('lets a steady 75 RPM fitness effort finish without a crash', () => {
+  it('lets a steady 75 RPM effort that eases off under the cloud shelf finish without a crash', () => {
     const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[0]).course;
     let state = createFlightState(course, { calibration: { lowRpm: 15, highRpm: 100 } });
     for (let frame = 0; frame < 20_000 && state.phase === 'playing'; frame += 1) {
-      state = stepFlight(state, { rpm: 75, connected: true, transportStalled: false, ts: frame + 1 }, 1 / 60, course);
+      const rpm = state.courseTime > 127 && state.courseTime < 147 ? 52 : 75;
+      state = stepFlight(state, { rpm, connected: true, transportStalled: false, ts: frame + 1 }, 1 / 60, course);
     }
 
     expect(state.phase).toBe('completed');
     expect(state.restarts).toBe(0);
-    expect(state.collisions).toBeLessThanOrEqual(1);
+    expect(state.collisions).toBe(0);
+  });
+
+  it('crashes a steady 75 RPM effort into the cloud shelf instead of letting it pass through', () => {
+    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[0]).course;
+    let state = createFlightState(course, { calibration: { lowRpm: 15, highRpm: 100 } });
+    for (let frame = 0; frame < 60 * 150 && state.phase === 'playing'; frame += 1) {
+      state = stepFlight(state, { rpm: 75, connected: true, transportStalled: false, ts: frame + 1 }, 1 / 60, course);
+    }
+
+    expect(state.phase).toBe('crashed');
+    expect(state.lastCollisionSegmentId).toBe('cloud-descent');
+  });
+
+  it('flies every bundled act cleanly with a cadence-only autopilot', () => {
+    const catalog = new SkylineGliderCourseCatalog({ configService: configService() });
+    for (const raw of catalog.list('home')) {
+      const { course, valid, errors } = validateFrontendCourse(raw);
+      expect(valid, `${raw.id}: ${errors}`).toBe(true);
+      const calibration = { lowRpm: 30, highRpm: 100 };
+      const rpmFor = (altitude) => calibration.lowRpm + ((.78 - altitude) / .6) * (calibration.highRpm - calibration.lowRpm);
+      const bands = [
+        ...course.segments.filter((segment) => terrainBounds(segment)).map((segment) => ({ start: segment.start_s, end: segment.end_s ?? segment.start_s, ...terrainBounds(segment) })),
+        ...course.entities.filter((entity) => entity.class !== 'scenery').map((entity) => ({ start: entity.at_s - entity.width_s / 2, end: entity.at_s + entity.width_s / 2, top: 0, bottom: entity.altitude - entity.height })),
+      ];
+      let state = createFlightState(course, { calibration });
+      for (let frame = 0; frame < course.duration_s * 60 + 60 && state.phase === 'playing'; frame += 1) {
+        const from = state.courseTime - .67 - 1.5;
+        const to = state.courseTime + .8 + 2.5;
+        const band = bands.filter((item) => item.start <= to && item.end >= from)
+          .reduce((acc, item) => ({ top: Math.max(acc.top, item.top + .07), bottom: Math.min(acc.bottom, item.bottom - .07) }), { top: .18, bottom: .78 });
+        const target = Math.min(band.bottom, Math.max(band.top, .5));
+        state = stepFlight(state, { rpm: rpmFor(target), connected: true, transportStalled: false, ts: frame + 1 }, 1 / 60, course);
+      }
+      expect(state.phase, `${raw.id} at ${state.courseTime}`).toBe('completed');
+      expect(state.collisions, raw.id).toBe(0);
+      expect(state.restarts, raw.id).toBe(0);
+    }
   });
 
   it('keeps every shipped obstacle navigable with cadence-only altitude control', () => {
@@ -110,7 +150,50 @@ describe('SkylineGliderCourseCatalog', () => {
     fs.writeFileSync(path.join(dir, 'impossible.yml'), `schema: skyline-glider-course/v1\nid: impossible\nversion: 1\nname: Nope\nduration_s: 30\nmotion: { max_climb_rate: 0.3, max_descent_rate: 0.22 }\nsegments:\n  - { id: wall, type: corridor, start_s: 0, end_s: 29, ceiling: 0.2, floor: 0.21 }\n  - { id: finish, type: finish, start_s: 30 }\n`);
     const warnings = [];
     const catalog = new SkylineGliderCourseCatalog({ configService: configService(), logger: { warn: (event, data) => warnings.push({ event, data }) } });
-    expect(catalog.list('home').map((course) => course.id)).toEqual(['mountain-pass', 'ridge-run']);
+    const acts = catalog.list('home');
+    expect(acts.map((course) => course.id)).toEqual(['mountain-pass', 'cloud-ridge', 'ridge-run']);
+    expect(acts.at(-1)).toMatchObject({ act: null, zone: { id: 'alpine' } });
     expect(warnings).toHaveLength(2);
+  });
+
+  it('resolves household zones, act overrides, entity classes and world order', () => {
+    const base = path.join(root, 'fitness/skyline-glider');
+    fs.mkdirSync(path.join(base, 'zones'), { recursive: true });
+    fs.mkdirSync(path.join(base, 'courses'), { recursive: true });
+    fs.writeFileSync(path.join(base, 'world.yml'), 'zones: [space, alpine]\n');
+    fs.writeFileSync(path.join(base, 'zones/space.yml'), [
+      'schema: skyline-glider-zone/v1', 'id: space', 'name: Deep Space', 'asset_root: fitness/skyline-glider/space', 'pixel_art: true',
+      'layers:', '  - { id: sky, kind: image, src: stars.png, parallax: 0.05, fallback: alpine-sky }',
+      'sprites: { sheet: sprites.png, frames: sprites.json }',
+      'entities:', '  asteroid: { class: solid, frame: rock, width_s: 0.6, height: 0.1 }',
+      'sounds: { bell: ping.mp3, music: /shared/theme.mp3 }',
+    ].join('\n'));
+    fs.writeFileSync(path.join(base, 'courses/orbit.yml'), [
+      'schema: skyline-glider-course/v1', 'id: orbit', 'version: 1', 'zone: space', 'act: 1', 'name: Orbit', 'duration_s: 30',
+      'overrides: { layers: { sky: { src: nebula.png } } }',
+      'segments:', '  - { id: open, type: open, start_s: 0, end_s: 30 }', '  - { id: finish, type: finish, start_s: 30 }',
+      'entities:', '  - { entity: asteroid, at_s: 10, altitude: 0.7 }',
+    ].join('\n'));
+    fs.writeFileSync(path.join(base, 'courses/bad-entity.yml'), [
+      'schema: skyline-glider-course/v1', 'id: bad-entity', 'version: 1', 'zone: space', 'name: Bad', 'duration_s: 30',
+      'segments:', '  - { id: finish, type: finish, start_s: 30 }', 'entities:', '  - { entity: comet, at_s: 10, altitude: 0.7 }',
+    ].join('\n'));
+    const warnings = [];
+    const catalog = new SkylineGliderCourseCatalog({ configService: configService(), logger: { warn: (event, data) => warnings.push({ event, data }) } });
+
+    const acts = catalog.list('home');
+    expect(acts.map((act) => act.id)).toEqual(['orbit', 'mountain-pass', 'cloud-ridge']);
+    expect(acts[0].zone).toMatchObject({
+      id: 'space', pixel_art: true,
+      layers: [{ id: 'sky', kind: 'image', src: 'fitness/skyline-glider/space/nebula.png', fallback: 'alpine-sky' }],
+      sprites: { sheet: 'fitness/skyline-glider/space/sprites.png', frames: 'fitness/skyline-glider/space/sprites.json' },
+      sounds: { bell: 'fitness/skyline-glider/space/ping.mp3', music: 'shared/theme.mp3' },
+    });
+    expect(acts[0].entities).toEqual([{ id: 'asteroid-1', entity: 'asteroid', class: 'solid', frame: 'rock', at_s: 10, altitude: 0.7, width_s: 0.6, height: 0.1 }]);
+    expect(warnings.map((item) => item.data.file)).toEqual(['bad-entity.yml']);
+    expect(catalog.world('home')).toEqual({ zones: [
+      { id: 'space', name: 'Deep Space', acts: [{ id: 'orbit', name: 'Orbit', act: 1 }] },
+      { id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1 }, { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2 }] },
+    ] });
   });
 });

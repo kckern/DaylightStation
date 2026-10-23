@@ -416,6 +416,7 @@ export function createFitnessApiRouter(config) {
     cycleRaceApi,
     skylineGliderCourses: fitnessServices.skylineGliderCourseCatalog,
     skylineGliderRuns: fitnessServices.skylineGliderRunService,
+    skylineGliderProgress: fitnessServices.skylineGliderProgressService,
     generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     sessionLockService,

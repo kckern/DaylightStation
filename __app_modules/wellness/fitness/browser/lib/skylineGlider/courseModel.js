@@ -1,4 +1,7 @@
+import { SKYLINE_CRAFT_GEOMETRY, entityBounds, terrainContact } from "./flightGeometry.js";
+
 const SCHEMA = 'skyline-glider-course/v1';
+const ENTITY_CLASSES = new Set(['breakable', 'solid', 'scenery']);
 const TYPES = new Set([
   'open', 'lower-terrain', 'upper-terrain', 'corridor',
   'collectible-path', 'checkpoint', 'finish',
@@ -21,9 +24,32 @@ function safeBandFor(segment) {
   return null;
 }
 
+// A solid entity leaves the larger of the gaps above and below it open.
+function solidEntityBand(entity) {
+  const bounds = entityBounds(entity);
+  const above = { top: 0, bottom: bounds.top };
+  const below = { top: bounds.bottom, bottom: 1 };
+  const room = (band) => Math.min(0.78, band.bottom) - Math.max(0.18, band.top);
+  return { id: entity.id, start_s: bounds.start, end_s: bounds.end, safeBand: room(above) >= room(below) ? above : below };
+}
+
+function validateEntities(rawEntities, errors) {
+  const ids = new Set();
+  return rawEntities.map((raw, index) => {
+    const entity = { ...raw };
+    if (!entity.id || ids.has(entity.id)) errors.push(`duplicate or missing entity id at index ${index}`);
+    ids.add(entity.id);
+    if (!ENTITY_CLASSES.has(entity.class)) errors.push(`entity ${entity.id || index} has unsupported class`);
+    if (!finite(entity.at_s) || !inBand(entity.altitude)) errors.push(`entity ${entity.id || index} is misplaced`);
+    if (!(Number(entity.width_s) > 0) || !(Number(entity.height) > 0)) errors.push(`entity ${entity.id || index} has no size`);
+    for (const field of ['at_s', 'altitude', 'width_s', 'height']) entity[field] = Number(entity[field]);
+    return entity;
+  });
+}
+
 function validateReachability(segments, motion, errors) {
   let prior = { top: 0.18, bottom: 0.78, end: 0 };
-  for (const segment of segments) {
+  for (const segment of [...segments].sort((a, b) => a.start_s - b.start_s)) {
     if (!segment.safeBand) continue;
     const available = Math.max(0, segment.start_s - prior.end);
     const reachable = {
@@ -97,12 +123,22 @@ export function validateCourse(input) {
       errors.push(`motion ${field} must be positive`);
     }
   }
-  if (errors.length === 0) validateReachability(segments, motion, errors);
+  const entities = validateEntities(Array.isArray(input.entities) ? input.entities : [], errors);
+  if (errors.length === 0) {
+    const solids = entities.filter((entity) => entity.class === 'solid').map(solidEntityBand);
+    validateReachability([...segments, ...solids], motion, errors);
+    for (const checkpoint of segments.filter((segment) => segment.type === 'checkpoint')) {
+      const altitude = checkpoint.restart_altitude ?? 0.5;
+      if (terrainContact({ segments }, checkpoint.start_s, altitude, SKYLINE_CRAFT_GEOMETRY)) {
+        errors.push(`checkpoint ${checkpoint.id} restarts inside terrain`);
+      }
+    }
+  }
 
   return {
     valid: errors.length === 0,
     errors,
-    ...(errors.length === 0 ? { course: { ...structuredClone(input), segments } } : {}),
+    ...(errors.length === 0 ? { course: { ...structuredClone(input), segments, entities } } : {}),
   };
 }
 

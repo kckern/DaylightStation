@@ -26,6 +26,9 @@ export class YamlSkylineGliderRunDatastore {
     const dir = path.join(this._base(householdId), date);
     return listYamlFiles(dir).map((id) => loadYamlSafe(path.join(dir, id))).filter(Boolean);
   }
+  async findAll(householdId) {
+    return (await Promise.all(this._dates(householdId).map((date) => this.findByDate(date, householdId)))).flat();
+  }
   _dates(householdId) {
     return listDirsMatching(this._base(householdId), /^\d{4}-\d{2}-\d{2}$/);
   }

@@ -101,3 +101,33 @@ describe('resolveCalibration', () => {
     expect(() => resolveCalibration({ rpm: { min: 50, max: 50 } })).toThrow(/calibration/i);
   });
 });
+
+describe('course entities', () => {
+  const entity = (over = {}) => ({ id: 'rock', class: 'solid', at_s: 120, altitude: 0.78, width_s: 0.8, height: 0.2, ...over });
+
+  it('accepts placed entities and returns them numeric', () => {
+    const result = validateCourse(course({ entities: [entity({ at_s: '120' }), entity({ id: 'tree', class: 'breakable' })] }));
+    expect(result.valid).toBe(true);
+    expect(result.course.entities[0].at_s).toBe(120);
+  });
+
+  it('rejects unknown classes, duplicate ids and sizeless entities', () => {
+    expect(validateCourse(course({ entities: [entity({ class: 'lava' })] })).errors).toContain('entity rock has unsupported class');
+    expect(validateCourse(course({ entities: [entity(), entity()] })).errors).toContain('duplicate or missing entity id at index 1');
+    expect(validateCourse(course({ entities: [entity({ height: 0 })] })).errors).toContain('entity rock has no size');
+  });
+
+  it('rejects a solid entity that leaves no reachable gap', () => {
+    const wall = entity({ altitude: 0.9, height: 0.85 });
+    expect(validateCourse(course({ entities: [wall] })).errors.join()).toMatch(/rock is unreachable/);
+  });
+
+  it('rejects a checkpoint that restarts the rider inside terrain', () => {
+    const result = validateCourse(course({ segments: [
+      { id: 'ground', type: 'lower-terrain', start_s: 70, end_s: 80, top: 0.45 },
+      { id: 'cp-1', type: 'checkpoint', start_s: 75, restart_altitude: 0.5 },
+      { id: 'finish', type: 'finish', start_s: 300 },
+    ] }));
+    expect(result.errors).toContain('checkpoint cp-1 restarts inside terrain');
+  });
+});

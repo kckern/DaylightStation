@@ -42,5 +42,20 @@ export function projectCourseWindow(course, courseTime, options = {}) {
     }))
     .filter((item) => visible(item.x));
 
-  return { ...view, unitsPerSecond, segments, collectibles };
+  const entities = (course?.entities || [])
+    .map((entity) => {
+      const x = xForTime(Number(entity.at_s) - Number(entity.width_s) / 2);
+      const width = Number(entity.width_s) * unitsPerSecond;
+      const height = Number(entity.height) * view.height;
+      return {
+        ...entity,
+        x: round(x),
+        y: round(Number(entity.altitude) * view.height - height),
+        width: round(width),
+        height: round(height),
+      };
+    })
+    .filter((entity) => visible(entity.x, entity.x + entity.width));
+
+  return { ...view, unitsPerSecond, segments, collectibles, entities };
 }

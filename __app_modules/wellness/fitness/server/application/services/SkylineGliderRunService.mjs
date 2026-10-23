@@ -14,9 +14,10 @@ function valid(record) {
 }
 
 export class SkylineGliderRunService {
-  constructor({ datastore, logger = console } = {}) {
+  constructor({ datastore, progress = null, logger = console } = {}) {
     if (!datastore) throw new Error('SkylineGliderRunService requires datastore');
     this.datastore = datastore;
+    this.progress = progress;
     this.logger = logger;
   }
   async save(record, householdId) {
@@ -28,6 +29,13 @@ export class SkylineGliderRunService {
     }
     const file = await this.datastore.create(record, householdId);
     this.logger.info?.('fitness.skyline_glider.run.saved', { runId: record.run.id, status: record.run.status });
+    // Progress is derived from the run log; a failed update is rebuilt later and
+    // must never fail the save that the reward depends on.
+    try {
+      await this.progress?.recordRun(record, householdId);
+    } catch (error) {
+      this.logger.warn?.('fitness.skyline_glider.progress.record_failed', { runId: record.run.id, error: error.message });
+    }
     return { created: true, record, file };
   }
   get(runId, householdId) { return this.datastore.findById(runId, householdId); }

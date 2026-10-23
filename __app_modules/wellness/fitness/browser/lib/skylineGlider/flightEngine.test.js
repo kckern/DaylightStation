@@ -146,7 +146,7 @@ describe('collisions, checkpoints, and completion', () => {
     expect(next.lives).toBe(3);
   });
 
-  it('collides when the visible nose reaches terrain and clears after the tail leaves', () => {
+  it('crashes when the visible nose reaches terrain and not before', () => {
     const sweptCourse = {
       ...course,
       segments: [
@@ -158,9 +158,9 @@ describe('collisions, checkpoints, and completion', () => {
     const atNose = createFlightState(sweptCourse, { calibration, altitude: 0.7, courseTime: 9.2 });
     const afterTail = createFlightState(sweptCourse, { calibration, altitude: 0.7, courseTime: 12.69 });
 
-    expect(stepFlight(beforeNose, fresh(30), 1 / 60, sweptCourse).lives).toBe(3);
-    expect(stepFlight(atNose, fresh(30), 1 / 60, sweptCourse).lives).toBe(2);
-    expect(stepFlight(afterTail, fresh(30), 1 / 60, sweptCourse).lives).toBe(3);
+    expect(stepFlight(beforeNose, fresh(30), 1 / 60, sweptCourse).phase).toBe('playing');
+    expect(stepFlight(atNose, fresh(30), 1 / 60, sweptCourse)).toMatchObject({ phase: 'crashed', crashCause: 'terrain', lastCollisionSegmentId: 'hill' });
+    expect(stepFlight(afterTail, fresh(30), 1 / 60, sweptCourse).phase).toBe('playing');
   });
 
   it('collects a bell when the visible nose reaches it', () => {
@@ -178,49 +178,27 @@ describe('collisions, checkpoints, and completion', () => {
     expect(next.collectedIds).toEqual(['bell']);
   });
 
-  it('takes one life per contact and respects invincibility', () => {
+  it('never lets a low rider fly through the ground: touching it is a crash even while invincible', () => {
     let state = createFlightState(course, { calibration, altitude: 0.7, courseTime: 2.1 });
-    state = stepFlight(state, fresh(30), 1 / 60, course);
-    expect(state.lives).toBe(2);
-    const afterHit = stepFlight(state, fresh(30), 1 / 60, course);
-    expect(afterHit.lives).toBe(2);
-    expect(afterHit.invincibleRemaining).toBeGreaterThan(1);
+    state = stepFlight({ ...state, invincibleRemaining: 1 }, fresh(30), 1 / 60, course);
+
+    expect(state).toMatchObject({ phase: 'crashed', lives: 0, crashCause: 'terrain', lastCollisionSegmentId: 'wall' });
   });
 
-  it('does not take another life while continuously touching the same obstacle', () => {
-    let state = createFlightState(course, { calibration, altitude: 0.7, courseTime: 2.1 });
-    state = stepFlight(state, fresh(30), 1 / 60, course);
-    expect(state.lives).toBe(2);
+  it('holds a sensor-paused craft above the ground instead of crashing or sinking into it', () => {
+    let state = createFlightState(course, { calibration, altitude: 0.47, courseTime: 2.1 });
+    const lost = { rpm: 0, connected: false, transportStalled: false, ts: 1 };
+    state = run(state, 0.6, lost);
 
-    state = run(state, 1.5, fresh(30));
-
-    expect(state.lives).toBe(2);
-    expect(state.contactSegmentId).toBe('wall');
+    expect(state.phase).toBe('playing');
+    expect(state.altitude).toBeLessThanOrEqual(0.5 - 0.035 + 1e-9);
   });
 
-  it('allows a different obstacle to remove another life after the first is cleared', () => {
-    const twoWalls = {
-      ...course,
-      duration_s: 12,
-      segments: [
-        { id: 'first', type: 'lower-terrain', start_s: 2, end_s: 3, top: 0.5, safeBand: { top: 0, bottom: 0.5 } },
-        { id: 'second', type: 'lower-terrain', start_s: 6, end_s: 7, top: 0.5, safeBand: { top: 0, bottom: 0.5 } },
-        { id: 'finish', type: 'finish', start_s: 12 },
-      ],
-    };
-    let state = createFlightState(twoWalls, { calibration, altitude: 0.7, courseTime: 2.1 });
-    state = stepFlight(state, fresh(30), 1 / 60, twoWalls);
-    state = stepFlight({ ...state, courseTime: 6.1, invincibleRemaining: 0 }, fresh(30), 1 / 60, twoWalls);
-
-    expect(state.lives).toBe(1);
-    expect(state.contactSegmentId).toBe('second');
-  });
-
-  it('restores three lives and checkpoint state after the final collision', () => {
+  it('restores three lives and checkpoint state after a crash', () => {
     let state = createFlightState(course, { calibration, altitude: 0.4, courseTime: 4.99 });
     state = stepFlight(state, fresh(70), 1 / 60, course);
     expect(state.checkpoint.id).toBe('cp');
-    state = { ...state, altitude: 0.7, courseTime: 2.1, lives: 1, invincibleRemaining: 0 };
+    state = { ...state, altitude: 0.7, courseTime: 2.1, lives: 2, invincibleRemaining: 0 };
     state = stepFlight(state, fresh(30), 1 / 60, course);
     expect(state.phase).toBe('crashed');
     state = run(state, 2.1, fresh(50));
@@ -231,7 +209,70 @@ describe('collisions, checkpoints, and completion', () => {
     expect(state.altitude).toBeCloseTo(0.5, 1);
     expect(state.filteredRpm).toBeGreaterThan(calibration.lowRpm);
   });
+});
 
+describe('entities', () => {
+  const entityCourse = {
+    ...course,
+    segments: [
+      { id: 'cp', type: 'checkpoint', start_s: 5, restart_altitude: 0.5 },
+      { id: 'finish', type: 'finish', start_s: 20 },
+    ],
+    entities: [
+      { id: 'tree-a', class: 'breakable', at_s: 3, altitude: 0.78, width_s: 0.5, height: 0.2 },
+      { id: 'tree-b', class: 'breakable', at_s: 8, altitude: 0.78, width_s: 0.5, height: 0.2 },
+      { id: 'tree-c', class: 'breakable', at_s: 10, altitude: 0.78, width_s: 0.5, height: 0.2 },
+      { id: 'rock', class: 'solid', at_s: 14, altitude: 0.78, width_s: 0.8, height: 0.2 },
+      { id: 'sign', class: 'scenery', at_s: 16, altitude: 0.78, width_s: 0.3, height: 0.2 },
+    ],
+  };
+  const at = (courseTime, altitude, over = {}) => ({ ...createFlightState(entityCourse, { calibration, altitude, courseTime }), ...over });
+
+  it('destroys a breakable on contact for one life, then flies on', () => {
+    const next = stepFlight(at(2.5, 0.7), fresh(30), 1 / 60, entityCourse);
+
+    expect(next).toMatchObject({ phase: 'playing', lives: 2, collisions: 1, destroyedIds: ['tree-a'], lastCollisionEntityId: 'tree-a' });
+    expect(next.invincibleRemaining).toBeGreaterThan(1);
+    expect(stepFlight({ ...next, invincibleRemaining: 0 }, fresh(30), 1 / 60, entityCourse).lives).toBe(2);
+  });
+
+  it('still destroys a breakable while blinking but charges nothing', () => {
+    const next = stepFlight(at(2.5, 0.7, { invincibleRemaining: 1 }), fresh(30), 1 / 60, entityCourse);
+
+    expect(next).toMatchObject({ lives: 3, collisions: 0, destroyedIds: ['tree-a'] });
+  });
+
+  it('crashes when a breakable takes the last life', () => {
+    const next = stepFlight(at(9.5, 0.7, { lives: 1 }), fresh(30), 1 / 60, entityCourse);
+
+    expect(next).toMatchObject({ phase: 'crashed', crashCause: 'lives', collisions: 1, lastCollisionEntityId: 'tree-c' });
+  });
+
+  it('crashes on a solid entity even while invincible and ignores scenery', () => {
+    expect(stepFlight(at(13.5, 0.7, { invincibleRemaining: 1 }), fresh(30), 1 / 60, entityCourse))
+      .toMatchObject({ phase: 'crashed', crashCause: 'entity', lastCollisionEntityId: 'rock' });
+    expect(stepFlight(at(16, 0.7), fresh(30), 1 / 60, entityCourse)).toMatchObject({ phase: 'playing', lives: 3 });
+  });
+
+  it('flies clear over an entity', () => {
+    expect(stepFlight(at(2.5, 0.5), fresh(70), 1 / 60, entityCourse)).toMatchObject({ lives: 3, destroyedIds: [] });
+  });
+
+  it('brings back breakables destroyed after the checkpoint on restart', () => {
+    let state = at(4.99, 0.5);
+    state = stepFlight({ ...state, destroyedIds: ['tree-a'] }, fresh(70), 1 / 60, entityCourse);
+    expect(state.checkpoint.destroyedIds).toEqual(['tree-a']);
+    state = stepFlight({ ...state, courseTime: 7.5, altitude: 0.7 }, fresh(30), 1 / 60, entityCourse);
+    expect(state.destroyedIds).toEqual(['tree-a', 'tree-b']);
+    state = stepFlight({ ...state, courseTime: 13.5, invincibleRemaining: 0 }, fresh(30), 1 / 60, entityCourse);
+    state = run(state, 2.1, fresh(50));
+
+    expect(state.phase).toBe('playing');
+    expect(state.destroyedIds).toEqual(['tree-a']);
+  });
+});
+
+describe('completion', () => {
   it('collects stable ids once and completes at the finish', () => {
     let state = createFlightState(course, { calibration, altitude: 0.5, courseTime: 6.15 });
     state = run(state, 0.2, fresh(65));

@@ -12,8 +12,10 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - Equipment `rpm.min` and `rpm.max` calibrate the altitude range; the safe fallback is 30–100 RPM.
 - Faster cadence climbs and slower cadence descends. Zero RPM coasts for one second before descending.
 - A missing or stalled cadence transport is collision-protected for 0.75 seconds, then freezes the course behind a reconnect overlay.
-- The rider has three lives. A third collision plays a two-second crash and restores three lives at the latest checkpoint.
-- Mountain Pass lasts five minutes and has checkpoints near 25%, 50%, and 75%.
+- **Terrain and `solid` entities are walls.** Touching one is an immediate crash ("Wing down!"), invincible or not: a two-second pause, then a restart at the latest checkpoint with three lives. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
+- **`breakable` entities** (trees, houses) shatter on contact and cost one life, followed by `invincibility_s` of blinking. Hits while blinking still shatter but cost nothing. Losing the last life is a crash. A checkpoint restart brings back anything broken after that checkpoint.
+- **`scenery` entities** never collide.
+- Mountain Pass (Alpine, Act 1) lasts five minutes and has checkpoints near 25%, 50%, and 75%. Cloud Ridge (Alpine, Act 2) adds pines, a chalet and boulders.
 - Completion awards 10 rings plus one per unique collectible, capped at 30. Normal heart-rate rings continue independently.
 
 ## Persistence
@@ -22,15 +24,72 @@ The browser stores the current checkpoint under `fitness:skyline-glider:<userId>
 
 Run saves are idempotent by run ID. Reusing an ID with different content returns HTTP 409. The reward key is `rpm-flight:<runId>:completion:<userId>`, so retrying a successful save cannot pay twice.
 
-## Course configuration
+## World: zones and acts
 
-The bundled `mountain-pass` course is always available. Optional household overrides belong in:
+The game is a world of **zones** (art, sprites, sounds, entity classes) holding **acts** (course layouts). Bundled files live in `__app_modules/wellness/fitness/server/adapters/skylineGlider/`. Household files with the same id replace them; new ids add to them:
 
 ```text
-fitness/skyline-glider/courses/*.yml
+fitness/skyline-glider/world.yml        # zone order: { zones: [alpine, space] }
+fitness/skyline-glider/zones/*.yml      # skyline-glider-zone/v1
+fitness/skyline-glider/courses/*.yml    # acts: skyline-glider-course/v1
 ```
 
-Malformed overrides are ignored individually and logged as `fitness.skyline_glider.course_override.invalid`; they never hide the bundled course.
+Each file is loaded on every request, so an edit takes effect on the next lobby load with no restart. A malformed act is skipped and logged as `fitness.skyline_glider.course_override.invalid`. A malformed zone is logged as `fitness.skyline_glider.zone_override.invalid`. Neither hides the bundled world. The browser validates again, including reachability, and logs `skyline_glider.course.invalid` for anything it drops.
+
+### Zone file
+
+```yaml
+schema: skyline-glider-zone/v1
+id: green-hill
+name: Green Hill
+asset_root: fitness/skyline-glider/green-hill   # media-relative folder
+pixel_art: true                                  # crisp scaling for pixel art
+layers:                                          # drawn back to front
+  - { id: sky,  kind: svg,   draw: alpine-sky }
+  - { id: far,  kind: image, src: far.png, parallax: 0.14, y: 0.35, height: 0.4, fallback: alpine-far }
+  - { id: dust, kind: image, src: dust.png, parallax: 1.4, y: 0.9, height: 0.1, front: true }
+terrain: { fill: rock.png, edge: grass.png, ceiling_edge: icicles.png, edge_lip: 0.02, edge_height: 0.06 }
+sprites: { sheet: sprites.png, frames: sprites.json }
+craft: { frames: [ship-1, ship-2], fps: 8, height: 0.09 }
+collectible: { frame: ring }
+checkpoint: { frame: post }
+finish: { frame: goal }
+entities:
+  palm:    { class: breakable, frame: palm, width_s: 0.6, height: 0.18 }
+  boulder: { class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
+sounds: { bell: ring.mp3, checkpoint: post.mp3, breakable: smash.mp3, crash: crash.mp3,
+          restart: restart.mp3, finish: fanfare.mp3, wind: wind.mp3, music: theme.mp3 }
+```
+
+- **Every slot is optional and falls back to the built-in SVG art** (`svgPresets.jsx`): `alpine-sky`, `alpine-far`, `alpine-middle`, `alpine-near`, the alpine rock terrain, the glider, the bell, and the entity drawings `pine`, `chalet`, `boulder`, `signpost`. An image layer that fails to load draws its `fallback` preset.
+- `parallax` is a fraction of the course scroll speed (1 moves with the terrain, above 1 moves faster, for foreground). `y` and `height` are fractions of the 600-unit scene height, and strips repeat horizontally at their natural aspect ratio. Layers with `front: true` draw over the craft.
+- The terrain `fill` is a texture locked to the course. The `edge` strip is drawn `edge_lip` above the collision line, so grass tips can be brushed without crashing. Ceilings use `ceiling_edge`, or the floor edge flipped.
+- Sprite sheets use the TexturePacker/Aseprite JSON export (`hash` or `array`). Frame names drop their extension, so `glider-1.png` is addressed as `glider-1`. Any `frame:` can be `frames: [...]` with `fps:` to animate.
+- Asset paths resolve against `asset_root` on the media mount and are served by `/api/v1/proxy/media/*` with revalidating cache headers, so replacing a file keeps its name. A path starting with `/` is media-root-relative.
+- Sounds: `bell`, `checkpoint`, `breakable`, `crash`, `restart` and `finish` are cues. `wind` and `music` loop during flight. A missing, empty or undecodable file falls back to the synthesized tone, so the alpine zone ships with empty placeholders under `media/fitness/skyline-glider/alpine/sounds/`.
+- On each act change the lobby preloads the zone and logs `skyline_glider.assets.loaded` with `{ zoneId, images, spriteFrames, sounds, missing }`. The level is `warn` when anything other than an empty placeholder failed.
+
+### Act file
+
+An act is a course file with three additions:
+
+```yaml
+zone: green-hill          # default alpine
+act: 2                    # play order inside the zone
+overrides:                # per-act changes to the zone
+  layers: { sky: { src: dusk.png } }
+  sounds: { music: night.mp3 }
+entities:                 # placed by name; they stand on `altitude`
+  - { id: palm-01, entity: palm, at_s: 42, altitude: 0.70 }
+```
+
+Give entities stable `id`s, and bump `version` whenever placements change: the id is what a checkpoint remembers as broken. Validation rejects unknown entities, duplicate ids, a solid entity that leaves no reachable gap, and a checkpoint whose `restart_altitude` sits inside terrain.
+
+## Progression
+
+Acts play in world order: zone order from `world.yml`, then `act`. The first act is always open. Each later act opens once the act before it is completed, and that rule crosses zone boundaries. Per-rider progress lives in `fitness/skyline-glider/progress/<riderId>.yml`. It is updated whenever a completed run saves, and rebuilt from the run log when missing, so deleting it is safe.
+
+The lobby shows the world map. The rider button starts, in priority order: a tapped tile, a flight waiting to be retried or resumed, then the rider's next act. Tapping a locked tile asks for an admin fingerprint and records the unlock with `unlocked_by`. If the world map cannot load, every act stays playable and `skyline_glider.world.error` is logged.
 
 The household Fitness menu is deployment-owned configuration and is not tracked in this repository. Add this tile to the production menu:
 
@@ -45,7 +104,9 @@ The household Fitness menu is deployment-owned configuration and is not tracked 
 
 ## API
 
-- `GET /api/v1/fitness/skyline-glider/courses`
+- `GET /api/v1/fitness/skyline-glider/courses`: resolved acts in world order, each with its zone merged in
+- `GET /api/v1/fitness/skyline-glider/world?rider=<id>`: zones → acts with `locked | open | completed`, `best`, and `next`
+- `POST /api/v1/fitness/skyline-glider/progress/:riderId/unlock` with `{ actId, unlockedBy }`
 - `POST /api/v1/fitness/skyline-glider/runs` with `{ record, household? }`
 - `GET /api/v1/fitness/skyline-glider/runs/:runId`
 
