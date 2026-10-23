@@ -137,7 +137,7 @@ import { createCalendarApiRouter } from "../../__app_modules/personal/calendar/s
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '../../__app_modules/learning/piano/server/composition/screen-power-sync.mjs';
 import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/composition/midi-wake.mjs";
-import { createPianoBridgeSupervisor } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
+import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
@@ -3995,7 +3995,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       eventBus,
       deviceService: deviceServices.deviceService,
       getScreenOverrideService,
-      logger: rootLogger.child({ module: 'piano-bridge-supervisor' }),
+      logger: rootLogger.child({ module: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE }),
     });
   } else {
     rootLogger.info?.('piano-bridge.supervisor.skipped', { reason: 'not the prod container', isDocker, enableScheduler });

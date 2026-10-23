@@ -157,7 +157,7 @@ test('overlapping ticks are serialized', async () => {
 });
 
 
-function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false, notifyResult = undefined, hold = true, checkReady = null, queryLogs = null, start = 1_790_000_000_000 } = {}) {
+function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false, notifyResult = undefined, hold = true, checkReady = null, queryLogs = null, start = 1_790_000_000_000, notify = true } = {}) {
   let t = start;
   const state = { health: { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }, power, notifyResult };
   const calls = [];
@@ -169,7 +169,7 @@ function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error:
     probe: { readHealth: async () => state.health },
     relaunch: async () => ({ ok: true }),
     readPianoPower: async () => state.power,
-    notify: async (p) => { pushes.push(p); return state.notifyResult; },
+    notify: notify ? async (p) => { pushes.push(p); return state.notifyResult; } : null,
     compose: composePianoBridgePush,
     scheduler: { every: () => () => {} },
     clock: { now: () => t },
@@ -363,13 +363,16 @@ test('readiness: a broken link pushes once a day at most, re-checks hourly, and 
   const r = speakerRig({ checkReady: async () => { checks++; return state.problems; } });
   await r.step(1);
   assert.equal(checks, 1);
+  assert.equal(r.pushes.length, 0);  // one sighting is a suspicion, not an alarm
+  await r.step(21);                  // ~10 min later: confirmed
+  assert.equal(checks, 2);
   assert.equal(r.pushes.length, 1);
   assert.match(r.pushes[0].title, /self-repair is broken/);
   assert.equal(r.events('piano.speaker.not-ready')[0].level, 'warn');
-  await r.step(10);                 // 5 min: no re-check yet
-  assert.equal(checks, 1);
-  await r.step(120);                // past an hour: re-checked, still broken, no second push today
-  assert.ok(checks >= 2);
+  await r.step(10);                  // 5 min: no re-check yet
+  assert.equal(checks, 2);
+  await r.step(120);                 // past an hour: re-checked, still broken, no second push today
+  assert.ok(checks >= 3);
   assert.equal(r.pushes.length, 1);
   state.problems = [];
   await r.step(121);                // next hourly check sees it fixed
@@ -416,7 +419,7 @@ test('weekly: Sunday evening sums the week from the log store and pushes once', 
   assert.equal(weekly.length, 1);
   assert.equal(weekly[0].message, 'Dropped 3 times and fixed itself every time: 2 by restarting the piano, 1 by a Bluetooth reset.');
   assert.deepEqual(r.events('piano.speaker.weekly-summary')[0].data.byRung, { 4: 2, 2: 1 });
-  assert.ok(queries.every((q) => q.includes('context.module:piano-bridge-supervisor')));
+  assert.ok(queries.every((q) => q.includes('context.module:"piano-bridge-supervisor"')));
   await r.step(5);
   assert.equal(r.pushes.filter((p) => /this week/.test(p.title)).length, 1);
 });
@@ -439,4 +442,67 @@ test('weekly: never runs outside Sunday evening', async () => {
   const r = speakerRig({ start: Date.parse('2026-10-24T02:00:00Z'), queryLogs: async () => { asked++; return []; } }); // Fri 19:00 PT
   await r.step(4);
   assert.equal(asked, 0);
+});
+
+test('readiness: a single blip (HA restarting) never pushes, and never sends a working-again card', async () => {
+  let checks = 0;
+  const r = speakerRig({ checkReady: async () => { checks++; return checks === 1 ? ['plug-unavailable'] : []; } });
+  await r.step(30);
+  assert.equal(r.pushes.length, 0);
+  assert.equal(r.events('piano.speaker.not-ready-suspected').length, 1);
+});
+
+test('readiness: a restart inside 24 h of a sent alert does not alert again (budget lives in the log store)', async () => {
+  const queries = [];
+  const r = speakerRig({
+    checkReady: async () => ['plug-unavailable'],
+    queryLogs: async (q) => { queries.push(q); return q.includes('alert-sent') ? [{ _msg: 'piano-bridge.supervisor.alert-sent' }] : []; },
+  });
+  await r.step(30);
+  assert.equal(r.pushes.filter((p) => /self-repair/.test(p.title)).length, 0);
+  assert.ok(queries.some((q) => q.includes('data.kind:"not-ready"') && q.includes('_time:24h')));
+});
+
+test('readiness: with no push target it says so once a day at warn, never error-spams', async () => {
+  const r = speakerRig({ notify: false, checkReady: async () => [] });
+  await r.step(2 * 60 * 3); // 3 hours
+  assert.equal(r.events('piano.speaker.not-ready').length, 1);
+  assert.deepEqual(r.events('piano.speaker.not-ready')[0].data.problems, ['no-notify-target']);
+  assert.equal(r.events('piano-bridge.supervisor.alert-unsent').length, 0);
+});
+
+test('weekly: a recovery a person made after a give-up is not counted as a rung fix', async () => {
+  const r = speakerRig({
+    start: SUNDAY_EVENING,
+    queryLogs: async (q) => (q.includes('weekly-summary') ? [] : [
+      row('piano.speaker.dropped'), row('piano.speaker.gave-up'),
+      { _msg: 'piano.speaker.recovered', 'data.rung': '5', 'data.alerted': 'true' },
+    ]),
+  });
+  await r.step(1);
+  const w = r.pushes.find((p) => /this week/.test(p.title));
+  assert.equal(w.message, 'Dropped once, and it needed a person.');
+});
+
+test('weekly: drops that ended with the piano switched off read cleanly', async () => {
+  const r = speakerRig({ start: SUNDAY_EVENING, queryLogs: async (q) => (q.includes('weekly-summary') ? [] : [row('piano.speaker.dropped'), row('piano.speaker.dropped')]) });
+  await r.step(1);
+  assert.equal(r.pushes.find((p) => /this week/.test(p.title)).message, 'Dropped 2 times.');
+});
+
+test('weekly + readiness queries quote the module name', async () => {
+  const queries = [];
+  const r = speakerRig({ start: SUNDAY_EVENING, queryLogs: async (q) => { queries.push(q); return []; } });
+  await r.step(1);
+  assert.ok(queries.length > 0);
+  assert.ok(queries.every((q) => q.includes('context.module:"piano-bridge-supervisor"')));
+});
+
+test('recovered events carry alerted so the week can be told apart', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(3);
+  r.up();
+  await r.step(1);
+  assert.equal(r.events('piano.speaker.recovered')[0].data.alerted, false);
 });

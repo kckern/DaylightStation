@@ -40,6 +40,13 @@ import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
 
+/**
+ * The logger `module` this supervisor's events carry. app.mjs names its child logger
+ * with it, and the weekly summary / readiness budget query the log store by it — one
+ * string, so a rename cannot silently break either.
+ */
+export const PIANO_BRIDGE_SUPERVISOR_LOG_MODULE = 'piano-bridge-supervisor';
+
 /** @type {PianoBridgeSupervisorService | null} */
 let instance = null;
 
@@ -113,7 +120,9 @@ export function createPianoBridgeSupervisor({
       : null;
     if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
     const actions = speakerActionsFactory({ bridgeUrl });
-    const logStoreBase = logStoreBaseFromSinkUrl(configService?.get?.('logging.remoteSink')?.url);
+    const sink = configService?.get?.('logging.remoteSink');
+    // A disabled sink ships nothing: every week would read as quiet.
+    const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
     speaker = {
       actions,
       checkReady: createSpeakerReadinessCheck({ actions, haGateway, plugEntity }),
@@ -150,6 +159,7 @@ export function createPianoBridgeSupervisor({
     alertAfterMs: cfg.alert_after_ms,
     oneWayAlertAfterMs: cfg.one_way_alert_after_ms,
     speaker,
+    logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
   });
   service.start();
   instance = service;

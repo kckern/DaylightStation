@@ -10,9 +10,10 @@ export function createSpeakerReadinessCheck({ actions, haGateway, plugEntity = n
     const problems = [];
     const { present } = await actions.probeEndpoints();
     if (present === false) problems.push('bridge-endpoints-missing');
-    if (!plugEntity) problems.push('no-plug-configured');
+    // Without an HA gateway there are no plug rungs at all, whatever the entity says.
+    if (!plugEntity || typeof haGateway?.getState !== 'function') problems.push('no-plug-configured');
     else {
-      const state = (await haGateway?.getState?.(plugEntity))?.state;
+      const state = (await haGateway.getState(plugEntity))?.state;
       if (!state || state === 'unavailable' || state === 'unknown') problems.push('plug-unavailable');
     }
     return problems;

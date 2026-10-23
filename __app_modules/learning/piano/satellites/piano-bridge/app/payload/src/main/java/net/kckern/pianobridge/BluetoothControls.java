@@ -297,12 +297,17 @@ public final class BluetoothControls implements BluetoothController.Port {
         ConnectPlan.Action plan = current == null ? ConnectPlan.Action.RELOAD : ConnectPlan.decide(profile, address,
                 audioRole ? current.speakerMac() : current.targetMac(),
                 audioRole ? current.bluetoothAudioEnabled() : current.bluetoothMidiEnabled(),
-                connectedNow);
+                connectedNow, audioRole ? spk != null : ble != null);
         if (plan != ConnectPlan.Action.RELOAD) {
             if (plan == ConnectPlan.Action.NUDGE) {
-                if (audioRole && spk != null) spk.connectNow();
-                else if (!audioRole && ble != null) ble.connectNow();
+                if (audioRole) spk.connectNow();
+                else ble.connectNow();
             }
+            // A renamed device is persisted, but without the teardown a reload would cost.
+            String freshName = safeConfigName(device.getName());
+            String knownName = audioRole ? current.speakerName() : current.targetName();
+            if (!freshName.isEmpty() && !freshName.equals(knownName))
+                DeviceConfig.writeOverride(ctx, (audioRole ? "speakerName: " : "targetName: ") + freshName + "\n");
             lastError = null;
             Diag.log("PianoBridge-Bluetooth", profile + " connect for " + address + " → " + plan + " (no teardown)");
             return true;

@@ -95,11 +95,21 @@ export function composePianoSpeakerPush({
   }
   if (kind === 'weekly') {
     const parts = fixParts(byRung);
-    const fixedAll = !gaveUp;
-    const head = drops === 1 ? 'Dropped once' : `Dropped ${drops} times`;
+    const fixed = Object.entries(byRung ?? {}).reduce((n, [rung, c]) => n + (RUNG_FIX[rung] ? c : 0), 0);
+    const total = Math.max(drops, fixed + gaveUp);
+    const head = total === 1 ? 'Dropped once' : `Dropped ${total} times`;
     let message;
-    if (fixedAll) message = `${head} and fixed itself${drops === 1 ? '' : ' every time'}: ${parts.join(', ')}.`;
-    else message = `${head}: ${[...parts, `and ${gaveUp} needed a person`].join(', ')}.`;
+    if (!gaveUp && fixed > 0 && fixed === total) {
+      message = `${head} and fixed itself${total === 1 ? '' : ' every time'}: ${parts.join(', ')}.`;
+    } else {
+      // Some drops ended with the piano switched off (or are still open): say only what is known.
+      const bits = parts.map((p) => p.replace(/^(\d+) by /, '$1 fixed by '));
+      const person = gaveUp === 1 && total === 1 ? 'it' : String(gaveUp);
+      if (gaveUp && !bits.length) message = `${head}, and ${person} needed a person.`;
+      else if (gaveUp) message = `${head}: ${bits.join(', ')}, and ${gaveUp} needed a person.`;
+      else if (bits.length) message = `${head}: ${bits.join(', ')}.`;
+      else message = `${head}.`;
+    }
     return {
       title: `🎹 Piano speaker this week${where}`,
       message,

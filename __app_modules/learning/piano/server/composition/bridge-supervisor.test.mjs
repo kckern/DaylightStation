@@ -137,3 +137,15 @@ test('no log store configured: readiness still runs, weekly summary is off', () 
   assert.equal(created.readiness, true);
   assert.equal(created.weeklySummary, false);
 });
+
+test('a disabled remote sink means no weekly summary (nothing ships, so every week would read quiet)', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  d.args.configService.get = (key) => (key === 'logging.remoteSink' ? { enabled: false, url: 'http://victoria-logs:9428/insert/jsonline' } : undefined);
+  createPianoBridgeSupervisor(d.args);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.weeklySummary, false);
+});
+
+test('the log module name is exported, so app.mjs and the log-store queries cannot drift apart', async () => {
+  const mod = await import('./bridge-supervisor.mjs');
+  assert.equal(mod.PIANO_BRIDGE_SUPERVISOR_LOG_MODULE, 'piano-bridge-supervisor');
+});

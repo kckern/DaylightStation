@@ -31,3 +31,8 @@ test('no plug configured says so', async () => {
   const check = createSpeakerReadinessCheck({ actions: actions(true), haGateway: ha('on'), plugEntity: null });
   assert.deepEqual(await check(), ['no-plug-configured']);
 });
+
+test('no Home Assistant gateway means no plug rungs at all: no-plug-configured', async () => {
+  const check = createSpeakerReadinessCheck({ actions: actions(true), haGateway: null, plugEntity: 'switch.p' });
+  assert.deepEqual(await check(), ['no-plug-configured']);
+});

@@ -76,10 +76,9 @@ public class A2dpConnector {
                     new IntentFilter(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED), null, handler);
             ctx.registerReceiver(headsetReceiver,
                     new IntentFilter(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED), null, handler);
-            if (adapter != null && adapter.isEnabled()) {
+            if (adapter != null && adapter.isEnabled())
                 adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP);
-                adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.HEADSET);
-            }
+            requestHeadsetProxy();
             scheduleSweep();
         });
     }
@@ -225,16 +224,36 @@ public class A2dpConnector {
         }
     };
 
+    /**
+     * The HEADSET proxy dies with Bluetooth (the ladder's own BT cycle turns it off), and
+     * nothing else would ask for it again — so every sweep re-requests it while it is gone.
+     */
+    private void requestHeadsetProxy() {
+        if (headset == null && adapter != null && adapter.isEnabled())
+            adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.HEADSET);
+    }
+
     /** Keep the speaker off HFP (see {@link HeadsetGuard}). Runs on the handler thread. */
     private void guardHeadset() {
         if (!running) return;
+        requestHeadsetProxy();
         HeadsetGuard.Outcome o = headsetGuard.reconcile();
-        if (!o.acted) return;
+        if (o.capJustHit) {
+            Diag.log(TAG, "HFP guard: disconnect cap reached; leaving HFP up for the rest of the hour");
+            LogEvents.emit(cfg, "bridge.a2dp.hfp-capped", "warn", hfpData(o));
+        }
+        // Only a real change is an event: a refused priority write retried every sweep
+        // must not become thousands of log lines a day.
+        if (!o.changed) return;
         Diag.log(TAG, "HFP guard: priorityOff=" + o.priorityOff + " disconnected=" + o.disconnected);
+        LogEvents.emit(cfg, "bridge.a2dp.hfp-disabled", "info", hfpData(o));
+    }
+
+    private JSONObject hfpData(HeadsetGuard.Outcome o) {
         JSONObject d = new JSONObject();
         try { d.put("mac", cfg.speakerMac()).put("priorityOff", o.priorityOff).put("disconnected", o.disconnected); }
         catch (JSONException ignored) { }
-        LogEvents.emit(cfg, "bridge.a2dp.hfp-disabled", "info", d);
+        return d;
     }
 
     /** Reflection onto BluetoothHeadset: get/setPriority are @SystemApi, disconnect is @hide (greylisted). */
@@ -250,11 +269,11 @@ public class A2dpConnector {
             if (h == null || t == null) return false;
             try { return h.getConnectionState(t) == BluetoothProfile.STATE_CONNECTED; } catch (Exception e) { return false; }
         }
-        public boolean headsetPriorityOff() {
+        public Boolean headsetPriorityOff() {
             try {
                 Object p = BluetoothHeadset.class.getMethod("getPriority", BluetoothDevice.class).invoke(headset, target());
-                return p instanceof Integer && (Integer) p == 0; // PRIORITY_OFF
-            } catch (Throwable t) { return false; }
+                return p instanceof Integer ? (Integer) p == 0 : null; // 0 = PRIORITY_OFF
+            } catch (Throwable t) { return null; }
         }
         public boolean setHeadsetPriorityOff() {
             try {
@@ -340,10 +359,14 @@ public class A2dpConnector {
             o.put("proxyReady", proxy != null);
             o.put("reconnects", reconnects);
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);
-            HeadsetOps h = new HeadsetOps();
-            o.put("hfpConnected", h.ready() && h.headsetConnected());
-            o.put("hfpPriorityOff", h.ready() && h.headsetPriorityOff());
-            o.put("hfpDisconnects", headsetGuard.disconnects());
+            // Last observation, not fresh binder calls: /status is polled every 30 s.
+            HeadsetGuard.Snapshot h = headsetGuard.snapshot();
+            o.put("hfpConnected", h.connected == null ? JSONObject.NULL : h.connected);
+            o.put("hfpPriorityOff", h.priorityOff == null ? JSONObject.NULL : h.priorityOff);
+            o.put("hfpDisconnects", h.disconnects);
+            o.put("hfpPriorityRefused", h.priorityGivenUp);
+            o.put("hfpCapped", h.capped);
+            o.put("hfpProxyReady", headset != null);
         } catch (JSONException ignored) { }
         return o;
     }

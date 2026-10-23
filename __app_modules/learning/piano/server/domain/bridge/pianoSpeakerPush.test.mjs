@@ -100,7 +100,18 @@ test('weekly summary says how often it dropped and what fixed it', () => {
 
 test('weekly summary owns up to give-ups', () => {
   const p = composePianoSpeakerPush({ ...base, kind: 'weekly', drops: 2, byRung: { 1: 1 }, gaveUp: 1 });
-  assert.equal(p.message, 'Dropped 2 times: 1 by reconnecting, and 1 needed a person.');
+  assert.equal(p.message, 'Dropped 2 times: 1 fixed by reconnecting, and 1 needed a person.');
+});
+
+test('weekly with no fix rows never prints an empty list', () => {
+  assert.equal(composePianoSpeakerPush({ ...base, kind: 'weekly', drops: 1, byRung: {}, gaveUp: 0 }).message, 'Dropped once.');
+  assert.equal(composePianoSpeakerPush({ ...base, kind: 'weekly', drops: 1, byRung: {}, gaveUp: 1 }).message, 'Dropped once, and it needed a person.');
+  assert.equal(composePianoSpeakerPush({ ...base, kind: 'weekly', drops: 0, byRung: {}, gaveUp: 1 }).message, 'Dropped once, and it needed a person.');
+});
+
+test('weekly where only some drops were fixed does not claim every time', () => {
+  const p = composePianoSpeakerPush({ ...base, kind: 'weekly', drops: 3, byRung: { 4: 1 }, gaveUp: 0 });
+  assert.equal(p.message, 'Dropped 3 times: 1 fixed by restarting the piano.');
 });
 
 test('weekly with one drop is singular', () => {

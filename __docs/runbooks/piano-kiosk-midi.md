@@ -428,9 +428,13 @@ curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects
 - **A2DP only.** The module also offers the Headset (HFP) profile and Android connected it.
   A microphone open (voice feedback) reshuffles call audio onto an HFP link, and the
   speaker dropped seconds after three recordings on 2026-10-23. `HeadsetGuard` turns the
-  speaker's HFP priority off and drops any HFP link. `GET :8770/speaker` shows
-  `hfpConnected` (want `false`), `hfpPriorityOff` and `hfpDisconnects`, and the log store
-  gets `bridge.a2dp.hfp-disabled`.
+  speaker's HFP priority off and drops any HFP link. If Android refuses the priority write
+  three times, it falls back to dropping HFP whenever it reappears, at most 10 times an hour
+  (`bridge.a2dp.hfp-capped` when the cap is hit). The headset handle is re-requested every
+  sweep, because the ladder's own Bluetooth cycle kills it. `GET :8770/speaker` shows the
+  last observation: `hfpConnected` (want `false`), `hfpPriorityOff` (`null` = unreadable),
+  `hfpPriorityRefused`, `hfpDisconnects`, `hfpCapped`, `hfpProxyReady`. The log store gets
+  `bridge.a2dp.hfp-disabled` only when something actually changed.
 - **The Bluetooth panel's Connect leaves a working link alone.** It used to rebuild every
   connector, A2DP and BLE-MIDI both, even for the device already connected (the 18:04
   drop). `ConnectPlan` now makes the same device a no-op, or a nudge if it is down. Only a
@@ -439,8 +443,11 @@ curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects
 **Readiness and the weekly summary (backend):**
 - Every 24 h, and hourly while anything is broken, the supervisor checks that the bridge
   has the repair endpoints, that the HA plug is answering, and that a push target exists.
-  If not: `piano.speaker.not-ready` (warn) and at most one push a day ("self-repair is
-  broken: …"). A quiet "working again" card follows the fix.
+  One sighting is only `not-ready-suspected`, because HA restarting reads as an unavailable
+  plug. A second sighting 10 minutes later is `piano.speaker.not-ready` (warn) and a push
+  ("self-repair is broken: …"). The once-a-day budget is checked against `alert-sent` in the
+  log store, so a redeploy does not re-alert. A quiet "working again" card follows the fix.
+  With no push target configured, the problem is logged once a day at warn instead.
 - Sunday from 18:00 household time, it reads the week back from the log store
   (`context.module:piano-bridge-supervisor`) and pushes drops and what fixed them, only if
   there were any. `piano.speaker.weekly-summary` is logged either way; finding it in the

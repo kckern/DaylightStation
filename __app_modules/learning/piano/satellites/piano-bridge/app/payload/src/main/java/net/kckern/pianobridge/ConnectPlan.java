@@ -23,11 +23,12 @@ public final class ConnectPlan {
      * @param configuredMac  the MAC currently configured for that role
      * @param roleEnabled    bluetoothAudioEnabled / bluetoothMidiEnabled
      * @param connected      that role is connected to {@code address} right now
+     * @param connectorPresent the role's connector exists (a nudge needs something to nudge)
      */
     public static Action decide(String profile, String address, String configuredMac,
-                                boolean roleEnabled, boolean connected) {
+                                boolean roleEnabled, boolean connected, boolean connectorPresent) {
         boolean same = norm(address).equals(norm(configuredMac)) && !norm(address).isEmpty();
-        if (!same || !roleEnabled) return Action.RELOAD;
+        if (!same || !roleEnabled || !connectorPresent) return Action.RELOAD;
         return connected ? Action.NOOP : Action.NUDGE;
     }
 
