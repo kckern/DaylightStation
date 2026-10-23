@@ -159,8 +159,10 @@ describe('SurroundHost', () => {
     vi.restoreAllMocks();
   });
 
-  it('registers the built-in modules by importing the host', () => {
-    // The seams must not need a registration call of their own.
+  it('resolves built-in modules registered by application composition', async () => {
+    // Built-in content modules belong to the application, not the host capability.
+    const { registerSurroundBuiltins } = await import('../../../../__app_modules/media/media/browser/surround/builtins.js');
+    registerSurroundBuiltins();
     const registry = getSurroundRegistry();
     expect(registry.get('segment-map')).toBeTruthy();
     expect(registry.get('cue-ticker')).toBeTruthy();

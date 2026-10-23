@@ -729,7 +729,7 @@ describe('ReadalongPlaylistPlayer — the completion card', () => {
  */
 describe('the progress wire contract', () => {
   const USE_CASE = path.resolve(
-    HERE, '../../../../__backend/src/3_applications/school/usecases/RecordLessonCompanionProgress.mjs',
+    HERE, '../../../../__app_modules/learning/school/server/application/usecases/RecordLessonCompanionProgress.mjs',
   );
 
   /** Comment-stripped, so a prose mention never satisfies a code assertion. */
