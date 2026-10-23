@@ -3992,6 +3992,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       remoteAdmin: deviceRemoteAdministrationService,
       haGateway: homeAutomationAdapters.haGateway,
       householdId,
+      eventBus,
+      deviceService: deviceServices.deviceService,
+      getScreenOverrideService,
       logger: rootLogger.child({ module: 'piano-bridge-supervisor' }),
     });
   } else {

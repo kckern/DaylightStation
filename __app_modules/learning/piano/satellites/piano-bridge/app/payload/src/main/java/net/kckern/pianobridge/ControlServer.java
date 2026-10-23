@@ -56,6 +56,7 @@ public class ControlServer extends NanoWSD {
     public static final int PORT = 8770;
 
     private final BridgeCore service;
+    private final AdapterCycler adapterCycler = AdapterCycler.forDevice();
     private final Set<ControlSocket> clients =
             Collections.newSetFromMap(new ConcurrentHashMap<ControlSocket, Boolean>());
     private final Timer heartbeatTimer = new Timer("PianoBridge-WS-heartbeat", true);
@@ -120,7 +121,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p31-system-consent";
+    public static final String BUILT_BY = "p32-speaker-heal";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -198,6 +199,7 @@ public class ControlServer extends NanoWSD {
                             .put("POST /payload?url=<jar-url>&sha256=<hex>  (fetch+verify+activate a new payload; zero-tap)")
                             .put("POST /payload/rollback      (revert to the previous payload)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status+guard / force reconnect)")
+                            .put("POST /speaker/reconnect · POST /speaker/bt-cycle?settleMs=  (speaker ladder rungs)")
                             .put("POST /audio-guard/bootstrap   (spend the one-time clamp window: drop→clamp→reconnect)")
                             .put("POST /audio-guard/override?ms=60000  (reopen SYNTH gate only, time-boxed; never unclamps)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
@@ -410,6 +412,34 @@ public class ControlServer extends NanoWSD {
                 }
                 case "/crashlog":
                     return json(CrashLog.read());
+                case "/speaker/reconnect": {
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    A2dpConnector spk = service.getA2dpConnector();
+                    if (spk == null) return json(err("no_a2dp"));
+                    Diag.log(TAG, "/speaker/reconnect from " + session.getRemoteIpAddress());
+                    spk.reconnectNow();
+                    return json(ok().put("action", "speaker_reconnect"));
+                }
+                case "/speaker/bt-cycle": {
+                    // Rungs 2-3 of the backend speaker ladder. Answers at once; the cycle runs
+                    // on its own thread so the HTTP client (whose link we are about to drop
+                    // along with BLE) can't strand Bluetooth off by disconnecting.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    if (adapterCycler == null) return json(err("no_bluetooth"));
+                    final int settleMs = Math.max(0, Math.min(30000, parseIntParam(session, "settleMs", 5000)));
+                    if (adapterCycler.isRunning()) return json(err("busy")); // run() itself refuses a racing second call
+                    final DeviceConfig cfg = service.getConfig();
+                    Diag.log(TAG, "/speaker/bt-cycle settleMs=" + settleMs + " from " + session.getRemoteIpAddress());
+                    new Thread(() -> {
+                        LogEvents.emit(cfg, "bridge.bt-cycle.start", "info", new JSONObject());
+                        AdapterCycler.Result r = adapterCycler.run(settleMs);
+                        JSONObject d = new JSONObject();
+                        try { d.put("ok", r.ok).put("error", r.error == null ? JSONObject.NULL : r.error).put("tookMs", r.tookMs); }
+                        catch (JSONException ignored) { }
+                        LogEvents.emit(cfg, "bridge.bt-cycle.done", r.ok ? "info" : "error", d);
+                    }, "PianoBridge-bt-cycle").start();
+                    return json(ok().put("action", "bt_cycle").put("settleMs", settleMs));
+                }
                 case "/speaker": {
                     A2dpConnector spk = service.getA2dpConnector();
                     if (spk == null) return json(err("no_a2dp"));

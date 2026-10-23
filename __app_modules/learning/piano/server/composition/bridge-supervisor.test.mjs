@@ -54,3 +54,68 @@ test('inherits device, url and power entity from sibling blocks; relaunch goes t
   assert.equal(notifies[0][0], 'notify');
   assert.equal(notifies[0][1], 'mobile_app_phone');
 });
+
+// ── speaker recovery wiring ──
+
+function deps(pianoConfig, extra = {}) {
+  const logs = [];
+  const log = (level) => (event, data) => logs.push({ level, event, data });
+  return {
+    logs,
+    args: {
+      configService: { getHouseholdAppConfig: () => pianoConfig, getHouseholdTimezone: () => 'America/Los_Angeles' },
+      remoteAdmin: { performAction: async () => ({}) },
+      haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+      logger: { debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') },
+      probeFactory: () => ({ readHealth: async () => ({ reachable: true, speaker: true }) }),
+      scheduler: { every: () => () => {} },
+      eventBus: { broadcast: () => {} },
+      ...extra,
+    },
+  };
+}
+const base = {
+  bridge_supervisor: { enabled: true, device_id: 'yellow-room-tablet', bridge_url: 'http://tablet:8770' },
+};
+
+test('speaker recovery wires the plug entity and the bus when enabled', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  assert.ok(pianoBridgeSupervisor);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created');
+  assert.equal(created.data.speakerRecovery, true);
+  assert.equal(created.data.plugEntity, 'switch.yellow_room_piano_plug');
+});
+
+test('speaker recovery off when the block is absent', () => {
+  const d = deps(base);
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created');
+  assert.equal(created.data.speakerRecovery, false);
+});
+
+test('enabled without a plug entity still runs the Bluetooth rungs and says so', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true } });
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created');
+  assert.equal(created.data.speakerRecovery, true);
+  assert.equal(created.data.plugEntity, null);
+  assert.ok(d.logs.some((l) => l.event === 'piano.speaker.no-plug' && l.level === 'warn'));
+});
+
+test('speaker recovery gets a screen hold when the device and override services are present', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } }, {
+    deviceService: { get: () => ({ getStatus: async () => ({ screenOn: true }) }) },
+    getScreenOverrideService: () => ({ get: () => null, set: () => ({}) }),
+  });
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created');
+  assert.equal(created.data.screenHold, true);
+});
+
+test('without them the ladder still runs, and says the screen is unprotected', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  createPianoBridgeSupervisor(d.args);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.screenHold, false);
+  assert.ok(d.logs.some((l) => l.event === 'piano.speaker.no-screen-hold' && l.level === 'warn'));
+});

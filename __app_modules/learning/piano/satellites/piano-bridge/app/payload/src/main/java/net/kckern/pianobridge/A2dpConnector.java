@@ -52,6 +52,9 @@ public class A2dpConnector {
     private volatile int reconnects = 0;
     private volatile long lastConnectAttempt = 0L;
     private volatile Runnable onStateChanged;
+    // Every failed connect() also broadcasts DISCONNECTED; only a real drop of a working
+    // link is an event (a wedged dongle would otherwise log one every 20 s, all night).
+    private volatile boolean wasConnected = false;
 
     public A2dpConnector(Context ctx, DeviceConfig cfg) {
         this.ctx = ctx.getApplicationContext();
@@ -96,6 +99,29 @@ public class A2dpConnector {
 
     /** Force an A2DP disconnect (pbctl bootstrap). Reflection: disconnect() is @hide but greylisted. */
     public void disconnectNow() { handler.post(this::forceDisconnect); }
+
+    /**
+     * Rung 1 of the backend speaker ladder (POST /speaker/reconnect): drop whatever
+     * half-open link the stack holds, then connect fresh. Plain connect() retries
+     * cannot clear a wedge where the sink refuses L2CAP (SDP conn cnf 0x4).
+     */
+    public void reconnectNow() {
+        handler.post(() -> {
+            emit("bridge.a2dp.reconnect-requested", "info", null, null);
+            forceDisconnect();
+            handler.postDelayed(this::ensureConnected, 2000L);
+        });
+    }
+
+    private void emit(String msg, String level, String key, Object value) {
+        JSONObject d = new JSONObject();
+        try {
+            d.put("mac", cfg.speakerMac());
+            d.put("reconnects", reconnects);
+            if (key != null) d.put(key, value);
+        } catch (JSONException ignored) { }
+        LogEvents.emit(cfg, msg, level, d);
+    }
 
     /** Force-disconnect the target speaker so the route falls back to the built-in speaker. */
     private void forceDisconnect() {
@@ -158,10 +184,14 @@ public class A2dpConnector {
                 if (!running || !cfg.bluetoothAudioEnabled()) { fireStateChanged(); return; }
                 reconnects++;
                 Diag.log(TAG, "speaker disconnected — reconnecting (#" + reconnects + ")");
+                if (wasConnected) emit("bridge.a2dp.disconnected", "warn", null, null);
+                wasConnected = false;
                 handler.postDelayed(A2dpConnector.this::ensureConnected, RECONNECT_DELAY_MS);
                 fireStateChanged();
             } else if (state == BluetoothProfile.STATE_CONNECTED) {
                 Diag.log(TAG, "speaker connected");
+                emit("bridge.a2dp.connected", "info", null, null);
+                wasConnected = true;
                 lastError = null;
                 fireStateChanged();
             }
@@ -194,7 +224,7 @@ public class A2dpConnector {
             setError("speaker not bonded (pair it in Bluetooth controls)");
             return;
         }
-        if (isConnected(target)) return; // already good — nothing to do
+        if (isConnected(target)) { wasConnected = true; return; } // already good — nothing to do
 
         lastConnectAttempt = System.currentTimeMillis();
         try {
@@ -249,7 +279,12 @@ public class A2dpConnector {
         }
     }
 
-    private void setError(String e) { lastError = e; Diag.log(TAG, e); }
+    private void setError(String e) {
+        boolean changed = e != null && !e.equals(lastError);
+        lastError = e;
+        Diag.log(TAG, e);
+        if (changed) emit("bridge.a2dp.error", "warn", "error", e);
+    }
 
     private static String norm(String mac) { return mac == null ? "" : mac.trim().toUpperCase(Locale.US); }
 }

@@ -77,4 +77,32 @@ public class AudioRouteGuardTest {
         assertEquals("override", g.reason());
         assertEquals(1, ops.clampCalls); // volume floor still enforced
     }
+
+    /** FKB re-raises the index after every clamp — the 2026-10-23 storm. */
+    static class FightingOps extends FakeOps {
+        @Override public void clampSpeakerMusicVolume() { clampCalls++; /* FKB puts it right back */ }
+    }
+
+    @Test public void storm_everyClampStillHappens_butLogsOncePerMinute() {
+        FightingOps ops = new FightingOps();
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        for (int i = 0; i < 100; i++) { g.reconcile(); now[0] += 40; } // 4 s of storm
+        assertEquals("fail-closed: never skip a clamp", 100, ops.clampCalls);
+        assertEquals(1, g.clampLogs());
+        now[0] += 60_000;
+        g.reconcile();
+        assertEquals(2, g.clampLogs());
+    }
+
+    @Test public void status_reportsClampsInTheLastMinute() throws Exception {
+        FightingOps ops = new FightingOps();
+        long[] now = { 1_000_000L };
+        AudioRouteGuard g = new AudioRouteGuard(ops, () -> now[0]);
+        for (int i = 0; i < 30; i++) { g.reconcile(); now[0] += 100; }
+        assertEquals(30, g.status().getInt("clampsPerMin"));
+        now[0] += 61_000;
+        g.reconcile();
+        assertEquals(1, g.status().getInt("clampsPerMin"));
+    }
 }

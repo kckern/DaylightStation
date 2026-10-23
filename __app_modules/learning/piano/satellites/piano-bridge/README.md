@@ -201,6 +201,19 @@ across reboots *and* across same-signature self-updates (lost only on a full
 uninstall). Currently granted on the device: `WRITE_SECURE_SETTINGS`, `READ_LOGS`,
 `DUMP`, `ACCESS_FINE_LOCATION`, and the `REQUEST_INSTALL_PACKAGES` appop.
 
+### Speaker repair endpoints (payload p32, 2026-10-23)
+
+The DS backend's speaker ladder (`__docs/runbooks/piano-kiosk-midi.md` §7b) drives two
+endpoints. Both answer at once and are safe to call by hand:
+
+| Endpoint | Does |
+|---|---|
+| `POST /speaker/reconnect` | A2DP disconnect, then connect after 2 s (clears a half-open link) |
+| `POST /speaker/bt-cycle?settleMs=5000` | tablet Bluetooth off → `settleMs` (0–30000) → on, on its own thread; keeps asking for `enable()` for 30 s so a dropped HTTP client can't strand Bluetooth off. `{"ok":false,"error":"busy"}` while one runs. BLE-MIDI drops for the duration and reconnects on its own. |
+
+Both log to the log store: `bridge.a2dp.{disconnected,connected,reconnect-requested,error}`
+and `bridge.bt-cycle.{start,done}` (`context.app:piano-bridge`).
+
 ### Screen-wake on a played note (`ScreenWaker`)
 
 A BLE-MIDI note-on pokes Fully Kiosk's `screenOn` REST endpoint on `127.0.0.1:2323`,
