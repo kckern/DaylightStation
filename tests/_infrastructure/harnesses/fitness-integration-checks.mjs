@@ -3,6 +3,32 @@ import assert from 'node:assert/strict';
 export async function verifyIntegration(page,evidence,engine) {
   const render=options=>page.evaluate(options=>window.renderIntegration(options),options);
   const settle=()=>page.waitForTimeout(650);
+  const settledProgress=async()=>{
+    const handle=await page.waitForFunction(()=>{
+      const bars=[...document.querySelectorAll('.governance-lock__progress-track')].map(track=>{
+        const fill=track.querySelector('.governance-lock__progress-fill');
+        const label=track.querySelector('.governance-lock__progress-indicator').textContent;
+        const trackRect=track.getBoundingClientRect();const fillRect=fill.getBoundingClientRect();
+        const transform=getComputedStyle(fill).transform;
+        return {label,percent:Number(label.replace('%','')),track:trackRect.toJSON(),fill:fillRect.toJSON(),
+          fraction:fillRect.width/trackRect.width,scale:new DOMMatrixReadOnly(transform).a,transform,
+          animating:fill.getAnimations().some(animation=>animation.playState==='running'||animation.pending)};
+      });
+      return bars.length>0&&bars.every(bar=>Number.isFinite(bar.percent)&&bar.track.width>0&&!bar.animating
+        &&Math.abs(bar.fraction-bar.percent/100)<0.001&&Math.abs(bar.scale-bar.percent/100)<0.001
+        &&Math.abs(bar.fill.right-(bar.track.left+bar.track.width*bar.percent/100))<0.75)?bars:false;
+    },undefined,{timeout:3000,polling:'raf'});
+    const bars=await handle.jsonValue();await handle.dispose();return bars;
+  };
+  const assertPaintedProgress=(bars,expected)=>{
+    assert.deepEqual(bars.map(bar=>bar.percent),expected,'painted progress labels');
+    bars.forEach((bar,index)=>{
+      assert.ok(Math.abs(bar.fraction-expected[index]/100)<0.001,'painted fill fraction '+JSON.stringify(bar));
+      assert.ok(Math.abs(bar.scale-expected[index]/100)<0.001,'computed fill scale '+JSON.stringify(bar));
+      assert.ok(Math.abs(bar.fill.left-bar.track.left)<0.75,'fill anchored at track start '+JSON.stringify(bar));
+      assert.ok(Math.abs(bar.fill.right-(bar.track.left+bar.track.width*expected[index]/100))<0.75,'painted fill endpoint '+JSON.stringify(bar));
+    });
+  };
   const screenshot=label=>page.screenshot({path:`/tmp/task4-${engine}-${label}.png`});
   const allActive=count=>Object.fromEntries(Array.from({length:count},(_,i)=>['rider-'+i,'active']));
   for(const viewport of [{width:1920,height:1080},{width:1381,height:777},{width:1024,height:640}]) {
@@ -67,14 +93,33 @@ export async function verifyIntegration(page,evidence,engine) {
       const close=document.querySelector('.close-btn').getBoundingClientRect();return {last:last.toJSON(),body:body.toJSON(),close:close.toJSON()};
     });
     let positions=await reach();assert.ok(positions.last.bottom<=positions.body.bottom+1,'wheel reaches final action');
+    const wheelPositions=positions;
     await page.getByRole('button',{name:'Close settings',exact:true}).focus();
-    for(let i=0;i<labels.length+5;i++) await page.keyboard.press('Tab');
-    await page.getByRole('button',{name:'Send feedback',exact:true}).focus();
-    positions=await reach();assert.ok(positions.last.bottom<=positions.body.bottom+1,'keyboard focus reaches final action');
+    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close settings');
+    await body.evaluate(element=>{element.scrollTop=0;});
+    assert.equal(await body.evaluate(element=>element.scrollTop),0,'keyboard case starts independently at top');
+    const maxTabs=await page.locator('.fitness-sidebar-menu button,.fitness-sidebar-menu input,.fitness-sidebar-menu summary').count()+2;
+    const keyboardPath=[];
+    let keyboardReached=false;
+    for(let i=0;i<maxTabs;i++) {
+      await page.keyboard.press('Tab');
+      const focused=await page.evaluate(()=>({
+        label:document.activeElement?.getAttribute('aria-label')||document.activeElement?.textContent?.trim(),
+        final:document.activeElement===document.querySelector('[aria-label="Send feedback"]'),
+      }));
+      keyboardPath.push(focused.label);
+      if(focused.final) {keyboardReached=true;break;}
+    }
+    assert.ok(keyboardReached,'actual Tab traversal reaches Send feedback: '+JSON.stringify(keyboardPath));
+    assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('[aria-label="Send feedback"]')),true);
+    positions=await reach();
+    const keyboardPositions=positions;
+    assert.ok(positions.last.top>=positions.body.top-1&&positions.last.bottom<=positions.body.bottom+1,'Tab traversal scrolls final action into content bounds');
     assert.ok(positions.close.top>=0 && positions.close.width>=40 && positions.close.height>=40,'reachable close');
     // Native touch scroll is Chromium evidence; desktop Firefox supplies
     // wheel and keyboard evidence (it does not expose TouchEvent).
     if(engine==='chromium') {
+      await page.getByRole('button',{name:'Close settings',exact:true}).focus();
       await body.evaluate(e=>{e.scrollTop=0;});
       const box=await body.boundingBox();
       const cdp=await page.context().newCDPSession(page);
@@ -113,7 +158,7 @@ export async function verifyIntegration(page,evidence,engine) {
     await page.locator('.sidebar-menu-overlay').click({position:{x:30,y:30}});
     assert.equal(await page.locator('.fitness-sidebar-menu').count(),0);
     assert.equal(await page.evaluate(()=>window.fullscreenCount||0),0,'scrim does not trigger fullscreen');
-    evidence.push({acceptance:'settings',viewport,nativeTouch:engine==='chromium',positions,feedbackSurvivedMs:5300,endCount:await page.evaluate(()=>window.endCount)});
+    evidence.push({acceptance:'settings',viewport,nativeTouch:engine==='chromium',keyboardPath,wheelPositions,keyboardPositions,positions,feedbackSurvivedMs:5300,endCount:await page.evaluate(()=>window.endCount)});
   }
 
   await page.getByRole('button',{name:'Open settings',exact:true}).click();
@@ -136,7 +181,8 @@ export async function verifyIntegration(page,evidence,engine) {
   // display calculation, independent of the canonical-zone sensor pipeline.
   for(const [hr,percent] of [[70,0],[135,50],[200,100]]) {
     await render({reset:true,count:1,challenge:false,target:'fire',showOverlay:true,zones:{'rider-0':'cool'},heartRates:{'rider-0':hr}});
-    await settle();
+    const painted=await settledProgress();
+    assertPaintedProgress(painted,[percent]);
     const notch=await page.evaluate(()=>{
       const n=document.querySelector('.governance-lock__progress-indicator');const track=n.parentElement;
       return {label:n.textContent,notch:n.getBoundingClientRect().toJSON(),track:track.getBoundingClientRect().toJSON(),meta:document.querySelector('.governance-lock__chip-meta').textContent};
@@ -145,7 +191,7 @@ export async function verifyIntegration(page,evidence,engine) {
     const expectedLeft=notch.track.left+(notch.track.width-notch.notch.width)*percent/100;
     assert.ok(Math.abs(notch.notch.left-expectedLeft)<1,'notch follows actual percentage '+JSON.stringify(notch));
     assert.ok(notch.notch.left>=notch.track.left-1 && notch.notch.right<=notch.track.right+1,JSON.stringify(notch));
-    evidence.push({acceptance:'percentage',percent,...notch});
+    evidence.push({acceptance:'percentage',percent,painted,...notch});
   }
   await render({reset:true,count:3,challenge:false,target:'fire',showOverlay:true,zones:{'rider-0':'cool','rider-1':'cool','rider-2':'cool'}});
   const palette=await page.evaluate(()=>window.integrationPalette);
@@ -171,11 +217,13 @@ export async function verifyIntegration(page,evidence,engine) {
     result=await render({zones:{'rider-0':'warm','rider-1':'active','rider-2':'active'},showOverlay:true});
     if(hold>0) {
       result=await render({advance:hold*500,zones:{'rider-0':'warm','rider-1':'warm','rider-2':'active'},showOverlay:true});
+      const painted=await settledProgress();
+      assertPaintedProgress(painted,[100,100,0]);
       const bars=await page.locator('.governance-hold-progress').evaluateAll(nodes=>nodes.map(e=>({max:e.getAttribute('aria-valuemax'),now:e.getAttribute('aria-valuenow'),text:e.getAttribute('aria-valuetext'),height:e.getBoundingClientRect().height})));
       assert.equal(bars.length,2);assert.equal(Number(bars[0].max),hold*1000);assert.ok(bars.every(b=>b.height<=4));
       assert.deepEqual(bars.map(b=>Number(b.now)).sort((a,b)=>a-b),[0,hold*500]);
       assert.ok(!/\bHolding\b/.test(await page.locator('.governance-lock').innerText()));
-      evidence.push({acceptance:'hold',hold,bars});await screenshot('hold-'+hold);
+      evidence.push({acceptance:'hold',hold,bars,painted});await screenshot('hold-'+hold);
       result=await render({advance:hold*500,showOverlay:true});
     } else assert.equal(await page.locator('.governance-hold-progress').count(),0,'zero hold has no indicator');
     assert.ok(result.state.challenge.metUsers.includes('rider-0'),JSON.stringify({hold,state:result.state.challenge,diagnostics:await page.evaluate(()=>window.integrationDiagnostics)}));
