@@ -165,8 +165,13 @@ try {
         assert.ok(geometry.grouping.every(Boolean),'coherent zone headings: '+JSON.stringify(geometry));
         assert.ok(!geometry.clipped, JSON.stringify({options,geometry}));
         assert.ok(geometry.units.every(size=>size>=14), '14px floor');
-        assert.ok(geometry.cardHeights.every(h=>h>=63.5 && h<=132.5), JSON.stringify({options,geometry}));
-        if (count>1 && geometry.height>64 && geometry.height<132) assert.ok(geometry.room-geometry.bottom <= count+2, JSON.stringify({options,geometry}));
+        assert.ok(geometry.cardHeights.every(h=>h>=63.5 && Math.abs(h-geometry.height)<0.5), JSON.stringify({options,geometry}));
+        if(count===1) assert.ok(geometry.height<=132,'single rider height cap');
+        const overhead=geometry.bottom-geometry.cardHeights.reduce((sum,height)=>sum+height,0);
+        if(count>1 && count*64+overhead<=geometry.room+1) {
+          assert.ok(geometry.bottom<=geometry.room+1,'no needless overflow: '+JSON.stringify({options,geometry}));
+          assert.ok(geometry.room-geometry.bottom<=count+2,'fill fitting multi-rider room: '+JSON.stringify({options,geometry}));
+        }
         for (const row of geometry.rpmRows) {
           assert.ok(Math.abs(row.center-row.expected)<1, JSON.stringify({options,row}));
           assert.ok(Math.abs(row.width-46)<1, 'RPM diameter');

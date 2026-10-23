@@ -1,7 +1,8 @@
 // Continuous card sizing, bounded for readable text and a quiet single rider.
 export function allocateRiderHeight({ room, overhead, count }) {
   if (!count) return 64;
-  return Math.max(64, Math.min(132, Math.floor((room - overhead) / count)));
+  const height = Math.floor((room - overhead) / count);
+  return Math.max(64, count === 1 ? Math.min(132, height) : height);
 }
 
 export function measureRiderHeight(container, content) {

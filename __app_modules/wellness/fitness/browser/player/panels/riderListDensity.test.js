@@ -6,6 +6,9 @@ describe('continuous roster allocation', () => {
     expect(allocateRiderHeight({ room: 600, overhead: 100, count: 5 })).toBe(100);
     expect(allocateRiderHeight({ room: 625, overhead: 100, count: 5 })).toBe(105);
   });
+  it.each([[5, 160], [3, 266]])('fills tall available room for %i riders without a single-card cap', (count, height) => {
+    expect(allocateRiderHeight({ room: 900, overhead: 100, count })).toBe(height);
+  });
   it('caps a single card and scrolls at readable minimum', () => {
     expect(allocateRiderHeight({ room: 700, overhead: 30, count: 1 })).toBe(132);
     expect(allocateRiderHeight({ room: 400, overhead: 100, count: 8 })).toBe(64);
