@@ -33,6 +33,10 @@ export function createCheckpointedLocalAuthority({ ruleset, definition, namespac
   // player their board: the quota path in the ports is the second chance.
   const onReclaim = (result, cause) => {
     if (result.removed.length) logger().info('gaming.checkpoints.reclaimed', { namespace, cause, removed: result.removed.length, kept: result.kept.length });
+    // Full, and none of it ours to free: the space belongs to live games or to
+    // other apps on this origin. Without this line the only trace is the
+    // failed move that follows.
+    else if (cause === 'quota') logger().warn('gaming.checkpoints.full-nothing-reclaimable', { namespace, kept: result.kept.length });
   };
   try { onReclaim(reclaimCheckpoints({ storage, namespace }), 'startup'); }
   catch (error) { logger().warn('gaming.checkpoints.reclaim-failed', { namespace, error: error.message }); }

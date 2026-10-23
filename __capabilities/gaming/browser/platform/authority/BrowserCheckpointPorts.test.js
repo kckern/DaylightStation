@@ -64,11 +64,42 @@ describe('reclaimCheckpoints', () => {
   });
 });
 
+describe('reclaimCheckpoints namespace boundary', () => {
+  it('never touches a namespace that merely starts with the same letters', () => {
+    const local = storage();
+    for (const key of ['ns:snapshot:a', 'ns-x:snapshot:a', 'nsx:journal:a']) local.setItem(key, '{}');
+    reclaimCheckpoints({ storage: local, namespace: 'ns' });
+    expect(local.getItem('ns:snapshot:a')).toBe(null);
+    expect(local.getItem('ns-x:snapshot:a')).toBe('{}');
+    expect(local.getItem('nsx:journal:a')).toBe('{}');
+  });
+});
+
+describe('writing when the sweep itself fails', () => {
+  it('rethrows the original quota error, not the sweep\'s', async () => {
+    const local = storage({ quotaBytes: 10 });
+    local.key = () => { throw new Error('key() broke'); };
+    const snapshots = new BrowserSnapshotRepository({ storage: local, namespace: 'ns' });
+    await expect(snapshots.put({ header: { session_id: 's1', revision: 0 }, state: {} }, { expectedRevision: null }))
+      .rejects.toMatchObject({ name: 'QuotaExceededError' });
+  });
+
+  it('a throwing onReclaim does not cost the retried write', async () => {
+    const local = storage({ quotaBytes: 200 });
+    local.setItem('ns:snapshot:dead', 'x'.repeat(150));
+    const snapshots = new BrowserSnapshotRepository({ storage: local, namespace: 'ns', onReclaim: () => { throw new Error('logger broke'); } });
+    await snapshots.put({ header: { session_id: 's1', revision: 0 }, state: {} }, { expectedRevision: null });
+    expect(local.getItem('ns:snapshot:s1')).not.toBe(null);
+    expect(local.getItem('ns:snapshot:dead')).toBe(null);
+  });
+});
+
 describe('isQuotaError', () => {
   it('recognises the quota errors browsers throw and nothing else', () => {
     expect(isQuotaError({ name: 'QuotaExceededError' })).toBe(true);
     expect(isQuotaError({ name: 'NS_ERROR_DOM_QUOTA_REACHED' })).toBe(true);
     expect(isQuotaError({ code: 22 })).toBe(true);
+    expect(isQuotaError({ code: 1014 })).toBe(true);
     expect(isQuotaError(new Error('boom'))).toBe(false);
     expect(isQuotaError(undefined)).toBe(false);
   });

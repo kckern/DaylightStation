@@ -28,4 +28,17 @@ describe('createCheckpointedLocalAuthority reclaim', () => {
     await expect(authority.resume(learnerB.header.session_id, { participant_id: 'p' })).resolves.toBeTruthy();
     expect(localStorage.getItem('unrelated')).toBe('x');
   });
+
+  it('a sweep that throws still leaves a working authority', async () => {
+    const broken = {
+      get length() { return localStorage.length; },
+      key: () => { throw new Error('key() broke'); },
+      getItem: (k) => localStorage.getItem(k),
+      setItem: (k, v) => localStorage.setItem(k, v),
+      removeItem: (k) => localStorage.removeItem(k),
+    };
+    const authority = createCheckpointedLocalAuthority({ ruleset: connectFourRuleModule, definition: connectFourDefinition, namespace: NS, storage: broken });
+    const session = await create(authority);
+    expect(session.header.session_id).toBeTruthy();
+  });
 });

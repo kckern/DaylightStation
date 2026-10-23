@@ -58,9 +58,13 @@ function writeReclaiming({ storage, namespace, onReclaim }, key, value, sessionI
     storage.setItem(key, value);
   } catch (error) {
     if (!isQuotaError(error)) throw error;
-    const result = reclaimCheckpoints({ storage, namespace, keep: [sessionId] });
-    onReclaim?.(result, 'quota');
-    storage.setItem(key, value);
+    // A sweep that cannot run must not hide why the write failed: the caller
+    // still gets the quota error, not whatever the sweep tripped on.
+    let result;
+    try { result = reclaimCheckpoints({ storage, namespace, keep: [sessionId] }); }
+    catch { throw error; }
+    try { storage.setItem(key, value); }
+    finally { try { onReclaim?.(result, 'quota'); } catch { /* reporting never costs the write */ } }
   }
 }
 
