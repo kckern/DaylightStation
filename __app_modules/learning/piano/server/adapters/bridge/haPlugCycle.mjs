@@ -3,7 +3,7 @@
  *
  * The piano powers itself back on when plug power returns (verified 2026-08-25:
  * 14.9 W three seconds after turn_on), so this is a full unattended reboot of the
- * piano and its USB Bluetooth dongle. Once turn_off has landed, turn_on is ALWAYS
+ * piano and its built-in Bluetooth speaker. Once turn_off has landed, turn_on is ALWAYS
  * attempted and retried; a failure there is reported as `unpowered` so the
  * supervisor can page someone at once instead of leaving the piano dark.
  */

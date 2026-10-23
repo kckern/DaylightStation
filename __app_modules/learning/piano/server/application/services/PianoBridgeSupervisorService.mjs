@@ -38,6 +38,12 @@ const DEFAULT_ALERT_AFTER_MS = 5 * 60_000;
 const DEFAULT_ONE_WAY_ALERT_AFTER_MS = 10 * 60_000;
 const DEFAULT_RELAUNCH_BACKOFF_MS = [60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
 const HEARTBEAT_EVERY_TICKS = 20;
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+const WEEKLY_WEEKDAY = 'Sun';
+const WEEKLY_HOUR = 18;
+const DEFAULT_LOG_MODULE = 'piano-bridge-supervisor';
+const READY_CONFIRM_MS = 10 * 60_000;
 
 export class PianoBridgeSupervisorService {
   #probe; #relaunch; #readPianoPower; #notify; #compose;
@@ -63,6 +69,15 @@ export class PianoBridgeSupervisorService {
   #speakerAlert = null;       // {kind, fields} still owed to a person
   #speakerAlertTried = false;
   #speakerTold = false;       // a push actually went out (not merely attempted)
+  // readiness: can the ladder actually work if the speaker drops?
+  #readyNextAt = 0;
+  #readyAlertedAt = null;
+  #readySuspected = false;    // one sighting is a suspicion; two in a row is a problem
+  #readyNotifyLessAt = null;  // with no push target, say so once a day
+  #logModule = DEFAULT_LOG_MODULE;
+  // weekly summary (state lives in the log store, so a deploy cannot repeat or lose it)
+  #weeklyNextAt = 0;
+  #weeklyDoneDate = null;
 
   /**
    * @param {Object} opts
@@ -86,6 +101,7 @@ export class PianoBridgeSupervisorService {
     oneWayAlertAfterMs = DEFAULT_ONE_WAY_ALERT_AFTER_MS,
     relaunchBackoffMs = DEFAULT_RELAUNCH_BACKOFF_MS,
     speaker = null,
+    logModule = DEFAULT_LOG_MODULE,
   } = {}) {
     if (typeof probe?.readHealth !== 'function') throw new Error('PianoBridgeSupervisorService requires probe');
     if (typeof relaunch !== 'function') throw new Error('PianoBridgeSupervisorService requires relaunch');
@@ -109,6 +125,7 @@ export class PianoBridgeSupervisorService {
     this.#oneWayAlertAfterMs = oneWayAlertAfterMs;
     this.#relaunchBackoffMs = relaunchBackoffMs.length ? relaunchBackoffMs : DEFAULT_RELAUNCH_BACKOFF_MS;
     this.#speaker = speaker;
+    this.#logModule = logModule;
   }
 
   start() {
@@ -142,7 +159,11 @@ export class PianoBridgeSupervisorService {
       this.#ticks += 1;
       if (health?.reachable) await this.#onReachable(health);
       else await this.#onUnreachable(health);
-      if (this.#speaker) await this.#checkSpeaker(health);
+      if (this.#speaker) {
+        await this.#checkSpeaker(health);
+        await this.#checkReadiness();
+        await this.#checkWeekly();
+      }
     } finally {
       this.#ticking = false;
     }
@@ -331,7 +352,7 @@ export class PianoBridgeSupervisorService {
       return;
     }
     if (action.type === 'recovered') {
-      this.#logger.info?.('piano.speaker.recovered', { deviceId, rung: action.rung, durationMs: action.durationMs });
+      this.#logger.info?.('piano.speaker.recovered', { deviceId, rung: action.rung, durationMs: action.durationMs, alerted: !!action.alerted });
       // A "back" card only replaces an alarm somebody actually received.
       if (this.#speakerTold) await this.#push('back', { downMs: action.durationMs }, this.#speaker.compose);
       this.#speakerAlert = null;
@@ -367,6 +388,110 @@ export class PianoBridgeSupervisorService {
     }
   }
 
+  // ── readiness ───────────────────────────────────────────────────────────
+
+  async #checkReadiness() {
+    const check = this.#speaker.checkReady;
+    const now = this.#clock.now();
+    if (typeof check !== 'function' || now < this.#readyNextAt) return;
+    const deviceId = this.#deviceId;
+    let problems;
+    try {
+      problems = [...(await check())];
+    } catch (err) {
+      this.#logger.warn?.('piano.speaker.ready-check-failed', { deviceId, error: String(err?.message ?? err) });
+      this.#readyNextAt = now + HOUR_MS;
+      return;
+    }
+
+    if (!problems.length) {
+      this.#readySuspected = false;
+      if (!this.#notify) {
+        // Nobody can be told anything; say so at warn, once a day — not an error every hour.
+        if (this.#readyNotifyLessAt === null || now - this.#readyNotifyLessAt >= DAY_MS) {
+          this.#logger.warn?.('piano.speaker.not-ready', { deviceId, problems: ['no-notify-target'] });
+          this.#readyNotifyLessAt = now;
+        }
+        this.#readyNextAt = now + DAY_MS;
+        return;
+      }
+      this.#logger.info?.('piano.speaker.ready', { deviceId });
+      if (this.#readyAlertedAt !== null) {
+        await this.#push('ready-again', {}, this.#speaker.compose);
+        this.#readyAlertedAt = null;
+      }
+      this.#readyNextAt = now + DAY_MS;
+      return;
+    }
+
+    // HA restarting reads as "plug unavailable" for a minute: re-check before alarming.
+    if (!this.#readySuspected) {
+      this.#readySuspected = true;
+      this.#logger.info?.('piano.speaker.not-ready-suspected', { deviceId, problems });
+      this.#readyNextAt = now + READY_CONFIRM_MS;
+      return;
+    }
+    if (!this.#notify) problems.push('no-notify-target');
+    this.#logger.warn?.('piano.speaker.not-ready', { deviceId, problems });
+    this.#readyNextAt = now + HOUR_MS; // a fix clears within the hour
+    if (!this.#notify) return;
+    if (this.#readyAlertedAt !== null && now - this.#readyAlertedAt < DAY_MS) return;
+    if (await this.#alertedInLast24h('not-ready')) { this.#readyAlertedAt = now; return; }
+    if (await this.#push('not-ready', { problems }, this.#speaker.compose)) this.#readyAlertedAt = now;
+  }
+
+  /** The daily budget survives restarts: ask the log store whether this alert already went out. */
+  async #alertedInLast24h(kind) {
+    const query = this.#speaker.queryLogs;
+    if (typeof query !== 'function') return false;
+    try {
+      const rows = await query(`"piano-bridge.supervisor.alert-sent" AND data.kind:"${kind}" AND _time:24h AND ${this.#logScope()}`);
+      return rows.length > 0;
+    } catch {
+      return false; // can't tell: one extra push beats a silent broken ladder
+    }
+  }
+
+  #logScope() {
+    return `context.module:"${this.#logModule}" AND data.deviceId:"${this.#deviceId}"`;
+  }
+
+  // ── weekly summary ──────────────────────────────────────────────────────
+
+  async #checkWeekly() {
+    const query = this.#speaker.queryLogs;
+    const now = this.#clock.now();
+    if (typeof query !== 'function' || now < this.#weeklyNextAt) return;
+    const local = localParts(now, this.#timezone);
+    if (local.weekday !== WEEKLY_WEEKDAY || local.hour < WEEKLY_HOUR || this.#weeklyDoneDate === local.date) return;
+    const deviceId = this.#deviceId;
+    const scope = this.#logScope();
+    try {
+      // The marker is visible only after the sink's ~5 s flush; a restart inside that
+      // window can repeat the summary. Narrow enough to accept.
+      const prior = await query(`"piano.speaker.weekly-summary" AND _time:6d AND ${scope}`);
+      if (prior.length) { this.#weeklyDoneDate = local.date; return; }
+      const rows = await query(`("piano.speaker.dropped" OR "piano.speaker.recovered" OR "piano.speaker.gave-up") AND _time:7d AND ${scope}`);
+      let drops = 0; let gaveUp = 0; const byRung = {};
+      for (const r of rows) {
+        if (r._msg === 'piano.speaker.dropped') drops += 1;
+        else if (r._msg === 'piano.speaker.gave-up') gaveUp += 1;
+        else if (r._msg === 'piano.speaker.recovered') {
+          // A recovery after a give-up was a person's doing, already counted as gave-up.
+          if (r['data.alerted'] === 'true' || r['data.alerted'] === true) continue;
+          const rung = Number(r['data.rung']);
+          if (Number.isInteger(rung) && rung > 0) byRung[rung] = (byRung[rung] ?? 0) + 1;
+        }
+      }
+      this.#logger.info?.('piano.speaker.weekly-summary', { deviceId, drops, byRung, gaveUp });
+      if (drops > 0 || gaveUp > 0) await this.#push('weekly', { drops, byRung, gaveUp }, this.#speaker.compose);
+      this.#weeklyDoneDate = local.date;
+    } catch (err) {
+      this.#logger.warn?.('piano.speaker.weekly-failed', { deviceId, error: String(err?.message ?? err) });
+      this.#weeklyNextAt = now + HOUR_MS;
+    }
+  }
+
   // ── push ────────────────────────────────────────────────────────────────
 
   /** @returns {Promise<boolean>} whether a person was told */
@@ -399,6 +524,15 @@ export class PianoBridgeSupervisorService {
       return false;
     }
   }
+}
+
+/** Weekday / hour / date in the household zone (the tablet's clock is not the house's). */
+function localParts(ms, timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || undefined, weekday: 'short', hour: 'numeric', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+  return { weekday: parts.weekday, hour: Number(parts.hour), date: `${parts.year}-${parts.month}-${parts.day}` };
 }
 
 export default PianoBridgeSupervisorService;

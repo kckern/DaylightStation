@@ -359,13 +359,14 @@ gap in `healthy` means the supervisor itself is not running.
 
 **Symptom:** the piano plays, the screen works, but videos, karaoke and the synth are
 silent. The kiosk's audio goes out the piano's Bluetooth A2DP sink ("J2-USB
-Bluetooth", a USB dongle in the piano), and the audio guard mutes the tablet's own
+Bluetooth" is the name the piano's **built-in** Bluetooth speaker module advertises;
+there is no separate dongle), and the audio guard mutes the tablet's own
 speaker by design. A dropped sink means silence. `bridge.heartbeat data.speaker:false`
 while `data.linkVerdict:VERIFIED` is the signature.
 
-**Why the bridge's own retry can't fix it.** In logcat the stack pages the dongle, then
+**Why the bridge's own retry can't fix it.** In logcat the stack pages the piano's module, then
 `bt_sdp: SDP - Rcvd conn cnf with error: 0x4` → `A2DP service discovery failed`: the
-dongle refuses the L2CAP channel. `A2dpConnector`'s 20 s `connect()` returns `true` every
+module refuses the L2CAP channel. `A2dpConnector`'s 20 s `connect()` returns `true` every
 time and never lands (29 attempts on 2026-10-23). A tablet Bluetooth off/on revived it
 once; a piano power-on always does.
 
@@ -382,7 +383,7 @@ silently whether or not anyone is at the piano:
 | 5 | piano plug off 30 s → on | 90 s |
 
 The piano powers itself on when its plug comes back (14.9 W three seconds after
-`turn_on`), so a plug cycle is a full unattended reboot of piano and dongle. The BT
+`turn_on`), so a plug cycle is a full unattended reboot of the piano and its Bluetooth module — the only way to reset it. The BT
 windows are long because the one BT-cycle recovery on record took 55 s from Bluetooth-on
 to A2DP up; a shorter window judges a working cycle failed and the next rung tears it
 down. Before each plug rung the supervisor pins the tablet screen to its current state
@@ -392,8 +393,8 @@ edge. A person's own screen override is never replaced. Limits:
 
 - At most 2 plug cycles per rolling hour.
 - No plug cycle while piano power reads `unknown`.
-- The counter only resets after 10 healthy minutes, so a flapping dongle keeps climbing.
-  Switching the piano off resets it too, since that reboots the dongle: the next power-on
+- The counter only resets after 10 healthy minutes, so a flapping speaker keeps climbing.
+  Switching the piano off resets it too, since that reboots the module: the next power-on
   starts at rung 1, never at a plug cycle.
 - If all five fail: one push ("Piano speaker won't reconnect"; the text says so when the
   plug rungs were skipped, and why). The kiosk banner reads "Speaker needs help — a
@@ -423,11 +424,42 @@ curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects
 
 `piano.speaker.recovered {rung}` says which rung worked.
 
+**Prevention (payload p33):**
+- **A2DP only.** The module also offers the Headset (HFP) profile and Android connected it.
+  A microphone open (voice feedback) reshuffles call audio onto an HFP link, and the
+  speaker dropped seconds after three recordings on 2026-10-23. `HeadsetGuard` turns the
+  speaker's HFP priority off and drops any HFP link. If Android refuses the priority write
+  three times, it falls back to dropping HFP whenever it reappears, at most 10 times an hour
+  (`bridge.a2dp.hfp-capped` when the cap is hit). The headset handle is re-requested every
+  sweep, because the ladder's own Bluetooth cycle kills it. `GET :8770/speaker` shows the
+  last observation: `hfpConnected` (want `false`), `hfpPriorityOff` (`null` = unreadable),
+  `hfpPriorityRefused`, `hfpDisconnects`, `hfpCapped`, `hfpProxyReady`. The log store gets
+  `bridge.a2dp.hfp-disabled` only when something actually changed.
+- **The Bluetooth panel's Connect leaves a working link alone.** It used to rebuild every
+  connector, A2DP and BLE-MIDI both, even for the device already connected (the 18:04
+  drop). `ConnectPlan` now makes the same device a no-op, or a nudge if it is down. Only a
+  different device reloads.
+
+**Readiness and the weekly summary (backend):**
+- Every 24 h, and hourly while anything is broken, the supervisor checks that the bridge
+  has the repair endpoints, that the HA plug is answering, and that a push target exists.
+  One sighting is only `not-ready-suspected`, because HA restarting reads as an unavailable
+  plug. A second sighting 10 minutes later is `piano.speaker.not-ready` (warn) and a push
+  ("self-repair is broken: …"). The once-a-day budget is checked against `alert-sent` in the
+  log store, so a redeploy does not re-alert. A quiet "working again" card follows the fix.
+  With no push target configured, the problem is logged once a day at warn instead.
+- Sunday from 18:00 household time, it reads the week back from the log store
+  (`context.module:piano-bridge-supervisor`) and pushes drops and what fixed them, only if
+  there were any. `piano.speaker.weekly-summary` is logged either way; finding it in the
+  store is also what stops a Sunday redeploy from sending it twice.
+- Re-pairing by hand: the module is discoverable only for a few seconds after the piano
+  boots. Switch the piano on, then pair from the kiosk's Bluetooth panel straight away.
+
 **Measured on a live wedge (2026-10-23, piano idle, 484 failed reconnects):**
 - An A2DP disconnect→connect (rung 1's action) changed nothing in 30 s.
 - A tablet Bluetooth off/on (rung 2's action) changed nothing in 45 s. The Bluetooth
   process restarted (new PID) and the fresh stack still got `SDP conn cnf error 0x4`, so
-  the wedge lives in the dongle.
+  the wedge lives in the piano's module.
 - A plug cycle (10 s off) brought the piano back to 17 W at +5 s and the speaker connected
   at +10 s. BLE-MIDI never dropped, because the JamCorder has its own power.
 

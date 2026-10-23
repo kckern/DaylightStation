@@ -3,6 +3,7 @@ package net.kckern.pianobridge;
 import android.bluetooth.BluetoothA2dp;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -46,6 +47,8 @@ public class A2dpConnector {
 
     private BluetoothAdapter adapter;
     private volatile BluetoothA2dp proxy;
+    private volatile BluetoothHeadset headset;
+    private final HeadsetGuard headsetGuard = new HeadsetGuard(new HeadsetOps());
     private volatile boolean running = false;
     private volatile boolean stopped = false;
     private volatile String lastError = null;
@@ -53,7 +56,7 @@ public class A2dpConnector {
     private volatile long lastConnectAttempt = 0L;
     private volatile Runnable onStateChanged;
     // Every failed connect() also broadcasts DISCONNECTED; only a real drop of a working
-    // link is an event (a wedged dongle would otherwise log one every 20 s, all night).
+    // link is an event (a wedged speaker would otherwise log one every 20 s, all night).
     private volatile boolean wasConnected = false;
 
     public A2dpConnector(Context ctx, DeviceConfig cfg) {
@@ -71,8 +74,11 @@ public class A2dpConnector {
             adapter = BluetoothAdapter.getDefaultAdapter();
             ctx.registerReceiver(stateReceiver,
                     new IntentFilter(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED), null, handler);
+            ctx.registerReceiver(headsetReceiver,
+                    new IntentFilter(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED), null, handler);
             if (adapter != null && adapter.isEnabled())
                 adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP);
+            requestHeadsetProxy();
             scheduleSweep();
         });
     }
@@ -83,10 +89,15 @@ public class A2dpConnector {
         handler.post(() -> {
             handler.removeCallbacksAndMessages(null);
             try { ctx.unregisterReceiver(stateReceiver); } catch (Exception ignored) { }
+            try { ctx.unregisterReceiver(headsetReceiver); } catch (Exception ignored) { }
             if (proxy != null && adapter != null) {
                 try { adapter.closeProfileProxy(BluetoothProfile.A2DP, proxy); } catch (Exception ignored) { }
             }
+            if (headset != null && adapter != null) {
+                try { adapter.closeProfileProxy(BluetoothProfile.HEADSET, headset); } catch (Exception ignored) { }
+            }
             proxy = null;
+            headset = null;
             onStateChanged = null; // drop the (now stale) guard reference
         });
         // Let the posted teardown run, then retire the HandlerThread so it doesn't leak
@@ -161,6 +172,12 @@ public class A2dpConnector {
 
     private final BluetoothProfile.ServiceListener profileListener = new BluetoothProfile.ServiceListener() {
         @Override public void onServiceConnected(int profile, BluetoothProfile p) {
+            if (profile == BluetoothProfile.HEADSET) {
+                if (stopped) { if (adapter != null) adapter.closeProfileProxy(profile, p); return; }
+                headset = (BluetoothHeadset) p;
+                handler.post(A2dpConnector.this::guardHeadset);
+                return;
+            }
             if (profile != BluetoothProfile.A2DP) return;
             if (stopped) {
                 if (adapter != null) adapter.closeProfileProxy(profile, p);
@@ -172,6 +189,7 @@ public class A2dpConnector {
         }
         @Override public void onServiceDisconnected(int profile) {
             if (profile == BluetoothProfile.A2DP) proxy = null;
+            if (profile == BluetoothProfile.HEADSET) headset = null;
         }
     };
 
@@ -198,11 +216,85 @@ public class A2dpConnector {
         }
     };
 
+    private final BroadcastReceiver headsetReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent intent) {
+            BluetoothDevice dev = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+            if (dev == null || !norm(dev.getAddress()).equals(cfg.speakerMac())) return;
+            if (intent.getIntExtra(BluetoothProfile.EXTRA_STATE, -1) == BluetoothProfile.STATE_CONNECTED) guardHeadset();
+        }
+    };
+
+    /**
+     * The HEADSET proxy dies with Bluetooth (the ladder's own BT cycle turns it off), and
+     * nothing else would ask for it again — so every sweep re-requests it while it is gone.
+     */
+    private void requestHeadsetProxy() {
+        if (headset == null && adapter != null && adapter.isEnabled())
+            adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.HEADSET);
+    }
+
+    /** Keep the speaker off HFP (see {@link HeadsetGuard}). Runs on the handler thread. */
+    private void guardHeadset() {
+        if (!running) return;
+        requestHeadsetProxy();
+        HeadsetGuard.Outcome o = headsetGuard.reconcile();
+        if (o.capJustHit) {
+            Diag.log(TAG, "HFP guard: disconnect cap reached; leaving HFP up for the rest of the hour");
+            LogEvents.emit(cfg, "bridge.a2dp.hfp-capped", "warn", hfpData(o));
+        }
+        // Only a real change is an event: a refused priority write retried every sweep
+        // must not become thousands of log lines a day.
+        if (!o.changed) return;
+        Diag.log(TAG, "HFP guard: priorityOff=" + o.priorityOff + " disconnected=" + o.disconnected);
+        LogEvents.emit(cfg, "bridge.a2dp.hfp-disabled", "info", hfpData(o));
+    }
+
+    private JSONObject hfpData(HeadsetGuard.Outcome o) {
+        JSONObject d = new JSONObject();
+        try { d.put("mac", cfg.speakerMac()).put("priorityOff", o.priorityOff).put("disconnected", o.disconnected); }
+        catch (JSONException ignored) { }
+        return d;
+    }
+
+    /** Reflection onto BluetoothHeadset: get/setPriority are @SystemApi, disconnect is @hide (greylisted). */
+    private final class HeadsetOps implements HeadsetGuard.Ops {
+        private BluetoothDevice target() {
+            String mac = cfg.speakerMac();
+            if (adapter == null || mac.isEmpty()) return null;
+            try { return adapter.getRemoteDevice(mac); } catch (IllegalArgumentException e) { return null; }
+        }
+        public boolean ready() { return headset != null && target() != null; }
+        public boolean headsetConnected() {
+            BluetoothHeadset h = headset; BluetoothDevice t = target();
+            if (h == null || t == null) return false;
+            try { return h.getConnectionState(t) == BluetoothProfile.STATE_CONNECTED; } catch (Exception e) { return false; }
+        }
+        public Boolean headsetPriorityOff() {
+            try {
+                Object p = BluetoothHeadset.class.getMethod("getPriority", BluetoothDevice.class).invoke(headset, target());
+                return p instanceof Integer ? (Integer) p == 0 : null; // 0 = PRIORITY_OFF
+            } catch (Throwable t) { return null; }
+        }
+        public boolean setHeadsetPriorityOff() {
+            try {
+                Object r = BluetoothHeadset.class.getMethod("setPriority", BluetoothDevice.class, int.class).invoke(headset, target(), 0);
+                return Boolean.TRUE.equals(r);
+            } catch (Throwable t) { Diag.log(TAG, "HFP setPriority refused: " + t.getClass().getSimpleName()); return false; }
+        }
+        public boolean disconnectHeadset() {
+            try {
+                Object r = BluetoothHeadset.class.getMethod("disconnect", BluetoothDevice.class).invoke(headset, target());
+                return Boolean.TRUE.equals(r);
+            } catch (Throwable t) { Diag.log(TAG, "HFP disconnect refused: " + t.getClass().getSimpleName()); return false; }
+        }
+    }
+
     private void scheduleSweep() {
         if (!running) return;
         handler.postDelayed(() -> {
             if (!running) return;
             ensureConnected();
+            guardHeadset();
             fireStateChanged(); // gives the reconciler its <=20s convergence tick
             scheduleSweep();
         }, SWEEP_MS);
@@ -267,6 +359,14 @@ public class A2dpConnector {
             o.put("proxyReady", proxy != null);
             o.put("reconnects", reconnects);
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);
+            // Last observation, not fresh binder calls: /status is polled every 30 s.
+            HeadsetGuard.Snapshot h = headsetGuard.snapshot();
+            o.put("hfpConnected", h.connected == null ? JSONObject.NULL : h.connected);
+            o.put("hfpPriorityOff", h.priorityOff == null ? JSONObject.NULL : h.priorityOff);
+            o.put("hfpDisconnects", h.disconnects);
+            o.put("hfpPriorityRefused", h.priorityGivenUp);
+            o.put("hfpCapped", h.capped);
+            o.put("hfpProxyReady", headset != null);
         } catch (JSONException ignored) { }
         return o;
     }

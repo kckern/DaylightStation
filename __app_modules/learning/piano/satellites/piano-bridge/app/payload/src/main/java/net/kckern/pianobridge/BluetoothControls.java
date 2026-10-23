@@ -281,6 +281,37 @@ public final class BluetoothControls implements BluetoothController.Port {
         BluetoothDevice device = adapter.getRemoteDevice(address);
         if ("audio".equals(profile) && device.getBondState() != BluetoothDevice.BOND_BONDED)
             return fail("Pair the audio device before connecting");
+        // Same device, same role: never rebuild the connectors (that drops a working
+        // speaker AND BLE-MIDI). See ConnectPlan.
+        DeviceConfig current = bridge.getConfig();
+        boolean audioRole = "audio".equals(profile);
+        A2dpConnector spk = bridge.getA2dpConnector();
+        BleMidiConnector ble = bridge.getBleConnector();
+        boolean connectedNow;
+        if (audioRole) connectedNow = spk != null && spk.isTargetConnected();
+        else {
+            JSONObject st = ble != null ? ble.status() : null;
+            connectedNow = st != null && "CONNECTED".equals(st.optString("state"))
+                    && address.equalsIgnoreCase(st.optString("connectedMac", ""));
+        }
+        ConnectPlan.Action plan = current == null ? ConnectPlan.Action.RELOAD : ConnectPlan.decide(profile, address,
+                audioRole ? current.speakerMac() : current.targetMac(),
+                audioRole ? current.bluetoothAudioEnabled() : current.bluetoothMidiEnabled(),
+                connectedNow, audioRole ? spk != null : ble != null);
+        if (plan != ConnectPlan.Action.RELOAD) {
+            if (plan == ConnectPlan.Action.NUDGE) {
+                if (audioRole) spk.connectNow();
+                else ble.connectNow();
+            }
+            // A renamed device is persisted, but without the teardown a reload would cost.
+            String freshName = safeConfigName(device.getName());
+            String knownName = audioRole ? current.speakerName() : current.targetName();
+            if (!freshName.isEmpty() && !freshName.equals(knownName))
+                DeviceConfig.writeOverride(ctx, (audioRole ? "speakerName: " : "targetName: ") + freshName + "\n");
+            lastError = null;
+            Diag.log("PianoBridge-Bluetooth", profile + " connect for " + address + " → " + plan + " (no teardown)");
+            return true;
+        }
         String name = safeConfigName(device.getName());
         String update = "audio".equals(profile)
                 ? "speakerMac: " + address + "\nspeakerName: " + name + "\nbluetoothAudioEnabled: true\n"
