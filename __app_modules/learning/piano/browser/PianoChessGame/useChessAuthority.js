@@ -196,8 +196,12 @@ export function useChessAuthority({
         viewer: { participant_id: ACTOR },
         seed: Number(nextSeed) >>> 0,
       });
-      localStorage.setItem(indexKey, resumed.header.session_id);
     }
+    // EVERY live session is indexed, not only a new one. A server resume rebuilds
+    // into a new local session; left unindexed it was never resumed locally, and
+    // since 2026-10-23 the checkpoint sweep would delete it out from under the
+    // board the moment any game started on the same screen.
+    localStorage.setItem(indexKey, resumed.header.session_id);
     sessionRef.current = resumed;
     setSession(resumed);
     return resumed;
