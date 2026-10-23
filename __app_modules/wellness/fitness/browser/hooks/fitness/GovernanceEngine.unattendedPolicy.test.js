@@ -302,7 +302,7 @@ describe('GovernanceEngine — per-child start gate', () => {
     expect(two.challenges[0].selections.map((s) => s.label)).toEqual(['All warm', 'All hot']);
   });
   it('a challenge completes only after the 10s hold, with a pulse due at the hold end', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 10 });
     h.evaluate({ first: 'hot', second: 'hot' });
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
@@ -352,7 +352,7 @@ describe('GovernanceEngine — start state and holds in the composed state', () 
   });
 
   it('carries riders mid-hold on the challenge snapshot', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 10 });
     h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
     h.advance(180_000);
     h.evaluate({ 'child-a': 'active', 'child-b': 'active' });

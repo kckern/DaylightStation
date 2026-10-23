@@ -7,7 +7,7 @@ import { buildZoneMetadata } from "../hooks/fitness/zoneMetadata.js";
 import { DEFAULT_ZONE_CONFIG } from "../hooks/fitness/types.js";
 
 const p = (over) => ({
-  id: 'p', name: 'p', rawZoneId: 'active', zoneProgress: 0, isActive: true, ...over,
+  id: 'p', name: 'p', zoneId: 'active', rawZoneId: 'fire', zoneProgress: 0, isActive: true, ...over,
 });
 
 describe('ZONE_RANK_MAP', () => {
@@ -31,16 +31,15 @@ describe('sortByZoneRank', () => {
   });
 
   it('ranks a hotter zone above a cooler one regardless of progress', () => {
-    const warmLow = p({ id: 'warm', rawZoneId: 'warm', zoneProgress: 0.01 });
-    const activeHigh = p({ id: 'active', rawZoneId: 'active', zoneProgress: 0.99 });
+    const warmLow = p({ id: 'warm', zoneId: 'warm', zoneProgress: 0.01 });
+    const activeHigh = p({ id: 'active', zoneId: 'active', zoneProgress: 0.99 });
     expect(sortByZoneRank([activeHigh, warmLow]).map((x) => x.id)).toEqual(['warm', 'active']);
   });
 
-  it('sorts on the RAW zone, not the hysteresis-smoothed committed zone', () => {
-    // Committed zone would order these backwards; raw must win.
+  it('groups on committed zones even when raw readings disagree', () => {
     const a = p({ id: 'a', rawZoneId: 'hot', zoneId: 'cool' });
-    const b = p({ id: 'b', rawZoneId: 'cool', zoneId: 'hot' });
-    expect(sortByZoneRank([b, a]).map((x) => x.id)).toEqual(['a', 'b']);
+    const b = p({ id: 'b', zoneId: 'cool', zoneId: 'hot' });
+    expect(sortByZoneRank([b, a]).map((x) => x.id)).toEqual(['b', 'a']);
   });
 
   it('falls back to committed zoneId when rawZoneId is absent', () => {
@@ -51,16 +50,25 @@ describe('sortByZoneRank', () => {
 
   it('sinks zoneless participants to the bottom', () => {
     const none = p({ id: 'none', rawZoneId: null, zoneId: null });
-    const cool = p({ id: 'cool', rawZoneId: 'cool' });
+    const cool = p({ id: 'cool', zoneId: 'cool' });
     expect(sortByZoneRank([none, cool]).map((x) => x.id)).toEqual(['cool', 'none']);
   });
 
   it('is case-insensitive on zone ids', () => {
-    const a = p({ id: 'a', rawZoneId: 'FIRE' });
-    const b = p({ id: 'b', rawZoneId: 'cool' });
+    const a = p({ id: 'a', zoneId: 'FIRE' });
+    const b = p({ id: 'b', zoneId: 'cool' });
     expect(sortByZoneRank([b, a]).map((x) => x.id)).toEqual(['a', 'b']);
   });
 
+  it('groups interleaved inputs and preserves within-zone progress ordering after regrouping', () => {
+    const input = [p({id:'a',zoneId:'cool',zoneProgress:.8}), p({id:'b',zoneId:'warm',zoneProgress:.1}),
+      p({id:'c',zoneId:'active'}),p({id:'d',zoneId:'cool',zoneProgress:.3}),p({id:'e',zoneId:'warm',zoneProgress:.9})];
+    expect(sortByZoneRank(input).map(p=>p.id)).toEqual(['e','b','c','a','d']);
+    expect(sortByZoneRank(input.map(p=>p.id==='a'?{...p,zoneId:'warm'}:p)).map(p=>p.id)).toEqual(['e','a','b','c','d']);
+  });
+  it('sinks explicitly null and untrusted zones despite raw high readings', () => {
+    expect(sortByZoneRank([p({id:'none',zoneId:null}),p({id:'untrusted',zoneTrusted:false,zoneId:'hot'}),p({id:'cool',zoneId:'cool'})]).map(p=>p.id)).toEqual(['cool','none','untrusted']);
+  });
   it('breaks progress ties with active before inactive', () => {
     const inactive = p({ id: 'inactive', isActive: false, zoneProgress: 0.5 });
     const active = p({ id: 'active', isActive: true, zoneProgress: 0.5 });

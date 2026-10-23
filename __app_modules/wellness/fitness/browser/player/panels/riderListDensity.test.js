@@ -1,59 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { DENSITIES, densityClassName, pickDensity } from './riderListDensity.js';
+import { allocateRiderHeight, measureRiderHeight } from './riderListDensity.js';
 
-// jsdom has no layout: content height follows the grid's card-size class.
-function list({ room, heights }) {
-  const container = document.createElement('div');
-  const content = document.createElement('div');
-  const grid = document.createElement('div');
-  grid.className = 'device-grid layout-horiz';
-  const card = document.createElement('div');
-  card.className = 'fitness-device card-horizontal';
-  grid.appendChild(card);
-  content.appendChild(grid);
-  container.appendChild(content);
-  document.body.appendChild(container); // computed style needs a connected node
-  Object.defineProperty(container, 'clientHeight', { get: () => room });
-  Object.defineProperty(content, 'scrollHeight', {
-    get: () => heights[DENSITIES.find((d) => densityClassName(d) && grid.classList.contains(densityClassName(d))) || 'regular'],
+describe('continuous roster allocation', () => {
+  it('fills available space continuously for five riders', () => {
+    expect(allocateRiderHeight({ room: 600, overhead: 100, count: 5 })).toBe(100);
+    expect(allocateRiderHeight({ room: 625, overhead: 100, count: 5 })).toBe(105);
   });
-  return { container, content, grid, card };
-}
-
-const heights = { roomy: 680, comfortable: 580, regular: 530, compact: 359 };
-
-describe('rider list density', () => {
-  it('picks the largest card size that fits the room', () => {
-    expect(pickDensity(...Object.values(list({ room: 700, heights })).slice(0, 2))).toBe('roomy');
-    expect(pickDensity(...Object.values(list({ room: 600, heights })).slice(0, 2))).toBe('comfortable');
-    expect(pickDensity(...Object.values(list({ room: 530, heights })).slice(0, 2))).toBe('regular');
-    expect(pickDensity(...Object.values(list({ room: 400, heights })).slice(0, 2))).toBe('compact');
+  it('caps a single card and scrolls at readable minimum', () => {
+    expect(allocateRiderHeight({ room: 700, overhead: 30, count: 1 })).toBe(132);
+    expect(allocateRiderHeight({ room: 400, overhead: 100, count: 8 })).toBe(64);
   });
-
-  it('falls back to compact when nothing fits; the list then scrolls', () => {
-    expect(pickDensity(...Object.values(list({ room: 200, heights })).slice(0, 2))).toBe('compact');
+  it('measures children independently of the animated grid height', () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<div class="device-grid"><div class="device-wrapper"><div class="device-zone-info"></div><div class="fitness-device card-horizontal heart-rate"></div></div><div class="rpm-group-container"></div></div>';
+    document.body.append(container);
+    Object.defineProperty(container, 'clientHeight', { value: 300 });
+    const grid = container.firstChild;
+    grid.style.gap = '10px';
+    grid.style.height = '900px'; // FlipMove's maintained height is irrelevant.
+    grid.children[0].getBoundingClientRect = () => ({ height: 90 });
+    grid.querySelector('.fitness-device').getBoundingClientRect = () => ({ height: 64 });
+    grid.children[1].getBoundingClientRect = () => ({ height: 64 });
+    expect(measureRiderHeight(container, container)).toBe(132);
+    expect(grid.style.height).toBe('900px');
   });
-
-  it('leaves the DOM as it found it', () => {
-    const l = list({ room: 400, heights });
-    l.grid.classList.add('horiz-scale-130');
-    pickDensity(l.container, l.content);
-    expect(l.grid.className).toBe('device-grid layout-horiz horiz-scale-130');
-    expect(l.card.classList.contains('card-compact')).toBe(false);
-  });
-
-  it('measures the room inside the list\'s padding', () => {
-    const l = list({ room: 535, heights });
-    l.container.style.paddingTop = '0px';
-    l.container.style.paddingBottom = '9px';
-    // 535 - 9 = 526 of room: regular (530) no longer fits, so compact.
-    expect(pickDensity(l.container, l.content)).toBe('compact');
-  });
-
-  it('maps each density to the card-size class the sidebar styles', () => {
-    expect(densityClassName('roomy')).toBe('horiz-scale-150');
-    expect(densityClassName('comfortable')).toBe('horiz-scale-130');
-    expect(densityClassName('regular')).toBe('');
-    expect(densityClassName('compact')).toBe('density-compact');
+  it('does not reserve room for a leaving absolute equipment group', () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<div class="device-grid"><div class="device-wrapper"><div class="fitness-device card-horizontal heart-rate"></div></div><div class="rpm-group-container" style="position:absolute"></div></div>';
+    document.body.append(container);
+    Object.defineProperty(container, 'clientHeight', { value: 300 });
+    container.firstChild.children[0].getBoundingClientRect = () => ({ height: 64 });
+    container.querySelector('.fitness-device').getBoundingClientRect = () => ({ height: 64 });
+    container.querySelector('.rpm-group-container').getBoundingClientRect = () => ({ height: 250 });
+    expect(measureRiderHeight(container, container)).toBe(132);
   });
 });

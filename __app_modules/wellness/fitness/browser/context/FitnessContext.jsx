@@ -1,3 +1,4 @@
+import { committedZoneId } from '../lib/committedZone.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -1885,7 +1886,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const zoneLedPayload = React.useMemo(() => {
     if (!ambientLedEnabled) return [];
     return participantRoster.map(p => ({
-      zoneId: p.rawZoneId || p.zoneId || null,
+      zoneId: committedZoneId(p),
       isActive: p.isActive !== false
     }));
   }, [participantRoster, ambientLedEnabled]);
@@ -1911,7 +1912,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // otherwise the backend computes maxZoneRank=-1 and the fan never fires.
   const fanRoster = React.useMemo(
     () => participantRoster.map(p => ({
-      zoneId: p.rawZoneId || p.zoneId || null,
+      zoneId: committedZoneId(p),
       isActive: p.isActive !== false
     })),
     [participantRoster]

@@ -46,8 +46,8 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.5);
 
   .rpm-devices {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, var(--rpm-cell));
+    display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     gap: var(--rpm-gap);
   }
@@ -58,6 +58,7 @@
     position: relative;
     width: var(--rpm-avatar-size);
     height: var(--rpm-avatar-size);
+    flex: 0 0 var(--rpm-avatar-size);
 
     .rpm-avatar-wrapper {
       position: relative;
@@ -348,6 +349,8 @@
       overflow-y: auto;
       width: 100%;
       position: relative;
+      min-height: 0;
+      container-type: inline-size;
       /* Align with treasure box horizontal margins. No bottom padding: the
          camera panel below supplies the gap, and every pixel here decides
          whether five riders get regular or compact cards. */
@@ -361,59 +364,33 @@
       width: 100%;
     }
 
-    // Densest card size: tighter spacing so a full garage (8) still fits.
-    .device-grid.density-compact {
-      gap: 4px;
-    }
-
-    /* Increase inter-card spacing slightly in vertical layout */
     .device-grid.layout-vert { gap: 14px; }
-    /* When exactly 3 HR users in horiz mode, increase vertical presence without changing width */
-    .device-grid.horiz-scale-150 { gap: 14px; }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal {
-      padding: 12px 14px;
-    }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .card-avatar {
-      width: 86px;
-      height: 86px;
-      min-width: 86px;
-      min-height: 86px;
-      flex: 0 0 86px;
-      margin-right: 14px;
-    }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-name {
-      font-size: 1.6rem;
-      line-height: 1.05;
-    }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-value {
-      font-size: 1.35rem;
-    }
-    .device-grid.horiz-scale-150 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.95rem;
-    }
 
-    /* Moderate enlargement for exactly 4 HR users (keep width constant) */
-    .device-grid.horiz-scale-130 { gap: 12px; }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal {
-      padding: 10px 12px;
-    }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .card-avatar {
-      width: 72px;
-      height: 72px;
-      min-width: 72px;
-      min-height: 72px;
-      flex: 0 0 72px;
-      margin-right: 12px;
-    }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-name {
-      font-size: 1.42rem;
-      line-height: 1.04;
-    }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-value {
-      font-size: 1.18rem;
-    }
-    .device-grid.horiz-scale-130 .fitness-device.card-horizontal .device-info .device-stats .device-unit {
-      font-size: 0.9rem;
+    // JS allocates the available roster room continuously. Width constrains
+    // the avatar so narrow sidebars retain space for names and real HR values.
+    .device-grid.layout-horiz .fitness-device.heart-rate {
+      box-sizing: border-box;
+      height: var(--rider-card-height, 64px);
+      min-height: 64px;
+      padding: 6px 8px;
+      gap: 10px;
+      .card-avatar {
+        --rider-avatar: clamp(36px, calc(var(--rider-card-height, 64px) - 20px), min(86px, 24cqw));
+        width: var(--rider-avatar);
+        height: var(--rider-avatar);
+        min-width: var(--rider-avatar);
+        flex: 0 0 var(--rider-avatar);
+      }
+      .device-info { min-width: 0; }
+      .device-info .device-name {
+        font-size: clamp(14px, calc(var(--rider-card-height, 64px) * .2), 26px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .device-info .device-stats .device-value {
+        font-size: clamp(16px, calc(var(--rider-card-height, 64px) * .2), 24px);
+      }
     }
 
     .fitness-device.card-horizontal {
@@ -661,8 +638,11 @@
     right: 0;
     width: 100%;
     max-width: 100%;
+    min-height: 0;
+    max-height: 100dvh;
     height: 100%;
     background: #1a1a1a;
+    color: #f8fafc;
     border-left: 1px solid rgba(255, 255, 255, 0.2);
     z-index: 1000;
     display: flex;
@@ -698,13 +678,17 @@
         border-radius: 4px;
         transition: background 0.2s;
         flex-shrink: 0;
+        min-width: 40px;
+        min-height: 40px;
 
       }
     }
 
     .sidebar-menu-content {
-      flex: 1;
-      padding: 1rem;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 0.75rem;
+      overscroll-behavior: contain;
       overflow-y: auto;
       overflow-x: hidden;
 
@@ -766,7 +750,7 @@
       }
 
       .menu-section {
-        margin-bottom: 1.5rem;
+        margin-bottom: 0.75rem;
 
         h4 {
           margin: 0 0 0.5rem 0;
@@ -864,7 +848,7 @@
             cursor: default;
             gap: 0.5rem;
 
-            span {
+            > span:first-child {
               flex: 1;
               min-width: 0;
               overflow: hidden;
@@ -1745,7 +1729,7 @@
   }
 
   // One palette for every zone mark on the card — tint, accent, progress,
-  // avatar ring — the same one the heart, zone badge and lock screen use.
+  // avatar ring — the same one the zone badge and lock screen use.
   // The avatar ring is set through custom properties the sidebar's
   // .card-avatar border and shadow read, so no rule has to out-rank another.
   @each $zone, $tint, $shade in (
@@ -1806,24 +1790,10 @@
   &.inactive {
     // Beats the inline opacity react-flip-move writes while a card animates.
     opacity: 0.6 !important;
-    filter: grayscale(0.6);
 
-    .device-icon {
-      filter: grayscale(0.5);
-    }
   }
 
-  // D3 per-child start badge ("Reach Hot") under the name on a roster card.
-  .device-info .device-start-badge {
-    align-self: flex-start;
-    margin-top: 2px;
-  }
-  &.card-vertical .device-info .device-start-badge {
-    align-self: center;
-  }
-
-  // Strap sticker colour, by the rider's name: identifies whose strap is whose.
-  // The ring and heart carry the zone colour (FitnessUsers.jsx heartColorIcon).
+  // Strap dot and heart identify the physical monitor.
   .device-name .strap-dot {
     display: inline-block;
     width: 0.6em;
@@ -1833,4 +1803,16 @@
     vertical-align: 0.12em;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   }
+}
+
+.fitness-sidebar-container .fitness-sidebar-menu {
+  .menu-section { margin-bottom: 0.75rem; }
+  .visibility-controls { display: grid; gap: 0.35rem; }
+  .menu-item { min-height: 40px; font-size: max(14px, 0.875rem); }
+  .touch-volume-item { padding: 0.5rem; }
+  .menu-more {
+    border-top: 1px solid rgba(255,255,255,.15);
+    summary { min-height: 40px; display: list-item; padding: 0.65rem 0.4rem; cursor: pointer; font-size: 1rem; }
+  }
+  .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid #6ab8ff; outline-offset: 3px; }
 }

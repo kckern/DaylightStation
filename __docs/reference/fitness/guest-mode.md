@@ -243,12 +243,16 @@ Before loading, generic-Guest profileIds (prefix `guest_`) are swapped to a plac
 
 ### Color
 
-The physical-sticker mapping (`device_colors.heart_rate`) surfaces in two coordinated ways, both driven by the `strapColors.js` lib (single source of truth):
+The physical-sticker mapping (`device_colors.heart_rate`) surfaces through the shared `strapColors.js` helpers:
 
-1. **Strap dot** — a small dot in the configured sticker color before the name on the card (`.device-name .strap-dot`, titled "Purple strap"). The dot follows the device, not the occupant — a guest wearing the "purple strap" keeps the purple dot whoever they are. Fully unidentified devices (no mapped user, no assignment) get a deterministic per-device **hash color** instead, so simultaneous unknown straps are visually distinct.
-2. **Color-name card label** — when nothing else resolves a name (DisplayNameResolver falls through to its device-ID fallback), a configured sticker color renders as "Purple strap" instead of `#10366`.
+1. **Heart and strap dot** — both keep the configured monitor color across every zone, before baseline trust, and during signal loss. They follow the physical strap when a guest takes it over. Fully unidentified devices (no mapped user or assignment) use the existing deterministic per-device hash color.
+2. **Color-name card label** — when name resolution falls through to its device-ID fallback, a configured sticker color renders as "Purple strap" instead of the device number.
 
-Everything else on the card is **zone-driven** (live HR → zone → zone color), identical to household users: the avatar ring, the heart icon (neutral grey before a zone), the zone tag and the progress bar. Until 2026-10-22 the heart and an inset avatar ring wore the sticker color; sticker colors share the zone hues (green, blue, yellow, red), so a yellow-strap rider read as Warm whatever their zone. The sticker color moved to the dot so the ring and heart mean one thing.
+The avatar ring, group heading, zone tag, tint and progress fill use the shared zone palette and the trusted committed zone used by governance. Raw heart rate remains visible while the zone is untrusted; a raw high reading cannot color the card, ambient lighting or zone-driven fan input as an earned high zone. Cadence-driven fan behavior remains independent.
+
+Roster cards use the room available after group headings and equipment, with bounded card sizes and scrolling when readable minimums require it. Startup and hold instructions belong to the governance surface, without an extra text row on each rider card. RPM circles retain their size and gap and center each occupied wrapped row. Challenge contributors center and wrap in both success presentations.
+
+Settings places video volume and boost first, followed by webcam/treasure visibility and End Session. The collapsed More group contains Reload App and Feedback. End Session still requires confirmation. The header stays reachable while the inner body scrolls; scrolling renews the idle timer and focus keeps the menu open until focus leaves. Guest labels and sidebar units retain a 14px minimum.
 
 ### Menu (picker) UI
 
@@ -427,7 +431,7 @@ devices:
 
 device_colors:
   heart_rate:
-    "10366": purple    # color-allocated visitor slot — heart emoji + avatar ring + "Purple strap" label, no user mapping
+    "101": purple    # color-allocated visitor slot — strap-colored heart + zone avatar ring + "Purple strap" label, no user mapping
     "11521": beige
 
 ble_users:                  # subset of user IDs reachable via BLE
@@ -453,21 +457,21 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 
 | File | Role |
 |------|------|
-| `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Builds `guestCandidates` from `family` + `friends` + displaced primaries (`allowWhileAssigned`) |
-| `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx` | Guest picker UI (W2 `guest_<deviceId>` synthesis, numbered names, kid zone metadata, hint/transfer-note copy, idle close) |
-| `frontend/src/modules/Fitness/lib/guestOptionsBuilder.js` | Pure option-list builder: exclusion sets, multi-assignable generics, `nextGenericGuestName`, kid Guest option, `zonesMapToArray` |
-| `frontend/src/modules/Fitness/lib/guestPlaceholders.js` | Placeholder avatar tiers — `guest-adult` / `guest-kid` image ids for generic-Guest profileIds |
-| `frontend/src/modules/Fitness/lib/strapColors.js` | Sticker-color SSOT: heart emoji, CSS ring color, deterministic hash color, "Purple strap" labels |
-| `frontend/src/modules/Fitness/player/FitnessUsers.jsx` | Card rendering: avatar profileId chain, strap ring + color labels, zone colors, display name lookup |
-| `frontend/src/hooks/fitness/GuestAssignmentService.js` | Validation, continuous-usage threshold logic, entity creation, event emission |
-| `frontend/src/hooks/fitness/types.js` | `normalizeZoneOverrides` accepts both map and `[{id, min}]` array shapes (kid guest zones arrive as the array) |
-| `frontend/src/hooks/fitness/DeviceAssignmentLedger.js` | `deviceId → occupant` ledger (session-scoped) |
-| `frontend/src/hooks/fitness/UserManager.js` | Resolves `deviceId → user`; synthesizes users from assignments |
-| `frontend/src/hooks/fitness/DisplayNameResolver.js` | Guest-priority display name resolution |
-| `frontend/src/hooks/fitness/ParticipantRoster.js` | Roster entries with `isGuest` flag, zone lookup by trackingId, `#<deviceId>` naming |
-| `frontend/src/hooks/fitness/PersistenceManager.js` | `is_guest`/`is_primary`/`base_user` persistence, W1.B backfill, occupant exclusion |
-| `frontend/src/hooks/fitness/sessionBackfill.js` | OI-1/OI-2/OI-3/§5 rules incl. late-tag untagged placeholder merge |
-| `frontend/src/context/FitnessContext.jsx` | Exposes `assignGuestToDevice`, `clearGuestAssignment`, `suppressDeviceUntilNextReading`, `guestCandidates` |
+| `__app_modules/wellness/fitness/browser/player/FitnessSidebar.jsx` | Builds `guestCandidates` from `family` + `friends` + displaced primaries (`allowWhileAssigned`) |
+| `__app_modules/wellness/fitness/browser/player/panels/FitnessSidebarMenu.jsx` | Guest picker UI (W2 `guest_<deviceId>` synthesis, numbered names, kid zone metadata, hint/transfer-note copy, idle close) |
+| `__app_modules/wellness/fitness/browser/lib/guestOptionsBuilder.js` | Pure option-list builder: exclusion sets, multi-assignable generics, `nextGenericGuestName`, kid Guest option, `zonesMapToArray` |
+| `__app_modules/wellness/fitness/browser/lib/guestPlaceholders.js` | Placeholder avatar tiers — `guest-adult` / `guest-kid` image ids for generic-Guest profileIds |
+| `__app_modules/wellness/fitness/browser/lib/strapColors.js` | Sticker-color SSOT: heart color, deterministic hash color, "Purple strap" labels |
+| `__app_modules/wellness/fitness/browser/player/panels/FitnessUsers.jsx` | Card rendering: avatar profileId chain, strap hearts + color labels, trusted zone rings, display name lookup |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/GuestAssignmentService.js` | Validation, continuous-usage threshold logic, entity creation, event emission |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/types.js` | `normalizeZoneOverrides` accepts both map and `[{id, min}]` array shapes (kid guest zones arrive as the array) |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DeviceAssignmentLedger.js` | `deviceId → occupant` ledger (session-scoped) |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js` | Resolves `deviceId → user`; synthesizes users from assignments |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DisplayNameResolver.js` | Guest-priority display name resolution |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/ParticipantRoster.js` | Roster entries with `isGuest` flag, zone lookup by trackingId, `#<deviceId>` naming |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/PersistenceManager.js` | `is_guest`/`is_primary`/`base_user` persistence, W1.B backfill, occupant exclusion |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/sessionBackfill.js` | OI-1/OI-2/OI-3/§5 rules incl. late-tag untagged placeholder merge |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | Exposes `assignGuestToDevice`, `clearGuestAssignment`, `suppressDeviceUntilNextReading`, `guestCandidates` |
 | `_extensions/fitness/src/ble.mjs` | BLE scan, HR Service 0x180D discovery, best-effort matching, unknown-device drop |
 | `_extensions/fitness/src/decoders/heart_rate.mjs` | GATT 0x2A37 packet parser |
 

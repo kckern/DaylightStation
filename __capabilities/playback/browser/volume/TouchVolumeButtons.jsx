@@ -57,6 +57,11 @@ export const TouchVolumeButtons = ({ controlId, currentLevel, disabled, onSelect
             disabled={disabled}
             aria-pressed={isActive}
             aria-label={level === 0 ? 'Mute / Off' : `${level}% volume`}
+            onClick={(event) => {
+              // Pointer input is handled by the continuous track above. Keyboard
+              // and assistive activation dispatch a click with zero detail.
+              if (event.detail === 0 && !disabled) onSelect(level);
+            }}
           />
         );
       })}

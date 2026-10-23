@@ -36,48 +36,41 @@ const hex = (css) => (css.startsWith('#')
   ? css.toLowerCase()
   : '#' + css.match(/\d+/g).slice(0, 3).map((n) => Number(n).toString(16).padStart(2, '0')).join(''));
 
-describe('FitnessUsers card colours: zone owns the colour, the strap gets a dot', () => {
-  it('colours the heart by the rider’s zone, not the strap', async () => {
-    testState.context = context({ name: 'Rider A', rawZoneId: 'warm', rawZoneColor: '#ffd43b' });
+describe('FitnessUsers strap identity and earned zone', () => {
+  it.each(['cool', 'active', 'warm', 'hot', 'fire', null])('keeps a purple heart through %s', async (zoneId) => {
+    testState.context = context({ name: 'Rider A', zoneId, rawZoneId: 'fire' });
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.fitness-heart-icon')).toBeTruthy());
-    expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#ffd43b');
+    expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#b07cf7');
+    expect(container.querySelector('.fitness-device').classList.contains(zoneId ? `zone-${zoneId}` : 'no-zone')).toBe(true);
   });
 
-  it('draws no strap-coloured ring on the avatar', async () => {
-    testState.context = context({ name: 'Rider A', rawZoneId: 'warm', rawZoneColor: '#ffd43b' });
+  it('uses the trusted committed profile even when raw HR has crossed another zone', async () => {
+    testState.context = { ...context({ name: 'Rider A', zoneId: 'warm', rawZoneId: 'fire' }),
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: 'active', zoneSnapshot: { currentZoneId: 'fire' } }] };
     const { container } = render(<FitnessUsersList />);
-    await waitFor(() => expect(container.querySelector('.card-avatar')).toBeTruthy());
-    expect(container.querySelector('.card-avatar').style.outline || '').toBe('');
+    await waitFor(() => expect(container.querySelector('.fitness-device.zone-active')).toBeTruthy());
+    expect(hex(container.querySelector('.zone-badge-probe').style.backgroundColor)).toBe('#51cf66');
+    expect(container.querySelector('.device-value').textContent).toBe('141');
   });
 
-  it('marks the strap with a small labelled dot by the name', async () => {
-    testState.context = context({ name: 'Rider A', rawZoneId: 'warm', rawZoneColor: '#ffd43b' });
+  it.each([false, true])('never revives an explicitly null committed profile (trust %s)', async (zoneTrusted) => {
+    testState.context = { ...context({ name: 'Rider A', zoneId: 'hot', rawZoneId: 'fire' }),
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted, currentZoneId: null }] };
     const { container } = render(<FitnessUsersList />);
-    await waitFor(() => expect(container.querySelector('.device-name')).toBeTruthy());
-    const dot = container.querySelector('.device-name .strap-dot');
-    expect(dot).toBeTruthy();
-    expect(dot.getAttribute('title')).toMatch(/purple/i);
+    await waitFor(() => expect(container.querySelector('.fitness-device.no-zone')).toBeTruthy());
+    expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#b07cf7');
+  });
+  it('uses the current guest profile before the physical strap owner profile', async () => {
+    testState.context = { ...context({ id: 'guest-a', profileId: 'guest-a', name: 'Guest A', zoneId: null, rawZoneId: 'fire' }),
+      getDisplayName: () => ({displayName: 'Guest A', source: 'assignment'}),
+      zoneProfiles: [
+        {id:'rider-a', name:'Rider A', zoneTrusted:true, currentZoneId:'hot'},
+        {id:'guest-a', name:'Guest A', zoneTrusted:false, currentZoneId:null},
+      ] };
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.fitness-device')).toBeTruthy());
+    expect(container.querySelector('.fitness-device').classList.contains('no-zone')).toBe(true);
   });
 
-  it('a rider with no zone yet gets a neutral heart', async () => {
-    testState.context = context({ name: 'Rider A' });
-    const { container } = render(<FitnessUsersList />);
-    await waitFor(() => expect(container.querySelector('.fitness-heart-icon')).toBeTruthy());
-    const color = container.querySelector('.fitness-heart-icon').style.color;
-    expect(color).toBeTruthy();
-    expect(hex(color)).not.toBe('#b07cf7'); // purple strap sticker
-  });
-
-  // Zone config names colours ('green'); the CSS keyword is #008000, not the
-  // palette green the card's progress bar and accent use.
-  it('maps a named zone colour onto the shared palette for heart and badge', async () => {
-    testState.context = context({ name: 'Rider A', rawZoneId: 'active', rawZoneColor: 'green' });
-    const { container } = render(<FitnessUsersList />);
-    await waitFor(() => expect(container.querySelector('.fitness-heart-icon')).toBeTruthy());
-    expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#51cf66');
-    const badge = container.querySelector('.zone-badge-probe');
-    expect(badge).toBeTruthy();
-    expect(hex(badge.style.backgroundColor)).toBe('#51cf66');
-  });
 });

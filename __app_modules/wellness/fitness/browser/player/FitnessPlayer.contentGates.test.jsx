@@ -301,7 +301,10 @@ describe('FitnessPlayer real-engine recovery audio', () => {
     view.rerender(playerNode());
     expect(fixture.duck).toBe(1);
     expect(view.container.querySelector('.governance-overlay')).not.toBeNull();
-    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
+    // The unmet floor owns the explanation; cadence recovery remains backgrounded.
+    expect(locked.challenge).toMatchObject({ sensorUnavailable: true, paused: true, pauseReason: 'floor_unmet' });
+    expect(screen.queryByRole('status', { name: 'Cadence sensor unavailable' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.cycle-challenge-overlay')).toBeNull();
   });
 });
 

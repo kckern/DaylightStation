@@ -231,6 +231,7 @@ export default function FitnessToast({ toast, onDone }) {
     // lead, their faces are the anchor, and the layout stacks rather than sits
     // in a row beside an icon.
     achievement && hasContributors ? 'fitness-toast--achievement' : '',
+    !achievement && hasContributors && variant === 'success' ? 'fitness-toast--challenge-success' : '',
     // Strips the card chrome entirely — see the fire toast below.
     frameless ? 'fitness-toast--frameless' : '',
     exiting ? 'fitness-toast--exiting' : 'fitness-toast--entered',
@@ -352,15 +353,15 @@ export default function FitnessToast({ toast, onDone }) {
             </span>
           ) : null}
           {subtitle ? <div className="fitness-toast__subtitle">{subtitle}</div> : null}
-          {hasContributors ? (
-            <div className="fitness-toast__contributors">
-              {contributors.map((c) => (
-                <ContributorChip key={c.id} name={c.name} avatarUrl={c.avatarUrl} />
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
+      {hasContributors ? (
+        <div className="fitness-toast__contributors">
+          {contributors.map((c) => (
+            <ContributorChip key={c.id} name={c.name} avatarUrl={c.avatarUrl} />
+          ))}
+        </div>
+      ) : null}
       <div className="fitness-toast__countdown">
         {/* key forces a DOM remount on each new toast → restarts the CSS countdown animation */}
         <div
