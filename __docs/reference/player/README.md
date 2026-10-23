@@ -44,6 +44,19 @@ machine that watches health telemetry and escalates to progressively more
 destructive recoveries. `Player.jsx` is the conductor: it holds resilience state,
 renders overlays, and decides when to remount the renderer.
 
+Controllers are registered for the active renderer lifetime and native-node
+registration epoch. `onController(controller)` may return a release function;
+`useCommonMediaController` calls it when its registration effect retires. That
+release applies only to its own registration, and retired callbacks cannot
+replace the current controller. All controller readers, including the shared
+transport adapter, validate ownership at call time rather than waiting for
+passive cleanup. Existing consumers that return nothing remain supported.
+
+Readalong renderers register native audio access without a common media
+controller. After a video-to-readalong transition, play/pause therefore uses the
+current registered audio accessor; that accessor takes precedence over a
+previously exposed native node, which may belong to the retired video.
+
 ---
 
 ## Two directories, two responsibilities

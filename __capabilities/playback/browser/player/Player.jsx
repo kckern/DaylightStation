@@ -1420,7 +1420,17 @@ const Player = forwardRef(function Player(props, ref) {
   // commands to the old element. WeakMap also lets a DASH wrapper registration
   // remain distinct from the inner <video> returned by the real accessor.
   const mediaElementContentIdsRef = useRef(new WeakMap());
-  const controllerRef = useRef(null);
+  const controllerRegistrationRef = useRef(null);
+  const controllerRegistrationTokenRef = useRef(null);
+  // Every reader (including the shared transport adapter) sees only the live
+  // renderer's controller, before passive-effect cleanup has a chance to run.
+  const getCurrentController = useCallback(() => {
+    const registration = controllerRegistrationRef.current;
+    return registration?.isCurrent() ? registration.controller : null;
+  }, []);
+  const controllerRef = useMemo(() => ({
+    get current() { return getCurrentController(); },
+  }), [getCurrentController]);
   const fallbackResilienceRef = useRef(null);
   // Mirror mediaAccess state as a ref so the imperative handle can read the
   // latest getMediaEl without needing mediaAccess in its dependency array.
@@ -2092,10 +2102,32 @@ const Player = forwardRef(function Player(props, ref) {
 
   const rendererRegistration = useMemo(() => {
     const token = { epoch: nativeRegistrationEpoch };
+    controllerRegistrationTokenRef.current = token;
     const isCurrent = () => registrationLifetime.active
       && registrationLifetimeRef.current === registrationLifetime
       && token.epoch === nativeRegistrationEpochRef.current;
     return {
+      onController: (controller) => {
+        if (!isCurrent() || controllerRegistrationTokenRef.current !== token) {
+          playbackLog('controller-registration-stale', { playerInstanceId }, { level: 'debug' });
+          return undefined;
+        }
+        const epoch = nativeRegistrationEpochRef.current;
+        const registration = {
+          controller,
+          // Refreshing callback props alone does not retire a registered
+          // controller: its renderer lifetime and admitted node epoch do.
+          isCurrent: () => isCurrent() && epoch === nativeRegistrationEpochRef.current,
+        };
+        controllerRegistrationRef.current = registration;
+        playbackLog('controller-registered', { playerInstanceId, epoch }, { level: 'debug' });
+        props.onController?.(controller);
+        return () => {
+          if (controllerRegistrationRef.current !== registration) return;
+          controllerRegistrationRef.current = null;
+          playbackLog('controller-released', { playerInstanceId, epoch }, { level: 'debug' });
+        };
+      },
       onMediaRef: (node, ownership) => {
         if (isCurrent()) handleMediaRef(node, {
           ownership,
@@ -2107,14 +2139,9 @@ const Player = forwardRef(function Player(props, ref) {
         if (isCurrent()) handleRegisterMediaAccess(access, token);
       },
     };
-  }, [registrationLifetime, nativeRegistrationEpoch, handleMediaRef, handleRegisterMediaAccess]);
-
-  const handleController = useCallback((controller) => {
-    controllerRef.current = controller;
-    if (props.onController) props.onController(controller);
-    // ESLint's own message says the fix is to destructure specific props, which this already does — do not add `props`
+    // External notifications retain their existing accepted-controller shape.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.onController]);
+  }, [registrationLifetime, nativeRegistrationEpoch, handleMediaRef, handleRegisterMediaAccess, props.onController, playerInstanceId]);
 
   const withTransport = useCallback((handler, fallback) => {
     const controller = controllerRef.current;
@@ -2138,8 +2165,10 @@ const Player = forwardRef(function Player(props, ref) {
   // Uses only refs so the imperative handle closure stays fresh without deps.
   const _getMediaElFallback = () =>
     controllerRef.current?.transport?.getMediaEl?.()
-    || exposedMediaRef.current
+    // Content renderers register an accessor without publishing onMediaRef;
+    // the exposed node can still belong to the outgoing video renderer.
     || mediaAccessRef.current?.getMediaEl?.()
+    || exposedMediaRef.current
     || null;
 
   const stopOwner = useCallback(() => {
@@ -2643,7 +2672,7 @@ const Player = forwardRef(function Player(props, ref) {
     keyboardOverrides,
     onProgress: props.onProgress,
     onMediaRef: rendererRegistration.onMediaRef,
-    onController: handleController,
+    onController: rendererRegistration.onController,
     onResolvedMeta: handleResolvedMeta,
     resolveTracks,
     onPlaybackMetrics: handlePlaybackMetrics,
