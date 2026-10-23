@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PianoBridgeSupervisorService } from "./PianoBridgeSupervisorService.mjs";
 import { composePianoBridgePush } from "../../domain/bridge/pianoBridgePush.mjs";
+import { composePianoSpeakerPush } from "../../domain/bridge/pianoSpeakerPush.mjs";
 
 const INTERVAL = 30_000;
 
@@ -153,4 +154,144 @@ test('overlapping ticks are serialized', async () => {
   assert.equal(calls, 1);
   release({ reachable: true, ble: 'CONNECTED', outVerified: true });
   await first;
+});
+
+
+function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false } = {}) {
+  let t = 1_790_000_000_000;
+  const state = { health: { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }, power };
+  const calls = [];
+  const pushes = [];
+  const published = [];
+  const logs = [];
+  const log = (level) => (event, data) => logs.push({ level, event, data });
+  const svc = new PianoBridgeSupervisorService({
+    probe: { readHealth: async () => state.health },
+    relaunch: async () => ({ ok: true }),
+    readPianoPower: async () => state.power,
+    notify: async (p) => { pushes.push(p); },
+    compose: composePianoBridgePush,
+    scheduler: { every: () => () => {} },
+    clock: { now: () => t },
+    logger: { debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') },
+    deviceId: 'yellow-room-tablet',
+    location: 'Yellow Room',
+    timezone: 'America/Los_Angeles',
+    intervalMs: 30_000,
+    speaker: {
+      actions: {
+        a2dpReconnect: async () => { calls.push('a2dpReconnect'); return failA2dp ? { ok: false, error: 'endpoint-missing' } : { ok: true, error: null }; },
+        bluetoothCycle: async (ms) => { calls.push(`btCycle:${ms}`); return { ok: true, error: null }; },
+      },
+      plugCycle: plug ? async (ms) => { calls.push(`plugCycle:${ms}`); return plugResult; } : null,
+      publish: (payload) => published.push(payload),
+      compose: composePianoSpeakerPush,
+    },
+  });
+  const step = async (n = 1) => { for (let i = 0; i < n; i++) { await svc.tick(); t += 30_000; } };
+  const events = (name) => logs.filter((l) => l.event === name);
+  const down = () => { state.health = { ...state.health, speaker: false }; };
+  const up = () => { state.health = { ...state.health, speaker: true }; };
+  return { svc, state, calls, pushes, published, step, events, down, up };
+}
+
+test('speaker: runs the five rungs in order with the spec parameters, then pushes once', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(30);
+  assert.deepEqual(r.calls, ['a2dpReconnect', 'btCycle:5000', 'btCycle:15000', 'plugCycle:10000', 'plugCycle:30000']);
+  assert.equal(r.pushes.length, 1);
+  assert.match(r.pushes[0].title, /Piano speaker won't reconnect \(Yellow Room\)/);
+  assert.equal(r.events('piano.speaker.gave-up').length, 1);
+  assert.equal(r.events('piano.speaker.gave-up')[0].level, 'error');
+  assert.equal(r.events('piano.speaker.dropped').length, 1);
+});
+
+test('speaker: silent recovery — no push, recovered logged with the rung', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(3); // rung 2 fired
+  r.up();
+  await r.step(1);
+  assert.equal(r.pushes.length, 0);
+  const rec = r.events('piano.speaker.recovered');
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].data.rung, 2);
+});
+
+test('speaker: publishes recovering then ok, never needs-help, on a silent fix', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(3);
+  r.up();
+  await r.step(1);
+  assert.deepEqual(r.published.map((p) => p.state), ['recovering', 'ok']);
+  assert.equal(r.published[0].topic, 'piano.speaker');
+  assert.equal(r.published[0].deviceId, 'yellow-room-tablet');
+});
+
+test('speaker: needs-help is re-published every tick so a reloaded kiosk catches up', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(30);
+  const n = r.published.filter((p) => p.state === 'needs-help').length;
+  await r.step(2);
+  assert.equal(r.published.filter((p) => p.state === 'needs-help').length, n + 2);
+});
+
+test('speaker: recovery after a push sends the quiet back card', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(30);
+  r.up();
+  await r.step(1);
+  assert.equal(r.pushes.length, 2);
+  assert.match(r.pushes[1].title, /Piano speaker is back/);
+  assert.equal(r.pushes[1].data.alert_once, true);
+});
+
+test('speaker: a plug cycle that cannot restore power pages at once', async () => {
+  const r = speakerRig({ plugResult: { ok: false, error: 'turn_on: HA timeout', unpowered: true } });
+  r.down();
+  await r.step(8); // reaches rung 4
+  assert.ok(r.calls.includes('plugCycle:10000'));
+  assert.equal(r.pushes.length, 1);
+  assert.match(r.pushes[0].title, /Piano is unpowered/);
+  await r.step(10);
+  assert.ok(!r.calls.includes('plugCycle:30000'), 'never cycles again once unpowered');
+});
+
+test('speaker: a failing rung is logged at warn and the ladder continues', async () => {
+  const r = speakerRig({ failA2dp: true });
+  r.down();
+  await r.step(3);
+  const failed = r.events('piano.speaker.attempt-failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].level, 'warn');
+  assert.equal(failed[0].data.error, 'endpoint-missing');
+  assert.deepEqual(r.calls, ['a2dpReconnect', 'btCycle:5000']);
+});
+
+test('speaker: piano off never opens an episode', async () => {
+  const r = speakerRig({ power: 'off' });
+  r.down();
+  await r.step(10);
+  assert.deepEqual(r.calls, []);
+  assert.deepEqual(r.published, []);
+});
+
+test('speaker: bridge unreachable pauses the ladder', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(2); // rung 1
+  r.state.health = { reachable: false, ble: null, outVerified: null, speaker: null, error: 'ECONNREFUSED' };
+  await r.step(10);
+  assert.deepEqual(r.calls, ['a2dpReconnect']);
+});
+
+test('speaker: feature off (speaker: null) changes nothing', async () => {
+  const r = rig();
+  r.state.health = { ...r.state.health, speaker: false };
+  await r.step(10);
+  assert.equal(r.events('piano.speaker.dropped').length, 0);
 });
