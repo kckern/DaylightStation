@@ -237,6 +237,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
+    if (entry?.trusted === false) return null;
     let zoneId = null;
     let color = null;
     if (entry) {
@@ -264,6 +265,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
+    if (entry?.trusted === false) return null;
     if (entry) {
       if (typeof entry === 'object' && entry.color) {
         return entry.color;

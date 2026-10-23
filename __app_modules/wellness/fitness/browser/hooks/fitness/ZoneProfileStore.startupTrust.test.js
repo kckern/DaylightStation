@@ -48,6 +48,16 @@ describe('ZoneProfileStore accepted baseline and stateful transitions', () => {
     expect(read(195)).toMatchObject({ zoneTrusted: false, currentZoneId: null });
   });
 
+  it('keeps trust and the Fire entry through a configuration rebuild', () => {
+    establishCool(); read(195); advance(3000);
+    const before = read(195);
+    expect(before).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
+    store.clear({ preserveTrust: true });
+    const after = read(195);
+    expect(after).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
+    expect(after.zoneEntry.id).toBe(before.zoneEntry.id);
+  });
+
   it('commits a steady repeated reading when its hysteresis stability expires', () => {
     establishCool(); read(115); advance(1000); read(195);
     advance(3000);

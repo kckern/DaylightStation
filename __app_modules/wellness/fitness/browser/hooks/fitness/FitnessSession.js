@@ -3865,6 +3865,6 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
-    this.zoneProfileStore?.clear();
+    this.zoneProfileStore?.clear({ preserveTrust: true });
   }
 }

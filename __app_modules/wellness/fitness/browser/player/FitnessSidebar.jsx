@@ -14,7 +14,7 @@ import { buildEndSessionRequest } from "./endSessionRequest.js";
 import "./FitnessSidebar.scss";
 import "./panels/FitnessGovernance.scss";
 
-const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost, governanceStateOverride = undefined }, ref) => {
+const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
   useRenderProfiler('FitnessSidebar');
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
@@ -240,7 +240,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
         <div className="fitness-sidebar-devices">
           <FitnessUsersList
             onRequestGuestAssignment={handleGuestAssignmentRequest}
-            governanceStateOverride={governanceStateOverride}
           />
         </div>
       )}

@@ -116,7 +116,7 @@ const paletteZoneColor = (zoneId, configured) => {
   return byName || configured || null;
 };
 
-const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = undefined }) => {
+const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
   

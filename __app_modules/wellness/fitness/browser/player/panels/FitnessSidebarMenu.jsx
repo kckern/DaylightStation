@@ -158,20 +158,26 @@ const FitnessSidebarMenu = ({
     scheduleIdleClose();
   }, [scheduleIdleClose]);
 
-  const rootInteractionHandlers = React.useMemo(() => ({
-    onPointerDown: scheduleIdleClose,
-    onTouchStart: scheduleIdleClose,
-    onKeyDown: scheduleIdleClose,
-    onChange: scheduleIdleClose,
-    onWheel: scheduleIdleClose,
-    onTouchMove: scheduleIdleClose,
-    onScrollCapture: scheduleIdleClose,
-    onFocusCapture: () => { focusWithinRef.current = true; scheduleIdleClose(); },
-    onBlurCapture: (event) => {
-      focusWithinRef.current = event.currentTarget.contains(event.relatedTarget);
-      scheduleIdleClose();
-    },
-  }), [scheduleIdleClose]);
+  // Keyboard focus inside the menu holds it open. A tap also focuses the
+  // button or checkbox it lands on; that focus must not cancel the idle close.
+  const pointerOriginRef = React.useRef(false);
+  const rootInteractionHandlers = React.useMemo(() => {
+    const onPointer = () => { pointerOriginRef.current = true; scheduleIdleClose(); };
+    return {
+      onPointerDown: onPointer,
+      onTouchStart: onPointer,
+      onKeyDown: () => { pointerOriginRef.current = false; scheduleIdleClose(); },
+      onChange: scheduleIdleClose,
+      onWheel: scheduleIdleClose,
+      onTouchMove: scheduleIdleClose,
+      onScrollCapture: scheduleIdleClose,
+      onFocusCapture: () => { focusWithinRef.current = !pointerOriginRef.current; scheduleIdleClose(); },
+      onBlurCapture: (event) => {
+        focusWithinRef.current = !pointerOriginRef.current && event.currentTarget.contains(event.relatedTarget);
+        scheduleIdleClose();
+      },
+    };
+  }, [scheduleIdleClose]);
 
   const handleVideoLevelSelect = React.useCallback((level) => {
     const next = linearVolumeFromLevel(level);
