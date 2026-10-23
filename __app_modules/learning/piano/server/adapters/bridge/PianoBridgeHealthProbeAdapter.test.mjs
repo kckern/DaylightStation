@@ -10,7 +10,7 @@ test('reads BLE state and the echo verdict from /status (ws:// url accepted)', a
     bridgeUrl: 'ws://10.0.0.245:8770/',
     fetchImpl: async (url) => { urls.push(url); return ok({ ok: true, ble: { state: 'CONNECTED' }, outVerified: true }); },
   });
-  assert.deepEqual(await probe.readHealth(), { reachable: true, ble: 'CONNECTED', outVerified: true, error: null });
+  assert.deepEqual(await probe.readHealth(), { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: null, error: null });
   assert.deepEqual(urls, ['http://10.0.0.245:8770/status']);
 });
 
@@ -40,4 +40,20 @@ test('a non-2xx status is unreachable', async () => {
     fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }),
   });
   assert.equal((await probe.readHealth()).reachable, false);
+});
+
+test('reads the A2DP speaker state from /status', async () => {
+  const probe = new PianoBridgeHealthProbeAdapter({
+    bridgeUrl: 'http://tablet:8770',
+    fetchImpl: async () => ok({ ble: { state: 'CONNECTED' }, outVerified: true, speaker: { connected: false } }),
+  });
+  assert.equal((await probe.readHealth()).speaker, false);
+});
+
+test('unreachable bridge reports speaker null', async () => {
+  const probe = new PianoBridgeHealthProbeAdapter({
+    bridgeUrl: 'http://tablet:8770',
+    fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+  });
+  assert.equal((await probe.readHealth()).speaker, null);
 });

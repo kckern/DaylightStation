@@ -10,6 +10,7 @@
  * @property {string|null} ble - e.g. 'CONNECTED'
  * @property {boolean|null} outVerified - the piano echoed our probe recently;
  *   null when the loopback endpoint could not be read
+ * @property {boolean|null} speaker - the piano's A2DP speaker is connected; null when unknown
  * @property {string|null} error - why it was unreachable
  */
 export class IPianoBridgeHealthProbe {
