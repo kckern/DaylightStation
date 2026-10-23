@@ -8,6 +8,8 @@ const connection = vi.hoisted(() => ({
   repairConnection,
 }));
 vi.mock('./usePianoConnection.js', () => ({ usePianoConnection: () => connection }));
+const speaker = vi.hoisted(() => ({ needsHelp: false }));
+vi.mock('./usePianoSpeakerHelp.js', () => ({ usePianoSpeakerHelp: () => speaker.needsHelp }));
 
 import PianoLinkBanner from './PianoLinkBanner.jsx';
 
@@ -16,6 +18,8 @@ describe('PianoLinkBanner', () => {
     repairConnection.mockClear();
     Object.assign(connection.health, { state: 'ready', everReady: true });
     Object.assign(connection.repair, { state: 'idle', message: null });
+    connection.repair = { state: 'idle', message: null };
+    speaker.needsHelp = false;
   });
 
   it('stays out of the way while ready or making the initial connection', () => {
@@ -45,5 +49,19 @@ describe('PianoLinkBanner', () => {
     connection.repair = { state: 'success', message: 'Piano reconnected — settings restored.' };
     rerender(<PianoLinkBanner />);
     expect(screen.getByRole('status')).toHaveTextContent('Piano reconnected — settings restored.');
+  });
+
+  it('says the speaker needs a grown-up when recovery gave up', () => {
+    speaker.needsHelp = true;
+    render(<PianoLinkBanner />);
+    expect(screen.getByRole('status')).toHaveTextContent('Speaker needs help — a grown-up has been told');
+    expect(screen.queryByRole('button')).toBeNull(); // nothing for a child to press
+  });
+
+  it('a lost piano connection outranks the speaker message', () => {
+    speaker.needsHelp = true;
+    connection.health.state = 'offline';
+    render(<PianoLinkBanner />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Piano connection lost.');
   });
 });
