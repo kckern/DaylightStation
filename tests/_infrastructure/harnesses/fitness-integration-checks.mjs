@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-export async function verifyIntegration(page,evidence,engine) {
+// outDir: where screenshots go; the caller (fitness-sidebar-layout.mjs) passes its
+// per-run directory. Standalone callers get a fresh fitness-harness-XXXXXX temp dir.
+export async function verifyIntegration(page,evidence,engine,outDir=mkdtempSync(join(tmpdir(),'fitness-harness-'))) {
   const render=options=>page.evaluate(options=>window.renderIntegration(options),options);
   const settle=()=>page.waitForTimeout(650);
   const settledProgress=async()=>{
@@ -29,7 +34,7 @@ export async function verifyIntegration(page,evidence,engine) {
       assert.ok(Math.abs(bar.fill.right-(bar.track.left+bar.track.width*expected[index]/100))<0.75,'painted fill endpoint '+JSON.stringify(bar));
     });
   };
-  const screenshot=label=>page.screenshot({path:`/tmp/task4-${engine}-${label}.png`});
+  const screenshot=label=>page.screenshot({path:join(outDir,`${engine}-${label}.png`)});
   const allActive=count=>Object.fromEntries(Array.from({length:count},(_,i)=>['rider-'+i,'active']));
   for(const viewport of [{width:1920,height:1080},{width:1381,height:777},{width:1024,height:640}]) {
     await page.setViewportSize(viewport);

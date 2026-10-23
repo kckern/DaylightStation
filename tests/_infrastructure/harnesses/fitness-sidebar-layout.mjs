@@ -3,13 +3,18 @@
  * Isolated real-component/styles sidebar, menu, and ceremony geometry checks.
  * No backend or hardware connection: all context data is synthetic and every
  * network request is confined to this ephemeral loopback fixture server.
- * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox]
+ * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--out-dir <dir>]
+ * Screenshots and geometry.json go to a fresh per-run directory under the OS temp dir
+ * (fitness-harness-XXXXXX) unless --out-dir or FITNESS_HARNESS_OUT_DIR names one.
+ * The directory is printed to stderr at start and reported as `outDir` in the result line.
  * Requires the selected Playwright browser to be installed.
  */
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium, firefox } from 'playwright';
@@ -18,8 +23,22 @@ import { verifyIntegration } from './fitness-integration-checks.mjs';
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const frontendRequire = createRequire(join(repo, 'frontend/package.json'));
 const sass = frontendRequire('sass-embedded');
-const engine = process.argv[2] || 'chromium';
+const args = process.argv.slice(2);
+let requestedOutDir = process.env.FITNESS_HARNESS_OUT_DIR || null;
+const positional = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--out-dir') requestedOutDir = args[++i];
+  else if (args[i].startsWith('--out-dir=')) requestedOutDir = args[i].slice('--out-dir='.length);
+  else if (!args[i].startsWith('--')) positional.push(args[i]);
+}
+assert.ok(requestedOutDir !== undefined && requestedOutDir !== '', '--out-dir needs a directory');
+const engine = positional[0] || 'chromium';
 assert.ok(['chromium', 'firefox'].includes(engine), 'Select chromium or firefox');
+const outDir = requestedOutDir
+  ? (mkdirSync(resolve(requestedOutDir), { recursive: true }), resolve(requestedOutDir))
+  : mkdtempSync(join(tmpdir(), 'fitness-harness-'));
+const artifact = name => join(outDir, `${engine}-${name}`);
+process.stderr.write(`fitness-harness: writing screenshots and geometry to ${outDir}\n`);
 
 const entry = `
 import React from 'react';
@@ -212,7 +231,7 @@ try {
       assert.ok(geometry.fonts.every(f=>f.size>=14),JSON.stringify(geometry));
       if(menu==='guest') assert.ok(geometry.fonts.length>=5,'guest selectors rendered');
       evidence.push({viewport,menu,...geometry});
-      await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-'+menu+'.png'});
+      await page.screenshot({path:artifact(viewport.width+'-'+menu+'.png')});
     }
     for(const achievement of [false,true]) for(const people of [1,2,5]) {
       await page.evaluate(options=>window.renderFixture(options),{people,achievement,width:300,height:500});
@@ -227,7 +246,7 @@ try {
       assert.ok(Math.abs((geometry.headline.left+geometry.headline.right)/2-(geometry.toast.left+geometry.toast.right)/2)<3,'centered challenge headline: '+JSON.stringify(geometry));
       for(const row of geometry.rows){assert.ok(Math.abs(row.center-row.expected)<3,JSON.stringify({people,achievement,geometry}));assert.ok(row.bottom<=geometry.toast.bottom,JSON.stringify(geometry));}
       evidence.push({viewport,people,achievement,...geometry});
-      if(people===5) await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-ceremony-'+achievement+'.png'});
+      if(people===5) await page.screenshot({path:artifact(viewport.width+'-ceremony-'+achievement+'.png')});
     }
     await page.evaluate(()=>window.renderFixture({home:true,count:0}));
     await page.waitForSelector('.show-card');
@@ -240,10 +259,10 @@ try {
     assert.ok(homeGeometry.nav.length===8 && homeGeometry.nav.every(height=>height>=40),'nav targets');
     assert.ok(homeGeometry.last.bottom<homeGeometry.mic.top,JSON.stringify(homeGeometry));
     evidence.push({viewport,home:true,...homeGeometry});
-    await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-home.png'});
+    await page.screenshot({path:artifact(viewport.width+'-home.png')});
     await page.evaluate(()=>window.renderFixture({count:5,rpm:5,zones:3,width:300,height:597}));
     await page.waitForTimeout(420);
-    await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-roster.png'});
+    await page.screenshot({path:artifact(viewport.width+'-roster.png')});
   }
   for(const options of [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
     await page.evaluate(options=>window.renderFixture({...options,height:597}),options);
@@ -255,11 +274,11 @@ try {
     evidence.push({transition:options,settled:after});
   }
   }
-  await verifyIntegration(page, evidence, engine);
+  await verifyIntegration(page, evidence, engine, outDir);
   assert.deepEqual(errors,[]);
   const {writeFile}=await import('node:fs/promises');
-  await writeFile('/tmp/task4-'+engine+'-geometry.json',JSON.stringify(evidence,null,2));
-  process.stdout.write(JSON.stringify({engine,scope:process.argv.includes('--integration-only')?'integration-only':'full',checks:evidence.length,errors})+'\n');
+  await writeFile(artifact('geometry.json'),JSON.stringify(evidence,null,2));
+  process.stdout.write(JSON.stringify({engine,scope:process.argv.includes('--integration-only')?'integration-only':'full',checks:evidence.length,errors,outDir})+'\n');
 
 } finally {
   await browser?.close();

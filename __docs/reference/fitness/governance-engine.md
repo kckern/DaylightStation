@@ -14,9 +14,9 @@ steps per minute) can opt into the same warning, grace, and lock lifecycle.
 
 ## Related code:
 
-- frontend/src/hooks/fitness/GovernanceEngine.js
-- frontend/src/modules/Fitness/player/FitnessPlayer.jsx
-- frontend/src/Apps/FitnessApp.jsx
+- __app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js
+- __app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx
+- __app_modules/wellness/fitness/browser/FitnessApp.jsx
 
 ---
 
@@ -62,7 +62,7 @@ Note: The FPS profiler uses a global `window.__fitnessVideoElement` reference (s
 
 ## Core Components
 
-### GovernanceEngine (`frontend/src/hooks/fitness/GovernanceEngine.js`)
+### GovernanceEngine (`__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js`)
 
 The state machine that determines content access. Manages:
 - Phase transitions (pending/unlocked/warning/locked)
@@ -70,14 +70,14 @@ The state machine that determines content access. Manages:
 - Challenge timers
 - Grace period countdowns
 
-### FitnessSession (`frontend/src/hooks/fitness/FitnessSession.js`)
+### FitnessSession (`__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js`)
 
 Orchestrates the fitness experience:
 - Coordinates between DeviceManager, UserManager, GovernanceEngine
 - Manages the `snapshot` object used by UI components
 - Handles `updateSnapshot()` calls that trigger re-evaluation
 
-### ZoneProfileStore (`frontend/src/hooks/fitness/ZoneProfileStore.js`)
+### ZoneProfileStore (`__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js`)
 
 Authoritative accepted zone state for each user:
 - Derives raw zones from HR and the validated personal ladder.
@@ -92,14 +92,14 @@ Authoritative accepted zone state for each user:
 
 A committed transition backed by an accepted real reading carries `zoneEntry: { id, zoneId, heartRate, threshold, enteredAt }`. Its ID increases across the lifetime of a store, including resets; the evidence is cloned on reads and cleared on trust reset. It records the HR and threshold at commitment and persists while hysteresis retains that zone. Fire detection requires a trusted observed crossing, a new matching Fire entry and captured HR at or above the personal Fire threshold. Initial Fire, synthetic Cool → Fire, contradictory entry evidence and reused pre-reset entries cannot celebrate. Toast queues retain the captured entry HR/threshold even if the live HR later changes.
 
-### DeviceManager (`frontend/src/hooks/fitness/DeviceManager.js`)
+### DeviceManager (`__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js`)
 
 Tracks physical devices and their current readings:
 - Maps device IDs to device objects
 - Stores current HR, zone, activity status
 - Handles device timeout/inactive detection
 
-### UserManager (`frontend/src/hooks/fitness/UserManager.js`)
+### UserManager (`__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js`)
 
 Maps users to their devices:
 - Resolves device ID → user ID
@@ -125,9 +125,8 @@ The GovernanceEngine has four phases:
 if (challengeForcesRed) {
   phase = 'locked';           // Failed challenge locks immediately
 } else if (allSatisfied) {
-  if (satisfiedDuration >= 500) {
-    phase = 'unlocked';       // Hysteresis: 500ms sustained
-  }
+  phase = 'unlocked';         // Unlocks on the same evaluation; no hold
+  satisfiedOnce = true;
 } else if (!satisfiedOnce) {
   phase = 'pending';          // Never unlocked before
 } else {
@@ -139,28 +138,33 @@ if (challengeForcesRed) {
 
 ## Critical Concepts
 
-### Hysteresis (500ms)
+### Immediate unlock (no engine-level hold)
 
-Requirements must be satisfied **continuously for 500ms** before:
-- `satisfiedOnce` is set to `true`
-- Phase transitions to `unlocked`
-
-**Why this matters**: Prevents rapid phase cycling when HR hovers around zone threshold.
+The engine unlocks on the **same evaluation** in which every requirement is
+satisfied. There is no sustained-satisfaction timer: an earlier 500ms
+`_hysteresisMs` / `satisfiedSince` hold was removed, and the engine no longer
+has either field. The same branch sets `satisfiedOnce = true` and clears any
+grace deadline.
 
 ```javascript
-// GovernanceEngine.js:147
-this._hysteresisMs = 500;
-
-// GovernanceEngine.js:1366-1376
-if (!this.meta.satisfiedSince) {
-  this.meta.satisfiedSince = now;
-}
-const satisfiedDuration = now - this.meta.satisfiedSince;
-if (satisfiedDuration >= this._hysteresisMs) {
+// GovernanceEngine.js, "6. Determine Phase"
+} else if (allSatisfied) {
+  // Requirements met -> unlocked immediately (no hysteresis delay)
   this.meta.satisfiedOnce = true;
-  this._setPhase('unlocked');
+  this.meta.deadline = null;
+  this.meta.gracePeriodTotal = null;
+  this._setPhase('unlocked', evalContext);
 }
 ```
+
+**Where jitter is absorbed instead**: debouncing lives one layer down, in
+`ZoneProfileStore` zone hysteresis (see ZoneProfileStore under Core Components above):
+the first zone change commits instantly, a second change within 5s must hold
+steady for 3s before it commits, and a downgrade is suppressed while HR stays
+within 5 bpm of the committed zone's floor. The engine reads those stabilized
+zones, so it can unlock at once without flickering. On the way down, the
+grace period (`warning` phase) and the post-recovery warning cooldown
+(`warning_cooldown_seconds`) keep a brief dip from locking the video.
 
 ### satisfiedOnce Flag
 
@@ -391,9 +395,9 @@ Bypassing governance via the show-title icon flips the title icon to unlocked an
 > **Route-level exception:** deep-linking directly to `/fitness/play/:id` for an episode of a sequential show redirects to the show UI unless `nogovern` is set — there the single `nogovern` flag lifts both the governance gate and the sequential redirect (see the `?nogovern` table below). This coupling exists only on the URL play path; inside the show UI the two controls remain independent. **This is intended behavior.**
 
 Related code:
-- `frontend/src/modules/Fitness/player/FitnessShow.jsx` — `isSequential`, `lockedEpisodeIds`, `handleLockedEpisodeUnlockTap` (`skip_content`), `handleGovernanceUnlockTap` (`governance_bypass`)
-- `frontend/src/modules/Fitness/player/overlays/UnlockPrompt.jsx` — shared fingerprint-unlock overlay
-- `frontend/src/Apps/FitnessApp.jsx` — `sequentialLabelSet`, route-level sequential redirect
+- `__app_modules/wellness/fitness/browser/player/FitnessShow.jsx` — `isSequential`, `lockedEpisodeIds`, `handleLockedEpisodeUnlockTap` (`skip_content`), `handleGovernanceUnlockTap` (`governance_bypass`)
+- `__app_modules/wellness/fitness/browser/player/overlays/UnlockPrompt.jsx` — shared fingerprint-unlock overlay
+- `__app_modules/wellness/fitness/browser/FitnessApp.jsx` — `sequentialLabelSet`, route-level sequential redirect
 
 ---
 
@@ -478,7 +482,7 @@ Challenge satisfaction is tracked separately. When a challenge is active:
 **Symptom in tests**:
 ```
 Video unlocked!                    ← Overlay disappeared
-WARNING: Governance phase is pending, not 'unlocked'  ← Engine hasn't completed hysteresis
+WARNING: Governance phase is pending, not 'unlocked'  ← Engine has not yet evaluated satisfied zones
 ```
 
 **Solution**: Always verify governance phase, not just overlay visibility:
@@ -585,7 +589,7 @@ async function unlockVideo(page, sim, devices) {
       return { unlocked: true, phaseUnlocked: true };
     }
 
-    // Keep sending HR through hysteresis
+    // Keep sending HR until ZoneProfileStore commits the zone and the engine re-evaluates
     for (const device of devices) {
       await sim.setZone(device.deviceId, 'warm');
     }
@@ -1030,16 +1034,16 @@ zones:
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/hooks/fitness/GovernanceEngine.js` | Core state machine |
-| `frontend/src/hooks/fitness/FitnessSession.js` | Session orchestration |
-| `frontend/src/hooks/fitness/ZoneProfileStore.js` | Stable zone state |
-| `frontend/src/hooks/fitness/DeviceManager.js` | Device tracking |
-| `frontend/src/hooks/fitness/UserManager.js` | User-device mapping |
-| `frontend/src/context/FitnessContext.jsx` | React context provider |
-| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective governance state |
-| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` |
-| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI |
-| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Audio cue + duck/restore lifecycle |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js` | Core state machine |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js` | Session orchestration |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js` | Stable zone state |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js` | Device tracking |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js` | User-device mapping |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | React context provider |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx` | Video control, bypass-aware effective governance state |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` |
+| `__app_modules/wellness/fitness/browser/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI |
+| `__app_modules/wellness/fitness/browser/player/hooks/useGovernanceAudioDuck.js` | Audio cue + duck/restore lifecycle |
 | `tests/live/flow/fitness/governance-comprehensive.runtime.test.mjs` | Test suite |
 
 ---
@@ -1049,7 +1053,8 @@ zones:
 - `ops:docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
 - `ops:docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
 - `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
-- `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
+- `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan (historical: the 500ms engine hold it worked around was later removed)
+- `ops:docs/plans/2026-02-17-governance-ghost-oscillation-fix.md` - Removal of the engine hysteresis/relock logic
 
 ## Warning overlay observability
 

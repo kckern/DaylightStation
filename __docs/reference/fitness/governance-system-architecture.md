@@ -10,7 +10,7 @@ For API reference and configuration, see `governance-engine.md`.
 
 The governance system enforces exercise participation requirements during video playback. When media tagged with governed labels plays, participants must maintain prescribed heart rate zones or playback locks.
 
-The system is **event-driven and reactive**: heart rate sensor data flows through a pipeline of transforms (device → user → zone → governance decision), with hysteresis at two layers to prevent jitter from noisy biometric data.
+The system is **event-driven and reactive**: heart rate sensor data flows through a pipeline of transforms (device → user → zone → governance decision), with zone hysteresis in ZoneProfileStore to absorb jitter from noisy biometric data. The GovernanceEngine itself unlocks as soon as requirements are met; its only damping is on the way down (grace period, warning cooldown).
 
 ### Component Map
 
@@ -165,7 +165,7 @@ The GovernanceEngine is a four-phase state machine:
               └────┬─────┘                                             │
                    │                                                   │
                    │ requirements satisfied                            │
-                   │ + 500ms hysteresis hold                           │
+                   │ (same evaluation, no hold)                        │
                    │                                                   │
               ┌────▼─────┐                                             │
     ┌────────▶│ UNLOCKED │ ◀───── Video plays, challenges can trigger  │
@@ -190,7 +190,7 @@ The GovernanceEngine is a four-phase state machine:
     │         │ (locked) │                                        │    │
     │         └────┬─────┘                                        │    │
     │              │                                               │    │
-    │              │ requirements satisfied + 500ms hysteresis     │    │
+    │              │ requirements satisfied, no failed challenge   │    │
     │              │                                               │    │
     └──────────────┘                                     ┌────────┘    │
                                                          │             │
@@ -201,12 +201,12 @@ The GovernanceEngine is a four-phase state machine:
 
 | From | To | Condition |
 |------|----|-----------|
-| pending → unlocked | All requirements met for 500ms continuously |
+| pending → unlocked | All requirements met (on the same evaluation; no hold timer) |
 | unlocked → warning | Requirements break AND `satisfiedOnce = true` |
 | unlocked → locked | Challenge failure (absolute — base requirements irrelevant) |
 | warning → unlocked | Requirements re-satisfied |
 | warning → locked | Grace period expires OR challenge fails |
-| locked → unlocked | Requirements met for 500ms AND no active failed challenge |
+| locked → unlocked | Requirements met AND no active failed challenge |
 | any → pending | No media, no participants, or engine reset |
 
 ---
@@ -350,7 +350,7 @@ Each piece of data has exactly one authoritative source. All other components mu
 Governance may pause the video only while the **live** governance state says
 locked. Callbacks handed to `<Player>` read governance through
 `useGovernanceProgressEnforcer`
-(`frontend/src/modules/Fitness/player/governanceProgressEnforcer.js`), never a
+(`__app_modules/wellness/fitness/browser/player/governanceProgressEnforcer.js`), never a
 captured value: a media listener can outlive the render that bound it, and a
 boolean captured during a lock keeps pausing after the unlock. After unmount the
 enforcer does nothing, so a listener on a dead element cannot call
@@ -387,6 +387,8 @@ For each HR update:
   1. Derive rawZoneId from HR + validated personal zone thresholds
      No accepted reading → preserve trusted committed zone, commit nothing
   2. If rawZoneId === committedZoneId → no change
+  2a. If rawZone is a downgrade and HR >= committedZoneMin - 5 BPM
+      → suppress (exit margin, Schmitt trigger)
   3. If timeSinceLastCommit > 5000ms → commit immediately (first transition)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
   5. Else → suppress change, keep showing committedZoneId
@@ -395,6 +397,8 @@ For each HR update:
 **Parameters:**
 - Cooldown window: 5 seconds after last zone commit
 - Stability requirement: 3 seconds of continuous new zone
+- Exit margin: 5 BPM below the committed zone's floor before a downgrade can
+  commit (`EXIT_MARGIN_BPM`; logged as `zoneprofilestore.exit_margin_suppressed`)
 - First transition: instant (no stability wait)
 - A sample with no reading never commits or establishes Cool trust. Brief
   same-wearer gaps retain the trusted committed zone within the existing
@@ -434,9 +438,13 @@ not a later display HR, travels through the toast queue. First observation in
 Fire, a default Cool baseline, a reused entry or contradictory HR/threshold
 cannot invent an achievement.
 
-### Layer 2: GovernanceEngine (Phase Flap Prevention)
+### Layer 2: GovernanceEngine (no unlock hold)
 
-Prevents rapid phase cycling between unlocked/warning when requirements hover at boundary.
+The engine does **not** debounce unlocking. An earlier 500ms sustained-
+satisfaction hold (`_hysteresisMs` / `satisfiedSince`) was removed; the engine
+unlocks on the same evaluation in which every requirement is satisfied. Jitter
+is absorbed upstream by Layer 1, which feeds the engine already-stabilized
+zones. Damping remains only on the way down.
 
 **Algorithm:**
 
@@ -445,21 +453,25 @@ For each evaluate():
   If challengeForcesRed (active challenge with status 'failed'):
     phase = 'locked'   (recovery only via challenge satisfaction check)
   Else if allSatisfied:
-    If satisfiedSince is null → set satisfiedSince = now
-    If (now - satisfiedSince) >= 500ms:
-      satisfiedOnce = true
-      phase = 'unlocked'
-    Else:
-      Keep current phase (don't flap back to pending)
+    satisfiedOnce = true
+    clear grace deadline
+    phase = 'unlocked'          (immediately, no hold)
+  Else if !satisfiedOnce:
+    phase = 'pending'
+  Else if inside warning cooldown:
+    keep current phase
+  Else if no grace period configured:
+    phase = 'locked'
   Else:
-    Clear satisfiedSince
-    If satisfiedOnce → phase = 'warning'
-    Else → phase = 'pending'
+    start/continue grace deadline
+    phase = 'warning' until the deadline passes, then 'locked'
 ```
 
 **Parameters:**
-- Unlock hysteresis: 500ms sustained satisfaction required
+- Unlock: immediate once all requirements are satisfied
 - Grace period: configurable per-policy (default from `grace_period_seconds`)
+- Warning cooldown: after returning to `unlocked` from `warning` or `locked`,
+  `warning_cooldown_seconds` suppresses immediate re-entry into `warning`
 
 ---
 
@@ -616,20 +628,20 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 
 | File | Role | SSoT Responsibility |
 |------|------|-------------------|
-| `frontend/src/hooks/fitness/GovernanceEngine.js` | State machine, phase transitions, challenges | Phase, lock decision |
-| `frontend/src/hooks/fitness/ZoneProfileStore.js` | Zone stabilization via hysteresis | Current zone per user |
-| `frontend/src/hooks/fitness/FitnessSession.js` | Session orchestration, data routing | Roster, session lifecycle |
-| `frontend/src/hooks/fitness/PersistenceManager.js` | Validation, encoding, API persistence | Session payload format |
-| `frontend/src/hooks/fitness/DeviceManager.js` | Raw device tracking | Device readings |
-| `frontend/src/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
-| `frontend/src/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
-| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
-| `frontend/src/modules/Fitness/player/governanceProgressEnforcer.js` | Live-read governance enforcement on progress ticks (`useGovernanceProgressEnforcer`) | Governance pause on progress ticks |
-| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
-| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
-| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
-| `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Sidebar governance panel (reads raw context state) | Sidebar display |
-| `frontend/src/Apps/FitnessApp.jsx` | URL routing, config loading, queue management | Content source |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js` | State machine, phase transitions, challenges | Phase, lock decision |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js` | Zone stabilization via hysteresis | Current zone per user |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js` | Session orchestration, data routing | Roster, session lifecycle |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/PersistenceManager.js` | Validation, encoding, API persistence | Session payload format |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js` | Raw device tracking | Device readings |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
+| `__app_modules/wellness/fitness/browser/player/governanceProgressEnforcer.js` | Live-read governance enforcement on progress ticks (`useGovernanceProgressEnforcer`) | Governance pause on progress ticks |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
+| `__app_modules/wellness/fitness/browser/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
+| `__app_modules/wellness/fitness/browser/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
+| `__app_modules/wellness/fitness/browser/player/FitnessSidebar.jsx` | Sidebar governance panel (reads raw context state) | Sidebar display |
+| `__app_modules/wellness/fitness/browser/FitnessApp.jsx` | URL routing, config loading, queue management | Content source |
 | `__backend/src/4_api/v1/routers/info.mjs` | Content metadata API | Media metadata |
 
 ---
