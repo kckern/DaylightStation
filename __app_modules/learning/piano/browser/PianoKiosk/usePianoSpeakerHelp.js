@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from '../../../../../frontend/src/hooks/useWebSocket.js';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { KIOSK_DEVICE_ID } from './kioskDeviceIdentity.js';
@@ -16,18 +16,29 @@ function logger() {
   return _logger;
 }
 
+const QUIET = { needsHelp: false, told: false };
+
+/**
+ * @returns {{needsHelp: boolean, told: boolean}} `told` is true only when a push
+ *   actually reached a person, so the banner never claims one did when it did not.
+ */
 export function usePianoSpeakerHelp(deviceId = KIOSK_DEVICE_ID) {
-  const [needsHelp, setNeedsHelp] = useState(false);
+  const [help, setHelp] = useState(QUIET);
   const handle = useCallback((msg) => {
     if (!deviceId || msg?.deviceId !== deviceId) return;
-    const next = msg.state === 'needs-help';
-    setNeedsHelp((was) => {
-      if (was !== next) logger().info(next ? 'piano.speaker-banner.shown' : 'piano.speaker-banner.cleared', { rung: msg.rung ?? null });
-      return next;
-    });
+    const next = msg.state === 'needs-help' ? { needsHelp: true, told: msg.told === true } : QUIET;
+    setHelp((was) => (was.needsHelp === next.needsHelp && was.told === next.told ? was : next));
   }, [deviceId]);
   useWebSocketSubscription(PIANO_SPEAKER_TOPIC, handle, [handle]);
-  return needsHelp;
+
+  // Logged from an effect, not the state updater: updaters may run twice.
+  const shown = useRef(false);
+  useEffect(() => {
+    if (help.needsHelp === shown.current) return;
+    shown.current = help.needsHelp;
+    logger().info(help.needsHelp ? 'piano.speaker-banner.shown' : 'piano.speaker-banner.cleared', { told: help.told });
+  }, [help]);
+  return help;
 }
 
 export default usePianoSpeakerHelp;

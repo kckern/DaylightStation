@@ -52,6 +52,9 @@ public class A2dpConnector {
     private volatile int reconnects = 0;
     private volatile long lastConnectAttempt = 0L;
     private volatile Runnable onStateChanged;
+    // Every failed connect() also broadcasts DISCONNECTED; only a real drop of a working
+    // link is an event (a wedged dongle would otherwise log one every 20 s, all night).
+    private volatile boolean wasConnected = false;
 
     public A2dpConnector(Context ctx, DeviceConfig cfg) {
         this.ctx = ctx.getApplicationContext();
@@ -181,12 +184,14 @@ public class A2dpConnector {
                 if (!running || !cfg.bluetoothAudioEnabled()) { fireStateChanged(); return; }
                 reconnects++;
                 Diag.log(TAG, "speaker disconnected — reconnecting (#" + reconnects + ")");
-                emit("bridge.a2dp.disconnected", "warn", null, null);
+                if (wasConnected) emit("bridge.a2dp.disconnected", "warn", null, null);
+                wasConnected = false;
                 handler.postDelayed(A2dpConnector.this::ensureConnected, RECONNECT_DELAY_MS);
                 fireStateChanged();
             } else if (state == BluetoothProfile.STATE_CONNECTED) {
                 Diag.log(TAG, "speaker connected");
                 emit("bridge.a2dp.connected", "info", null, null);
+                wasConnected = true;
                 lastError = null;
                 fireStateChanged();
             }
@@ -219,7 +224,7 @@ public class A2dpConnector {
             setError("speaker not bonded (pair it in Bluetooth controls)");
             return;
         }
-        if (isConnected(target)) return; // already good — nothing to do
+        if (isConnected(target)) { wasConnected = true; return; } // already good — nothing to do
 
         lastConnectAttempt = System.currentTimeMillis();
         try {

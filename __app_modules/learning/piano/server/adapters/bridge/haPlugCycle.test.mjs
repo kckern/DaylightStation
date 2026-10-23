@@ -49,3 +49,34 @@ test('turn_on failing every retry reports unpowered', async () => {
   assert.equal(r.unpowered, true);
   assert.equal(ha.calls.filter((c) => c.startsWith('switch.turn_on')).length, 4); // first try + 3 retries
 });
+
+// The real HomeAssistantAdapter.callService never throws: it resolves {ok:false, error}.
+function resolvingGateway({ offFails = false, onFailures = 0 } = {}) {
+  const calls = [];
+  let left = onFailures;
+  return {
+    calls,
+    callService: async (domain, service, data) => {
+      calls.push(`${domain}.${service}:${data.entity_id}`);
+      if (service === 'turn_off' && offFails) return { ok: false, error: 'HA 500' };
+      if (service === 'turn_on' && left > 0) { left -= 1; return { ok: false, error: 'HA timeout' }; }
+      return { ok: true, data: [] };
+    },
+  };
+}
+
+test('a resolved {ok:false} turn_on is retried, and all-failed is unpowered', async () => {
+  const ha = resolvingGateway({ onFailures: 99 });
+  const r = await createHaPlugCycle({ haGateway: ha, entityId: 'switch.p', sleep, retries: 3 })(10000);
+  assert.equal(r.ok, false);
+  assert.equal(r.unpowered, true);
+  assert.match(r.error, /turn_on: HA timeout/);
+  assert.equal(ha.calls.filter((c) => c.startsWith('switch.turn_on')).length, 4);
+});
+
+test('a resolved {ok:false} turn_off never touches turn_on and is not unpowered', async () => {
+  const ha = resolvingGateway({ offFails: true });
+  const r = await createHaPlugCycle({ haGateway: ha, entityId: 'switch.p', sleep })(10000);
+  assert.deepEqual(r, { ok: false, unpowered: false, error: 'turn_off: HA 500' });
+  assert.deepEqual(ha.calls, ['switch.turn_off:switch.p']);
+});

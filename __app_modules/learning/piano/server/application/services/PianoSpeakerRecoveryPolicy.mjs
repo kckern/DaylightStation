@@ -14,8 +14,11 @@
 
 export const SPEAKER_LADDER = Object.freeze([
   Object.freeze({ rung: 1, action: 'a2dpReconnect', checkAfterMs: 15_000 }),
-  Object.freeze({ rung: 2, action: 'btCycle', settleMs: 5_000, checkAfterMs: 30_000 }),
-  Object.freeze({ rung: 3, action: 'btCycle', settleMs: 15_000, checkAfterMs: 45_000 }),
+  // The one BT-cycle recovery on record took 55 s from Bluetooth-on to A2DP up
+  // (2026-10-23 19:56:53 → 19:57:48); a shorter window judges a working cycle
+  // failed and the next rung tears it down.
+  Object.freeze({ rung: 2, action: 'btCycle', settleMs: 5_000, checkAfterMs: 75_000 }),
+  Object.freeze({ rung: 3, action: 'btCycle', settleMs: 15_000, checkAfterMs: 90_000 }),
   Object.freeze({ rung: 4, action: 'plugCycle', offMs: 10_000, checkAfterMs: 60_000 }),
   Object.freeze({ rung: 5, action: 'plugCycle', offMs: 30_000, checkAfterMs: 90_000 }),
 ]);
@@ -84,12 +87,15 @@ export function decideSpeaker(episode, observation, now, options) {
 
   if (pianoPower === 'off') {
     if (waitingOnPlug) return giveUp(ep, now, 'piano-stayed-off');
+    // Switching the piano off power-cycles the dongle too — the next power-on gets a
+    // fresh ladder, never a carried-over plug rung seconds after someone sits down.
     if (ep.phase === 'recovering') {
       return {
-        episode: { ...ep, phase: 'ok', downTicks: 0, checkAt: 0, lastAction: null, healthySince: null },
+        episode: { ...ep, phase: 'ok', downTicks: 0, checkAt: 0, lastAction: null, healthySince: null, rung: 0 },
         action: { type: 'ended', rung: ep.rung },
       };
     }
+    if (ep.phase === 'ok') return { episode: { ...ep, downTicks: 0, healthySince: null, rung: 0 }, action: NONE };
     return { episode: { ...ep, downTicks: 0, healthySince: null }, action: NONE };
   }
 

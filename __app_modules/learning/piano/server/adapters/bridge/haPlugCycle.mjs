@@ -9,13 +9,20 @@
  */
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** HomeAssistantAdapter.callService resolves {ok:false, error} instead of throwing; treat both as failure. */
+async function call(haGateway, service, data) {
+  const res = await haGateway.callService('switch', service, data);
+  if (res && res.ok === false) throw new Error(res.error || 'refused');
+  return res;
+}
+
 export function createHaPlugCycle({ haGateway, entityId, sleep = realSleep, retries = 3, retryDelayMs = 2000 } = {}) {
   if (typeof haGateway?.callService !== 'function') throw new Error('createHaPlugCycle requires haGateway');
   if (!entityId) throw new Error('createHaPlugCycle requires entityId');
   const data = { entity_id: entityId };
   return async function plugCycle(offMs) {
     try {
-      await haGateway.callService('switch', 'turn_off', data);
+      await call(haGateway, 'turn_off', data);
     } catch (err) {
       return { ok: false, unpowered: false, error: `turn_off: ${String(err?.message ?? err)}` };
     }
@@ -23,7 +30,7 @@ export function createHaPlugCycle({ haGateway, entityId, sleep = realSleep, retr
     let lastError = null;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
-        await haGateway.callService('switch', 'turn_on', data);
+        await call(haGateway, 'turn_on', data);
         return { ok: true, error: null, unpowered: false };
       } catch (err) {
         lastError = err;

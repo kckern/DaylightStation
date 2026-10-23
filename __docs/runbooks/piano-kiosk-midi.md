@@ -376,19 +376,30 @@ silently whether or not anyone is at the piano:
 | Rung | Action | Checked after |
 |---|---|---|
 | 1 | A2DP disconnect → connect (`POST :8770/speaker/reconnect`) | 15 s |
-| 2 | tablet Bluetooth off → 5 s → on (`POST :8770/speaker/bt-cycle`) | 30 s |
-| 3 | the same with 15 s off | 45 s |
+| 2 | tablet Bluetooth off → 5 s → on (`POST :8770/speaker/bt-cycle`) | 75 s |
+| 3 | the same with 15 s off | 90 s |
 | 4 | piano plug off 10 s → on (HA `switch.turn_off/turn_on`) | 60 s |
 | 5 | piano plug off 30 s → on | 90 s |
 
 The piano powers itself on when its plug comes back (14.9 W three seconds after
-`turn_on`), so a plug cycle is a full unattended reboot of piano and dongle. Limits:
+`turn_on`), so a plug cycle is a full unattended reboot of piano and dongle. The BT
+windows are long because the one BT-cycle recovery on record took 55 s from Bluetooth-on
+to A2DP up; a shorter window judges a working cycle failed and the next rung tears it
+down. Before each plug rung the supervisor pins the tablet screen to its current state
+(`ScreenOverrideService`, for off-time + check window). That stops the power-sync
+authority from blanking the screen at 15 s of "piano off" or pulsing it at the power
+edge. A person's own screen override is never replaced. Limits:
 
 - At most 2 plug cycles per rolling hour.
 - No plug cycle while piano power reads `unknown`.
 - The counter only resets after 10 healthy minutes, so a flapping dongle keeps climbing.
-- If all five fail: one push ("Piano speaker won't reconnect"), the kiosk banner
-  "Speaker needs help — a grown-up has been told", then a retry from rung 1 an hour later.
+  Switching the piano off resets it too, since that reboots the dongle: the next power-on
+  starts at rung 1, never at a plug cycle.
+- If all five fail: one push ("Piano speaker won't reconnect"; the text says so when the
+  plug rungs were skipped, and why). The kiosk banner reads "Speaker needs help — a
+  grown-up has been told" only once HA actually accepted that push. Until then it reads
+  "— please tell a grown-up", and the push is retried every 30 s. The ladder retries from
+  rung 1 an hour later.
 - If the plug can't be turned back on: an immediate "Piano is unpowered" push.
 
 **Config** (`household/piano/config.yml`, top level):
@@ -410,8 +421,17 @@ curl -s {env.log_store_url}/select/logsql/query -d 'query="bridge.a2dp" OR "brid
 curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects, guard.clampsPerMin
 ```
 
-`piano.speaker.recovered {rung}` says which rung worked. Watch it over time: if rung 1
-never wins, the wedge is dongle-side, and the plug rungs are doing the real work.
+`piano.speaker.recovered {rung}` says which rung worked.
+
+**Measured on a live wedge (2026-10-23, piano idle, 484 failed reconnects):**
+- An A2DP disconnect→connect (rung 1's action) changed nothing in 30 s.
+- A tablet Bluetooth off/on (rung 2's action) changed nothing in 45 s. The Bluetooth
+  process restarted (new PID) and the fresh stack still got `SDP conn cnf error 0x4`, so
+  the wedge lives in the dongle.
+- A plug cycle (10 s off) brought the piano back to 17 W at +5 s and the speaker connected
+  at +10 s. BLE-MIDI never dropped, because the JamCorder has its own power.
+
+Expect most real recoveries to report rung 4.
 
 ---
 

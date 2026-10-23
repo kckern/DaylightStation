@@ -5,17 +5,19 @@ import { usePianoSpeakerHelp } from './usePianoSpeakerHelp.js';
 export function PianoLinkBanner() {
   const { health, repair, repairConnection } = usePianoConnection();
   // The backend's silent speaker ladder gave up: only then is there anything to say.
-  const speakerNeedsHelp = usePianoSpeakerHelp();
+  const speaker = usePianoSpeakerHelp();
   if (repair.state === 'success') {
     return <div className="piano-linkbanner piano-linkbanner--ok" role="status"><span className="piano-linkbanner__icon" aria-hidden>✓</span><span className="piano-linkbanner__text">{repair.message}</span></div>;
   }
   const initialConnection = health.state === 'connecting' && !health.everReady && repair.state === 'idle';
   if (health.state === 'ready' || initialConnection) {
-    if (!speakerNeedsHelp) return null;
+    if (!speaker.needsHelp) return null;
     return (
       <div className="piano-linkbanner piano-linkbanner--down" role="status">
         <span className="piano-linkbanner__icon" aria-hidden>!</span>
-        <span className="piano-linkbanner__text">Speaker needs help — a grown-up has been told</span>
+        <span className="piano-linkbanner__text">
+          {speaker.told ? 'Speaker needs help — a grown-up has been told' : 'Speaker needs help — please tell a grown-up'}
+        </span>
       </div>
     );
   }

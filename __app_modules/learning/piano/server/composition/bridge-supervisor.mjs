@@ -33,6 +33,7 @@ import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationSc
 import { composePianoBridgePush } from "../domain/bridge/pianoBridgePush.mjs";
 import { PianoBridgeSpeakerActionsAdapter } from "../adapters/bridge/PianoBridgeSpeakerActionsAdapter.mjs";
 import { createHaPlugCycle } from "../adapters/bridge/haPlugCycle.mjs";
+import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
@@ -48,10 +49,13 @@ let instance = null;
  * @param {string|null} [deps.householdId]
  * @param {Object} [deps.logger]
  * @param {{broadcast:Function}|null} [deps.eventBus] - carries `piano.speaker` to the kiosk
+ * @param {{get:Function}|null} [deps.deviceService] - reads the tablet's screen state for the plug-cycle hold
+ * @param {Function|null} [deps.getScreenOverrideService] - the shared override map the screen authority honours
  * @returns {{ pianoBridgeSupervisor: PianoBridgeSupervisorService|null }}
  */
 export function createPianoBridgeSupervisor({
   configService, remoteAdmin, haGateway = null, householdId = null, logger = console, eventBus = null,
+  deviceService = null, getScreenOverrideService = null,
   speakerActionsFactory = (options) => new PianoBridgeSpeakerActionsAdapter(options),
   probeFactory = (options) => new PianoBridgeHealthProbeAdapter(options),
   scheduler = new NodeApplicationScheduler(),
@@ -102,9 +106,14 @@ export function createPianoBridgeSupervisor({
       ? createHaPlugCycle({ haGateway, entityId: plugEntity })
       : null;
     if (!plugCycle) logger.warn?.('piano.speaker.no-plug', { plugEntity, hasHa: !!haGateway?.callService });
+    const holdScreen = deviceService?.get && getScreenOverrideService
+      ? createScreenHold({ deviceService, overrides: getScreenOverrideService(), deviceId })
+      : null;
+    if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
     speaker = {
       actions: speakerActionsFactory({ bridgeUrl }),
       plugCycle,
+      holdScreen,
       publish: typeof eventBus?.broadcast === 'function'
         ? (payload) => eventBus.broadcast('piano.speaker', payload)
         : null,
@@ -139,7 +148,7 @@ export function createPianoBridgeSupervisor({
   service.start();
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
-    deviceId, bridgeUrl, pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity,
+    deviceId, bridgeUrl, pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
   });
   return { pianoBridgeSupervisor: service };
 }

@@ -43,12 +43,13 @@ test('climbs all five rungs in order, then gives up with one notify', () => {
 });
 
 test('each rung waits for its checkAt before escalating', () => {
-  const { actions } = run(Array(8).fill(DOWN));
-  // t0 none, t30 rung1 (check +15s), t60 rung2 (check +30s), t90 rung3 (check +45s) ...
-  assert.deepEqual(actions.slice(0, 4).map((a) => a.type), ['none', 'attempt', 'attempt', 'attempt']);
-  // rung3 checks at t90+45 = t135 → next decision at t150 (index 5); t120 (index 4) waits.
-  assert.equal(actions[4].type, 'none');
-  assert.equal(actions[5].step.rung, 4);
+  const { actions } = run(Array(9).fill(DOWN));
+  // t0 none, t30 rung1 (check +15s), t60 rung2 (check +75s → t135), t150 rung3 (check +90s → t240), t240 rung4.
+  assert.deepEqual(actions.slice(0, 3).map((a) => a.type), ['none', 'attempt', 'attempt']);
+  assert.deepEqual(actions.slice(3, 5).map((a) => a.type), ['none', 'none']);
+  assert.equal(actions[5].step.rung, 3);
+  assert.deepEqual(actions.slice(6, 8).map((a) => a.type), ['none', 'none']);
+  assert.equal(actions[8].step.rung, 4);
 });
 
 test('speaker returning mid-ladder reports recovered with the rung that worked', () => {
@@ -63,7 +64,7 @@ test('speaker returning mid-ladder reports recovered with the rung that worked',
 
 test('plug wait ignores the power-off it caused', () => {
   // Reach rung 4 (first plug cycle).
-  let { ep } = run(Array(7).fill(DOWN));
+  let { ep } = run(Array(9).fill(DOWN));
   assert.equal(ep.lastAction, 'plugCycle');
   const r = decideSpeaker(ep, { speaker: false, pianoPower: 'off', bridgeUp: true }, ep.checkAt - 1);
   assert.equal(r.action.type, 'none');
@@ -71,7 +72,7 @@ test('plug wait ignores the power-off it caused', () => {
 });
 
 test('piano still off after the plug check is a give-up, not a quiet end', () => {
-  let { ep } = run(Array(7).fill(DOWN));
+  let { ep } = run(Array(9).fill(DOWN));
   const r = decideSpeaker(ep, { speaker: false, pianoPower: 'off', bridgeUp: true }, ep.checkAt + 1);
   assert.equal(r.action.type, 'gave-up');
   assert.equal(r.action.reason, 'piano-stayed-off');
@@ -161,7 +162,7 @@ test('recovery after give-up reports alerted so the caller sends the back card',
 });
 
 test('forceGiveUp jumps straight to needs-help', () => {
-  let { ep, t } = run(Array(7).fill(DOWN));
+  let { ep, t } = run(Array(9).fill(DOWN));
   const r = forceGiveUp(ep, t, 'piano-unpowered');
   assert.equal(r.action.type, 'gave-up');
   assert.equal(r.action.reason, 'piano-unpowered');
@@ -177,9 +178,28 @@ test('undefined options fall back to defaults', () => {
 test('ladder table matches the spec exactly', () => {
   assert.deepEqual(SPEAKER_LADDER.map((s) => [s.action, s.settleMs ?? s.offMs ?? null, s.checkAfterMs]), [
     ['a2dpReconnect', null, 15_000],
-    ['btCycle', 5_000, 30_000],
-    ['btCycle', 15_000, 45_000],
+    ['btCycle', 5_000, 75_000],
+    ['btCycle', 15_000, 90_000],
     ['plugCycle', 10_000, 60_000],
     ['plugCycle', 30_000, 90_000],
   ]);
+});
+
+test('a piano power-off resets the ladder: the next power-on starts at rung 1, not a plug cycle', () => {
+  // Climb to rung 3, child switches the piano off, next morning it comes on with the dongle still connecting.
+  let { ep, t } = run(Array(8).fill(DOWN));
+  assert.equal(ep.rung, 3);
+  const off = { speaker: false, pianoPower: 'off', bridgeUp: true };
+  ({ ep, t } = run(Array(4).fill(off), { start: t, ep }));
+  assert.equal(ep.rung, 0);
+  const { actions } = run([DOWN, DOWN], { start: t + 12 * 3600_000, ep });
+  assert.equal(actions[1].type, 'attempt');
+  assert.equal(actions[1].step.action, 'a2dpReconnect');
+});
+
+test('a power-off between drops also clears a gave-up-ready rung 5', () => {
+  let { ep, t } = run(Array(30).fill(DOWN)); // needs-help at rung 5
+  const off = { speaker: false, pianoPower: 'off', bridgeUp: true };
+  ({ ep } = run([UP, off, off], { start: t, ep })); // recovered, then switched off
+  assert.equal(ep.rung, 0);
 });

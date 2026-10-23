@@ -157,9 +157,9 @@ test('overlapping ticks are serialized', async () => {
 });
 
 
-function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false } = {}) {
+function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false, notifyResult = undefined, hold = true } = {}) {
   let t = 1_790_000_000_000;
-  const state = { health: { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }, power };
+  const state = { health: { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }, power, notifyResult };
   const calls = [];
   const pushes = [];
   const published = [];
@@ -169,7 +169,7 @@ function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error:
     probe: { readHealth: async () => state.health },
     relaunch: async () => ({ ok: true }),
     readPianoPower: async () => state.power,
-    notify: async (p) => { pushes.push(p); },
+    notify: async (p) => { pushes.push(p); return state.notifyResult; },
     compose: composePianoBridgePush,
     scheduler: { every: () => () => {} },
     clock: { now: () => t },
@@ -179,6 +179,7 @@ function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error:
     timezone: 'America/Los_Angeles',
     intervalMs: 30_000,
     speaker: {
+      holdScreen: hold ? async (ms) => { calls.push(`holdScreen:${ms}`); } : null,
       actions: {
         a2dpReconnect: async () => { calls.push('a2dpReconnect'); return failA2dp ? { ok: false, error: 'endpoint-missing' } : { ok: true, error: null }; },
         bluetoothCycle: async (ms) => { calls.push(`btCycle:${ms}`); return { ok: true, error: null }; },
@@ -199,7 +200,7 @@ test('speaker: runs the five rungs in order with the spec parameters, then pushe
   const r = speakerRig();
   r.down();
   await r.step(30);
-  assert.deepEqual(r.calls, ['a2dpReconnect', 'btCycle:5000', 'btCycle:15000', 'plugCycle:10000', 'plugCycle:30000']);
+  assert.deepEqual(r.calls, ['a2dpReconnect', 'btCycle:5000', 'btCycle:15000', 'holdScreen:70000', 'plugCycle:10000', 'holdScreen:120000', 'plugCycle:30000']);
   assert.equal(r.pushes.length, 1);
   assert.match(r.pushes[0].title, /Piano speaker won't reconnect \(Yellow Room\)/);
   assert.equal(r.events('piano.speaker.gave-up').length, 1);
@@ -225,9 +226,10 @@ test('speaker: publishes recovering then ok, never needs-help, on a silent fix',
   await r.step(3);
   r.up();
   await r.step(1);
-  assert.deepEqual(r.published.map((p) => p.state), ['recovering', 'ok']);
-  assert.equal(r.published[0].topic, 'piano.speaker');
-  assert.equal(r.published[0].deviceId, 'yellow-room-tablet');
+  // First tick announces the current state (clears a banner left over from before a restart).
+  assert.deepEqual(r.published.map((p) => p.state), ['ok', 'recovering', 'ok']);
+  assert.equal(r.published[1].topic, 'piano.speaker');
+  assert.equal(r.published[1].deviceId, 'yellow-room-tablet');
 });
 
 test('speaker: needs-help is re-published every tick so a reloaded kiosk catches up', async () => {
@@ -253,7 +255,7 @@ test('speaker: recovery after a push sends the quiet back card', async () => {
 test('speaker: a plug cycle that cannot restore power pages at once', async () => {
   const r = speakerRig({ plugResult: { ok: false, error: 'turn_on: HA timeout', unpowered: true } });
   r.down();
-  await r.step(8); // reaches rung 4
+  await r.step(10); // reaches rung 4
   assert.ok(r.calls.includes('plugCycle:10000'));
   assert.equal(r.pushes.length, 1);
   assert.match(r.pushes[0].title, /Piano is unpowered/);
@@ -277,7 +279,7 @@ test('speaker: piano off never opens an episode', async () => {
   r.down();
   await r.step(10);
   assert.deepEqual(r.calls, []);
-  assert.deepEqual(r.published, []);
+  assert.deepEqual(r.published.map((p) => p.state), ['ok']); // announced once at start, never again
 });
 
 test('speaker: bridge unreachable pauses the ladder', async () => {
@@ -294,4 +296,59 @@ test('speaker: feature off (speaker: null) changes nothing', async () => {
   r.state.health = { ...r.state.health, speaker: false };
   await r.step(10);
   assert.equal(r.events('piano.speaker.dropped').length, 0);
+});
+
+test('speaker: holds the screen for the whole plug window, just before cutting power', async () => {
+  const r = speakerRig();
+  r.down();
+  await r.step(30);
+  const i = r.calls.indexOf('plugCycle:10000');
+  assert.equal(r.calls[i - 1], 'holdScreen:70000'); // offMs 10 s + check 60 s
+  const j = r.calls.indexOf('plugCycle:30000');
+  assert.equal(r.calls[j - 1], 'holdScreen:120000'); // offMs 30 s + check 90 s
+});
+
+test('speaker: a notify that HA rejects is not "told" — retried, and the bus says so', async () => {
+  const r = speakerRig({ notifyResult: { ok: false, error: 'HA 401' } });
+  r.down();
+  await r.step(30);
+  assert.ok(r.events('piano-bridge.supervisor.alert-failed').length >= 1);
+  assert.equal(r.events('piano-bridge.supervisor.alert-sent').length, 0);
+  const last = r.published.at(-1);
+  assert.equal(last.state, 'needs-help');
+  assert.equal(last.told, false);
+  const attempts = r.pushes.length;
+  r.state.notifyResult = { ok: true };
+  await r.step(1);
+  assert.equal(r.pushes.length, attempts + 1);
+  assert.equal(r.published.at(-1).told, true);
+  await r.step(3);
+  assert.equal(r.pushes.length, attempts + 1); // told once, never again
+});
+
+test('speaker: recovery after a give-up nobody heard about sends no back card', async () => {
+  const r = speakerRig({ notifyResult: { ok: false, error: 'HA 401' } });
+  r.down();
+  await r.step(30);
+  const before = r.pushes.length;
+  r.state.notifyResult = { ok: false, error: 'still down' };
+  r.up();
+  await r.step(1);
+  assert.ok(r.pushes.slice(before).every((p) => !/is back/.test(p.title)));
+  assert.equal(r.published.at(-1).state, 'ok');
+});
+
+test('speaker: the give-up push says the piano was not restarted when no plug is wired', async () => {
+  const r = speakerRig({ plug: false });
+  r.down();
+  await r.step(30);
+  assert.equal(r.pushes.length, 1);
+  assert.match(r.pushes[0].message, /not restarted/);
+  assert.doesNotMatch(r.pushes[0].message, /including restarting the piano/);
+});
+
+test('speaker: first tick announces ok so a stale needs-help banner clears after a restart', async () => {
+  const r = speakerRig();
+  await r.step(1);
+  assert.deepEqual(r.published.map((p) => [p.state, p.told]), [['ok', false]]);
 });

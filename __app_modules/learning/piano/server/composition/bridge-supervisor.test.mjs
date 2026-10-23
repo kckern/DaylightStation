@@ -102,3 +102,20 @@ test('enabled without a plug entity still runs the Bluetooth rungs and says so',
   assert.equal(created.data.plugEntity, null);
   assert.ok(d.logs.some((l) => l.event === 'piano.speaker.no-plug' && l.level === 'warn'));
 });
+
+test('speaker recovery gets a screen hold when the device and override services are present', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } }, {
+    deviceService: { get: () => ({ getStatus: async () => ({ screenOn: true }) }) },
+    getScreenOverrideService: () => ({ get: () => null, set: () => ({}) }),
+  });
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created');
+  assert.equal(created.data.screenHold, true);
+});
+
+test('without them the ladder still runs, and says the screen is unprotected', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  createPianoBridgeSupervisor(d.args);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.screenHold, false);
+  assert.ok(d.logs.some((l) => l.event === 'piano.speaker.no-screen-hold' && l.level === 'warn'));
+});

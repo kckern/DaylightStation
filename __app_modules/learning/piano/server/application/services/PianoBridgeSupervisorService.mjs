@@ -59,6 +59,10 @@ export class PianoBridgeSupervisorService {
   // speaker episode
   #speaker = null;
   #speakerEpisode = initialSpeakerEpisode();
+  #speakerAnnounced = false;  // first tick publishes, clearing a banner from before a restart
+  #speakerAlert = null;       // {kind, fields} still owed to a person
+  #speakerAlertTried = false;
+  #speakerTold = false;       // a push actually went out (not merely attempted)
 
   /**
    * @param {Object} opts
@@ -271,7 +275,23 @@ export class PianoBridgeSupervisorService {
     this.#speakerEpisode = episode;
     await this.#onSpeakerAction(action, now);
     const after = speakerPublicState(this.#speakerEpisode);
-    if (after !== before || after === 'needs-help') this.#publishSpeaker(after);
+    await this.#deliverSpeakerAlert();
+    if (after !== before || after === 'needs-help' || !this.#speakerAnnounced) {
+      this.#speakerAnnounced = true;
+      this.#publishSpeaker(this.#speakerPublic());
+    }
+  }
+
+  #speakerPublic() {
+    return speakerPublicState(this.#speakerEpisode);
+  }
+
+  /** Owed alerts retry every tick until HA accepts one; with no notify target, say so once. */
+  async #deliverSpeakerAlert() {
+    if (!this.#speakerAlert || this.#speakerTold) return;
+    if (this.#speakerAlertTried && !this.#notify) return;
+    this.#speakerAlertTried = true;
+    this.#speakerTold = await this.#push(this.#speakerAlert.kind, this.#speakerAlert.fields, this.#speaker.compose);
   }
 
   async #onSpeakerAction(action, now) {
@@ -287,7 +307,14 @@ export class PianoBridgeSupervisorService {
       try {
         if (step.action === 'a2dpReconnect') result = await this.#speaker.actions.a2dpReconnect();
         else if (step.action === 'btCycle') result = await this.#speaker.actions.bluetoothCycle(step.settleMs);
-        else result = await this.#speaker.plugCycle(step.offMs);
+        else {
+          // Pin the screen for the whole outage so the power-sync authority neither
+          // blanks it at 15 s of "piano off" nor pulses it on the power edge.
+          try { await this.#speaker.holdScreen?.(step.offMs + step.checkAfterMs); } catch (err) {
+            this.#logger.warn?.('piano.speaker.screen-hold-failed', { deviceId, error: String(err?.message ?? err) });
+          }
+          result = await this.#speaker.plugCycle(step.offMs);
+        }
       } catch (err) {
         result = { ok: false, error: String(err?.message ?? err) };
       }
@@ -299,13 +326,17 @@ export class PianoBridgeSupervisorService {
       if (result?.unpowered) {
         this.#speakerEpisode = forceGiveUp(this.#speakerEpisode, now, 'piano-unpowered').episode;
         this.#logger.error?.('piano.speaker.gave-up', { deviceId, reason: 'piano-unpowered', error: result.error ?? null });
-        await this.#push('unpowered', {}, this.#speaker.compose);
+        this.#owe('unpowered', {});
       }
       return;
     }
     if (action.type === 'recovered') {
       this.#logger.info?.('piano.speaker.recovered', { deviceId, rung: action.rung, durationMs: action.durationMs });
-      if (action.alerted) await this.#push('back', { downMs: action.durationMs }, this.#speaker.compose);
+      // A "back" card only replaces an alarm somebody actually received.
+      if (this.#speakerTold) await this.#push('back', { downMs: action.durationMs }, this.#speaker.compose);
+      this.#speakerAlert = null;
+      this.#speakerAlertTried = false;
+      this.#speakerTold = false;
       return;
     }
     if (action.type === 'ended') {
@@ -314,8 +345,14 @@ export class PianoBridgeSupervisorService {
     }
     if (action.type === 'gave-up') {
       this.#logger.error?.('piano.speaker.gave-up', { deviceId, reason: action.reason, skipped: action.skipped });
-      if (action.notify) await this.#push('needs-help', {}, this.#speaker.compose);
+      if (action.notify) this.#owe('needs-help', { reason: action.reason, skipped: action.skipped });
     }
+  }
+
+  #owe(kind, fields) {
+    this.#speakerAlert = { kind, fields };
+    this.#speakerAlertTried = false;
+    this.#speakerTold = false;
   }
 
   #publishSpeaker(state) {
@@ -323,6 +360,7 @@ export class PianoBridgeSupervisorService {
     try {
       this.#speaker.publish({
         topic: 'piano.speaker', deviceId: this.#deviceId, state, rung: this.#speakerEpisode.rung,
+        told: this.#speakerTold,
       });
     } catch (err) {
       this.#logger.warn?.('piano.speaker.publish-failed', { deviceId: this.#deviceId, error: String(err?.message ?? err) });
@@ -349,7 +387,9 @@ export class PianoBridgeSupervisorService {
       return false;
     }
     try {
-      await this.#notify(push);
+      const res = await this.#notify(push);
+      // HomeAssistantAdapter.callService resolves {ok:false} rather than throwing.
+      if (res && res.ok === false) throw new Error(res.error || 'notify refused');
       this.#logger.info?.('piano-bridge.supervisor.alert-sent', { deviceId: this.#deviceId, kind });
       return true;
     } catch (err) {

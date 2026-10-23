@@ -10,7 +10,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Runs entirely on the tablet so a dropped HTTP connection mid-toggle can never
  * strand Bluetooth off: once disabled, it keeps asking for enable() for up to
- * {@link #WATCHDOG_MS} before reporting "stuck-off". BLE-MIDI drops for the
+ * {@link #WATCHDOG_MS}, then keeps retrying every {@link #SLOW_RETRY_MS} for
+ * {@link #SLOW_WINDOW_MS} before reporting "stuck-off" — a Bluetooth left off would
+ * take BLE-MIDI (the piano's keys) down with the speaker. BLE-MIDI drops for the
  * duration; BleMidiConnector reconnects it on its own.
  */
 public final class AdapterCycler {
@@ -23,6 +25,8 @@ public final class AdapterCycler {
     static final long WATCHDOG_MS = 30_000L;
     static final long POLL_MS = 200L;
     static final long ENABLE_RETRY_MS = 2_000L;
+    static final long SLOW_RETRY_MS = 10_000L;
+    static final long SLOW_WINDOW_MS = 5 * 60_000L;
 
     public static final class Result {
         public final boolean ok; public final String error; public final long tookMs;
@@ -64,19 +68,29 @@ public final class AdapterCycler {
                 waitFor(false, STATE_WAIT_MS);
             }
             clock.sleep(settle);
-            long deadline = clock.now() + WATCHDOG_MS;
+            long fastUntil = clock.now() + WATCHDOG_MS;
+            long slowUntil = fastUntil + SLOW_WINDOW_MS;
             while (true) {
-                ops.enable();
+                tryEnable();
                 if (waitFor(true, ENABLE_RETRY_MS)) return new Result(true, null, clock.now() - start);
-                if (clock.now() >= deadline) return new Result(false, "stuck-off", clock.now() - start);
+                if (clock.now() >= slowUntil) return new Result(false, "stuck-off", clock.now() - start);
+                if (clock.now() >= fastUntil) clock.sleep(SLOW_RETRY_MS);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            ops.enable(); // never leave it off on the way out
+            tryEnable(); // never leave it off on the way out
             return new Result(false, "interrupted", clock.now() - start);
+        } catch (RuntimeException e) {
+            tryEnable();
+            return new Result(false, "error: " + e.getClass().getSimpleName(), clock.now() - start);
         } finally {
             end();
         }
+    }
+
+    /** enable() can throw (a revoked permission, a dying stack); a throw is just a failed try. */
+    private void tryEnable() {
+        try { ops.enable(); } catch (RuntimeException ignored) { }
     }
 
     private boolean waitFor(boolean wantEnabled, long withinMs) throws InterruptedException {
