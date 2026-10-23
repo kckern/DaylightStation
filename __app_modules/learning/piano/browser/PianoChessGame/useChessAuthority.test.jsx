@@ -79,6 +79,26 @@ describe('durable resume from the server copy', () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
+  it('indexes the rebuilt server game so the next start resumes it and reclaim keeps it', async () => {
+    const { result } = renderHook(() => useChessAuthority({ userId: USER, seed: 7, fetchResumable: serverReply() }));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.session.header.session_id;
+    expect(window.localStorage.getItem(`gaming:piano-chess:active:${USER}`)).toBe(id);
+    expect(window.localStorage.getItem(`gaming:piano-chess:snapshot:${id}`)).not.toBe(null);
+  });
+
+  it('a second player starting chess on the same screen does not sweep the first player\'s rebuilt game', async () => {
+    const first = renderHook(() => useChessAuthority({ userId: USER, seed: 7, fetchResumable: serverReply() }));
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    const id = first.result.current.session.header.session_id;
+    const other = renderHook(() => useChessAuthority({ userId: 'sibling', seed: 1, fetchResumable: async () => null }));
+    await waitFor(() => expect(other.result.current.ready).toBe(true));
+    expect(window.localStorage.getItem(`gaming:piano-chess:snapshot:${id}`)).not.toBe(null);
+    // White to move in the incident's final position; a2-a3 is legal there.
+    await act(async () => { await first.result.current.move({ from: 'a2', to: 'a3' }); });
+    expect(first.result.current.session.state.history).toHaveLength(75);
+  });
+
   it('play again after a resume gives an empty board', async () => {
     const { result } = renderHook(() => useChessAuthority({ userId: USER, seed: 1, fetchResumable: serverReply() }));
     await waitFor(() => expect(result.current.ready).toBe(true));
