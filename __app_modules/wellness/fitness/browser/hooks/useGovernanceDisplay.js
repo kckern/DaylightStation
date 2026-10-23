@@ -8,7 +8,7 @@ const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 const isLiveZoneChallenge = (challenge) => Boolean(challenge
   && challenge.type !== 'cycle'
   && !challenge.paused
-  && challenge.status === 'pending');
+  && (challenge.status === 'pending' || challenge.status === 'failed'));
 
 /**
  * Per-participant governance status beyond met/missing, keyed by normalized id:
@@ -30,7 +30,7 @@ export function resolveParticipantGovernanceStatuses(govState) {
       statuses[key] = {
         status: 'holding',
         zoneLabel,
-        remainingMs: Number.isFinite(challenge.holdRemainingMs) ? challenge.holdRemainingMs : null
+        remainingMs: challenge.holdProgressByUser?.[userId]?.remainingMs ?? null
       };
     });
   }
@@ -54,265 +54,111 @@ export function resolveParticipantGovernanceStatuses(govState) {
  * Pure function: resolve governance decisions + display map → display rows.
  * Exported for testability. Used via useGovernanceDisplay hook.
  */
-export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options) {
-  const preferGroupLabels = options?.preferGroupLabels ?? false;
+export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneMeta, options) {
   if (!govState?.isGoverned) return null;
-
-  const {
-    status,
-    requirements,
-    challenge: rawChallenge,
-    deadline,
-    gracePeriodTotal,
-    videoLocked,
-    hrInactiveUsers,
-    activeUserCount
-  } = govState;
-  // Recovery leaves cycling progress frozen in the engine snapshot. Use only
-  // base requirements for the generic panel; do not infer a lock, targets or
-  // completion credit from that temporarily suspended cycling challenge.
-  const challenge = rawChallenge?.type === 'cycle' && rawChallenge.sensorUnavailable
-    ? null
-    : rawChallenge;
-  const normalizedRequirements = Array.isArray(requirements) ? requirements : [];
-  const participantStatuses = resolveParticipantGovernanceStatuses({ ...govState, challenge });
-  const activityRequirements = normalizedRequirements.filter((req) => req?.type === 'activity_rate');
-
-  if (status === 'unlocked') {
-    // Cycle challenges can enter `cycleState: 'locked'` independently of
-    // parent governance — the rider dropped below loRpm even though HR-based
-    // base requirements are still satisfied.
-    //
-    // Health-lock (lockReason === 'health'): the inline CycleChallengeOverlay
-    // stays visible showing the empty health meter; videoLocked pauses
-    // playback. The generic GovernanceStateOverlay must NOT render — return
-    // show:false so the host skips it. The cycle overlay is kept by
-    // FitnessPlayerOverlay's health-lock guard.
-    //
-    // Non-health locks (init/ramp): keep existing show:true so GovernanceStateOverlay
-    // renders (the inline overlay is already suppressed for those by FitnessPlayerOverlay).
-    if (challenge && challenge.type === 'cycle' && challenge.cycleState === 'locked') {
-      if (challenge.lockReason === 'health') {
-        return {
-          show: false,
-          status,
-          rows: [],
-          requirements: [],
-          deadline: null,
-          gracePeriodTotal: null,
-          videoLocked: true,
-          metRows: [],
-          challenge,
-          participantStatuses,
-          activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
-        };
-      }
-      // Non-health cycle lock (init/ramp) — surface through GovernanceStateOverlay.
-      return {
-        show: true,
-        status,
-        rows: [],
-        requirements: [],
-        deadline: null,
-        gracePeriodTotal: null,
-        videoLocked: false,
-        metRows: [],
-        challenge,
-        participantStatuses,
-        activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
-      };
-    }
-    return { show: false, status, rows: [], metRows: [], activityRequirements, participantStatuses };
-  }
-
-  // Collect all (userId, targetZoneId) pairs from unsatisfied requirements + active challenge
-  const userTargets = new Map(); // userId → targetZoneId (highest severity wins)
+  const preferGroupLabels = options?.preferGroupLabels ?? false;
   const zoneMap = zoneMeta?.map || {};
   const rankOf = (zoneId) => zoneMap[zoneId]?.rank ?? -1;
-  const hrInactiveSet = new Set((hrInactiveUsers || []).map(normalize));
-
-  // Hard rule: a user whose display entry shows no current HR signal
-  // (heartRate null or 0) is never a candidate for the lock screen, regardless
-  // of which list governance put them on. Belt-and-braces with the
-  // hrInactiveSet filter below — if the engine's pulse/snapshot paths ever
-  // disagree about hrInactiveUsers, this still guarantees zero-HR users
-  // don't appear.
-  //
-  // Note: when displayMap has NO entry for the key at all (e.g. init race
-  // where governance has emitted a requirement before the display map has
-  // populated), we leave the user in so the fallback name path keeps working.
-  // Only an explicit zero/null in the entry triggers the exclusion.
-  const isZeroHrInDisplay = (key) => {
-    const d = displayMap.get(key);
-    if (!d) return false;
-    if (d.heartRate == null) return true;
-    return Number.isFinite(d.heartRate) && d.heartRate <= 0;
-  };
-
-  // Base requirements
-  normalizedRequirements.forEach((req) => {
-    if (req.satisfied) return;
-    // A cadence_floor is satisfied by pedaling OR by reaching its `orZone`, so
-    // its row targets that zone (how close the rider's HR is) and carries the
-    // pedal reading — its heart rate alone is not what the rule is about.
-    const pedal = req.type === 'cadence_floor'
-      ? {
-        rpm: Math.max(0, Math.round(Number(req.currentRate) || 0)),
-        targetRpm: Number.isFinite(req.targetRate) ? req.targetRate : null,
-        orZoneLabel: req.orZoneLabel || null
-      }
-      : null;
-    const targetZoneId = pedal ? (req.orZone || null) : (req.zone || null);
-    (req.missingUsers || []).forEach((userId) => {
-      const key = normalize(userId);
-      if (hrInactiveSet.has(key)) return;
-      if (isZeroHrInDisplay(key)) return;
-      const existing = userTargets.get(key);
-      if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
-        userTargets.set(key, { userId, targetZoneId, source: 'requirement', pedal });
-      }
-    });
+  const requirements = Array.isArray(govState.requirements) ? govState.requirements : [];
+  const floors = requirements.filter((req) => req && !req.satisfied)
+    .sort((a, b) => rankOf(b.zone || b.orZone) - rankOf(a.zone || a.orZone));
+  const rawChallenge = govState.challenge;
+  const availableChallenge = !floors.length && rawChallenge && !rawChallenge.paused
+    && !rawChallenge.sensorUnavailable ? rawChallenge : null;
+  const lockingChallenge = availableChallenge && (availableChallenge.status === 'failed'
+    || (availableChallenge.type === 'cycle' && availableChallenge.cycleState === 'locked'))
+    ? availableChallenge : null;
+  const participantStatuses = resolveParticipantGovernanceStatuses({
+    ...govState, challenge: floors.length ? null : availableChallenge,
   });
+  const hrInactiveSet = new Set((govState.hrInactiveUsers || []).map(normalize));
+  const nameOf = (display, userId) => (preferGroupLabels && display?.groupLabel)
+    ? display.groupLabel : (display?.displayName || userId);
+  const currentZoneOf = (display) => display?.zoneTrusted === false ? null : (zoneMap[display?.zoneId] || null);
 
-  // Challenge requirements (if active, NOT paused, and has missing users)
-  if (challenge && !challenge.paused && (challenge.status === 'pending' || challenge.status === 'failed') && Array.isArray(challenge.missingUsers)) {
-    const targetZoneId = challenge.zone || null;
-    challenge.missingUsers.forEach((userId) => {
+  const makeObligation = (requirement, source, index) => {
+    const targetId = requirement.type === 'cadence_floor' ? requirement.orZone : requirement.zone;
+    const targetZone = zoneMap[targetId] || null;
+    const credited = new Set((source === 'requirement'
+      ? (requirement.eligibleMetUsers || requirement.metUsers || [])
+      : (requirement.metUsers || [])).map(normalize));
+    const missing = new Set((requirement.missingUsers || []).map(normalize));
+    const holding = new Set((source === 'challenge' ? requirement.holding || [] : []).map(normalize));
+    const rows = [];
+    for (const userId of requirement.missingUsers || []) {
       const key = normalize(userId);
-      if (hrInactiveSet.has(key)) return;
-      if (isZeroHrInDisplay(key)) return;
-      const existing = userTargets.get(key);
-      if (!existing || rankOf(targetZoneId) > rankOf(existing.targetZoneId)) {
-        userTargets.set(key, { userId, targetZoneId, source: 'challenge' });
-      }
-    });
-  }
-
-  // Resolve each user against the display map
-  const rows = [];
-  const challengeHolding = new Set(
-    (Array.isArray(challenge?.holding) ? challenge.holding : []).map(normalize)
-  );
-  for (const [key, { userId, targetZoneId, source, pedal = null }] of userTargets) {
-    const display = displayMap.get(key);
-    const targetZone = targetZoneId ? (zoneMap[targetZoneId] || null) : null;
-    const currentZoneId = display?.zoneId || null;
-    const currentZone = currentZoneId ? (zoneMap[currentZoneId] || null) : null;
-
-    // Compute target-aware progress (full span to governance target)
-    const zoneSequence = display?.zoneSequence || [];
-    const currentZoneIndex = zoneSequence.findIndex(z => z.id === currentZoneId);
-    const targetResult = (zoneSequence.length > 0 && currentZoneIndex >= 0)
-      ? calculateZoneProgressTowardsTarget({
-          snapshot: {
-            zoneSequence,
-            currentZoneIndex,
-            heartRate: display?.heartRate ?? 0
-          },
-          targetZoneId
-        })
-      : null;
-
-    // Use target-aware progress if available, otherwise fall back to display map progress
-    const resolvedProgress = (targetResult && targetResult.progress != null)
-      ? targetResult.progress
-      : (display?.progress ?? null);
-    const intermediateZones = targetResult?.intermediateZones || [];
-
-    const resolvedName = (preferGroupLabels && display?.groupLabel)
-      ? display.groupLabel
-      : (display?.displayName || userId);
-    // A row is 'missing' unless the rider is mid-hold on the challenge that
-    // put them here (D5), or is an unattended child past the start window (D3).
-    const participantStatus = participantStatuses[key] || null;
-    let rowStatus = 'missing';
-    if (source === 'challenge' && challengeHolding.has(key)) {
-      rowStatus = 'holding';
-    } else if (participantStatus?.status === 'start-overdue') {
-      rowStatus = 'start-overdue';
+      if (credited.has(key) || hrInactiveSet.has(key)) continue;
+      const display = displayMap.get(key);
+      // Preserve the existing signal-loss filter while allowing roster startup
+      // fallback names when the display map has not populated yet.
+      if (display && (display.heartRate == null || display.heartRate <= 0)) continue;
+      const currentZone = currentZoneOf(display);
+      const zoneSequence = display?.zoneSequence || [];
+      const currentZoneIndex = zoneSequence.findIndex((zone) => zone.id === currentZone?.id);
+      const targetResult = zoneSequence.length && currentZoneIndex >= 0 && targetId
+        ? calculateZoneProgressTowardsTarget({ snapshot: {
+          zoneSequence, currentZoneIndex, heartRate: display?.heartRate ?? 0,
+        }, targetZoneId: targetId }) : null;
+      const personalTarget = zoneSequence.find((zone) => zone.id === targetId)?.threshold;
+      const status = holding.has(key) ? 'holding'
+        : (participantStatuses[key]?.status === 'start-overdue' ? 'start-overdue' : 'missing');
+      rows.push({
+        key, userId, status,
+        statusZoneLabel: status === 'holding' ? (requirement.zoneLabel || targetId)
+          : (status === 'start-overdue' ? participantStatuses[key]?.zoneLabel : null),
+        displayName: nameOf(display, userId), avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
+        heartRate: display?.heartRate ?? null, currentZone, targetZone, zoneSequence,
+        progress: currentZone ? (targetResult?.progress ?? display?.progress ?? null) : null,
+        intermediateZones: targetResult?.intermediateZones || [],
+        targetHeartRate: Number.isFinite(personalTarget) ? personalTarget
+          : (targetResult?.rangeMax ?? (zoneSequence.length ? null : display?.targetHeartRate ?? null)),
+        holdProgress: source === 'challenge' ? (requirement.holdProgressByUser?.[userId] || null) : null,
+        groupLabel: display?.groupLabel || null,
+        pedal: requirement.type === 'cadence_floor' ? {
+          rpm: Math.max(0, Math.round(Number(requirement.currentRate) || 0)),
+          targetRpm: Number.isFinite(requirement.targetRate) ? requirement.targetRate : null,
+          orZoneLabel: requirement.orZoneLabel || null,
+        } : null,
+      });
     }
-    rows.push({
-      key: key,
-      userId,
-      status: rowStatus,
-      statusZoneLabel: rowStatus === 'start-overdue'
-        ? participantStatus.zoneLabel
-        : (rowStatus === 'holding' ? (challenge?.zoneLabel || challenge?.zone || null) : null),
-      displayName: resolvedName,
-      avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
-      heartRate: display?.heartRate ?? null,
-      currentZone,
-      targetZone,
-      zoneSequence,
-      progress: resolvedProgress,
-      intermediateZones,
-      targetHeartRate: display?.targetHeartRate ?? null,
-      groupLabel: display?.groupLabel || null,
-      pedal
-    });
-  }
-
-  // Sort by severity (highest target zone first)
-  rows.sort((a, b) => rankOf(b.targetZone?.id) - rankOf(a.targetZone?.id));
-
-  // Participants who HAVE satisfied their requirement. `rows` above is
-  // missing-only by construction, so without this a rider drops off the lock
-  // screen the instant they reach their target — the header count is the only
-  // trace they were ever there. Collected from the same requirement/challenge
-  // pair that feeds userTargets so the credit and the count agree.
-  const metUserIds = new Map(); // normalized key → raw userId
-  const collectMet = (list) => {
-    (Array.isArray(list) ? list : []).forEach((userId) => {
-      const key = normalize(userId);
-      if (!key || metUserIds.has(key)) return;
-      metUserIds.set(key, userId);
-    });
+    const metRows = [];
+    for (const key of credited) {
+      if (missing.has(key)) continue;
+      const display = displayMap.get(key);
+      metRows.push({ key, userId: key, displayName: nameOf(display, key), avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
+        heartRate: display?.heartRate ?? null, currentZone: currentZoneOf(display), groupLabel: display?.groupLabel || null });
+    }
+    return {
+      key: `${source}:${requirement.id || index}`, source, zone: targetId || null,
+      zoneLabel: requirement.zoneLabel || requirement.orZoneLabel || targetZone?.name || targetId || null,
+      requiredCount: requirement.requiredCount ?? null, actualCount: requirement.actualCount ?? null,
+      rows, metRows,
+      // Keep the full scoped rule for activity/sensor presentation and legacy hosts.
+      requirement: source === 'requirement' ? requirement : null,
+      challenge: source === 'challenge' ? requirement : null,
+    };
   };
-  normalizedRequirements.forEach((req) => {
-    if (req.satisfied) return;
-    collectMet(req.metUsers);
-  });
-  if (challenge && !challenge.paused && (challenge.status === 'pending' || challenge.status === 'failed')) {
-    collectMet(challenge.metUsers);
-  }
-
-  const metRows = [];
-  for (const [key, userId] of metUserIds) {
-    // A participant can't simultaneously block and credit. If governance has
-    // them on both lists (conflicting requirements), the blocking row wins —
-    // otherwise their face would say "done" while their row says "not yet".
-    if (userTargets.has(key)) continue;
-    const display = displayMap.get(key);
-    const currentZoneId = display?.zoneId || null;
-    metRows.push({
-      key,
-      userId,
-      displayName: (preferGroupLabels && display?.groupLabel)
-        ? display.groupLabel
-        : (display?.displayName || userId),
-      avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
-      heartRate: display?.heartRate ?? null,
-      currentZone: currentZoneId ? (zoneMap[currentZoneId] || null) : null,
-      groupLabel: display?.groupLabel || null
-    });
-  }
-
-  const show = rows.length > 0 || activityRequirements.some((req) => !req.satisfied)
-    || status === 'locked' || status === 'pending';
-
+  const obligations = floors.map((req, index) => makeObligation(req, 'requirement', index));
+  if (!floors.length && lockingChallenge) obligations.push(makeObligation(lockingChallenge, 'challenge', 0));
+  const selected = obligations[0] || null;
+  const activityRequirements = floors.filter((req) => req.type === 'activity_rate');
+  const cycleLocked = lockingChallenge?.type === 'cycle';
+  const cycleHealthLock = cycleLocked && lockingChallenge.lockReason === 'health';
+  const show = cycleHealthLock ? false : Boolean(selected?.rows.length || activityRequirements.length
+    || cycleLocked || govState.status === 'locked' || govState.status === 'pending');
   return {
-    show,
-    status,
-    deadline: deadline || null,
-    gracePeriodTotal: gracePeriodTotal || null,
-    videoLocked: videoLocked || false,
-    challenge: challenge || null,
-    requirements: normalizedRequirements,
-    activityRequirements,
-    activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null,
-    rows,
-    metRows,
-    participantStatuses
+    show, status: govState.status,
+    obligations,
+    zone: selected?.zone || null, zoneLabel: selected?.zoneLabel || null,
+    requiredCount: selected?.requiredCount ?? null, actualCount: selected?.actualCount ?? null,
+    rows: selected?.rows || [], metRows: selected?.metRows || [],
+    requirements: selected?.requirement ? [selected.requirement] : [],
+    activityRequirements: selected?.requirement?.type === 'activity_rate' ? [selected.requirement] : [],
+    challenge: lockingChallenge || null,
+    deadline: govState.deadline ?? null, gracePeriodTotal: govState.gracePeriodTotal ?? null,
+    videoLocked: cycleHealthLock ? true : (cycleLocked ? false : Boolean(govState.videoLocked)),
+    activeUserCount: Number.isFinite(govState.activeUserCount) ? Math.max(0, Math.round(govState.activeUserCount)) : null,
+    participantStatuses,
   };
 }
 

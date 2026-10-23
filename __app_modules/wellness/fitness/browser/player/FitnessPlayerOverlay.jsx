@@ -54,7 +54,9 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
   const isGovernanceLocked = governanceDisplay?.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
   const isCycleChallenge = activeChallenge?.type === 'cycle';
-  const lockScreen = resolveLockScreen({ activeChallenge, governanceDisplay });
+  const challengeBackgrounded = Boolean(activeChallenge?.paused
+    || governanceDisplay?.obligations?.some((obligation) => obligation.source === 'requirement'));
+  const lockScreen = resolveLockScreen({ activeChallenge: challengeBackgrounded ? null : activeChallenge, governanceDisplay });
   const challengeEventRef = useRef({ id: null, status: null });
   const wasPlayingBeforeOverlayRef = useRef(false);
 
@@ -164,16 +166,16 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
   // cycle UI owns the challenge affordance (ring, gauge, swap). Without this
   // gate, ChallengeOverlay would attempt to render zone-shaped fields
   // (zoneLabel, requiredCount, metUsers) against a cycle snapshot.
-  const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked && !isCycleChallenge
+  const challengeOverlay = currentChallengeOverlay?.show && !challengeBackgrounded && !isGovernanceLocked && !isCycleChallenge
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />
     : null;
-  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !isGovernanceLocked && !isCycleChallenge
+  const nextChallengeOverlay = upcomingChallengeOverlay?.show && !challengeBackgrounded && !isGovernanceLocked && !isCycleChallenge
     ? <ChallengeOverlay overlay={upcomingChallengeOverlay} />
     : null;
 
   // Locked/failed cycles are promoted; sensor recovery keeps the dial in-deck.
   // Success is handled separately by the completion hold below.
-  const cycleOverlayActive = isCycleChallenge
+  const cycleOverlayActive = isCycleChallenge && !challengeBackgrounded
     && activeChallenge?.status !== 'success';
   const cycleOverlayNode = cycleOverlayActive ? (
     <CycleChallengeOverlay
@@ -188,7 +190,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
   // (full green ring + ✓ + pulse) instead of vanishing — mirrors the HR overlay.
   // useCycleSuccessHold captures the success snapshot so it survives the engine
   // clearing the live challenge during the hold window.
-  const cycleSuccess = useCycleSuccessHold(isCycleChallenge ? activeChallenge : null);
+  const cycleSuccess = useCycleSuccessHold(isCycleChallenge && !challengeBackgrounded ? activeChallenge : null);
   const cycleDoneOverlay = (cycleSuccess.done && cycleSuccess.challenge && !lockScreen.promoteCycle) ? (
     <CycleChallengeOverlay challenge={cycleSuccess.challenge} done />
   ) : null;

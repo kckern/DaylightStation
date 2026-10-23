@@ -238,7 +238,7 @@ Timer fires → _triggerPulse()
         evaluate() on each pulse
             │
             ├── Participants meet challenge zone?
-            │       YES (for 500ms) → status: 'success'
+            │       YES (optional configured hold) → status: 'success'
             │           Clear challenge, schedule next
             │           _schedulePulse(nextInterval)
             │
@@ -247,14 +247,23 @@ Timer fires → _triggerPulse()
             │           videoLocked = true
             │           phase → locked
             │
-            └── Phase changed to warning/locked?
-                    Challenge timer PAUSES
-                    challenge.pausedAt = now
-                    challenge.pausedRemainingMs = remaining
-                    Timer resumes when phase returns to unlocked
+            └── Any evaluated floor criterion unmet?
+                    Challenge PAUSES and backgrounds (including grace)
+                    Identity/status, clock and earned progress are banked
+                    Resume once when every floor criterion recovers
 ```
 
-**Challenge timer pausing rule:** Challenge timers only count down during `unlocked` phase. If the user drops below base requirements (entering `warning`), the challenge clock freezes. This prevents double-penalizing users who are already being warned about base requirements.
+**Challenge suspension rule:** Evaluated floor satisfaction controls suspension,
+independently of the overall playback phase. A failed challenge can itself hold
+that phase locked while the floor is satisfied. Any unmet floor backgrounds zone,
+step and cycle challenges, banking countdown and earned progress throughout
+warning/grace and lock. Recovery resumes the same challenge once; an unmet failed
+challenge then owns the lock again. Optional per-person holds default to zero,
+exclude paused time, and reset on observed target loss or departure. Display
+obligations keep floor targets/counts/rows/faces scoped; no challenge-only blocker
+or credit appears in a floor explanation. See the
+[governance reference](./governance-engine.md#floor-priority-and-challenge-suspension)
+for the snapshot and display contracts.
 
 ---
 

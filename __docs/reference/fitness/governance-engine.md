@@ -739,31 +739,84 @@ challenge that cannot drop is skipped like an infeasible one, and any configured
 or unattended selection at or below the baseline is skipped at start
 (`governance.challenge.skipped_baseline_zone`).
 
-Every zone challenge (supervised or unattended) counts a rider only after they
-have held the target zone for `challenge_hold_seconds` (default 10) continuous
-seconds within that challenge. Holds keep accruing while a challenge is paused;
-the hold starts at the first evaluation after a rider enters the zone. A rider already in the zone when the challenge
-appears still holds for the full time; dropping below the zone resets that
-rider's hold. The challenge completes once the required count of riders have
-each completed a hold. `0` restores instant completion. The evaluation result
-carries `holding` (in zone, hold incomplete) and `holdRemainingMs`, and the
-engine pulses at the earliest hold end so completion is not late. The
-challenge snapshot in the composed state copies `holding` and `holdRemainingMs`.
-Riders mid-hold stay in `missingUsers` (they still count as missing in the engine), but the display layer gives them the
-status `holding`: the challenge overlay draws them as pulsing blocks after the
-completed ones, and warning/lock rows read "Holding" rather than missing. Cycle
-challenges are unaffected.
+### Floor priority and challenge suspension
+
+Evaluated floor satisfaction determines priority independently of playback phase.
+Whenever a floor criterion is unmet, including its warning/grace interval, the
+floor owns the explanation. Its own target, subject numerator, denominator,
+blocker rows and credited faces stay together. Challenges are backgrounded and
+cannot introduce an earlier playback lock or start a replacement challenge.
+
+Zone, step and cycle challenges expose `paused: true` and
+`pauseReason: "floor_unmet"` during floor suspension. Their identity and
+pending/failed status persist. Countdown, optional holds and earned effort are
+banked; suspended wall time cannot expire a challenge, earn effort or award a
+reward. On recovery the same challenge resumes once with its saved time. A failed
+challenge returns to the foreground and keeps playback locked until its own
+recovery condition is met. Cycle sensor/cadence recovery continues in the
+background without taking over the floor explanation or earning effort.
+
+Manual playback and transport pauses compose with floor suspension: only the
+union of paused time is excluded, including a pause beginning at timestamp zero.
+An active challenge survives departures below its start minimum; departure or
+observed target loss invalidates that rider's own uninterrupted hold. Step
+counters and cycle clocks rebase on recovery, excluding background effort.
+
+### Optional zone holds
+
+`challenge_hold_seconds` defaults to **0**, including invalid or negative settings.
+A zero hold credits a trusted eligible zone immediately and shows no secondary
+indicator. Explicit finite nonnegative settings, including 1 or 10 seconds,
+require continuous eligibility within that challenge. Another challenge cannot
+inherit a rider's hold credit.
+
+The evaluation result and composed challenge snapshot expose
+`holdProgressByUser[userId]: { elapsedMs, remainingMs, totalMs }`. The existing
+`holdRemainingMs` is the earliest unfinished group hold and serves scheduling;
+it must not be shown as every person's remaining time. In-zone riders with an
+unfinished hold remain in `missingUsers` and `holding` until they qualify.
+Earned elapsed time survives a floor pause, while paused time earns nothing;
+observed ineligibility or departure resets the affected hold.
+
+### Foreground display contract
+
+`resolveGovernanceDisplay` emits ordered `display.obligations` entries with
+`{ key, source, zone, zoneLabel, requiredCount, actualCount, rows, metRows }`.
+`source` is `requirement` or `challenge`. While any floor is unmet, entries contain
+only unmet floors, ordered by target severity and kept separately scoped. Once
+all floors recover, a locking challenge may supply the explanation; a pending
+challenge never supplies a generic lock explanation. Activity and unavailable
+sensor policies retain their existing behavior. Compatibility fields such as
+`rows`, `metRows`, `requirements`, `challenge`, `zoneLabel`, and counts reflect the
+first selected obligation. Hosts presenting multiple floors consume the scoped
+entries instead of merging their rows and credit.
+
+Zone floor summaries carry `eligibleMetUsers` for the governed subjects counted
+by `actualCount`; broad `metUsers` can include guests/exempt riders and must not
+supply floor faces. Challenge credit retains its separate guest/exempt policy.
+
+Current zone pills and avatar rings follow live trusted committed state. HR
+remains visible while untrusted, without an earned-zone treatment. The HR
+denominator is the displayed obligation's personal target threshold, even if
+several zones above the rider's current zone. The numeric percentage notch tracks
+HR progress and remains within the bar at 0–100%. Nonzero holds add a slim
+secondary visual with accessible individual timing, without visible Holding
+prose or another text line. Cadence blockers use a crank/pedal icon with an
+accessible pedal OR zone instruction and a compact measurement in the existing
+row. Lock rows use natural height and bounded scrolling rather than blank
+reserved table space. Zone colors use the shared palette; HR strap identity
+colors remain a separate contract.
 
 ## Configuration
 
 ### Governance Policies
 
-Located in `data/household/fitness/config.yml`:
+Located at `household/fitness/config.yml` under the configured data root:
 
 ```yaml
 governance:
   grace_period_seconds: 30
-  challenge_hold_seconds: 10  # zone challenges: continuous seconds in zone (0 = instant)
+  challenge_hold_seconds: 0   # immediate zone credit; set 1 or 10 for an optional hold
   # superusers: retired and ignored; supervisors are profiles with type: owner or roles: [guardian]
   unattended_policy:
     enabled: true

@@ -169,7 +169,7 @@ describe('FitnessPlayerOverlay cycling bypass and recovery', () => {
     expect(view.container.querySelector('audio[aria-label="Governance cue locked"]')).not.toBeNull();
   });
 
-  it('shows the base HR panel and its configured unlock during recovery while keeping the dial visible', () => {
+  it('shows the base HR panel and its configured unlock while cadence recovers in the background', () => {
     mockGovernanceState = {
       ...LOCKED_STATE,
       requirements: [{ satisfied: false, zone: 'warm', zoneLabel: 'Warm', missingUsers: ['rider'], metUsers: [], requiredCount: 1 }],
@@ -177,11 +177,27 @@ describe('FitnessPlayerOverlay cycling bypass and recovery', () => {
     };
     const onGovernanceUnlock = vi.fn();
     const { container } = renderOverlay({ onGovernanceUnlock });
-    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
+    expect(screen.queryByRole('status', { name: 'Cadence sensor unavailable' })).not.toBeInTheDocument();
     expect(container.querySelector('.cycle-lock-screen')).toBeNull();
     expect(container.querySelector('.governance-overlay')).not.toBeNull();
     expect(screen.getByText('0 of 1 in Warm')).toBeVisible();
     fireEvent.pointerDown(screen.getByRole('button', { name: /skip or unlock/i }));
     expect(onGovernanceUnlock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FitnessPlayerOverlay foreground floor priority', () => {
+  afterEach(() => { cleanup(); mockGovernanceState = null; });
+  it.each(['warning', 'locked'])('backgrounds a cadence lock whenever the floor is %s', (status) => {
+    mockGovernanceState = {
+      ...LOCKED_STATE, status,
+      deadline: Date.now() + 30000, gracePeriodTotal: 30,
+      requirements: [{ satisfied: false, zone: 'active', zoneLabel: 'Active', missingUsers: ['rider'], metUsers: [], requiredCount: 1 }],
+      challenge: { ...CYCLE_CHALLENGE, paused: true, pauseReason: 'floor_unmet' },
+    };
+    const { container } = renderOverlay({});
+    expect(container.querySelector(status === 'warning' ? '.governance-progress-overlay' : '.governance-overlay')).not.toBeNull();
+    expect(container.querySelector('.cycle-lock-screen')).toBeNull();
+    expect(container.querySelector('.cycle-challenge-overlay')).toBeNull();
   });
 });

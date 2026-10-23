@@ -8,10 +8,6 @@
   --governance-overlay-panel-h-driven-w: calc((var(--governance-overlay-avail-h) * 16) / 9);
   --governance-overlay-panel-w: min(var(--governance-overlay-panel-max-w), var(--governance-overlay-panel-h-driven-w));
   --governance-lock-row-min-h: clamp(54px, 8.8vh, 64px);
-  // Rows absorb the height the panel reserves, but only up to a point — one
-  // rider alone should get a large legible row, not a single 600px slab.
-  --governance-lock-row-max-h: clamp(72px, 20vh, 132px);
-  --governance-lock-table-min-h: calc((var(--governance-lock-row-min-h) * 2) + 1px);
   --governance-lock-credit-size: clamp(34px, 3.4vw, 52px);
   position: absolute;
   inset: 0;
@@ -25,13 +21,11 @@
 
   &__panel {
     width: var(--governance-overlay-panel-w);
-    min-height: calc((var(--governance-overlay-panel-w) * 9) / 16);
+    min-height: 0;
     height: auto;
     flex: 0 0 auto;
     max-width: none;
-    // Never taller than the video frame: with every row stacking name,
-    // reading and instruction, a full garage outgrows it, and the overflow
-    // must scroll inside the table rather than clip the header and last row.
+    // Natural-height rows; overflow stays within the visible video frame.
     max-height: 100%;
     aspect-ratio: auto;
     background: rgba(17, 24, 39, 0.82);
@@ -254,15 +248,14 @@
     overflow: hidden;
     background: rgba(15, 23, 42, 0.65);
     margin-top: clamp(4px, 0.9vw, 8px);
-    // The panel holds a 16:9 floor; the table absorbs whatever the header
-    // doesn't use instead of leaving dead space below it.
     display: flex;
     flex-direction: column;
     // safe: when rows overflow, start at the top so the first row stays reachable.
-    justify-content: safe center;
-    flex: 1 1 auto;
-    min-height: var(--governance-lock-table-min-h);
+    justify-content: flex-start;
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    pointer-events: auto;
 
     &--init {
       flex: 1 1 auto;
@@ -312,9 +305,8 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     align-items: center;
     column-gap: clamp(8px, 1vw, 14px);
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: var(--governance-lock-row-min-h);
-    max-height: var(--governance-lock-row-max-h);
     padding: clamp(8px, 1vw, 12px) clamp(10px, 1.4vw, 16px);
     transform-origin: center;
     will-change: transform, opacity;
@@ -486,7 +478,7 @@
     padding: 7px 12px;
     border-radius: 999px;
     border: 1px solid rgba(255, 255, 255, 0.18);
-    font-size: clamp(0.78rem, 1.05vw, 0.88rem);
+    font-size: clamp(14px, 1.05vw, 0.88rem);
     font-weight: 600;
     letter-spacing: 0.03em;
     color: #f8fafc;
@@ -548,6 +540,11 @@
 
   &__progress--inline {
     width: 100%;
+    padding-top: 16px;
+    padding-bottom: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
   }
 
   &__progress-track {
@@ -556,6 +553,16 @@
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);
     overflow: visible;
+  }
+
+  &__progress-indicator {
+    position: absolute;
+    top: -19px;
+    font-size: 14px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: #f8fafc;
+    white-space: nowrap;
   }
 
   &__progress-fill {
@@ -714,9 +721,6 @@
       padding: 8px 10px;
     }
 
-    &__chip-meta {
-      display: none;
-    }
   }
 }
 
@@ -984,4 +988,48 @@ $lock-zone-hues: (
     text-align: center;
     color: rgba(241, 245, 249, 0.9);
   }
+}
+
+
+.governance-pedal-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.governance-pedal-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.governance-hold-progress {
+  height: 3px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.18);
+  overflow: hidden;
+
+  > span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: currentColor;
+    transform-origin: left;
+  }
+}
+
+.governance-overlay__panel--sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.governance-lock__section {
+  flex: 0 0 auto;
+  min-width: 0;
 }

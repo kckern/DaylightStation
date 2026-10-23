@@ -42,6 +42,29 @@ The engine operates in four distinct phases that determine the playback state:
   - Progress toward meeting the requirement
 - **How to proceed**: All participants must reach their target zones to unlock
 
+## Floor priority and display
+
+Any unmet evaluated floor criterion owns warning/lock explanations. Zone, step
+and cycle challenges pause and background immediately, preserve their identity,
+status and earned progress, and resume the same obligation after floor recovery.
+A resumed failed challenge still locks until its own recovery condition is met.
+Paused time earns no hold or effort credit. Cycle sensor/cadence recovery remains
+active in the background. Manual, transport and floor pauses exclude their union
+of time once, including timestamp zero.
+
+Zone holds default to `challenge_hold_seconds: 0`. Explicit nonnegative holds
+expose per-person `{ elapsedMs, remainingMs, totalMs }` in `holdProgressByUser`;
+`holdRemainingMs` remains a scheduler aid. Observed target loss or departure resets
+that rider's hold. Step/cycle effort rebases on recovery.
+
+`display.obligations` keeps each foreground target, subject count, blocker row and
+credited face scoped together. Unmet floors come first; a locking challenge can
+supply an explanation only after every floor recovers. Floor faces use
+`eligibleMetUsers`, matching its subject numerator. Rows show a live current zone,
+the personal threshold for the displayed target, an HR percentage notch, a slim
+optional hold indicator, and a compact pedal icon where applicable. Shared zone
+colors remain separate from physical strap identity.
+
 ## Policies
 
 Policies define the rules for a session. The system selects the appropriate policy based on the number of active participants.
