@@ -6,7 +6,7 @@
  * - A user's FIRST observation only seeds their zone — it never emits. Someone
  *   already in Fire when the page loads must not be congratulated for a zone they
  *   reached before this UI existed (the same reason ring celebrations seed on attach).
- * - Crossing into 'fire' from any other zone emits, unless that person already
+ * - A trusted crossing into 'fire' with new accepted threshold evidence emits, unless that person already
  *   fired within FIRE_TOAST_COOLDOWN_MS.
  * - Staying in Fire emits nothing; only the crossing counts.
  *
@@ -21,7 +21,7 @@ export const FIRE_ZONE_ID = 'fire';
 export const FIRE_TOAST_COOLDOWN_MS = 5 * 60 * 1000;
 
 export function createFireZoneTracker() {
-  return { lastZone: new Map(), lastFiredAt: new Map() };
+  return { lastZone: new Map(), lastFiredAt: new Map(), lastEntryId: new Map() };
 }
 
 function cloneTracker(tracker) {
@@ -29,6 +29,7 @@ function cloneTracker(tracker) {
   return {
     lastZone: new Map(source.lastZone),
     lastFiredAt: new Map(source.lastFiredAt),
+    lastEntryId: new Map(source.lastEntryId),
   };
 }
 
@@ -40,7 +41,7 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
     const userId = profile?.id || profile?.profileId;
     if (!userId) return;
 
-    const zone = typeof profile.currentZoneId === 'string'
+    const zone = profile.zoneTrusted === true && typeof profile.currentZoneId === 'string'
       ? profile.currentZoneId.toLowerCase()
       : null;
     const seen = next.lastZone.has(userId);
@@ -48,8 +49,22 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
     next.lastZone.set(userId, zone);
 
     // First sighting seeds only — see the seeding rule above.
-    if (!seen) return;
-    if (zone !== FIRE_ZONE_ID || previous === FIRE_ZONE_ID) return;
+    if (!seen) {
+      if (profile.zoneEntry?.id != null) next.lastEntryId.set(userId, profile.zoneEntry.id);
+      return;
+    }
+    if (!previous || zone !== FIRE_ZONE_ID || previous === FIRE_ZONE_ID) return;
+
+    const fireThreshold = (Array.isArray(profile.zoneConfig) ? profile.zoneConfig : [])
+      .find((zone) => zone?.id === FIRE_ZONE_ID)?.min;
+    const entry = profile.zoneEntry;
+    // A retained zone is not a new achievement. Require the actual accepted
+    // crossing and keep its HR, even if display HR changes while a toast waits.
+    if (!entry || entry.id == null || entry.id === next.lastEntryId.get(userId)
+        || entry.zoneId !== FIRE_ZONE_ID || !Number.isFinite(entry.enteredAt)
+        || !Number.isFinite(fireThreshold) || entry.threshold !== fireThreshold
+        || !Number.isFinite(entry.heartRate) || entry.heartRate < fireThreshold) return;
+    next.lastEntryId.set(userId, entry.id);
 
     const lastFiredAt = next.lastFiredAt.get(userId);
     if (Number.isFinite(lastFiredAt) && now - lastFiredAt < FIRE_TOAST_COOLDOWN_MS) return;
@@ -59,12 +74,10 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
     // WHY it fired is one nobody can audit: the 2026-09-16 false toast took a
     // cross-log correlation to disprove, because `fire_toast.shown` recorded
     // only a userId and the nearest HR came from a different source.
-    const fireThreshold = (Array.isArray(profile.zoneConfig) ? profile.zoneConfig : [])
-      .find((zone) => zone?.id === FIRE_ZONE_ID)?.min;
     entries.push({
       userId,
       name: profile.name || userId,
-      heartRate: Number.isFinite(profile.heartRate) ? profile.heartRate : null,
+      heartRate: entry.heartRate,
       fireThreshold: Number.isFinite(fireThreshold) ? fireThreshold : null
     });
   });

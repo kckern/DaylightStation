@@ -11,9 +11,9 @@ import { StepMatCard } from "./RealtimeCards/StepMatCard.jsx";
 import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
-import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
-import { DENSITIES, densityClassName, pickDensity } from "./riderListDensity.js";
-import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
+import { measureRiderHeight } from "./riderListDensity.js";
+import { committedZoneId } from "../../lib/committedZone.js";
+import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 
@@ -82,7 +82,7 @@ const CONFIG = {
     fallbackTextDark: '#222',
     fallbackTextLight: '#fff',
     zoneBadgeDefaultBg: '#555',
-    // Heart before a rider has a zone: neutral, so it never reads as one.
+    // Neutral fallback when the physical strap has no resolved identity color.
     heartNoZone: '#cbd5e1'
   },
   statusColors: {
@@ -104,6 +104,17 @@ const UI_LABELS = CONFIG.uiLabels;
 
 // Vibration device types that should render VibrationCard instead of the generic inline card
 const VIBRATION_DEVICE_TYPES = new Set(['vibration', 'punching_bag', 'step_platform', 'pull_up_bar']);
+
+// Zone config names its colours ('green'), and the CSS keyword is not the
+// palette green the card's accent and progress bar use (FitnessSidebar.scss
+// via shared/styles/_zones.scss). Standard zones and named colours map onto
+// the shared palette; a custom hex from config is kept as written.
+const paletteZoneColor = (zoneId, configured) => {
+  const byZone = ZONE_COLORS[String(zoneId || '').toLowerCase()];
+  if (byZone) return byZone;
+  const byName = ZONE_COLORS[String(configured || '').toLowerCase()];
+  return byName || configured || null;
+};
 
 const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = undefined }) => {
   // Use the fitness context
@@ -134,21 +145,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     pressureMatActivities = {},
     assignEquipmentUser,
     disengagePressureMat,
-    governanceState: contextGovernanceState,
   } = fitnessContext;
-  // The player passes its bypass-aware snapshot (?nogovern, fingerprint or
-  // per-item bypass → isGoverned:false); the module sidebar has no player and
-  // reads context. `undefined` means "no override".
-  const governanceState = governanceStateOverride !== undefined
-    ? governanceStateOverride
-    : contextGovernanceState;
-
-  // D3: unattended children who still have to reach the startup zone once.
-  const governanceStatuses = React.useMemo(
-    () => resolveParticipantGovernanceStatuses(governanceState),
-    [governanceState]
-  );
-
   // Use context-provided arrays if available, fallback to derivation for backward compat
   const allDevices = React.useMemo(() => {
     if (contextAllDevices) return contextAllDevices;
@@ -262,26 +259,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return zoneProfileLookup.get(idOrName) || null;
   }, [zoneProfileLookup]);
 
-  const deriveZoneFromProfile = React.useCallback((profile, heartRate) => {
-    if (!profile || !Number.isFinite(heartRate)) return null;
-    const sequence = Array.isArray(profile.zoneSnapshot?.zoneSequence)
-      ? profile.zoneSnapshot.zoneSequence
-      : profile.zoneSequence;
-    if (!Array.isArray(sequence) || sequence.length === 0) return null;
-    const sorted = sequence.slice().sort((a, b) => (a?.threshold ?? 0) - (b?.threshold ?? 0));
-    let resolved = sorted[0]?.id || null;
-    sorted.forEach((zone, index) => {
-      const threshold = Number.isFinite(zone?.threshold)
-        ? zone.threshold
-        : (index === 0 ? 0 : null);
-      if (threshold == null) return;
-      if (heartRate >= threshold) {
-        resolved = zone.id || resolved;
-      }
-    });
-    return resolved;
-  }, []);
-
   const participantsByDevice = React.useMemo(() => {
     if (participantsByDeviceMap instanceof Map) return participantsByDeviceMap;
     if (participantsByDeviceMap && typeof participantsByDeviceMap === 'object') {
@@ -365,8 +342,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
-  const [density, setDensity] = useState(DENSITIES[0]);
-  const [layoutMode, setLayoutMode] = useState('horiz'); // 'horiz' | 'vert' for heart-rate user cards
+  const [cardHeight, setCardHeight] = useState(64);
+  const layoutMode = 'horiz'; // One bounded allocation at every roster size.
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   React.useRef(null); // Hidden ref for measurement
@@ -442,10 +419,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return map;
   }, [equipment]);
 
-  // The heart wears the rider's zone colour. Strap sticker colours share the
-  // zone hues (green, blue, yellow, red), so a strap-coloured heart read as a
-  // zone; the strap now gets its own dot by the name.
-  const heartColorIcon = (zoneColor) => <HeartIcon fill={zoneColor || CONFIG.color.heartNoZone} />;
+  const heartColorIcon = (strapColor) => <HeartIcon fill={strapColor || CONFIG.color.heartNoZone} />;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -458,8 +432,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     return `${hours}${UI_LABELS.TIME_HOURS_SUFFIX}`;
   };
 
-  const getDeviceIcon = (device, zoneColor = null) => {
-    if (device.type === 'heart_rate') return heartColorIcon(zoneColor);
+  const getDeviceIcon = (device, strapColor = null) => {
+    if (device.type === 'heart_rate') return heartColorIcon(strapColor);
     return (CONFIG.devices[device.type] || CONFIG.devices.default).icon;
   };
 
@@ -502,50 +476,17 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     onRequestGuestAssignment?.({ deviceId, defaultName });
   }, [onRequestGuestAssignment, getDisplayName]);
 
-  const canonicalZones = CONFIG.zone.canonical;
-  // Live (raw) zone — reflects current HR, bypassing the ZoneProfileStore
-  // hysteresis that smooths the committed zone for governance stability.
-  // Used for CARD DISPLAY only; sorting now happens in FitnessContext against
-  // the same rawZoneId, so card color, progress bar, and sort order still
-  // track the user's actual HR together.
-  //
-  // Fallback chain:
-  //   1. participantEntry.rawZoneId   (populated by ParticipantRoster from
-  //                                    TreasureBox baseline = live HR)
-  //   2. zoneProfile.zoneSnapshot.currentZoneId  (live snapshot from
-  //      types.js calculateZoneProgress, which picks zone from live HR
-  //      before hysteresis runs)
-  //   3. derive from current HR using deriveZoneFromProfile
-  // Intentionally does NOT fall back to getDeviceZoneId, whose first two
-  // branches return the COMMITTED (hysteresis-smoothed) zone.
-  const getRawZoneId = (device) => {
+  const getCommittedZoneId = (device) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);
-    const participantEntry = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey) || null;
-    const rawId = participantEntry?.rawZoneId;
-    if (rawId) {
-      const normalized = String(rawId).toLowerCase();
-      if (canonicalZones.includes(normalized)) return normalized;
-    }
-    // Fallback: ask the zone profile for the live (non-smoothed) zone
-    const userObj = getUserByDevice?.(deviceKey) || null;
-    const canonicalName = resolveCanonicalUserName(device.deviceId, participantEntry?.name || userObj?.name);
-    const zoneProfile = resolveZoneProfile(canonicalName || participantEntry?.name || userObj?.name);
-    if (zoneProfile?.zoneSnapshot?.currentZoneId) {
-      const snapId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
-      if (canonicalZones.includes(snapId)) return snapId;
-    }
-    if (zoneProfile) {
-      const hrValue = Number(device?.heartRate);
-      if (Number.isFinite(hrValue) && hrValue > 0) {
-        const derived = deriveZoneFromProfile(zoneProfile, hrValue);
-        if (derived) {
-          const normalized = String(derived).toLowerCase();
-          if (canonicalZones.includes(normalized)) return normalized;
-        }
-      }
-    }
-    return null;
+    const participant = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey);
+    const user = getUserByDevice?.(deviceKey);
+    const name = resolveCanonicalUserName(deviceKey, participant?.name || user?.name);
+    // Device ownership can still name the strap's original owner after a guest
+    // assignment. Only the current participant's profile may override its zone.
+    const profile = resolveZoneProfile(participant?.profileId)
+      || resolveZoneProfile(participant?.id) || resolveZoneProfile(name);
+    return committedZoneId(profile, participant, participant ? null : resolveZoneProfile(user?.id));
   };
 
   const pickTextColor = (bg) => {
@@ -635,61 +576,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     // comparator that used them. equipmentMap was already unused here.
   }, [equipmentMap, equipment, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices, pressureMatActivities]);
 
-  // Decide vertical vs horizontal layout for user (heart_rate) cards
-  useLayoutEffect(() => {
-    if (!containerRef.current || !allDevices) return;
-    // Count heart_rate users that are active; fallback to all heart_rate when none marked active
-    // Phase 1 SSOT: Use activeHeartRateParticipants for HR count
-    const hrAll = activeHeartRateParticipants || [];
-    const hrActive = hrAll.filter(d => d.isActive);
-    const hrCountCandidate = (hrActive.length > 0 ? hrActive.length : hrAll.length);
-
-    if (hrCountCandidate > 0 && hrCountCandidate <= 2) {
-      setLayoutMode('vert');
-      return;
-    }
-
-    // Heuristic gate: only consider vertical when fewer than 3 users
-  const allowVerticalByCount = hrCountCandidate > 0 && hrCountCandidate <= CONFIG.layout.decision.verticalUserMax;
-    if (!allowVerticalByCount) {
-      setLayoutMode('horiz');
-      return;
-    }
-
-    // Estimate total height without scaling if we render HR cards vertically
-    const containerHeight = containerRef.current.clientHeight || 0;
-
-  // Empirical per-card heights (sidebar styles) from CONFIG:
-  const HORIZ_CARD_H = CONFIG.layout.cards.horizontal.height;
-  const VERT_CARD_H = CONFIG.layout.cards.vertical.height;
-  const GRID_GAP = CONFIG.layout.grid.gap;
-
-    let count = 0;
-    let total = 0;
-    sortedDevices.forEach(d => {
-      const isHR = d.type === 'heart_rate';
-      const h = (isHR ? VERT_CARD_H : HORIZ_CARD_H);
-      total += h;
-      count += 1;
-    });
-    // add gaps between cards
-    if (count > 1) total += (count - 1) * GRID_GAP;
-  // small safety margin
-  total += CONFIG.layout.margin.safety;
-
-    if (total <= containerHeight) {
-      setLayoutMode('vert');
-    } else {
-      setLayoutMode('horiz');
-    }
-  // activeHeartRateParticipants is covered indirectly: the preceding effect
-  // already depends on it and calls setSortedDevices whenever it changes, which
-  // re-triggers this effect (via sortedDevices) on the next render with the
-  // fresh value. Adding it directly here would just double-fire on the same
-  // update.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortedDevices, allDevices]);
-
   // Card size by fit (riderListDensity.js). Re-picked when anything that moves
   // the list's height changes: the roster, the zone headers, the cards still in
   // the DOM (a leaving card fades out in place) or the room itself.
@@ -704,6 +590,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+  const onRosterAnimationFinish = React.useCallback(() => setListResizes((n) => n + 1), []);
   const densitySignatureRef = React.useRef('');
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -717,8 +604,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
     const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}`;
     if (signature === densitySignatureRef.current) return;
     densitySignatureRef.current = signature;
-    const next = pickDensity(container, content);
-    if (next !== density) setDensity(next);
+    const next = measureRiderHeight(container, content);
+    if (next !== cardHeight) setCardHeight(next);
   });
 
   return (
@@ -729,13 +616,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
         <div ref={contentRef} className="fitness-devices-content">
         {sortedDevices.length > 0 ? (
           <FlipMove 
-            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : `layout-horiz ${densityClassName(density)}`}`}
+            className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'}`}
+            style={{ '--rider-card-height': `${cardHeight}px` }}
             duration={CONFIG.animation.flipMove.duration}
             easing={CONFIG.animation.flipMove.easing}
             staggerDelayBy={CONFIG.animation.flipMove.staggerDelayBy}
             enterAnimation={CONFIG.animation.flipMove.enter}
             leaveAnimation={CONFIG.animation.flipMove.leave}
-            maintainContainerHeight={true}
+            maintainContainerHeight={false}
+            onFinishAll={onRosterAnimationFinish}
           >
             {(() => {
               const seenZones = new Set();
@@ -870,7 +759,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                 ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
                 : profileId;
               // §3: surface the physical sticker color as a dot by the name (the
-              // avatar ring and heart belong to the zone). Configured color wins;
+              // heart identifies the same strap; the avatar ring belongs to the zone). Configured color wins;
               // unidentified cards (no user, no assignment) get a deterministic
               // per-device hash color so simultaneous unknown straps are distinct.
               const strapDotColor = isHeartRate
@@ -907,12 +796,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                 ? Math.max(0, Math.min(1, progressInfo.progress))
                 : null;
               const shouldShowProgressBar = Boolean(progressInfo && (progressInfo.showBar || normalizedProgress !== null));
-              const startBadge = isHeartRate
-                ? ([participantEntry?.id, participantEntry?.profileId, profileId, resolvedUser?.id]
-                    .map((id) => (typeof id === 'string' ? id.trim().toLowerCase() : ''))
-                    .map((id) => (id ? governanceStatuses[id] : null))
-                    .find(Boolean) || null)
-                : null;
               Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
@@ -950,14 +833,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                   hasGuestAssignment: !!guestAssignment
                 }, { maxPerMinute: 6, aggregate: true });
               }
-              // Use the LIVE (raw) zone for card display so the card color,
-              // progress bar fill, and sort order all track current HR
-              // together. Hysteresis is still applied for governance
-              // (committed zone) but the UI surfaces live state.
-              const zoneIdForGrouping = isHeartRate ? getRawZoneId(device) : null;
+              const zoneIdForGrouping = isHeartRate ? getCommittedZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
-                ? (participantEntry?.rawZoneColor || userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                ? paletteZoneColor(zoneIdForGrouping, userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
                 : null;
               const readableZone = zoneIdForGrouping
                 ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)
@@ -1008,7 +887,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                     )}
                   </div>
                   <div
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass} ${layoutMode === 'horiz' && density === 'compact' ? 'card-compact' : ''}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
@@ -1071,11 +950,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
                         ) : null}
                         {deviceName}
                       </div>
-                      {startBadge ? (
-                        <GovernanceStartBadge statusBadge={startBadge} className="device-start-badge" />
-                      ) : null}
                       <div className="device-stats">
-                        <span className="device-icon">{getDeviceIcon(device, zoneBadgeColor)}</span>
+                        <span className="device-icon">{getDeviceIcon(device, strapDotColor)}</span>
                         <span className="device-value">{deviceValue}</span>
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
 const testState = vi.hoisted(() => ({ context: null }));
@@ -29,31 +29,20 @@ const context = (devs) => ({
   fitnessSessionInstance: { getEquipmentUser: () => null },
 });
 
-// jsdom has no layout: the list is 530px tall; its content's height depends on
-// which card size the grid carries.
-const contentHeight = { 'horiz-scale-150': 760, 'horiz-scale-130': 640, regular: 520, 'density-compact': 300 };
-let restore = [];
-beforeEach(() => {
-  const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
-  const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.classList.contains('fitness-devices') ? 530 : 0; } });
-  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() {
-    const grid = this.querySelector?.('.device-grid');
-    if (!grid) return 0;
-    const cls = Object.keys(contentHeight).find((c) => grid.classList.contains(c));
-    return contentHeight[cls || 'regular'];
-  } });
-  restore = [['clientHeight', ch], ['scrollHeight', sh]];
-});
-afterEach(() => restore.forEach(([k, d]) => (d ? Object.defineProperty(HTMLElement.prototype, k, d) : delete HTMLElement.prototype[k])));
-
 describe('FitnessUsers card size follows the room, not the rider count', () => {
+  it.each([1, 2])('keeps %i-rider cards in the bounded continuous layout', async (count) => {
+    testState.context = context(riders(count));
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelectorAll('.fitness-device.card-horizontal')).toHaveLength(count));
+  });
+
   it('five riders get the largest cards that fit, not the compact jump', async () => {
     testState.context = context(riders(5));
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelectorAll('.fitness-device').length).toBe(5));
     const grid = container.querySelector('.device-grid');
     expect(grid.className).not.toMatch(/horiz-scale|density-compact/);
+    expect(grid.style.getPropertyValue('--rider-card-height')).toBe('64px');
     expect(container.querySelector('.card-compact')).toBeNull();
   });
 

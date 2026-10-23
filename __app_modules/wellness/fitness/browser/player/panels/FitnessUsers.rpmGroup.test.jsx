@@ -44,7 +44,7 @@ afterEach(() => vi.restoreAllMocks());
 const bikes = (n) => Array.from({ length: n }, (_, i) => ({ deviceId: String(1000 + i), cadence: 40 + i, type: 'cadence', isActive: true, lastSeen: Date.now() }));
 
 describe('FitnessUsers RPM group', () => {
-  it.each([1, 2, 4, 5])('lays out %i bikes with one fixed-size grid, never a shrink transform', async (n) => {
+  it.each([1, 2, 3, 4, 5])('lays out %i bikes with one fixed-size wrapping group, never a shrink transform', async (n) => {
     testState.context = { ...baseContext({}), rpmDevices: bikes(n) };
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelectorAll('.rpm-device-avatar').length).toBe(n));

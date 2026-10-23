@@ -78,10 +78,16 @@
   &__contributors {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
     gap: 8px 14px;
     margin-top: 8px;
   }
   &__contributor {
+    min-width: 0;
+    max-width: 100%;
+    justify-content: center;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -94,7 +100,7 @@
     font-size: 0.95rem; font-weight: 700; color: #cbd5e1;
     &--fallback { background: rgba(255, 255, 255, 0.12); }
   }
-  &__contributor-name { font-size: 1.05rem; font-weight: 600; }
+  &__contributor-name { font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; min-width: 0; text-align: center; }
 
   &__countdown {
     height: 4px; border-radius: 2px;
@@ -128,7 +134,7 @@
   .fitness-toast__ring-icon { width: 7.8rem; height: 7.8rem; object-fit: contain; filter: drop-shadow(0 0.4rem 0.75rem rgba(255, 149, 25, 0.32)); }
   .fitness-toast__ring-total { color: #ffe45c; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 900; letter-spacing: 0.045em; line-height: 1; font-variant-numeric: tabular-nums; }
   .fitness-toast__ring-message { font-size: 1.16rem; font-weight: 700; color: #fff8bd; }
-  .fitness-toast__ring-faces { display: flex; align-items: flex-start; justify-content: center; margin-top: 0.18rem; padding-inline: 0.7rem; }
+  .fitness-toast__ring-faces { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; width: 100%; gap: 0.5rem; margin-top: 0.18rem; padding-inline: 0.7rem; }
   .fitness-toast__ring-faces .fitness-toast__contributor { flex-direction: column; gap: 0.2rem; margin-inline: -0.3rem; }
   .fitness-toast__ring-faces .fitness-toast__contributor-avatar { width: 3.4rem; height: 3.4rem; border: 2px solid rgba(255, 248, 189, 0.95); box-shadow: 0 0.22rem 0.55rem rgba(0, 0, 0, 0.45); }
   .fitness-toast__ring-faces .fitness-toast__contributor-name { max-width: 5.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.73rem; letter-spacing: 0.02em; }
@@ -177,15 +183,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* Overlapped, so a group reads as one team rather than a list of separate
-       people — and so four faces still fit the width two used to take. */
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 0.7rem;
     margin-bottom: 0.2rem;
 
     .fitness-toast__contributor {
       flex-direction: column;
       align-items: center;
       gap: 0.3rem;
-      margin-inline: -0.4rem;
+      max-width: 8rem;
+      margin-inline: 0;
     }
 
     .fitness-toast__contributor-avatar {
@@ -199,7 +207,7 @@
     }
 
     .fitness-toast__contributor-name {
-      font-size: 0.8rem;
+      font-size: 0.875rem;
       font-weight: 700;
       letter-spacing: 0.04em;
     }
@@ -308,3 +316,12 @@
 @media (prefers-reduced-motion: reduce) {
   .fitness-toast__fire-ball { display: none; }
 }
+
+// Both challenge-success variants center the headline, zone and people.
+.fitness-toast--challenge-success {
+  text-align: center;
+  .fitness-toast__body { flex-direction: column; justify-content: center; gap: 0.5rem; }
+  .fitness-toast__text { align-items: center; }
+}
+.fitness-toast--challenge-success .fitness-toast__zone-pill,
+.fitness-toast--achievement .fitness-toast__zone-pill { align-self: center; }

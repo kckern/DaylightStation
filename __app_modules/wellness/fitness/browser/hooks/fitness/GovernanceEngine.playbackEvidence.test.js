@@ -40,3 +40,15 @@ it('attributes a warning to the participant below the requirement instead of the
   expect(h.engine.phase).toBe('warning');
   expect(h.engine.state.playbackEvidence).toMatchObject({ participantId: 'child', requiredZone: 'active', requiredThresholdBpm: 120 });
 });
+
+it('attributes a floor failure to the floor while a failed challenge is backgrounded', () => {
+  const h = harness({ challenge_hold_seconds: 0, grace_period_seconds: 0 });
+  h.evaluate('hot'); h.evaluate('active');
+  h.engine.challengeState.activeChallenge = { id: 'failed-warm', type: 'zone', zone: 'warm', status: 'failed', rule: 1, requiredCount: 1, summary: { missingUsers: ['child'] } };
+  h.evaluate('active');
+  expect(h.engine.state.playbackEvidence.reason).toBe('challenge_failed');
+  h.evaluate('cool');
+  expect(h.engine.state.playbackEvidence).toMatchObject({ reason: 'requirements_not_met', requiredZone: 'active', participantId: 'child', challengeId: null });
+  h.evaluate('active');
+  expect(h.engine.state.playbackEvidence).toMatchObject({ reason: 'challenge_failed', requiredZone: 'warm', challengeId: 'failed-warm' });
+});

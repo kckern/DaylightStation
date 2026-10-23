@@ -146,6 +146,33 @@ Registry: `data/system/testdata.yml`
    - API test? → `tests/integration/suite/`
    - E2E? → `tests/runtime/suite/`
 
+## Isolated Fitness styled acceptance
+
+Run `node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs chromium`
+and repeat with `firefox`. Install the selected Playwright browser first.
+The harness bundles production components and SCSS on a temporary loopback
+server; external requests are blocked and microphone capture is refused. It
+never connects to a household backend or publishes workout events.
+
+Coverage includes roster/RPM allocation, the production player frame with the
+sidebar governance/media reservations and an 80px footer reservation, compact
+governance rows, live display colors, percentage notches, hold-credit migration,
+floor interruption/recovery, Settings wheel/keyboard/native Chromium touch,
+End Session confirmation, scrim dismissal and the real Feedback dialog surviving
+idle dismissal. Governance transitions use the real engine and display resolver;
+sensor trust/Fire qualification, nested pause and step/cycle freezing remain
+covered by their Fitness source suites. Pedal geometry is a presentation fixture;
+cadence OR Active behavior is covered by the real engine source tests.
+
+The sidebar slot structure is reproduced without mounting camera/music/session
+services. The footer is a reserved layout slot, not playback controls. Feedback
+open/close is exercised without recording or submitting audio. Screenshots and
+geometry JSON are written under the system temporary directory. Viewports are
+1920×1080 CSS, 1381×777 CSS and 1024×640 CSS at scale factor 1.39; screenshot pixels
+must not be confused with CSS layout dimensions. `--integration-only` runs just
+the added frame/governance/interaction checks during fixture development; use the
+full command for acceptance evidence.
+
 ## Media acceptance fixtures
 
 The Media app's journeys (`tests/live/flow/media/`) run against `tests/_lib/media-redesign-server.mjs`, an owned acceptance server (exact-SHA preview) that mounts REAL backend services over in-memory or throwaway state. It never writes household data and never commands a household screen (only Office may be used as a physical screen). What it provides:

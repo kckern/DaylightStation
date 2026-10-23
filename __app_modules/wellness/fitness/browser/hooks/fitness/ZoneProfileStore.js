@@ -55,7 +55,9 @@ export class ZoneProfileStore {
     this._baseZoneConfig = null;
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
-    this._profileCache = new Map();
+    this._trustedUsers = new Set();
+    this._zoneEntries = new Map();
+    this._zoneEntrySequence = 0;
     // The last ladder that PASSED validation, per rider. A rebuild that fails
     // validation is rejected and this stays in force, so a transient bad
     // rebuild is invisible: no phantom zone, no wrong demotion, no lost rings.
@@ -73,21 +75,29 @@ export class ZoneProfileStore {
   }
 
   /**
-   * Revision of the per-user zone thresholds. Changes ONLY when some user's
-   * zoneConfig id:min set changes — not when heart rate or committed zone move,
-   * which is most of what syncFromUsers() reports as "changed".
-   * @returns {number}
-   */
-  /**
    * Forget one user's zone smoothing state, so a new wearer of a relabelled
    * strap starts clean instead of inheriting the previous wearer's hysteresis.
    * @param {string} userId
    */
-  resetZoneState(userId) {
+  resetZoneState(userId, reason = 'wearer-change') {
     if (userId == null) return;
     this._hysteresis.delete(userId);
+    this._trustedUsers.delete(userId);
+    this._zoneEntries.delete(userId);
+    const profile = this._profiles.get(userId);
+    if (profile) this._profiles.set(userId, {
+      ...profile, zoneTrusted: false, zoneEntry: null,
+      currentZoneId: null, currentZoneName: null, currentZoneColor: null
+    });
+    this._signature = null;
+    getLogger().info('fitness.zone_state.reset', { userId, reason });
   }
 
+  isZoneTrusted(userId) {
+    return this._profiles.get(userId)?.zoneTrusted === true;
+  }
+
+  /** Revision of per-user thresholds, independent of volatile zone/HR state. */
   getZoneConfigRevision() {
     return this._zoneConfigRevision;
   }
@@ -98,7 +108,6 @@ export class ZoneProfileStore {
       return;
     }
     this._baseZoneConfig = cloneZoneConfig(zoneConfig);
-    this._profileCache.clear();
   }
 
   /**
@@ -114,7 +123,10 @@ export class ZoneProfileStore {
     this._profiles.clear();
     this._signature = null;
     this._hysteresis.clear();
-    this._profileCache.clear();
+    this._trustedUsers.clear();
+    this._zoneEntries.clear();
+    getLogger().info('fitness.zone_state.reset', { reason: 'session-reset' });
+
     // A rider's ladder from one session must never authorize the next.
     this._lastGoodLadder.clear();
     this._ladderRejected.clear();
@@ -125,23 +137,12 @@ export class ZoneProfileStore {
     const nextMap = new Map();
     if (usersIterable && typeof usersIterable[Symbol.iterator] === 'function') {
       for (const user of usersIterable) {
-        // Per-user input memoization: skip rebuild if inputs unchanged
-        const inputSig = this.#userInputSignature(user);
-        const cached = inputSig ? this._profileCache.get(inputSig) : null;
-        if (cached) {
-          nextMap.set(cached.id, cached);
-          continue;
-        }
+        // Profiles include a state machine and elapsed-time decisions. Historical
+        // memoization skipped raw-zone changes and stability expiry on repeat HR,
+        // and replayed pre-reset state. Always advance hysteresis; the output
+        // signature still suppresses redundant consumer notifications.
         const profile = this.#buildProfileFromUser(user);
-        if (profile) {
-          nextMap.set(profile.id, profile);
-          // Never memoize a profile built on a fallback ladder. Its inputs are
-          // the REJECTED config, so a cache hit would replay the fallback
-          // without re-validating, turning one bad tick into a permanent one.
-          if (inputSig && !this._ladderRejected.has(profile.id)) {
-            this._profileCache.set(inputSig, profile);
-          }
-        }
+        if (profile) nextMap.set(profile.id, profile);
       }
     }
     const signature = this.#computeSignature(nextMap);
@@ -177,6 +178,8 @@ export class ZoneProfileStore {
       name: profile.name,
       heartRate: profile.heartRate,
       zoneId: profile.currentZoneId,
+      zoneTrusted: profile.zoneTrusted,
+      zoneEntry: profile.zoneEntry ? { ...profile.zoneEntry } : null,
       zoneName: profile.currentZoneName,
       zoneColor: profile.currentZoneColor,
       displayZoneId: profile.displayZoneId,
@@ -229,7 +232,7 @@ export class ZoneProfileStore {
 
     const heartRate = Number.isFinite(user?.currentData?.heartRate)
       ? Math.max(0, user.currentData.heartRate)
-      : 0; // No fallback — UserManager.currentData.heartRate is the SSoT for HR
+      : null; // Display missing HR explicitly; it cannot earn a default Cool.
 
     // THE enforcement point. Every consumer — fire toast, zone LEDs, TreasureBox
     // rings and coins, GovernanceEngine — reads the profile built here, so this
@@ -246,7 +249,36 @@ export class ZoneProfileStore {
 
     // Apply zone hysteresis: instant first transition, debounce rapid toggling
     const rawZoneId = normalizedSnapshot?.currentZoneId ?? null;
-    const stabilized = this.#applyHysteresis(userId, rawZoneId, committedLadder || [], heartRate);
+    const eligible = user.zoneReadingEligible !== false && heartRate > 0;
+    if (!this._trustedUsers.has(userId) && eligible && committedLadder && rawZoneId === 'cool') {
+      this._trustedUsers.add(userId);
+    }
+    const zoneTrusted = this._trustedUsers.has(userId);
+    const previousZone = this._hysteresis.get(userId)?.committedZoneId ?? null;
+    const stabilized = this.#applyHysteresis(
+      userId, zoneTrusted ? rawZoneId : null, committedLadder || [],
+      zoneTrusted && eligible ? heartRate : null
+    );
+    // Keep raw display/progress available before trust, without publishing it as
+    // earned state. Only an accepted reading can justify a newly committed zone.
+    const displayZone = committedLadder?.find(zone => zone.id === rawZoneId);
+    if (zoneTrusted && eligible && stabilized.zoneId !== previousZone && stabilized.zoneId === rawZoneId) {
+      this._zoneEntries.set(userId, {
+        id: ++this._zoneEntrySequence,
+        zoneId: stabilized.zoneId,
+        heartRate,
+        threshold: normalizedSnapshot?.currentZoneThreshold ?? null,
+        enteredAt: now()
+      });
+    }
+    const previous = this._profiles.get(userId);
+    if (previous?.zoneTrusted !== zoneTrusted || previous?.currentZoneId !== stabilized.zoneId) {
+      getLogger().info('fitness.zone_state.transition', {
+        userId, zoneTrusted, reason: !zoneTrusted ? 'awaiting-real-cool' : (!previous?.zoneTrusted ? 'accepted-cool-baseline' : 'hysteresis'),
+        heartRate, rawZoneId, committedZoneId: stabilized.zoneId,
+        zoneEntry: this._zoneEntries.get(userId) || null
+      });
+    }
 
     return {
       id: userId,
@@ -258,12 +290,14 @@ export class ZoneProfileStore {
       zoneConfig: committedLadder || [],
       zoneSequence,
       zoneSnapshot: normalizedSnapshot,
+      zoneTrusted,
+      zoneEntry: this._zoneEntries.get(userId) ? { ...this._zoneEntries.get(userId) } : null,
       currentZoneId: stabilized.zoneId,
       currentZoneName: stabilized.zoneName,
       currentZoneColor: stabilized.zoneColor,
-      displayZoneId: stabilized.rawZoneId,
-      displayZoneName: stabilized.rawZoneName,
-      displayZoneColor: stabilized.rawZoneColor,
+      displayZoneId: rawZoneId,
+      displayZoneName: displayZone?.name ?? null,
+      displayZoneColor: displayZone?.color ?? null,
       currentZoneThreshold: normalizedSnapshot?.currentZoneThreshold ?? null,
       nextZoneId: normalizedSnapshot?.nextZoneId ?? null,
       nextZoneThreshold: normalizedSnapshot?.nextZoneThreshold ?? null,
@@ -336,7 +370,7 @@ export class ZoneProfileStore {
 
   /**
    * Apply zone hysteresis to prevent rapid visual toggling at zone boundaries.
-   * - First zone transition: always instant
+   * - First accepted Cool baseline: instant
    * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
    *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
    *
@@ -376,9 +410,9 @@ export class ZoneProfileStore {
     // read as Cool and governance flashed a warning (2026-10-21, arcade).
     let state = this._hysteresis.get(userId);
     if (!(Number.isFinite(heartRate) && heartRate > 0)) {
-      // Hold the last real zone through a gap; with none (smoothing reset on a
-      // confirmed loss), report the raw zone without starting any state.
-      const shown = state ? state.committedZoneId : rawZoneId;
+      // Hold the last trusted zone through a brief gap. Without a baseline,
+      // report no earned zone and do not start smoothing from synthetic Cool.
+      const shown = state ? state.committedZoneId : null;
       return { ...lookupZone(shown), ...lookupRawZone(rawZoneId) };
     }
 
@@ -462,6 +496,7 @@ export class ZoneProfileStore {
     if (!profile) return null;
     return {
       ...profile,
+      zoneEntry: profile.zoneEntry ? { ...profile.zoneEntry } : null,
       zoneConfig: cloneZoneConfig(profile.zoneConfig),
       zoneSequence: cloneZoneSequence(profile.zoneSequence) || [],
       zoneSnapshot: profile.zoneSnapshot ? cloneSnapshot(profile.zoneSnapshot) : null
@@ -473,6 +508,9 @@ export class ZoneProfileStore {
       slug: profile.slug || profile.id,
       hr: profile.heartRate,
       zone: profile.currentZoneId,
+      rawZone: profile.displayZoneId,
+      trusted: profile.zoneTrusted,
+      entryId: profile.zoneEntry?.id ?? null,
       progress: profile.progress,
       config: profile.zoneConfig.map((zone) => `${zone.id}:${zone.min ?? ''}`).join('|')
     }));
@@ -496,15 +534,4 @@ export class ZoneProfileStore {
     }
   }
 
-  #userInputSignature(user) {
-    if (!user?.id) return null;
-    const hr = Number.isFinite(user?.currentData?.heartRate)
-      ? Math.round(user.currentData.heartRate)
-      : 0;
-    const zoneKey = Array.isArray(user.zoneConfig)
-      ? user.zoneConfig.map(z => `${z?.id}:${z?.min ?? ''}`).join('|')
-      : '_base_';
-    const committedZone = this._hysteresis.get(user.id)?.committedZoneId ?? '_none_';
-    return `${user.id}:${hr}:${zoneKey}:${committedZone}`;
-  }
 }

@@ -204,6 +204,7 @@ export class FitnessSession {
     this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
+    this._zoneReadingEligible = new Map(); // userId -> current accepted real sample
     this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
     this._hrReadingState = new Map(); // deviceId -> true (reading) | false (no reading); edges drive _onHrReadingLost
 
@@ -387,7 +388,11 @@ export class FitnessSession {
     const prev = this._hrReadingState.get(key);
     if (prev === hasReading) return;
     this._hrReadingState.set(key, hasReading);
-    if (!hasReading) this._deviceHrSampleCount.delete(key);
+    if (!hasReading) {
+      this._deviceHrSampleCount.delete(key);
+      const userId = this._hrOccupantId(key);
+      if (userId) this._zoneReadingEligible.set(userId, false);
+    }
     // First sighting is not an edge: nothing was held, nothing to clear.
     if (prev === undefined) return;
     const userId = this._hrOccupantId(key);
@@ -433,7 +438,7 @@ export class FitnessSession {
     if (before || !owner.currentData?.hrInactive) return;
     const userId = this._hrOccupantId(key) || owner.id;
     getLogger().info('fitness.device.hr_loss_confirmed', { deviceId: key, userId });
-    this.zoneProfileStore?.resetZoneState?.(userId);
+    this.zoneProfileStore?.resetZoneState?.(userId, 'confirmed-loss');
     this._syncPresentZoneProfiles(userId);
   }
 
@@ -470,7 +475,12 @@ export class FitnessSession {
   _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
     try {
-      const changed = this.zoneProfileStore.syncFromUsers(allUsers);
+      const changed = this.zoneProfileStore.syncFromUsers(allUsers.map(user => ({
+        ...user,
+        // Every shared sync carries each rider's OWN acceptance state. A rider
+        // cannot acquire startup trust through somebody else's accepted packet.
+        zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true
+      })));
       return changed;
     } catch (err) {
       getLogger().error('fitness.zone_profile_store.sync_failed', {
@@ -571,18 +581,19 @@ export class FitnessSession {
         // 5A: Check for device reassignment - clear cumulative state if occupant changed
         const currentOccupant = resolvedSlug;
         if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
-          this._cumulativeBeats.delete(device.id);
-          this._cumulativeRotations.delete(device.id);
-          this._log('device_reassigned', { 
-            deviceId: device.id, 
-            from: device.lastOccupantSlug, 
-            to: currentOccupant 
-          });
+          this._resetWearerZoneState(device.id, device.lastOccupantSlug, currentOccupant);
         }
         device.lastOccupantSlug = currentOccupant;
         
         const wasHrInactive = !!user.currentData?.hrInactive;
-        user.updateFromDevice(deviceData);
+        // Bind acceptance to the packet BEFORE UserManager chooses a canonical
+        // reading across this rider's straps. Device getters need an explicit
+        // deviceId when forwarding a Device instance as a plain packet.
+        const STARTUP_DISCARD_COUNT = 3;
+        const packetEligible = deviceData.type === 'heart_rate'
+          && Number.isFinite(deviceData.heartRate) && deviceData.heartRate > 0
+          && (this._deviceHrSampleCount.get(String(device.id)) || 0) >= STARTUP_DISCARD_COUNT;
+        user.updateFromDevice({ ...deviceData, deviceId: deviceData.deviceId, zoneReadingEligible: packetEligible });
 
         // No reading is a real state: the strap is present but not reading.
         // Nothing accrues or counts while it lasts (see _onHrReadingLost).
@@ -601,7 +612,6 @@ export class FitnessSession {
         // applies on every reconnect — not once per page load.
         let startupDiscarded = false;
         if (hasHrReading) {
-          const STARTUP_DISCARD_COUNT = 3;
           const deviceKey = String(device.id);
           const count = this._deviceHrSampleCount.get(deviceKey) || 0;
           this._deviceHrSampleCount.set(deviceKey, count + 1);
@@ -614,6 +624,14 @@ export class FitnessSession {
             });
             startupDiscarded = true;
           }
+        }
+
+        if (isHrPacket) {
+          const selectedDeviceId = user.currentData?.heartRateDeviceId;
+          this._zoneReadingEligible.set(resolvedSlug,
+            user.currentData?.zoneReadingEligible === true
+              && user.ownsHrDevice(selectedDeviceId)
+              && this._hrReadingState.get(String(selectedDeviceId)) === true);
         }
 
         // ORDER MATTERS — sync the zone store BEFORE feeding TreasureBox.
@@ -642,7 +660,8 @@ export class FitnessSession {
           // Try to route via entity first (Phase 2), fall back to current occupant.
           // No reading → null: TreasureBox's dropout path resets the interval
           // without an award. It is never handed a held value.
-          this.treasureBox.recordHeartRateForDevice(device.id, hasHrReading ? deviceData.heartRate : null, {
+          this.treasureBox.recordHeartRateForDevice(device.id,
+            hasHrReading && this._zoneReadingEligible.get(resolvedSlug) === true ? user.currentData.heartRate : null, {
             profileId: currentOccupantId,
             fallbackUserId: currentOccupantId
           });
@@ -791,6 +810,7 @@ export class FitnessSession {
     const open = this.entityRegistry.getByDevice(deviceId);
     if (open && open.status === 'active') {
       if (open.profileId === profileId) return open;
+      this._resetWearerZoneState(deviceId, open.profileId, profileId);
       this.entityRegistry.endEntity(open.entityId, { status: 'superseded', reason: 'handover' });
     }
     return this.createSessionEntity({ profileId, name: name || profileId, deviceId: String(deviceId) });
@@ -819,6 +839,7 @@ export class FitnessSession {
 
     if (mode === 'correction') {
       const moved = this._moveStintData(fromUserId, toUserId, stint.startTick);
+      this._resetWearerZoneState(key, fromUserId, toUserId);
       this.entityRegistry.relabel(stint.entityId, { profileId: toUserId, name });
       // The new occupant owns a live stint again — back on the chart.
       this._transferredUsers?.delete(toUserId);
@@ -832,10 +853,30 @@ export class FitnessSession {
       return { ok: true, mode, stint, ...moved };
     }
 
+    this._resetWearerZoneState(key, fromUserId, toUserId);
     this.entityRegistry.endEntity(stint.entityId, { status: 'superseded', reason: 'handover' });
     const next = this.createSessionEntity({ profileId: toUserId, name: name || toUserId, deviceId: key });
     getLogger().info('fitness.stint.handover', { deviceId: key, fromUserId, toUserId });
     return { ok: true, mode: 'handover', stint: next };
+  }
+
+  // Invalidate both identities synchronously, before another packet or sync can
+  // expose a returning wearer's previous baseline, cache or unfinished interval.
+  _resetWearerZoneState(deviceId, fromUserId, toUserId) {
+    const key = String(deviceId);
+    this._deviceHrSampleCount.delete(key);
+    this._cumulativeBeats.delete(key);
+    this._cumulativeRotations.delete(key);
+    this._log('device_reassigned', { deviceId: key, from: fromUserId, to: toUserId });
+    for (const userId of new Set([fromUserId, toUserId].filter(Boolean))) {
+      this._zoneReadingEligible.set(userId, false);
+      this.userManager.getUserById(userId)?.resetHrReadings?.();
+      this.zoneProfileStore?.resetZoneState?.(userId, 'wearer-change');
+      this.treasureBox?.recordUserHeartRate(userId, null);
+    }
+    this._userZoneProfilesCache = null;
+    const device = this.deviceManager.getDevice(key);
+    if (device) device.lastOccupantSlug = toUserId;
   }
 
   /**
@@ -856,7 +897,6 @@ export class FitnessSession {
     const ringsMoved = this.treasureBox?.moveStint(fromUserId, toUserId, { baseRings: bases.rings_total }) ?? 0;
     const beatsMoved = this._timelineRecorder?.moveStintBeats(fromUserId, toUserId, bases.heart_beats) ?? 0;
     this.activityMonitor?.moveStintActivity(fromUserId, toUserId, start);
-    this.zoneProfileStore?.resetZoneState?.(toUserId);
     return { ringsMoved, beatsMoved };
   }
 
@@ -2936,6 +2976,9 @@ export class FitnessSession {
     // next session skips its warm-up discard.
     this._hrReadingState.clear();
     this._deviceHrSampleCount.clear();
+    this._zoneReadingEligible.clear();
+    this.zoneProfileStore?.clear();
+    this._userZoneProfilesCache = null;
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};

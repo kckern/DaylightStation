@@ -1,3 +1,4 @@
+import { committedZoneId } from '../../lib/committedZone.js';
 /**
  * useZoneLedSync - Ambient LED Zone Synchronization Hook
  *
@@ -30,7 +31,7 @@ function buildZoneSignature(roster) {
 
   const normalized = roster
     .filter(p => p && p.isActive !== false)
-    .map(p => p.rawZoneId || p.zoneId || 'unknown')
+    .map(p => committedZoneId(p) || 'unknown')
     .sort()
     .join(',');
 
@@ -42,7 +43,7 @@ function buildZoneSignature(roster) {
  */
 function buildZones(roster) {
   return (Array.isArray(roster) ? roster : []).map(z => ({
-    zoneId: z.rawZoneId || z.zoneId || null,
+    zoneId: committedZoneId(z),
     isActive: z.isActive !== false
   }));
 }

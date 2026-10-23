@@ -398,7 +398,8 @@ export class FitnessTreasureBox {
       // CRITICAL: Only process intervals for ACTIVE participants
       // This prevents ring accumulation during dropout
       // Phase 4: Simplified - activeParticipants and perUser use same ID scheme
-      if (!activeParticipants.has(accKey)) {
+      if (!activeParticipants.has(accKey)
+          || (this._zoneProfileStore && !this._zoneProfileStore.isZoneTrusted?.(profileId))) {
         this._log('user_not_active', { userId: accKey, profileId }, 'debug');
         // User not active - clear their highestZone to prevent stale awards
         acc.highestZone = null;
@@ -504,6 +505,15 @@ export class FitnessTreasureBox {
 
   // Determine zone for HR for a given user, returns zone object or null
   resolveZone(userId, hr) {
+    // A wired zone store is authoritative, including an explicit lack of trust.
+    // Raw HR / global thresholds must never turn startup display into earnings.
+    if (this._zoneProfileStore && !this._zoneProfileStore.isZoneTrusted?.(userId)) {
+      if (!this._zoneProfileStore.getProfile?.(userId) && !this._zoneOverrideMissLogged.has(userId)) {
+        this._zoneOverrideMissLogged.add(userId);
+        this._log('zone_override_miss', { userId }, 'warn');
+      }
+      return null;
+    }
     if (!hr || hr <= 0 || this.globalZones.length === 0) return null;
 
     // Build effective thresholds: priority is usersConfigOverrides > ZoneProfileStore > global
@@ -617,7 +627,8 @@ export class FitnessTreasureBox {
     acc._lastHRTimestamp = now;
     
     // HR dropout (<=0) resets interval without award
-    if (!hr || hr <= 0 || Number.isNaN(hr)) {
+    if (!hr || hr <= 0 || Number.isNaN(hr)
+        || (this._zoneProfileStore && !this._zoneProfileStore.isZoneTrusted?.(profileId))) {
       acc.currentIntervalStart = now;
       acc.highestZone = null;
       acc.lastHR = hr;

@@ -97,7 +97,7 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
     const { box, store } = boxWithStore();
 
     expect(store.getProfile('user_4')).toBeNull();              // the 1ms race
-    expect(box.resolveZone('user_4', 105).id).toBe('active');   // no profile yet: global
+    expect(box.resolveZone('user_4', 105)).toBeNull(); // unknown trust cannot use global
 
     store.syncFromUsers([miloUser(MILO_ZONES, 105)]);         // store catches up
     expect(box.resolveZone('user_4', 105).id).toBe('cool');     // personal active=120
@@ -106,6 +106,7 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
   it('re-reads a profile whose thresholds changed, and only then', () => {
     const { box, store } = boxWithStore();
 
+    store.syncFromUsers([miloUser(GLOBAL_ZONES, 80)]); // accepted real Cool
     store.syncFromUsers([miloUser(GLOBAL_ZONES, 105)]);
     expect(box.resolveZone('user_4', 105).id).toBe('active');
 
@@ -129,7 +130,7 @@ describe('FitnessTreasureBox.resolveZone with a late ZoneProfileStore profile', 
     // A guest the store never learns about: without a guard this warn would fire
     // on every HR sample for the whole session.
     for (let i = 0; i < 5; i++) {
-      expect(box.resolveZone('guest-1', 105).id).toBe('active'); // global, every time
+      expect(box.resolveZone('guest-1', 105)).toBeNull(); // unknown trust, every time
     }
 
     const misses = logSpy.mock.calls.filter(([event]) => event === 'zone_override_miss');

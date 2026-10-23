@@ -26,7 +26,7 @@ const GLOBAL_ZONES = [
   { id: 'warm', name: 'Warm', min: 120, color: 'yellow', rings: 2 },
   { id: 'hot', name: 'Hot', min: 140, color: 'orange', rings: 3 },
 ];
-const MILO_ZONE_OVERRIDES = { active: 120, warm: 140, hot: 160 };
+const PERSONAL_ZONE_OVERRIDES = { active: 120, warm: 140, hot: 160 };
 // Between the two `active` thresholds: the two tables disagree about whether
 // this sample earns a ring, which is the whole point of the fixture.
 const BETWEEN_BPM = 105;
@@ -43,10 +43,10 @@ function hrPacket(deviceId, bpm) {
   };
 }
 
-function startedSession() {
+function startedSession(users = [{ id: 'user_4', name: 'User_4', hr_device_id: 'hr-user_4', zones: PERSONAL_ZONE_OVERRIDES }]) {
   const session = new FitnessSession();
   session.userManager.configure(
-    { primary: [{ id: 'user_4', name: 'User_4', hr_device_id: 'hr-user_4', zones: MILO_ZONE_OVERRIDES }] },
+    { primary: users },
     GLOBAL_ZONES
   );
   session.ensureStarted({ force: true, reason: 'zoneSyncOrder-test' });
@@ -91,4 +91,29 @@ describe('FitnessSession — the zone store is synced before TreasureBox scores 
     // healthy session emits it too, it is noise and the next incident hides in it.
     expect(logSpy.mock.calls.filter(([event]) => event === 'zone_override_miss')).toEqual([]);
   });
+  // A per-user accepted flag from the incoming strap must not authorize a
+  // different strap's discarded reading selected by lowest-HR arbitration.
+  it('does not let accepted high strap A authorize discarded Cool from strap B', () => {
+    const session = startedSession([{ id: 'rider-a', name: 'Rider A', hr_device_ids: ['strap-a', 'strap-b'] }]);
+    for (let i = 0; i < 4; i++) session.ingestData(hrPacket('strap-a', 187));
+    expect(session.getZoneProfile('rider-a').zoneTrusted).toBe(false);
+    session.ingestData(hrPacket('strap-b', 90)); // B's first reading is discarded
+    session.ingestData(hrPacket('strap-a', 187)); // accepted A; canonical HR still comes from B
+    expect(session.getZoneProfile('rider-a')).toMatchObject({ heartRate: 90, zoneTrusted: false, currentZoneId: null });
+    expect(session.treasureBox.perUser.get('rider-a')?.highestZone ?? null).toBeNull();
+    expect(session.treasureBox.perUser.get('rider-a')?.totalRings ?? 0).toBe(0);
+    session.reset();
+  });
+
+  it('scores the accepted canonical low reading when another strap reports high', () => {
+    const session = startedSession([{ id: 'rider-a', name: 'Rider A', hr_device_ids: ['strap-a', 'strap-b'] }]);
+    for (let i = 0; i < 4; i++) session.ingestData(hrPacket('strap-a', 187));
+    for (let i = 0; i < 4; i++) session.ingestData(hrPacket('strap-b', 90));
+    expect(session.getZoneProfile('rider-a')).toMatchObject({ heartRate: 90, zoneTrusted: true, currentZoneId: 'cool' });
+    session.ingestData(hrPacket('strap-a', 187));
+    expect(session.treasureBox.perUser.get('rider-a').highestZone.id).toBe('cool');
+    expect(session.treasureBox.perUser.get('rider-a').lastHR).toBe(90);
+    session.reset();
+  });
+
 });

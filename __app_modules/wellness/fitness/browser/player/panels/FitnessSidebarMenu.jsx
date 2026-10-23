@@ -57,6 +57,8 @@ const FitnessSidebarMenu = ({
     setFeedbackRecordingActive?.(false);
   }, [resumeMusicPlayer, setFeedbackRecordingActive]);
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
+  const feedbackOpenRef = React.useRef(false);
+  feedbackOpenRef.current = feedbackOpen;
   const deviceAssignments = React.useMemo(
     () => fitnessContext?.deviceAssignments || [],
     [fitnessContext?.deviceAssignments],
@@ -132,6 +134,7 @@ const FitnessSidebarMenu = ({
   const [flashingId, setFlashingId] = React.useState(null);
   const ackTimerRef = React.useRef(null);
   const closeTimerRef = React.useRef(null);
+  const focusWithinRef = React.useRef(false);
   React.useEffect(() => () => {
     if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
@@ -141,7 +144,7 @@ const FitnessSidebarMenu = ({
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      onClose?.();
+      if (!focusWithinRef.current && !feedbackOpenRef.current) onClose?.();
     }, MENU_IDLE_CLOSE_MS);
   }, [onClose]);
 
@@ -160,6 +163,14 @@ const FitnessSidebarMenu = ({
     onTouchStart: scheduleIdleClose,
     onKeyDown: scheduleIdleClose,
     onChange: scheduleIdleClose,
+    onWheel: scheduleIdleClose,
+    onTouchMove: scheduleIdleClose,
+    onScrollCapture: scheduleIdleClose,
+    onFocusCapture: () => { focusWithinRef.current = true; scheduleIdleClose(); },
+    onBlurCapture: (event) => {
+      focusWithinRef.current = event.currentTarget.contains(event.relatedTarget);
+      scheduleIdleClose();
+    },
   }), [scheduleIdleClose]);
 
   const handleVideoLevelSelect = React.useCallback((level) => {
@@ -255,138 +266,67 @@ const FitnessSidebarMenu = ({
 
   const renderSettings = () => (
     <>
-
-
-      <div className="menu-section">
-
-        <h4>Media Visibility</h4>
-        <div
-          className={`menu-item toggle-item${flashingId === 'sidebarCam' ? ' is-ack-flash' : ''}`}
-          onPointerDown={() => handleToggle('sidebarCam')}
-        >
-          <span>📹 Sidebar Webcam</span>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={Boolean(visibility.sidebarCam)}
-              readOnly
-            />
-            <span className="toggle-slider"></span>
-          </label>
-        </div>
-
-
-
-        <div
-          className={`menu-item toggle-item${flashingId === 'treasureBox' ? ' is-ack-flash' : ''}`}
-          onPointerDown={() => handleToggle('treasureBox')}
-        >
-          <span><RingIcon /> Treasure Box</span>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={visibility.treasureBox}
-              readOnly
-            />
-            <span className="toggle-slider"></span>
-          </label>
-        </div>
-
-      </div>
-
-      <div className="menu-section">
-        <button
-          type="button"
-          className="menu-item"
-          aria-label="Send feedback"
-          onClick={() => setFeedbackOpen(true)}
-        >
-          💬 Send feedback
-        </button>
-        <FeedbackOverlay
-          open={feedbackOpen}
-          app="fitness"
-          onClose={() => setFeedbackOpen(false)}
-          onPauseMusic={onFeedbackPauseMusic}
-          onResumeMusic={onFeedbackResumeMusic}
-        />
-      </div>
-
-      <div className="menu-section">
-        <h4>Maintenance</h4>
-        <button
-          type="button"
-          className="menu-item"
-          onPointerDown={handleReloadPage}
-          aria-label="Hard-reload the app (bypasses cache)"
-          title="Hard-reload the app — picks up new versions"
-        >
-          🔄 Reload App
-        </button>
-      </div>
-
-      {activeSessionId && onEndSession && (
-        <div className="menu-section">
-          <h4>Session</h4>
-          {endSessionError && (
-            <div className="menu-item-subtext fitness-sidebar-end-session-error" role="alert">
-              {endSessionError}
+      {appMode === 'player' && (
+        <section className="menu-section" aria-label="Workout audio">
+          <div className="menu-item touch-volume-item">
+            <div className="mix-label" id="settings-video-volume-label">Video volume</div>
+            <TouchVolumeButtons controlId="settings-video-volume" currentLevel={videoDisplayLevel}
+              disabled={!videoMediaAvailable} onSelect={handleVideoLevelSelect} />
+            {!videoMediaAvailable && <div className="menu-item-subtext">Video player inactive.</div>}
+          </div>
+          <div className="menu-item touch-volume-item" role="group" aria-labelledby="settings-video-boost-label">
+            <div className="mix-label" id="settings-video-boost-label">Video volume boost</div>
+            <div className="volume-boost-controls">
+              {[1, 5, 10, 20].map(level => (
+                <button key={level} type="button"
+                  className={`boost-btn ${boostLevel === level ? 'active' : ''}${flashingId === `boost-${level}` ? ' is-ack-flash' : ''}`}
+                  onClick={() => handleBoostSelect(level)} disabled={!videoMediaAvailable}
+                  aria-label={`Video boost ${level} times`} aria-pressed={boostLevel === level}>
+                  {level}x
+                </button>
+              ))}
             </div>
-          )}
-          <button
-            type="button"
-            className="menu-item action-item danger"
-            onPointerDown={() => {
-              setConfirmEndSession(true);
-              ackSelection('end-session');
-            }}
-            disabled={endingSession}
-            aria-label="End current fitness session"
-            title="Force end the current session so it won't auto-merge with the next workout"
-          >
+          </div>
+        </section>
+      )}
+      <section className="menu-section visibility-controls" aria-label="Workout visibility">
+        {[
+          ['sidebarCam', 'Sidebar Webcam', '📹'],
+          ['treasureBox', 'Treasure Box', <RingIcon key="ring" />],
+        ].map(([key, label, icon]) => (
+          <label key={key} className={`menu-item toggle-item${flashingId === key ? ' is-ack-flash' : ''}`}>
+            <span>{icon} {key === 'sidebarCam' ? 'Webcam' : label}</span>
+            <span className="toggle-switch">
+              <input type="checkbox" aria-label={label} checked={Boolean(visibility[key])}
+                onChange={() => handleToggle(key)} />
+              <span className="toggle-slider" />
+            </span>
+          </label>
+        ))}
+      </section>
+      {activeSessionId && onEndSession && (
+        <section className="menu-section" aria-label="Session">
+          {endSessionError && <div className="menu-item-subtext fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>}
+          <button type="button" className="menu-item action-item danger"
+            onClick={() => { setConfirmEndSession(true); ackSelection('end-session'); }}
+            disabled={endingSession} aria-label="End current fitness session"
+            title="End the current session so it won't auto-merge with the next workout">
             {endingSession ? 'Ending…' : '⏹ End Session'}
           </button>
-        </div>
+        </section>
       )}
-
-      {appMode === 'player' && (
-      <div className="menu-section">
-        <h4>Video Controls</h4>
-        <div className="menu-item touch-volume-item" role="group" aria-label="Video volume">
-          <div className="mix-label" id="video-volume-label">
-            Video Volume
-          </div>
-          <TouchVolumeButtons
-            controlId="video-volume"
-            currentLevel={videoDisplayLevel}
-            disabled={!videoMediaAvailable}
-            onSelect={handleVideoLevelSelect}
-          />
-          {!videoMediaAvailable && (
-            <div className="menu-item-subtext">Video player inactive.</div>
-          )}
-        </div>
-        <div className="menu-item touch-volume-item" role="group" aria-label="Video volume">
-          <div className="mix-label" id="video-volume-label">
-            Video Volume Boost
-          </div>
-          <div className="volume-boost-controls">
-            {[1, 5, 10, 20].map((level) => (
-              <button
-                key={level}
-                type="button"
-                className={`boost-btn ${boostLevel === level ? 'active' : ''}${flashingId === `boost-${level}` ? ' is-ack-flash' : ''}`}
-                onPointerDown={() => handleBoostSelect(level)}
-                disabled={!videoMediaAvailable}
-              >
-                {level}x
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      )}
-
+      <details className="menu-section menu-more" onToggle={scheduleIdleClose}>
+        <summary>More</summary>
+        <button type="button" className="menu-item" onClick={handleReloadPage}
+          aria-label="Hard-reload the app (bypasses cache)" title="Hard-reload the app — picks up new versions">
+          🔄 Reload App
+        </button>
+        <button type="button" className="menu-item" aria-label="Send feedback" onClick={() => setFeedbackOpen(true)}>
+          💬 Send feedback
+        </button>
+      </details>
+      <FeedbackOverlay open={feedbackOpen} app="fitness" onClose={() => { setFeedbackOpen(false); scheduleIdleClose(); }}
+        onPauseMusic={onFeedbackPauseMusic} onResumeMusic={onFeedbackResumeMusic} />
     </>
   );
 
@@ -511,7 +451,7 @@ const FitnessSidebarMenu = ({
     >
       <div className="sidebar-menu-header">
         <h3>{isGuestMode ? 'Assign Guest' : 'Settings'}</h3>
-        <button className="close-btn" onClick={onClose}>✕</button>
+        <button type="button" className="close-btn" aria-label={isGuestMode ? 'Close guest assignment' : 'Close settings'} onClick={onClose}>✕</button>
       </div>
       <div className="sidebar-menu-content">
         {isGuestMode ? renderGuestAssignment() : renderSettings()}

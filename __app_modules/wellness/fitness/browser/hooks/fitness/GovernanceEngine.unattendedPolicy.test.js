@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GovernanceEngine } from "./GovernanceEngine.js";
+
+const engines = [];
+afterEach(() => {
+  engines.splice(0).forEach((engine) => engine.reset());
+  vi.restoreAllMocks();
+});
 
 const ZONES = {
   zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
@@ -22,6 +28,7 @@ const CONFIG = {
 function harness(overrides = {}) {
   let now = 100_000;
   const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
+  engines.push(engine);
   engine.configure({ ...CONFIG, ...overrides });
   engine.setMedia({ id: 'episode-1', type: 'episode', labels: ['cardio'] });
   const evaluate = (userZoneMap, guestIds = []) => engine.evaluate({
@@ -136,6 +143,7 @@ describe('GovernanceEngine — cyclic selection after an infeasible skip', () =>
   it('moves past a skipped selection instead of retrying it forever', () => {
     let now = 100_000;
     const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
+    engines.push(engine);
     engine.configure({
       governed_labels: ['cardio'],
       policies: {
@@ -302,7 +310,7 @@ describe('GovernanceEngine — per-child start gate', () => {
     expect(two.challenges[0].selections.map((s) => s.label)).toEqual(['All warm', 'All hot']);
   });
   it('a challenge completes only after the 10s hold, with a pulse due at the hold end', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 10 });
     h.evaluate({ first: 'hot', second: 'hot' });
     h.advance(180_000);
     h.evaluate({ first: 'active', second: 'active' });
@@ -352,7 +360,7 @@ describe('GovernanceEngine — start state and holds in the composed state', () 
   });
 
   it('carries riders mid-hold on the challenge snapshot', () => {
-    const h = harness();
+    const h = harness({ challenge_hold_seconds: 10 });
     h.evaluate({ 'child-a': 'hot', 'child-b': 'hot' });
     h.advance(180_000);
     h.evaluate({ 'child-a': 'active', 'child-b': 'active' });

@@ -55,14 +55,12 @@ const context = () => ({
 });
 
 describe('FitnessUsers roster start badge', () => {
-  it('shows the overdue "Reach Hot" badge from the context snapshot', async () => {
+  it('keeps startup policy out of roster cards', async () => {
     testState.context = context();
     const { container } = render(<FitnessUsersList />);
-    await waitFor(() => {
-      const badge = container.querySelector('.device-start-badge');
-      expect(badge?.textContent).toBe('Reach Hot');
-      expect(badge.classList.contains('governance-start-badge--overdue')).toBe(true);
-    });
+    await waitFor(() => expect(container.querySelector('.device-name')).not.toBeNull());
+    expect(container.querySelector('.device-start-badge')).toBeNull();
+    expect(container.textContent).not.toMatch(/Reach Hot|Holding/);
   });
 
   it('shows no badge when the player passes a bypassed snapshot', async () => {

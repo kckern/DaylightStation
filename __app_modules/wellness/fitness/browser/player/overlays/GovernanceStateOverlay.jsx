@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
@@ -6,27 +6,36 @@ import { useDeadlineCountdown } from "../../shared/index.js";
 import GovernanceAudioPlayer from "./GovernanceAudioPlayer.jsx";
 import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
-import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
 import "./GovernanceStateOverlay.scss";
 import { checkOverlayPaint } from "./overlayPaintCheck.js";
 
 const TOTAL_NOTCHES = 56;
-const ROW_GROW_ANIMATION_MS = 220;
 
-// A cadence_floor row is about the pedal (or the zone that excuses it), never
-// the rider's heart rate — that number answers a question the rule isn't asking.
-// The rpm is the engine's 10s window of counted turns, so a single nudge of the
-// pedal doesn't flash a number the rule then ignores.
-// Split into the reading and the instruction, stacked on two lines on both the
-// lock row and the warning chip so neither truncates the instruction.
-const pedalParts = (pedal) => {
+// The crank icon keeps the pedal OR zone instruction in the existing row.
+function PedalFeedback({ pedal }) {
   const instruction = pedal?.orZoneLabel ? `Pedal or reach ${pedal.orZoneLabel}` : 'Start pedaling';
   const rpm = Number.isFinite(pedal?.rpm) ? Math.max(0, Math.round(pedal.rpm)) : null;
-  if (rpm == null) return { reading: null, instruction };
-  const target = Number.isFinite(pedal?.targetRpm) ? ` / ${Math.round(pedal.targetRpm)}` : '';
-  return { reading: `${rpm}${target} RPM`, instruction };
-};
+  return <span className="governance-pedal-feedback">
+    <span className="governance-pedal-icon" role="img" aria-label={instruction}>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" /><path d="m10 14-5 5m9-9 5-5M2 19h6M16 5h6" strokeLinecap="round" />
+      </svg>
+    </span>
+    {rpm != null ? <span aria-label={`${rpm} of ${pedal.targetRpm ?? 0} rotations per minute`}>{rpm}{Number.isFinite(pedal.targetRpm) ? ` / ${Math.round(pedal.targetRpm)}` : ''}</span> : null}
+  </span>;
+}
 
+function HoldProgress({ row }) {
+  const hold = row.holdProgress;
+  if (!hold || !Number.isFinite(hold.totalMs) || hold.totalMs <= 0) return null;
+  const elapsedMs = Math.max(0, Math.min(hold.totalMs, hold.elapsedMs || 0));
+  return <div className="governance-hold-progress" role="progressbar"
+    aria-label={`${row.displayName || row.name || row.userId} zone hold`}
+    aria-valuemin={0} aria-valuemax={hold.totalMs} aria-valuenow={elapsedMs}
+    aria-valuetext={`${Math.ceil(Math.max(0, hold.totalMs - elapsedMs) / 1000)} seconds remaining`}>
+    <span style={{ transform: `scaleX(${elapsedMs / hold.totalMs})`, background: row.targetZone?.color || undefined }} />
+  </div>;
+}
 
 let _warningLogger;
 const warningLogger = () => {
@@ -108,7 +117,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
   useWarningOverlayObservability(containerRef, rowKeys);
 
   return (
-    <div className="governance-progress-overlay" aria-hidden="true" ref={containerRef}>
+    <div className="governance-progress-overlay" ref={containerRef}>
       {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
           {items.map((item) => {
@@ -122,7 +131,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const borderColor = item.currentZone?.color || item.zoneColor || null;
             const borderStyle = borderColor ? { borderColor } : undefined;
             const progressColor = item.currentZone?.color || item.zoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
-            const pedal = item.pedal ? pedalParts(item.pedal) : null;
+            const pedal = item.pedal;
             return (
               <div
                 className={`governance-progress-overlay__chip${item.status === 'holding' ? ' governance-progress-overlay__chip--holding' : ''}`}
@@ -148,14 +157,9 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                     </span>
                     <span className="governance-progress-overlay__chip-meta">
                       {pedal
-                        ? (pedal.reading || pedal.instruction)
+                        ? <PedalFeedback pedal={pedal} />
                         : (Number.isFinite(item.heartRate) ? item.heartRate : 'No HR data')}
-                      {item.status === 'holding' ? ' · Holding' : null}
                     </span>
-                    {pedal?.reading ? (
-                      <span className="governance-progress-overlay__chip-hint">{pedal.instruction}</span>
-                    ) : null}
-                    <GovernanceStartBadge statusBadge={{ status: item.status, zoneLabel: item.statusZoneLabel }} />
                   </div>
                 </div>
                 {percentValue != null ? (
@@ -169,6 +173,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                     />
                   </div>
                 ) : null}
+                <HoldProgress row={item} />
               </div>
             );
           })}
@@ -230,7 +235,7 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
 // effect, which re-rendered, forever — a render loop on every multi-rider lock.
 const NO_LOCK_ROWS = [];
 
-const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = NO_LOCK_ROWS, onUnlock = null }) {
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = NO_LOCK_ROWS, onUnlock = null, embedded = false }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
   const requirements = useMemo(() => (
@@ -238,7 +243,8 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       ? display.requirements
       : (Array.isArray(overlay?.requirements) ? overlay.requirements : [])
   ), [display?.requirements, overlay?.requirements]);
-  const challenge = display?.challenge || null;
+  const foreground = display?.obligations?.[0] || null;
+  const challenge = foreground ? foreground.challenge : (display?.challenge || null);
   const activeUserCount = Number.isFinite(display?.activeUserCount)
     ? Math.max(0, Math.round(display.activeUserCount))
     : null;
@@ -254,55 +260,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   }, [display, lockRows]);
   const hasRows = rows.length > 0;
 
-  const [animatedRows, setAnimatedRows] = useState(() =>
-    rows.map((row) => ({ row, phase: 'stable' }))
-  );
-
-  // Keep removed rows around briefly so they can animate out.
-  useEffect(() => {
-    setAnimatedRows((prev) => {
-      const prevByKey = new Map(prev.map((entry) => [entry.row.key, entry]));
-      const nextKeys = new Set(rows.map((row) => row.key));
-
-      const nextEntries = rows.map((row) => {
-        const previous = prevByKey.get(row.key);
-        if (!previous || previous.phase === 'exit') {
-          return { row, phase: 'enter' };
-        }
-        return { row, phase: previous.phase === 'enter' ? 'enter' : 'stable' };
-      });
-
-      const existingExitEntries = prev.filter(
-        (entry) => entry.phase === 'exit' && !nextKeys.has(entry.row.key)
-      );
-
-      const newExitEntries = prev
-        .filter((entry) => !nextKeys.has(entry.row.key) && entry.phase !== 'exit')
-        .map((entry) => ({ row: entry.row, phase: 'exit' }));
-
-      return [...nextEntries, ...existingExitEntries, ...newExitEntries];
-    });
-  }, [rows]);
-
-  useEffect(() => {
-    if (!animatedRows.some((entry) => entry.phase === 'enter')) return undefined;
-    const timer = setTimeout(() => {
-      setAnimatedRows((prev) =>
-        prev.map((entry) => (entry.phase === 'enter' ? { ...entry, phase: 'stable' } : entry))
-      );
-    }, ROW_GROW_ANIMATION_MS);
-    return () => clearTimeout(timer);
-  }, [animatedRows]);
-
-  useEffect(() => {
-    if (!animatedRows.some((entry) => entry.phase === 'exit')) return undefined;
-    const timer = setTimeout(() => {
-      setAnimatedRows((prev) => prev.filter((entry) => entry.phase !== 'exit'));
-    }, ROW_GROW_ANIMATION_MS);
-    return () => clearTimeout(timer);
-  }, [animatedRows]);
-
-  const hasAnimatedRows = animatedRows.length > 0;
   const isInitPoolEmpty = !hasRows && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
 
   const activeRequirement = useMemo(() => {
@@ -329,13 +286,15 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   );
   const stepChallengeUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
 
-  const targetZoneName = challenge?.zoneLabel
+  const targetZoneName = foreground?.zoneLabel
+    || challenge?.zoneLabel
     || challenge?.zone
     || activeRequirement?.zoneLabel
     || activeRequirement?.zone
     || 'target';
 
   const targetCount = useMemo(() => {
+    if (Number.isFinite(foreground?.requiredCount)) return foreground.requiredCount;
     if (Number.isFinite(challenge?.requiredCount)) {
       return Math.max(0, Math.round(challenge.requiredCount));
     }
@@ -346,7 +305,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       return normalizeRequiredCountFromRule(activeRequirement?.rule, activeUserCount);
     }
     return null;
-  }, [challenge, activeRequirement, activeUserCount]);
+  }, [foreground, challenge, activeRequirement, activeUserCount]);
 
   const actualCount = useMemo(() => {
     const challengeActual = Number.isFinite(challenge?.actualCount)
@@ -355,12 +314,12 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const requirementActual = Number.isFinite(activeRequirement?.actualCount)
       ? Math.max(0, Math.round(activeRequirement.actualCount))
       : null;
-    const resolved = challengeActual ?? requirementActual ?? 0;
+    const resolved = foreground?.actualCount ?? challengeActual ?? requirementActual ?? 0;
     if (Number.isFinite(targetCount)) {
       return Math.min(targetCount, resolved);
     }
     return resolved;
-  }, [challenge, activeRequirement, targetCount]);
+  }, [foreground, challenge, activeRequirement, targetCount]);
 
   // Participants who have already satisfied, joined to their avatar/zone by
   // resolveGovernanceDisplay. `rows` is missing-only, so these riders exist
@@ -413,32 +372,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     }
   }, [hasRows, status, display, lockRows, requirements]);
 
-  const frozenCurrentByRowRef = useRef(new Map());
-  const frozenSnapshotKeyRef = useRef(null);
-  const freezeSnapshotKey = `${status}|${challenge?.id || display?.deadline || overlay?.deadline || 'none'}`;
-
-  useEffect(() => {
-    const freezeActive = status === 'pending' || status === 'locked';
-    if (!freezeActive) {
-      frozenCurrentByRowRef.current.clear();
-      frozenSnapshotKeyRef.current = null;
-      return;
-    }
-
-    if (frozenSnapshotKeyRef.current !== freezeSnapshotKey) {
-      frozenCurrentByRowRef.current.clear();
-      frozenSnapshotKeyRef.current = freezeSnapshotKey;
-    }
-
-    rows.forEach((row) => {
-      if (!row?.key || frozenCurrentByRowRef.current.has(row.key)) return;
-      frozenCurrentByRowRef.current.set(row.key, {
-        zoneId: row.currentZone?.id || null,
-        label: row.currentZone?.name || row.currentLabel || 'No signal'
-      });
-    });
-  }, [status, freezeSnapshotKey, rows]);
-
   const renderProgressBlock = (row) => {
     // Support both formats: progress (new) and progressPercent (legacy)
     const rawProgress = row.progress ?? row.progressPercent ?? null;
@@ -462,8 +395,8 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       fillBackground = row.progressGradient || `linear-gradient(90deg, ${currentColor}, ${targetColor})`;
     }
     return (
-      <div className={progressClass} aria-hidden="true">
-        <div className="governance-lock__progress-track">
+      <div className={progressClass}>
+        <div className="governance-lock__progress-track" aria-hidden="true">
           <div
             className="governance-lock__progress-fill"
             style={{
@@ -471,6 +404,8 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
               background: fillBackground
             }}
           />
+          <span className="governance-lock__progress-indicator"
+            style={{ left: `${widthPercent}%`, transform: `translateX(-${widthPercent}%)` }}>{percentValue}%</span>
           {intermediateZones.map((zone) => {
             const markerPosition = Math.round((zone.position || 0) * 100);
             const isPassed = widthPercent >= markerPosition;
@@ -487,6 +422,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
             );
           })}
         </div>
+        <HoldProgress row={row} />
       </div>
     );
   };
@@ -494,8 +430,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   const renderChipMeta = (row) => {
     const base = (() => {
       if (row.pedal) {
-        const { reading, instruction } = pedalParts(row.pedal);
-        return reading || instruction;
+        return <PedalFeedback pedal={row.pedal} />;
       }
       const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
       const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
@@ -507,13 +442,12 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       }
       return row.groupLabel || 'No HR data';
     })();
-    // D5: in the zone, hold still running — not missing.
-    return row.status === 'holding' ? `${base} · Holding` : base;
+    return base;
   };
 
   return (
-    <div className={`governance-overlay governance-overlay--${status}`}>
-      <div className="governance-overlay__panel governance-lock governance-lock--wide">
+    <div className={embedded ? 'governance-lock__section' : `governance-overlay governance-overlay--${status}`}>
+      <div className={`${embedded ? '' : 'governance-overlay__panel '}governance-lock governance-lock--wide`}>
         {/* One chrome line owns all the standing state: who has earned it, the
             count, and the unlock affordance. The former stacked title
             ("Video Locked") and instruction line were static copy the paused
@@ -587,12 +521,9 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                   </div>
                 ) : null}
               </div>
-            ) : hasAnimatedRows ? animatedRows.map((entry) => {
-            const row = entry.row;
-            const frozenCurrent = frozenCurrentByRowRef.current.get(row.key) || null;
-            const frozenCurrentZoneId = frozenCurrent?.zoneId || row.currentZone?.id || null;
-            const frozenCurrentLabel = frozenCurrent?.label || row.currentZone?.name || row.currentLabel || 'No signal';
-            const currentClass = frozenCurrentZoneId ? `zone-${frozenCurrentZoneId}` : 'zone-none';
+            ) : hasRows ? rows.map((row) => {
+            const currentLabel = row.currentZone?.name || row.currentLabel || 'No signal';
+            const currentClass = row.currentZone?.id ? `zone-${row.currentZone.id}` : 'zone-none';
             const targetClass = row.targetZone?.id ? `zone-${row.targetZone.id}` : 'zone-none';
             const chip = (
               <div className="governance-lock__chip">
@@ -611,17 +542,13 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                 <div className="governance-lock__chip-text">
                   <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
-                  {row.pedal && pedalParts(row.pedal).reading ? (
-                    <span className="governance-lock__chip-hint">{pedalParts(row.pedal).instruction}</span>
-                  ) : null}
-                  <GovernanceStartBadge statusBadge={{ status: row.status, zoneLabel: row.statusZoneLabel }} />
                 </div>
               </div>
             );
 
               return (
               <div
-                className={`governance-lock__row${entry.phase === 'enter' ? ' governance-lock__row--grow-in' : ''}${entry.phase === 'exit' ? ' governance-lock__row--grow-out' : ''}`}
+                className="governance-lock__row"
                 role="row"
                 key={row.key}
               >
@@ -630,7 +557,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                 </div>
                 <div className="governance-lock__metric" role="cell">
                   <span className={`governance-lock__pill ${currentClass}`}>
-                    {frozenCurrentLabel}
+                    {currentLabel}
                   </span>
                 </div>
                 <div className="governance-lock__metric governance-lock__metric--progress" role="cell">
@@ -681,6 +608,20 @@ GovernancePanelOverlay.propTypes = {
   lockRows: PropTypes.array,
   onUnlock: PropTypes.func
 };
+
+function GovernancePanels({ display, onUnlock }) {
+  if ((display?.obligations?.length || 0) <= 1) return <GovernancePanelOverlay display={display} onUnlock={onUnlock} />;
+  return <div className={`governance-overlay governance-overlay--${display.status}`}>
+    <div className="governance-overlay__panel governance-overlay__panel--sections">
+      {display.obligations.map((obligation, index) => <GovernancePanelOverlay key={obligation.key} embedded
+        onUnlock={index === 0 ? onUnlock : null}
+        display={{ ...display, ...obligation, obligations: [obligation],
+          requirements: obligation.requirement ? [obligation.requirement] : [],
+          activityRequirements: obligation.requirement?.type === 'activity_rate' ? [obligation.requirement] : [],
+        }} />)}
+    </div>
+  </div>;
+}
 
 const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
   return (
@@ -763,7 +704,7 @@ const GovernanceStateOverlay = ({
             countdown={countdown}
             countdownTotal={display.gracePeriodTotal}
             notches={countdownNotches}
-            rows={display.rows}
+            rows={display.obligations?.length > 1 ? display.obligations.flatMap((obligation) => obligation.rows.map((row) => ({ ...row, key: `${obligation.key}:${row.key}` }))) : display.rows}
           />
         </>
       );
@@ -773,7 +714,7 @@ const GovernanceStateOverlay = ({
     return (
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
-        <GovernancePanelOverlay display={display} onUnlock={onUnlock} />
+        <GovernancePanels display={display} onUnlock={onUnlock} />
       </>
     );
   }

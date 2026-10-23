@@ -82,6 +82,8 @@ export class User {
     const firstZone = Array.isArray(this.zoneConfig) && this.zoneConfig.length > 0 ? this.zoneConfig[0] : null;
     return {
       heartRate: zoneSnapshot?.currentHR ?? 0,
+      heartRateDeviceId: null,
+      zoneReadingEligible: false,
       zone: zoneSnapshot?.currentZoneId ?? firstZone?.id ?? null,
       zoneName: zoneSnapshot?.currentZoneName ?? firstZone?.name ?? null,
       color: zoneSnapshot?.currentZoneColor ?? firstZone?.color ?? null,
@@ -130,6 +132,8 @@ export class User {
       // Downstream consumers (ZoneProfileStore, TimelineRecorder) will see null
       // and correctly treat this as "no data" rather than using cached values.
       this.currentData.heartRate = null;
+      this.currentData.heartRateDeviceId = null;
+      this.currentData.zoneReadingEligible = false;
       this.currentData.zone = null;
       this.currentData.color = null;
       this.currentData.hrInactive = true;
@@ -207,21 +211,28 @@ export class User {
           const devId = String(device.deviceId);
           const now = Date.now();
           const STALE_MS = 10000; // drop readings older than 10s
-          this._pendingHR.set(devId, { hr: device.heartRate, ts: now });
-
+          const sample = {
+            deviceId: devId, hr: device.heartRate, ts: now,
+            // Session supplies acceptance for THIS packet, before arbitration.
+            // Standalone User callers retain their existing real-reading behavior.
+            zoneReadingEligible: device.zoneReadingEligible !== false
+          };
+          this._pendingHR.set(devId, sample);
+          let selected = sample;
           if (this.hrDeviceIds.size > 1) {
-            // Prune stale entries
             for (const [id, entry] of this._pendingHR) {
-              if (now - entry.ts > STALE_MS) this._pendingHR.delete(id);
+              if (!this.ownsHrDevice(id) || now - entry.ts > STALE_MS) this._pendingHR.delete(id);
             }
-            // Pick the lowest non-zero HR across active devices
-            let canonHR = Infinity;
+            // Lowest-HR display arbitration is unchanged. Carry its provenance
+            // and acceptance; an accepted higher packet cannot authorize it.
             for (const entry of this._pendingHR.values()) {
-              if (entry.hr > 0 && entry.hr < canonHR) canonHR = entry.hr;
+              if (entry.hr > 0 && (!(selected.hr > 0) || entry.hr < selected.hr)) selected = entry;
             }
-            this.#updateHeartRateData(canonHR === Infinity ? device.heartRate : canonHR);
-          } else {
-            this.#updateHeartRateData(device.heartRate);
+          }
+          this.#updateHeartRateData(selected.hr);
+          if (selected.hr > 0) {
+            this.currentData.heartRateDeviceId = selected.deviceId;
+            this.currentData.zoneReadingEligible = selected.zoneReadingEligible;
           }
         }
         break;
@@ -242,6 +253,13 @@ export class User {
         }
         break;
     }
+  }
+
+  // Wearer boundaries invalidate reading provenance, not historical statistics.
+  resetHrReadings() {
+    this._pendingHR.clear();
+    this._lastRealHrAt = null;
+    this.#updateHeartRateData(null);
   }
 
   resetSession() {

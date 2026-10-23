@@ -63,3 +63,34 @@ describe('GovernanceEngine — _buildChallengeSnapshot pause-aware remaining tim
     expect(snap.remainingSeconds).toBe(5); // defensive fallback, same as today
   });
 });
+
+it('excludes the union of overlapping manual and transport pauses starting at zero', () => {
+  let now = 0;
+  const engine = new GovernanceEngine(null, { now: () => now });
+  const events = new Map();
+  engine._setupPlaybackSubscription((event, callback) => { events.set(event, callback); return () => events.delete(event); });
+  engine.challengeState.activeChallenge = pausedChallenge({ startedAt: 0, expiresAt: 40000, pausedAt: null, pausedRemainingMs: null, zoneHold: { rider: 0 } });
+  engine.setPlaybackPaused(true);
+  now = 10000; events.get('playback:stalled')();
+  now = 20000; engine.setPlaybackPaused(false);
+  expect(engine._timersPaused).toBe(true);
+  now = 30000; events.get('playback:recovered')();
+  expect(engine._timersPaused).toBe(false);
+  expect(engine._buildChallengeSnapshot(now).remainingSeconds).toBe(40);
+  expect(engine.challengeState.activeChallenge.zoneHold.rider).toBe(30000);
+  events.get('playback:recovered')();
+  expect(engine._buildChallengeSnapshot(now).remainingSeconds).toBe(40);
+  engine.reset();
+});
+
+it('publishes a frozen countdown during a manual pause starting at zero', () => {
+  let now = 0;
+  const engine = new GovernanceEngine(null, { now: () => now });
+  engine.challengeState.activeChallenge = pausedChallenge({ startedAt: 0, expiresAt: 40000, pausedAt: null, pausedRemainingMs: null });
+  engine.setPlaybackPaused(true);
+  now = 60000;
+  expect(engine._buildChallengeSnapshot(now)).toMatchObject({ paused: true, pauseReason: null, remainingSeconds: 40 });
+  engine.setPlaybackPaused(false);
+  expect(engine._buildChallengeSnapshot(now)).toMatchObject({ paused: false, remainingSeconds: 40 });
+  engine.reset();
+});

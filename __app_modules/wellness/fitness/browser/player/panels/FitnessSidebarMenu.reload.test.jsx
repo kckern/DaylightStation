@@ -38,9 +38,10 @@ describe('FitnessSidebarMenu — Reload App', () => {
     expect(screen.getByText(/Reload App/)).toBeInTheDocument();
   });
 
-  it('fires hardReload with the settings-menu source on pointer down', () => {
+  it('fires hardReload with the settings-menu source on click', () => {
     renderMenu();
-    fireEvent.pointerDown(screen.getByText(/Reload App/));
+    fireEvent.click(screen.getByText('More'));
+    fireEvent.click(screen.getByText(/Reload App/));
     expect(hardReloadSpy).toHaveBeenCalledTimes(1);
     expect(hardReloadSpy).toHaveBeenCalledWith('settings-menu');
   });

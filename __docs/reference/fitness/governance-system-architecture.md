@@ -75,8 +75,9 @@ WebSocket message arrives
     │       │
     │       ├──▶ ZoneProfileStore.syncFromUsers(allUsers)
     │       │       Derives: raw zone from HR + zone thresholds
+    │       │       Requires: accepted real Cool baseline for each wearer
     │       │       Applies: hysteresis (5s cooldown, 3s stability)
-    │       │       Stores: profile.currentZoneId (stabilized)
+    │       │       Stores: zoneTrusted, currentZoneId, accepted zoneEntry evidence
     │       │       Returns: true if zone signature changed
     │       │
     │       └──▶ [if zone changed] GovernanceEngine.notifyZoneChange()
@@ -237,7 +238,7 @@ Timer fires → _triggerPulse()
         evaluate() on each pulse
             │
             ├── Participants meet challenge zone?
-            │       YES (for 500ms) → status: 'success'
+            │       YES (optional configured hold) → status: 'success'
             │           Clear challenge, schedule next
             │           _schedulePulse(nextInterval)
             │
@@ -246,14 +247,25 @@ Timer fires → _triggerPulse()
             │           videoLocked = true
             │           phase → locked
             │
-            └── Phase changed to warning/locked?
-                    Challenge timer PAUSES
-                    challenge.pausedAt = now
-                    challenge.pausedRemainingMs = remaining
-                    Timer resumes when phase returns to unlocked
+            └── Any evaluated floor criterion unmet?
+                    Challenge PAUSES and backgrounds (including grace)
+                    Identity/status, clock and earned progress are banked
+                    Resume once when every floor criterion recovers
 ```
 
-**Challenge timer pausing rule:** Challenge timers only count down during `unlocked` phase. If the user drops below base requirements (entering `warning`), the challenge clock freezes. This prevents double-penalizing users who are already being warned about base requirements.
+**Challenge suspension rule:** Evaluated floor satisfaction controls suspension,
+independently of the overall playback phase. A failed challenge can itself hold
+that phase locked while the floor is satisfied. Any unmet floor backgrounds zone,
+step and cycle challenges, banking countdown and earned progress throughout
+warning/grace and lock. Recovery resumes the same challenge once; recoverable
+failed zone/step challenges and recoverable cycle locks then own their explanation again. Terminal
+failed-cycle outcomes retain existing history/cooldown and cleanup after their
+remaining publication window resumes; they gain no new recovery policy. Optional
+per-person holds default to zero, exclude paused time, and reset on observed target loss or departure. Display
+obligations keep floor targets/counts/rows/faces scoped; no challenge-only blocker
+or credit appears in a floor explanation. See the
+[governance reference](./governance-engine.md#floor-priority-and-challenge-suspension)
+for the snapshot and display contracts.
 
 ---
 
@@ -371,8 +383,9 @@ Prevents rapid visual toggling when HR hovers near zone boundaries (e.g., 99-101
 
 ```
 For each HR update:
-  0. No reading (HR null/0) → report rawZoneId, commit nothing
-  1. Derive rawZoneId from HR + zone thresholds
+  0. Untrusted → no committed zone until an accepted real Cool reading
+  1. Derive rawZoneId from HR + validated personal zone thresholds
+     No accepted reading → preserve trusted committed zone, commit nothing
   2. If rawZoneId === committedZoneId → no change
   3. If timeSinceLastCommit > 5000ms → commit immediately (first transition)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
@@ -383,12 +396,43 @@ For each HR update:
 - Cooldown window: 5 seconds after last zone commit
 - Stability requirement: 3 seconds of continuous new zone
 - First transition: instant (no stability wait)
-- A sample with no reading never commits. A strap that drops out is not a
-  rider who cooled down: when a loss is confirmed the session clears the
-  smoothing (`resetZoneState`), and committing the resulting "Cool" stamped the
-  cooldown, so a strap restored at 170 bpm read Cool for up to 3s and
-  governance flashed 0.1s warnings (2026-10-21). The first real reading after a
-  gap is a first sighting and commits instantly.
+- A sample with no reading never commits or establishes Cool trust. Brief
+  same-wearer gaps retain the trusted committed zone within the existing
+  five-second HR-loss grace, while scoring stops immediately.
+- Confirmed loss, session reset and wearer changes clear trust, smoothing and
+  entry evidence. Recovery requires a fresh accepted Cool baseline. This
+  deliberately replaces the earlier policy of immediately trusting any first
+  restored high reading after confirmed loss.
+- Shared synchronization carries **each user's own selected sample's** startup
+  acceptance flag and respects its originating strap. Lowest-HR arbitration
+  retains per-sample acceptance, so an accepted higher packet cannot authorize
+  a different strap's discarded Cool. Scoring uses the same eligible canonical HR.
+- Correction and ordinary handover reset both identities synchronously, before
+  another packet or sync: pending HR provenance, earned zones, cached profile
+  maps and unfinished intervals clear; historical totals remain intact.
+- Every sync advances smoothing even for repeated HR. Profile memoization is
+  unsafe: its key cannot describe elapsed stability or interrupted raw-zone
+  runs, and historical profiles must not survive resets.
+
+The public profile adds `zoneTrusted: boolean` and
+`zoneEntry: { id, zoneId, heartRate, threshold, enteredAt } | null`. The entry
+captures an accepted reading that justified the current committed transition;
+its ID is monotonic for the store lifetime. Read APIs clone the evidence.
+A reset clears published trust and current-zone fields immediately, before the
+next reading arrives. Raw `displayZone*`, `zoneSnapshot`, progress and HR remain
+measurement data; they must not be substituted for an untrusted earned zone.
+
+TreasureBox requires a trusted profile before resolving or awarding an HR
+interval. It cannot fall back to global thresholds while the profile is absent
+or untrusted. The roster and participant display map retain the authoritative
+null earned zone, so governance cannot count a startup spike.
+
+Fire ceremonies require a trusted non-Fire → Fire crossing with new entry
+identity, matching personal threshold and captured HR at/above that threshold.
+Retained Fire under hysteresis is not another entry. The captured evidence,
+not a later display HR, travels through the toast queue. First observation in
+Fire, a default Cool baseline, a reused entry or contradictory HR/threshold
+cannot invent an achievement.
 
 ### Layer 2: GovernanceEngine (Phase Flap Prevention)
 
@@ -527,7 +571,7 @@ All previously documented SSoT violations have been addressed:
 
 | # | Violation | Resolution |
 |---|-----------|-----------|
-| 1 | `getUserVitals().zoneId` raw zone | Now reads from ZoneProfileStore first, falls back to raw zone for initial state |
+| 1 | `getUserVitals().zoneId` raw zone | Reads the trusted ZoneProfileStore zone; initial state remains untrusted |
 | 2 | FitnessPlayer dual governance check | Removed local label check from `pauseDecision` and `playObject.autoplay`; `governanceState.videoLocked` is sole lock authority |
 | 3 | Heart rate triple-storage | Documented propagation chain in `ingestData()`; removed stale snapshot fallback in ZoneProfileStore |
 | 4 | Progress bar data source split | Fallback path now prefers `progressEntry.currentHR` over raw `heartRate` |
@@ -536,7 +580,7 @@ All previously documented SSoT violations have been addressed:
 ### Design Decisions
 
 - **Triple HR storage retained:** DeviceManager, UserManager, and ZoneProfileStore each serve different roles. The three stores update synchronously in `ingestData()`. If any path becomes async, this must be collapsed to a single authoritative store.
-- **Raw zone fields retained in vitals:** `getUserVitals().zoneId` now prefers ZoneProfileStore but falls back to raw zone for initial state before first stabilization cycle.
+- **Raw zone fields retained in vitals:** Raw vitals remain measurement data. Earned zone consumers use ZoneProfileStore and preserve its untrusted/null result during startup.
 - **`computeProgressData` two paths retained:** Zone-based and HR-based are fundamentally different algorithms for different scenarios. The fix ensures both use the same HR source (snapshot preferred over raw).
 
 ---

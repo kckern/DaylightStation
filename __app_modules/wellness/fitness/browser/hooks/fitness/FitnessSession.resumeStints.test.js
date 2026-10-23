@@ -82,6 +82,8 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     const session = resumed();
     expect(session.treasureBox.perUser.get('kid-a')?.totalRings).toBe(6);
     expect(session._timelineRecorder._cumulativeBeats.get('kid-a')).toBeCloseTo(47.1);
+    for (let i = 0; i < 4; i++) session.ingestData(hr('D2', 80)); // fresh accepted Cool after reload
+    vi.advanceTimersByTime(6000);
     for (let i = 0; i < 30; i += 1) { vi.advanceTimersByTime(1000); session.ingestData(hr('D2', 140)); }
     const rings = session.timeline.series['user:kid-a:rings_total'].filter(Number.isFinite);
     expect(rings.every((v, i) => i === 0 || v >= rings[i - 1])).toBe(true);

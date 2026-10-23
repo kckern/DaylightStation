@@ -518,15 +518,16 @@ export class ParticipantRoster {
     // Preserve raw zone for real-time UI (cards, LEDs) while committed zone
     // is used for governance decisions and historical persistence.
     if (this._zoneProfileStore && typeof this._zoneProfileStore.getZoneState === 'function') {
-      for (const [trackingId] of zoneLookup) {
+      const ids = new Set([...zoneLookup.keys(), ...(this._zoneProfileStore.getProfiles?.() || []).map(profile => profile.id)]);
+      for (const trackingId of ids) {
         const committed = this._zoneProfileStore.getZoneState(trackingId);
-        if (committed?.zoneId) {
+        if (committed) {
           const baseline = zoneLookup.get(trackingId);
           const rawZoneId = baseline?.zoneId || null;
           const rawZoneColor = baseline?.color || null;
           zoneLookup.set(trackingId, {
-            zoneId: String(committed.zoneId).toLowerCase(),
-            color: committed.zoneColor || rawZoneColor || null,
+            zoneId: committed.zoneTrusted === false ? null : committed.zoneId?.toLowerCase() || null,
+            color: committed.zoneTrusted === false ? null : committed.zoneColor || rawZoneColor || null,
             rawZoneId,
             rawZoneColor
           });

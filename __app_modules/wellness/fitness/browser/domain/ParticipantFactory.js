@@ -15,6 +15,7 @@
  */
 
 import { createEmptyParticipant, validateParticipant } from "./Participant.js";
+import { committedZoneId } from "../lib/committedZone.js";
 import { lookupZoneProgress } from "./zoneProgressIndex.js";
 
 /**
@@ -94,8 +95,9 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     isActive,
     zoneId,
     zoneColor,
-    // Live (non-hysteresis) zone — what the cards render and what sortByZoneRank
-    // ranks on. Three rungs, each validated against the canonical zone list so an
+    zoneTrusted: rosterEntry.zoneTrusted,
+    // Raw telemetry is retained for diagnostics; earned-zone consumers and
+    // sorting use committed zoneId. Three rungs, each validated against the canonical zone list so an
     // unrecognized value falls THROUGH rather than being written:
     //   1. roster rawZoneId  — TreasureBox baseline (live HR)
     //   2. vitals zoneId     — user.currentData.zone, derived from live HR by
@@ -157,8 +159,8 @@ export const determineActiveStatus = (rosterEntry, rawDevice, inactiveTimeout = 
  */
 export const resolveZoneInfo = (rosterEntry, zoneConfig = []) => {
   // Prefer roster entry's zone info (already computed by session logic)
-  if (rosterEntry?.zoneId) {
-    const normalizedId = String(rosterEntry.zoneId).toLowerCase();
+  const normalizedId = committedZoneId(rosterEntry);
+  if (normalizedId) {
     const zoneColor = rosterEntry.zoneColor || lookupZoneColor(normalizedId, zoneConfig);
     return { zoneId: normalizedId, zoneColor };
   }
@@ -223,22 +225,15 @@ export const canonicalZoneId = (value) => {
   return Object.prototype.hasOwnProperty.call(ZONE_RANK_MAP, normalized) ? normalized : null;
 };
 
-/**
- * Rank a participant by their LIVE zone.
- *
- * Deliberately prefers `rawZoneId` over the committed `zoneId`: the committed
- * zone is hysteresis-smoothed for governance stability, and using it here would
- * desync sort order from the card color and progress bar, which both render
- * live state. Hysteresis remains in force for governance decisions only.
- */
+/** Rank by the same earned committed zone used by cards and governance. */
 const rankOf = (participant, zoneRankMap) => {
-  const zoneId = participant?.rawZoneId || participant?.zoneId || null;
+  const zoneId = committedZoneId(participant);
   if (!zoneId) return -1;
   return zoneRankMap[String(zoneId).toLowerCase()] ?? -1;
 };
 
 /**
- * THE sort for heart-rate participants. Order: live zone rank desc →
+ * THE sort for heart-rate participants. Order: committed zone rank desc →
  * progress-within-zone desc → active before inactive → id asc (determinism).
  *
  * Progress is only meaningful as a tiebreaker WITHIN a zone, since each user
