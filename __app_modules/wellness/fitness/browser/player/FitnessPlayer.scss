@@ -142,85 +142,6 @@ dash-video {
     flex-direction: column;
     position: relative;
 
-    /* When FitnessUsers (fitness-devices-nav) is rendered inside the sidebar, switch to vertical layout */
-    .fitness-devices-nav {
-      margin: 6px 0 0;
-      padding: 0 2px 6px 2px; /* slight inset both sides */
-      display: flex;
-      flex-direction: column;
-      background: transparent; /* inherit */
-      box-shadow: none;
-
-      .nav-header {
-        margin: 0 0 4px;
-        padding: 0 0 6px;
-        border-bottom: 1px solid #2a2a2a;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-
-      .fitness-devices {
-        flex: 1 1 auto;
-        overflow-y: visible; /* rely on sidebar scroll */
-        width: 100%;
-      }
-
-      /* Override device-grid to be a simple vertical stack */
-      .device-grid {
-        display: flex !important;
-        flex-direction: column;
-        gap: 10px;
-        width: 100%;
-      }
-
-      .fitness-device.card-horizontal {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        gap: 12px;
-        width: 100%;
-        margin: 0;
-        padding: 8px 10px;
-        background: #181818;
-        border: 1px solid #262626;
-        border-radius: 6px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.4);
-        transition: background .15s ease, border-color .15s ease;
-        /* Hover removed for TV touch environment */
-      }
-
-      .card-avatar {
-        flex: 0 0 46px;
-        width: 4rem;
-        height: 3rem;
-        border-radius: 50%;
-        overflow: hidden;
-        background: #222;
-          flex: 1 0 calc(20% - 4px); /* 5 per row typical */
-          max-width: none;
-          height: 100%;
-          .thumbnail-wrapper {
-            height: 100%;
-            display: flex;
-            align-items: stretch;
-            justify-content: center;
-            overflow: hidden;
-          }
-        &.zone-fire   { border-color: var(--zone-fire-color, #dc2626); box-shadow: 0 0 0 2px rgba(220,38,38,0.45); }
-        &.no-zone     { border-color: #333; box-shadow:none; }
-      }
-
-      .device-info {
-        flex: 1 1 auto;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        .device-name { font-size: 0.9rem; line-height: 1.1; }
-        .device-stats { font-size: 0.75rem; display: flex; align-items: center; gap: 6px; }
-      }
-    }
-
     .fitness-player-sidebar-resizer {
       position: absolute;
       top: 0;
@@ -1477,7 +1398,6 @@ dash-video {
       }
     }
 
-
   /* Stack mode: when thumbnails too skinny, reflow footer */
   .fitness-player-footer.stack-mode {
     align-items: stretch;
@@ -1620,7 +1540,6 @@ dash-video {
   }
 }
 
-
 /* =============================================================================
    Cycle Challenge Video Dim (Task 20)
    Progressive video degradation driven by --cycle-dim CSS custom property
@@ -1673,7 +1592,6 @@ dash-video {
     transform: scale(0.95);
   }
 }
-
 
 .playback-budget-overlay {
   position: absolute;

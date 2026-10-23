@@ -1,5 +1,34 @@
+// Volume-button states, shared by the music player's mix rows and the
+// settings menu's video-volume row (TouchVolumeButtons.jsx).
+@mixin touch-volume-states {
+  .touch-volume-button:first-child.off {
+    background: rgb(120, 49, 56);
+    border-color: rgba(220, 53, 69, 0.4);
+  }
 
+  .touch-volume-button:first-child.on {
+    background: linear-gradient(180deg, rgba(220, 53, 69, 0.85), rgba(185, 43, 58, 0.85));
+    border-color: rgba(220, 53, 69, 0.6);
+  }
 
+  .touch-volume-button.on {
+    background: linear-gradient(180deg, rgba(255, 212, 59, 0.85), rgba(255, 179, 71, 0.85));
+    color: #1b1b1b;
+    border-color: rgba(255, 212, 59, 0.6);
+    box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.25);
+  }
+
+  .touch-volume-button.off {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .touch-volume-button.active {
+    border-color: rgba(26, 142, 11, 0.95);
+    background: linear-gradient(180deg, rgba(53, 220, 73, 0.85), rgba(43, 185, 57, 0.85));
+    box-shadow: 0 0 8px rgba(255, 212, 59, 0.45);
+  }
+}
 
 // RPM Group styling — one circle size at every bike count. Four bikes fit
 // one row of the 250px sidebar (4 x 46 + 3 x 10 = 214 of 218px); a fifth
@@ -170,7 +199,7 @@
       backdrop-filter: blur(4px);
       box-shadow: 0 2px 6px rgba(0,0,0,0.4);
       h3 { 
-        margin: 0!important;
+        margin: 0;
         padding: 0; 
         font-weight: 700; 
         letter-spacing: .6px; 
@@ -323,7 +352,7 @@
     }
 
     .device-grid {
-      display: flex !important;
+      display: flex;
       flex-direction: column;
       gap: 10px;
       width: 100%;
@@ -458,10 +487,10 @@
       border-radius: 50%;
       overflow: hidden;
       background: #222;
-      border: 6px solid #333; /* explicit border style */
+      border: 6px solid var(--avatar-ring, #333);
       margin: 6px 0 14px 0;
       flex: 0 0 auto;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.6);
+      box-shadow: var(--avatar-glow, 0 0 0 3px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.6));
       position: relative;
       z-index: 1; /* above zone overlay */
     }
@@ -505,13 +534,13 @@
       border-radius: 50%;
       overflow: hidden;
       background: radial-gradient(circle at 35% 25%, rgba(255,255,255,0.08), rgba(0,0,0,0.7));
-      border: 3px solid rgba(255,255,255,0.12);
+      border: 3px solid var(--avatar-ring, rgba(255,255,255,0.12));
       display: flex;
       align-items: center;
       justify-content: center;
       position: relative;
       z-index: 1; /* above zone overlay */
-      box-shadow: 0 4px 10px rgba(0,0,0,0.55);
+      box-shadow: var(--avatar-glow, 0 4px 10px rgba(0,0,0,0.55));
       transition: border-color .25s ease, box-shadow .25s ease;
 
       img,
@@ -622,355 +651,6 @@
     contain: layout; // Isolate layout from music player changes
     overflow: hidden;
   }
-}
-
-// Music Player Styles (root level)
-.fitness-music-player-container {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  margin: 0;
-  min-height: 80px;
-  height: auto;
-  background: rgba(24, 24, 24, 0.85);
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0;
-  overflow: hidden;
-  padding: 0;
-  box-sizing: border-box;
-  flex-shrink: 0;
-  transition: box-shadow 0.2s ease;
-  contain: layout size; // Prevent marquee measurements from affecting parent
-
-  &.controls-open {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-    overflow-x: hidden;
-    overflow-y: visible;
-    contain: none; // Allow container to resize for expanded content
-  }
-
-  .music-player-content {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    width: 100%;
-    min-width: 0;
-    height: 80px;
-    min-height: 80px;
-  }
-
-  .music-player-artwork {
-    flex: 0 0 80px;
-    width: 80px;
-    height: 80px;
-    position: relative;
-    
-    .artwork-image {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .artwork-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-color: #222;
-      .artwork-icon { font-size: 3rem; }
-    }
-    
-    .playback-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-color: rgba(0, 0, 0, 0.3);
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      pointer-events: none;
-      
-      .playback-icon {
-        font-size: 2.4rem;
-        color: white;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-      }
-    }
-    
-    &.paused .playback-overlay {
-      opacity: 1;
-    }
-  }
-
-  .music-player-info {
-    flex: 1;
-    min-width: 0;
-    padding: 0 10px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    height: 100%;
-    cursor: pointer;
-    user-select: none;
-    overflow: hidden;
-
-    .track-details {
-      display: flex;
-      flex-direction: column;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      line-height: 1.2;
-
-          &.action-item {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            gap: 0.5rem;
-
-            &:hover {
-              background: rgba(81, 207, 102, 0.18);
-              border-color: rgba(81, 207, 102, 0.35);
-            }
-
-            &:disabled {
-              opacity: 0.6;
-              cursor: not-allowed;
-            }
-          }
-
-          &.mic-select {
-            display: flex;
-            flex-direction: column;
-            gap: 0.55rem;
-            cursor: default;
-
-            label {
-              font-size: 0.8rem;
-              text-transform: uppercase;
-              letter-spacing: 0.6px;
-              color: rgba(255, 255, 255, 0.6);
-            }
-
-          }
-      .track-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #fff;
-        white-space: nowrap;
-        overflow: hidden;
-        display: flex;
-
-        .menu-item-subtext {
-          font-size: 0.75rem;
-          color: rgba(255, 255, 255, 0.6);
-          margin-top: 0.25rem;
-
-          &.error {
-            color: #ff6b6b;
-          }
-
-          &.loading {
-            color: #ffd43b;
-          }
-        }
-
-        // Marquee wrapper - ping-pong scroll for overflow text
-        .marquee-text {
-          display: inline-block;
-          // --scroll-distance is set by JS based on actual overflow
-          animation: marquee-pingpong 8s ease-in-out infinite;
-          animation-play-state: var(--marquee-play-state, paused);
-        }
-      }
-
-      // Ping-pong marquee: pause at each end, scroll back and forth
-      @keyframes marquee-pingpong {
-        0%, 20% {
-          transform: translateX(0); // Start flush left, pause 20%
-        }
-        50%, 70% {
-          transform: translateX(var(--scroll-distance, 0px)); // Scroll to show end, pause 20%
-        }
-        100% {
-          transform: translateX(0); // Back to flush left
-        }
-      }
-      .music-player-retry {
-        display: inline-block;
-        padding: 0 0.25rem;
-        color: rgba(255, 165, 100, 0.95);
-        font-weight: 500;
-        text-decoration: underline;
-        cursor: pointer;
-        user-select: none;
-
-        &:hover { color: rgba(255, 200, 150, 1); }
-        &:active { transform: scale(0.97); }
-        &:focus-visible {
-          outline: 2px solid rgba(255, 200, 150, 0.9);
-          outline-offset: 2px;
-        }
-      }
-      .track-artist {
-        font-size: 0.9rem;
-        color: rgba(255, 255, 255, 0.6);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-    }
-
-    .track-progress {
-      margin-top: 4px;
-      .progress-bar {
-        width: 100%;
-        height: 6px;
-        background-color: rgba(255, 255, 255, 0.2);
-        border-radius: 4px;
-        overflow: hidden;
-        .progress-fill {
-          height: 100%;
-          background-color: #fff;
-          border-radius: 4px;
-          transition: width 0.2s linear;
-        }
-      }
-      .progress-time {
-        display: none;
-      }
-    }
-  }
-
-  .music-player-controls {
-    flex: 0 0 80px;
-    width: 80px;
-    height: 80px;
-
-    .control-button {
-      width: 100%;
-        height: 100%;
-      background: rgba(255, 255, 255, 0.08);
-      border: none;
-      color: #fff;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      font-size: 2.4rem;
-    }
-  }
-  .music-player-expanded {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    padding: 20px 28px 28px;
-    background: rgba(12, 12, 12, 0.9);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-
-    .expanded-section {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .empty-state {
-      font-size: 0.72rem;
-      color: rgba(255, 255, 255, 0.5);
-    }
-
-    .mix-row {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 1.4rem;
-      color: rgba(255, 255, 255, 0.85);
-    }
-
-    .mix-label {
-      font-size: 1.4rem;
-      font-weight: 600;
-      color: rgba(255, 255, 255, 0.8);
-    }
-
-    .mix-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      .touch-volume {
-        flex: 1 1 auto;
-        display: grid;
-        grid-template-columns: repeat(11, minmax(0, 1fr));
-        gap: 2px;
-        min-width: 0;
-      }
-
-      .touch-volume.disabled {
-        opacity: 0.4;
-        pointer-events: none;
-      }
-
-      .touch-volume-button {
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        background: rgba(255, 255, 255, 0.08);
-        color: transparent;
-        border-radius: 4px;
-        font-size: 1.2rem;
-        padding: 0;
-        cursor: pointer;
-        transition: background 0.2s ease, border 0.2s ease;
-        height: 6ex!important;
-      }
-
-      .touch-volume-button:first-child.off {
-        background: rgb(120, 49, 56);
-        border-color: rgba(220, 53, 69, 0.4);
-      }
-
-      .touch-volume-button:first-child.on {
-        background: linear-gradient(180deg, rgba(220, 53, 69, 0.85), rgba(185, 43, 58, 0.85));
-        border-color: rgba(220, 53, 69, 0.6);
-      }
-
-      .touch-volume-button.on {
-        background: linear-gradient(180deg, rgba(255, 212, 59, 0.85), rgba(255, 179, 71, 0.85));
-        color: #1b1b1b;
-        border-color: rgba(255, 212, 59, 0.6);
-        box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.25);
-      }
-
-      .touch-volume-button.off {
-        background: rgba(255, 255, 255, 0.12);
-        border-color: rgba(255, 255, 255, 0.25);
-      }
-
-      .touch-volume-button.active {
-        border-color: rgba(26, 142, 11, 0.95);
-        background: linear-gradient(180deg, rgba(53, 220, 73, 0.85), rgba(43, 185, 57, 0.85));
-        box-shadow: 0 0 8px rgba(255, 212, 59, 0.45);
-       // transform: translateY(-1px);
-      }
-
-      .touch-volume-button:disabled {
-        cursor: not-allowed;
-      }
-
-    }
-  }
-}
-
-.fitness-sidebar-container {
 
   .fitness-sidebar-menu {
     position: absolute;
@@ -996,8 +676,8 @@
       flex-shrink: 0;
 
       h3 {
-        margin: 0!important;
-        padding: 0!important;
+        margin: 0;
+        padding: 0;
         font-size: 1.2rem;
         color: white;
         white-space: nowrap;
@@ -1138,36 +818,10 @@
               padding: 0;
               cursor: pointer;
               transition: background 0.2s ease, border 0.2s ease;
-              height: 5ex!important;
+              height: 5ex;
             }
 
-            .touch-volume-button:first-child.off {
-              background: rgb(120, 49, 56);
-              border-color: rgba(220, 53, 69, 0.4);
-            }
-
-            .touch-volume-button:first-child.on {
-              background: linear-gradient(180deg, rgba(220, 53, 69, 0.85), rgba(185, 43, 58, 0.85));
-              border-color: rgba(220, 53, 69, 0.6);
-            }
-
-            .touch-volume-button.on {
-              background: linear-gradient(180deg, rgba(255, 212, 59, 0.85), rgba(255, 179, 71, 0.85));
-              color: #1b1b1b;
-              border-color: rgba(255, 212, 59, 0.6);
-              box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.25);
-            }
-
-            .touch-volume-button.off {
-              background: rgba(255, 255, 255, 0.12);
-              border-color: rgba(255, 255, 255, 0.25);
-            }
-
-            .touch-volume-button.active {
-              border-color: rgba(26, 142, 11, 0.95);
-              background: linear-gradient(180deg, rgba(53, 220, 73, 0.85), rgba(43, 185, 57, 0.85));
-              box-shadow: 0 0 8px rgba(255, 212, 59, 0.45);
-            }
+            @include touch-volume-states;
 
             .touch-volume-button:disabled {
               cursor: not-allowed;
@@ -1199,32 +853,6 @@
           cursor: pointer;
           transition: all 0.2s;
           box-sizing: border-box;
-
-          &.mic-select {
-            display: flex;
-            flex-direction: column;
-            gap: 0.65rem;
-            cursor: default;
-
-            label {
-              font-size: 0.85rem;
-              color: rgba(255, 255, 255, 0.75);
-            }
-
-            .menu-item-subtext {
-              font-size: 0.75rem;
-              color: rgba(255, 255, 255, 0.65);
-
-              &.loading {
-                color: rgba(255, 255, 255, 0.5);
-              }
-
-              &.error {
-                color: #ff6b6b;
-              }
-            }
-
-          }
 
           &.toggle-item {
             display: flex;
@@ -1403,91 +1031,277 @@
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Global fallbacks: ensure zone rings and background tints always apply,     */
-/* regardless of container ancestry (.fitness-devices, .fitness-sidebar-*)    */
-/* -------------------------------------------------------------------------- */
-
-/* Card-level zone tints */
-.fitness-device {
-  position: relative;
-}
-
-.fitness-device.zone-cool::before,
-.fitness-device.zone-active::before,
-.fitness-device.zone-warm::before,
-.fitness-device.zone-hot::before,
-.fitness-device.zone-fire::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: 8px;
-  opacity: 1;
-  mix-blend-mode: normal;
-  z-index: 0; /* behind all content */
-}
-
-.fitness-device.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
-.fitness-device.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
-.fitness-device.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
-.fitness-device.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
-.fitness-device.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
-
-/* Left accent */
-.fitness-device.zone-cool  { border-left: 4px solid rgba(106,184,255,0.9); }
-.fitness-device.zone-active{ border-left: 4px solid rgba(81,207,102,0.9); }
-.fitness-device.zone-warm  { border-left: 4px solid rgba(255,212,59,0.9); }
-.fitness-device.zone-hot   { border-left: 4px solid rgba(255,146,43,0.9); }
-.fitness-device.zone-fire  { border-left: 4px solid rgba(255,107,107,0.9); }
-
-.fitness-device.zone-cool  .zone-progress-fill { background: #6ab8ff; }
-.fitness-device.zone-active .zone-progress-fill { background: #51cf66; }
-.fitness-device.zone-warm  .zone-progress-fill { background: #ffd43b; }
-.fitness-device.zone-hot   .zone-progress-fill { background: #ff922b; }
-.fitness-device.zone-fire  .zone-progress-fill { background: #ff6b6b; }
-
-/* Vertical card base (fallback) */
-.fitness-device.card-vertical {
-  background: linear-gradient(180deg, #181818, #121212);
-  border: 1px solid #262626;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
-}
-
-/* Zone-colored avatar rings (place AFTER any generic border rules so it wins) */
-.fitness-device .card-avatar {
-  position: relative;
-  z-index: 1 !important; /* CRITICAL: avatars must be above zone overlay */
-}
-.fitness-device .card-avatar.zone-cool   { border-color: var(--zone-cool-color, #1e3a8a) !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.35) !important; }
-.fitness-device .card-avatar.zone-active { border-color: var(--zone-active-color, #059669) !important; box-shadow: 0 0 0 2px rgba(16,185,129,0.35) !important; }
-.fitness-device .card-avatar.zone-warm   { border-color: var(--zone-warm-color, #ca8a04) !important; box-shadow: 0 0 0 2px rgba(234,179,8,0.35) !important; }
-.fitness-device .card-avatar.zone-hot    { border-color: var(--zone-hot-color, #ea580c) !important; box-shadow: 0 0 0 2px rgba(234,88,12,0.4) !important; }
-.fitness-device .card-avatar.zone-fire   { border-color: var(--zone-fire-color, #dc2626) !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.45) !important; }
-.fitness-device .card-avatar.no-zone     { border-color: #333 !important; box-shadow: none !important; }
-
-/* Vertical avatar sizing (fallback) */
-.fitness-device.card-vertical .card-avatar {
-  width: 128px;
-  height: 128px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: #222;
-  border: 6px solid #333;
-  margin: 6px 0 14px 0;
-  flex: 0 0 auto;
-  box-shadow: 0 0 0 3px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.6);
-  position: relative;
-  z-index: 1 !important; /* above zone overlay */
-}
-
-/* Vertical zone pill alignment (fallback) */
-.device-zone-info.for-vert {
-  margin: 0 0 6px 0;
+// Music Player Styles (root level)
+.fitness-music-player-container {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  min-height: 80px;
+  height: auto;
+  background: rgba(24, 24, 24, 0.85);
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  overflow: hidden;
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: box-shadow 0.2s ease;
+  contain: layout size; // Prevent marquee measurements from affecting parent
+
+  &.controls-open {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    overflow-x: hidden;
+    overflow-y: visible;
+    contain: none; // Allow container to resize for expanded content
+  }
+
+  .music-player-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    height: 80px;
+    min-height: 80px;
+  }
+
+  .music-player-artwork {
+    flex: 0 0 80px;
+    width: 80px;
+    height: 80px;
+    position: relative;
+    
+    .artwork-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .artwork-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #222;
+      .artwork-icon { font-size: 3rem; }
+    }
+    
+    .playback-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      
+      .playback-icon {
+        font-size: 2.4rem;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      }
+    }
+    
+    &.paused .playback-overlay {
+      opacity: 1;
+    }
+  }
+
+  .music-player-info {
+    flex: 1;
+    min-width: 0;
+    padding: 0 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+
+    .track-details {
+      display: flex;
+      flex-direction: column;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+
+      .track-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        display: flex;
+
+        // Marquee wrapper - ping-pong scroll for overflow text
+        .marquee-text {
+          display: inline-block;
+          // --scroll-distance is set by JS based on actual overflow
+          animation: marquee-pingpong 8s ease-in-out infinite;
+          animation-play-state: var(--marquee-play-state, paused);
+        }
+      }
+
+      // Ping-pong marquee: pause at each end, scroll back and forth
+      @keyframes marquee-pingpong {
+        0%, 20% {
+          transform: translateX(0); // Start flush left, pause 20%
+        }
+        50%, 70% {
+          transform: translateX(var(--scroll-distance, 0px)); // Scroll to show end, pause 20%
+        }
+        100% {
+          transform: translateX(0); // Back to flush left
+        }
+      }
+      .music-player-retry {
+        display: inline-block;
+        padding: 0 0.25rem;
+        color: rgba(255, 165, 100, 0.95);
+        font-weight: 500;
+        text-decoration: underline;
+        cursor: pointer;
+        user-select: none;
+
+        &:hover { color: rgba(255, 200, 150, 1); }
+        &:active { transform: scale(0.97); }
+        &:focus-visible {
+          outline: 2px solid rgba(255, 200, 150, 0.9);
+          outline-offset: 2px;
+        }
+      }
+      .track-artist {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.6);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .track-progress {
+      margin-top: 4px;
+      .progress-bar {
+        width: 100%;
+        height: 6px;
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+        overflow: hidden;
+        .progress-fill {
+          height: 100%;
+          background-color: #fff;
+          border-radius: 4px;
+          transition: width 0.2s linear;
+        }
+      }
+      .progress-time {
+        display: none;
+      }
+    }
+  }
+
+  .music-player-controls {
+    flex: 0 0 80px;
+    width: 80px;
+    height: 80px;
+
+    .control-button {
+      width: 100%;
+        height: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      font-size: 2.4rem;
+    }
+  }
+  .music-player-expanded {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px 28px 28px;
+    background: rgba(12, 12, 12, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+    .expanded-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .empty-state {
+      font-size: 0.72rem;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .mix-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 1.4rem;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .mix-label {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .mix-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .touch-volume {
+        flex: 1 1 auto;
+        display: grid;
+        grid-template-columns: repeat(11, minmax(0, 1fr));
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .touch-volume.disabled {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+
+      .touch-volume-button {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
+        color: transparent;
+        border-radius: 4px;
+        font-size: 1.2rem;
+        padding: 0;
+        cursor: pointer;
+        transition: background 0.2s ease, border 0.2s ease;
+        height: 6ex;
+      }
+
+      @include touch-volume-states;
+
+      .touch-volume-button:disabled {
+        cursor: not-allowed;
+      }
+
+    }
+  }
 }
 
 // Fitness Video Component
@@ -1566,27 +1380,6 @@
   }
 }
 
-// Attach zone progress styling directly to fitness cards
-.fitness-device {
-  .zone-progress-bar {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.12);
-    overflow: hidden;
-    border-bottom-left-radius: inherit;
-    border-bottom-right-radius: inherit;
-  }
-
-  .zone-progress-fill {
-    height: 100%;
-    background: rgba(255, 255, 255, 0.4);
-    transition: width 0.3s ease-in-out;
-  }
-}
-
 // Media Controls Container (Video + Buttons)
 .media-controls-container {
   display: flex;
@@ -1609,7 +1402,7 @@
       /* Remove internal margins so button panel isn't clipped off to the right */
       width: 100%;
       height: 100%;
-      margin: 0 !important;
+      margin: 0;
       border-radius: 0; /* flush with unified container */
       
       .fitness-video-feed {
@@ -1784,50 +1577,10 @@
     .mix-controls {
       .touch-volume-button {
         font-size: 0.9rem;
-        height: 4ex!important;
+        height: 4ex;
       }
     }
     
-  }
-}
-
-/* Global Fitness Device Styles - Ensure these apply everywhere */
-.fitness-device {
-  position: relative; /* Ensure positioning context for absolute children */
-
-  /* Countdown bar for device removal */
-  .device-timeout-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: rgba(255, 0, 0, 0.2);
-    z-index: 100;
-    pointer-events: none;
-    border-top-left-radius: inherit;
-    border-top-right-radius: inherit;
-    overflow: hidden;
-    
-    .device-timeout-fill {
-      height: 100%;
-      background: #ff6b6b;
-      transition: width 1s linear;
-      box-shadow: 0 0 8px rgba(255, 107, 107, 0.6);
-    }
-  }
-
-  &.inactive {
-    opacity: 0.6 !important;
-    filter: grayscale(0.6);
-    
-    .device-icon {
-      filter: grayscale(0.5);
-    }
-  }
-  
-  &.countdown-active {
-    /* Ensure background doesn't conflict if needed */
   }
 }
 
@@ -1953,15 +1706,6 @@
   }
 }
 
-// D3 per-child start badge ("Reach Hot") under the name on a roster card.
-.fitness-device .device-info .device-start-badge {
-  align-self: flex-start;
-  margin-top: 2px;
-}
-.fitness-device.card-vertical .device-info .device-start-badge {
-  align-self: center;
-}
-
 // Portalled to <body> by SidebarMenuScrim, so it lives outside the sidebar.
 // Above the fitness player's z-index 1000 wrapper; it stops at the sidebar's
 // left edge, so it never covers the menu inside that wrapper.
@@ -1975,14 +1719,123 @@
   z-index: 1001;
 }
 
-// Strap sticker colour, by the rider's name: identifies whose strap is whose.
-// The ring and heart carry the zone colour (FitnessUsers.jsx heartColorIcon).
-.fitness-device .device-name .strap-dot {
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  margin-right: 0.35em;
-  border-radius: 50%;
-  vertical-align: 0.12em;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+// Rider cards. FitnessUsers.jsx renders them only inside the sidebar's
+// rider list, whose block above sets size and layout; these are the parts
+// that follow the rider's state (zone, removal countdown, inactivity).
+.fitness-device {
+  position: relative;
+
+  // Zone tint behind the card content
+  &.zone-cool::before,
+  &.zone-active::before,
+  &.zone-warm::before,
+  &.zone-hot::before,
+  &.zone-fire::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: 8px;
+    opacity: 1;
+    mix-blend-mode: normal;
+    z-index: 0;
+  }
+
+  &.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
+  &.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
+  &.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
+  &.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
+  &.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
+
+  &.zone-cool  { border-left: 4px solid rgba(106,184,255,0.9); }
+  &.zone-active{ border-left: 4px solid rgba(81,207,102,0.9); }
+  &.zone-warm  { border-left: 4px solid rgba(255,212,59,0.9); }
+  &.zone-hot   { border-left: 4px solid rgba(255,146,43,0.9); }
+  &.zone-fire  { border-left: 4px solid rgba(255,107,107,0.9); }
+
+  &.zone-cool  .zone-progress-fill { background: #6ab8ff; }
+  &.zone-active .zone-progress-fill { background: #51cf66; }
+  &.zone-warm  .zone-progress-fill { background: #ffd43b; }
+  &.zone-hot   .zone-progress-fill { background: #ff922b; }
+  &.zone-fire  .zone-progress-fill { background: #ff6b6b; }
+
+  // Avatar ring: the zone sets the custom properties the sidebar's
+  // .card-avatar border and shadow read, so no rule has to out-rank another.
+  .card-avatar.zone-cool   { --avatar-ring: #1e3a8a; --avatar-glow: 0 0 0 2px rgba(59,130,246,0.35); }
+  .card-avatar.zone-active { --avatar-ring: #059669; --avatar-glow: 0 0 0 2px rgba(16,185,129,0.35); }
+  .card-avatar.zone-warm   { --avatar-ring: #ca8a04; --avatar-glow: 0 0 0 2px rgba(234,179,8,0.35); }
+  .card-avatar.zone-hot    { --avatar-ring: #ea580c; --avatar-glow: 0 0 0 2px rgba(234,88,12,0.4); }
+  .card-avatar.zone-fire   { --avatar-ring: #dc2626; --avatar-glow: 0 0 0 2px rgba(220,38,38,0.45); }
+  .card-avatar.no-zone     { --avatar-ring: #333; --avatar-glow: none; }
+
+  .zone-progress-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    border-bottom-left-radius: inherit;
+    border-bottom-right-radius: inherit;
+  }
+
+  .zone-progress-fill {
+    height: 100%;
+    background: rgba(255, 255, 255, 0.4);
+    transition: width 0.3s ease-in-out;
+  }
+
+  // Countdown bar while a silent device waits to be removed
+  .device-timeout-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 0, 0, 0.2);
+    z-index: 100;
+    pointer-events: none;
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+    overflow: hidden;
+
+    .device-timeout-fill {
+      height: 100%;
+      background: #ff6b6b;
+      transition: width 1s linear;
+      box-shadow: 0 0 8px rgba(255, 107, 107, 0.6);
+    }
+  }
+
+  &.inactive {
+    // Beats the inline opacity react-flip-move writes while a card animates.
+    opacity: 0.6 !important;
+    filter: grayscale(0.6);
+
+    .device-icon {
+      filter: grayscale(0.5);
+    }
+  }
+
+  // D3 per-child start badge ("Reach Hot") under the name on a roster card.
+  .device-info .device-start-badge {
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+  &.card-vertical .device-info .device-start-badge {
+    align-self: center;
+  }
+
+  // Strap sticker colour, by the rider's name: identifies whose strap is whose.
+  // The ring and heart carry the zone colour (FitnessUsers.jsx heartColorIcon).
+  .device-name .strap-dot {
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.35em;
+    border-radius: 50%;
+    vertical-align: 0.12em;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  }
 }
