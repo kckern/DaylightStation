@@ -206,6 +206,82 @@ describe('taking a move back at the keys', () => {
   });
 });
 
+// 2026-10-23: a legal move the reducer accepted failed to save (browser storage
+// full) and the catch dropped the lifted piece. The destination chord, still
+// held, was then read as a fresh pick-up — "Nothing on that square" to e2→e4,
+// thirteen times running. A failed save must leave the piece in hand.
+describe('a move that cannot be saved', () => {
+  const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
+    .pitch_classes.map((pc) => 60 + pc);
+  const holdNotes = (notes) => mockUsePianoMidiNotes.mockReturnValue({
+    activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
+    noteHistory: [],
+  });
+  const makeElement = () => <PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />;
+  const playChord = async (rerender, notes) => {
+    holdNotes(notes);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    holdNotes([]);
+    rerender(makeElement());
+    await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+  };
+  const selectedSquares = (container) => [...container.querySelectorAll('.chess-board__square--selected')]
+    .map((el) => el.getAttribute('data-square'));
+  const lastMoveSquares = (container) => [...container.querySelectorAll('.chess-board__square--last-move')]
+    .map((el) => el.getAttribute('data-square'))
+    .filter(Boolean)
+    .sort();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: true, status: 'connected' });
+    fetchChessConfig.mockReset();
+    fetchChessConfig.mockResolvedValue(null);
+    requestOpponentMove.mockReset();
+    // The opponent never answers, so the board after the replay shows only
+    // White's move.
+    requestOpponentMove.mockImplementation(() => new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockUsePianoMidi.mockReturnValue({ connected: false, status: 'disconnected' });
+    mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(), noteHistory: [] });
+  });
+
+  it('keeps the piece lifted when the move cannot be saved, so the next chord is still a destination', async () => {
+    const { container, rerender } = render(makeElement());
+    await boardReady();
+    await playChord(rerender, notesFor('e2')); // hover
+    await playChord(rerender, notesFor('e2')); // lift
+    expect(selectedSquares(container)).toEqual(['e2']);
+    // Every journal write throws, including the ports' reclaim-and-retry.
+    // The test env's localStorage does not route through Storage.prototype,
+    // so the instance method is the one replaced.
+    const storage = window.localStorage;
+    const realSetItem = storage.setItem.bind(storage);
+    const spy = vi.spyOn(storage, 'setItem').mockImplementation((key, value) => {
+      if (String(key).includes(':journal:')) {
+        const e = new Error('exceeded the quota');
+        e.name = 'QuotaExceededError';
+        throw e;
+      }
+      return realSetItem(key, value);
+    });
+    try {
+      await playChord(rerender, notesFor('e4')); // land — the save fails
+      expect(spy.mock.calls.some(([key]) => String(key).includes(':journal:'))).toBe(true);
+      expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/could not be saved/i);
+      expect(selectedSquares(container)).toEqual(['e2']);
+      expect(lastMoveSquares(container)).toEqual([]);
+    } finally { spy.mockRestore(); }
+    await playChord(rerender, notesFor('e4')); // storage back — the same chord now lands
+    expect(selectedSquares(container)).toEqual([]);
+    expect(lastMoveSquares(container)).toEqual(['e2', 'e4']);
+  });
+});
+
 // A regression test for the two-clock arming race (Finding 1) was attempted
 // here and removed: it could not be made to fail against the pre-fix
 // lastEscapeAtRef+boolean implementation. The bug is inherently a REAL-CLOCK
