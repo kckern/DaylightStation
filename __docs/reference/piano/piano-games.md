@@ -715,6 +715,16 @@ The live match is a checkpointed session in **that browser's** localStorage, ind
 another screen never sees it. A game left on the office display and a game left on the
 tablet are two different games, and choosing chess on either resumes that screen's own.
 
+**Only indexed sessions survive.** Every board game (chess, checkers, Connect Four) writes a
+snapshot and a journal per session. When a game starts, `reclaimCheckpoints`
+(`__capabilities/gaming/browser/platform/authority/BrowserCheckpointPorts.js`) deletes every
+session in that game's namespace that no `<ns>:active:<user>` key names. Every user's index
+counts, since one screen serves the household. A write that still hits the browser's quota
+sweeps the same way and retries once. Logged as
+`gaming.checkpoints.reclaimed {namespace, cause: startup|quota, removed, kept}`. Before
+2026-10-23 nothing was ever removed: the office screen filled up and every chess move died
+`authority-move-failed … exceeded the quota`.
+
 **Resume window: 6 hours since the last move** (`RESUME_MAX_IDLE_MS` in
 `useChessAuthority.js`). Past it the session is discarded and a fresh board starts,
 logged as `chess.resume.stale-discarded {userId, idleMs, plies}`. Before 2026-09-27 there
