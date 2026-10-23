@@ -89,6 +89,76 @@ describe('floor priority through evaluate', () => {
     expect(h.engine.state.challenge.status).toBe('success');
     expect(h.engine.state.videoLocked).toBe(false);
   });
+  it('a failed-challenge lock stays locked through repeated floor drops', () => {
+    const h = harness();
+    h.advance(40001); h.evaluate();
+    expect(h.engine.phase).toBe('locked');
+    for (let i = 0; i < 4; i += 1) {
+      h.evaluate({ a: 'cool', b: 'active' });
+      expect(h.engine.phase).toBe('locked');
+      expect(h.engine.state.videoLocked).toBe(true);
+      expect(h.engine.state.challenge).toMatchObject({ status: 'failed', paused: true, pauseReason: 'floor_unmet' });
+      expect(h.engine.meta.deadline).toBeNull();
+      h.advance(25000); h.evaluate({ a: 'cool', b: 'active' });
+      expect(h.engine.state.videoLocked).toBe(true);
+      h.evaluate();
+      expect(h.engine.phase).toBe('locked');
+      expect(h.engine.state.videoLocked).toBe(true);
+    }
+  });
+  it('a playback pause keeps a locked cycle locking the video', () => {
+    const h = harness({ type: 'cycle' });
+    // Lock the cycle directly; evaluate() would recover it at the harness's 80 RPM.
+    Object.assign(h.challenge, { cycleState: 'locked', lockReason: 'maintain', _publishedCycleState: 'locked' });
+    h.engine._invalidateStateCache();
+    expect(h.engine.state.challenge.cycleState).toBe('locked');
+    expect(h.engine.state.videoLocked).toBe(true);
+    h.engine.setPlaybackPaused(true); h.engine._invalidateStateCache();
+    expect(h.engine.state.challenge.paused).toBe(true);
+    expect(h.engine.state.videoLocked).toBe(true);
+    h.engine.setPlaybackPaused(false); h.engine._invalidateStateCache();
+    expect(h.engine.state.videoLocked).toBe(true);
+  });
+  it('step sensor-offline time before a floor pause still counts after recovery', () => {
+    const h = harness({ type: 'step' });
+    const offline = (zones) => h.engine.evaluate({
+      activeParticipants: Object.keys(zones), userZoneMap: zones, zoneRankMap: ranks,
+      zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } }, totalCount: 2,
+      activityMetricMap: { mat: { online: false, sessionSteps: 10 } }, equipmentRiderMap: { mat: 'a' }, equipmentCadenceMap: {},
+    });
+    offline({ a: 'active', b: 'active' });
+    const offlineSince = h.challenge.sensorUnavailableAt;
+    h.advance(6000); offline({ a: 'cool', b: 'active' });
+    h.advance(60000); offline({ a: 'cool', b: 'active' });
+    offline({ a: 'active', b: 'active' });
+    // 6s of offline time already elapsed; the 60s floor pause is excluded.
+    expect(h.challenge.sensorUnavailableAt).toBe(offlineSince + 60000);
+    h.advance(4000); offline({ a: 'active', b: 'active' });
+    expect(h.engine.state.challenge).toBeNull();
+    expect(h.engine.state.challengeHistory.at(-1)).toMatchObject({ status: 'cancelled', cancelReason: 'sensor_offline' });
+  });
+  it('drops a manual start requested while the floor is unmet', () => {
+    const h = harness();
+    h.engine.challengeState.activeChallenge = null;
+    h.evaluate({ a: 'cool', b: 'active' });
+    h.engine.challengeState.forceStartRequest = { requestedAt: h.now(), payload: null };
+    h.evaluate({ a: 'cool', b: 'active' });
+    expect(h.engine.challengeState.forceStartRequest).toBeNull();
+    h.evaluate();
+    expect(h.engine.state.challenge?.id ?? null).not.toBe('forced');
+    expect(h.engine.challengeState.activeChallenge).toBeNull();
+  });
+  it('a floor pause during the success flash does not count toward the next challenge', () => {
+    const h = harness();
+    h.evaluate({ a: 'warm', b: 'warm' });
+    expect(h.engine.state.challenge.status).toBe('success');
+    const nextAt = h.engine.challengeState.nextChallengeAt;
+    expect(Number.isFinite(nextAt)).toBe(true);
+    h.advance(500); h.evaluate({ a: 'cool', b: 'active' });
+    h.advance(200000); h.evaluate({ a: 'cool', b: 'active' });
+    h.evaluate();
+    expect(h.engine.challengeState.nextChallengeAt).toBe(nextAt + 200000);
+  });
   it('floor recovery resumes saved challenge time once', () => {
     const h = harness();
     h.evaluate({ a: 'cool', b: 'active' });

@@ -5,9 +5,13 @@ import { calculateZoneProgressTowardsTarget } from "./fitness/types.js";
 const FALLBACK_AVATAR = DaylightMediaPath('/static/img/users/user');
 const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 
+// A floor suspension backgrounds a challenge. A playback pause only freezes
+// its clock: the challenge still owns its lock and its rows.
+const isBackgrounded = (challenge) => challenge?.pauseReason === 'floor_unmet';
+
 const isLiveZoneChallenge = (challenge) => Boolean(challenge
   && challenge.type !== 'cycle'
-  && !challenge.paused
+  && !isBackgrounded(challenge)
   && (challenge.status === 'pending' || challenge.status === 'failed'));
 
 /**
@@ -63,7 +67,7 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
   const floors = requirements.filter((req) => req && !req.satisfied)
     .sort((a, b) => rankOf(b.zone || b.orZone) - rankOf(a.zone || a.orZone));
   const rawChallenge = govState.challenge;
-  const availableChallenge = !floors.length && rawChallenge && !rawChallenge.paused
+  const availableChallenge = !floors.length && rawChallenge && !isBackgrounded(rawChallenge)
     && !rawChallenge.sensorUnavailable ? rawChallenge : null;
   const lockingChallenge = availableChallenge && (availableChallenge.status === 'failed'
     || (availableChallenge.type === 'cycle' && availableChallenge.cycleState === 'locked'))
