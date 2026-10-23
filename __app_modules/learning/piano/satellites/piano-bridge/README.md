@@ -211,7 +211,11 @@ endpoints. Both answer at once and are safe to call by hand:
 | `POST /speaker/reconnect` | A2DP disconnect, then connect after 2 s (clears a half-open link) |
 | `POST /speaker/bt-cycle?settleMs=5000` | tablet Bluetooth off → `settleMs` (0–30000) → on, on its own thread; keeps asking for `enable()` for 30 s so a dropped HTTP client can't strand Bluetooth off. `{"ok":false,"error":"busy"}` while one runs. BLE-MIDI drops for the duration and reconnects on its own. |
 
-Both log to the log store: `bridge.a2dp.{disconnected,connected,reconnect-requested,error}`
+Since p33, `GET /speaker` also reports `hfpConnected` / `hfpPriorityOff` / `hfpDisconnects`.
+The speaker is kept A2DP-only (`HeadsetGuard`), and a panel Connect to the already-configured
+device no longer rebuilds the connectors (`ConnectPlan`).
+
+Both log to the log store: `bridge.a2dp.{disconnected,connected,reconnect-requested,error,hfp-disabled}`
 and `bridge.bt-cycle.{start,done}` (`context.app:piano-bridge`).
 
 ### Screen-wake on a played note (`ScreenWaker`)

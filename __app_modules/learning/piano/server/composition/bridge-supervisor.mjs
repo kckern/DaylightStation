@@ -34,6 +34,8 @@ import { composePianoBridgePush } from "../domain/bridge/pianoBridgePush.mjs";
 import { PianoBridgeSpeakerActionsAdapter } from "../adapters/bridge/PianoBridgeSpeakerActionsAdapter.mjs";
 import { createHaPlugCycle } from "../adapters/bridge/haPlugCycle.mjs";
 import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
+import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness.mjs";
+import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
@@ -110,8 +112,12 @@ export function createPianoBridgeSupervisor({
       ? createScreenHold({ deviceService, overrides: getScreenOverrideService(), deviceId })
       : null;
     if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
+    const actions = speakerActionsFactory({ bridgeUrl });
+    const logStoreBase = logStoreBaseFromSinkUrl(configService?.get?.('logging.remoteSink')?.url);
     speaker = {
-      actions: speakerActionsFactory({ bridgeUrl }),
+      actions,
+      checkReady: createSpeakerReadinessCheck({ actions, haGateway, plugEntity }),
+      queryLogs: logStoreBase ? createLogStoreQuery({ baseUrl: logStoreBase }) : null,
       plugCycle,
       holdScreen,
       publish: typeof eventBus?.broadcast === 'function'
@@ -149,6 +155,7 @@ export function createPianoBridgeSupervisor({
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
     deviceId, bridgeUrl, pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs,
   });
   return { pianoBridgeSupervisor: service };
 }

@@ -157,8 +157,8 @@ test('overlapping ticks are serialized', async () => {
 });
 
 
-function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false, notifyResult = undefined, hold = true } = {}) {
-  let t = 1_790_000_000_000;
+function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error: null, unpowered: false }, failA2dp = false, notifyResult = undefined, hold = true, checkReady = null, queryLogs = null, start = 1_790_000_000_000 } = {}) {
+  let t = start;
   const state = { health: { reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }, power, notifyResult };
   const calls = [];
   const pushes = [];
@@ -180,6 +180,8 @@ function speakerRig({ power = 'on', plug = true, plugResult = { ok: true, error:
     intervalMs: 30_000,
     speaker: {
       holdScreen: hold ? async (ms) => { calls.push(`holdScreen:${ms}`); } : null,
+      checkReady,
+      queryLogs,
       actions: {
         a2dpReconnect: async () => { calls.push('a2dpReconnect'); return failA2dp ? { ok: false, error: 'endpoint-missing' } : { ok: true, error: null }; },
         bluetoothCycle: async (ms) => { calls.push(`btCycle:${ms}`); return { ok: true, error: null }; },
@@ -351,4 +353,90 @@ test('speaker: first tick announces ok so a stale needs-help banner clears after
   const r = speakerRig();
   await r.step(1);
   assert.deepEqual(r.published.map((p) => [p.state, p.told]), [['ok', false]]);
+});
+
+// ── readiness + weekly summary ─────────────────────────────────────────────
+
+test('readiness: a broken link pushes once a day at most, re-checks hourly, and clears with a quiet card', async () => {
+  const state = { problems: ['plug-unavailable'] };
+  let checks = 0;
+  const r = speakerRig({ checkReady: async () => { checks++; return state.problems; } });
+  await r.step(1);
+  assert.equal(checks, 1);
+  assert.equal(r.pushes.length, 1);
+  assert.match(r.pushes[0].title, /self-repair is broken/);
+  assert.equal(r.events('piano.speaker.not-ready')[0].level, 'warn');
+  await r.step(10);                 // 5 min: no re-check yet
+  assert.equal(checks, 1);
+  await r.step(120);                // past an hour: re-checked, still broken, no second push today
+  assert.ok(checks >= 2);
+  assert.equal(r.pushes.length, 1);
+  state.problems = [];
+  await r.step(121);                // next hourly check sees it fixed
+  assert.equal(r.pushes.length, 2);
+  assert.match(r.pushes[1].title, /working again/);
+});
+
+test('readiness: healthy is logged, never pushed, and re-checked daily', async () => {
+  let checks = 0;
+  const r = speakerRig({ checkReady: async () => { checks++; return []; } });
+  await r.step(1);
+  assert.equal(r.events('piano.speaker.ready').length, 1);
+  assert.equal(r.pushes.length, 0);
+  await r.step(2 * 60 * 23);       // 23 h
+  assert.equal(checks, 1);
+  await r.step(2 * 60 * 2);        // past 24 h
+  assert.equal(checks, 2);
+});
+
+test('readiness: a check that throws is a warning, retried, never a crash', async () => {
+  const r = speakerRig({ checkReady: async () => { throw new Error('HA down'); } });
+  await r.step(1);
+  assert.equal(r.events('piano.speaker.ready-check-failed')[0].level, 'warn');
+  assert.equal(r.pushes.length, 0);
+});
+
+// Sunday 2026-10-25 19:00 America/Los_Angeles = 2026-10-26T02:00:00Z
+const SUNDAY_EVENING = Date.parse('2026-10-26T02:00:00Z');
+const row = (msg, rung) => ({ _msg: msg, 'data.rung': rung == null ? undefined : String(rung) });
+
+test('weekly: Sunday evening sums the week from the log store and pushes once', async () => {
+  const queries = [];
+  const r = speakerRig({
+    start: SUNDAY_EVENING,
+    queryLogs: async (q) => {
+      queries.push(q);
+      if (q.includes('weekly-summary')) return [];
+      return [row('piano.speaker.dropped'), row('piano.speaker.dropped'), row('piano.speaker.dropped'),
+        row('piano.speaker.recovered', 4), row('piano.speaker.recovered', 4), row('piano.speaker.recovered', 2)];
+    },
+  });
+  await r.step(1);
+  const weekly = r.pushes.filter((p) => /this week/.test(p.title));
+  assert.equal(weekly.length, 1);
+  assert.equal(weekly[0].message, 'Dropped 3 times and fixed itself every time: 2 by restarting the piano, 1 by a Bluetooth reset.');
+  assert.deepEqual(r.events('piano.speaker.weekly-summary')[0].data.byRung, { 4: 2, 2: 1 });
+  assert.ok(queries.every((q) => q.includes('context.module:piano-bridge-supervisor')));
+  await r.step(5);
+  assert.equal(r.pushes.filter((p) => /this week/.test(p.title)).length, 1);
+});
+
+test('weekly: a summary already in the store (redeploy on Sunday) is not repeated', async () => {
+  const r = speakerRig({ start: SUNDAY_EVENING, queryLogs: async (q) => (q.includes('weekly-summary') ? [row('piano.speaker.weekly-summary')] : [row('piano.speaker.dropped')]) });
+  await r.step(3);
+  assert.equal(r.pushes.filter((p) => /this week/.test(p.title)).length, 0);
+});
+
+test('weekly: a quiet week is logged but not pushed', async () => {
+  const r = speakerRig({ start: SUNDAY_EVENING, queryLogs: async () => [] });
+  await r.step(1);
+  assert.equal(r.events('piano.speaker.weekly-summary').length, 1);
+  assert.equal(r.pushes.length, 0);
+});
+
+test('weekly: never runs outside Sunday evening', async () => {
+  let asked = 0;
+  const r = speakerRig({ start: Date.parse('2026-10-24T02:00:00Z'), queryLogs: async () => { asked++; return []; } }); // Fri 19:00 PT
+  await r.step(4);
+  assert.equal(asked, 0);
 });

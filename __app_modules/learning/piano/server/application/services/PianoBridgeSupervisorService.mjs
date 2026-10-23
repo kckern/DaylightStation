@@ -38,6 +38,11 @@ const DEFAULT_ALERT_AFTER_MS = 5 * 60_000;
 const DEFAULT_ONE_WAY_ALERT_AFTER_MS = 10 * 60_000;
 const DEFAULT_RELAUNCH_BACKOFF_MS = [60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
 const HEARTBEAT_EVERY_TICKS = 20;
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+const WEEKLY_WEEKDAY = 'Sun';
+const WEEKLY_HOUR = 18;
+const SUPERVISOR_MODULE = 'piano-bridge-supervisor';
 
 export class PianoBridgeSupervisorService {
   #probe; #relaunch; #readPianoPower; #notify; #compose;
@@ -63,6 +68,12 @@ export class PianoBridgeSupervisorService {
   #speakerAlert = null;       // {kind, fields} still owed to a person
   #speakerAlertTried = false;
   #speakerTold = false;       // a push actually went out (not merely attempted)
+  // readiness: can the ladder actually work if the speaker drops?
+  #readyNextAt = 0;
+  #readyAlertedAt = null;
+  // weekly summary (state lives in the log store, so a deploy cannot repeat or lose it)
+  #weeklyNextAt = 0;
+  #weeklyDoneDate = null;
 
   /**
    * @param {Object} opts
@@ -142,7 +153,11 @@ export class PianoBridgeSupervisorService {
       this.#ticks += 1;
       if (health?.reachable) await this.#onReachable(health);
       else await this.#onUnreachable(health);
-      if (this.#speaker) await this.#checkSpeaker(health);
+      if (this.#speaker) {
+        await this.#checkSpeaker(health);
+        await this.#checkReadiness();
+        await this.#checkWeekly();
+      }
     } finally {
       this.#ticking = false;
     }
@@ -367,6 +382,70 @@ export class PianoBridgeSupervisorService {
     }
   }
 
+  // ── readiness ───────────────────────────────────────────────────────────
+
+  async #checkReadiness() {
+    const check = this.#speaker.checkReady;
+    const now = this.#clock.now();
+    if (typeof check !== 'function' || now < this.#readyNextAt) return;
+    const deviceId = this.#deviceId;
+    let problems;
+    try {
+      problems = [...(await check())];
+    } catch (err) {
+      this.#logger.warn?.('piano.speaker.ready-check-failed', { deviceId, error: String(err?.message ?? err) });
+      this.#readyNextAt = now + HOUR_MS;
+      return;
+    }
+    if (!this.#notify) problems.push('no-notify-target');
+    if (problems.length) {
+      this.#logger.warn?.('piano.speaker.not-ready', { deviceId, problems });
+      if (this.#readyAlertedAt === null || now - this.#readyAlertedAt >= DAY_MS) {
+        if (await this.#push('not-ready', { problems }, this.#speaker.compose)) this.#readyAlertedAt = now;
+      }
+      this.#readyNextAt = now + HOUR_MS; // a fix clears within the hour
+      return;
+    }
+    this.#logger.info?.('piano.speaker.ready', { deviceId });
+    if (this.#readyAlertedAt !== null) {
+      await this.#push('ready-again', {}, this.#speaker.compose);
+      this.#readyAlertedAt = null;
+    }
+    this.#readyNextAt = now + DAY_MS;
+  }
+
+  // ── weekly summary ──────────────────────────────────────────────────────
+
+  async #checkWeekly() {
+    const query = this.#speaker.queryLogs;
+    const now = this.#clock.now();
+    if (typeof query !== 'function' || now < this.#weeklyNextAt) return;
+    const local = localParts(now, this.#timezone);
+    if (local.weekday !== WEEKLY_WEEKDAY || local.hour < WEEKLY_HOUR || this.#weeklyDoneDate === local.date) return;
+    const deviceId = this.#deviceId;
+    const scope = `context.module:${SUPERVISOR_MODULE} AND data.deviceId:"${deviceId}"`;
+    try {
+      const prior = await query(`"piano.speaker.weekly-summary" AND _time:6d AND ${scope}`);
+      if (prior.length) { this.#weeklyDoneDate = local.date; return; }
+      const rows = await query(`("piano.speaker.dropped" OR "piano.speaker.recovered" OR "piano.speaker.gave-up") AND _time:7d AND ${scope}`);
+      let drops = 0; let gaveUp = 0; const byRung = {};
+      for (const r of rows) {
+        if (r._msg === 'piano.speaker.dropped') drops += 1;
+        else if (r._msg === 'piano.speaker.gave-up') gaveUp += 1;
+        else if (r._msg === 'piano.speaker.recovered') {
+          const rung = Number(r['data.rung']);
+          if (Number.isInteger(rung) && rung > 0) byRung[rung] = (byRung[rung] ?? 0) + 1;
+        }
+      }
+      this.#logger.info?.('piano.speaker.weekly-summary', { deviceId, drops, byRung, gaveUp });
+      if (drops > 0 || gaveUp > 0) await this.#push('weekly', { drops, byRung, gaveUp }, this.#speaker.compose);
+      this.#weeklyDoneDate = local.date;
+    } catch (err) {
+      this.#logger.warn?.('piano.speaker.weekly-failed', { deviceId, error: String(err?.message ?? err) });
+      this.#weeklyNextAt = now + HOUR_MS;
+    }
+  }
+
   // ── push ────────────────────────────────────────────────────────────────
 
   /** @returns {Promise<boolean>} whether a person was told */
@@ -399,6 +478,15 @@ export class PianoBridgeSupervisorService {
       return false;
     }
   }
+}
+
+/** Weekday / hour / date in the household zone (the tablet's clock is not the house's). */
+function localParts(ms, timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone || undefined, weekday: 'short', hour: 'numeric', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+  return { weekday: parts.weekday, hour: Number(parts.hour), date: `${parts.year}-${parts.month}-${parts.day}` };
 }
 
 export default PianoBridgeSupervisorService;

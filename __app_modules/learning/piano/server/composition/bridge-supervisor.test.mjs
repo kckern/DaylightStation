@@ -119,3 +119,21 @@ test('without them the ladder still runs, and says the screen is unprotected', (
   assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.screenHold, false);
   assert.ok(d.logs.some((l) => l.event === 'piano.speaker.no-screen-hold' && l.level === 'warn'));
 });
+
+test('speaker recovery gets a readiness check, and a weekly summary when the log store is configured', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  d.args.configService.get = (key) => (key === 'logging.remoteSink'
+    ? { enabled: true, url: 'http://victoria-logs:9428/insert/jsonline?_time_field=ts' } : undefined);
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data;
+  assert.equal(created.readiness, true);
+  assert.equal(created.weeklySummary, true);
+});
+
+test('no log store configured: readiness still runs, weekly summary is off', () => {
+  const d = deps({ ...base, speaker_recovery: { enabled: true, plug_entity: 'switch.yellow_room_piano_plug' } });
+  createPianoBridgeSupervisor(d.args);
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data;
+  assert.equal(created.readiness, true);
+  assert.equal(created.weeklySummary, false);
+});

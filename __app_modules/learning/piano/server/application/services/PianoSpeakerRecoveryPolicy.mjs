@@ -3,7 +3,7 @@
  * (the "J2-USB Bluetooth" A2DP sink) given what the bridge supervisor saw this
  * tick. Pure: no I/O, the caller supplies `now`.
  *
- * Why a ladder (2026-10-23): when the dongle wedges it accepts the baseband page
+ * Why a ladder (2026-10-23): when the piano's built-in Bluetooth module wedges it accepts the baseband page
  * but refuses L2CAP (`SDP conn cnf error 0x4`), so the APK's own 20 s connect()
  * retry can never succeed. A tablet Bluetooth off→on fixed it once; a piano power
  * cycle always does, and the piano powers itself on when its plug comes back.
@@ -75,7 +75,7 @@ export function decideSpeaker(episode, observation, now, options) {
         },
       };
     }
-    // Only a long healthy stretch earns a fresh ladder; a flapping dongle keeps climbing.
+    // Only a long healthy stretch earns a fresh ladder; a flapping speaker keeps climbing.
     const healthySince = ep.healthySince ?? now;
     const rung = ep.rung > 0 && now - healthySince >= cfg.healthyResetMs ? 0 : ep.rung;
     return { episode: { ...ep, downTicks: 0, healthySince, rung }, action: NONE };
@@ -87,7 +87,7 @@ export function decideSpeaker(episode, observation, now, options) {
 
   if (pianoPower === 'off') {
     if (waitingOnPlug) return giveUp(ep, now, 'piano-stayed-off');
-    // Switching the piano off power-cycles the dongle too — the next power-on gets a
+    // Switching the piano off power-cycles its Bluetooth module too — the next power-on gets a
     // fresh ladder, never a carried-over plug rung seconds after someone sits down.
     if (ep.phase === 'recovering') {
       return {

@@ -46,3 +46,19 @@ test('network failure resolves, never rejects', async () => {
   assert.equal(r.ok, false);
   assert.match(r.error, /ECONNRESET/);
 });
+
+test('probeEndpoints: "POST only" means present, 404 means missing, network error means unknown', async () => {
+  const seen = [];
+  const present = new PianoBridgeSpeakerActionsAdapter({
+    bridgeUrl: 'http://tablet:8770',
+    fetchImpl: async (url, init) => { seen.push([url, init.method]); return res(200, { ok: false, error: 'POST only' }); },
+  });
+  assert.deepEqual(await present.probeEndpoints(), { present: true });
+  assert.deepEqual(seen, [['http://tablet:8770/speaker/reconnect', 'GET'], ['http://tablet:8770/speaker/bt-cycle', 'GET']]);
+
+  const old = new PianoBridgeSpeakerActionsAdapter({ bridgeUrl: 'http://tablet:8770', fetchImpl: async () => res(404) });
+  assert.deepEqual(await old.probeEndpoints(), { present: false });
+
+  const down = new PianoBridgeSpeakerActionsAdapter({ bridgeUrl: 'http://tablet:8770', fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
+  assert.deepEqual(await down.probeEndpoints(), { present: null });
+});

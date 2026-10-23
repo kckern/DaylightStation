@@ -186,7 +186,7 @@ test('ladder table matches the spec exactly', () => {
 });
 
 test('a piano power-off resets the ladder: the next power-on starts at rung 1, not a plug cycle', () => {
-  // Climb to rung 3, child switches the piano off, next morning it comes on with the dongle still connecting.
+  // Climb to rung 3, child switches the piano off, next morning it comes on with the speaker still connecting.
   let { ep, t } = run(Array(8).fill(DOWN));
   assert.equal(ep.rung, 3);
   const off = { speaker: false, pianoPower: 'off', bridgeUp: true };
