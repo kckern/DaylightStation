@@ -39,10 +39,16 @@ describe('Settings primary controls and interaction', () => {
     fireEvent.click(screen.getByRole('button', { name: 'End Session' }));
     expect(p.onEndSession).toHaveBeenCalledTimes(1);
   });
-  it('keeps open while a control retains focus, then dismisses after idle blur', () => {
+  it('a tap that focuses a control still dismisses after idle', () => {
+    vi.useFakeTimers(); const p = props(); render(<FitnessSidebarMenu {...p} />);
+    const toggle = screen.getByRole('checkbox', { name: 'Sidebar Webcam' });
+    fireEvent.pointerDown(toggle); fireEvent.focus(toggle); fireEvent.click(toggle);
+    act(() => vi.advanceTimersByTime(5001)); expect(p.onClose).toHaveBeenCalledTimes(1);
+  });
+  it('keeps open while a control retains keyboard focus, then dismisses after idle blur', () => {
     vi.useFakeTimers(); const p = props(); render(<FitnessSidebarMenu {...p} />);
     const button = screen.getByRole('button', { name: /End current/ });
-    fireEvent.pointerDown(button); fireEvent.focus(button);
+    fireEvent.keyDown(button, { key: 'Tab' }); fireEvent.focus(button);
     act(() => vi.advanceTimersByTime(6000)); expect(p.onClose).not.toHaveBeenCalled();
     fireEvent.blur(button, { relatedTarget: document.body });
     act(() => vi.advanceTimersByTime(5001)); expect(p.onClose).toHaveBeenCalledTimes(1);

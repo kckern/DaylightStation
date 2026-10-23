@@ -472,8 +472,8 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 | `__app_modules/wellness/fitness/browser/hooks/fitness/PersistenceManager.js` | `is_guest`/`is_primary`/`base_user` persistence, W1.B backfill, occupant exclusion |
 | `__app_modules/wellness/fitness/browser/hooks/fitness/sessionBackfill.js` | OI-1/OI-2/OI-3/§5 rules incl. late-tag untagged placeholder merge |
 | `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | Exposes `assignGuestToDevice`, `clearGuestAssignment`, `suppressDeviceUntilNextReading`, `guestCandidates` |
-| `_extensions/fitness/src/ble.mjs` | BLE scan, HR Service 0x180D discovery, best-effort matching, unknown-device drop |
-| `_extensions/fitness/src/decoders/heart_rate.mjs` | GATT 0x2A37 packet parser |
+| `__app_modules/wellness/fitness/satellites/fitness-controller/src/ble.mjs` | BLE scan, HR Service 0x180D discovery, best-effort matching, unknown-device drop |
+| `__app_modules/wellness/fitness/satellites/fitness-controller/src/decoders/heart_rate.mjs` | GATT 0x2A37 packet parser |
 
 ---
 

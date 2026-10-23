@@ -474,3 +474,17 @@ describe('resolveGovernanceDisplay — scoped foreground obligations', () => {
     expect(result.rows[0].heartRate).toBe(105);
   });
 });
+
+describe('resolveGovernanceDisplay — playback pause vs floor backgrounding', () => {
+  const failedZone = (extra) => ({ id: 'z', type: 'zone', status: 'failed', zone: 'warm', missingUsers: [], metUsers: [], ...extra });
+  it('keeps a failed challenge as the lock owner while playback is paused', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', videoLocked: true,
+      challenge: failedZone({ paused: true, pauseReason: null }) }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.challenge).toMatchObject({ id: 'z', status: 'failed' });
+  });
+  it('backgrounds a challenge suspended by the floor', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', videoLocked: true,
+      challenge: failedZone({ paused: true, pauseReason: 'floor_unmet' }) }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.challenge).toBeNull();
+  });
+});

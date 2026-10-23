@@ -1924,12 +1924,13 @@ export class GovernanceEngine {
     if (Number.isFinite(this._warningCooldownUntil)) this._warningCooldownUntil += delta;
 
     const cs = this.challengeState || {};
-    if (Number.isFinite(cs.nextChallengeAt)) cs.nextChallengeAt += delta;
-
     const active = cs.activeChallenge;
     // A floor suspension already banks this entire interval, including any
     // nested playback pause. Shift challenge clocks exactly once on floor resume.
-    if (active && active.pauseReason !== 'floor_unmet') {
+    const floorSuspended = active?.pauseReason === 'floor_unmet';
+    if (!floorSuspended && Number.isFinite(cs.nextChallengeAt)) cs.nextChallengeAt += delta;
+
+    if (active && !floorSuspended) {
       Object.keys(active.zoneHold || {}).forEach((id) => { active.zoneHold[id] += delta; });
       // HR challenge anchors
       if (Number.isFinite(active.expiresAt)) active.expiresAt += delta;
@@ -2430,7 +2431,9 @@ export class GovernanceEngine {
         || (challengeSnapshot?.type === 'cycle'
             && challengeSnapshot?.cycleState === 'locked'
             && !challengeSnapshot?.sensorUnavailable
-            && !challengeSnapshot?.paused),
+            // Only the floor backgrounds a cycle lock; a playback pause
+            // (voice memo, stall) freezes its clock but keeps it locking.
+            && challengeSnapshot?.pauseReason !== 'floor_unmet'),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       audioDuck: this._computeAudioDuck(challengeSnapshot),
@@ -2927,8 +2930,9 @@ export class GovernanceEngine {
           this._setPhase('locked', evalContext);
         } else {
           // Start or continue grace period countdown
-          if (!Number.isFinite(this.meta.deadline) && (this.phase !== 'locked'
-              || (challengeForcesRed && activeChallengeForPhase.pauseReason !== 'floor_unmet'))) {
+          // A failed-challenge lock stays locked when the floor also drops:
+          // backgrounding the challenge must never open a fresh grace window.
+          if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
             this.meta.deadline = now + graceSeconds * 1000;
             this.meta.gracePeriodTotal = graceSeconds;
           }
@@ -4852,12 +4856,16 @@ export class GovernanceEngine {
       if (Number.isFinite(challenge[key])) challenge[key] += durationMs;
     });
     Object.keys(challenge.zoneHold || {}).forEach((id) => { challenge.zoneHold[id] += durationMs; });
+    // A completed challenge's follow-up is already scheduled; the floor pause
+    // must not count toward it.
+    if (Number.isFinite(this.challengeState.nextChallengeAt)) this.challengeState.nextChallengeAt += durationMs;
     if (challenge.type === 'step') {
       const mat = this._latestInputs?.activityMetricMap?.[challenge.equipment];
       const count = challenge.metric === 'stomps' ? mat?.sessionStomps : mat?.sessionSteps;
       challenge.startCount = (Number(count) || 0) - (challenge._floorStepProgress || 0);
-      // The floor suspension already accounts for any overlapping offline time.
-      if (Number.isFinite(challenge.sensorUnavailableAt)) challenge.sensorUnavailableAt = now;
+      // Offline time before the floor dropped still counts toward the sensor
+      // grace and the deadline extension; only the paused interval is excluded.
+      if (Number.isFinite(challenge.sensorUnavailableAt)) challenge.sensorUnavailableAt += durationMs;
     }
     challenge._lastCycleTs = now;
     challenge.pausedAt = null;
@@ -5237,7 +5245,13 @@ export class GovernanceEngine {
     };
 
     // --- Main Logic ---
-    const forceStartRequest = floorSatisfied ? this.challengeState.forceStartRequest : null;
+    // A manual start cannot override an unmet floor. Drop it rather than
+    // queue it, so it never fires unexpectedly minutes after recovery.
+    if (!floorSatisfied && this.challengeState.forceStartRequest) {
+      getLogger().info('governance.challenge.force_start_dropped', { reason: 'floor_unmet' });
+      this.challengeState.forceStartRequest = null;
+    }
+    const forceStartRequest = this.challengeState.forceStartRequest;
 
     if (this.challengeState.activeChallenge) {
       if (forceStartRequest) {

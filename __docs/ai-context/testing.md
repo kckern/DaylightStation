@@ -150,6 +150,11 @@ Registry: `data/system/testdata.yml`
 
 Run `node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs chromium`
 and repeat with `firefox`. Install the selected Playwright browser first.
+`--integration-only` skips the roster/menu/ceremony sweep. Each run writes its
+screenshots and `<engine>-geometry.json` to a fresh `fitness-harness-XXXXXX`
+directory under the OS temp dir (`os.tmpdir()`, honours `TMPDIR`); pass
+`--out-dir <dir>` or set `FITNESS_HARNESS_OUT_DIR` to choose one. The directory
+is printed to stderr at start and returned as `outDir` in the JSON result line.
 The harness bundles production components and SCSS on a temporary loopback
 server; external requests are blocked and microphone capture is refused. It
 never connects to a household backend or publishes workout events.

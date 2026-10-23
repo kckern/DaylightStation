@@ -2164,7 +2164,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       showChart={showChart}
       boostLevel={boostLevel}
       setBoost={setBoost}
-      governanceStateOverride={effectiveGovernanceState}
     />
   ) : null;
 

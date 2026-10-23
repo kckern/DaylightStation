@@ -1,4 +1,4 @@
-import { committedZoneId } from '../lib/committedZone.js';
+import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -2020,13 +2020,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const isGuest = Boolean(ledgerEntry);
       const source = isGuest ? 'Guest' : 'Primary';
       const displayLabel = getDisplayLabel(user.name, { userId: user.id });
-
+      // The earned zone comes from ZoneProfileStore (trusted + hysteresis), the
+      // same source as governance and the roster. User.currentData is raw HR.
       map.set(key, {
         name: user.name,
         heartRate: data.heartRate,
-        zoneId: data.zone,
-        zoneName: data.zoneName,
-        zoneColor: data.color,
+        ...earnedZoneFields(session?.zoneProfileStore?.getZoneState?.(user.id)),
         targetHeartRate: data.targetHeartRate,
         rangeMin: data.rangeMin,
         rangeMax: data.rangeMax,
@@ -2047,7 +2046,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
+  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels, session]);
 
   // Zone-progress lookup index. Keyed by profile ID, device IDs, given name,
   // AND display label so a caller holding any of them resolves the same entry.
@@ -2390,15 +2389,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // SSoT: Prefer ZoneProfileStore for stabilized zone (matches GovernanceEngine)
     const mergedProfileId = existing?.profileId || participant?.profileId || participant?.id || nameOrId;
     const zoneProfile = zoneProfileLookup.get(mergedProfileId);
-    const stabilizedZoneId = zoneProfile?.currentZoneId
-      ? String(zoneProfile.currentZoneId).toLowerCase()
-      : null;
     const stabilizedZoneColor = zoneProfile?.currentZoneColor || null;
-    const mergedZoneId = stabilizedZoneId
-      || existing?.zoneId
-      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
-    const mergedZoneColor = stabilizedZoneColor
-      || existing?.zoneColor || participant?.zoneColor || null;
+    // An untrusted profile is authoritative: never revive a raw zone under it.
+    const mergedZoneId = committedZoneId(zoneProfile, existing, participant);
+    const mergedZoneColor = zoneProfile
+      ? (zoneProfile.zoneTrusted === false ? null : stabilizedZoneColor)
+      : (existing?.zoneColor || participant?.zoneColor || null);
     const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
     const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
@@ -2509,11 +2505,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const userCurrentZones = React.useMemo(() => {
     const map = {};
     userVitalsMap.forEach((vitals) => {
-      if (vitals.name && vitals.zoneId) {
-        map[vitals.name] = {
-          id: vitals.zoneId,
-          color: vitals.zoneColor
-        };
+      if (!vitals.name) return;
+      if (vitals.zoneId) {
+        map[vitals.name] = { id: vitals.zoneId, color: vitals.zoneColor, trusted: true };
+      } else if (vitals.zoneTrusted === false) {
+        // Consumers must not derive a zone from raw HR for this rider.
+        map[vitals.name] = { id: null, color: null, trusted: false };
       }
     });
     return map;

@@ -31,6 +31,9 @@ import { PersistenceManager } from "./PersistenceManager.js";
 
 // Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
 const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
+// A kiosk reload this short keeps the riders' accepted-Cool zone trust. A
+// longer outage is when a strap could plausibly have changed hands.
+export const ZONE_TRUST_RESUME_GRACE_MS = 2 * 60 * 1000;
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -1842,6 +1845,7 @@ export class FitnessSession {
     // Restore the stints, so a correction after the reload still moves the
     // whole stint and the saved participant list keeps everyone who rode.
     this.entityRegistry.restore(sessionData.entities);
+    this._restoreZoneTrust(sessionData.metadata?.zone_trust, gapMs);
 
     getLogger().info('fitness.session.resumed', {
       sessionId: this.sessionId,
@@ -1860,6 +1864,39 @@ export class FitnessSession {
    * value of each restored per-person cumulative series.
    * @private
    */
+  _restoreZoneTrust(saved, gapMs) {
+    const riders = Array.isArray(saved?.riders) ? saved.riders : [];
+    for (const rider of riders) {
+      const userId = rider?.userId;
+      if (!userId) continue;
+      // Same wearer: one of the rider's saved straps still has the rider's
+      // restored open stint.
+      const sameWearer = (rider.deviceIds || []).some((deviceId) =>
+        this.entityRegistry.getByDevice(deviceId)?.profileId === userId);
+      const reason = gapMs > ZONE_TRUST_RESUME_GRACE_MS ? 'gap-too-long'
+        : !sameWearer ? 'wearer-changed' : null;
+      if (reason) {
+        getLogger().info('fitness.zone_trust.not_restored', { userId, reason, gapMs });
+        continue;
+      }
+      this.zoneProfileStore?.restoreTrust?.(userId);
+      getLogger().info('fitness.zone_trust.restored', { userId, gapMs });
+    }
+  }
+
+  _zoneTrustSnapshot() {
+    const userIds = this.zoneProfileStore?.getTrustedUserIds?.() || [];
+    return {
+      version: 1,
+      riders: userIds.map((userId) => ({
+        userId,
+        deviceIds: (this.entityRegistry?.getByProfile?.(userId) || [])
+          .filter((entity) => entity.status === 'active' && entity.deviceId)
+          .map((entity) => String(entity.deviceId)),
+      })),
+    };
+  }
+
   _restoreRunningTotals(liveSeries) {
     const lastFinite = (arr) => {
       for (let i = arr.length - 1; i >= 0; i -= 1) if (Number.isFinite(arr[i])) return arr[i];
@@ -3656,6 +3693,7 @@ export class FitnessSession {
             pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
               .filter(tracker => tracker.seenThisSession)
               .map(tracker => ({ ...tracker.checkpoint(), assignedUserId: this.getEquipmentRider(tracker.equipmentId) })) },
+            zone_trust: this._zoneTrustSnapshot(),
           },
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
@@ -3865,6 +3903,6 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
-    this.zoneProfileStore?.clear();
+    this.zoneProfileStore?.clear({ preserveTrust: true });
   }
 }

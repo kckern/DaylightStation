@@ -10,3 +10,16 @@ export function committedZoneId(...records) {
   }
   return null;
 }
+
+// The earned zone a vitals entry publishes, from a ZoneProfileStore zone state.
+// No state (startup-discarded packets) and untrusted state both earn nothing.
+export function earnedZoneFields(zoneState) {
+  const zoneTrusted = zoneState?.zoneTrusted === true;
+  const earned = zoneTrusted ? zoneState : null;
+  return {
+    zoneId: earned?.zoneId ? String(earned.zoneId).toLowerCase() : null,
+    zoneName: earned?.zoneName || null,
+    zoneColor: earned?.zoneColor || null,
+    zoneTrusted,
+  };
+}

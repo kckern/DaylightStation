@@ -54,7 +54,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
   const isGovernanceLocked = governanceDisplay?.status === 'locked';
   const activeChallenge = governanceState?.challenge || null;
   const isCycleChallenge = activeChallenge?.type === 'cycle';
-  const challengeBackgrounded = Boolean(activeChallenge?.paused
+  const challengeBackgrounded = Boolean(activeChallenge?.pauseReason === 'floor_unmet'
     || governanceDisplay?.obligations?.some((obligation) => obligation.source === 'requirement'));
   const lockScreen = resolveLockScreen({ activeChallenge: challengeBackgrounded ? null : activeChallenge, governanceDisplay });
   const challengeEventRef = useRef({ id: null, status: null });

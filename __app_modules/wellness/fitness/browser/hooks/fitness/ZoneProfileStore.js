@@ -93,6 +93,21 @@ export class ZoneProfileStore {
     getLogger().info('fitness.zone_state.reset', { userId, reason });
   }
 
+  /** Riders holding accepted-Cool trust, for persisting with the session. */
+  getTrustedUserIds() {
+    return [...this._trustedUsers];
+  }
+
+  /**
+   * Re-admit trust a rider earned earlier in the same session (kiosk reload).
+   * The caller decides eligibility; the next live reading commits the zone.
+   */
+  restoreTrust(userId) {
+    if (userId == null || this._trustedUsers.has(userId)) return;
+    this._trustedUsers.add(userId);
+    this._signature = null;
+  }
+
   isZoneTrusted(userId) {
     return this._profiles.get(userId)?.zoneTrusted === true;
   }
@@ -119,13 +134,21 @@ export class ZoneProfileStore {
     return cloneZoneConfig(this._baseZoneConfig);
   }
 
-  clear() {
+  /**
+   * @param {{ preserveTrust?: boolean }} [options] preserveTrust keeps each
+   *   rider's accepted-Cool trust, committed zone and Fire entry evidence. A
+   *   configuration rebuild within a session is not a new session or a new
+   *   wearer, and must not replay a zone entry (a second Fire ceremony).
+   */
+  clear({ preserveTrust = false } = {}) {
     this._profiles.clear();
     this._signature = null;
-    this._hysteresis.clear();
-    this._trustedUsers.clear();
-    this._zoneEntries.clear();
-    getLogger().info('fitness.zone_state.reset', { reason: 'session-reset' });
+    if (!preserveTrust) {
+      this._hysteresis.clear();
+      this._trustedUsers.clear();
+      this._zoneEntries.clear();
+    }
+    getLogger().info('fitness.zone_state.reset', { reason: preserveTrust ? 'config-rebuild' : 'session-reset' });
 
     // A rider's ladder from one session must never authorize the next.
     this._lastGoodLadder.clear();

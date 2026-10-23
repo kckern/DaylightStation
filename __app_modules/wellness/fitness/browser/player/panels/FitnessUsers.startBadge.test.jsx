@@ -63,11 +63,4 @@ describe('FitnessUsers roster start badge', () => {
     expect(container.textContent).not.toMatch(/Reach Hot|Holding/);
   });
 
-  it('shows no badge when the player passes a bypassed snapshot', async () => {
-    testState.context = context();
-    const bypassed = { ...governed, isGoverned: false, challenge: null };
-    const { container } = render(<FitnessUsersList governanceStateOverride={bypassed} />);
-    await waitFor(() => expect(container.querySelector('.device-name')).not.toBeNull());
-    expect(container.querySelector('.governance-start-badge')).toBeNull();
-  });
 });
