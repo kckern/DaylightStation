@@ -392,8 +392,13 @@ For each HR update:
   entry evidence. Recovery requires a fresh accepted Cool baseline. This
   deliberately replaces the earlier policy of immediately trusting any first
   restored high reading after confirmed loss.
-- Shared synchronization carries **each user's own** startup acceptance flag;
-  another rider's accepted packet cannot authorize discarded HR or Cool.
+- Shared synchronization carries **each user's own selected sample's** startup
+  acceptance flag and respects its originating strap. Lowest-HR arbitration
+  retains per-sample acceptance, so an accepted higher packet cannot authorize
+  a different strap's discarded Cool. Scoring uses the same eligible canonical HR.
+- Correction and ordinary handover reset both identities synchronously, before
+  another packet or sync: pending HR provenance, earned zones, cached profile
+  maps and unfinished intervals clear; historical totals remain intact.
 - Every sync advances smoothing even for repeated HR. Profile memoization is
   unsafe: its key cannot describe elapsed stability or interrupted raw-zone
   runs, and historical profiles must not survive resets.

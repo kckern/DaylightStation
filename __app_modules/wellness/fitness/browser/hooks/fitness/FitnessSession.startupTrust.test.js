@@ -130,6 +130,35 @@ describe('FitnessSession real accepted Cool baseline', () => {
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: false, currentZoneId: null });
   });
 
+  it('clears both identities immediately on ordinary handover to a previously trusted wearer', () => {
+    const session = sessionFor([
+      { id: 'rider-a', name: 'Rider A', hr_device_id: 'strap-a' },
+      { id: 'rider-b', name: 'Rider B', hr_device_id: 'strap-b' }
+    ]);
+    for (const dev of ['strap-a', 'strap-b']) for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 90));
+    advance(6000);
+    for (const dev of ['strap-a', 'strap-b']) { session.ingestData(hr(dev, 181)); session.ingestData(hr(dev, 181)); }
+    for (const id of ['rider-a', 'rider-b']) {
+      expect(session.getZoneProfile(id)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
+      expect(session.treasureBox.perUser.get(id).highestZone.id).toBe('fire');
+      session.treasureBox.awardBonus({ idempotencyKey: `earned:${id}`, userId: id, rings: 7, zoneId: 'fire', color: 'red' });
+    }
+    const totals = ['rider-a', 'rider-b'].map(id => session.treasureBox.perUser.get(id).totalRings);
+    expect(totals.every(total => total >= 7)).toBe(true);
+    const previouslyReadMap = session.userZoneProfiles;
+    expect(previouslyReadMap.get('rider-b').zoneTrusted).toBe(true);
+    const svc = new GuestAssignmentService({ session, ledger: session.userManager.assignmentLedger, thresholdMs: 1000 });
+    expect(svc.assignGuest('strap-a', { name: 'Rider B', profileId: 'rider-b', allowWhileAssigned: true }).ok).toBe(true);
+    // No new sensor packet or shared sync has occurred after the assignment.
+    for (const id of ['rider-a', 'rider-b']) {
+      expect(session.getZoneProfile(id)).toMatchObject({ zoneTrusted: false, currentZoneId: null, zoneEntry: null });
+      expect(session.userZoneProfiles.get(id)).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+      expect(session.treasureBox.perUser.get(id).highestZone).toBeNull();
+    }
+    expect(['rider-a', 'rider-b'].map(id => session.treasureBox.perUser.get(id).totalRings)).toEqual(totals);
+    session.reset();
+  });
+
   it('keeps explicit untrusted profiles blank through display fallback', () => {
     const map = buildParticipantDisplayMap(
       [{ id: 'rider-one', name: 'Rider One', zoneTrusted: false, currentZoneId: null, heartRate: 187 }],
