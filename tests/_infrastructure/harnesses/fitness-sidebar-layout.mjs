@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium, firefox } from 'playwright';
+import { verifyIntegration } from './fitness-integration-checks.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const frontendRequire = createRequire(join(repo, 'frontend/package.json'));
@@ -38,6 +39,8 @@ import { FixtureContext } from './__app_modules/wellness/fitness/browser/context
 window.fixtureRenderCount = 0;
 const fixtureMedia = document.createElement('video');
 const root = createRoot(document.getElementById('root'));
+import { installIntegration } from './tests/_infrastructure/harnesses/fitness-integration-fixture.jsx';
+installIntegration(root, FixtureContext);
 window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false }) => {
   const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
   const devices = Array.from({ length: count }, (_, i) => ({
@@ -85,8 +88,6 @@ const bundle = await build({
   plugins: [{ name: 'isolated-fitness', setup(builder) {
     builder.onResolve({ filter: /FitnessModuleMenu\.jsx$/ }, () => ({path:'unused-module-menu',namespace:'module-menu'}));
     builder.onLoad({filter:/.*/,namespace:'module-menu'},()=>({contents:'export default () => null;'}));
-    builder.onResolve({ filter: /FeedbackOverlay\.jsx$/ }, () => ({ path: 'fixture-feedback', namespace: 'feedback' }));
-    builder.onLoad({ filter: /.*/, namespace: 'feedback' }, () => ({contents:'export default () => null;'}));
     builder.onResolve({ filter: /FitnessContext\.jsx$/ }, () => ({ path: 'fixture-context', namespace: 'fixture' }));
     builder.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({
       contents: "import React from 'react'; export const FixtureContext = React.createContext({}); export const useFitnessContext = () => React.useContext(FixtureContext);",
@@ -96,7 +97,7 @@ const bundle = await build({
     builder.onLoad({filter:/.*/,namespace:'singleton'},()=>({contents:'export const getChildLogger = () => ({info:()=>{},debug:()=>{},warn:()=>{},error:()=>{},sampled:()=>{}});'}));
     builder.onResolve({ filter: /logging\/Logger\.js$/ }, () => ({ path: 'fixture-logger', namespace: 'logger' }));
     builder.onLoad({ filter: /.*/, namespace: 'logger' }, () => ({ contents:
-      'const noop = () => {}; const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop }; export default () => logger; export const getLogger = () => logger;' }));
+      'const noop = () => {}; const capture = (event, data) => { (window.fixtureEvents ||= []).push({event,data}); }; const logger = { child: () => logger, debug: noop, info: capture, warn: capture, error: capture, sampled: noop }; export default () => logger; export const getLogger = () => logger; export const getRecentEvents = () => [];' }));
     builder.onLoad({ filter: /\.scss$/ }, async ({ path }) => ({
       contents: (await sass.compileAsync(path, { logger: sass.Logger.silent, loadPaths: [join(repo, 'frontend/node_modules')] })).css,
       loader: 'css', resolveDir: dirname(path),
@@ -123,9 +124,15 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   await page.route('**/*', route => route.request().url().startsWith(origin) ? route.continue() : route.abort());
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+    HTMLMediaElement.prototype.pause = () => {};
+    Object.defineProperty(navigator, 'mediaDevices', {value: {getUserMedia: () => Promise.reject(new Error('Acceptance fixture never opens microphones')), enumerateDevices: async () => []}, configurable: true});
+  });
   await page.goto(origin);
   await page.waitForFunction(() => typeof window.renderFixture === 'function');
   const evidence = [];
+  if (!process.argv.includes('--integration-only')) {
   for (const viewport of [{width:1920,height:1080},{width:1381,height:777},{width:1024,height:640}]) {
     await page.setViewportSize(viewport);
     for (const count of [1,3,4,5,8]) {
@@ -205,7 +212,7 @@ try {
       assert.ok(geometry.fonts.every(f=>f.size>=14),JSON.stringify(geometry));
       if(menu==='guest') assert.ok(geometry.fonts.length>=5,'guest selectors rendered');
       evidence.push({viewport,menu,...geometry});
-      await page.screenshot({path:'/tmp/task3-'+engine+'-'+viewport.width+'-'+menu+'.png'});
+      await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-'+menu+'.png'});
     }
     for(const achievement of [false,true]) for(const people of [1,2,5]) {
       await page.evaluate(options=>window.renderFixture(options),{people,achievement,width:300,height:500});
@@ -220,7 +227,7 @@ try {
       assert.ok(Math.abs((geometry.headline.left+geometry.headline.right)/2-(geometry.toast.left+geometry.toast.right)/2)<3,'centered challenge headline: '+JSON.stringify(geometry));
       for(const row of geometry.rows){assert.ok(Math.abs(row.center-row.expected)<3,JSON.stringify({people,achievement,geometry}));assert.ok(row.bottom<=geometry.toast.bottom,JSON.stringify(geometry));}
       evidence.push({viewport,people,achievement,...geometry});
-      if(people===5) await page.screenshot({path:'/tmp/task3-'+engine+'-'+viewport.width+'-ceremony-'+achievement+'.png'});
+      if(people===5) await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-ceremony-'+achievement+'.png'});
     }
     await page.evaluate(()=>window.renderFixture({home:true,count:0}));
     await page.waitForSelector('.show-card');
@@ -233,10 +240,10 @@ try {
     assert.ok(homeGeometry.nav.length===8 && homeGeometry.nav.every(height=>height>=40),'nav targets');
     assert.ok(homeGeometry.last.bottom<homeGeometry.mic.top,JSON.stringify(homeGeometry));
     evidence.push({viewport,home:true,...homeGeometry});
-    await page.screenshot({path:'/tmp/task3-'+engine+'-'+viewport.width+'-home.png'});
+    await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-home.png'});
     await page.evaluate(()=>window.renderFixture({count:5,rpm:5,zones:3,width:300,height:597}));
     await page.waitForTimeout(420);
-    await page.screenshot({path:'/tmp/task3-'+engine+'-'+viewport.width+'-roster.png'});
+    await page.screenshot({path:'/tmp/task4-'+engine+'-'+viewport.width+'-roster.png'});
   }
   for(const options of [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
     await page.evaluate(options=>window.renderFixture({...options,height:597}),options);
@@ -247,10 +254,12 @@ try {
     assert.deepEqual(after,before,'roster transition must settle: '+JSON.stringify(options));
     evidence.push({transition:options,settled:after});
   }
+  }
+  await verifyIntegration(page, evidence, engine);
   assert.deepEqual(errors,[]);
   const {writeFile}=await import('node:fs/promises');
-  await writeFile('/tmp/task3-'+engine+'-geometry.json',JSON.stringify(evidence,null,2));
-  process.stdout.write(JSON.stringify({engine,checks:evidence.length,errors})+'\n');
+  await writeFile('/tmp/task4-'+engine+'-geometry.json',JSON.stringify(evidence,null,2));
+  process.stdout.write(JSON.stringify({engine,scope:process.argv.includes('--integration-only')?'integration-only':'full',checks:evidence.length,errors})+'\n');
 
 } finally {
   await browser?.close();

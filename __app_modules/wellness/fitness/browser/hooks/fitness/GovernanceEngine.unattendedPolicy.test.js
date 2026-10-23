@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GovernanceEngine } from "./GovernanceEngine.js";
+
+const engines = [];
+afterEach(() => {
+  engines.splice(0).forEach((engine) => engine.reset());
+  vi.restoreAllMocks();
+});
 
 const ZONES = {
   zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
@@ -22,6 +28,7 @@ const CONFIG = {
 function harness(overrides = {}) {
   let now = 100_000;
   const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
+  engines.push(engine);
   engine.configure({ ...CONFIG, ...overrides });
   engine.setMedia({ id: 'episode-1', type: 'episode', labels: ['cardio'] });
   const evaluate = (userZoneMap, guestIds = []) => engine.evaluate({
@@ -136,6 +143,7 @@ describe('GovernanceEngine — cyclic selection after an infeasible skip', () =>
   it('moves past a skipped selection instead of retrying it forever', () => {
     let now = 100_000;
     const engine = new GovernanceEngine(null, { now: () => now, random: () => 0 });
+    engines.push(engine);
     engine.configure({
       governed_labels: ['cardio'],
       policies: {

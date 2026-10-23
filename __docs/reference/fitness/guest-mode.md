@@ -252,7 +252,7 @@ The avatar ring, group heading, zone tag, tint and progress fill use the shared 
 
 Roster cards use the room available after group headings and equipment, with bounded card sizes and scrolling when readable minimums require it. Startup and hold instructions belong to the governance surface, without an extra text row on each rider card. RPM circles retain their size and gap and center each occupied wrapped row. Challenge contributors center and wrap in both success presentations.
 
-Settings places video volume and boost first, followed by webcam/treasure visibility and End Session. The collapsed More group contains Reload App and Feedback. End Session still requires confirmation. The header stays reachable while the inner body scrolls; scrolling renews the idle timer and focus keeps the menu open until focus leaves. Guest labels and sidebar units retain a 14px minimum.
+Settings places video volume and boost first, followed by webcam/treasure visibility and End Session. The collapsed More group contains Reload App and Feedback. End Session still requires confirmation. Feedback uses the shared body-portalled voice dialog above the Settings scrim, so its controls remain clickable while Settings stays mounted. The header stays reachable while the inner body scrolls; scrolling renews the idle timer and focus keeps the menu open until focus leaves. Guest labels and sidebar units retain a 14px minimum.
 
 ### Menu (picker) UI
 

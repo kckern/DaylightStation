@@ -38,7 +38,7 @@ describe('sortByZoneRank', () => {
 
   it('groups on committed zones even when raw readings disagree', () => {
     const a = p({ id: 'a', rawZoneId: 'hot', zoneId: 'cool' });
-    const b = p({ id: 'b', zoneId: 'cool', zoneId: 'hot' });
+    const b = p({ id: 'b', rawZoneId: 'cool', zoneId: 'hot' });
     expect(sortByZoneRank([b, a]).map((x) => x.id)).toEqual(['b', 'a']);
   });
 
