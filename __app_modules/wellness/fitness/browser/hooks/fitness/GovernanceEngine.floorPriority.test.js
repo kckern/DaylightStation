@@ -49,6 +49,33 @@ describe('floor priority through evaluate', () => {
     expect(h.engine.state.challengeHistory).toEqual([]);
     expect(h.awardBonus).not.toHaveBeenCalled();
   });
+  it('terminal failed cycle banks its remaining publication window and then cleans up without new recovery', () => {
+    const h = harness({ type: 'cycle' });
+    Object.assign(h.challenge, { status: 'failed', failReason: 'never_started', cycleState: 'locked', lockReason: 'init' });
+    h.evaluate();
+    const publicationStart = h.challenge.failPublishedAt;
+    const cooldownUntil = h.engine._cycleCooldowns.a;
+    expect(h.engine.state.challengeHistory).toEqual([expect.objectContaining({ id: 'saved-challenge', status: 'failed', failReason: 'never_started' })]);
+    h.advance(200); h.evaluate({ a: 'cool', b: 'active' });
+    h.advance(60000); h.evaluate({ a: 'cool', b: 'active' });
+    // The original 600ms publication window expired long ago in wall time.
+    expect(h.engine.state.challenge).toMatchObject({ id: 'saved-challenge', status: 'failed', paused: true, pauseReason: 'floor_unmet' });
+    expect(h.challenge.failPublishedAt).toBe(publicationStart);
+    expect(h.engine.state.challengeHistory).toHaveLength(1);
+    expect(h.engine._cycleCooldowns.a).toBe(cooldownUntil);
+    h.evaluate();
+    expect(h.engine.state.challenge).toMatchObject({ id: 'saved-challenge', status: 'failed', paused: false });
+    expect(h.challenge.failPublishedAt).toBe(publicationStart + 60000);
+    h.advance(399); h.evaluate();
+    expect(h.engine.state.challenge).toMatchObject({ id: 'saved-challenge', status: 'failed' });
+    h.advance(1); h.evaluate();
+    expect(h.engine.state.challenge).toBeNull();
+    h.advance(1); h.evaluate();
+    expect(h.engine.state.videoLocked).toBe(false);
+    expect(h.engine.state.challengeHistory).toHaveLength(1);
+    expect(h.engine._cycleCooldowns.a).toBe(cooldownUntil);
+    expect(h.awardBonus).not.toHaveBeenCalled();
+  });
   it('failed challenge backgrounds and returns after floor recovery', () => {
     const h = harness();
     h.advance(40001); h.evaluate();

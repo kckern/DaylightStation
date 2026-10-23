@@ -191,7 +191,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
   // useCycleSuccessHold captures the success snapshot so it survives the engine
   // clearing the live challenge during the hold window.
   const cycleSuccess = useCycleSuccessHold(isCycleChallenge && !challengeBackgrounded ? activeChallenge : null);
-  const cycleDoneOverlay = (cycleSuccess.done && cycleSuccess.challenge && !lockScreen.promoteCycle) ? (
+  const cycleDoneOverlay = (!challengeBackgrounded && cycleSuccess.done && cycleSuccess.challenge && !lockScreen.promoteCycle) ? (
     <CycleChallengeOverlay challenge={cycleSuccess.challenge} done />
   ) : null;
 

@@ -751,10 +751,14 @@ Zone, step and cycle challenges expose `paused: true` and
 `pauseReason: "floor_unmet"` during floor suspension. Their identity and
 pending/failed status persist. Countdown, optional holds and earned effort are
 banked; suspended wall time cannot expire a challenge, earn effort or award a
-reward. On recovery the same challenge resumes once with its saved time. A failed
-challenge returns to the foreground and keeps playback locked until its own
-recovery condition is met. Cycle sensor/cadence recovery continues in the
-background without taking over the floor explanation or earning effort.
+reward. On recovery the same challenge resumes once with its saved time. A
+recoverable failed zone/step challenge returns to the foreground and keeps playback locked until its
+own recovery condition is met. Recoverable cycle `cycleState: locked` states also
+retain their existing recovery. Terminal cycle `status: failed` outcomes, such as
+`never_started`, keep their existing history, cooldown and automatic cleanup
+policy: the remaining outcome publication window freezes during floor suspension
+and resumes before cleanup, without introducing a new recovery condition. Cycle
+sensor/cadence recovery continues in the background without taking over the floor explanation or earning effort.
 
 Manual playback and transport pauses compose with floor suspension: only the
 union of paused time is excluded, including a pause beginning at timestamp zero.

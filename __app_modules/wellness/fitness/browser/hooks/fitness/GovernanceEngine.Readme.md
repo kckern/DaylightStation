@@ -47,7 +47,9 @@ The engine operates in four distinct phases that determine the playback state:
 Any unmet evaluated floor criterion owns warning/lock explanations. Zone, step
 and cycle challenges pause and background immediately, preserve their identity,
 status and earned progress, and resume the same obligation after floor recovery.
-A resumed failed challenge still locks until its own recovery condition is met.
+Resumed failed zone/step challenges and recoverable cycle locks still require
+their own recovery. Terminal failed-cycle outcomes retain their existing
+history/cooldown and cleanup policy after the banked publication window resumes.
 Paused time earns no hold or effort credit. Cycle sensor/cadence recovery remains
 active in the background. Manual, transport and floor pauses exclude their union
 of time once, including timestamp zero.

@@ -201,3 +201,31 @@ describe('FitnessPlayerOverlay foreground floor priority', () => {
     expect(container.querySelector('.cycle-challenge-overlay')).toBeNull();
   });
 });
+
+describe('FitnessPlayerOverlay cached cycle completion floor priority', () => {
+  afterEach(() => { cleanup(); mockGovernanceState = null; });
+  it.each([
+    ['warning', false], ['locked', false], ['warning', true], ['locked', true],
+  ])('backgrounds cached success for floor %s after active challenge cleared=%s', (status, cleared) => {
+    const success = { ...CYCLE_CHALLENGE, status: 'success', cycleState: 'maintain', lockReason: null, cycleHealthPct: 1 };
+    mockGovernanceState = { ...CYCLE_STATE, videoLocked: false, challenge: success };
+    const view = renderOverlay({});
+    // Actual useCycleSuccessHold captures the real overlay snapshot, and keeps
+    // it after null input. A mocked done=false hook would miss this regression.
+    expect(view.container.querySelector('.cycle-challenge-overlay--phase-done')).not.toBeNull();
+    if (cleared) {
+      mockGovernanceState = { ...CYCLE_STATE, videoLocked: false, challenge: null };
+      view.rerender(<MemoryRouter><FitnessPlayerOverlay playerRef={{ current: null }} /></MemoryRouter>);
+      expect(view.container.querySelector('.cycle-challenge-overlay--phase-done')).not.toBeNull();
+    }
+    mockGovernanceState = {
+      ...LOCKED_STATE, status, deadline: Date.now() + 30000, gracePeriodTotal: 30,
+      requirements: [{ satisfied: false, zone: 'active', zoneLabel: 'Active', missingUsers: ['rider'], metUsers: [], requiredCount: 1 }],
+      challenge: cleared ? null : { ...success, paused: true, pauseReason: 'floor_unmet' },
+    };
+    view.rerender(<MemoryRouter><FitnessPlayerOverlay playerRef={{ current: null }} /></MemoryRouter>);
+    expect(view.container.querySelector(status === 'warning' ? '.governance-progress-overlay' : '.governance-overlay')).not.toBeNull();
+    expect(view.container.querySelector('.cycle-challenge-overlay')).toBeNull();
+    expect(view.container.querySelector('.cycle-lock-screen')).toBeNull();
+  });
+});

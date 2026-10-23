@@ -257,9 +257,11 @@ Timer fires → _triggerPulse()
 independently of the overall playback phase. A failed challenge can itself hold
 that phase locked while the floor is satisfied. Any unmet floor backgrounds zone,
 step and cycle challenges, banking countdown and earned progress throughout
-warning/grace and lock. Recovery resumes the same challenge once; an unmet failed
-challenge then owns the lock again. Optional per-person holds default to zero,
-exclude paused time, and reset on observed target loss or departure. Display
+warning/grace and lock. Recovery resumes the same challenge once; recoverable
+failed zone/step challenges and recoverable cycle locks then own their explanation again. Terminal
+failed-cycle outcomes retain existing history/cooldown and cleanup after their
+remaining publication window resumes; they gain no new recovery policy. Optional
+per-person holds default to zero, exclude paused time, and reset on observed target loss or departure. Display
 obligations keep floor targets/counts/rows/faces scoped; no challenge-only blocker
 or credit appears in a floor explanation. See the
 [governance reference](./governance-engine.md#floor-priority-and-challenge-suspension)
