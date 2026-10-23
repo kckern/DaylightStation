@@ -339,6 +339,36 @@ During the deploy the on-device config override was clobbered down to a single k
 route gated but no wrongful volume write. The fail-closed policy held under a config
 it never anticipated.
 
+### A fighting volume writer: FKB `volumeLevels` (2026-10-23)
+
+The reconciler's idempotence assumes nothing else writes `STREAM_MUSIC`. Fully Kiosk
+does when its `volumeLevels` setting is set: with `volumeLevels=3:100` it re-asserted
+the music stream to 15 every time the guard clamped the built-in speaker to 0
+(`AS.AudioService: setStreamVolume(stream=3, index=15, calling=de.ozerov.fully)`). While
+A2DP was down that became a loop of ~25 clamps a second: 5,600+ clamps, logcat's whole
+ring flushed every four minutes, and a few milliseconds of unmuted tablet speaker per
+round.
+
+Two fixes, both keeping the guard fail-closed:
+
+- `KioskSettingsGuard` now holds `volumeLevels` at the **empty string**
+  (`KioskSettings.DESIRED`). Never a level: `3:0` would write the *active* device's
+  index, and while A2DP is up that is the piano.
+- `AudioRouteGuard` still performs **every** clamp, but logs at most one line a minute
+  (with the count) and reports `clampsPerMin` in `GET /speaker`'s `guard` block. A
+  non-zero `clampsPerMin` while A2DP is up, or a large one while it is down, means a
+  writer is fighting the guard again.
+
+### Who reconnects the speaker
+
+`A2dpConnector` keeps the sink connected with a 20 s `connect()` sweep. That cannot
+clear a wedge where the sink accepts the page but refuses L2CAP (`bt_sdp: SDP - Rcvd
+conn cnf with error: 0x4` → `A2DP service discovery failed`): every retry returns
+`true` and fails the same way. Escalation belongs to the DS backend's speaker ladder
+(`PianoBridgeSupervisorService` + `PianoSpeakerRecoveryPolicy`), which drives
+`POST /speaker/reconnect` and `POST /speaker/bt-cycle` here and, beyond them, the
+piano's smart plug. See `__docs/runbooks/piano-kiosk-midi.md` §7b.
+
 ---
 
 ## Frontend relationship

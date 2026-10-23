@@ -355,6 +355,66 @@ gap in `healthy` means the supervisor itself is not running.
 
 ---
 
+## 7b. Speaker self-healing (2026-10-23)
+
+**Symptom:** the piano plays, the screen works, but videos, karaoke and the synth are
+silent. The kiosk's audio goes out the piano's Bluetooth A2DP sink ("J2-USB
+Bluetooth", a USB dongle in the piano), and the audio guard mutes the tablet's own
+speaker by design. A dropped sink means silence. `bridge.heartbeat data.speaker:false`
+while `data.linkVerdict:VERIFIED` is the signature.
+
+**Why the bridge's own retry can't fix it.** In logcat the stack pages the dongle, then
+`bt_sdp: SDP - Rcvd conn cnf with error: 0x4` → `A2DP service discovery failed`: the
+dongle refuses the L2CAP channel. `A2dpConnector`'s 20 s `connect()` returns `true` every
+time and never lands (29 attempts on 2026-10-23). A tablet Bluetooth off/on revived it
+once; a piano power-on always does.
+
+**The ladder** (DS backend, `PianoBridgeSupervisorService` + `PianoSpeakerRecoveryPolicy`).
+It opens when the speaker is down with the piano on for two 30 s checks, and runs
+silently whether or not anyone is at the piano:
+
+| Rung | Action | Checked after |
+|---|---|---|
+| 1 | A2DP disconnect → connect (`POST :8770/speaker/reconnect`) | 15 s |
+| 2 | tablet Bluetooth off → 5 s → on (`POST :8770/speaker/bt-cycle`) | 30 s |
+| 3 | the same with 15 s off | 45 s |
+| 4 | piano plug off 10 s → on (HA `switch.turn_off/turn_on`) | 60 s |
+| 5 | piano plug off 30 s → on | 90 s |
+
+The piano powers itself on when its plug comes back (14.9 W three seconds after
+`turn_on`), so a plug cycle is a full unattended reboot of piano and dongle. Limits:
+
+- At most 2 plug cycles per rolling hour.
+- No plug cycle while piano power reads `unknown`.
+- The counter only resets after 10 healthy minutes, so a flapping dongle keeps climbing.
+- If all five fail: one push ("Piano speaker won't reconnect"), the kiosk banner
+  "Speaker needs help — a grown-up has been told", then a retry from rung 1 an hour later.
+- If the plug can't be turned back on: an immediate "Piano is unpowered" push.
+
+**Config** (`household/piano/config.yml`, top level):
+
+```yaml
+speaker_recovery:
+  enabled: true
+  plug_entity: switch.<piano plug>
+  max_plug_cycles_per_hour: 2
+  healthy_reset_ms: 600000
+  give_up_backoff_ms: 3600000
+```
+
+**Reading it:**
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query -d 'query="piano.speaker" AND _time:24h'   # dropped / attempt / recovered {rung} / gave-up
+curl -s {env.log_store_url}/select/logsql/query -d 'query="bridge.a2dp" OR "bridge.bt-cycle" AND _time:24h'
+curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects, guard.clampsPerMin
+```
+
+`piano.speaker.recovered {rung}` says which rung worked. Watch it over time: if rung 1
+never wins, the wedge is dongle-side, and the plug rungs are doing the real work.
+
+---
+
 ## 8. Still open
 
 - ~~**Nothing alerts.**~~ Closed 2026-09-30 by the backend bridge supervisor (§7a). It
