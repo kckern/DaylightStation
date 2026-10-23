@@ -13,6 +13,7 @@ import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/stra
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import GovernanceStartBadge from "../../components/GovernanceStartBadge.jsx";
 import { DENSITIES, densityClassName, pickDensity } from "./riderListDensity.js";
+import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
@@ -104,6 +105,17 @@ const UI_LABELS = CONFIG.uiLabels;
 
 // Vibration device types that should render VibrationCard instead of the generic inline card
 const VIBRATION_DEVICE_TYPES = new Set(['vibration', 'punching_bag', 'step_platform', 'pull_up_bar']);
+
+// Zone config names its colours ('green'), and the CSS keyword is not the
+// palette green the card's accent and progress bar use (FitnessSidebar.scss
+// via shared/styles/_zones.scss). Standard zones and named colours map onto
+// the shared palette; a custom hex from config is kept as written.
+const paletteZoneColor = (zoneId, configured) => {
+  const byZone = ZONE_COLORS[String(zoneId || '').toLowerCase()];
+  if (byZone) return byZone;
+  const byName = ZONE_COLORS[String(configured || '').toLowerCase()];
+  return byName || configured || null;
+};
 
 const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = undefined }) => {
   // Use the fitness context
@@ -957,7 +969,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment, governanceStateOverride = 
               const zoneIdForGrouping = isHeartRate ? getRawZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
-                ? (participantEntry?.rawZoneColor || userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
+                ? paletteZoneColor(zoneIdForGrouping, participantEntry?.rawZoneColor || userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
                 : null;
               const readableZone = zoneIdForGrouping
                 ? zoneIdForGrouping.charAt(0).toUpperCase() + zoneIdForGrouping.slice(1)

@@ -14,8 +14,8 @@ vi.mock('@/lib/logging/Logger.js', () => {
   return { default: () => logger };
 });
 
-// The zone badge is a Mantine Badge; this test is about our start badge.
-vi.mock('@mantine/core', () => ({ Badge: ({ children }) => <span>{children}</span> }));
+// The zone badge is a Mantine Badge; keep its inline style to read the colour.
+vi.mock('@mantine/core', () => ({ Badge: ({ children, style }) => <span className="zone-badge-probe" style={style}>{children}</span> }));
 
 import FitnessUsersList from "./FitnessUsers.jsx";
 
@@ -67,5 +67,17 @@ describe('FitnessUsers card colours: zone owns the colour, the strap gets a dot'
     const color = container.querySelector('.fitness-heart-icon').style.color;
     expect(color).toBeTruthy();
     expect(hex(color)).not.toBe('#b07cf7'); // purple strap sticker
+  });
+
+  // Zone config names colours ('green'); the CSS keyword is #008000, not the
+  // palette green the card's progress bar and accent use.
+  it('maps a named zone colour onto the shared palette for heart and badge', async () => {
+    testState.context = context({ name: 'Rider A', rawZoneId: 'active', rawZoneColor: 'green' });
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelector('.fitness-heart-icon')).toBeTruthy());
+    expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#51cf66');
+    const badge = container.querySelector('.zone-badge-probe');
+    expect(badge).toBeTruthy();
+    expect(hex(badge.style.backgroundColor)).toBe('#51cf66');
   });
 });

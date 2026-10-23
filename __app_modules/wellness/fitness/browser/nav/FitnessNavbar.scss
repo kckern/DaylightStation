@@ -41,7 +41,9 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    // No gap: each item is 40px tall instead (32px of icon row + the old 8px
+    // gap), so the rail looks the same but the space between icons is hittable.
+    gap: 0;
     width: 100%;
 
     .nav-item {
@@ -54,6 +56,7 @@
       width: 100%;
       text-align: left;
       position: relative;
+      min-height: 40px;
       padding: 0.5ex 1ex;
       margin: 0 0.5ex;
       border-radius: 1ex;
@@ -102,7 +105,7 @@
     // Placeholder buttons keep the real item box (height, margins) — see NavRailSkeleton.
     .nav-item--skeleton {
       pointer-events: none;
-      min-height: 32px;
+      min-height: 40px;
     }
 
     .loading-state {

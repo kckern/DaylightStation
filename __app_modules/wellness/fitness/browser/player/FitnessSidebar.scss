@@ -1,3 +1,6 @@
+@use 'sass:map';
+@use '../shared/styles/zones' as zones;
+
 // Volume-button states, shared by the music player's mix rows and the
 // settings menu's video-volume row (TouchVolumeButtons.jsx).
 @mixin touch-volume-states {
@@ -68,13 +71,13 @@
         position: absolute;
         inset: -3px;
         border-radius: 50%;
-        border: 3px dashed rgba(255, 146, 43, 0.7);
+        border: 3px dashed rgba(zones.$zone-hot, 0.7);
         animation: spin-rpm linear infinite;
         animation-duration: var(--spin-duration, 1s);
         transition: animation-duration 0.3s ease-out;
 
         &.rpm-zero {
-          border-color: rgba(255, 146, 43, 0.2);
+          border-color: rgba(zones.$zone-hot, 0.2);
           animation: none;
         }
       }
@@ -105,7 +108,7 @@
           left: 0;
           right: 0;
           height: 50%;
-          background: rgba(255, 146, 43, 0.9);
+          background: rgba(zones.$zone-hot, 0.9);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -177,7 +180,7 @@
     background: rgba(220, 53, 69, 0.95);
     color: #fff;
     border-radius: 6px;
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     line-height: 1.2;
   }
 
@@ -318,7 +321,7 @@
         
         .tb-total {
           padding: 3px 5px;
-          font-size: 0.85rem;
+          font-size: 0.875rem;
           gap: 3px;
         }
       }
@@ -602,7 +605,7 @@
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        font-size: 12px;
+        font-size: 1rem;
         opacity: 0.95;
         margin-bottom: 6px;
       }
@@ -614,7 +617,7 @@
         padding: 4px 8px;
         border-radius: 4px;
         cursor: pointer;
-        font-size: 11px;
+        font-size: 0.875rem;
         transition: background 0.2s, border-color 0.2s;
 
         /* Hover removed */
@@ -714,7 +717,7 @@
       .guest-menu-hint {
         padding: 0.5rem 0.75rem;
         margin: 0 0 0.5rem;
-        font-size: 0.8rem;
+        font-size: 0.875rem;
         line-height: 1.35;
         color: rgba(255, 255, 255, 0.75);
         background: rgba(255, 255, 255, 0.06);
@@ -727,7 +730,7 @@
       .guest-menu-note {
         padding: 0.4rem 0.75rem;
         margin: 0 0 0.5rem;
-        font-size: 0.75rem;
+        font-size: 0.875rem;
         color: #ffd76a;
         background: rgba(255, 215, 106, 0.08);
         border-radius: 4px;
@@ -747,7 +750,7 @@
           border-bottom: 2px solid rgba(255, 255, 255, 0.1);
           border-radius: 0;
           color: rgba(255, 255, 255, 0.5);
-          font-size: 0.8rem;
+          font-size: 0.875rem;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.8px;
@@ -792,7 +795,7 @@
             padding: 1ex;
 
             .mix-label {
-              font-size: 0.7rem;
+              font-size: 0.875rem;
               font-weight: 600;
               color: rgba(255, 255, 255, 0.8);
             }
@@ -952,7 +955,7 @@
 
             .guest-option-name {
               font-weight: 600;
-              font-size: 0.8rem;
+              font-size: 0.875rem;
               color: rgba(255, 255, 255, 0.95);
               letter-spacing: 0.1px;
               line-height: 1.1;
@@ -964,7 +967,7 @@
             }
 
             .guest-option-source {
-              font-size: 0.55rem;
+              font-size: 0.875rem;
               text-transform: uppercase;
               letter-spacing: 0.4px;
               color: rgba(255, 255, 255, 0.65);
@@ -1246,7 +1249,7 @@
     }
 
     .empty-state {
-      font-size: 0.72rem;
+      font-size: 0.875rem;
       color: rgba(255, 255, 255, 0.5);
     }
 
@@ -1360,7 +1363,7 @@
       }
 
       .status-text {
-        font-size: 0.85rem;
+        font-size: 0.875rem;
         text-align: center;
         padding: 0 1rem;
         opacity: 0.9;
@@ -1540,7 +1543,7 @@
     
     .track-details {
       .track-title { font-size: 0.95rem; }
-      .track-artist { font-size: 0.8rem; }
+      .track-artist { font-size: 0.875rem; }
     }
     
     .track-progress {
@@ -1657,7 +1660,7 @@
 
   p {
     margin: 0 0 1.25rem;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     line-height: 1.4;
     color: rgba(255, 255, 255, 0.75);
   }
@@ -1741,31 +1744,23 @@
     z-index: 0;
   }
 
-  &.zone-cool::before { background: linear-gradient(90deg, rgba(70,120,255,0.22), rgba(30,40,70,0.10)); }
-  &.zone-active::before { background: linear-gradient(90deg, rgba(60,200,120,0.22), rgba(30,60,40,0.10)); }
-  &.zone-warm::before { background: linear-gradient(90deg, rgba(255,210,70,0.25), rgba(70,55,10,0.10)); }
-  &.zone-hot::before { background: linear-gradient(90deg, rgba(255,150,60,0.25), rgba(70,35,5,0.10)); }
-  &.zone-fire::before { background: linear-gradient(90deg, rgba(255,90,90,0.30), rgba(70,15,15,0.12)); }
-
-  &.zone-cool  { border-left: 4px solid rgba(106,184,255,0.9); }
-  &.zone-active{ border-left: 4px solid rgba(81,207,102,0.9); }
-  &.zone-warm  { border-left: 4px solid rgba(255,212,59,0.9); }
-  &.zone-hot   { border-left: 4px solid rgba(255,146,43,0.9); }
-  &.zone-fire  { border-left: 4px solid rgba(255,107,107,0.9); }
-
-  &.zone-cool  .zone-progress-fill { background: #6ab8ff; }
-  &.zone-active .zone-progress-fill { background: #51cf66; }
-  &.zone-warm  .zone-progress-fill { background: #ffd43b; }
-  &.zone-hot   .zone-progress-fill { background: #ff922b; }
-  &.zone-fire  .zone-progress-fill { background: #ff6b6b; }
-
-  // Avatar ring: the zone sets the custom properties the sidebar's
+  // One palette for every zone mark on the card — tint, accent, progress,
+  // avatar ring — the same one the heart, zone badge and lock screen use.
+  // The avatar ring is set through custom properties the sidebar's
   // .card-avatar border and shadow read, so no rule has to out-rank another.
-  .card-avatar.zone-cool   { --avatar-ring: #1e3a8a; --avatar-glow: 0 0 0 2px rgba(59,130,246,0.35); }
-  .card-avatar.zone-active { --avatar-ring: #059669; --avatar-glow: 0 0 0 2px rgba(16,185,129,0.35); }
-  .card-avatar.zone-warm   { --avatar-ring: #ca8a04; --avatar-glow: 0 0 0 2px rgba(234,179,8,0.35); }
-  .card-avatar.zone-hot    { --avatar-ring: #ea580c; --avatar-glow: 0 0 0 2px rgba(234,88,12,0.4); }
-  .card-avatar.zone-fire   { --avatar-ring: #dc2626; --avatar-glow: 0 0 0 2px rgba(220,38,38,0.45); }
+  @each $zone, $tint, $shade in (
+    (cool, 0.22, rgba(30, 40, 70, 0.10)),
+    (active, 0.22, rgba(30, 60, 40, 0.10)),
+    (warm, 0.25, rgba(70, 55, 10, 0.10)),
+    (hot, 0.25, rgba(70, 35, 5, 0.10)),
+    (fire, 0.30, rgba(70, 15, 15, 0.12))
+  ) {
+    $color: map.get(zones.$zone-colors, "#{$zone}");
+    &.zone-#{$zone}::before { background: linear-gradient(90deg, rgba($color, $tint), $shade); }
+    &.zone-#{$zone} { border-left: 4px solid rgba($color, 0.9); }
+    &.zone-#{$zone} .zone-progress-fill { background: $color; }
+    .card-avatar.zone-#{$zone} { --avatar-ring: #{$color}; --avatar-glow: 0 0 0 2px #{rgba($color, 0.4)}; }
+  }
   .card-avatar.no-zone     { --avatar-ring: #333; --avatar-glow: none; }
 
   .zone-progress-bar {
