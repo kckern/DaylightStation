@@ -41,4 +41,34 @@ describe('Skyline audio', () => {
     expect(audio.playCue('bell')).toBe(false);
     expect(context.createOscillator).not.toHaveBeenCalled();
   });
+
+  it('plays a zone sound file when one decodes and falls back to synthesis for empty placeholders', async () => {
+    const { createSkylineAudio } = await import("./skylineAudio.js");
+    const gain = () => ({ gain: { value: 1 }, connect: vi.fn() });
+    const source = { connect: vi.fn(), start: vi.fn(), stop: vi.fn(), disconnect: vi.fn() };
+    const oscillator = { type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+    const context = {
+      state: 'running', destination: {}, currentTime: 0, resume: vi.fn(),
+      createGain: vi.fn(gain), createOscillator: vi.fn(() => oscillator), createBufferSource: vi.fn(() => source),
+      decodeAudioData: vi.fn(async () => ({ duration: 1 })),
+    };
+    const files = { '/bell.mp3': new ArrayBuffer(8), '/crash.mp3': new ArrayBuffer(0) };
+    const fetchImpl = vi.fn(async (url) => (url in files
+      ? { ok: true, arrayBuffer: async () => files[url] }
+      : { ok: false, status: 404 }));
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; }, fetchImpl });
+    await audio.prime();
+
+    const report = await audio.loadSounds({ bell: '/bell.mp3', crash: '/crash.mp3', music: '/music.mp3' });
+
+    expect(report.loaded).toEqual(['bell']);
+    expect(report.missing).toEqual(expect.arrayContaining([
+      { slot: 'crash', url: '/crash.mp3', reason: 'empty' },
+      { slot: 'music', url: '/music.mp3', reason: 'http-404' },
+    ]));
+    expect(audio.playCue('bell')).toBe(true);
+    expect(context.createBufferSource).toHaveBeenCalledOnce();
+    expect(audio.playCue('crash')).toBe(true);
+    expect(oscillator.frequency.value).toBe(120);
+  });
 });

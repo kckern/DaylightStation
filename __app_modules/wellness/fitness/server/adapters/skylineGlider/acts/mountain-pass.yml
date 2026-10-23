@@ -1,6 +1,8 @@
 schema: skyline-glider-course/v1
 id: mountain-pass
-version: 3
+version: 4
+zone: alpine
+act: 1
 name: Mountain Pass
 description: Hold steady through long climbs, ease down beneath one cloud shelf, and finish strong.
 duration_s: 300

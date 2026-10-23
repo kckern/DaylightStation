@@ -1,0 +1,55 @@
+schema: skyline-glider-course/v1
+id: cloud-ridge
+version: 1
+zone: alpine
+act: 2
+name: Cloud Ridge
+description: Clear the pines, dodge the boulders, and thread the ridge gap.
+duration_s: 240
+motion:
+  filter_s: 0.25
+  deadband_rpm: 2
+  response_s: 0.6
+  max_climb_rate: 0.30
+  max_descent_rate: 0.30
+  coast_s: 1
+  disconnect_grace_s: 0.75
+  slow_signal_grace_s: 5
+  inferred_slowdown_s: 0.5
+rules:
+  lives: 3
+  invincibility_s: 1.25
+  restart_delay_s: 2
+segments:
+  - { id: valley, type: open, start_s: 0, end_s: 240 }
+  - id: ridge-bells
+    type: collectible-path
+    start_s: 10
+    end_s: 230
+    collectibles:
+      - { id: cr-bell-01, at_s: 26, altitude: 0.36 }
+      - { id: cr-bell-02, at_s: 42, altitude: 0.36 }
+      - { id: cr-bell-03, at_s: 82, altitude: 0.50 }
+      - { id: cr-bell-04, at_s: 117, altitude: 0.34 }
+      - { id: cr-bell-05, at_s: 166, altitude: 0.44 }
+      - { id: cr-bell-06, at_s: 207, altitude: 0.30 }
+  - { id: pine-meadow, type: lower-terrain, start_s: 15, end_s: 50, top: 0.60 }
+  - { id: checkpoint-one, type: checkpoint, start_s: 62, restart_altitude: 0.50 }
+  - { id: cloud-shelf, type: upper-terrain, start_s: 75, end_s: 90, bottom: 0.40 }
+  - { id: boulder-field, type: lower-terrain, start_s: 100, end_s: 135, top: 0.62 }
+  - { id: checkpoint-two, type: checkpoint, start_s: 145, restart_altitude: 0.50 }
+  - { id: ridge-gap, type: corridor, start_s: 160, end_s: 172, ceiling: 0.25, floor: 0.62 }
+  - { id: checkpoint-three, type: checkpoint, start_s: 176, restart_altitude: 0.50 }
+  - { id: last-ridge, type: lower-terrain, start_s: 190, end_s: 225, top: 0.52 }
+  - { id: finish, type: finish, start_s: 240 }
+entities:
+  - { id: sign-start, entity: signpost, at_s: 6, altitude: 0.88 }
+  - { id: pine-01, entity: pine, at_s: 22, altitude: 0.60 }
+  - { id: pine-02, entity: pine, at_s: 30, altitude: 0.60 }
+  - { id: pine-03, entity: pine, at_s: 38, altitude: 0.60 }
+  - { id: pine-04, entity: pine, at_s: 46, altitude: 0.60 }
+  - { id: boulder-01, entity: boulder, at_s: 110, altitude: 0.62 }
+  - { id: chalet-01, entity: chalet, at_s: 117, altitude: 0.62 }
+  - { id: boulder-02, entity: boulder, at_s: 124, altitude: 0.62 }
+  - { id: pine-05, entity: pine, at_s: 200, altitude: 0.52 }
+  - { id: pine-06, entity: pine, at_s: 214, altitude: 0.52 }

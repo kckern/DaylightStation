@@ -19,6 +19,9 @@ __backend/node_modules
 !/__app_modules/learning/school/satellites/ticalc-relay/config.example.yml
 !/__app_modules/learning/school/seeds/**/*.yml
 !__docs/configuration/*.example.yml
+# Skyline Glider's bundled world (zones + acts) ships with the app; without this
+# a new zone or act is silently left out of the build.
+!/__app_modules/wellness/fitness/server/adapters/skylineGlider/**/*.yml
 !docker/docker-compose.test.yml
 /shared/gaming/fixtures/
 /shared/presentation/fixtures/
@@ -242,7 +245,6 @@ recording-analysis/
 !/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/
 !/__app_modules/wellness/fitness/browser/widgets/ComponentShowcase/data/componentDefs.js
 !/__app_modules/wellness/fitness/cli/scripts/organize-fitness-pdfs.sh
-!/__app_modules/wellness/fitness/server/adapters/courses/mountain-pass.yml
 !/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20010101100000.yml
 !/__app_modules/wellness/fitness/server/domain/services/__fixtures__/session-20010102100000.yml
 !/__app_modules/wellness/health/server/application/agents/health-coach/playbooks/seed.yml

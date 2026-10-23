@@ -45,6 +45,24 @@
 .skyline-glider .skyline-glider__end { position: absolute; right: 2rem; bottom: 2rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider .skyline-glider__mute { position: absolute; right: 2rem; bottom: 6rem; padding: .65rem 1rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
+.skyline-glider__scene--pixel image { image-rendering: pixelated; }
+.skyline-glider__entity-leaf { fill: #2f6b4c; stroke: #173b2b; stroke-width: 3; }
+.skyline-glider__entity-trunk { fill: #6b4630; }
+.skyline-glider__entity-wall { fill: #e7c99a; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-roof { fill: #b44d3b; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-door { fill: #5b3d2f; }
+.skyline-glider__entity-rock { fill: #7b8584; stroke: #3c4545; stroke-width: 4; }
+.skyline-glider__entity-board { fill: #f3c777; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-box { fill: #d06a5a; stroke: #5b3d2f; stroke-width: 4; }
+.skyline-glider__entity-leaf, .skyline-glider__entity-wall, .skyline-glider__entity-roof, .skyline-glider__entity-rock, .skyline-glider__entity-board, .skyline-glider__entity-box { vector-effect: non-scaling-stroke; }
+.skyline-glider__world { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.skyline-glider__zone h3 { margin: 0 0 .5rem; font-size: 1rem; letter-spacing: .14em; text-transform: uppercase; color: #f3c777; }
+.skyline-glider__zone ol { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.skyline-glider .skyline-glider__act { display: grid; gap: .15rem; min-width: 9rem; padding: .75rem 1rem; border-radius: 1rem; text-align: left; color: #fff; background: rgba(7, 24, 31, .6); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .18); }
+.skyline-glider .skyline-glider__act[aria-pressed="true"] { color: #17333f; background: #f3c777; box-shadow: none; }
+.skyline-glider .skyline-glider__act--locked { opacity: .55; }
+.skyline-glider__act-number { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
+.skyline-glider__act-badge { font-size: .85rem; min-height: 1.1em; }
 @keyframes skyline-impact { to { opacity: .25; transform: scale(1.2); } }
 @keyframes skyline-bell-pop { from { opacity: 1; transform: scale(.25); } to { opacity: 0; transform: scale(1.4); } }
 @keyframes skyline-banner { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }

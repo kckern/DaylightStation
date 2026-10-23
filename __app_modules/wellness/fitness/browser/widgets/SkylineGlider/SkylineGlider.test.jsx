@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockCtx;
+let apiFetch;
+let worldFetch;
 const { mockLog } = vi.hoisted(() => ({
   mockLog: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() },
 }));
@@ -80,7 +82,10 @@ beforeEach(() => {
   gateMocks.clearUnlock.mockReset();
   const appListeners = new Map();
   mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { sessionId: 'fs-test', treasureBox: { awardBonus: vi.fn() }, getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), getUserByName: () => ({ id: 'dad', schoolLearner: true }), subscribeToAppEvent: (type, callback) => { appListeners.set(type, callback); return () => appListeners.delete(type); }, __emitAppEvent: (type, payload) => appListeners.get(type)?.({ type, payload, timestamp: Date.now() }), setGovernanceSuspended: vi.fn() };
-  global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
+  // World-map reads go to their own mock so run-save assertions keep exact call order.
+  apiFetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
+  worldFetch = vi.fn(async () => ({ ok: true, json: async () => ({ zones: [{ id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'open' }] }], next: 'mountain-pass' }) }));
+  global.fetch = vi.fn((url, options) => (String(url).includes('/skyline-glider/world') ? worldFetch(url, options) : apiFetch(url, options)));
 });
 
 describe('SkylineGlider', () => {
@@ -212,7 +217,7 @@ describe('SkylineGlider', () => {
 
     await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
 
-    expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(terminalRecord);
+    expect(JSON.parse(apiFetch.mock.calls[1][1].body).record).toEqual(terminalRecord);
     expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
     expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ resumed: false }));
   });
@@ -511,7 +516,7 @@ describe('SkylineGlider', () => {
     await act(async () => Promise.resolve());
     fireEvent.click(screen.getByRole('button', { name: /start over/i }));
     await act(async () => Promise.resolve());
-    const savedRecord = JSON.parse(global.fetch.mock.calls[1][1].body).record;
+    const savedRecord = JSON.parse(apiFetch.mock.calls[1][1].body).record;
     expect(savedRecord).toMatchObject({ run: { id: 'old-run', status: 'abandoned', duration_s: 75 } });
     expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
     vi.useRealTimers();
@@ -563,7 +568,7 @@ describe('SkylineGlider', () => {
 
   it('freezes immediately and preserves an exact pending terminal record when saving fails', async () => {
     vi.useFakeTimers();
-    global.fetch = vi.fn()
+    apiFetch = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ courses: [course] }) })
       .mockResolvedValueOnce({ ok: false, status: 503 });
     render(<SkylineGlider />);
@@ -576,11 +581,11 @@ describe('SkylineGlider', () => {
     expect(screen.getByRole('button', { name: /retry save/i })).toBeTruthy();
     const pending = JSON.parse(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass'));
     expect(pending).toMatchObject({ schema: 'skyline-glider-checkpoint/v3', lifecycle: 'pending_terminal', terminalRecord: { run: { status: 'abandoned' } } });
-    expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
+    expect(JSON.parse(apiFetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
 
-    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    apiFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
     await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    expect(JSON.parse(global.fetch.mock.calls[2][1].body).record).toEqual(pending.terminalRecord);
+    expect(JSON.parse(apiFetch.mock.calls[2][1].body).record).toEqual(pending.terminalRecord);
     expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
     vi.useRealTimers();
   });
@@ -620,5 +625,113 @@ describe('SkylineGlider', () => {
     act(() => vi.advanceTimersByTime(4500));
     expect(screen.getByTestId('skyline-glider-reconnect')).toBeTruthy();
     vi.useRealTimers();
+  });
+
+  it('offers the rider\'s next act from the world map and lets a tile pick another open act', async () => {
+    const ridge = { ...course, id: 'cloud-ridge', name: 'Cloud Ridge', act: 2 };
+    apiFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ courses: [course, ridge] }) }));
+    worldFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ next: 'cloud-ridge', zones: [{ id: 'alpine', name: 'Alpine', acts: [
+      { id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'completed', best: { bells: 4 } },
+      { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2, status: 'open' },
+    ] }] }) }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+
+    expect(worldFetch).toHaveBeenCalledWith('/api/v1/fitness/skyline-glider/world?rider=dad', undefined);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Cloud Ridge');
+    expect(screen.getByTestId('skyline-glider-act-mountain-pass')).toHaveTextContent('✓ 4');
+    fireEvent.click(screen.getByTestId('skyline-glider-act-mountain-pass'));
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Mountain Pass');
+  });
+
+  it('opens a locked act only after an admin fingerprint and records the unlock', async () => {
+    const ridge = { ...course, id: 'cloud-ridge', name: 'Cloud Ridge', act: 2 };
+    let ridgeStatus = 'locked';
+    apiFetch.mockImplementation(async (url) => ({ ok: true, json: async () => (String(url).includes('/unlock') ? { progress: {} } : { courses: [course, ridge] }) }));
+    worldFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ next: 'mountain-pass', zones: [{ id: 'alpine', name: 'Alpine', acts: [
+      { id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'open' },
+      { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2, status: ridgeStatus },
+    ] }] }) }));
+    gateMocks.registerAdmin.mockImplementation(async () => { ridgeStatus = 'open'; return { matched: true, userId: 'mom' }; });
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Mountain Pass');
+
+    await act(async () => { fireEvent.click(screen.getByTestId('skyline-glider-act-cloud-ridge')); });
+    await act(async () => Promise.resolve());
+
+    const unlock = apiFetch.mock.calls.find(([url]) => String(url).includes('/progress/dad/unlock'));
+    expect(JSON.parse(unlock[1].body)).toEqual({ actId: 'cloud-ridge', unlockedBy: 'mom' });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Cloud Ridge');
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.progress.unlock_granted', expect.objectContaining({ actId: 'cloud-ridge', adminUserId: 'mom' }));
+  });
+
+  it('keeps every act playable when the world map cannot load', async () => {
+    worldFetch.mockImplementation(async () => ({ ok: false, status: 503 }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+    expect(screen.getByTestId('skyline-glider-act-mountain-pass')).toHaveAttribute('data-status', 'open');
+    expect(mockLog.warn).toHaveBeenCalledWith('skyline_glider.world.error', expect.objectContaining({ riderId: 'dad' }));
+  });
+});
+
+describe('FlightScene zones', () => {
+  const zoned = {
+    ...course,
+    zone: {
+      id: 'space', name: 'Space', pixel_art: true,
+      layers: [
+        { id: 'stars', kind: 'image', src: 'z/stars.png', parallax: 0.1, fallback: 'alpine-sky' },
+        { id: 'hills', kind: 'image', src: 'z/missing.png', parallax: 0.3, fallback: 'alpine-far' },
+        { id: 'dust', kind: 'image', src: 'z/dust.png', parallax: 1.2, front: true, y: 0.9, height: 0.1 },
+      ],
+      terrain: { fill: 'z/rock.png' },
+      craft: { frames: ['ship-1', 'ship-2'], fps: 10 },
+      collectible: { frame: 'coin' },
+      checkpoint: {}, finish: {}, sounds: {},
+    },
+    entities: [
+      { id: 'tree-1', class: 'breakable', draw: 'pine', at_s: 9, altitude: 0.78, width_s: 0.5, height: 0.14 },
+      { id: 'tree-2', class: 'breakable', draw: 'pine', at_s: 10, altitude: 0.78, width_s: 0.5, height: 0.14 },
+      { id: 'rock-1', class: 'solid', frame: 'asteroid', at_s: 11, altitude: 0.7, width_s: 0.8, height: 0.12 },
+    ],
+  };
+  const assets = {
+    images: new Map([
+      ['z/stars.png', { url: '/m/stars.png', width: 500, height: 600 }],
+      ['z/dust.png', { url: '/m/dust.png', width: 200, height: 60 }],
+      ['z/rock.png', { url: '/m/rock.png', width: 64, height: 64 }],
+    ]),
+    sheet: { url: '/m/sheet.png', width: 128, height: 64 },
+    frames: { 'ship-1': { x: 0, y: 0, w: 32, h: 16 }, 'ship-2': { x: 32, y: 0, w: 32, h: 16 }, coin: { x: 64, y: 0, w: 16, h: 16 }, asteroid: { x: 80, y: 0, w: 32, h: 32 } },
+    missing: [],
+  };
+
+  it('draws loaded image layers, preset fallbacks, sprites and surviving entities', () => {
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [], destroyedIds: ['tree-2'] }} course={zoned} assets={assets}/>);
+    const scene = container.querySelector('svg.skyline-glider__scene');
+    expect(scene).toHaveClass('skyline-glider__scene--pixel');
+    expect(scene).toHaveAttribute('data-zone', 'space');
+    expect(container.querySelector('[data-layer="stars"] image')).toHaveAttribute('href', '/m/stars.png');
+    expect(container.querySelector('.skyline-glider__parallax--far')).toBeTruthy();
+    expect(scene.lastElementChild).toHaveAttribute('data-layer', 'dust');
+    expect(container.querySelector('#glider-terrain-fill image')).toHaveAttribute('href', '/m/rock.png');
+    expect(screen.getByTestId('course-segment-hill').querySelector('rect')).toHaveAttribute('fill', 'url(#glider-terrain-fill)');
+    const craftSprite = screen.getByTestId('skyline-glider-craft').querySelector('svg');
+    expect(craftSprite).toHaveAttribute('viewBox', '0 0 32 16');
+    expect(screen.getByTestId('course-collectible-bell').querySelector('svg')).toHaveAttribute('viewBox', '64 0 16 16');
+    expect(screen.getByTestId('course-entity-tree-1')).toHaveAttribute('data-class', 'breakable');
+    expect(screen.queryByTestId('course-entity-tree-2')).toBeNull();
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '80 0 32 32');
+  });
+
+  it('falls back to the alpine presets when nothing has loaded', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
+    expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();
+    expect(screen.getByTestId('course-collectible-bell').querySelector('path')).toBeTruthy();
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('.skyline-glider__entity-box')).toBeTruthy();
   });
 });

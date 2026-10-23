@@ -2,17 +2,15 @@ import {
   HIGH_ALTITUDE,
   LOW_ALTITUDE,
   SKYLINE_CRAFT_GEOMETRY,
+  entitiesTouchingCraft,
   pointOverlapsCraft,
-  terrainBounds,
-  terrainOverlappingCraft,
+  safeBandAt,
+  terrainContact,
 } from "./flightGeometry.js";
 
 const STEP = 1 / 60;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const moveToward = (value, target, amount) => value < target
-  ? Math.min(target, value + amount)
-  : Math.max(target, value - amount);
 
 function targetForRpm(rpm, calibration) {
   const normalized = clamp((rpm - calibration.lowRpm) / (calibration.highRpm - calibration.lowRpm), 0, 1);
@@ -33,6 +31,7 @@ function applyCourseEvents(state, previousTime, course) {
         time: checkpoint.start_s,
         restartAltitude: checkpoint.restart_altitude ?? 0.5,
         collectedIds: [...next.collectedIds],
+        destroyedIds: [...(next.destroyedIds || [])],
       },
     };
   }
@@ -50,33 +49,55 @@ function applyCourseEvents(state, previousTime, course) {
   return next;
 }
 
-function collide(state, course) {
-  if (state.phase !== 'playing') return state;
-  const terrain = terrainOverlappingCraft(course, state.courseTime).find((segment) => {
-    const bounds = terrainBounds(segment);
-    return state.altitude - SKYLINE_CRAFT_GEOMETRY.radius < bounds.top
-      || state.altitude + SKYLINE_CRAFT_GEOMETRY.radius > bounds.bottom;
-  });
-  if (!terrain) return state.contactSegmentId == null ? state : { ...state, contactSegmentId: null };
-  if (terrain.id === state.contactSegmentId) return state;
-  if (state.collisionProtected || state.invincibleRemaining > 0) {
-    return { ...state, contactSegmentId: terrain.id };
-  }
-  const lives = state.lives - 1;
-  if (lives <= 0) {
-    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id, contactSegmentId: terrain.id };
-  }
-  const bounds = terrainBounds(terrain);
-  const centre = clamp((bounds.top + bounds.bottom) / 2, HIGH_ALTITUDE, LOW_ALTITUDE);
+function crash(state, course, { cause, segmentId = null, entityId = null, counted = false }) {
   return {
     ...state,
-    lives,
+    lives: 0,
+    phase: 'crashed',
+    crashRemaining: course.rules.restart_delay_s,
+    crashCause: cause,
+    collisions: counted ? state.collisions : state.collisions + 1,
+    lastCollisionSegmentId: segmentId,
+    lastCollisionEntityId: entityId,
+  };
+}
+
+// Terrain and solid entities are walls: touching one crashes, invincible or
+// not. Only a sensor pause protects the rider, and then the craft is held
+// inside the open band so it can never drift through the ground.
+function holdInsideTerrain(state, course) {
+  const band = safeBandAt(course, state.courseTime);
+  const top = band.top + SKYLINE_CRAFT_GEOMETRY.radius;
+  const bottom = band.bottom - SKYLINE_CRAFT_GEOMETRY.radius;
+  if (top > bottom) return state;
+  const altitude = clamp(state.altitude, top, bottom);
+  return altitude === state.altitude ? state : { ...state, altitude };
+}
+
+function collide(state, course) {
+  if (state.phase !== 'playing') return state;
+  if (state.collisionProtected) return holdInsideTerrain(state, course);
+  const terrain = terrainContact(course, state.courseTime, state.altitude);
+  if (terrain) return crash(state, course, { cause: 'terrain', segmentId: terrain.id });
+  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude);
+  const solid = touching.find((entity) => entity.class === 'solid');
+  if (solid) return crash(state, course, { cause: 'entity', entityId: solid.id });
+
+  // Breakables shatter on contact and cost one life, except while blinking.
+  const destroyed = new Set(state.destroyedIds || []);
+  const broken = touching.filter((entity) => entity.class === 'breakable' && !destroyed.has(entity.id));
+  if (!broken.length) return state;
+  const next = { ...state, destroyedIds: [...destroyed, ...broken.map((entity) => entity.id)] };
+  if (state.invincibleRemaining > 0) return next;
+  const hit = {
+    ...next,
+    lives: state.lives - 1,
     collisions: state.collisions + 1,
-    lastCollisionSegmentId: terrain.id,
-    contactSegmentId: terrain.id,
-    altitude: moveToward(state.altitude, centre, 0.08),
+    lastCollisionSegmentId: null,
+    lastCollisionEntityId: broken[0].id,
     invincibleRemaining: course.rules.invincibility_s,
   };
+  return hit.lives > 0 ? hit : crash(hit, course, { cause: 'lives', entityId: broken[0].id, counted: true });
 }
 
 function restartAtCheckpoint(state, course) {
@@ -90,8 +111,9 @@ function restartAtCheckpoint(state, course) {
     verticalRate: 0,
     zeroElapsed: 0,
     invincibleRemaining: 0,
-    contactSegmentId: null,
+    crashCause: null,
     collectedIds: [...state.checkpoint.collectedIds],
+    destroyedIds: [...(state.checkpoint.destroyedIds || [])],
     restarts: state.restarts + 1,
   };
 }
@@ -193,7 +215,8 @@ export function createFlightState(course, {
     lives: course.rules.lives,
     collisions: 0,
     lastCollisionSegmentId: null,
-    contactSegmentId: null,
+    lastCollisionEntityId: null,
+    crashCause: null,
     restarts: 0,
     invincibleRemaining: 0,
     crashRemaining: 0,
@@ -206,7 +229,8 @@ export function createFlightState(course, {
     inputReady: armedAtMs == null,
     lastInputTs: null,
     collectedIds: [],
-    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [] },
+    destroyedIds: [],
+    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [] },
   };
 }
 

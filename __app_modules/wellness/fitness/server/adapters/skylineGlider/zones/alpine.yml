@@ -1,0 +1,34 @@
+# The original Skyline Glider look, built entirely from the built-in SVG presets.
+# Every art slot can be swapped for a file under the media mount at
+# media/<asset_root>/ — e.g. replace the far layer with
+#   - { id: far, kind: image, src: far.png, parallax: 0.14, y: 0.38, height: 0.34, fallback: alpine-far }
+# `parallax` is a fraction of the course scroll speed (1 = moves with the terrain).
+# Sounds below are placeholders until the files are populated; an empty or
+# missing file falls back to the synthesized cue.
+schema: skyline-glider-zone/v1
+id: alpine
+name: Alpine
+asset_root: fitness/skyline-glider/alpine
+pixel_art: false
+layers:
+  - { id: sky, kind: svg, draw: alpine-sky }
+  - { id: far, kind: svg, draw: alpine-far, parallax: 0.14 }
+  - { id: middle, kind: svg, draw: alpine-middle, parallax: 0.31 }
+  - { id: near, kind: svg, draw: alpine-near, parallax: 0.53 }
+terrain: { draw: alpine-rock, edge_lip: 0.02 }
+craft: { draw: glider }
+collectible: { draw: bell }
+entities:
+  pine: { class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
+  chalet: { class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
+  boulder: { class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
+  signpost: { class: scenery, draw: signpost, width_s: 0.3, height: 0.1 }
+sounds:
+  bell: sounds/bell.mp3
+  checkpoint: sounds/checkpoint.mp3
+  breakable: sounds/breakable.mp3
+  crash: sounds/crash.mp3
+  restart: sounds/restart.mp3
+  finish: sounds/finish.mp3
+  wind: sounds/wind.mp3
+  music: sounds/music.mp3

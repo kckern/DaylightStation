@@ -111,7 +111,7 @@ describe('flight telemetry', () => {
     const result = collectFlightTelemetry({
       previous: state({ courseTime: 9.9 }),
       next: state({
-        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1, lastCollisionSegmentId: 'nose-hit',
+        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1, lastCollisionSegmentId: 'nose-hit', crashCause: 'terrain',
         collectedIds: ['bell-1'], checkpoint: { id: 'ridge', time: 10 },
       }),
       input: { rpm: 40, connected: true, transportStalled: false },
@@ -119,10 +119,21 @@ describe('flight telemetry', () => {
       lastSampleSecond: 9, course,
     });
 
-    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'nose-hit' } });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, kind: 'crash', segmentId: 'nose-hit', entityId: null } });
     expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1' } });
     expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10 } });
-    expect(result.events).toContainEqual({ type: 'crashed', data: {} });
+    expect(result.events).toContainEqual({ type: 'crashed', data: { cause: 'terrain', segmentId: 'nose-hit', entityId: null } });
+  });
+
+  it('names the entity in a breakable hit', () => {
+    const result = collectFlightTelemetry({
+      previous: state({ courseTime: 9.9 }),
+      next: state({ courseTime: 10, lives: 2, collisions: 1, lastCollisionEntityId: 'pine-01' }),
+      input: { rpm: 40, connected: true, transportStalled: false },
+      previousInput: { rpm: 40, connected: true, transportStalled: false },
+      lastSampleSecond: 9, course,
+    });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 2, kind: 'breakable', segmentId: null, entityId: 'pine-01' } });
   });
 
   it('reports restart and completion transitions', () => {
