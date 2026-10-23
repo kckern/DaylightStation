@@ -32,10 +32,12 @@ describe('ZoneProfileStore — a reading gap does not count as a zone change', (
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-22T03:05:00Z'));
     store = new ZoneProfileStore();
+    store.syncFromUsers([rider(90)]);
+    advance(6000);
   });
   afterEach(() => vi.useRealTimers());
 
-  it('returns straight to Hot when the strap comes back at 168 bpm', () => {
+  it('returns straight to Hot when a brief same-wearer gap ends at 168 bpm', () => {
     store.syncFromUsers([rider(170)]);
     advance(10_000);
     store.syncFromUsers([rider(170)]);
@@ -43,12 +45,8 @@ describe('ZoneProfileStore — a reading gap does not count as a zone change', (
 
     advance(1_000);
     store.syncFromUsers([rider(null)]);   // strap sends no reading
-    advance(5_000);
-    // FitnessSession._maybeConfirmHrLoss: forget the smoothing, then re-sync.
-    store.resetZoneState('rider-a');
-    store.syncFromUsers([rider(null)]);
-    expect(zoneOf(store)).not.toBe('hot');
-    advance(1_000);
+    advance(2_000);
+    expect(zoneOf(store)).toBe('hot');
     store.syncFromUsers([rider(168)]);    // reading restored
     expect(zoneOf(store)).toBe('hot');
   });

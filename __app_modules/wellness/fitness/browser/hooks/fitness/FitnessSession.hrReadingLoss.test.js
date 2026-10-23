@@ -53,6 +53,12 @@ function startedSession(users = [{ id: 'user_1', name: 'User_1', hr_device_id: '
 }
 
 function warmUp(session, deviceId, bpm, extra = 3) {
+  // Existing training scenarios begin after a real accepted Cool baseline.
+  // Keep the scenario clock at its original time for the grace assertions.
+  const scenarioTime = Date.now();
+  vi.setSystemTime(scenarioTime - 6000);
+  for (let i = 0; i < STARTUP_DISCARD_COUNT + 1; i += 1) session.ingestData(hr(deviceId, 80));
+  vi.setSystemTime(scenarioTime);
   for (let i = 0; i < STARTUP_DISCARD_COUNT + extra; i += 1) session.ingestData(hr(deviceId, bpm));
 }
 
@@ -142,7 +148,7 @@ describe('FitnessSession — an HR strap with no reading counts for nothing', ()
     expect(session.deviceManager.getDevice('hr-1').heartRate).toBeNull();
     expect(user.currentData.heartRate).toBeNull();
     expect(user.currentData.hrInactive).toBe(true);
-    expect(reset).toHaveBeenCalledWith('user_1');
+    expect(reset).toHaveBeenCalledWith('user_1', 'confirmed-loss');
     expect(session.treasureBox.perUser.get('user_1').highestZone).toBeNull();
   });
 });

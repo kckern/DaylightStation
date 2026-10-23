@@ -79,10 +79,18 @@ Orchestrates the fitness experience:
 
 ### ZoneProfileStore (`frontend/src/hooks/fitness/ZoneProfileStore.js`)
 
-Stable, tick-aligned zone state for each user:
-- Derives zones from heart rate + zone config
-- Provides `getProfile(userId)` for zone lookup
-- Source of truth for GovernanceEngine zone data
+Authoritative accepted zone state for each user:
+- Derives raw zones from HR and the validated personal ladder.
+- Publishes `zoneTrusted: false` and a null `currentZoneId` until a real, accepted Cool reading establishes a baseline. A synthetic/default Cool, null/zero HR, or a discarded startup packet cannot qualify.
+- FitnessSession supplies every rider's own `zoneReadingEligible` state on every shared synchronization, including synchronization triggered by another rider or a timeline tick. Display HR remains available while untrusted.
+- A session reset, wearer change, or confirmed HR loss clears trust, smoothing and entry evidence immediately. A brief same-wearer gap within the existing five-second HR-loss grace preserves trust and the committed zone; it stops ring accrual immediately.
+- After trust, the existing five-second cooldown, three-second continuous stability and five-BPM exit margin apply. Repeated identical HR must still advance the state machine and interrupt pending transitions; stateful profiles are never memoized.
+- `getProfile(userId)` and `getZoneState(userId)` expose `zoneTrusted` and `zoneEntry`. `isZoneTrusted(userId)` provides a cheap credit check without cloning a full profile.
+- Roster/governance, display-map enrichment and TreasureBox respect the authoritative lack of an earned zone. Neither a roster fallback nor global thresholds may supply credit around the trust gate.
+
+`displayZoneId/name/color`, `heartRate`, the raw `zoneSnapshot` and progress remain available for live measurements. They do not establish earned state; consumers must use the trusted committed zone for qualification and zone treatment.
+
+A committed transition backed by an accepted real reading carries `zoneEntry: { id, zoneId, heartRate, threshold, enteredAt }`. Its ID increases across the lifetime of a store, including resets; the evidence is cloned on reads and cleared on trust reset. It records the HR and threshold at commitment and persists while hysteresis retains that zone. Fire detection requires a trusted observed crossing, a new matching Fire entry and captured HR at or above the personal Fire threshold. Initial Fire, synthetic Cool → Fire, contradictory entry evidence and reused pre-reset entries cannot celebrate. Toast queues retain the captured entry HR/threshold even if the live HR later changes.
 
 ### DeviceManager (`frontend/src/hooks/fitness/DeviceManager.js`)
 

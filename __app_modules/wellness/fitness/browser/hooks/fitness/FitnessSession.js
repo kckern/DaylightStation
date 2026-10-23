@@ -204,6 +204,7 @@ export class FitnessSession {
     this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
+    this._zoneReadingEligible = new Map(); // userId -> current accepted real sample
     this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
     this._hrReadingState = new Map(); // deviceId -> true (reading) | false (no reading); edges drive _onHrReadingLost
 
@@ -387,7 +388,11 @@ export class FitnessSession {
     const prev = this._hrReadingState.get(key);
     if (prev === hasReading) return;
     this._hrReadingState.set(key, hasReading);
-    if (!hasReading) this._deviceHrSampleCount.delete(key);
+    if (!hasReading) {
+      this._deviceHrSampleCount.delete(key);
+      const userId = this._hrOccupantId(key);
+      if (userId) this._zoneReadingEligible.set(userId, false);
+    }
     // First sighting is not an edge: nothing was held, nothing to clear.
     if (prev === undefined) return;
     const userId = this._hrOccupantId(key);
@@ -433,7 +438,7 @@ export class FitnessSession {
     if (before || !owner.currentData?.hrInactive) return;
     const userId = this._hrOccupantId(key) || owner.id;
     getLogger().info('fitness.device.hr_loss_confirmed', { deviceId: key, userId });
-    this.zoneProfileStore?.resetZoneState?.(userId);
+    this.zoneProfileStore?.resetZoneState?.(userId, 'confirmed-loss');
     this._syncPresentZoneProfiles(userId);
   }
 
@@ -470,7 +475,12 @@ export class FitnessSession {
   _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
     try {
-      const changed = this.zoneProfileStore.syncFromUsers(allUsers);
+      const changed = this.zoneProfileStore.syncFromUsers(allUsers.map(user => ({
+        ...user,
+        // Every shared sync carries each rider's OWN acceptance state. A rider
+        // cannot acquire startup trust through somebody else's accepted packet.
+        zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true
+      })));
       return changed;
     } catch (err) {
       getLogger().error('fitness.zone_profile_store.sync_failed', {
@@ -573,6 +583,11 @@ export class FitnessSession {
         if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
           this._cumulativeBeats.delete(device.id);
           this._cumulativeRotations.delete(device.id);
+          this._deviceHrSampleCount.delete(String(device.id));
+          this._zoneReadingEligible.set(currentOccupant, false);
+          this.treasureBox?.recordUserHeartRate(currentOccupant, null);
+          this.zoneProfileStore?.resetZoneState?.(currentOccupant, 'wearer-change');
+          this.zoneProfileStore?.resetZoneState?.(device.lastOccupantSlug, 'wearer-change');
           this._log('device_reassigned', { 
             deviceId: device.id, 
             from: device.lastOccupantSlug, 
@@ -615,6 +630,8 @@ export class FitnessSession {
             startupDiscarded = true;
           }
         }
+
+        if (isHrPacket) this._zoneReadingEligible.set(resolvedSlug, hasHrReading && !startupDiscarded);
 
         // ORDER MATTERS — sync the zone store BEFORE feeding TreasureBox.
         // Both blocks open on the same packet (the first one past the startup
@@ -856,7 +873,11 @@ export class FitnessSession {
     const ringsMoved = this.treasureBox?.moveStint(fromUserId, toUserId, { baseRings: bases.rings_total }) ?? 0;
     const beatsMoved = this._timelineRecorder?.moveStintBeats(fromUserId, toUserId, bases.heart_beats) ?? 0;
     this.activityMonitor?.moveStintActivity(fromUserId, toUserId, start);
-    this.zoneProfileStore?.resetZoneState?.(toUserId);
+    this._zoneReadingEligible.set(toUserId, false);
+    this.zoneProfileStore?.resetZoneState?.(toUserId, 'wearer-change');
+    // Historical totals transfer; an unfinished high-zone interval cannot
+    // survive the new wearer's trust reset and pay out on their first Cool.
+    this.treasureBox?.recordUserHeartRate(toUserId, null);
     return { ringsMoved, beatsMoved };
   }
 
@@ -2936,6 +2957,9 @@ export class FitnessSession {
     // next session skips its warm-up discard.
     this._hrReadingState.clear();
     this._deviceHrSampleCount.clear();
+    this._zoneReadingEligible.clear();
+    this.zoneProfileStore?.clear();
+    this._userZoneProfilesCache = null;
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};

@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createFireZoneTracker, nextFireToasts, FIRE_TOAST_COOLDOWN_MS } from "./fireZoneTracker.js";
 
-const profile = (id, zone, name = id) => ({ id, name, currentZoneId: zone });
+let serial = 0;
+const profile = (id, zone, name = id) => ({
+  id, name, currentZoneId: zone, zoneTrusted: true, heartRate: 181,
+  zoneConfig: [{ id: 'cool', min: 60 }, { id: 'fire', min: 175 }],
+  zoneEntry: { id: ++serial, zoneId: zone, heartRate: 181, threshold: 175, enteredAt: 1000 }
+});
 
 describe('nextFireToasts', () => {
   it('stays silent for a user first observed already in fire', () => {
@@ -15,7 +20,7 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 }]);
   });
 
   it('suppresses a second crossing inside the cooldown', () => {
@@ -34,7 +39,7 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 3000 }).tracker;
     const later = 2000 + FIRE_TOAST_COOLDOWN_MS + 1;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: later });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 }]);
   });
 
   it('does not re-emit while a user simply stays in fire', () => {
@@ -50,8 +55,8 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot'), profile('learner-two', 'warm')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire'), profile('learner-two', 'fire')], { now: 2000 });
     expect(r.entries).toEqual([
-      { userId: 'learner-one', name: 'learner-one', heartRate: null, fireThreshold: null },
-      { userId: 'learner-two', name: 'learner-two', heartRate: null, fireThreshold: null },
+      { userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 },
+      { userId: 'learner-two', name: 'learner-two', heartRate: 181, fireThreshold: 175 },
     ]);
   });
 
@@ -69,7 +74,7 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot', 'Learner-Two')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire', 'Learner-Two')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two', heartRate: null, fireThreshold: null }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two', heartRate: 181, fireThreshold: 175 }]);
   });
 
   it('carries the HR and the fire threshold that justified the celebration', () => {
@@ -80,7 +85,7 @@ describe('nextFireToasts', () => {
       { id: 'cool', min: 60 }, { id: 'active', min: 100 },
       { id: 'warm', min: 140 }, { id: 'hot', min: 160 }, { id: 'fire', min: 175 }
     ];
-    const rider = (zone) => ({ id: 'learner-one', name: 'Learner-One', currentZoneId: zone, heartRate: 181, zoneConfig });
+    const rider = (zone) => ({ ...profile('learner-one', zone, 'Learner-One'), zoneConfig });
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [rider('hot')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [rider('fire')], { now: 2000 });
@@ -95,4 +100,43 @@ describe('nextFireToasts', () => {
     expect(t0.lastZone.size).toBe(0);
     expect(t0.lastFiredAt.size).toBe(0);
   });
+  it.each([{ id: 'rider-a', hr: 115, fire: 190 }, { id: 'rider-b', hr: 169, fire: 185 }])(
+    'rejects $id Fire without accepted threshold evidence', ({ id, hr, fire }) => {
+      let t = nextFireToasts(createFireZoneTracker(), [profile(id, 'cool')]).tracker;
+      const contradictory = { ...profile(id, 'fire'), heartRate: hr,
+        zoneConfig: [{ id: 'fire', min: fire }],
+        zoneEntry: { id: ++serial, zoneId: 'fire', heartRate: hr, threshold: fire, enteredAt: 1000 } };
+      expect(nextFireToasts(t, [contradictory]).entries).toEqual([]);
+    }
+  );
+
+  it('does not turn an untrusted default Cool into an initial Fire crossing', () => {
+    let t = nextFireToasts(createFireZoneTracker(), [{ ...profile('rider-one', 'cool'), zoneTrusted: false }]).tracker;
+    expect(nextFireToasts(t, [profile('rider-one', 'fire')]).entries).toEqual([]);
+    t = nextFireToasts(t, [{ ...profile('rider-one', 'fire'), zoneTrusted: false }]).tracker;
+    expect(nextFireToasts(t, [{ ...profile('rider-one', 'fire'), zoneTrusted: false }]).entries).toEqual([]);
+  });
+
+  it('requires entry evidence and rejects a reused pre-reset Fire entry', () => {
+    let t = nextFireToasts(createFireZoneTracker(), [profile('rider-one', 'cool')]).tracker;
+    const fire = profile('rider-one', 'fire');
+    expect(nextFireToasts(t, [{ ...fire, zoneEntry: null }]).entries).toEqual([]);
+    t = nextFireToasts(t, [fire], { now: 2000 }).tracker;
+    t = nextFireToasts(t, [profile('rider-one', 'cool')], { now: 3000 }).tracker;
+    expect(nextFireToasts(t, [fire], { now: 2000 + FIRE_TOAST_COOLDOWN_MS + 1 }).entries).toEqual([]);
+  });
+
+  it('carries the accepted entry HR through later hysteresis and queue delays', () => {
+    const t = nextFireToasts(createFireZoneTracker(), [profile('rider-one', 'cool')]).tracker;
+    const r = nextFireToasts(t, [{ ...profile('rider-one', 'fire'), heartRate: 173 }], { now: 8000 });
+    expect(r.entries).toEqual([{ userId: 'rider-one', name: 'rider-one', heartRate: 181, fireThreshold: 175 }]);
+  });
+
+  it('rejects entry evidence from a different threshold or zone', () => {
+    const t = nextFireToasts(createFireZoneTracker(), [profile('rider-one', 'cool')]).tracker;
+    const fire = profile('rider-one', 'fire');
+    expect(nextFireToasts(t, [{ ...fire, zoneEntry: { ...fire.zoneEntry, threshold: 170 } }]).entries).toEqual([]);
+    expect(nextFireToasts(t, [{ ...fire, zoneEntry: { ...fire.zoneEntry, zoneId: 'hot' } }]).entries).toEqual([]);
+  });
+
 });
