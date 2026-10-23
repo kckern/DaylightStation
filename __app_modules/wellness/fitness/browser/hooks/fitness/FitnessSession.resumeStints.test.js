@@ -45,19 +45,20 @@ function savedPayload(now) {
       { entityId: 'e-a', profileId: 'kid-a', deviceId: 'D2', startTime: T0, endTime: null, status: 'active', startTick: 0, relabeledFrom: ['kid-b'] },
     ],
     treasureBox: { totalRings: 8, buckets: { yellow: 8 } },
+    metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D2'] }] } },
   };
 }
 
 const hr = (deviceId, bpm) => ({ topic: 'fitness', type: 'ant', deviceId, profile: 'HR', data: { ComputedHeartRate: bpm, timestamp: Date.now() } });
 
-function resumed() {
+function resumed(edit = (payload) => payload) {
   const session = new FitnessSession();
   session.userManager.setAssignmentLedger(new DeviceAssignmentLedger());
   session.userManager.configure({ primary: [{ id: 'kid-a', name: 'Kid A', hr_device_id: 'D2' }] }, ZONES);
   session.ensureStarted({ force: true, reason: 'resumed' });
   session.zoneProfileStore.setBaseZoneConfig(ZONES);
   session.treasureBox.configure({ zones: ZONES });
-  session._hydrateFromSession(savedPayload(Date.now()));
+  session._hydrateFromSession(edit(savedPayload(Date.now())));
   return session;
 }
 
@@ -82,13 +83,23 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     const session = resumed();
     expect(session.treasureBox.perUser.get('kid-a')?.totalRings).toBe(6);
     expect(session._timelineRecorder._cumulativeBeats.get('kid-a')).toBeCloseTo(47.1);
-    for (let i = 0; i < 4; i++) session.ingestData(hr('D2', 80)); // fresh accepted Cool after reload
-    vi.advanceTimersByTime(6000);
+    // Trust earned before the reload carries over: no fresh Cool is needed.
     for (let i = 0; i < 30; i += 1) { vi.advanceTimersByTime(1000); session.ingestData(hr('D2', 140)); }
     const rings = session.timeline.series['user:kid-a:rings_total'].filter(Number.isFinite);
     expect(rings.every((v, i) => i === 0 || v >= rings[i - 1])).toBe(true);
     expect(rings[rings.length - 1]).toBeGreaterThan(6);
     session.reset();
+  });
+
+  it('restores zone trust only for a short reload of the same wearer', () => {
+    expect(resumed().zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    const longGap = resumed((p) => ({ ...p, endTime: Date.now() - 10 * 60 * 1000 }));
+    expect(longGap.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    const moved = resumed((p) => ({ ...p, metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D9'] }] } } }));
+    expect(moved.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    const session = resumed();
+    expect(session.summary.metadata.zone_trust.riders).toEqual([{ userId: 'kid-a', deviceIds: ['D2'] }]);
+    [longGap, moved, session].forEach((s) => s.reset());
   });
 
   it('restores the stints, so a correction after the reload still moves the whole stint', () => {

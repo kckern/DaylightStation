@@ -93,6 +93,21 @@ export class ZoneProfileStore {
     getLogger().info('fitness.zone_state.reset', { userId, reason });
   }
 
+  /** Riders holding accepted-Cool trust, for persisting with the session. */
+  getTrustedUserIds() {
+    return [...this._trustedUsers];
+  }
+
+  /**
+   * Re-admit trust a rider earned earlier in the same session (kiosk reload).
+   * The caller decides eligibility; the next live reading commits the zone.
+   */
+  restoreTrust(userId) {
+    if (userId == null || this._trustedUsers.has(userId)) return;
+    this._trustedUsers.add(userId);
+    this._signature = null;
+  }
+
   isZoneTrusted(userId) {
     return this._profiles.get(userId)?.zoneTrusted === true;
   }
