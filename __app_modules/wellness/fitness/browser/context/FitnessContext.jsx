@@ -1,4 +1,4 @@
-import { committedZoneId } from '../lib/committedZone.js';
+import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -2022,17 +2022,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const displayLabel = getDisplayLabel(user.name, { userId: user.id });
       // The earned zone comes from ZoneProfileStore (trusted + hysteresis), the
       // same source as governance and the roster. User.currentData is raw HR.
-      const committed = session?.zoneProfileStore?.getZoneState?.(user.id) || null;
-      const zoneTrusted = committed ? committed.zoneTrusted === true : null;
-      const earned = committed ? (zoneTrusted ? committed : null) : null;
-
       map.set(key, {
         name: user.name,
         heartRate: data.heartRate,
-        zoneId: committed ? (earned?.zoneId ? String(earned.zoneId).toLowerCase() : null) : data.zone,
-        zoneName: committed ? (earned?.zoneName || null) : data.zoneName,
-        zoneColor: committed ? (earned?.zoneColor || null) : data.color,
-        zoneTrusted,
+        ...earnedZoneFields(session?.zoneProfileStore?.getZoneState?.(user.id)),
         targetHeartRate: data.targetHeartRate,
         rangeMin: data.rangeMin,
         rangeMax: data.rangeMax,
