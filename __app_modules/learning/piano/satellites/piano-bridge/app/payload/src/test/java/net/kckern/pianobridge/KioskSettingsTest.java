@@ -46,7 +46,7 @@ public class KioskSettingsTest {
                 "reloadPageFailure", "reloadOnIdle", "reloadEachSeconds"}) {
             assertNotNull("desired set must contain " + k, KioskSettings.DESIRED.get(k));
         }
-        assertEquals(11, KioskSettings.DESIRED.size());
+        assertEquals(12, KioskSettings.DESIRED.size());
     }
 
     @Test
@@ -136,5 +136,24 @@ public class KioskSettingsTest {
         java.util.Set<String> s = new java.util.HashSet<>();
         for (Drift d : drifts) s.add(d.key);
         return s;
+    }
+
+    @Test public void volumeLevels_set_isDriftAndRepairsToEmpty() {
+        // FKB's volumeLevels=3:100 re-asserted STREAM_MUSIC=15 against the audio guard
+        // ~25x/s (2026-10-23). The only safe desired value is empty — a level such as
+        // 3:0 would write the ACTIVE device's index, which is the piano.
+        java.util.Map<String, String> live = new java.util.HashMap<>();
+        live.put("volumeLevels", "3:100");
+        java.util.List<KioskSettings.Drift> d = KioskSettings.detect(live);
+        assertEquals(1, d.size());
+        assertEquals("volumeLevels", d.get(0).key);
+        assertEquals("", d.get(0).desired);
+        assertEquals(KioskSettings.Type.STRING, d.get(0).type);
+    }
+
+    @Test public void volumeLevels_empty_isNotDrift() {
+        java.util.Map<String, String> live = new java.util.HashMap<>();
+        live.put("volumeLevels", "");
+        assertEquals(0, KioskSettings.detect(live).size());
     }
 }
