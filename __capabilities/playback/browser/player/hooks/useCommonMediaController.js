@@ -1563,7 +1563,7 @@ export function useCommonMediaController({
 
   useEffect(() => {
     if (typeof onController === 'function') {
-      onController({
+      const release = onController({
         stallState,
         readStallState,
         getMediaEl,
@@ -1610,6 +1610,8 @@ export function useCommonMediaController({
           return mediaEl?.duration || 0;
         }
       });
+      // A renderer registration may provide identity-scoped cleanup.
+      return typeof release === 'function' ? release : undefined;
     }
   }, [onController, stallState, readStallState, getMediaEl, elementKey]);
 
