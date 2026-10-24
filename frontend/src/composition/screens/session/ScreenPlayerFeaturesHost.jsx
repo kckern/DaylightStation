@@ -12,6 +12,7 @@ import { getPlayerQueueOpRegistry } from "../../../../../__capabilities/playback
 import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { getPlayerSessionRegistry } from "../../../../../__capabilities/playback/browser/sessions.mjs";
 import { isSlideshowItem } from '@shared-contracts/media/playerFeatures.mjs';
+import { playbackQualityChange } from '@shared-contracts/media/playbackQuality.mjs';
 import { musicBehindVerdict } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { Player as Player } from "../../../../../__app_modules/media/media/browser/playback.mjs";
 import CameraOverlay from "../../../../../__app_modules/household/camera/browser/overlay.mjs";
@@ -64,6 +65,16 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         const player = ownerPlayer();
         if (!player?.setTracks) return { ok: false, code: 'NO_PLAYBACK', error: 'Nothing is playing here' };
         return player.setTracks(selection);
+      },
+      setQuality: (request) => {
+        const current = source?.capture?.()?.snapshot ?? source?.getSnapshot?.();
+        const result = playbackQualityChange(current, request);
+        if (!result.ok) return result;
+        if (typeof source?.adopt !== 'function') return { ok: false, code: 'QUALITY_UNSUPPORTED' };
+        return source.adopt(result.snapshot, {
+          operationId: `quality-${globalThis.crypto.randomUUID()}`,
+          autoplay: current.state !== 'paused',
+        });
       },
       stopMusic: () => { keepMusicRef.current = false; setMusic(null); features.setMusicState(null); },
       musicCommand: (op, params) => {

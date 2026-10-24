@@ -22,6 +22,7 @@
  * @property {{ play, pause, stop, seekAbs, seekRel, skipNext, skipPrev, restartCurrent }} transport
  * @property {{ playNow, playNext, addUpNext, add, remove, reorder, jump, clear }} queue
  * @property {{ setShuffle, setRepeat, setShader, setVolume }} config
+ * @property {{ setOverrides: (request: {contentId: string, queueItemId?: string, sessionId?: string, quality: Object}) => Promise<Object>|Object }} [quality] target-bound video quality replacement
  * @property {{ reset, adoptSnapshot }} lifecycle
  * @property {{ snapshotForHandoff, receiveClaim }} portability   (local only)
  * @property {{ seekable: boolean, live: boolean, reason: string|null, acked: boolean }} capabilities

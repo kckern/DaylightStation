@@ -17,6 +17,7 @@ import { FleetProvider } from "./fleet/FleetProvider.jsx";
 import { PeekProvider } from "./peek/PeekProvider.jsx";
 import { CastTargetProvider } from "./cast/CastTargetProvider.jsx";
 import { DispatchProvider } from "./cast/DispatchProvider.jsx";
+import { PlaybackQualityProvider } from "./quality/PlaybackQualityProvider.jsx";
 import mediaLog from "./logging/mediaLog.js";
 import { wsService } from "../../../../frontend/src/services/WebSocketService.js";
 import "./MediaApp.scss";
@@ -65,6 +66,7 @@ export default function MediaApp() {
         styles={{ notification: { pointerEvents: 'none' } }}
       />
       <ClientIdentityProvider>
+        <PlaybackQualityProvider>
         <LocalSessionProvider>
           <FleetProvider>
             <PeekProvider>
@@ -80,6 +82,7 @@ export default function MediaApp() {
             </PeekProvider>
           </FleetProvider>
         </LocalSessionProvider>
+        </PlaybackQualityProvider>
       </ClientIdentityProvider>
     </AppThemeProvider>
   );

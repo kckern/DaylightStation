@@ -17,6 +17,7 @@ const service = (result = { ok: true, commandId: 'c1' }) => ({
 
 describe('player feature routes', () => {
   it.each([
+    ['quality', { contentId: 'plex:42', quality: { maxResolution: '720', adaptive: false } }, 'set-quality', { contentId: 'plex:42', quality: { maxResolution: '720', adaptive: false } }],
     ['tracks', { subtitle: '1278358' }, 'set-tracks', { subtitle: '1278358' }],
     ['tracks', { subtitle: 'off', audio: '7' }, 'set-tracks', { audio: '7', subtitle: 'off' }],
     ['brief/close', {}, 'close-brief', {}],
@@ -30,6 +31,9 @@ describe('player feature routes', () => {
   });
 
   it.each([
+    ['quality', { contentId: 'plex:42' }],
+    ['quality', { contentId: 'plex:42', quality: { maxResolution: 'banana' } }],
+    ['quality', { quality: { maxResolution: '720' } }],
     ['tracks', {}],
     ['tracks', { audio: 3 }],
     ['music-behind', { op: 'start' }],

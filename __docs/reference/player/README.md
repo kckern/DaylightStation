@@ -14,6 +14,10 @@ anything.
 
 ---
 
+Explicit limits and MediaApp controls are documented in
+[Playback quality overrides](./playback-quality.md), including URL parameters,
+current-item replacement and the stall remediation ladder.
+
 ## How It Fits
 
 ```

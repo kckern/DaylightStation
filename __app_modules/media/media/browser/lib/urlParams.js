@@ -1,3 +1,4 @@
+import { PLAYBACK_QUALITY_KEYS } from '@shared-contracts/media/playbackQuality.mjs';
 // frontend/src/modules/Media/lib/urlParams.js
 // Navigation params and playback deep-link params share one URL
 // (__docs/reference/media/media-app.md "Navigation model and paths"). These are
@@ -6,7 +7,7 @@
 // namespace is enumerated.
 
 export const NAV_PARAM_KEYS = ['view', 'path', 'contentId', 'deviceId'];
-export const PLAYBACK_PARAM_KEYS = ['play', 'queue', 'shuffle', 'shader', 'volume'];
+export const PLAYBACK_PARAM_KEYS = ['play', 'queue', 'shuffle', 'shader', 'volume', ...PLAYBACK_QUALITY_KEYS, 'maxVideoResolution'];
 
 /** Parse the nav entry { view, params } out of a search string. */
 export function readNavFromSearch(search) {

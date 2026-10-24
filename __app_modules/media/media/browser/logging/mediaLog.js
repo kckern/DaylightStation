@@ -139,6 +139,9 @@ export const mediaLog = {
   // Player features (P2): tracks, Show briefly, music behind.
   playerFeature:          info('player-feature.command'),
   playerFeatureFailed:    warn('player-feature.failed'),
+  qualityChanged:         info('quality.changed'),
+  qualityChangeFailed:    warn('quality.change-failed'),
+  qualityOpened:         debug('quality.opened'),
   playerFeatureState:     debug('player-feature.state'),
   // Household media memory on the start page and item menus (batch A:
   // FIND.7a/9a/10a/11a/12a/13a, PLAY.4a).

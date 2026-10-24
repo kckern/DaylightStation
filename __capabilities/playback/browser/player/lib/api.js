@@ -1,6 +1,7 @@
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { playbackLog, setPlexSessionIdentity } from './playbackLogger.js';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
+import { normalizePlaybackQuality } from '../../../../../shared/contracts/media/playbackQuality.mjs';
 
 // Every answer this module gets back opens a Plex transcode session, and until
 // now only the failures were recorded: on 2026-08-16 the player minted 495
@@ -51,7 +52,7 @@ export function normalizeStreamContentId(contentId) {
  * @param {string} params.session - Optional session identifier
  * @returns {Promise<Object>} Media information
  */
-export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, session, resume }) {
+export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, transcode, adaptive, session, resume }) {
   // Normalize legacy params to contentId — backend handles all source resolution
   const rawContentId = contentId || (plex != null ? String(plex) : null) || media || null;
   if (!rawContentId) {
@@ -82,9 +83,9 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
     return qs ? `${base}?${qs}` : base;
   };
 
-  const queryCommon = {};
-  if (maxVideoBitrate !== undefined) queryCommon.maxVideoBitrate = maxVideoBitrate;
-  if (maxResolution !== undefined) queryCommon.maxResolution = maxResolution;
+  const quality = normalizePlaybackQuality({ maxVideoBitrate, maxResolution, transcode, adaptive });
+  // Boolean false is intentional quality policy, not an omitted query value.
+  const queryCommon = Object.fromEntries(Object.entries(quality).map(([key, value]) => [key, String(value)]));
   if (session !== undefined && session !== null) queryCommon.session = session;
   if (resume === false) queryCommon.resume = 'false';
 
@@ -141,7 +142,7 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
       const playResponse = await DaylightAPI(url);
       logSuccess(playResponse);
       if (playResponse) {
-        return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
+        return { ...playResponse, ...quality, assetId: playResponse.assetId || playResponse.id };
       }
       return null;
     }
@@ -153,7 +154,7 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
     if (playResponse.resume_position !== undefined && playResponse.seconds === undefined) {
       playResponse.seconds = playResponse.resume_position;
     }
-    return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
+    return { ...playResponse, ...quality, assetId: playResponse.assetId || playResponse.id };
   } catch (error) {
     playbackLog('fetch-media-failed', {
       ...requestFacts,

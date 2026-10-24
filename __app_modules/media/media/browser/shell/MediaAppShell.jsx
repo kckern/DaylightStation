@@ -18,6 +18,7 @@ import { RemoteScreenProblems } from "./RemoteScreenProblems.jsx";
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from "./LocalStopFeedbackContext.jsx";
 import { SearchLauncherContext } from "./SearchLauncherContext.js";
 import { slashIsNotForSearch } from "./searchShortcut.js";
+import { PlaybackQualityHost } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import "./MediaShell.scss";
 
@@ -85,6 +86,7 @@ function ShellInner() {
           </div>
         )}
         <TabBar />
+        <PlaybackQualityHost />
         {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
       </div>
     </DismissStackProvider>

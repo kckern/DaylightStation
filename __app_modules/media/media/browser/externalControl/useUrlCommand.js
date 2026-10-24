@@ -1,3 +1,4 @@
+import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 // frontend/src/modules/Media/externalControl/useUrlCommand.js
 // URL deep-link protocol (C8.1, §8): ?play= autoplays, ?queue= appends, plus
 // shuffle/shader/volume modifiers. Processing is idempotent across refreshes
@@ -44,7 +45,8 @@ function parse(search) {
 
   if (!play && !queue && volume == null && shader == null && !shuffle) return null;
 
-  return { play, queue, shuffle, shader, volume, unknownKeys };
+  const quality = normalizePlaybackQuality(Object.fromEntries(sp));
+  return { play, queue, shuffle, shader, volume, quality, unknownKeys };
 }
 
 export function useUrlCommand(controller, searchString = typeof window !== 'undefined' ? window.location.search : '') {
@@ -52,7 +54,12 @@ export function useUrlCommand(controller, searchString = typeof window !== 'unde
 
   useEffect(() => {
     if (appliedRef.current || !controller) return;
-    const cmd = parse(searchString);
+    let cmd;
+    try { cmd = parse(searchString); } catch (error) {
+      mediaLog.urlCommandIgnored({ reason: 'invalid-quality', error: error.message });
+      appliedRef.current = true;
+      return;
+    }
     if (!cmd) return;
 
     const token = tokenFor(searchString);
@@ -73,11 +80,11 @@ export function useUrlCommand(controller, searchString = typeof window !== 'unde
 
     // Precedence (§8): play wins; queue appends after the played item.
     if (cmd.play) {
-      controller.queue.playNow({ contentId: cmd.play }, { clearRest: true });
+      controller.queue.playNow({ contentId: cmd.play, ...cmd.quality }, { clearRest: true });
       mediaLog.urlCommandProcessed({ param: 'play', value: cmd.play });
     }
     if (cmd.queue) {
-      controller.queue.add({ contentId: cmd.queue });
+      controller.queue.add({ contentId: cmd.queue, ...cmd.quality });
       mediaLog.urlCommandProcessed({ param: 'queue', value: cmd.queue });
     }
 

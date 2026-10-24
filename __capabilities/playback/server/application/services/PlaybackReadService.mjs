@@ -14,7 +14,7 @@ export class PlaybackReadService {
     return this.contentCatalog.playbackManifest('plex', id, options);
   }
 
-  async resolve({ compoundId, shuffle = false, resume, session, bookmark = false }) {
+  async resolve({ compoundId, shuffle = false, resume, session, bookmark = false, quality = {} }) {
     const resolved = this.contentIdResolver.resolve(compoundId);
     if (!resolved) return { kind: 'unknown_source' };
     const { source, localId } = resolved;
@@ -31,7 +31,7 @@ export class PlaybackReadService {
         if (!playables.length) return { kind: 'no_playables' };
         selectedItem = playables[Math.floor(this.random() * playables.length)];
       }
-      return { kind: 'found', body: await this.#response(selectedItem, resolved, { resume, session }) };
+      return { kind: 'found', body: await this.#response(selectedItem, resolved, { resume, session, quality }) };
     }
 
     const item = await this.contentCatalog.getItem(resolved);
@@ -58,6 +58,7 @@ export class PlaybackReadService {
         body: await this.#response(playables[0], resolved, {
           resume,
           session,
+          quality,
           containerId: `${source}:${localId}`,
         }),
       };
@@ -66,14 +67,14 @@ export class PlaybackReadService {
     const progressNamespace = await this.contentCatalog.progressNamespace(resolved, item.id);
     const watchState = await this.playResponseService.getWatchState(item, progressNamespace, source);
     if (bookmark && watchState?.bookmark) watchState.playhead = watchState.bookmark.playhead;
-    const descriptor = this.contentCatalog.describeItem(item, resolved, session);
-    return { kind: 'found', body: this.playResponseService.toPlayResponse(item, watchState, { descriptor, resume, session }) };
+    const descriptor = this.contentCatalog.describeItem(item, resolved, session, quality);
+    return { kind: 'found', body: this.playResponseService.toPlayResponse(item, watchState, { descriptor, resume, session, quality }) };
   }
 
   async #response(item, resolution, options) {
     const progressNamespace = await this.contentCatalog.progressNamespace(resolution, item.id);
     const watchState = await this.playResponseService.getWatchState(item, progressNamespace, resolution.source);
-    const descriptor = this.contentCatalog.describeItem(item, resolution, options.session);
+    const descriptor = this.contentCatalog.describeItem(item, resolution, options.session, options.quality);
     return this.playResponseService.toPlayResponse(item, watchState, { descriptor, ...options });
   }
 }

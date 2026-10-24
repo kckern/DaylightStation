@@ -10,6 +10,8 @@ const resolveLocal = vi.fn();
 vi.mock("../cast/useDispatch.js", () => ({
   useDispatch: () => ({ dispatchToTarget, dispatches: new Map(), retry: vi.fn(), recordLocal, resolveLocal }),
 }));
+let selectedOverrides = {};
+vi.mock('../quality/PlaybackQualityProvider.jsx', () => ({ usePlaybackQuality: () => ({ getOverrides: id => selectedOverrides[id] ?? {} }) }));
 let controller;
 vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ controller, queue: controller?.queue, config: controller?.config }),
@@ -29,6 +31,7 @@ import { useContentDispatch } from "./useContentDispatch.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  selectedOverrides = {};
   aim = { targetIds: [], mode: 'fork' };
   controller = createLocalSessionController({ clientId: 'outcome-client' });
   controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
@@ -70,5 +73,25 @@ describe('useContentDispatch outcomes', () => {
     await act(async () => { result.current.dispatchLeafVerb('add', 'plex:697368', { title: 'Disclosure Day', format: 'video' }); await Promise.resolve(); await Promise.resolve(); });
     expect(resolveLocal).toHaveBeenCalledWith('local-attempt', expect.objectContaining({ phase: 'failed', reason: 'This screen is busy' }));
     expect(notificationsShow).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('selected quality dispatch', () => {
+  it('attaches per-item overrides to local playback and preserves them in the queue', async () => {
+    selectedOverrides = { 'plex:42': { maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false } };
+    const { result } = renderHook(() => useContentDispatch());
+    await act(async () => { result.current.dispatch('plex:42', { title: 'Movie', format: 'video' }); });
+    expect(controller.getSnapshot().currentItem).toMatchObject(selectedOverrides['plex:42']);
+    expect(controller.getSnapshot().queue.items[0]).toMatchObject(selectedOverrides['plex:42']);
+    await act(async () => { result.current.dispatchLeafVerb('add', 'plex:43', { title: 'Other', format: 'video' }); });
+    expect(controller.getSnapshot().queue.items[1]).not.toHaveProperty('maxResolution');
+  });
+  it('sends selected overrides in the remote item action', async () => {
+    selectedOverrides = { 'plex:42': { maxResolution: '720', adaptive: false } };
+    aim = { targetIds: ['office-tv'], mode: 'fork' };
+    const { result } = renderHook(() => useContentDispatch());
+    await act(async () => { result.current.dispatch('plex:42', { title: 'Movie', format: 'video' }); });
+    expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ itemAction: expect.objectContaining({ item: expect.objectContaining(selectedOverrides['plex:42']) }) }));
   });
 });
