@@ -179,7 +179,7 @@ Consequences:
 
 - **Single authority.** All five apply paths — hydration, `setVolume` (user
   change), `toggleMute`, `applyToPlayer`, and `setDuck` — multiply the stored
-  level by `duckRef`. Nothing writes the element volume outside this funnel.
+  level by `duckRef`. The Player also writes the element on load and on a `volume` prop change; see "The Player cannot lift a held duck" below.
 - **No override.** `useVolumeSync` re-applies the level on `canplay`, resilience
   recovery, and mount. Because those go through the same funnel, they re-apply the
   **ducked** level instead of clobbering the duck.
@@ -193,6 +193,39 @@ Consequences:
   session's `lift()` always hits the same multiplier and player.
 - The cue **SFX plays on its own independent `Audio` element** — a separate track
   from the `<video>`; the duck only scales the video's `level`, never `muted`.
+- **The Player cannot lift a held duck.** The Player re-writes `element.volume`
+  from its un-ducked `volume` prop whenever that prop changes, in a passive
+  effect that runs before the parent's. `usePersistentVolume` therefore
+  re-asserts the ducked level in its own effect after every level change while
+  `duckRef < 1`, so a volume tap mid-SFX stays proportional.
+
+### The boost amplifier carries the un-ducked level
+
+`FitnessPlayer` always routes the video through `useMediaAmplifier`
+(`components/useMediaAmplifier.js`): `MediaElementSource → GainNode →
+destination`, even at boost 1. A `MediaElementAudioSourceNode`'s output **already
+includes `element.volume` and `muted`**. The gain is the viewer's **un-ducked**
+level × boost (`muted ? 0 : level × boost`), with `level` passed in from
+`usePersistentVolume`'s `volume` (the stored level, which never includes the
+duck). It must never be `element.volume × boost`.
+
+| | `element.volume` | gain | audible |
+|---|---|---|---|
+| Normal playback | `level` | `level × boost` | `level² × boost` (unchanged since 2025-12) |
+| Ducked | `level × duck_to` | `level × boost` | `duck_to × level² × boost` |
+
+The perceived loudness curve of the volume buttons is therefore the historical
+square law. A duck, however, is applied **once**, so `duck_to: 0.15` is exactly
+15% of normal loudness (about −16 dB).
+
+Until 2026-10-23 the gain was `element.volume × boost`, from the amplifier's
+first version in 2025-12. A duck lowers `element.volume`, so it reached both
+factors and was squared: `duck_to: 0.15` landed at about 2%, which is silent
+under the SFX. Without a `level` option the hook still falls back to
+`element.volume`. `FitnessPlayer` always passes the level, and no other
+consumer exists. `media_amplifier.gain` (debug) logs the gain, boost, level,
+`levelSource` (`volume-store` | `element`), element volume and mute state
+whenever the gain changes.
 
 ---
 

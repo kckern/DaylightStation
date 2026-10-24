@@ -279,11 +279,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     registerVideoPlayer(mediaElement);
   }, [mediaElement, registerVideoPlayer]);
 
-  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
-    grandparentId: currentItem?.grandparentId,
-    parentId: currentItem?.parentId,
-    trackId: currentItem?.id
-  });
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const [isSeeking, setIsSeeking] = useState(false);
   const seekTimeoutRef = useRef(null);
@@ -842,6 +837,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     videoGrandparentId: grandparentId,
     videoParentId: parentId,
     videoTrackId: currentMediaIdentity
+  });
+
+  // WebAudio boost amplifier. It takes the UN-DUCKED level so normal playback
+  // keeps its loudness while a governance duck scales the output by exactly
+  // duck_to (see useMediaAmplifier and __docs/reference/fitness/audio-duck-cues.md).
+  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
+    grandparentId: currentItem?.grandparentId,
+    parentId: currentItem?.parentId,
+    trackId: currentItem?.id,
+    level: videoVolume?.volume
   });
 
   // Apply persisted volume when media element becomes available or after recovery

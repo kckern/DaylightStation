@@ -961,8 +961,10 @@ Triggers (each fires once per occurrence):
 
 Common to all cues:
 
-- `duck_to` is multiplicative against the viewer's current volume (`0.1` = 10%),
-  so the duck respects wherever they set the master level.
+- `duck_to` is the fraction of the video's normal audible loudness during the
+  cue (`0.1` = 10%, about -20 dB), whatever level the viewer set. The duck is
+  applied once (see `audio-duck-cues.md`, "The boost amplifier carries the
+  un-ducked level").
 - `sound` resolves against the media root; the referenced file must exist there.
 - When two cues would coincide, the grace-period warning wins — an impending
   lock is the most important thing to signal. Challenge *failure* has no cue: the
