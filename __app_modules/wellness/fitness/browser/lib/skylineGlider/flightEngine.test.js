@@ -311,3 +311,58 @@ describe('fresh input and shipped response', () => {
     expect(state.altitude).toBeCloseTo(0.57, 2);
   });
 });
+
+describe('weapons', () => {
+  const armed = {
+    ...course,
+    segments: [
+      { id: 'cp', type: 'checkpoint', start_s: 5, restart_altitude: 0.5 },
+      { id: 'finish', type: 'finish', start_s: 20 },
+    ],
+    entities: [{ id: 'tree', class: 'breakable', at_s: 3, altitude: 0.78, width_s: 0.5, height: 0.3 }],
+  };
+  const start = (over = {}) => ({ ...createFlightState(armed, { calibration, altitude: 0.6, courseTime: 1 }), ...over });
+  const fly = (state, seconds, input) => {
+    let next = state;
+    for (let i = 0; i < Math.round(seconds * 60); i += 1) next = stepFlight(next, input, 1 / 60, armed);
+    return next;
+  };
+  const hold = fresh(55);
+
+  it('starts armed and fills weapon fields on an older saved state', () => {
+    expect(start()).toMatchObject({ projectiles: [], bombsLeft: 5, destroyedBy: {} });
+    const { projectiles, bombsLeft, destroyedBy, ...legacy } = start();
+    expect(stepFlight(legacy, hold, 1 / 60, armed)).toMatchObject({ projectiles: [], bombsLeft: 5 });
+  });
+
+  it('fires only on the first sub-step of a frame', () => {
+    // 0.5 s outlasts the 0.3 s laser cooldown, so a press repeated on every sub-step would fire twice.
+    const next = stepFlight(start(), { ...hold, actions: ['laser'] }, 0.5, armed);
+    expect(next.shotsFired).toBe(1);
+  });
+
+  it('shoots a tree down without costing a life', () => {
+    let next = stepFlight(start(), { ...hold, actions: ['laser'] }, 1 / 60, armed);
+    next = fly(next, 0.5, hold);
+    expect(next).toMatchObject({ lives: 3, collisions: 0, destroyedIds: ['tree'], destroyedBy: { tree: 'laser' } });
+  });
+
+  it('records a crash-broken breakable as broken by crash', () => {
+    const next = stepFlight(start({ courseTime: 2.5, altitude: 0.7 }), fresh(30), 1 / 60, armed);
+    expect(next.destroyedBy).toEqual({ tree: 'crash' });
+  });
+
+  it('cannot fire while paused for the sensor', () => {
+    const paused = { ...createFlightState(armed, { calibration, armedAtMs: 10 }), courseTime: 1 };
+    expect(stepFlight(paused, { rpm: 60, connected: false, ts: 5, actions: ['laser'] }, 1 / 60, armed).shotsFired).toBe(0);
+  });
+
+  it('refills bombs at a checkpoint and on restart, and clears shots on crash', () => {
+    let next = stepFlight(start({ courseTime: 4.9, bombsLeft: 1 }), hold, 0.2, armed);
+    expect(next.bombsLeft).toBe(5);
+    const crashed = stepFlight({ ...next, bombsLeft: 0, projectiles: [{ id: 'laser-9', kind: 'laser', at_s: 6, origin_s: 6, altitude: 0.6 }], altitude: 0.99 }, hold, 1 / 60, { ...armed, segments: [...armed.segments.slice(0, 1), { id: 'floor', type: 'lower-terrain', start_s: 5, end_s: 8, top: 0.7 }, armed.segments[1]] });
+    expect(crashed).toMatchObject({ phase: 'crashed', projectiles: [] });
+    const restarted = stepFlight(crashed, hold, armed.rules.restart_delay_s + 0.05, armed);
+    expect(restarted).toMatchObject({ phase: 'playing', bombsLeft: 5, projectiles: [], blasts: [] });
+  });
+});

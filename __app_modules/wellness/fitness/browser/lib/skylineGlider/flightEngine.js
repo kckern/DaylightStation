@@ -7,6 +7,7 @@ import {
   safeBandAt,
   terrainContact,
 } from "./flightGeometry.js";
+import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
 
 const STEP = 1 / 60;
 
@@ -26,12 +27,14 @@ function applyCourseEvents(state, previousTime, course) {
   for (const checkpoint of crossingSegments(course, previousTime, next.courseTime, 'checkpoint')) {
     next = {
       ...next,
+      bombsLeft: weaponRules(course).bombs,
       checkpoint: {
         id: checkpoint.id,
         time: checkpoint.start_s,
         restartAltitude: checkpoint.restart_altitude ?? 0.5,
         collectedIds: [...next.collectedIds],
         destroyedIds: [...(next.destroyedIds || [])],
+        destroyedBy: { ...(next.destroyedBy || {}) },
       },
     };
   }
@@ -56,6 +59,7 @@ function crash(state, course, { cause, segmentId = null, entityId = null, counte
     phase: 'crashed',
     crashRemaining: course.rules.restart_delay_s,
     crashCause: cause,
+    projectiles: [],
     collisions: counted ? state.collisions : state.collisions + 1,
     lastCollisionSegmentId: segmentId,
     lastCollisionEntityId: entityId,
@@ -87,7 +91,11 @@ function collide(state, course) {
   const destroyed = new Set(state.destroyedIds || []);
   const broken = touching.filter((entity) => entity.class === 'breakable' && !destroyed.has(entity.id));
   if (!broken.length) return state;
-  const next = { ...state, destroyedIds: [...destroyed, ...broken.map((entity) => entity.id)] };
+  const next = {
+    ...state,
+    destroyedIds: [...destroyed, ...broken.map((entity) => entity.id)],
+    destroyedBy: { ...(state.destroyedBy || {}), ...Object.fromEntries(broken.map((entity) => [entity.id, 'crash'])) },
+  };
   if (state.invincibleRemaining > 0) return next;
   const hit = {
     ...next,
@@ -114,6 +122,12 @@ function restartAtCheckpoint(state, course) {
     crashCause: null,
     collectedIds: [...state.checkpoint.collectedIds],
     destroyedIds: [...(state.checkpoint.destroyedIds || [])],
+    destroyedBy: { ...(state.checkpoint.destroyedBy || {}) },
+    projectiles: [],
+    blasts: [],
+    bombsLeft: weaponRules(course).bombs,
+    laserCooldown: 0,
+    bombCooldown: 0,
     restarts: state.restarts + 1,
   };
 }
@@ -195,6 +209,8 @@ function singleStep(state, input, dt, course) {
     invincibleRemaining: Math.max(0, state.invincibleRemaining - dt),
     courseTime: state.courseTime + dt,
   };
+  next = fireWeapons(next, input?.actions, course);
+  next = advanceWeapons(next, dt, course);
   next = applyCourseEvents(next, previousTime, course);
   return collide(next, course);
 }
@@ -230,16 +246,21 @@ export function createFlightState(course, {
     lastInputTs: null,
     collectedIds: [],
     destroyedIds: [],
-    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [] },
+    ...initialWeaponState(course),
+    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [], destroyedBy: {} },
   };
 }
 
 export function stepFlight(state, input, elapsedSeconds, course) {
   let remaining = Math.max(0, Number(elapsedSeconds) || 0);
-  let next = state;
+  // Checkpoints saved before weapons existed lack these fields.
+  let next = Array.isArray(state.projectiles) ? state : { ...initialWeaponState(course), ...state };
+  // Presses fire once per frame, not once per 1/60 s sub-step.
+  let stepInput = input;
   while (remaining > 1e-9) {
     const dt = Math.min(STEP, remaining);
-    next = singleStep(next, input, dt, course);
+    next = singleStep(next, stepInput, dt, course);
+    if (stepInput?.actions) stepInput = { ...stepInput, actions: undefined };
     remaining -= dt;
   }
   return next;
