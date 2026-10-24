@@ -7,7 +7,9 @@ import GovernanceAudioPlayer from "./GovernanceAudioPlayer.jsx";
 import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
 import "./GovernanceStateOverlay.scss";
-import { checkOverlayPaint } from "./overlayPaintCheck.js";
+import { checkOverlayPaint, describeCompositing } from "./overlayPaintCheck.js";
+import { warningScrimStep } from "./warningScrimStep.js";
+import { createFrameTimingProbe } from "./frameTimingProbe.js";
 
 const TOTAL_NOTCHES = 56;
 
@@ -43,19 +45,45 @@ const warningLogger = () => {
   return _warningLogger;
 };
 const PAINT_CHECK_MS = 2000;
+const FRAME_STATS_MS = 5000;
+const SCRIM_STEP_SETTLE_MS = 700;
 
 /**
  * Observability for the warning UI as the household SEES it — the engine's
  * phase log cannot tell you the chips emptied while the phase held, or that
- * the scrim's darken/blur landed on the meter instead of under it.
+ * the scrim's darken landed on the meter instead of under it.
  * - `shown` / `hidden` (with visibleMs): a run of short pairs IS the flicker.
  * - `rows_changed`: who the chips name, as it changes.
  * - `paint_check` once per showing, then `dimmed` (warn) / `undimmed` on change:
  *   whether the scrim paints above the meter/chips or a filter/opacity applies.
+ *   It carries the compositing picture computed styles cannot otherwise show
+ *   in the log: scrim step + darkness, the video's live filter, device scale,
+ *   chip/meter rects in device px, and EVERY element on the page with a filter
+ *   or backdrop-filter (and whether it overlaps the chips).
+ * - `scrim_step`: each of the (at most four) ramp steps, with the same picture.
+ * - `frame_stats` every 5s while shown (sampled) and once at hide: rAF frame
+ *   intervals + event-loop lag. Long frames with low loop lag = the compositor
+ *   or GPU is struggling, not our JS — the signature of a paint-path thrash
+ *   that no DOM listener can see (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
  */
-function useWarningOverlayObservability(containerRef, rowKeys) {
+function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
   const rowKeysRef = useRef(rowKeys);
   rowKeysRef.current = rowKeys;
+
+  const compositing = () => {
+    const root = containerRef.current;
+    if (!root) return null;
+    const host = root.closest('.fitness-player-content') || root.parentElement || root;
+    return describeCompositing({
+      root,
+      targets: {
+        meter: root.querySelector('.governance-life-meter__frame'),
+        chip: root.querySelector('.governance-progress-overlay__chip'),
+      },
+      scrim: host.querySelector('.governance-warning-scrim'),
+      video: host.querySelector('video, dash-video'),
+    });
+  };
 
   useEffect(() => {
     const shownAt = Date.now();
@@ -70,9 +98,11 @@ function useWarningOverlayObservability(containerRef, rowKeys) {
         chip: root.querySelector('.governance-progress-overlay__chip'),
       }, host.querySelector('.governance-warning-scrim'));
       const payload = { ...result, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt };
-      if (lastDimmed === null) warningLogger().info('governance.warning_overlay.paint_check', payload);
+      if (lastDimmed === null) {
+        warningLogger().info('governance.warning_overlay.paint_check', { ...payload, compositing: compositing() });
+      }
       if (result.dimmed && lastDimmed !== true) {
-        warningLogger().warn('governance.warning_overlay.dimmed', payload);
+        warningLogger().warn('governance.warning_overlay.dimmed', { ...payload, compositing: compositing() });
       } else if (!result.dimmed && lastDimmed === true) {
         warningLogger().info('governance.warning_overlay.undimmed', payload);
       }
@@ -81,9 +111,26 @@ function useWarningOverlayObservability(containerRef, rowKeys) {
     // After the first paint, then on a slow clock while the warning stands.
     const frame = requestAnimationFrame(check);
     const timer = setInterval(check, PAINT_CHECK_MS);
+
+    const probe = createFrameTimingProbe();
+    probe.start();
+    const statsTimer = setInterval(() => {
+      const stats = probe.read();
+      if (stats) {
+        warningLogger().sampled('governance.warning_overlay.frame_stats',
+          { ...stats, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt },
+          { maxPerMinute: 12 });
+      }
+    }, FRAME_STATS_MS);
     return () => {
       cancelAnimationFrame(frame);
       clearInterval(timer);
+      clearInterval(statsTimer);
+      const finalStats = probe.read();
+      probe.stop();
+      if (finalStats) {
+        warningLogger().info('governance.warning_overlay.frame_stats', { ...finalStats, final: true, rows: rowKeysRef.current });
+      }
       warningLogger().info('governance.warning_overlay.hidden', {
         rows: rowKeysRef.current, visibleMs: Date.now() - shownAt,
       });
@@ -96,6 +143,23 @@ function useWarningOverlayObservability(containerRef, rowKeys) {
     warningLogger().info('governance.warning_overlay.rows_changed', { rows: rowKeys, previous: previousKeys.current });
     previousKeys.current = rowKeys;
   }, [rowKeys]);
+
+  const previousStep = useRef(null);
+  useEffect(() => {
+    if (previousStep.current === scrimStep) return;
+    const from = previousStep.current;
+    previousStep.current = scrimStep;
+    if (from === null) return; // the first step rides on paint_check
+    // Once the darkness transition (600ms) has settled, so the logged styles
+    // are the step's real values rather than a frame mid-ease.
+    const timer = setTimeout(() => {
+      warningLogger().info('governance.warning_overlay.scrim_step', {
+        step: scrimStep, from, rows: rowKeysRef.current, compositing: compositing(),
+      });
+    }, SCRIM_STEP_SETTLE_MS);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrimStep]);
 }
 
 const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
@@ -112,11 +176,24 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
   // Support both new (rows) and legacy (offenders) format
   const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
 
+  // Fixed ramp steps (warningScrimStep.js) — the scrim's DOM changes four
+  // times per warning, not every notch.
+  const total = Number.isFinite(countdownTotal) && countdownTotal > 0 ? countdownTotal : 30;
+  const remainingSeconds = Number.isFinite(notches) ? (notches / TOTAL_NOTCHES) * total : countdown;
+  const scrimStep = warningScrimStep(remainingSeconds, total);
+
   const containerRef = useRef(null);
   const rowKeys = items.map((item) => item.key).join(',');
-  useWarningOverlayObservability(containerRef, rowKeys);
+  useWarningOverlayObservability(containerRef, rowKeys, scrimStep);
 
+  // The overlay owns its scrim, so the darkening and the chips mount and
+  // unmount in the same commit (they used to come from two owners, 40-270ms
+  // apart). The scrim is a sibling, not a child: at z 5 it stays below the
+  // challenge deck and player layers, and the CSS desaturates the video
+  // through `.governance-warning-scrim ~ .fitness-video-mirror-wrap`.
   return (
+    <>
+    <div className="governance-warning-scrim" data-step={scrimStep} aria-hidden="true" />
     <div className="governance-progress-overlay" ref={containerRef}>
       {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
@@ -190,6 +267,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
         </div>
       </div>
     </div>
+    </>
   );
 }, (prevProps, nextProps) => {
   // Skip re-render if countdown delta < 0.3s and rows/offenders reference unchanged

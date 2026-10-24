@@ -829,16 +829,6 @@ $lock-zone-hues: (
   pointer-events: none;
   contain: layout style;
 
-
-.governance-overlay__audio {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
   &__offenders {
     position: absolute;
     bottom: clamp(18px, 4vw, 48px);
@@ -954,6 +944,59 @@ $lock-zone-hues: (
     will-change: transform;
   }
 }
+
+.governance-overlay__audio {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+// The governance warning scrim. Rendered by the warning overlay as the sibling
+// just before `.governance-progress-overlay`, inside `.fitness-video-shell`, so
+// it shares `.fitness-player-content`'s stacking context: z 5 puts it over the
+// video and under the chips, the challenge deck and the player's own layers.
+//
+// Five fixed steps (warningScrimStep.js), changed four times per warning:
+// - darkness is the scrim's background-color — the only thing that eases;
+// - desaturation is a STATIC `filter` on the <video> per step, confined to the
+//   video's own subtree so it can never sample or interleave with the chips.
+// No blur and no backdrop-filter: the full-screen, continuously transitioning
+// backdrop-filter that used to do this was the paint-path thrash behind the
+// chips flickering soft (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
+// Never transition `filter` here (warningScrimStep.test.js guards it).
+$warning-scrim-steps: (
+  // step: (darkness, grayscale, sepia)
+  0: (0.1, 0.15, 0.1),
+  1: (0.2, 0.35, 0.15),
+  2: (0.35, 0.6, 0.25),
+  3: (0.55, 0.85, 0.35),
+  4: (0.72, 1, 0.4)
+);
+
+.governance-warning-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background-color: rgba(0, 0, 0, 0.55);
+  transition: background-color 600ms linear;
+
+  @each $step, $v in $warning-scrim-steps {
+    &[data-step="#{$step}"] {
+      background-color: rgba(0, 0, 0, nth($v, 1));
+    }
+  }
+}
+
+@each $step, $v in $warning-scrim-steps {
+  .governance-warning-scrim[data-step="#{$step}"] ~ .fitness-video-mirror-wrap :is(video, dash-video) {
+    filter: grayscale(nth($v, 2)) sepia(nth($v, 3));
+  }
+}
+// end warning scrim
 
 .governance-life-meter {
   position: absolute;

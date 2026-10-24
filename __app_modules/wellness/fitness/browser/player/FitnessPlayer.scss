@@ -462,20 +462,6 @@ dash-video {
       pointer-events: none; /* Allow clicks to pass through except for the close button */
     }
 
-    .governance-warning-scrim {
-      position: absolute;
-      inset: 0;
-      z-index: 5;
-      pointer-events: none;
-      // Darken / blur / desaturate are driven by inline style and ramp up with
-      // the grace countdown (see GovernanceWarningScrim). The transition smooths
-      // between the per-notch updates so the ramp reads as continuous.
-      transition:
-        background-color 0.5s linear,
-        backdrop-filter 0.5s linear,
-        -webkit-backdrop-filter 0.5s linear;
-    }
-
     &.governance-filter-critical {
       .player,
       .video-player,
