@@ -181,8 +181,23 @@ function broadcastFitnessData(message) {
   }
 }
 
+// Ship a structured event to the app's log store via the backend's log
+// ingestion (topic 'logging', no `source`, so it is not relayed as sensor
+// data). This container's stdout never reaches the store. Dropped, not
+// queued, while the socket is down.
+function logToStore(level, event, data) {
+  if (!websocketClient || websocketClient.readyState !== WebSocket.OPEN) return;
+  websocketClient.send(JSON.stringify({
+    topic: 'logging',
+    events: [{
+      ts: new Date().toISOString(), level, event, data,
+      context: { source: 'satellite', app: 'fitness', module: 'fitness-controller' }
+    }]
+  }));
+}
+
 // Initialize managers with broadcast callback
-const antManager = new ANTPlusManager(broadcastFitnessData);
+const antManager = new ANTPlusManager(broadcastFitnessData, { logEvent: logToStore });
 const bleManager = new BLEManager(broadcastFitnessData);
 
 async function handleWebSocketMessage(data) {
