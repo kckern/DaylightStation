@@ -150,7 +150,8 @@ export const DEFAULT_ZONE = Object.freeze({
   terrain: { draw: 'alpine-rock', edge_lip: 0.02 },
   craft: { draw: 'glider' },
   collectible: { draw: 'bell' },
-  weapons: { laser: { draw: 'laser' }, bomb: { draw: 'bomb' }, blast: { draw: 'blast' } },
+  // Weapons pick their SVG preset by shot kind; a zone fills these slots only with sprite frames.
+  weapons: {},
   checkpoint: {},
   finish: {},
   sprites: null,

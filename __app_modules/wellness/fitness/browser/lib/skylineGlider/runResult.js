@@ -6,6 +6,8 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
   const collectibles = [...new Set(state.collectedIds || [])];
   const completed = status === 'completed';
   const rewardRings = completed ? skylineGliderBonus(collectibles) : 0;
+  // `targets` counts the final run-through (rolled back with the checkpoint, like
+  // collectibles); shot and bomb counters are cumulative, like collisions.
   const destroyedBy = Object.values(state.destroyedBy || {});
   const targets = destroyedBy.filter((by) => by === 'laser' || by === 'bomb').length;
   const shotsFired = state.shotsFired || 0;

@@ -3,6 +3,7 @@ import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from "../../lib/skylineGlider/courseModel.js";
 import { createFlightState, stepFlight } from "../../lib/skylineGlider/flightEngine.js";
+import { weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
 import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
@@ -108,10 +109,6 @@ export default function SkylineGlider() {
   const schoolLearner = riderId ? ctx?.getUserByName?.(riderId)?.schoolLearner : undefined;
   const access = useSkylineAccess(riderId, { schoolLearner });
   const accessGranted = access.unlocked || accessOverride?.riderId === riderId;
-  const drainWeapons = useSkylineWeapons({
-    enabled: phase === 'flight',
-    onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
-  });
   const riderIdentity = useMemo(() => equipment && riderId ? {
     fitnessSessionId: fitnessSessionInstance?.sessionId || null,
     riderId,
@@ -133,6 +130,11 @@ export default function SkylineGlider() {
     || courses.find((item) => item.id === riderWorld?.next)
     || courses.find((item) => playable(item.id)) || courses[0] || null;
   const course = lockedCourseRef.current || lobbyCourse;
+  const armory = weaponRules(course);
+  const drainWeapons = useSkylineWeapons({
+    enabled: phase === 'flight' && !!armory.enabled,
+    onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
+  });
   const checkpointIdentity = course ? riderIdentity : null;
   const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
   phaseRef.current = phase;
@@ -666,7 +668,7 @@ export default function SkylineGlider() {
   return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
-    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span><span data-testid="skyline-glider-bombs" aria-label="Bombs left">💣 {flight.bombsLeft ?? 0}</span></header>
+    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span>{!!armory.enabled && <span data-testid="skyline-glider-bombs" aria-label="Bombs left">💣 {flight.bombsLeft ?? armory.bombs}</span>}</header>
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}

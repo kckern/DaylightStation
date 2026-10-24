@@ -494,11 +494,33 @@ describe('SkylineGlider', () => {
     }
   });
 
-  it('ignores fire keys in the lobby', async () => {
+  it('ignores fire keys in the lobby, even once the flight starts', async () => {
+    vi.useFakeTimers();
     render(<SkylineGlider />);
     await act(async () => Promise.resolve());
     fireEvent.keyDown(window, { key: 'f' });
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
     expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.anything());
+    vi.useRealTimers();
+  });
+
+  it('hides the bomb rack and ignores fire keys when the act disables weapons', async () => {
+    vi.useFakeTimers();
+    const unarmed = { ...course, rules: { ...course.rules, weapons: { enabled: false } } };
+    apiFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ courses: [unarmed] }) }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
+    expect(screen.queryByTestId('skyline-glider-bombs')).toBeNull();
+    fireEvent.keyDown(window, { key: 'f' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.anything());
+    vi.useRealTimers();
   });
 
   it('prefers NiceDay over CycleAce regardless of equipment order', async () => {
@@ -804,6 +826,8 @@ describe('FlightScene zones', () => {
     const state = { ...flightState, collectedIds: [], projectiles: [{ id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 }], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.1 }] };
     render(<FlightScene state={state} course={armedZone} assets={assets}/>);
     expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('image')).toBeTruthy();
+    // The laser sprite is pinned to its tip, whatever the frame's aspect ratio.
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('svg')).toHaveAttribute('preserveAspectRatio', 'xMaxYMid meet');
     // remaining 0.1 of 0.5 s = progress 0.8, so the second of two frames.
     expect(screen.getByTestId('skyline-glider-blast-bomb-0').querySelector('svg')).toHaveAttribute('viewBox', '32 0 32 16');
   });

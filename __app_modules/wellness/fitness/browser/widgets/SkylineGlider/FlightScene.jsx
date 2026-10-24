@@ -118,12 +118,14 @@ const SHOT_SIZE = Object.freeze({ laser: { width: 52, height: 14 }, bomb: { widt
 function Shot({ shot, x, y, zone, assets, time }) {
   const name = frameName(zone.weapons?.[shot.kind], time);
   const size = SHOT_SIZE[shot.kind] || SHOT_SIZE.bomb;
-  // A laser sprite ends at the tip; a bomb sprite is centred on the bomb.
-  const left = shot.kind === 'laser' ? -size.width : -size.width / 2;
+  // A laser sprite is pinned by its tip to the shot's point (right-aligned, so
+  // any frame aspect ratio keeps the tip there); a bomb sprite is centred.
+  const laser = shot.kind === 'laser';
+  const left = laser ? -size.width : -size.width / 2;
   return <g data-testid={`skyline-glider-shot-${shot.id}`} data-kind={shot.kind} transform={`translate(${x} ${y})`} className={`skyline-glider__shot skyline-glider__shot--${shot.kind}`}>
     {hasFrame(assets, name)
-      ? <SpriteFrame assets={assets} name={name} x={left} y={-size.height / 2} width={size.width} height={size.height} align="xMidYMid"/>
-      : shot.kind === 'laser' ? <LaserPreset/> : <BombPreset/>}
+      ? <SpriteFrame assets={assets} name={name} x={left} y={-size.height / 2} width={size.width} height={size.height} align={laser ? 'xMaxYMid' : 'xMidYMid'}/>
+      : laser ? <LaserPreset/> : <BombPreset/>}
   </g>;
 }
 

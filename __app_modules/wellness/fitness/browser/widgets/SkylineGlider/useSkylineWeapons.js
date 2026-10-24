@@ -10,6 +10,18 @@ const TRIGGER_THRESHOLD = 0.5;
 export const WEAPON_BUTTONS = Object.freeze({ laser: [0, 7], bomb: [1, 2, 6] });
 export const WEAPON_KEYS = Object.freeze({ ' ': 'laser', f: 'laser', F: 'laser', b: 'bomb', B: 'bomb' });
 
+const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+// The fire action for a key event, or null when the key is not ours: browser
+// shortcuts (Ctrl/Cmd+F, Ctrl+B) and typing into a field are left alone.
+function fireKeyAction(event) {
+  const action = WEAPON_KEYS[event.key];
+  if (!action || event.ctrlKey || event.metaKey || event.altKey) return null;
+  const target = event.target;
+  if (target && (TYPING_TAGS.has(target.tagName) || target.isContentEditable)) return null;
+  return action;
+}
+
 export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad } = {}) {
   const queue = useRef([]);
   const onGamepadRef = useRef(onGamepad);
@@ -18,14 +30,23 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad } = {
   useEffect(() => {
     queue.current = [];
     if (!enabled) return undefined;
-    const handler = (event) => {
-      const action = WEAPON_KEYS[event.key];
-      if (!action || event.repeat) return;
+    const onKeyDown = (event) => {
+      const action = fireKeyAction(event);
+      if (!action) return;
       event.preventDefault();
-      queue.current.push(action);
+      // A tapped End flight / Mute button keeps focus, and Space would press it
+      // on keyup in Firefox. Drop the focus so fire keys only ever fire.
+      const target = event.target;
+      if (target && target !== document.body && typeof target.blur === 'function') target.blur();
+      if (!event.repeat) queue.current.push(action);
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    const onKeyUp = (event) => { if (fireKeyAction(event)) event.preventDefault(); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, [enabled]);
 
   useEffect(() => {

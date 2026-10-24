@@ -33,4 +33,36 @@ describe('useSkylineWeapons', () => {
     fireEvent.keyDown(window, { key: 'f' });
     expect(result.current()).toEqual([]);
   });
+
+  it('leaves browser shortcuts and typing alone', () => {
+    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [] }));
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'f', metaKey: true });
+    fireEvent.keyDown(window, { key: 'b', altKey: true });
+    const input = document.createElement('input');
+    const area = document.createElement('textarea');
+    const editable = document.createElement('div');
+    editable.contentEditable = 'true';
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    document.body.append(input, area, editable);
+    fireEvent.keyDown(input, { key: 'f' });
+    fireEvent.keyDown(area, { key: ' ' });
+    fireEvent.keyDown(editable, { key: 'b' });
+    expect(result.current()).toEqual([]);
+    input.remove(); area.remove(); editable.remove();
+  });
+
+  it('fires Space on a focused button without letting it press the button', () => {
+    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [] }));
+    const button = document.createElement('button');
+    document.body.append(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    const down = fireEvent.keyDown(button, { key: ' ' });
+    expect(down).toBe(false);
+    expect(document.activeElement).not.toBe(button);
+    expect(fireEvent.keyUp(button, { key: ' ' })).toBe(false);
+    expect(result.current()).toEqual(['laser']);
+    button.remove();
+  });
 });
