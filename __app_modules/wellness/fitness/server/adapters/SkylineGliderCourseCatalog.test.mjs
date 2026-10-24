@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SkylineGliderCourseCatalog } from "./SkylineGliderCourseCatalog.mjs";
+import { resolveAct } from "./skylineGlider/resolveAct.mjs";
 import { validateCourse as validateFrontendCourse } from "../../browser/lib/skylineGlider/courseModel.js";
 import { createFlightState, stepFlight } from "../../browser/lib/skylineGlider/flightEngine.js";
 import { terrainBounds } from "../../browser/lib/skylineGlider/flightGeometry.js";
@@ -195,5 +196,13 @@ describe('SkylineGliderCourseCatalog', () => {
       { id: 'space', name: 'Deep Space', acts: [{ id: 'orbit', name: 'Orbit', act: 1 }] },
       { id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1 }, { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2 }] },
     ] });
+  });
+
+  it('carries vulnerable_to and the zone weapons slot through resolution', () => {
+    const zone = { schema: 'skyline-glider-zone/v1', id: 'z', asset_root: 'fitness/skyline-glider/z', entities: { rock: { class: 'solid', width_s: 0.8, height: 0.12, vulnerable_to: ['bomb'] } }, weapons: { laser: { frame: 'laser-0' }, bomb: 'not-an-object' } };
+    const act = { id: 'a', zone: 'z', entities: [{ entity: 'rock', at_s: 4, altitude: 0.78 }, { entity: 'rock', at_s: 9, altitude: 0.78, vulnerable_to: [] }] };
+    const resolved = resolveAct(act, new Map([['z', zone]]));
+    expect(resolved.entities.map((entity) => entity.vulnerable_to)).toEqual([['bomb'], []]);
+    expect(resolved.zone.weapons).toEqual({ laser: { frame: 'laser-0' } });
   });
 });

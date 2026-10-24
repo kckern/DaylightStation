@@ -117,6 +117,20 @@ describe('course entities', () => {
     expect(validateCourse(course({ entities: [entity({ height: 0 })] })).errors).toContain('entity rock has no size');
   });
 
+  it('accepts vulnerable_to naming known weapons and rejects anything else', () => {
+    const rock = { id: 'rock', class: 'solid', at_s: 10, altitude: 0.78, width_s: 0.5, height: 0.1 };
+    expect(validateCourse(course({ entities: [{ ...rock, vulnerable_to: ['laser', 'bomb'] }] })).valid).toBe(true);
+    expect(validateCourse(course({ entities: [{ ...rock, vulnerable_to: ['flamethrower'] }] })).errors)
+      .toContain('entity rock has unsupported vulnerable_to');
+  });
+
+  it('validates act weapon rules', () => {
+    const rules = course().rules;
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: 3, enabled: false } } })).valid).toBe(true);
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: -1 } } })).errors)
+      .toContain('rules weapons bombs must be a non-negative number');
+  });
+
   it('rejects a solid entity that leaves no reachable gap', () => {
     const wall = entity({ altitude: 0.9, height: 0.85 });
     expect(validateCourse(course({ entities: [wall] })).errors.join()).toMatch(/rock is unreachable/);
