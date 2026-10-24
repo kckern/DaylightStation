@@ -32,7 +32,8 @@ The rider can fire a laser and drop bombs from a gamepad or keyboard. Weapons ne
 - **Bomb:** released under the craft, it keeps pace with the craft while falling under `bomb_gravity`. It detonates on terrain, a non-scenery entity, or the bottom of the screen. The blast (`blast_width_s` × `blast_height`, visible for `blast_s`) destroys every entity it touches that is vulnerable to bombs. The rack holds `bombs` and refills at every checkpoint crossed and on restart.
 - **Vulnerability** defaults by class: `breakable` → laser and bomb, `solid` → bomb only, `scenery` → nothing. An entity definition or placement can set `vulnerable_to: [laser, bomb]` (or `[]`). A destroyed solid stops being a wall.
 - A crash clears shots and blasts in flight. A checkpoint restart restores what was destroyed at that checkpoint, as it does for crash-broken breakables.
-- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. Reward rings do not change.
+- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Reward rings do not change.
+- Fire keys are ignored with Ctrl, Cmd or Alt held and while typing in a field. A fire key never also activates a focused on-screen button.
 
 `rules.weapons` in an act overrides the defaults. Every field except `enabled` must be a non-negative number:
 
@@ -51,7 +52,7 @@ rules:
     blast_s: 0.5
 ```
 
-Weapons are drawn with the built-in SVG presets `laser`, `bomb` and `blast`. A zone may name sprite frames from its sheet under `weapons:`. The laser and bomb animate by time; a blast steps through its frames once over its lifetime:
+Weapons are drawn with the built-in SVG presets `laser`, `bomb` and `blast`, chosen by shot kind. A zone may name sprite frames from its sheet under `weapons:`. A laser sprite is right-aligned so its tip stays at the hit point. The laser and bomb animate by time; a blast steps through its frames once over its lifetime:
 
 ```yaml
 weapons:
