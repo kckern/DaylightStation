@@ -464,6 +464,7 @@ If the hostname is unreachable (off-network), go in over SSH instead:
 | `context.source` | `backend` \| `frontend` \| `cron` \| `webhook` |
 | `context.app` | Subsystem — `piano`, `fitness`, `api`, … |
 | `context.module` / `context.component` | Finer unit within the app |
+| `context.deviceId` | Frontend only: which screen (`?device=` on the kiosk URL) |
 | `level` | `debug` \| `info` \| `warn` \| `error` |
 | `_msg` | The dotted event name |
 | `data.*` | Event payload fields, individually queryable |

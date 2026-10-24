@@ -27,7 +27,6 @@ import { FitnessPlayerFrame } from "./frames/index.js";
 import { useVolumeSync } from "../hooks/useVolumeSync.js";
 import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
-import GovernanceWarningScrim from "./overlays/GovernanceWarningScrim.jsx";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
 import { useIdentity } from "../identity/useIdentity.js";
 import { shouldBypassGovernance } from "./governanceBypass.js";
@@ -2252,12 +2251,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           <span className="fitness-mirror-hotspot__icon" aria-hidden="true">⇄</span>
         </div>
       ))}
-      {govStatus === 'warning' && (
-        <GovernanceWarningScrim
-          deadline={effectiveGovernanceState?.deadline}
-          totalSeconds={effectiveGovernanceState?.gracePeriodTotal}
-        />
-      )}
     </div>
   );
 

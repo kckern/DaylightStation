@@ -59,3 +59,42 @@ describe('overlayPaintCheck', () => {
     expect(checkOverlayPaint({ meter, chip: null }, scrim).targets).not.toHaveProperty('chip');
   });
 });
+
+describe('describeCompositing', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('reports the scrim step, video filter, scale, rects and every filtered element', async () => {
+    const { describeCompositing } = await import('./overlayPaintCheck.js');
+    document.body.innerHTML = `
+      <div class="fitness-player mode-fullscreen">
+        <div class="fitness-player-content">
+          <div class="fitness-video-shell">
+            <div class="challenge-overlay" style="backdrop-filter: blur(16px)"></div>
+            <div class="governance-warning-scrim" data-step="2" style="background-color: rgba(0, 0, 0, 0.35)"></div>
+            <div class="governance-progress-overlay">
+              <div class="governance-life-meter__frame"></div>
+              <div class="governance-progress-overlay__chip"></div>
+            </div>
+            <div class="fitness-video-mirror-wrap"><video style="filter: grayscale(0.6)"></video></div>
+          </div>
+        </div>
+      </div>`;
+    const $ = (sel) => document.querySelector(sel);
+    const out = describeCompositing({
+      root: $('.governance-progress-overlay'),
+      targets: { meter: $('.governance-life-meter__frame'), chip: $('.governance-progress-overlay__chip') },
+      scrim: $('.governance-warning-scrim'),
+      video: $('video'),
+    });
+    expect(out.scrimStep).toBe(2);
+    expect(out.scrimBackground).toBe('rgba(0, 0, 0, 0.35)');
+    expect(out.scrimBackdropFilter).toBeNull();
+    expect(out.videoFilter).toBe('grayscale(0.6)');
+    expect(out.devicePixelRatio).toBeGreaterThan(0);
+    expect(out.playerMode).toBe('fullscreen');
+    expect(Object.keys(out.rects)).toEqual(['meter', 'chip']);
+    expect(out.rects.chip.device).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(out.filteredCount).toBe(2);
+    expect(out.filtered.map((f) => f.element)).toEqual(['challenge-overlay', 'VIDEO']);
+  });
+});

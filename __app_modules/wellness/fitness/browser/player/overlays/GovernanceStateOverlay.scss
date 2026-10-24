@@ -540,29 +540,31 @@
 
   &__progress--inline {
     width: 100%;
-    padding-top: 16px;
-    padding-bottom: 4px;
+    // Room for the 22px knob centred on the 8px track (7px over each side).
+    padding-block: 8px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 10px;
   }
 
+  // Progress bar with a knob that rides the tip. A single input, `--p` (0-1,
+  // set inline on the track), drives both transforms below with the SAME
+  // duration and curve, so the percentage can never drift from the fill:
+  // they start in the same style recalc and ease identically. Transform-only
+  // (compositor); never transition `left`, `filter`, or the shadow.
   &__progress-track {
+    --p: 0;
+    --tip-t: 450ms var(--ds-motion-easing, cubic-bezier(0.4, 0, 0.2, 1));
+    --knob-w: 48px;
     position: relative;
     height: 8px;
+    // Half the knob's width (+6px air): centred honestly on the tip, the knob
+    // overhangs the bar end at 0% / 100% but stays inside the metric cell and
+    // clear of the neighbouring zone pills on narrow (sidebar-open) layouts.
+    margin-inline: calc(var(--knob-w) / 2 + 6px);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);
     overflow: visible;
-  }
-
-  &__progress-indicator {
-    position: absolute;
-    top: -19px;
-    font-size: 14px;
-    line-height: 16px;
-    font-variant-numeric: tabular-nums;
-    color: #f8fafc;
-    white-space: nowrap;
   }
 
   &__progress-fill {
@@ -571,10 +573,47 @@
     border-radius: inherit;
     background: linear-gradient(90deg, #38bdf8, #22c55e);
     transform-origin: left;
-    transform: scaleX(0);
-    transition: transform 0.5s ease-out;
+    transform: scaleX(var(--p));
+    transition: transform var(--tip-t);
     will-change: transform;
     overflow: hidden;
+  }
+
+  // Full-track-width wrapper slid so its left edge IS the tip: translateX(%)
+  // is a percentage of its own width, which equals the track's.
+  &__progress-tip {
+    position: absolute;
+    inset: 0;
+    z-index: 2; // above the zone markers, so the knob covers one it passes
+    pointer-events: none;
+    transform: translateX(calc(var(--p) * 100%));
+    transition: transform var(--tip-t);
+    will-change: transform;
+  }
+
+  // The knob: a dark tab centred on the wrapper's left edge (= the tip), its
+  // rim in the rider's current zone colour. Fixed width + tabular figures so
+  // the number changing on each HR tick never resizes or jitters it.
+  &__progress-indicator {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    width: var(--knob-w);
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 2px solid var(--tip-color, #f8fafc);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    color: #f8fafc;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__zone-marker {
@@ -790,16 +829,6 @@ $lock-zone-hues: (
   pointer-events: none;
   contain: layout style;
 
-
-.governance-overlay__audio {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
   &__offenders {
     position: absolute;
     bottom: clamp(18px, 4vw, 48px);
@@ -915,6 +944,59 @@ $lock-zone-hues: (
     will-change: transform;
   }
 }
+
+.governance-overlay__audio {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+// The governance warning scrim. Rendered by the warning overlay as the sibling
+// just before `.governance-progress-overlay`, inside `.fitness-video-shell`, so
+// it shares `.fitness-player-content`'s stacking context: z 5 puts it over the
+// video and under the chips, the challenge deck and the player's own layers.
+//
+// Five fixed steps (warningScrimStep.js), changed four times per warning:
+// - darkness is the scrim's background-color — the only thing that eases;
+// - desaturation is a STATIC `filter` on the <video> per step, confined to the
+//   video's own subtree so it can never sample or interleave with the chips.
+// No blur and no backdrop-filter: the full-screen, continuously transitioning
+// backdrop-filter that used to do this was the paint-path thrash behind the
+// chips flickering soft (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
+// Never transition `filter` here (warningScrimStep.test.js guards it).
+$warning-scrim-steps: (
+  // step: (darkness, grayscale, sepia)
+  0: (0.1, 0.15, 0.1),
+  1: (0.2, 0.35, 0.15),
+  2: (0.35, 0.6, 0.25),
+  3: (0.55, 0.85, 0.35),
+  4: (0.72, 1, 0.4)
+);
+
+.governance-warning-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background-color: rgba(0, 0, 0, 0.55);
+  transition: background-color 600ms linear;
+
+  @each $step, $v in $warning-scrim-steps {
+    &[data-step="#{$step}"] {
+      background-color: rgba(0, 0, 0, nth($v, 1));
+    }
+  }
+}
+
+@each $step, $v in $warning-scrim-steps {
+  .governance-warning-scrim[data-step="#{$step}"] ~ .fitness-video-mirror-wrap :is(video, dash-video) {
+    filter: grayscale(nth($v, 2)) sepia(nth($v, 3));
+  }
+}
+// end warning scrim
 
 .governance-life-meter {
   position: absolute;
