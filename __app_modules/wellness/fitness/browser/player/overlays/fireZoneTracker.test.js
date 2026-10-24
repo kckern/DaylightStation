@@ -20,7 +20,7 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'hot' }]);
   });
 
   it('suppresses a second crossing inside the cooldown', () => {
@@ -39,7 +39,7 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot')], { now: 3000 }).tracker;
     const later = 2000 + FIRE_TOAST_COOLDOWN_MS + 1;
     const r = nextFireToasts(t, [profile('learner-one', 'fire')], { now: later });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'hot' }]);
   });
 
   it('does not re-emit while a user simply stays in fire', () => {
@@ -55,8 +55,8 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [profile('learner-one', 'hot'), profile('learner-two', 'warm')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire'), profile('learner-two', 'fire')], { now: 2000 });
     expect(r.entries).toEqual([
-      { userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175 },
-      { userId: 'learner-two', name: 'learner-two', heartRate: 181, fireThreshold: 175 },
+      { userId: 'learner-one', name: 'learner-one', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'hot' },
+      { userId: 'learner-two', name: 'learner-two', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'warm' },
     ]);
   });
 
@@ -74,7 +74,7 @@ describe('nextFireToasts', () => {
     let t = createFireZoneTracker();
     t = nextFireToasts(t, [profile('learner-one', 'hot', 'Learner-Two')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [profile('learner-one', 'fire', 'Learner-Two')], { now: 2000 });
-    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two', heartRate: 181, fireThreshold: 175 }]);
+    expect(r.entries).toEqual([{ userId: 'learner-one', name: 'Learner-Two', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'hot' }]);
   });
 
   it('carries the HR and the fire threshold that justified the celebration', () => {
@@ -90,7 +90,7 @@ describe('nextFireToasts', () => {
     t = nextFireToasts(t, [rider('hot')], { now: 1000 }).tracker;
     const r = nextFireToasts(t, [rider('fire')], { now: 2000 });
     expect(r.entries).toEqual([
-      { userId: 'learner-one', name: 'Learner-One', heartRate: 181, fireThreshold: 175 }
+      { userId: 'learner-one', name: 'Learner-One', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'hot' }
     ]);
   });
 
@@ -129,7 +129,7 @@ describe('nextFireToasts', () => {
   it('carries the accepted entry HR through later hysteresis and queue delays', () => {
     const t = nextFireToasts(createFireZoneTracker(), [profile('rider-one', 'cool')]).tracker;
     const r = nextFireToasts(t, [{ ...profile('rider-one', 'fire'), heartRate: 173 }], { now: 8000 });
-    expect(r.entries).toEqual([{ userId: 'rider-one', name: 'rider-one', heartRate: 181, fireThreshold: 175 }]);
+    expect(r.entries).toEqual([{ userId: 'rider-one', name: 'rider-one', heartRate: 181, fireThreshold: 175, entryId: expect.any(Number), previousZoneId: 'cool' }]);
   });
 
   it('rejects entry evidence from a different threshold or zone', () => {
@@ -139,4 +139,26 @@ describe('nextFireToasts', () => {
     expect(nextFireToasts(t, [{ ...fire, zoneEntry: { ...fire.zoneEntry, zoneId: 'hot' } }]).entries).toEqual([]);
   });
 
+  // Bug #5: a rider resuming their zone after a water break did not just
+  // cross into it. A resumed entry seeds; only a later real crossing counts.
+  it('never celebrates a resumed Fire entry, then celebrates a later real crossing', () => {
+    let t = nextFireToasts(createFireZoneTracker(), [profile('rider-c', 'hot')], { now: 1000 }).tracker;
+    t = nextFireToasts(t, [{ ...profile('rider-c', 'hot'), zoneTrusted: false, currentZoneId: null, zoneEntry: null }], { now: 2000 }).tracker;
+    const resumed = profile('rider-c', 'fire');
+    resumed.zoneEntry = { ...resumed.zoneEntry, heartRate: 185, resumed: true };
+    let r = nextFireToasts(t, [resumed], { now: 3000 });
+    expect(r.entries).toEqual([]);
+    t = nextFireToasts(r.tracker, [profile('rider-c', 'hot')], { now: 4000 }).tracker;
+    r = nextFireToasts(t, [profile('rider-c', 'fire')], { now: 5000 });
+    expect(r.entries).toHaveLength(1);
+  });
+
+  it('never celebrates a resumed entry even when the preserved last zone makes it look like a crossing', () => {
+    let t = nextFireToasts(createFireZoneTracker(), [profile('rider-c', 'hot')], { now: 1000 }).tracker;
+    const resumed = profile('rider-c', 'fire');
+    resumed.zoneEntry = { ...resumed.zoneEntry, resumed: true };
+    const r = nextFireToasts(t, [resumed], { now: 2000 });
+    expect(r.entries).toEqual([]);
+    expect(r.tracker.lastEntryId.get('rider-c')).toBe(resumed.zoneEntry.id);
+  });
 });

@@ -7,7 +7,7 @@ import { VoiceMemoManager } from "./VoiceMemoManager.js";
 import { FitnessTimeline } from "./FitnessTimeline.js";
 import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
 import { getClientId } from "../../../../../../frontend/src/lib/clientId.js";
-import { ZoneProfileStore } from "./ZoneProfileStore.js";
+import { ZoneProfileStore, ZONE_TRUST_RESUME_WINDOW_MS } from "./ZoneProfileStore.js";
 import { EventJournal } from "./EventJournal.js";
 import { ActivityMonitor } from "../../domain/ActivityMonitor.js";
 import { SessionEntityRegistry } from "./SessionEntity.js";
@@ -31,9 +31,10 @@ import { PersistenceManager } from "./PersistenceManager.js";
 
 // Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
 const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
-// A kiosk reload this short keeps the riders' accepted-Cool zone trust. A
-// longer outage is when a strap could plausibly have changed hands.
-export const ZONE_TRUST_RESUME_GRACE_MS = 2 * 60 * 1000;
+// A kiosk reload this short keeps the riders' zone trust — the same window a
+// mid-session reading loss resumes within (ZoneProfileStore), so both paths
+// apply one rule. A declared handover still wipes trust at once.
+export const ZONE_TRUST_RESUME_GRACE_MS = ZONE_TRUST_RESUME_WINDOW_MS;
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -482,7 +483,13 @@ export class FitnessSession {
         ...user,
         // Every shared sync carries each rider's OWN acceptance state. A rider
         // cannot acquire startup trust through somebody else's accepted packet.
-        zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true
+        zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true,
+        // Which strap and which sample this reading is. The store resumes a
+        // rider only on the strap its evidence came from, and counts a
+        // re-sync of the same sample (another rider's packet) as no new
+        // sample when confirming an upward zone change.
+        zoneReadingDeviceId: user.currentData?.heartRateDeviceId ?? null,
+        zoneReadingAt: Number.isFinite(user._lastRealHrAt) ? user._lastRealHrAt : null
       })));
       return changed;
     } catch (err) {
@@ -577,10 +584,16 @@ export class FitnessSession {
       // Clear the flag after processing
       device._isNew = false;
       
+      // A reading the slew gate is holding (DeviceManager) is not a reading:
+      // it must not reach the rider, the zone store or TreasureBox until the
+      // next packet confirms it. Nothing else about this packet matters.
+      const hrHeld = device._hrHeld === true;
+      device._hrHeld = false;
+
       // Resolve user and update their stats
       const user = this.userManager.resolveUserForDevice(device.id);
       const resolvedSlug = user?.id || null;
-      if (user) {
+      if (user && !hrHeld) {
         // 5A: Check for device reassignment - clear cumulative state if occupant changed
         const currentOccupant = resolvedSlug;
         if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
@@ -1866,6 +1879,7 @@ export class FitnessSession {
    */
   _restoreZoneTrust(saved, gapMs) {
     const riders = Array.isArray(saved?.riders) ? saved.riders : [];
+    const now = Date.now();
     for (const rider of riders) {
       const userId = rider?.userId;
       if (!userId) continue;
@@ -1873,26 +1887,42 @@ export class FitnessSession {
       // restored open stint.
       const sameWearer = (rider.deviceIds || []).some((deviceId) =>
         this.entityRegistry.getByDevice(deviceId)?.profileId === userId);
-      const reason = gapMs > ZONE_TRUST_RESUME_GRACE_MS ? 'gap-too-long'
+      // v2 carries the rider's last confirmed reading; its age, not the
+      // reload gap, is what the hour is measured against.
+      const evidence = rider.evidence && Number.isFinite(rider.evidence.at) ? rider.evidence : null;
+      const ageMs = evidence ? now - evidence.at : gapMs;
+      const reason = ageMs > ZONE_TRUST_RESUME_GRACE_MS ? (evidence ? 'evidence-too-old' : 'gap-too-long')
         : !sameWearer ? 'wearer-changed' : null;
       if (reason) {
-        getLogger().info('fitness.zone_trust.not_restored', { userId, reason, gapMs });
+        getLogger().info('fitness.zone_trust.not_restored', { userId, reason, gapMs, ageMs });
+        continue;
+      }
+      if (evidence) {
+        // Same rule as a water break: the next eligible reading from that
+        // strap resumes the zone once it is plausible against the evidence.
+        this.zoneProfileStore?.seedTrustEvidence?.(userId, evidence);
+        getLogger().info('fitness.zone_trust.restored', { userId, gapMs, ageMs, via: 'evidence' });
         continue;
       }
       this.zoneProfileStore?.restoreTrust?.(userId);
-      getLogger().info('fitness.zone_trust.restored', { userId, gapMs });
+      getLogger().info('fitness.zone_trust.restored', { userId, gapMs, ageMs, via: 'v1-trust' });
     }
   }
 
   _zoneTrustSnapshot() {
-    const userIds = this.zoneProfileStore?.getTrustedUserIds?.() || [];
+    const store = this.zoneProfileStore;
+    const userIds = [...new Set([
+      ...(store?.getTrustedUserIds?.() || []),
+      ...(store?.getEvidenceUserIds?.() || []),
+    ])];
     return {
-      version: 1,
+      version: 2,
       riders: userIds.map((userId) => ({
         userId,
         deviceIds: (this.entityRegistry?.getByProfile?.(userId) || [])
           .filter((entity) => entity.status === 'active' && entity.deviceId)
           .map((entity) => String(entity.deviceId)),
+        evidence: store?.getTrustEvidence?.(userId) || null,
       })),
     };
   }

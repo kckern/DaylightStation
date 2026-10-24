@@ -91,15 +91,40 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     session.reset();
   });
 
-  it('restores zone trust only for a short reload of the same wearer', () => {
+  it('restores zone trust only for a reload of the same wearer within the hour', () => {
     expect(resumed().zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
-    const longGap = resumed((p) => ({ ...p, endTime: Date.now() - 10 * 60 * 1000 }));
-    expect(longGap.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    // One rule with the mid-session dropout resume: 60 minutes (bug #5).
+    const gap = (min) => resumed((p) => ({ ...p, endTime: Date.now() - min * 60 * 1000 }));
+    const tenMin = gap(10); const fiftyNine = gap(59); const sixtyOne = gap(61);
+    expect(tenMin.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    expect(fiftyNine.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    expect(sixtyOne.zoneProfileStore.getTrustedUserIds()).toEqual([]);
     const moved = resumed((p) => ({ ...p, metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D9'] }] } } }));
     expect(moved.zoneProfileStore.getTrustedUserIds()).toEqual([]);
-    const session = resumed();
-    expect(session.summary.metadata.zone_trust.riders).toEqual([{ userId: 'kid-a', deviceIds: ['D2'] }]);
-    [longGap, moved, session].forEach((s) => s.reset());
+    [tenMin, fiftyNine, sixtyOne, moved].forEach((s) => s.reset());
+  });
+
+  it('saves v2 evidence and resumes through it: plausible same-strap reading in, stale evidence out', () => {
+    const v2 = (evidenceAgeMs) => (p) => ({ ...p, metadata: { zone_trust: { version: 2, riders: [{
+      userId: 'kid-a', deviceIds: ['D2'],
+      evidence: { deviceId: 'D2', zoneId: 'warm', heartRate: 143, at: Date.now() - evidenceAgeMs }
+    }] } } });
+    const fresh = resumed(v2(20 * 60 * 1000));
+    // Evidence, not blanket trust: the next live reading decides.
+    expect(fresh.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    expect(fresh.zoneProfileStore.getTrustEvidence('kid-a')).toMatchObject({ deviceId: 'D2', heartRate: 143 });
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); fresh.ingestData(hr('D2', 141)); }
+    expect(fresh.getZoneProfile('kid-a')).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm', zoneEntry: { resumed: true } });
+    const snapshot = fresh.summary.metadata.zone_trust;
+    expect(snapshot.version).toBe(2);
+    expect(snapshot.riders).toEqual([{ userId: 'kid-a', deviceIds: ['D2'],
+      evidence: { deviceId: 'D2', zoneId: 'warm', heartRate: 141, at: Date.now() } }]);
+
+    const stale = resumed(v2(61 * 60 * 1000));
+    expect(stale.zoneProfileStore.getTrustEvidence('kid-a')).toBeNull();
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); stale.ingestData(hr('D2', 141)); }
+    expect(stale.getZoneProfile('kid-a')).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+    [fresh, stale].forEach((s) => s.reset());
   });
 
   it('restores the stints, so a correction after the reload still moves the whole stint', () => {

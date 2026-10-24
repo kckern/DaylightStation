@@ -1,4 +1,5 @@
 import { deriveZoneProgressSnapshot, getZoneMin, validateZoneLadder } from "./types.js";
+import { HR_SLEW_MAX_DELTA_BPM } from "./hrPlausibility.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
 const cloneZoneConfig = (config = []) => {
@@ -47,6 +48,18 @@ const HYSTERESIS_COOLDOWN_MS = 5000;
 const HYSTERESIS_STABILITY_MS = 3000;
 // Schmitt trigger: to LEAVE a zone, HR must drop this many BPM below the zone's min threshold
 const EXIT_MARGIN_BPM = 5;
+// An UPWARD commit needs this many separate samples in the higher zone,
+// spanning at least UPWARD_CONFIRM_MS. One corrupt 204 bpm packet committed
+// Fire instantly twice on 2026-10-23 (ops:docs/_wip/bugs/2026-10-23-fitness-
+// false-fire-ceremonies-recurring.md). A real climb pays about 1s.
+export const UPWARD_CONFIRM_SAMPLES = 2;
+export const UPWARD_CONFIRM_MS = 1000;
+// A rider whose reading was lost resumes their zone without a fresh Cool when
+// this store holds confirmed evidence for them from the same strap, at most
+// this old. A new session never has evidence, so a strap still emitting a
+// previous day's Fire stays suppressed (ops:docs/_wip/bugs/2026-10-23-
+// fitness-returning-rider-zone-suppressed-after-break.md).
+export const ZONE_TRUST_RESUME_WINDOW_MS = 60 * 60 * 1000;
 
 export class ZoneProfileStore {
   constructor() {
@@ -56,6 +69,16 @@ export class ZoneProfileStore {
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
     this._trustedUsers = new Set();
+    // Last CONFIRMED trusted reading per rider: Map<userId, { deviceId, zoneId, heartRate, at }>.
+    // Refreshed only by a sample that supports the committed zone, so a held
+    // spike can never become evidence. Survives a confirmed reading loss; a
+    // wearer change and a session reset delete it.
+    this._trustEvidence = new Map();
+    // A resume whose first reading was implausible against the evidence waits
+    // for consistent samples: Map<userId, { hr, firstTs, sampleAt, samples }>.
+    this._resumeCandidates = new Map();
+    // Riders whose resume refusal (expired / other strap) has been logged once.
+    this._resumeRefusalLogged = new Set();
     this._zoneEntries = new Map();
     this._zoneEntrySequence = 0;
     // The last ladder that PASSED validation, per rider. A rebuild that fails
@@ -84,13 +107,20 @@ export class ZoneProfileStore {
     this._hysteresis.delete(userId);
     this._trustedUsers.delete(userId);
     this._zoneEntries.delete(userId);
+    this._resumeCandidates.delete(userId);
+    this._resumeRefusalLogged.delete(userId);
+    // A confirmed loss is the same rider on the same strap going quiet (a
+    // water break): keep the evidence so the return resumes. Anything else —
+    // a handover, a correction — is a different person's heart.
+    const keepsEvidence = reason === 'confirmed-loss' && this._trustEvidence.has(userId);
+    if (!keepsEvidence) this._trustEvidence.delete(userId);
     const profile = this._profiles.get(userId);
     if (profile) this._profiles.set(userId, {
       ...profile, zoneTrusted: false, zoneEntry: null,
       currentZoneId: null, currentZoneName: null, currentZoneColor: null
     });
     this._signature = null;
-    getLogger().info('fitness.zone_state.reset', { userId, reason });
+    getLogger().info('fitness.zone_state.reset', { userId, reason, keepsEvidence });
   }
 
   /** Riders holding accepted-Cool trust, for persisting with the session. */
@@ -105,6 +135,33 @@ export class ZoneProfileStore {
   restoreTrust(userId) {
     if (userId == null || this._trustedUsers.has(userId)) return;
     this._trustedUsers.add(userId);
+    this._signature = null;
+  }
+
+  /** The rider's last confirmed trusted reading, for persisting with the session. */
+  getTrustEvidence(userId) {
+    const evidence = this._trustEvidence.get(userId);
+    return evidence ? { ...evidence } : null;
+  }
+
+  /** Riders holding resume evidence (trusted now, or lost within the window). */
+  getEvidenceUserIds() {
+    return [...this._trustEvidence.keys()];
+  }
+
+  /**
+   * Re-admit a rider through the SAME rule a mid-session dropout uses (kiosk
+   * reload): their next eligible reading from the same strap resumes the
+   * zone once it is plausible against this evidence.
+   */
+  seedTrustEvidence(userId, evidence) {
+    if (userId == null || !evidence || !Number.isFinite(evidence.at) || !Number.isFinite(evidence.heartRate)) return;
+    this._trustEvidence.set(userId, {
+      deviceId: evidence.deviceId != null ? String(evidence.deviceId) : null,
+      zoneId: evidence.zoneId ?? null,
+      heartRate: evidence.heartRate,
+      at: evidence.at
+    });
     this._signature = null;
   }
 
@@ -147,6 +204,9 @@ export class ZoneProfileStore {
       this._hysteresis.clear();
       this._trustedUsers.clear();
       this._zoneEntries.clear();
+      this._trustEvidence.clear();
+      this._resumeCandidates.clear();
+      this._resumeRefusalLogged.clear();
     }
     getLogger().info('fitness.zone_state.reset', { reason: preserveTrust ? 'config-rebuild' : 'session-reset' });
 
@@ -273,14 +333,25 @@ export class ZoneProfileStore {
     // Apply zone hysteresis: instant first transition, debounce rapid toggling
     const rawZoneId = normalizedSnapshot?.currentZoneId ?? null;
     const eligible = user.zoneReadingEligible !== false && heartRate > 0;
-    if (!this._trustedUsers.has(userId) && eligible && committedLadder && rawZoneId === 'cool') {
-      this._trustedUsers.add(userId);
+    // Sample identity. Every rider is re-synced on every rider's packet, so a
+    // re-sync of the same reading must not count as a second confirming sample.
+    // Without a timestamp (standalone callers) each sync is its own sample.
+    const sampleAt = Number.isFinite(user.zoneReadingAt) ? user.zoneReadingAt : null;
+    const readingDeviceId = user.zoneReadingDeviceId != null ? String(user.zoneReadingDeviceId) : null;
+    let resumed = null;
+    if (!this._trustedUsers.has(userId) && eligible && committedLadder) {
+      if (rawZoneId === 'cool') {
+        this._trustedUsers.add(userId);
+        this._resumeCandidates.delete(userId);
+      } else {
+        resumed = this.#tryResumeFromEvidence(userId, { heartRate, rawZoneId, readingDeviceId, sampleAt });
+      }
     }
     const zoneTrusted = this._trustedUsers.has(userId);
     const previousZone = this._hysteresis.get(userId)?.committedZoneId ?? null;
     const stabilized = this.#applyHysteresis(
       userId, zoneTrusted ? rawZoneId : null, committedLadder || [],
-      zoneTrusted && eligible ? heartRate : null
+      zoneTrusted && eligible ? heartRate : null, sampleAt
     );
     // Keep raw display/progress available before trust, without publishing it as
     // earned state. Only an accepted reading can justify a newly committed zone.
@@ -291,14 +362,33 @@ export class ZoneProfileStore {
         zoneId: stabilized.zoneId,
         heartRate,
         threshold: normalizedSnapshot?.currentZoneThreshold ?? null,
-        enteredAt: now()
+        enteredAt: now(),
+        // A resumed zone is the zone the rider already had, not a crossing:
+        // fireZoneTracker seeds on it and never celebrates it.
+        ...(resumed ? { resumed: true } : {})
+      });
+    }
+    // Evidence for a later resume: only a trusted, eligible reading that the
+    // committed zone agrees with. A spike held by confirmation never qualifies.
+    if (zoneTrusted && eligible && stabilized.zoneId && stabilized.zoneId === rawZoneId) {
+      this._trustEvidence.set(userId, {
+        deviceId: readingDeviceId, zoneId: stabilized.zoneId, heartRate, at: now()
       });
     }
     const previous = this._profiles.get(userId);
     if (previous?.zoneTrusted !== zoneTrusted || previous?.currentZoneId !== stabilized.zoneId) {
       getLogger().info('fitness.zone_state.transition', {
-        userId, zoneTrusted, reason: !zoneTrusted ? 'awaiting-real-cool' : (!previous?.zoneTrusted ? 'accepted-cool-baseline' : 'hysteresis'),
+        userId, zoneTrusted,
+        reason: !zoneTrusted ? 'awaiting-real-cool'
+          : resumed ? 'resumed-recent-evidence'
+          : (!previous?.zoneTrusted ? 'accepted-cool-baseline' : 'hysteresis'),
         heartRate, rawZoneId, committedZoneId: stabilized.zoneId,
+        previousZoneId: previous?.currentZoneId ?? null,
+        previousHeartRate: previous?.heartRate ?? null,
+        deviceId: readingDeviceId,
+        commitPath: stabilized.commitPath ?? null,
+        rawSamples: stabilized.rawSamples ?? null,
+        rawStableMs: stabilized.rawStableMs ?? null,
         zoneEntry: this._zoneEntries.get(userId) || null
       });
     }
@@ -333,6 +423,70 @@ export class ZoneProfileStore {
       source: user.source || null,
       updatedAt: now()
     };
+  }
+
+  /**
+   * The second way into trust, next to an accepted Cool: confirmed evidence of
+   * this rider's zone from the same strap within ZONE_TRUST_RESUME_WINDOW_MS.
+   * The current reading must be plausible against the evidence (within the
+   * slew limit), or else two consistent samples at least UPWARD_CONFIRM_MS
+   * apart — so a spike that happens to be the first packet back cannot resume
+   * a rider straight into Fire. Hysteresis then restarts empty, so the zone is
+   * that of the current reading.
+   * @returns {{ path: string, evidence: object, ageMs: number }|null}
+   */
+  #tryResumeFromEvidence(userId, { heartRate, rawZoneId, readingDeviceId, sampleAt }) {
+    const evidence = this._trustEvidence.get(userId);
+    if (!evidence) return null;
+    const ts = now();
+    const ageMs = ts - evidence.at;
+    const refuse = (reason) => {
+      if (this._resumeRefusalLogged.has(userId)) return null;
+      this._resumeRefusalLogged.add(userId);
+      getLogger().info('fitness.zone_trust.resume_refused', {
+        userId, reason, ageMs, deviceId: readingDeviceId, evidenceDeviceId: evidence.deviceId,
+        heartRate, evidenceHeartRate: evidence.heartRate
+      });
+      return null;
+    };
+    if (ageMs > ZONE_TRUST_RESUME_WINDOW_MS) {
+      this._trustEvidence.delete(userId);
+      return refuse('evidence-expired');
+    }
+    if ((evidence.deviceId ?? null) !== (readingDeviceId ?? null)) return refuse('different-strap');
+
+    let path = null;
+    if (Math.abs(heartRate - evidence.heartRate) < HR_SLEW_MAX_DELTA_BPM) {
+      path = 'evidence-plausible';
+    } else {
+      const candidate = this._resumeCandidates.get(userId);
+      const consistent = candidate && Math.abs(heartRate - candidate.hr) < HR_SLEW_MAX_DELTA_BPM;
+      if (consistent) {
+        if (sampleAt == null || sampleAt !== candidate.sampleAt) candidate.samples += 1;
+        candidate.hr = heartRate;
+        candidate.sampleAt = sampleAt;
+        if (candidate.samples >= UPWARD_CONFIRM_SAMPLES && ts - candidate.firstTs >= UPWARD_CONFIRM_MS) {
+          path = 'consistent-samples';
+        }
+      } else {
+        this._resumeCandidates.set(userId, { hr: heartRate, firstTs: ts, sampleAt, samples: 1 });
+        getLogger().warn('fitness.zone_trust.resume_held', {
+          userId, heartRate, rawZoneId, evidenceHeartRate: evidence.heartRate,
+          evidenceZoneId: evidence.zoneId, ageMs, deviceId: readingDeviceId,
+          replacedHeartRate: candidate?.hr ?? null
+        });
+      }
+    }
+    if (!path) return null;
+
+    this._trustedUsers.add(userId);
+    this._resumeCandidates.delete(userId);
+    this._resumeRefusalLogged.delete(userId);
+    getLogger().info('fitness.zone_trust.resumed', {
+      userId, path, heartRate, rawZoneId, ageMs, deviceId: readingDeviceId,
+      evidenceZoneId: evidence.zoneId, evidenceHeartRate: evidence.heartRate
+    });
+    return { path, evidence: { ...evidence }, ageMs };
   }
 
   /**
@@ -393,7 +547,10 @@ export class ZoneProfileStore {
 
   /**
    * Apply zone hysteresis to prevent rapid visual toggling at zone boundaries.
-   * - First accepted Cool baseline: instant
+   * - First accepted Cool baseline (or resumed zone): instant
+   * - Upward move: needs UPWARD_CONFIRM_SAMPLES separate samples in the higher
+   *   zone spanning UPWARD_CONFIRM_MS — one corrupt packet cannot commit it
+   * - Downward move after a quiet HYSTERESIS_COOLDOWN_MS: instant
    * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
    *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
    *
@@ -402,7 +559,7 @@ export class ZoneProfileStore {
    * @param {Array} zoneConfig - normalized zone config for name/color lookup
    * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null, rawZoneId: string|null, rawZoneName: string|null, rawZoneColor: string|null }}
    */
-  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate) {
+  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null) {
     const ts = now();
     const lookupZone = (id) => {
       if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
@@ -439,21 +596,30 @@ export class ZoneProfileStore {
       return { ...lookupZone(shown), ...lookupRawZone(rawZoneId) };
     }
 
-    // First time seeing this user — commit whatever we have, no delay
+    // First time seeing this user (accepted Cool, or a resume) — commit
+    // whatever we have, no delay. Both entries into trust already passed
+    // their own plausibility rule.
     if (!state) {
       this._hysteresis.set(userId, {
         committedZoneId: rawZoneId,
         lastCommitTs: ts,
         rawZoneId,
-        rawZoneStableSince: ts
+        rawZoneStableSince: ts,
+        rawSamples: 1,
+        lastSampleAt: sampleAt
       });
-      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
+      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId), commitPath: 'instant-first', rawSamples: 1, rawStableMs: 0 };
     }
 
-    // Track when the raw zone changed
+    const isNewSample = sampleAt == null || sampleAt !== state.lastSampleAt;
+    state.lastSampleAt = sampleAt;
+    // Track when the raw zone changed, and how many separate samples it has held
     if (rawZoneId !== state.rawZoneId) {
       state.rawZoneId = rawZoneId;
       state.rawZoneStableSince = ts;
+      state.rawSamples = 1;
+    } else if (isNewSample) {
+      state.rawSamples = (state.rawSamples || 0) + 1;
     }
 
     // Raw zone matches committed — no change needed
@@ -475,6 +641,7 @@ export class ZoneProfileStore {
           }, { maxPerMinute: 10 });
           state.rawZoneId = state.committedZoneId;
           state.rawZoneStableSince = ts;
+          state.rawSamples = 1;
           return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId) };
         }
       }
@@ -483,19 +650,27 @@ export class ZoneProfileStore {
     // Raw zone differs from committed — decide whether to commit
     const timeSinceLastCommit = ts - state.lastCommitTs;
     const rawStableDuration = ts - state.rawZoneStableSince;
-
-    if (timeSinceLastCommit > HYSTERESIS_COOLDOWN_MS) {
-      // No recent zone change — this is a "first" transition, commit instantly
+    const upward = rawRank > committedRank;
+    const trace = { rawSamples: state.rawSamples, rawStableMs: rawStableDuration };
+    const commit = (commitPath) => {
       state.committedZoneId = rawZoneId;
       state.lastCommitTs = ts;
-      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
+      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId), commitPath, ...trace };
+    };
+
+    // An upward move is a claim of effort; one packet is not evidence of it.
+    if (upward && !(state.rawSamples >= UPWARD_CONFIRM_SAMPLES && rawStableDuration >= UPWARD_CONFIRM_MS)) {
+      return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'pending-upward', ...trace };
+    }
+
+    if (timeSinceLastCommit > HYSTERESIS_COOLDOWN_MS) {
+      // No recent zone change — commit (a confirmed climb, or a drop at once)
+      return commit(upward ? 'confirmed-upward' : 'downgrade');
     }
 
     if (rawStableDuration >= HYSTERESIS_STABILITY_MS) {
       // Rapid toggling detected but new zone has been stable long enough — commit
-      state.committedZoneId = rawZoneId;
-      state.lastCommitTs = ts;
-      return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId) };
+      return commit(upward ? 'confirmed-upward' : 'stable');
     }
 
     // Rapid toggling, not yet stable — keep the committed zone

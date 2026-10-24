@@ -208,8 +208,11 @@ describe('ZoneProfileStore hysteresis', () => {
     // Advance past cooldown
     mockTime += 6000;
 
-    // HR rises to 101 — just above active threshold (100)
-    // Upgrades should be instant, no exit margin applied
+    // HR rises to 101 — just above active threshold (100). No exit margin
+    // applies to an upgrade; it commits on the confirming second sample 1s
+    // later (UPWARD_CONFIRM_MS — one corrupt packet cannot claim a climb).
+    store.syncFromUsers([makeUser('user-1', 101)]);
+    mockTime += 1000;
     store.syncFromUsers([makeUser('user-1', 101)]);
     expect(store.getProfile('user-1').currentZoneId).toBe('active');
   });

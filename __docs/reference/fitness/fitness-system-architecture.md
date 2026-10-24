@@ -941,12 +941,17 @@ the frame. Under `prefers-reduced-motion` the gif is hidden and the avatar keeps
 a static heat glow.
 
 Detection reads the **stabilized** `currentZoneId` from `ZoneProfileStore`, the
-same value `GovernanceEngine` agrees with, so its hysteresis (5s cooldown, 3s
-stability, 5bpm exit margin) is what prevents chatter at the 160bpm line. On top
+same value `GovernanceEngine` agrees with, so its hysteresis (upward
+confirmation on a second sample 1s later, 5s cooldown, 3s stability, 5bpm exit
+margin) is what prevents chatter at the 160bpm line — and what keeps a single
+corrupt packet (two 204 bpm spikes on 2026-10-23) from ever reaching Fire. On top
 of that, `fireZoneTracker` seeds silently on a person's first observation — a
 reload mid-workout never congratulates someone for a zone they were already in —
-and enforces a five-minute per-person quiet period, because interval work
+treats a `resumed` zone entry (a rider back from a break) the same way, and
+enforces a five-minute per-person quiet period, because interval work
 legitimately re-crosses that line many times in a session.
+`fitness.fire_toast.shown` carries `zoneEntryId` and `previousZoneId`, the join
+keys to the `fitness.zone_state.transition` row that justified it.
 
 Fire waits its turn. If a challenge or ring card holds the slot, the crossing is
 queued and shown the moment it clears (`fireToastQueue`), so no moment is

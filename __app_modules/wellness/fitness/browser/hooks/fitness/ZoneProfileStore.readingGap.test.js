@@ -53,6 +53,9 @@ describe('ZoneProfileStore — a reading gap does not count as a zone change', (
 
   it('still debounces a real rapid toggle between two readings', () => {
     store.syncFromUsers([rider(170)]);
+    advance(1_000);
+    store.syncFromUsers([rider(170)]);    // second sample confirms the climb
+    expect(zoneOf(store)).toBe('hot');
     advance(10_000);
     store.syncFromUsers([rider(130)]);    // a real drop: commits instantly
     expect(zoneOf(store)).toBe('active');

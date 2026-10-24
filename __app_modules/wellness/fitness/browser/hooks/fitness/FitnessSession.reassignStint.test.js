@@ -50,6 +50,9 @@ function run(session, ticks, readings) {
   for (const dev of Object.keys(readings)) {
     const userId = session.userManager.resolveUserForDevice(dev)?.id;
     if (session.getZoneProfile(userId)?.zoneTrusted !== true) {
+      // A strap changing chests is not a 150 -> 80 bpm drop inside a second;
+      // the slew gate would rightly hold that. Let the old reading age out.
+      vi.advanceTimersByTime(2500);
       for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 80));
       vi.advanceTimersByTime(6000);
     }

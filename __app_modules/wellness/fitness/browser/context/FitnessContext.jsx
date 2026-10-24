@@ -2339,7 +2339,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getLogger().info('fitness.fire_toast.shown', {
       userId: show.userId,
       hr: show.heartRate ?? null,
-      fireThreshold: show.fireThreshold ?? null
+      fireThreshold: show.fireThreshold ?? null,
+      zoneEntryId: show.entryId ?? null,
+      previousZoneId: show.previousZoneId ?? null
     });
   }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
 
