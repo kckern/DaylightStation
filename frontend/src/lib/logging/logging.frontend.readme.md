@@ -95,6 +95,15 @@ configure({
 const logger = getLogger();
 ```
 
+### Automatic context
+
+Every event carries `context.build` (the bundle that wrote it) and, when the
+page was opened with `?device=<id>`, `context.deviceId` (`logDeviceId.js`). All
+kiosks log through one proxy IP, so `deviceId` is how the log store tells the
+garage display from the living-room TV. It is read at module load (before a
+router drops the query) and persisted in `localStorage`, falling back to the
+ids the fitness and piano apps already persist.
+
 ### Child Loggers
 
 Create scoped loggers with additional context:

@@ -32,3 +32,18 @@ describe('Logger.sampled — level option', () => {
     expect(recent.find((e) => e.event === `${name}.info`)?.level).toBe('info');
   });
 });
+
+describe('Logger — device identity in context', () => {
+  it('stamps ?device= from the page URL on every event as context.deviceId', async () => {
+    const { vi } = await import('vitest');
+    window.history.replaceState(null, '', '/fitness?device=garage-tv');
+    vi.resetModules();
+    const fresh = await import('./Logger.js');
+    window.history.replaceState(null, '', '/fitness/home'); // the router drops it
+    const name = `device-ctx-${Date.now()}`;
+    fresh.default().child({ component: 'device-test' }).info(name, {});
+    const evt = fresh.getRecentEvents(50).find((e) => e.event === name);
+    expect(evt.context.deviceId).toBe('garage-tv');
+    window.localStorage.removeItem('daylight.log.deviceId');
+  });
+});

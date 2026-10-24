@@ -14,6 +14,7 @@ import {
   readJankProbes,
   readRenderRegistry,
 } from './jankProbes.js';
+import { readLogDeviceId } from './logDeviceId.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 
@@ -21,6 +22,14 @@ const LEVELS = ['debug', 'info', 'warn', 'error'];
 // build has one, else the build time in base36). Without it the log store
 // cannot say whether a misbehaving screen was running current code.
 const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
+// Which screen wrote the event (`?device=` on the kiosk URL, persisted). Every
+// kiosk logs through one proxy IP, so without it only the user agent tells the
+// garage display from the living-room TV. Read once, at module load, before
+// any router rewrites the URL.
+const DEVICE_ID = typeof window !== 'undefined'
+  ? readLogDeviceId(window.location, (() => { try { return window.localStorage; } catch { return null; } })())
+  : null;
+const DEVICE_CONTEXT = DEVICE_ID ? { deviceId: DEVICE_ID } : {};
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
 
 const DEFAULT_OPTIONS = Object.freeze({
@@ -118,7 +127,7 @@ const emit = (level, eventName, data = {}, options = {}) => {
     message: options.message,
     data: data || {},
     source: options.source || config.name,
-    context: { build: BUILD_ID, ...config.context, ...(options.context || {}) },
+    context: { build: BUILD_ID, ...DEVICE_CONTEXT, ...config.context, ...(options.context || {}) },
     tags: options.tags || []
   };
 
