@@ -18,6 +18,16 @@ layers:
 terrain: { draw: alpine-rock, edge_lip: 0.02 }
 craft: { draw: glider }
 collectible: { draw: bell }
+# Weapons draw with the built-in SVG presets. To use sprites, name frames from
+# the zone sheet, e.g. laser: { frames: [laser-0, laser-1], fps: 12 }. A blast
+# steps through its frames over its lifetime instead of by clock time.
+weapons:
+  laser: { draw: laser }
+  bomb: { draw: bomb }
+  blast: { draw: blast }
+# Entity classes: breakable (broken by a hit, a laser or a bomb), solid (a wall;
+# only a bomb destroys it), scenery (never touched). Set
+# `vulnerable_to: [laser, bomb]` (or []) on a definition or placement to override.
 entities:
   pine: { class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
   chalet: { class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
