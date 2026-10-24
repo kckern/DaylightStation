@@ -55,11 +55,12 @@
 .skyline-glider__entity-board { fill: #f3c777; stroke: #5b3d2f; stroke-width: 3; }
 .skyline-glider__entity-box { fill: #d06a5a; stroke: #5b3d2f; stroke-width: 4; }
 .skyline-glider__entity-leaf, .skyline-glider__entity-wall, .skyline-glider__entity-roof, .skyline-glider__entity-rock, .skyline-glider__entity-board, .skyline-glider__entity-box { vector-effect: non-scaling-stroke; }
-.skyline-glider__laser-glow { fill: rgba(255, 90, 90, .45); }
+.skyline-glider__laser-glow { fill: rgba(255, 80, 80, .6); }
 .skyline-glider__laser-core { fill: #fff1a8; }
 .skyline-glider__bomb-body { fill: #2b2f36; stroke: #fff1a8; stroke-width: 2; }
 .skyline-glider__bomb-fin { fill: #5b6470; }
-.skyline-glider__blast-outer { fill: rgba(255, 170, 60, .55); }
+.skyline-glider__blast-outer { fill: #ff9a3c; }
+.skyline-glider__blast-spark { stroke: #fff1a8; stroke-linecap: round; stroke-width: 5; }
 .skyline-glider__blast-inner { fill: #fff1a8; }
 .skyline-glider__world { display: grid; gap: 1rem; margin-top: 1.5rem; }
 .skyline-glider__zone h3 { margin: 0 0 .5rem; font-size: 1rem; letter-spacing: .14em; text-transform: uppercase; color: #f3c777; }

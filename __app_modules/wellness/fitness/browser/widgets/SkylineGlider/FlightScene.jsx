@@ -113,7 +113,7 @@ function Entity({ entity, assets, time }) {
   </g>;
 }
 
-const SHOT_SIZE = Object.freeze({ laser: { width: 40, height: 12 }, bomb: { width: 24, height: 30 } });
+const SHOT_SIZE = Object.freeze({ laser: { width: 52, height: 14 }, bomb: { width: 24, height: 30 } });
 
 function Shot({ shot, x, y, zone, assets, time }) {
   const name = frameName(zone.weapons?.[shot.kind], time);
