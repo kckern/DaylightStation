@@ -193,6 +193,26 @@ Consequences:
   session's `lift()` always hits the same multiplier and player.
 - The cue **SFX plays on its own independent `Audio` element** — a separate track
   from the `<video>`; the duck only scales the video's `level`, never `muted`.
+- **The Player cannot lift a held duck.** The Player re-writes `element.volume`
+  from its un-ducked `volume` prop whenever that prop changes, in a passive
+  effect that runs before the parent's. `usePersistentVolume` therefore
+  re-asserts the ducked level in its own effect after every level change while
+  `duckRef < 1`, so a volume tap mid-SFX stays proportional.
+
+### The boost amplifier applies boost only
+
+`FitnessPlayer` always routes the video through `useMediaAmplifier`
+(`components/useMediaAmplifier.js`): `MediaElementSource → GainNode →
+destination`, even at boost 1. A `MediaElementAudioSourceNode`'s output **already
+includes `element.volume` and `muted`**, so the gain is the **boost alone**
+(`muted ? 0 : boost`). It must never multiply by `element.volume`.
+
+Until 2026-10-23 it did (`gain = volume × boost`, from the amplifier's first
+version in 2025-12). The audible level was then `volume² × boost`, so every duck
+was squared too: `duck_to: 0.15` landed at about 2%, which is silent under the
+SFX. With the gain fixed, the effective level is `level × duck_to × boost`, so
+`duck_to` means what the config says. `media_amplifier.gain` (debug) logs the
+gain, boost, element volume and mute state whenever the gain changes.
 
 ---
 
