@@ -129,6 +129,12 @@ export function collectFlightTelemetry({
         cause: next.crashCause || null,
         segmentId: next.lastCollisionSegmentId || null,
         entityId: next.lastCollisionEntityId || null,
+        // Where and how the rider was flying, so a crash reads on its own
+        // without lining it up against the per-second samples.
+        courseTime: next.courseTime,
+        altitude: next.altitude,
+        filteredRpm: next.filteredRpm,
+        rawRpm: Math.max(0, Number(input?.rpm) || 0),
       },
     });
   }

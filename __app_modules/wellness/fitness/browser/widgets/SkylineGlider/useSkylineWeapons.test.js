@@ -4,19 +4,25 @@ import { useSkylineWeapons } from "./useSkylineWeapons.js";
 
 describe('useSkylineWeapons', () => {
   it('queues a key press once, ignores auto-repeat, and drains', () => {
-    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [] }));
+    const onFire = vi.fn();
+    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [], onFire }));
     fireEvent.keyDown(window, { key: 'b' });
     fireEvent.keyDown(window, { key: 'b', repeat: true });
     fireEvent.keyDown(window, { key: ' ' });
     expect(result.current()).toEqual(['bomb', 'laser']);
     expect(result.current()).toEqual([]);
+    expect(onFire.mock.calls.map(([press]) => press)).toEqual([
+      { action: 'bomb', source: 'keyboard', key: 'b' },
+      { action: 'laser', source: 'keyboard', key: ' ' },
+    ]);
   });
 
   it('ignores a pad button held when polling starts, then fires on each new press', () => {
     vi.useFakeTimers();
     const onGamepad = vi.fn();
+    const onFire = vi.fn();
     const pad = { index: 0, id: 'pad', mapping: 'standard', buttons: [{ pressed: true }] };
-    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [pad], onGamepad }));
+    const { result } = renderHook(() => useSkylineWeapons({ enabled: true, getGamepads: () => [pad], onGamepad, onFire }));
     act(() => vi.advanceTimersByTime(50));
     expect(result.current()).toEqual([]);
     expect(onGamepad).toHaveBeenCalledOnce();
@@ -25,6 +31,7 @@ describe('useSkylineWeapons', () => {
     pad.buttons = [{ pressed: false }, { pressed: true }];
     act(() => vi.advanceTimersByTime(50));
     expect(result.current()).toEqual(['bomb']);
+    expect(onFire).toHaveBeenCalledExactlyOnceWith({ action: 'bomb', source: 'gamepad', button: 1, padId: 'pad' });
     vi.useRealTimers();
   });
 

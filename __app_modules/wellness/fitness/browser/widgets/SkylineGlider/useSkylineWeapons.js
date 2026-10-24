@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef } from 'react';
 // Fire buttons for flight. Presses are edge-detected and queued; the flight
 // loop drains the queue once per animation frame and hands it to stepFlight.
 // A button already held when polling starts counts as held, not pressed, so
-// the press that started the flight does not also fire.
+// the press that started the flight does not also fire. onFire hears each
+// queued press with where it came from, so field logs show which physical
+// button a rider reaches for.
 
 const TRIGGER_THRESHOLD = 0.5;
 // Standard mapping: A / RT fire the laser; B / X / LT drop a bomb.
@@ -22,10 +24,12 @@ function fireKeyAction(event) {
   return action;
 }
 
-export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad } = {}) {
+export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFire } = {}) {
   const queue = useRef([]);
   const onGamepadRef = useRef(onGamepad);
   onGamepadRef.current = onGamepad;
+  const onFireRef = useRef(onFire);
+  onFireRef.current = onFire;
 
   useEffect(() => {
     queue.current = [];
@@ -38,7 +42,9 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad } = {
       // on keyup in Firefox. Drop the focus so fire keys only ever fire.
       const target = event.target;
       if (target && target !== document.body && typeof target.blur === 'function') target.blur();
-      if (!event.repeat) queue.current.push(action);
+      if (event.repeat) return;
+      queue.current.push(action);
+      onFireRef.current?.({ action, source: 'keyboard', key: event.key });
     };
     const onKeyUp = (event) => { if (fireKeyAction(event)) event.preventDefault(); };
     window.addEventListener('keydown', onKeyDown);
@@ -62,12 +68,16 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad } = {
         const primed = seen.has(pad.index);
         if (!primed) { seen.add(pad.index); onGamepadRef.current?.(pad); }
         for (const [action, indexes] of Object.entries(WEAPON_BUTTONS)) {
-          const down = indexes.some((index) => {
-            const button = pad.buttons?.[index];
-            return !!button && (button.pressed || button.value > TRIGGER_THRESHOLD);
+          const button = indexes.find((index) => {
+            const state = pad.buttons?.[index];
+            return !!state && (state.pressed || state.value > TRIGGER_THRESHOLD);
           });
+          const down = button !== undefined;
           const key = `${pad.index}:${action}`;
-          if (primed && down && !held.get(key)) queue.current.push(action);
+          if (primed && down && !held.get(key)) {
+            queue.current.push(action);
+            onFireRef.current?.({ action, source: 'gamepad', button, padId: pad.id });
+          }
           held.set(key, down);
         }
       }

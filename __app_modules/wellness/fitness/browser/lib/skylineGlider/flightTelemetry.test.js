@@ -122,7 +122,10 @@ describe('flight telemetry', () => {
     expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, kind: 'crash', segmentId: 'nose-hit', entityId: null } });
     expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1' } });
     expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10 } });
-    expect(result.events).toContainEqual({ type: 'crashed', data: { cause: 'terrain', segmentId: 'nose-hit', entityId: null } });
+    const crashed = result.events.find((event) => event.type === 'crashed');
+    expect(crashed.data).toMatchObject({ cause: 'terrain', segmentId: 'nose-hit', entityId: null, courseTime: 10.1, rawRpm: 40 });
+    expect(crashed.data).toHaveProperty('altitude');
+    expect(crashed.data).toHaveProperty('filteredRpm');
   });
 
   it('names the entity in a breakable hit', () => {

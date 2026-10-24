@@ -134,6 +134,7 @@ export default function SkylineGlider() {
   const drainWeapons = useSkylineWeapons({
     enabled: phase === 'flight' && !!armory.enabled,
     onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
+    onFire: (press) => log.info('skyline_glider.input.fire', press),
   });
   const checkpointIdentity = course ? riderIdentity : null;
   const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
