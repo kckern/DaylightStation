@@ -85,3 +85,11 @@ it('keeps quality fields in Media deep links and includes them in dedupe identit
   renderHook(() => useUrlCommand(second, '?play=plex:42&maxResolution=480'));
   expect(second.queue.playNow).toHaveBeenCalledWith({ contentId: 'plex:42', maxResolution: '480' }, { clearRest: true });
 });
+
+it('does not replay an unchanged legacy URL after quality keys are added to the protocol', () => {
+  localStorage.clear();
+  localStorage.setItem('media-app.url-command-token', 'v2:play=plex:42&queue=&shuffle=&shader=&volume=');
+  const controller = makeController();
+  renderHook(() => useUrlCommand(controller, '?play=plex:42'));
+  expect(controller.queue.playNow).not.toHaveBeenCalled();
+});

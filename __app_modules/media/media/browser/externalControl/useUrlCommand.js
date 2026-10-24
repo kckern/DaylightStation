@@ -1,4 +1,4 @@
-import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
+import { normalizePlaybackQuality, PLAYBACK_QUALITY_KEYS } from '@shared-contracts/media/playbackQuality.mjs';
 // frontend/src/modules/Media/externalControl/useUrlCommand.js
 // URL deep-link protocol (C8.1, §8): ?play= autoplays, ?queue= appends, plus
 // shuffle/shader/volume modifiers. Processing is idempotent across refreshes
@@ -17,7 +17,11 @@ export const URL_TOKEN_KEY = STORAGE_KEYS.URL_COMMAND_TOKEN;
 // command and replay ?play, destroying the session (§8 idempotency).
 export function tokenFor(search) {
   const p = readPlaybackParams(search);
-  return `v2:${PLAYBACK_PARAM_KEYS.map((k) => `${k}=${p[k] ?? ''}`).join('&')}`;
+  // Missing new fields must retain the stored v2 token from older bundles;
+  // otherwise a refresh after upgrading would replay an unchanged Play URL.
+  const qualityKeys = [...PLAYBACK_QUALITY_KEYS, 'maxVideoResolution'];
+  const keys = PLAYBACK_PARAM_KEYS.filter(key => !qualityKeys.includes(key) || p[key] != null);
+  return `v2:${keys.map((k) => `${k}=${p[k] ?? ''}`).join('&')}`;
 }
 
 function parse(search) {

@@ -30,7 +30,8 @@ For example, using installation-specific identifiers and origin:
 
 Screen autoplay URLs and MediaApp `?play=` / `?queue=` deep links preserve
 the same fields, including `adaptive=false`; quality changes also distinguish
-Media deep-link dedupe tokens.
+Media deep-link dedupe tokens. Links without quality fields retain the legacy
+saved token, preventing an unchanged Play URL from replaying after an upgrade.
 
 The same quality query is accepted by `/api/v1/proxy/plex/stream/<rating-key>`
 and the legacy `/api/v1/play/plex/mpd/<rating-key>` endpoint. The proxy stream
