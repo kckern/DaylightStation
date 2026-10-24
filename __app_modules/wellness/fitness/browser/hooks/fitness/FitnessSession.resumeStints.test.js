@@ -104,6 +104,16 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     [tenMin, fiftyNine, sixtyOne, moved].forEach((s) => s.reset());
   });
 
+  it('v1 trust (no evidence) commits the first reading flagged resumed, so it can never be a Fire ceremony', () => {
+    const session = resumed();
+    expect(session.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); session.ingestData(hr('D2', 141)); }
+    expect(session.getZoneProfile('kid-a')).toMatchObject({
+      zoneTrusted: true, currentZoneId: 'warm', zoneEntry: { resumed: true, restored: 'no-evidence' }
+    });
+    session.reset();
+  });
+
   it('saves v2 evidence and resumes through it: plausible same-strap reading in, stale evidence out', () => {
     const v2 = (evidenceAgeMs) => (p) => ({ ...p, metadata: { zone_trust: { version: 2, riders: [{
       userId: 'kid-a', deviceIds: ['D2'],
