@@ -71,6 +71,41 @@ describe('LaunchService', () => {
     expect(mockLauncher.launch).not.toHaveBeenCalled();
   });
 
+  describe('prepareLaunch hook', () => {
+    function withPrepare(prepareLaunch) {
+      return new LaunchService({
+        contentCatalog: mockCatalog,
+        deviceLauncher: mockLauncher,
+        prepareLaunch,
+        logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
+      });
+    }
+
+    it('runs before the device launch with the resolved item', async () => {
+      const order = [];
+      const prepareLaunch = jest.fn(async () => { order.push('prepare'); });
+      mockLauncher.launch.mockImplementation(async () => { order.push('launch'); return { ok: true }; });
+      await withPrepare(prepareLaunch).launch({ contentId: 'retroarch:n64/mario-kart-64', targetDeviceId: 'shield-tv' });
+      expect(prepareLaunch).toHaveBeenCalledWith(expect.objectContaining({ title: 'Mario Kart 64' }));
+      expect(order).toEqual(['prepare', 'launch']);
+    });
+
+    it('runs before an FKB intent is handed back', async () => {
+      const prepareLaunch = jest.fn().mockResolvedValue(undefined);
+      await withPrepare(prepareLaunch).resolveIntent('retroarch:n64/mario-kart-64');
+      expect(prepareLaunch).toHaveBeenCalledTimes(1);
+    });
+
+    it('a throwing hook never blocks the launch', async () => {
+      const prepareLaunch = jest.fn().mockRejectedValue(new Error('adb down'));
+      const result = await withPrepare(prepareLaunch).launch({ contentId: 'retroarch:n64/mario-kart-64', targetDeviceId: 'shield-tv' });
+      expect(result.success).toBe(true);
+      expect(mockLauncher.launch).toHaveBeenCalled();
+      await expect(withPrepare(prepareLaunch).resolveIntent('retroarch:n64/mario-kart-64'))
+        .resolves.toEqual(expect.objectContaining({ target: 'com.retroarch/Activity' }));
+    });
+  });
+
   it('fails at composition time when the content catalog contract is missing', () => {
     expect(() => new LaunchService({
       contentRegistry: mockCatalog,

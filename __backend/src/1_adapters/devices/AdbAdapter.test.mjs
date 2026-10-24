@@ -28,6 +28,16 @@ describe('AdbAdapter shell recovery', () => {
     );
   });
 
+  it('shellArgv passes the script as one argv element, with no host shell', async () => {
+    const execFileCommand = vi.fn().mockResolvedValueOnce({ stdout: 'x\n', stderr: '' });
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const adapter = new AdbAdapter({ host: '10.0.0.12' }, { logger, execFileCommand });
+    const script = "cat '/c/Mega Man'\\''s $HOME.cfg'";
+
+    await expect(adapter.shellArgv(script)).resolves.toMatchObject({ ok: true, output: 'x' });
+    expect(execFileCommand).toHaveBeenCalledWith('adb', ['-s', '10.0.0.12:5555', 'shell', script], expect.any(Object));
+  });
+
   it('still records a genuine shell failure as an error', async () => {
     const execCommand = vi.fn().mockRejectedValueOnce(new Error('permission denied'));
     const { adapter, logger } = fixture(execCommand);

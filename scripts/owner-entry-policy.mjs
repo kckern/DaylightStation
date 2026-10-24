@@ -66,6 +66,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/piano/server/composition/audio-harvesters.mjs': 'composition',
   '__capabilities/content-catalog/server/composition/proxy-services.mjs': 'composition',
   '__capabilities/content-catalog/server/composition/libby.mjs': 'composition',
+  '__capabilities/content-catalog/server/composition/retroarch-overrides.mjs': 'composition',
   '__app_modules/media/media/server/composition/content-providers.mjs': 'composition',
   '__capabilities/content-catalog/server/application/proxy/ports/ILibraryMediaBootstrapGateway.mjs': 'application',
   '__capabilities/content-catalog/server/application/proxy/ports/ILibraryMediaStreamGateway.mjs': 'application',

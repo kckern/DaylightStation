@@ -238,6 +238,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
 | Controller pairing (garage BT pads: guided steps from input.yml, D-Bus pair helper, bond/HID checks, reconnect, status badges) | `__docs/reference/gaming/controller-pairing.md` |
+| Shield RetroArch savestate auto-load (off by default; per-game `resume` in catalog overrides; launch-time override files) | `__docs/reference/gaming/retroarch-game-overrides.md` |
 | Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |

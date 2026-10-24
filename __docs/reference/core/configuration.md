@@ -548,6 +548,12 @@ Configs that are NOT in the registry, deliberately:
 - `home/dashboard` and `player/config` are read directly via
   `dataService.household.read()` rather than through the app union.
 - `triggers/` is bindings, not app config.
+- `gaming/retroarch/catalog.yml` is read and written via
+  `dataService.household` (the RetroArch sync regenerates its `games:` list).
+  Its `overrides:` map survives sync and carries per-game settings, including
+  `resume` (savestate auto-load). Per-console `core_name` and
+  `launch.game_overrides` live in the registered `games` config. See
+  `__docs/reference/gaming/retroarch-game-overrides.md`.
 - `household.yml`, `integrations.yml` and `hardware/devices.yml` are not app
   configs either. The first two are loaded by `configLoader`'s own dedicated
   loaders (household identity at the household root, `loadHouseholdIntegrations`

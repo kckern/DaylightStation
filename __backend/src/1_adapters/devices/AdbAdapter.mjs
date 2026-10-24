@@ -113,6 +113,17 @@ export class AdbAdapter {
   }
 
   /**
+   * Run a device shell script without a host shell in between: the script string
+   * goes to `adb shell` as one argv element, so only the device shell parses it.
+   * Use this when the script carries arbitrary text (paths with quotes, `$`, `&`).
+   * @param {string} script - Device shell script
+   * @returns {Promise<{ok: boolean, output?: string, error?: string}>}
+   */
+  async shellArgv(script) {
+    return this.#execArgs(['shell', script]);
+  }
+
+  /**
    * Check if an error indicates the device is disconnected.
    * @private
    */

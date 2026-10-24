@@ -4116,9 +4116,44 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'adb-launcher' })
   });
 
+  // RetroArch per-game overrides: before a game launches, its override file on
+  // the device gets the catalog's `resume` flag as savestate_auto_load. The ADB
+  // endpoint is the configured device's content_control.fallback.
+  let prepareLaunch = null;
+  const gamesLaunchConfig = configService.getHouseholdAppConfig(null, 'games')?.launch;
+  const overrideDeviceId = gamesLaunchConfig?.game_overrides?.device;
+  if (overrideDeviceId) {
+    const overrideLogger = rootLogger.child({ module: 'retroarch-overrides' });
+    const adbFallback = configService.getDeviceConfig(overrideDeviceId)?.content_control?.fallback;
+    if (adbFallback?.provider === 'adb' && adbFallback.host) {
+      const { AdbAdapter } = await import('#adapters/devices/AdbAdapter.mjs');
+      const { createRetroArchPrepareLaunch } = await import("../../__capabilities/content-catalog/server/composition/retroarch-overrides.mjs");
+      const overrideAdb = new AdbAdapter({ host: adbFallback.host, port: adbFallback.port }, { logger: overrideLogger });
+      let adbConnected = false;
+      prepareLaunch = createRetroArchPrepareLaunch({
+        shell: async (script) => {
+          if (!adbConnected) {
+            const conn = await overrideAdb.connect();
+            if (!conn.ok) return conn;
+            adbConnected = true;
+          }
+          const result = await overrideAdb.shellArgv(script);
+          if (!result.ok) adbConnected = false;
+          return result;
+        },
+        getConfig: () => configService.getHouseholdAppConfig(null, 'games'),
+        readCatalog: () => dataService.household.read('gaming/retroarch/catalog'),
+        logger: overrideLogger
+      });
+    } else {
+      overrideLogger.warn?.('retroarch.override.disabled', { reason: 'device has no adb fallback', device: overrideDeviceId });
+    }
+  }
+
   const launchService = new LaunchService({
     contentCatalog: contentServices.contentCatalog,
     deviceLauncher: adbLauncher,
+    prepareLaunch,
     logger: rootLogger.child({ module: 'launch-service' })
   });
 

@@ -10,6 +10,7 @@ export class LaunchService {
   #deviceLauncher;
   #loadSchedule;
   #findDeviceByConstraint;
+  #prepareLaunch;
   #logger;
 
   /**
@@ -18,6 +19,9 @@ export class LaunchService {
    * @param {Object} config.deviceLauncher
    * @param {Function} [config.loadSchedule]
    * @param {Function} [config.findDeviceByConstraint]
+   * @param {Function} [config.prepareLaunch] - async (item) => void; best-effort device
+   *   prep before a launch or intent hand-off (e.g. RetroArch per-game overrides).
+   *   Must not throw; errors are logged and the launch proceeds.
    * @param {Object} [config.logger]
   */
   constructor(config) {
@@ -33,6 +37,7 @@ export class LaunchService {
     this.#deviceLauncher = config.deviceLauncher;
     this.#loadSchedule = config.loadSchedule || (() => null);
     this.#findDeviceByConstraint = config.findDeviceByConstraint || (() => null);
+    this.#prepareLaunch = typeof config.prepareLaunch === 'function' ? config.prepareLaunch : null;
     this.#logger = config.logger || console;
   }
 
@@ -101,6 +106,7 @@ export class LaunchService {
     }
 
     // 4. Execute
+    await this.#prepare(item, contentId);
     await this.#deviceLauncher.launch(resolvedDeviceId, item.launchIntent);
 
     this.#logger.info?.('launch.service.success', { contentId, targetDeviceId: resolvedDeviceId, title: item.title });
@@ -122,7 +128,17 @@ export class LaunchService {
     const item = await this.#contentCatalog.getItem(resolved);
     if (!item?.launchIntent) return null;
 
+    await this.#prepare(item, contentId);
     return item.launchIntent;
+  }
+
+  async #prepare(item, contentId) {
+    if (!this.#prepareLaunch) return;
+    try {
+      await this.#prepareLaunch(item);
+    } catch (error) {
+      this.#logger.warn?.('launch.service.prepareFailed', { contentId, error: error?.message });
+    }
   }
 
   #checkContentSchedule(contentId) {
