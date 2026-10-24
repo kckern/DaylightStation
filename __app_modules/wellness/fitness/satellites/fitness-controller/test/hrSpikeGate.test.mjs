@@ -44,3 +44,27 @@ test('a reading older than the window is not compared, and null resets the basel
   gate.gate('s', { heartRate: null, now: SPIKE_WINDOW_MS + 100 });
   assert.equal(gate.gate('s', { heartRate: 90, now: SPIKE_WINDOW_MS + 200 }).verdict, 'accept');
 });
+
+// Garage has two ANT+ dongles; each hears every broadcast, so every packet
+// reaches the gate twice (same BeatCount) before the multi-dongle dedup.
+test('two dongles: the second copy of a spike packet cannot confirm it', () => {
+  const g = createHrSpikeGate();
+  const seq = [[152, 10], [152, 10], [152, 11], [152, 11], [204, 12], [204, 12], [153, 13], [153, 13]];
+  const out = seq.map(([hr, beat], i) => g.gate('strap-a1', { heartRate: hr, beatCount: beat, now: 1000 + i * 10 }));
+  assert.deepEqual(out.map((r) => r.hr), [152, 152, 152, 152, null, null, 153, 153]);
+  assert.deepEqual(out.slice(4, 7).map((r) => r.verdict), ['held', 'duplicate', 'rejected']);
+});
+
+test('two dongles: a real jump is still confirmed by the next beat', () => {
+  const g = createHrSpikeGate();
+  const seq = [[100, 1], [100, 1], [140, 2], [140, 2], [141, 3]];
+  const out = seq.map(([hr, beat], i) => g.gate('s', { heartRate: hr, beatCount: beat, now: 1000 + i * 10 }));
+  assert.deepEqual(out.map((r) => r.verdict), ['accept', 'accept', 'held', 'duplicate', 'confirmed']);
+});
+
+test('a range-rejected reading does not clear the baseline', () => {
+  const g = createHrSpikeGate();
+  g.gate('s', { heartRate: 150, now: 1000 });
+  assert.equal(g.gate('s', { heartRate: null, rangeRejected: true, now: 1250 }).verdict, 'none');
+  assert.equal(g.gate('s', { heartRate: 204, now: 1500 }).verdict, 'held');
+});

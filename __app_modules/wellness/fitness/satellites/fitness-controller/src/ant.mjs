@@ -297,7 +297,12 @@ export class ANTPlusManager {
         // be implausible. Every verdict but a plain accept is logged
         // UNTHROTTLED — the 1 Hz line below is how a 2026-10-22 spike slipped
         // between log lines and could never be proven.
-        const spike = this._hrSpikeGate.gate(deviceId, { heartRate: hr, now: Date.now() });
+        const spike = this._hrSpikeGate.gate(deviceId, {
+          heartRate: hr,
+          now: Date.now(),
+          beatCount: Number.isFinite(data.BeatCount) ? data.BeatCount : null,
+          rangeRejected: rawHr !== null && hr === null
+        });
         if (spike.verdict === 'held' || spike.verdict === 'confirmed' || spike.verdict === 'rejected') {
           const raw = rawHrFields(data);
           console.log(`[${timestamp}] ${deviceId} HR spike ${spike.verdict}: held ${spike.heldHr} bpm, previous ${spike.previousHr} bpm (${spike.previousAgeMs}ms ago) raw=${JSON.stringify(raw)}`);
@@ -306,6 +311,7 @@ export class ANTPlusManager {
             previousAgeMs: spike.previousAgeMs, raw
           });
         }
+        if (spike.verdict === 'duplicate') return; // the other dongle's copy of a held packet
         if (spike.verdict === 'held') {
           if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
           if ('heartRate' in data) data.heartRate = null;

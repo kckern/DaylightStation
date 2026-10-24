@@ -14,7 +14,15 @@
  *   - agrees with the last accepted   -> 'rejected'  (a lone spike)
  *   - neither                          -> the new value is held in its place
  * A reading older than the window is not compared against, and a packet with
- * no reading clears the baseline, so a reconnect is never held.
+ * no reading clears the baseline, so a reconnect is never held. A reading the
+ * range check REJECTED is not "no reading": it leaves the baseline alone, so a
+ * corrupt 240 cannot clear the way for a corrupt 204 behind it.
+ *
+ * Only a NEW beat can confirm. Garage has two ANT+ dongles and both hear every
+ * broadcast, so the same over-the-air packet reaches this gate twice before the
+ * multi-dongle dedup. Without the BeatCount check the second copy of a 204
+ * "confirmed" the first (seen in review, 2026-10-23). A copy of the held packet
+ * is dropped as 'duplicate'.
  *
  * Same rule as the browser's createHrSlewGate (browser/hooks/fitness/
  * hrPlausibility.js) — this package cannot import it, so the limits are
@@ -30,17 +38,18 @@ export function createHrSpikeGate({ maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs 
   // deviceId -> { last: {hr, ts}|null, pending: {hr, ts}|null }
   const state = new Map();
   const close = (a, b) => Math.abs(a - b) < maxDeltaBpm;
+  const sameBeat = (a, b) => Number.isFinite(a) && Number.isFinite(b) && a === b;
 
   return {
     /**
      * @param {string} deviceId
-     * @param {{heartRate: number|null, now: number}} sample
-     * @returns {{verdict: 'accept'|'held'|'confirmed'|'rejected'|'none', hr: number|null,
+     * @param {{heartRate: number|null, now: number, beatCount?: number|null, rangeRejected?: boolean}} sample
+     * @returns {{verdict: 'accept'|'held'|'confirmed'|'rejected'|'duplicate'|'none', hr: number|null,
      *   heldHr: number|null, previousHr: number|null, previousAgeMs: number|null}}
      */
-    gate(deviceId, { heartRate, now }) {
+    gate(deviceId, { heartRate, now, beatCount = null, rangeRejected = false }) {
       if (!Number.isFinite(heartRate) || heartRate <= 0) {
-        state.delete(deviceId);
+        if (!rangeRejected) state.delete(deviceId);
         return { verdict: 'none', hr: Number.isFinite(heartRate) ? heartRate : null, heldHr: null, previousHr: null, previousAgeMs: null };
       }
       let s = state.get(deviceId);
@@ -53,19 +62,22 @@ export function createHrSpikeGate({ maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs 
         previousAgeMs: s.last ? now - s.last.ts : null
       };
       const accept = (verdict) => {
-        s.last = { hr: heartRate, ts: now };
+        s.last = { hr: heartRate, ts: now, beatCount };
         s.pending = null;
         return { verdict, hr: heartRate, ...base };
       };
       if (pending) {
+        if (sameBeat(beatCount, pending.beatCount)) {
+          return { verdict: 'duplicate', hr: null, ...base };
+        }
         if (close(heartRate, pending.hr)) return accept('confirmed');
         if (last && close(heartRate, last.hr)) return accept('rejected');
-        s.pending = { hr: heartRate, ts: now };
+        s.pending = { hr: heartRate, ts: now, beatCount };
         return { verdict: 'held', hr: null, ...base, heldHr: heartRate, replacedHr: pending.hr };
       }
       s.pending = null;
       if (last && !close(heartRate, last.hr)) {
-        s.pending = { hr: heartRate, ts: now };
+        s.pending = { hr: heartRate, ts: now, beatCount };
         return { verdict: 'held', hr: null, ...base, heldHr: heartRate };
       }
       return accept('accept');
