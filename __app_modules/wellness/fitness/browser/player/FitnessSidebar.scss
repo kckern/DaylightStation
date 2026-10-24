@@ -129,6 +129,20 @@
 }
 
 // Animations
+@keyframes zone-max-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes fitness-pinned-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitness-sidebar-container .fitness-sidebar-devices .fitness-devices-pinned { animation: none; }
+}
+
 @keyframes spin-rpm {
   from {
     transform: rotate(0deg);
@@ -337,7 +351,9 @@
     min-height: 0;
     overflow: hidden; // Changed from overflow-y: auto
     margin: 6px 0 0;
-    padding: 0;
+    // The camera/controls panel below has no margin of its own: this is the
+    // gap that keeps the last card (or the pinned RPM block) off it.
+    padding: 0 0 8px;
     display: flex;
     flex-direction: column;
     background: transparent;
@@ -351,16 +367,30 @@
       position: relative;
       min-height: 0;
       container-type: inline-size;
-      /* Align with treasure box horizontal margins. No bottom padding: the
-         camera panel below supplies the gap, and every pixel here decides
-         whether five riders get regular or compact cards. */
+      /* Align with treasure box horizontal margins. The bottom gap above the
+         camera panel is .fitness-sidebar-devices' padding, outside this box,
+         so riderListDensity's room already excludes it. */
       padding: 0 1ex;
+    }
+
+    // RPM meters and step mats: always fully visible below the rider list.
+    // Only the list above scrolls; its room shrinks by this block's height
+    // through the list's ResizeObserver.
+    .fitness-devices-pinned {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 1ex 0;
+      animation: fitness-pinned-enter 0.3s ease-out;
     }
 
     .device-grid {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      // JS picks 10px, or 4px when cards sit at the 64px floor
+      // (riderListDensity.allocateRiderLayout).
+      gap: var(--rider-gap, 10px);
       width: 100%;
     }
 
@@ -390,6 +420,26 @@
       }
       .device-info .device-stats .device-value {
         font-size: clamp(16px, calc(var(--rider-card-height, 64px) * .2), 24px);
+      }
+    }
+
+    // Tall card with an HR trend: avatar + name/BPM on top, the chart fills
+    // the rest of the card's width and height (hrTrend.js thresholds).
+    .device-grid.layout-horiz .fitness-device.heart-rate.has-trend {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      align-items: center;
+      column-gap: 10px;
+      row-gap: 6px;
+      padding: 8px 8px 12px;
+      .card-avatar { --rider-avatar: min(64px, 24cqw); }
+      .rider-hr-trend {
+        grid-column: 1 / -1;
+        align-self: stretch;
+        width: 100%;
+        height: 100%;
+        min-height: 20px;
       }
     }
 
@@ -1729,6 +1779,39 @@
     transition: width 0.3s ease-in-out;
   }
 
+  // Fire has no next zone, so the bar is full, brighter red, and pulses
+  // (opacity only — compositor work; never animate filter or box-shadow).
+  // Selector out-ranks the per-zone fill colour above.
+  &.zone-fire .zone-progress-bar--max { height: 6px; }
+  &.zone-fire .zone-progress-bar--max .zone-progress-fill {
+    width: 100%;
+    background: zones.$zone-fire-hot;
+    transition: none;
+    animation: zone-max-pulse 1.4s ease-in-out infinite;
+    will-change: opacity;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &.zone-fire .zone-progress-bar--max .zone-progress-fill { animation: none; opacity: 1; }
+  }
+
+  // Whole-session HR sparkline (RiderHrTrend). Static SVG, no animation.
+  .rider-hr-trend {
+    display: block;
+    overflow: visible;
+  }
+  .rider-hr-trend__line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .rider-hr-trend__guide {
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
   // Countdown bar while a silent device waits to be removed
   .device-timeout-bar {
     position: absolute;
@@ -1757,16 +1840,6 @@
 
   }
 
-  // Strap dot and heart identify the physical monitor.
-  .device-name .strap-dot {
-    display: inline-block;
-    width: 0.6em;
-    height: 0.6em;
-    margin-right: 0.35em;
-    border-radius: 50%;
-    vertical-align: 0.12em;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-  }
 }
 
 .fitness-sidebar-container .fitness-sidebar-menu {
@@ -1774,9 +1847,76 @@
   .visibility-controls { display: grid; gap: 0.35rem; }
   .menu-item { min-height: 40px; font-size: max(14px, 0.875rem); }
   .touch-volume-item { padding: 0.5rem; }
-  .menu-more {
-    border-top: 1px solid rgba(255,255,255,.15);
-    summary { min-height: 40px; display: list-item; padding: 0.65rem 0.4rem; cursor: pointer; font-size: 1rem; }
-  }
   .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid #6ab8ff; outline-offset: 3px; }
+  button:focus-visible { outline: 2px solid #6ab8ff; outline-offset: 2px; }
+
+  // Close is a full-width footer at the bottom, in reach of a short rider and
+  // right where the gear that opened the menu sits (2026-10-23).
+  .sidebar-menu-footer {
+    flex-shrink: 0;
+    padding: 8px 0.75rem 0.75rem;
+    .close-btn {
+      width: 100%;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 10px;
+      cursor: pointer;
+      .close-glyph { font-size: 1.2rem; line-height: 1; }
+    }
+  }
+
+  // Settings: bottom-anchored, priority bottom-up. margin-top:auto (not
+  // justify-content:flex-end) keeps the top reachable by scroll if a short
+  // viewport ever overflows; at the kiosk's 777px the stack fits unscrolled.
+  &.settings-mode .sidebar-menu-content {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+  .settings-stack {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    // Selectors match the base menu rules' specificity and come later, so they win.
+    .menu-section { margin: 0; }
+    .menu-section .menu-item { margin: 0; min-height: 48px; font-size: 1rem; }
+    .settings-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.55);
+      padding: 0 2px;
+    }
+    .settings-tools {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      .menu-item { text-align: center; padding: 0.5rem; white-space: nowrap; }
+      &.menu-section .menu-item { text-align: center; padding: 0.5rem; }
+    }
+    .settings-divider { height: 1px; background: rgba(255, 255, 255, 0.12); margin: 2px 0; }
+    .visibility-controls { gap: 8px; }
+    .menu-section .boost-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      cursor: default;
+      .mix-label { font-size: 0.875rem; font-weight: 600; color: rgba(255, 255, 255, 0.8); }
+      .volume-boost-controls { flex: 1; margin: 0; gap: 4px; }
+      .boost-btn { min-height: 40px; padding: 0; }
+    }
+    .menu-section .menu-item.touch-volume-item { padding: 8px; gap: 6px; }
+    .menu-section .menu-item.touch-volume-item .touch-volume-button { height: 44px; }
+  }
 }

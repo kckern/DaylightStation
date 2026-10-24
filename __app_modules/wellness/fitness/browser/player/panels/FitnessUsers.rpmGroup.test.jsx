@@ -53,4 +53,13 @@ describe('FitnessUsers RPM group', () => {
     const grid = container.querySelector('.rpm-devices');
     expect(grid.className).not.toMatch(/devicecount/);
   });
+  it('pins the RPM group below the scrolling rider list, never inside it', async () => {
+    testState.context = { ...baseContext({}), rpmDevices: bikes(2) };
+    const { container } = render(<FitnessUsersList />);
+    await waitFor(() => expect(container.querySelectorAll('.rpm-device-avatar').length).toBe(2));
+    expect(container.querySelector('.fitness-devices .rpm-group-container')).toBeNull();
+    const pinned = container.querySelector('.fitness-devices-pinned');
+    expect(pinned.querySelector('.rpm-group-container')).toBeTruthy();
+    expect(pinned.previousElementSibling.classList.contains('fitness-devices')).toBe(true);
+  });
 });

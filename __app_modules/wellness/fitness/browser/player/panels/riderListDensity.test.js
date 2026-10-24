@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocateRiderHeight, measureRiderHeight } from './riderListDensity.js';
+import { allocateRiderHeight, allocateRiderLayout, measureRiderHeight, measureRiderLayout } from './riderListDensity.js';
 
 describe('continuous roster allocation', () => {
   it('fills available space continuously for five riders', () => {
@@ -36,5 +36,37 @@ describe('continuous roster allocation', () => {
     container.querySelector('.fitness-device').getBoundingClientRect = () => ({ height: 64 });
     container.querySelector('.rpm-group-container').getBoundingClientRect = () => ({ height: 250 });
     expect(measureRiderHeight(container, container)).toBe(132);
+  });
+
+  it('keeps the roomy gap while cards clear the floor', () => {
+    // 5 riders, 3 headers (75), 7 gaps: (600 - 75 - 70) / 5 = 91
+    expect(allocateRiderLayout({ room: 600, content: 75, gaps: 7, count: 5 })).toEqual({ height: 91, gap: 10 });
+  });
+  it('tightens the gap before the floor forces a scroll (the 17:05 roster)', () => {
+    // RPM is pinned outside the list now: 457 - 75 headers - 7 x 10 = 312 / 5 = 62 < 64
+    expect(allocateRiderLayout({ room: 457, content: 75, gaps: 7, count: 5 })).toEqual({ height: 70, gap: 4 });
+    // (470 - 75 - 70) / 5 = 65 clears the floor, so the roomy gap stays.
+    expect(allocateRiderLayout({ room: 470, content: 75, gaps: 7, count: 5 })).toEqual({ height: 65, gap: 10 });
+  });
+  it('choice does not depend on the gap the grid currently wears', () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<div class="device-grid">' + Array.from({ length: 5 }, () => '<div class="device-wrapper"><div class="device-zone-info"></div><div class="fitness-device card-horizontal heart-rate"></div></div>').join('') + '</div>';
+    document.body.append(container);
+    Object.defineProperty(container, 'clientHeight', { value: 340 });
+    const grid = container.firstChild;
+    [...grid.children].forEach(c => { c.getBoundingClientRect = () => ({ height: 64 }); });
+    grid.querySelectorAll('.fitness-device').forEach(c => { c.getBoundingClientRect = () => ({ height: 64 }); });
+    grid.style.gap = '4px';
+    const a = measureRiderLayout(container, container);
+    grid.style.gap = '10px';
+    expect(measureRiderLayout(container, container)).toEqual(a);
+    expect(a).toEqual({ height: 64, gap: 4 });
+  });
+  it('lets a single rider grow to the trend cap when an HR trend has room to draw', () => {
+    expect(allocateRiderHeight({ room: 700, overhead: 30, count: 1, singleCap: 560 })).toBe(560);
+    expect(allocateRiderHeight({ room: 545, overhead: 25, count: 1, singleCap: 560 })).toBe(520);
+    expect(allocateRiderLayout({ room: 700, content: 25, gaps: 0, count: 1, singleCap: 560 })).toEqual({ height: 560, gap: 10 });
+    // Two or more riders were never capped; the trend cap does not touch them.
+    expect(allocateRiderHeight({ room: 700, overhead: 50, count: 2, singleCap: 560 })).toBe(325);
   });
 });

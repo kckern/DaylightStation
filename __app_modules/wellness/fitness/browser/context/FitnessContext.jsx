@@ -1254,8 +1254,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       setMusicOverride(null);
       return;
     }
-    // Callers may silence an allowed overlay (player failure/close), but may
-    // not force music on. The settings UI intentionally exposes no toggle.
+    // false silences an allowed overlay (the settings Music toggle, a player
+    // failure/close); anything else only clears that silence. Nothing here can
+    // force music on: musicEnabled still requires a video whose labels allow
+    // it, so the settings toggle (shown only when musicAllowed) cannot break
+    // the 2026-10-06 rule.
     setMusicOverride(nextEnabled === false ? false : null);
   }, []);
 
@@ -3007,6 +3010,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     plexConfig,
     nomusicLabels,
     musicEnabled,
+    // The queued video allows background music (carries a nomusic label).
+    // The settings Music toggle is shown only while this is true.
+    musicAllowed: musicAutoEnabled,
+    musicOverride,
     setMusicAutoEnabled,
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,

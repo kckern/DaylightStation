@@ -44,21 +44,25 @@ export async function verifyIntegration(page,evidence,engine,outDir=mkdtempSync(
       const rect=sel=>document.querySelector(sel).getBoundingClientRect().toJSON();
       const list=document.querySelector('.fitness-devices');
       const grid=document.querySelector('.device-grid');
-      return {viewport:{width:innerWidth,height:innerHeight},frame:rect('.fitness-player-frame'),sidebar:rect('.fitness-sidebar-container'),list:rect('.fitness-devices'),media:rect('.fitness-sidebar-media'),footer:rect('#fixture-footer'),scroll:list.scrollHeight,room:list.clientHeight,
+      return {viewport:{width:innerWidth,height:innerHeight},frame:rect('.fitness-player-frame'),sidebar:rect('.fitness-sidebar-container'),list:rect('.fitness-devices'),pinned:rect('.fitness-devices-pinned'),media:rect('.fitness-sidebar-media'),footer:rect('#fixture-footer'),scroll:list.scrollHeight,room:list.clientHeight,
         bottom:Math.max(...[...grid.children].map(e=>e.getBoundingClientRect().bottom)),cards:[...document.querySelectorAll('.fitness-device.heart-rate')].map(e=>e.getBoundingClientRect().height)};
     });
     assert.equal(parent.cards.length,5);
     assert.ok(parent.cards.every(h=>h>=63.5),'readable cards in parent');
     const minimumContent=5*64+(parent.bottom-parent.list.top-parent.cards.reduce((sum,h)=>sum+h,0));
-    if(minimumContent<=parent.room) assert.ok(parent.scroll<=parent.room+3,'five cards and RPM fit actual parent '+JSON.stringify(parent));
+    if(minimumContent<=parent.room) assert.ok(parent.scroll<=parent.room+3,'five cards fit actual parent '+JSON.stringify(parent));
     else {
       assert.ok(parent.cards.every(h=>Math.abs(h-64)<1),'scroll only at readable minimum');
       const scrolled=await page.locator('.fitness-devices').evaluate(list=>{list.scrollTop=list.scrollHeight;return {last:list.querySelector('.device-grid').lastElementChild.getBoundingClientRect().bottom,bottom:list.getBoundingClientRect().bottom};});
-      assert.ok(scrolled.last<=scrolled.bottom+1,'RPM remains reachable at minimum-supported height');
+      assert.ok(scrolled.last<=scrolled.bottom+1,'last rider reachable at minimum-supported height');
       parent.scrolled=scrolled;
     }
     assert.ok(parent.media.bottom<=parent.sidebar.bottom+1,'media reservation fits');
-    assert.ok(parent.media.top-parent.list.bottom<2,'list fills above media');
+    // RPM is pinned below the scrolling list (never scrolled away), and an 8px
+    // gap keeps both off the camera panel (2026-10-23 cutout bug).
+    assert.ok(parent.pinned.top>=parent.list.bottom-0.5,'RPM pinned below the list '+JSON.stringify(parent));
+    const gapAboveMedia=parent.media.top-parent.pinned.bottom;
+    assert.ok(gapAboveMedia>=7.5&&gapAboveMedia<10,'8px gap above media '+JSON.stringify(parent));
     assert.ok(Math.abs(parent.list.bottom-(parent.scrolled?.last??parent.bottom))<8,'no parent allocation gap '+JSON.stringify(parent));
     assert.equal(Math.round(parent.footer.height),80);
     assert.equal(Math.round(parent.sidebar.height),viewport.height);
@@ -88,52 +92,54 @@ export async function verifyIntegration(page,evidence,engine,outDir=mkdtempSync(
     await render({reset:true,count:5,challenge:false,target:'active',zones:allActive(5)});
     await page.getByRole('button',{name:'Open settings',exact:true}).click();
     const body=page.locator('.sidebar-menu-content');
-    await page.locator('.menu-more summary').click();
+    // Close is focused on open; the stack is bottom-anchored, priority bottom-up,
+    // with End Session (least important) as its FIRST/top control.
+    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close settings','Close focused on open');
+    assert.equal(await page.locator('.fitness-sidebar-menu details').count(),0,'no More overflow');
     const labels=await page.locator('.touch-volume-button,.boost-btn').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('aria-label')));
     assert.ok(labels.length>4 && labels.every(Boolean));assert.equal(new Set(labels).size,labels.length,'unique audio labels');
-    await body.hover();await page.mouse.wheel(0,1000);await page.waitForTimeout(180);
-    assert.ok(await page.getByRole('button',{name:'Send feedback',exact:true}).isVisible());
-    const reach=()=>page.evaluate(()=>{
-      const body=document.querySelector('.sidebar-menu-content').getBoundingClientRect();const last=document.querySelector('[aria-label="Send feedback"]').getBoundingClientRect();
-      const close=document.querySelector('.close-btn').getBoundingClientRect();return {last:last.toJSON(),body:body.toJSON(),close:close.toJSON()};
-    });
-    let positions=await reach();assert.ok(positions.last.bottom<=positions.body.bottom+1,'wheel reaches final action');
+    const FIRST='[aria-label="End current fitness session"]';
+    const reach=()=>page.evaluate((first)=>{
+      const body=document.querySelector('.sidebar-menu-content').getBoundingClientRect();const top=document.querySelector(first).getBoundingClientRect();
+      const close=document.querySelector('.sidebar-menu-footer .close-btn').getBoundingClientRect();const root=document.querySelector('.fitness-sidebar-menu').getBoundingClientRect();
+      return {first:top.toJSON(),body:body.toJSON(),close:close.toJSON(),root:root.toJSON()};
+    },FIRST);
+    await body.hover();await page.mouse.wheel(0,-1000);await page.waitForTimeout(180);
+    let positions=await reach();assert.ok(positions.first.top>=positions.body.top-1,'wheel reaches the top action');
+    assert.ok(positions.close.bottom>=positions.root.bottom-80,'Close sits at the bottom '+JSON.stringify(positions));
     const wheelPositions=positions;
+    await body.evaluate(element=>{element.scrollTop=element.scrollHeight;});
     await page.getByRole('button',{name:'Close settings',exact:true}).focus();
-    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Close settings');
-    await body.evaluate(element=>{element.scrollTop=0;});
-    assert.equal(await body.evaluate(element=>element.scrollTop),0,'keyboard case starts independently at top');
-    const maxTabs=await page.locator('.fitness-sidebar-menu button,.fitness-sidebar-menu input,.fitness-sidebar-menu summary').count()+2;
+    // Keyboard / gamepad D-pad path: Up from Close walks the stack to the top.
     const keyboardPath=[];
     let keyboardReached=false;
-    for(let i=0;i<maxTabs;i++) {
-      await page.keyboard.press('Tab');
-      const focused=await page.evaluate(()=>({
+    for(let i=0;i<14;i++) {
+      await page.keyboard.press('ArrowUp');
+      const focused=await page.evaluate((first)=>({
         label:document.activeElement?.getAttribute('aria-label')||document.activeElement?.textContent?.trim(),
-        final:document.activeElement===document.querySelector('[aria-label="Send feedback"]'),
-      }));
+        final:document.activeElement===document.querySelector(first),
+      }),FIRST);
       keyboardPath.push(focused.label);
       if(focused.final) {keyboardReached=true;break;}
     }
-    assert.ok(keyboardReached,'actual Tab traversal reaches Send feedback: '+JSON.stringify(keyboardPath));
-    assert.equal(await page.evaluate(()=>document.activeElement===document.querySelector('[aria-label="Send feedback"]')),true);
+    assert.ok(keyboardReached,'ArrowUp traversal reaches End Session: '+JSON.stringify(keyboardPath));
+    assert.ok(keyboardPath[0]&&/volume/i.test(keyboardPath[0]),'Up from Close lands on video volume first: '+JSON.stringify(keyboardPath));
     positions=await reach();
     const keyboardPositions=positions;
-    assert.ok(positions.last.top>=positions.body.top-1&&positions.last.bottom<=positions.body.bottom+1,'Tab traversal scrolls final action into content bounds');
-    assert.ok(positions.close.top>=0 && positions.close.width>=40 && positions.close.height>=40,'reachable close');
+    assert.ok(positions.first.top>=positions.body.top-1&&positions.first.bottom<=positions.body.bottom+1,'Up traversal keeps the top action in content bounds');
+    assert.ok(positions.close.width>=40 && positions.close.height>=56,'reachable close');
     // Native touch scroll is Chromium evidence; desktop Firefox supplies
     // wheel and keyboard evidence (it does not expose TouchEvent).
     if(engine==='chromium') {
-      await page.getByRole('button',{name:'Close settings',exact:true}).focus();
-      await body.evaluate(e=>{e.scrollTop=0;});
+      await body.evaluate(e=>{e.scrollTop=e.scrollHeight;});
       const box=await body.boundingBox();
       const cdp=await page.context().newCDPSession(page);
       await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
-      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width/2,y:box.y+box.height-15}]});
-      for(let i=1;i<=8;i++) await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width/2,y:box.y+box.height-15-i*(box.height-30)/8}]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width/2,y:box.y+15}]});
+      for(let i=1;i<=8;i++) await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width/2,y:box.y+15+i*(box.height-30)/8}]});
       await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
       await page.waitForTimeout(300);
-      positions=await reach();assert.ok(positions.last.bottom<=positions.body.bottom+1,'native touch reaches last Settings action');
+      positions=await reach();assert.ok(positions.first.top>=positions.body.top-1,'native touch reaches the top Settings action');
       await cdp.detach();
     }
     await page.getByRole('button',{name:'30% volume',exact:true}).click();
@@ -163,14 +169,24 @@ export async function verifyIntegration(page,evidence,engine,outDir=mkdtempSync(
     await page.locator('.sidebar-menu-overlay').click({position:{x:30,y:30}});
     assert.equal(await page.locator('.fitness-sidebar-menu').count(),0);
     assert.equal(await page.evaluate(()=>window.fullscreenCount||0),0,'scrim does not trigger fullscreen');
+    await page.getByRole('button',{name:'Open settings',exact:true}).click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.fitness-sidebar-menu').count(),0,'Escape closes Settings');
+    await page.getByRole('button',{name:'Open settings',exact:true}).click();
+    const band=await page.evaluate(()=>{const c=document.querySelector('.sidebar-menu-content').getBoundingClientRect();const s=document.querySelector('.settings-stack').getBoundingClientRect();return s.top-c.top;});
+    if(band>20) {
+      await page.locator('.sidebar-menu-content').click({position:{x:20,y:8}});
+      assert.equal(await page.locator('.fitness-sidebar-menu').count(),0,'tap on the empty band above the stack closes Settings');
+    } else {
+      await page.getByRole('button',{name:'Close settings',exact:true}).click();
+    }
     evidence.push({acceptance:'settings',viewport,nativeTouch:engine==='chromium',keyboardPath,wheelPositions,keyboardPositions,positions,feedbackSurvivedMs:5300,endCount:await page.evaluate(()=>window.endCount)});
   }
 
   await page.getByRole('button',{name:'Open settings',exact:true}).click();
-  await page.locator('.menu-more summary').click();
   await Promise.all([page.waitForEvent('framenavigated', {predicate:frame=>frame===page.mainFrame()}),page.getByRole('button',{name:'Hard-reload the app (bypasses cache)',exact:true}).click()]);
   await page.waitForFunction(()=>typeof window.renderIntegration==='function');
-  evidence.push({acceptance:'more-reload',origin: new URL(page.url()).origin});
+  evidence.push({acceptance:'settings-reload',origin: new URL(page.url()).origin});
 
   await page.setViewportSize({width:1381,height:777});
   const heartColors=[];

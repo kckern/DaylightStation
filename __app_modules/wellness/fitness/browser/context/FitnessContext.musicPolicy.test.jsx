@@ -53,4 +53,24 @@ describe('Fitness music policy across navigation', () => {
     await act(async () => context.setFitnessPlayQueue([]));
     await waitFor(() => expect(context.musicEnabled).toBe(false));
   });
+
+  it('the settings Music toggle turns an allowed overlay off and back on, and is offered only when allowed', async () => {
+    let context;
+    function Probe() { context = useFitnessContext(); return null; }
+    render(<FitnessProvider fitnessConfiguration={config}><Probe /></FitnessProvider>);
+    await act(async () => context.setFitnessPlayQueue([{ id: 'video-1', labels: ['NoMusic'] }]));
+    await waitFor(() => expect(context.musicEnabled).toBe(true));
+    expect(context.musicAllowed).toBe(true);
+    await act(async () => context.setMusicOverride(false));
+    expect(context.musicEnabled).toBe(false);
+    expect(context.musicOverride).toBe(false);
+    expect(context.musicAllowed).toBe(true);
+    await act(async () => context.setMusicOverride(null));
+    expect(context.musicEnabled).toBe(true);
+    // A video without the label offers no toggle, and "on" cannot start music.
+    await act(async () => context.setFitnessPlayQueue([{ id: 'video-2', labels: [] }]));
+    await waitFor(() => expect(context.musicAllowed).toBe(false));
+    await act(async () => context.setMusicOverride(null));
+    expect(context.musicEnabled).toBe(false);
+  });
 });
