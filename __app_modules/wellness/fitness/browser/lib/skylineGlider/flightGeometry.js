@@ -62,6 +62,31 @@ export function entitiesTouchingCraft(course, courseTime, altitude, geometry = S
   });
 }
 
+/** The terrain segment covering the point (at_s, altitude), or null. */
+export function terrainAtPoint(course, atSeconds, altitude) {
+  return (course?.segments || []).find((segment) => {
+    const bounds = terrainBounds(segment);
+    if (!bounds) return false;
+    if (atSeconds < Number(segment.start_s) || atSeconds > Number(segment.end_s ?? segment.start_s)) return false;
+    return altitude < bounds.top || altitude > bounds.bottom;
+  }) || null;
+}
+
+/** The first entity whose box holds the point, or null. */
+export function entityAtPoint(entities, atSeconds, altitude) {
+  return (entities || []).find((entity) => {
+    const bounds = entityBounds(entity);
+    return atSeconds >= bounds.start && atSeconds <= bounds.end && altitude >= bounds.top && altitude <= bounds.bottom;
+  }) || null;
+}
+
+/** Whether an entity overlaps a blast box centred on the detonation point. */
+export function blastTouches(entity, blast, { blast_width_s, blast_height }) {
+  const bounds = entityBounds(entity);
+  return bounds.start <= blast.at_s + blast_width_s / 2 && bounds.end >= blast.at_s - blast_width_s / 2
+    && bounds.top <= blast.altitude + blast_height / 2 && bounds.bottom >= blast.altitude - blast_height / 2;
+}
+
 export function pointOverlapsCraft(pointTime, courseTime, geometry = SKYLINE_CRAFT_GEOMETRY) {
   return pointTime >= courseTime - geometry.rearSeconds
     && pointTime <= courseTime + geometry.frontSeconds;
