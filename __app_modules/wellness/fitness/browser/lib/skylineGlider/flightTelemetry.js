@@ -24,6 +24,7 @@ function buildSample(next, input, course, courseSecond) {
     verticalRate: next.verticalRate,
     inputMode: next.inputMode,
     lives: next.lives,
+    bombsLeft: next.bombsLeft ?? null,
     phase: next.phase,
     visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
     sensor: {
@@ -88,6 +89,21 @@ export function collectFlightTelemetry({
         entityId: next.lastCollisionEntityId || null,
       },
     });
+  }
+
+  if ((next.shotsFired || 0) > (previous.shotsFired || 0)) {
+    events.push({ type: 'weapon.fired', data: { weapon: 'laser', count: next.shotsFired } });
+  }
+  if ((next.bombsDropped || 0) > (previous.bombsDropped || 0)) {
+    events.push({ type: 'weapon.fired', data: { weapon: 'bomb', count: next.bombsDropped, bombsLeft: next.bombsLeft } });
+  }
+  const priorBlasts = new Set((previous.blasts || []).map((blast) => blast.id));
+  for (const blast of next.blasts || []) {
+    if (!priorBlasts.has(blast.id)) events.push({ type: 'bomb.detonated', data: { shotId: blast.id, atSeconds: blast.at_s, altitude: blast.altitude } });
+  }
+  const priorDestroyed = previous.destroyedBy || {};
+  for (const [entityId, by] of Object.entries(next.destroyedBy || {})) {
+    if (!(entityId in priorDestroyed)) events.push({ type: 'entity.destroyed', data: { entityId, by } });
   }
 
   const priorCollectibles = new Set(previous.collectedIds || []);
