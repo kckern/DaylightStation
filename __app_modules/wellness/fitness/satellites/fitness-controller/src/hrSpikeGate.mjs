@@ -24,6 +24,14 @@
  * "confirmed" the first (seen in review, 2026-10-23). A copy of the held packet
  * is dropped as 'duplicate'.
  *
+ * A jump after a short SILENT gap (no packets, so the baseline was not
+ * cleared, but older than the window) is accepted only PROVISIONALLY, judged
+ * against the last reading within SPIKE_MEMORY_MS. If the next packet goes
+ * back to that old line, the gap reading was the spike: the next packet is
+ * accepted ('rejected') instead of being held. Without this a 204 after a
+ * 2-5 s gap became the baseline, every real reading after it was held and
+ * dropped, and the browser received a clean 204 stream (2026-10-24 review).
+ *
  * Same rule as the browser's createHrSlewGate (browser/hooks/fitness/
  * hrPlausibility.js) — this package cannot import it, so the limits are
  * mirrored here and a test pins them.
@@ -33,9 +41,14 @@
 
 export const SPIKE_MAX_DELTA_BPM = 25;
 export const SPIKE_WINDOW_MS = 2000;
+/** How long the last accepted reading still judges a post-gap jump. */
+export const SPIKE_MEMORY_MS = 30 * 1000;
 
-export function createHrSpikeGate({ maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs = SPIKE_WINDOW_MS } = {}) {
-  // deviceId -> { last: {hr, ts}|null, pending: {hr, ts}|null }
+export function createHrSpikeGate({
+  maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs = SPIKE_WINDOW_MS, memoryMs = SPIKE_MEMORY_MS
+} = {}) {
+  // deviceId -> { last: {hr, ts, beatCount, priorHr?}|null, pending: {hr, ts}|null }
+  // `last.priorHr` marks a provisional accept: a post-gap jump away from priorHr.
   const state = new Map();
   const close = (a, b) => Math.abs(a - b) < maxDeltaBpm;
   const sameBeat = (a, b) => Number.isFinite(a) && Number.isFinite(b) && a === b;
@@ -61,10 +74,10 @@ export function createHrSpikeGate({ maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs 
         previousHr: s.last?.hr ?? null,
         previousAgeMs: s.last ? now - s.last.ts : null
       };
-      const accept = (verdict) => {
-        s.last = { hr: heartRate, ts: now, beatCount };
+      const accept = (verdict, extra = {}) => {
+        s.last = { hr: heartRate, ts: now, beatCount, ...(Number.isFinite(extra.priorHr) ? { priorHr: extra.priorHr } : {}) };
         s.pending = null;
-        return { verdict, hr: heartRate, ...base };
+        return { verdict, hr: heartRate, ...base, ...extra };
       };
       if (pending) {
         if (sameBeat(beatCount, pending.beatCount)) {
@@ -76,9 +89,19 @@ export function createHrSpikeGate({ maxDeltaBpm = SPIKE_MAX_DELTA_BPM, windowMs 
         return { verdict: 'held', hr: null, ...base, heldHr: heartRate, replacedHr: pending.hr };
       }
       s.pending = null;
+      // The provisional post-gap reading was the spike: back to the old line.
+      if (last && Number.isFinite(last.priorHr) && !close(heartRate, last.hr) && close(heartRate, last.priorHr)) {
+        return accept('rejected', { heldHr: last.hr, rejectedProvisional: true });
+      }
       if (last && !close(heartRate, last.hr)) {
         s.pending = { hr: heartRate, ts: now, beatCount };
         return { verdict: 'held', hr: null, ...base, heldHr: heartRate };
+      }
+      const remembered = !last && s.last && now - s.last.ts <= memoryMs ? s.last : null;
+      if (remembered && !close(heartRate, remembered.hr)) {
+        // A remembered reading still carrying priorHr was never confirmed.
+        const priorHr = Number.isFinite(remembered.priorHr) ? remembered.priorHr : remembered.hr;
+        return accept('accept', { provisional: true, priorHr });
       }
       return accept('accept');
     }

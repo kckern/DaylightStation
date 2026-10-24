@@ -68,3 +68,44 @@ test('a range-rejected reading does not clear the baseline', () => {
   assert.equal(g.gate('s', { heartRate: null, rangeRejected: true, now: 1250 }).verdict, 'none');
   assert.equal(g.gate('s', { heartRate: 204, now: 1500 }).verdict, 'held');
 });
+
+// 2026-10-24 review: steady 150, a 3 s silent gap, then 204, then 204/150
+// alternating. The old gate locked onto 204 and dropped every real 150.
+test('post-gap spike is provisional; alternation keeps the real line', () => {
+  const g = createHrSpikeGate();
+  let beat = 0;
+  const at = (hr, ms) => g.gate('s', { heartRate: hr, now: ms, beatCount: ++beat });
+  at(150, 1000); at(150, 2000);
+  const spike = at(204, 5000);
+  assert.equal(spike.verdict, 'accept');
+  assert.equal(spike.provisional, true);
+  const back = at(150, 6000);
+  assert.equal(back.verdict, 'rejected');
+  assert.equal(back.hr, 150);
+  assert.equal(at(204, 7000).verdict, 'held');
+  assert.equal(at(150, 8000).verdict, 'rejected');
+  assert.equal(at(204, 9000).verdict, 'held');
+  assert.equal(at(150, 10000).hr, 150);
+});
+
+test('two gaps in a row cannot re-lock onto a provisional spike', () => {
+  const g = createHrSpikeGate();
+  let beat = 0;
+  const at = (hr, ms) => g.gate('s', { heartRate: hr, now: ms, beatCount: ++beat });
+  at(150, 1000);
+  assert.equal(at(204, 4000).provisional, true);
+  const real = at(152, 7000);
+  assert.equal(real.hr, 152);
+  assert.equal(at(204, 8000).verdict, 'held');
+  assert.equal(at(152, 9000).hr, 152);
+});
+
+test('a real climb across a gap is confirmed by the next reading', () => {
+  const g = createHrSpikeGate();
+  let beat = 0;
+  const at = (hr, ms) => g.gate('s', { heartRate: hr, now: ms, beatCount: ++beat });
+  at(130, 1000);
+  assert.equal(at(165, 11000).verdict, 'accept');
+  assert.equal(at(166, 12000).verdict, 'accept');
+  assert.equal(at(167, 13000).hr, 167);
+});

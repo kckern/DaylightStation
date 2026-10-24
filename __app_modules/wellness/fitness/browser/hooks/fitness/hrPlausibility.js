@@ -116,7 +116,10 @@ export function createHrSlewGate({
       }
       const remembered = !last && s.last && ts - s.last.ts <= memoryMs ? s.last : null;
       if (remembered && !close(hr, remembered.hr)) {
-        return accept('accept', { provisional: true, priorHr: remembered.hr });
+        // A remembered reading still carrying priorHr was never confirmed: judge
+        // against ITS old line, or a second gap re-locks onto the spike.
+        const priorHr = Number.isFinite(remembered.priorHr) ? remembered.priorHr : remembered.hr;
+        return accept('accept', { provisional: true, priorHr });
       }
       return accept('accept');
     },

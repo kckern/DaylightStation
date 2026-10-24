@@ -131,3 +131,16 @@ describe('createHrSlewGate', () => {
     expect(gate.evaluate('d1', 180, 250).verdict).toBe('accept');
   });
 });
+
+describe('createHrSlewGate — chained post-gap provisionals (2026-10-24 review)', () => {
+  it('a second gap cannot re-lock onto the first provisional spike', () => {
+    const gate = createHrSlewGate();
+    gate.evaluate('d1', 150, 1000);
+    expect(gate.evaluate('d1', 204, 4000).provisional).toBe(true);
+    expect(gate.evaluate('d1', 152, 7000).hr).toBe(152);
+    expect(gate.evaluate('d1', 204, 8000).verdict).toBe('suspect');
+    const real = gate.evaluate('d1', 152, 9000);
+    expect(real.hr).toBe(152);
+    expect(gate.evaluate('d1', 204, 10000).verdict).toBe('suspect');
+  });
+});
