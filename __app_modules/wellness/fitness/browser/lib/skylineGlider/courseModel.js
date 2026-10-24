@@ -131,7 +131,7 @@ export function validateCourse(input) {
   if (weapons != null && (typeof weapons !== 'object' || Array.isArray(weapons))) errors.push('rules weapons must be a mapping');
   else for (const [field, value] of Object.entries(weapons || {})) {
     if (field === 'enabled') { if (typeof value !== 'boolean') errors.push('rules weapons enabled must be true or false'); continue; }
-    if (!finite(value) || Number(value) < 0) errors.push(`rules weapons ${field} must be a non-negative number`);
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push(`rules weapons ${field} must be a non-negative number`);
   }
   const entities = validateEntities(Array.isArray(input.entities) ? input.entities : [], errors);
   if (errors.length === 0) {

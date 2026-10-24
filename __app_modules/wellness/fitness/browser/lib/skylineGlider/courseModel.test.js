@@ -129,6 +129,8 @@ describe('course entities', () => {
     expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: 3, enabled: false } } })).valid).toBe(true);
     expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: -1 } } })).errors)
       .toContain('rules weapons bombs must be a non-negative number');
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: true, laser_cooldown_s: '' } } })).errors)
+      .toEqual(expect.arrayContaining(['rules weapons bombs must be a non-negative number', 'rules weapons laser_cooldown_s must be a non-negative number']));
   });
 
   it('rejects a solid entity that leaves no reachable gap', () => {
