@@ -3,6 +3,7 @@ import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from "../../lib/skylineGlider/courseModel.js";
 import { createFlightState, stepFlight } from "../../lib/skylineGlider/flightEngine.js";
+import { weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
 import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
@@ -16,6 +17,7 @@ import { isLocalDevHost } from '@/lib/kioskEnv.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { FlightScene } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
+import useSkylineWeapons from "./useSkylineWeapons.js";
 import "./SkylineGlider.scss";
 
 function formatTime(seconds) {
@@ -128,6 +130,11 @@ export default function SkylineGlider() {
     || courses.find((item) => item.id === riderWorld?.next)
     || courses.find((item) => playable(item.id)) || courses[0] || null;
   const course = lockedCourseRef.current || lobbyCourse;
+  const armory = weaponRules(course);
+  const drainWeapons = useSkylineWeapons({
+    enabled: phase === 'flight' && !!armory.enabled,
+    onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
+  });
   const checkpointIdentity = course ? riderIdentity : null;
   const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
   phaseRef.current = phase;
@@ -360,7 +367,10 @@ export default function SkylineGlider() {
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
-      const next = stepFlight(previous, cadence, Math.min(.1, Math.max(0, (now - prior) / 1000)), course);
+      const elapsed = Math.min(.1, Math.max(0, (now - prior) / 1000));
+      // A zero-length frame runs no engine sub-step, so presses wait for the next frame.
+      const actions = elapsed > 0 ? drainWeapons() : [];
+      const next = stepFlight(previous, actions.length ? { ...cadence, actions } : cadence, elapsed, course);
       prior = now;
       flightRef.current = next;
       setFlight(next);
@@ -406,6 +416,13 @@ export default function SkylineGlider() {
             effectTimersRef.current.add(timer);
           });
           executeCue('bell-cue', 'bell');
+        } else if (event.type === 'weapon.fired') {
+          executeCue(`${event.data.weapon}-cue`, event.data.weapon);
+        } else if (event.type === 'bomb.detonated') {
+          executeCue('explosion-cue', 'explosion');
+        } else if (event.type === 'entity.destroyed' && event.data.by === 'laser') {
+          // Bomb kills are covered by the explosion cue, crash kills by the collision cue.
+          executeCue('shatter-cue', 'breakable');
         } else if (event.type === 'checkpoint') {
           executeVisual('checkpoint-banner', () => {
             const label = `Checkpoint ${event.data.checkpointId}`;
@@ -433,7 +450,7 @@ export default function SkylineGlider() {
     audioRef.current.startWind();
     frameId = requestAnimationFrame(frame);
     return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
-  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
+  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted, drainWeapons]);
 
   const begin = useCallback((resume = false) => {
     if (!equipment || !riderId || !course) return;
@@ -651,7 +668,7 @@ export default function SkylineGlider() {
   return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
-    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span></header>
+    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span>{!!armory.enabled && <span data-testid="skyline-glider-bombs" aria-label="Bombs left">💣 {flight.bombsLeft ?? armory.bombs}</span>}</header>
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}

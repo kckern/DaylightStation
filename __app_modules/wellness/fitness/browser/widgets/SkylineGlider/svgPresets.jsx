@@ -105,6 +105,37 @@ export function GliderPreset({ craftFront, craftRear }) {
   </>;
 }
 
+// Weapons draw at their own origin: a laser's tip, a bomb's centre, a blast's centre.
+export function LaserPreset() {
+  return <>
+    <rect x="-52" y="-5" width="52" height="10" rx="5" className="skyline-glider__laser-glow"/>
+    <rect x="-46" y="-2" width="44" height="4" rx="2" className="skyline-glider__laser-core"/>
+  </>;
+}
+
+export function BombPreset() {
+  return <>
+    <path d="M-5 -6 L-9 -14 H9 L5 -6Z" className="skyline-glider__bomb-fin"/>
+    <circle r="8" className="skyline-glider__bomb-body"/>
+  </>;
+}
+
+const BLAST_SPARKS = Array.from({ length: 8 }, (_, index) => (index * Math.PI) / 4);
+
+export function BlastPreset({ width, height, progress }) {
+  const scale = 0.4 + 0.6 * progress;
+  const reach = (radians, from) => [Math.cos(radians) * (width / 2) * scale * from, Math.sin(radians) * (height / 2) * scale * from];
+  return <g opacity={1 - progress}>
+    <ellipse rx={(width / 2) * scale} ry={(height / 2) * scale} className="skyline-glider__blast-outer"/>
+    <ellipse rx={(width / 4) * scale} ry={(height / 4) * scale} className="skyline-glider__blast-inner"/>
+    {BLAST_SPARKS.map((radians) => {
+      const [x1, y1] = reach(radians, 0.7);
+      const [x2, y2] = reach(radians, 1.15);
+      return <line key={radians} x1={x1} y1={y1} x2={x2} y2={y2} className="skyline-glider__blast-spark"/>;
+    })}
+  </g>;
+}
+
 /** The alpine look, used when a course arrives without a resolved zone. */
 export const DEFAULT_ZONE = Object.freeze({
   id: 'alpine',
@@ -119,6 +150,8 @@ export const DEFAULT_ZONE = Object.freeze({
   terrain: { draw: 'alpine-rock', edge_lip: 0.02 },
   craft: { draw: 'glider' },
   collectible: { draw: 'bell' },
+  // Weapons pick their SVG preset by shot kind; a zone fills these slots only with sprite frames.
+  weapons: {},
   checkpoint: {},
   finish: {},
   sprites: null,

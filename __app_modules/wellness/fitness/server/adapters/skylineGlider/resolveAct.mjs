@@ -60,6 +60,7 @@ export function resolveZone(rawZone, overrides) {
     collectible: isObject(zone.collectible) ? { ...zone.collectible } : {},
     checkpoint: isObject(zone.checkpoint) ? { ...zone.checkpoint } : {},
     finish: isObject(zone.finish) ? { ...zone.finish } : {},
+    weapons: Object.fromEntries(Object.entries(isObject(zone.weapons) ? zone.weapons : {}).filter(([, spec]) => isObject(spec)).map(([kind, spec]) => [kind, { ...spec }])),
     sounds,
   };
 }
@@ -89,6 +90,7 @@ export function resolveAct(act, zones) {
       ...(definition.frame ? { frame: definition.frame } : {}),
       ...(definition.frames ? { frames: definition.frames, fps: definition.fps } : {}),
       ...(definition.draw ? { draw: definition.draw } : {}),
+      ...(Array.isArray(placement.vulnerable_to ?? definition.vulnerable_to) ? { vulnerable_to: [...(placement.vulnerable_to ?? definition.vulnerable_to)] } : {}),
     };
   });
   const { overrides, ...rest } = act;

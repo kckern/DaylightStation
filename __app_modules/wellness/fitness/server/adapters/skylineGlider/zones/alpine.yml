@@ -18,6 +18,17 @@ layers:
 terrain: { draw: alpine-rock, edge_lip: 0.02 }
 craft: { draw: glider }
 collectible: { draw: bell }
+# Weapons draw with the built-in SVG presets, chosen by shot kind. To use
+# sprites, add a `weapons:` slot naming frames from the zone sheet. The laser
+# and bomb animate by time; a blast steps through its frames once over its
+# lifetime instead of by clock time.
+# weapons:
+#   laser: { frames: [laser-0, laser-1], fps: 12 }
+#   bomb: { frame: bomb }
+#   blast: { frames: [blast-0, blast-1, blast-2] }
+# Entity classes: breakable (broken by a hit, a laser or a bomb), solid (a wall;
+# only a bomb destroys it), scenery (never touched). Set
+# `vulnerable_to: [laser, bomb]` (or []) on a definition or placement to override.
 entities:
   pine: { class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
   chalet: { class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
@@ -30,5 +41,8 @@ sounds:
   crash: sounds/crash.mp3
   restart: sounds/restart.mp3
   finish: sounds/finish.mp3
+  laser: sounds/laser.mp3
+  bomb: sounds/bomb.mp3
+  explosion: sounds/explosion.mp3
   wind: sounds/wind.mp3
   music: sounds/music.mp3

@@ -1,14 +1,15 @@
 import React from 'react';
 import { projectCourseWindow } from "../../lib/skylineGlider/courseProjection.js";
 import { SKYLINE_CRAFT_GEOMETRY } from "../../lib/skylineGlider/flightGeometry.js";
+import { weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { EMPTY_ZONE_ASSETS } from "../../lib/skylineGlider/zoneAssets.js";
 import {
-  BackdropPreset, BellPreset, CheckpointPreset, DEFAULT_ZONE, EntityPreset, FinishPreset,
-  GliderPreset, SCENE_HEIGHT, SCENE_WIDTH, SceneDefs, TerrainPreset, hasBackdropPreset,
+  BackdropPreset, BellPreset, BlastPreset, BombPreset, CheckpointPreset, DEFAULT_ZONE, EntityPreset, FinishPreset,
+  GliderPreset, LaserPreset, SCENE_HEIGHT, SCENE_WIDTH, SceneDefs, TerrainPreset, hasBackdropPreset,
 } from "./svgPresets.jsx";
 
 // The flight scene is a stack of layers drawn from the act's resolved zone:
-// backdrops → terrain → entities → collectibles → craft → foreground → effects.
+// backdrops → terrain → entities → collectibles → shots → craft → blasts → foreground → effects.
 // Every slot uses its file when one loaded and its SVG preset otherwise.
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -112,6 +113,37 @@ function Entity({ entity, assets, time }) {
   </g>;
 }
 
+const SHOT_SIZE = Object.freeze({ laser: { width: 52, height: 14 }, bomb: { width: 24, height: 30 } });
+
+function Shot({ shot, x, y, zone, assets, time }) {
+  const name = frameName(zone.weapons?.[shot.kind], time);
+  const size = SHOT_SIZE[shot.kind] || SHOT_SIZE.bomb;
+  // A laser sprite is pinned by its tip to the shot's point (right-aligned, so
+  // any frame aspect ratio keeps the tip there); a bomb sprite is centred.
+  const laser = shot.kind === 'laser';
+  const left = laser ? -size.width : -size.width / 2;
+  return <g data-testid={`skyline-glider-shot-${shot.id}`} data-kind={shot.kind} transform={`translate(${x} ${y})`} className={`skyline-glider__shot skyline-glider__shot--${shot.kind}`}>
+    {hasFrame(assets, name)
+      ? <SpriteFrame assets={assets} name={name} x={left} y={-size.height / 2} width={size.width} height={size.height} align={laser ? 'xMaxYMid' : 'xMidYMid'}/>
+      : laser ? <LaserPreset/> : <BombPreset/>}
+  </g>;
+}
+
+// Blasts step through their frames by progress, not by clock time.
+function blastFrame(spec, progress) {
+  const frames = spec?.frames || (spec?.frame ? [spec.frame] : []);
+  return frames.length ? frames[Math.min(frames.length - 1, Math.floor(progress * frames.length))] : null;
+}
+
+function Blast({ blast, x, y, width, height, progress, zone, assets }) {
+  const name = blastFrame(zone.weapons?.blast, progress);
+  return <g data-testid={`skyline-glider-blast-${blast.id}`} data-progress={Math.round(progress * 100) / 100} transform={`translate(${x} ${y})`} className="skyline-glider__blast">
+    {hasFrame(assets, name)
+      ? <SpriteFrame assets={assets} name={name} x={-width / 2} y={-height / 2} width={width} height={height} align="xMidYMid"/>
+      : <BlastPreset width={width} height={height} progress={progress}/>}
+  </g>;
+}
+
 export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_ASSETS }) {
   const zone = course.zone || DEFAULT_ZONE;
   const projected = projectCourseWindow(course, state.courseTime);
@@ -128,6 +160,11 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const destroyed = new Set(state.destroyedIds || []);
   const layers = zone.layers || [];
   const fill = assets.images.get(zone.terrain?.fill);
+  const rules = weaponRules(course);
+  const xAt = (atSeconds) => craftX + (atSeconds - time) * projected.unitsPerSecond;
+  const blastWidth = rules.blast_width_s * projected.unitsPerSecond;
+  const blastHeight = rules.blast_height * projected.height;
+  const blastProgress = (blast) => (rules.blast_s > 0 ? clamp(1 - blast.remaining / rules.blast_s, 0, 1) : 1);
   return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
     <SceneDefs/>
     {fill && <defs>
@@ -143,6 +180,9 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
         {hasFrame(assets, collectibleFrame) ? <SpriteFrame assets={assets} name={collectibleFrame} x={-16} y={-16} width={32} height={32} align="xMidYMid"/> : <BellPreset/>}
       </g>)}
     </g>
+    <g className="skyline-glider__weapons">
+      {(state.projectiles || []).map((shot) => <Shot key={shot.id} shot={shot} x={xAt(shot.at_s)} y={shot.altitude * projected.height} zone={zone} assets={assets} time={time}/>)}
+    </g>
     <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
     <g data-testid="skyline-glider-craft" data-facing="right" data-front-seconds={SKYLINE_CRAFT_GEOMETRY.frontSeconds} data-rear-seconds={SKYLINE_CRAFT_GEOMETRY.rearSeconds} data-radius={SKYLINE_CRAFT_GEOMETRY.radius} transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
       {hasFrame(assets, craftFrame) ? (() => {
@@ -152,6 +192,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
       {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
+    {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={blastWidth} height={blastHeight} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}
     {layers.filter((layer) => layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
   </svg>;
 }

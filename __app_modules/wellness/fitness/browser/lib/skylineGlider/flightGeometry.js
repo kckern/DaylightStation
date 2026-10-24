@@ -62,6 +62,55 @@ export function entitiesTouchingCraft(course, courseTime, altitude, geometry = S
   });
 }
 
+/** The terrain segment covering the point (at_s, altitude), or null. */
+export function terrainAtPoint(course, atSeconds, altitude) {
+  return (course?.segments || []).find((segment) => {
+    const bounds = terrainBounds(segment);
+    if (!bounds) return false;
+    if (atSeconds < Number(segment.start_s) || atSeconds > Number(segment.end_s ?? segment.start_s)) return false;
+    return altitude < bounds.top || altitude > bounds.bottom;
+  }) || null;
+}
+
+/** The first entity whose box holds the point, or null. */
+export function entityAtPoint(entities, atSeconds, altitude) {
+  return (entities || []).find((entity) => {
+    const bounds = entityBounds(entity);
+    return atSeconds >= bounds.start && atSeconds <= bounds.end && altitude >= bounds.top && altitude <= bounds.bottom;
+  }) || null;
+}
+
+/**
+ * The nearest entity or terrain segment met by a point sweeping from `from` to
+ * `to` at a fixed altitude: `{ entity | segment, at }`, or null. Entities win ties.
+ */
+export function firstHitAlong(entities, course, from, to, altitude) {
+  let best = null;
+  const consider = (hit, start, end) => {
+    if (start > to || end < from) return;
+    const at = Math.max(from, start);
+    if (!best || at < best.at) best = { ...hit, at };
+  };
+  for (const entity of entities || []) {
+    const bounds = entityBounds(entity);
+    if (altitude >= bounds.top && altitude <= bounds.bottom) consider({ entity }, bounds.start, bounds.end);
+  }
+  for (const segment of course?.segments || []) {
+    const bounds = terrainBounds(segment);
+    if (bounds && (altitude < bounds.top || altitude > bounds.bottom)) {
+      consider({ segment }, Number(segment.start_s), Number(segment.end_s ?? segment.start_s));
+    }
+  }
+  return best;
+}
+
+/** Whether an entity overlaps a blast box centred on the detonation point. */
+export function blastTouches(entity, blast, { blast_width_s, blast_height }) {
+  const bounds = entityBounds(entity);
+  return bounds.start <= blast.at_s + blast_width_s / 2 && bounds.end >= blast.at_s - blast_width_s / 2
+    && bounds.top <= blast.altitude + blast_height / 2 && bounds.bottom >= blast.altitude - blast_height / 2;
+}
+
 export function pointOverlapsCraft(pointTime, courseTime, geometry = SKYLINE_CRAFT_GEOMETRY) {
   return pointTime >= courseTime - geometry.rearSeconds
     && pointTime <= courseTime + geometry.frontSeconds;

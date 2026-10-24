@@ -2,6 +2,7 @@ import { SKYLINE_CRAFT_GEOMETRY, entityBounds, terrainContact } from "./flightGe
 
 const SCHEMA = 'skyline-glider-course/v1';
 const ENTITY_CLASSES = new Set(['breakable', 'solid', 'scenery']);
+const WEAPONS = new Set(['laser', 'bomb']);
 const TYPES = new Set([
   'open', 'lower-terrain', 'upper-terrain', 'corridor',
   'collectible-path', 'checkpoint', 'finish',
@@ -42,6 +43,9 @@ function validateEntities(rawEntities, errors) {
     if (!ENTITY_CLASSES.has(entity.class)) errors.push(`entity ${entity.id || index} has unsupported class`);
     if (!finite(entity.at_s) || !inBand(entity.altitude)) errors.push(`entity ${entity.id || index} is misplaced`);
     if (!(Number(entity.width_s) > 0) || !(Number(entity.height) > 0)) errors.push(`entity ${entity.id || index} has no size`);
+    if (entity.vulnerable_to != null && (!Array.isArray(entity.vulnerable_to) || entity.vulnerable_to.some((weapon) => !WEAPONS.has(weapon)))) {
+      errors.push(`entity ${entity.id || index} has unsupported vulnerable_to`);
+    }
     for (const field of ['at_s', 'altitude', 'width_s', 'height']) entity[field] = Number(entity[field]);
     return entity;
   });
@@ -122,6 +126,12 @@ export function validateCourse(input) {
     if (input.motion?.[field] != null && (!finite(input.motion[field]) || Number(input.motion[field]) <= 0)) {
       errors.push(`motion ${field} must be positive`);
     }
+  }
+  const weapons = input.rules?.weapons;
+  if (weapons != null && (typeof weapons !== 'object' || Array.isArray(weapons))) errors.push('rules weapons must be a mapping');
+  else for (const [field, value] of Object.entries(weapons || {})) {
+    if (field === 'enabled') { if (typeof value !== 'boolean') errors.push('rules weapons enabled must be true or false'); continue; }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push(`rules weapons ${field} must be a non-negative number`);
   }
   const entities = validateEntities(Array.isArray(input.entities) ? input.entities : [], errors);
   if (errors.length === 0) {

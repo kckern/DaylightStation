@@ -449,6 +449,80 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('fires a laser from the keyboard during flight, logs it and shows the bomb rack', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');
+    fireEvent.keyDown(window, { key: 'f' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.objectContaining({ weapon: 'laser', count: 1 }));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.skipped', expect.objectContaining({ effectId: 'laser-cue', reason: 'audio-unavailable' }));
+    fireEvent.keyDown(window, { key: 'b' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('4');
+    vi.useRealTimers();
+  });
+
+  it('keeps a press queued through a zero-length frame and fires it on the next one', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    // Take over animation frames so two callbacks can share one timestamp.
+    const pending = [];
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => pending.push(callback));
+    try {
+      act(() => vi.advanceTimersByTime(50));
+      const tick = (timestamp) => act(() => { pending.splice(0).forEach((callback) => callback(timestamp)); });
+      const fired = () => mockLog.info.mock.calls.filter(([name]) => name === 'skyline_glider.flight.weapon.fired');
+      let now = performance.now();
+      tick(now);
+      tick(now += 16);
+      fireEvent.keyDown(window, { key: 'f' });
+      tick(now);
+      expect(fired()).toHaveLength(0);
+      tick(now += 16);
+      expect(fired()).toHaveLength(1);
+      expect(fired()[0][1]).toMatchObject({ weapon: 'laser', count: 1 });
+    } finally {
+      raf.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores fire keys in the lobby, even once the flight starts', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.keyDown(window, { key: 'f' });
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
+    expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.anything());
+    vi.useRealTimers();
+  });
+
+  it('hides the bomb rack and ignores fire keys when the act disables weapons', async () => {
+    vi.useFakeTimers();
+    const unarmed = { ...course, rules: { ...course.rules, weapons: { enabled: false } } };
+    apiFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ courses: [unarmed] }) }));
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
+    expect(screen.queryByTestId('skyline-glider-bombs')).toBeNull();
+    fireEvent.keyDown(window, { key: 'f' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.anything());
+    vi.useRealTimers();
+  });
+
   it('prefers NiceDay over CycleAce regardless of equipment order', async () => {
     mockCtx.equipment = [
       { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
@@ -733,5 +807,28 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();
     expect(screen.getByTestId('course-collectible-bell').querySelector('path')).toBeTruthy();
     expect(screen.getByTestId('course-entity-rock-1').querySelector('.skyline-glider__entity-box')).toBeTruthy();
+  });
+  it('draws lasers, bombs and blasts as SVG presets with a blast that fades by progress', () => {
+    const state = { ...flightState, collectedIds: [], projectiles: [
+      { id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 },
+      { id: 'bomb-1', kind: 'bomb', at_s: 8, altitude: 0.6, fall: 0.2 },
+    ], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.25 }] };
+    const { container } = render(<FlightScene state={state} course={course}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1')).toHaveAttribute('data-kind', 'laser');
+    expect(screen.getByTestId('skyline-glider-shot-bomb-1').querySelector('.skyline-glider__bomb-body')).toBeTruthy();
+    const blast = screen.getByTestId('skyline-glider-blast-bomb-0');
+    expect(blast).toHaveAttribute('data-progress', '0.5');
+    expect(container.querySelector('.skyline-glider__laser-core')).toBeTruthy();
+  });
+
+  it('uses weapon sprite frames when the zone names them', () => {
+    const armedZone = { ...zoned, zone: { ...zoned.zone, weapons: { laser: { frame: 'coin' }, blast: { frames: ['ship-1', 'ship-2'] } } } };
+    const state = { ...flightState, collectedIds: [], projectiles: [{ id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 }], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.1 }] };
+    render(<FlightScene state={state} course={armedZone} assets={assets}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('image')).toBeTruthy();
+    // The laser sprite is pinned to its tip, whatever the frame's aspect ratio.
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('svg')).toHaveAttribute('preserveAspectRatio', 'xMaxYMid meet');
+    // remaining 0.1 of 0.5 s = progress 0.8, so the second of two frames.
+    expect(screen.getByTestId('skyline-glider-blast-bomb-0').querySelector('svg')).toHaveAttribute('viewBox', '32 0 32 16');
   });
 });
