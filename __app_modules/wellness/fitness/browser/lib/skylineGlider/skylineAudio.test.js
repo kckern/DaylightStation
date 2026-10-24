@@ -71,4 +71,22 @@ describe('Skyline audio', () => {
     expect(audio.playCue('crash')).toBe(true);
     expect(oscillator.frequency.value).toBe(120);
   });
+
+  it('exposes laser, bomb and explosion cue slots with synth fallback', async () => {
+    const { SKYLINE_SOUND_SLOTS, createSkylineAudio } = await import("./skylineAudio.js");
+    expect(SKYLINE_SOUND_SLOTS).toEqual(expect.arrayContaining(['laser', 'bomb', 'explosion']));
+    const oscillator = { type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+    const context = {
+      state: 'running', destination: {}, currentTime: 0, resume: vi.fn(),
+      createGain: vi.fn(() => ({ gain: { value: 1 }, connect: vi.fn() })), createOscillator: vi.fn(() => oscillator),
+    };
+    const audio = createSkylineAudio({ AudioContextCtor: function AudioContext() { return context; } });
+    await audio.prime();
+    expect(audio.playCue('laser')).toBe(true);
+    expect(oscillator.frequency.value).toBe(1320);
+    expect(audio.playCue('bomb')).toBe(true);
+    expect(oscillator.frequency.value).toBe(330);
+    expect(audio.playCue('explosion')).toBe(true);
+    expect(oscillator.frequency.value).toBe(90);
+  });
 });

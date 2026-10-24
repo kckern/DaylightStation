@@ -30,5 +30,8 @@ sounds:
   crash: sounds/crash.mp3
   restart: sounds/restart.mp3
   finish: sounds/finish.mp3
+  laser: sounds/laser.mp3
+  bomb: sounds/bomb.mp3
+  explosion: sounds/explosion.mp3
   wind: sounds/wind.mp3
   music: sounds/music.mp3

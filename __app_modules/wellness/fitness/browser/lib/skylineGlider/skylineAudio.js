@@ -9,6 +9,9 @@ const CUE_FREQUENCIES = Object.freeze({
   crash: 120,
   restart: 440,
   finish: 1040,
+  laser: 1320,
+  bomb: 330,
+  explosion: 90,
 });
 const LOOPS = Object.freeze({ wind: 0.35, music: 0.5 });
 const SYNTH_GAIN = 0.05;
