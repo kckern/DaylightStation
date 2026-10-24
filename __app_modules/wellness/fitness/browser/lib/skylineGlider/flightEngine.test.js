@@ -357,11 +357,20 @@ describe('weapons', () => {
     expect(stepFlight(paused, { rpm: 60, connected: false, ts: 5, actions: ['laser'] }, 1 / 60, armed).shotsFired).toBe(0);
   });
 
+  it('flies through the box of a solid it has bombed', () => {
+    const rocky = { ...armed, entities: [{ id: 'rock', class: 'solid', at_s: 4, altitude: 0.78, width_s: 0.8, height: 0.12 }] };
+    let next = stepFlight(start({ courseTime: 3.4, altitude: 0.55 }), { ...fresh(30), actions: ['bomb'] }, 1 / 60, rocky);
+    for (let i = 0; i < 90; i += 1) next = stepFlight(next, fresh(30), 1 / 60, rocky);
+    expect(next.destroyedBy).toEqual({ rock: 'bomb' });
+    expect(next.altitude + 0.035).toBeGreaterThan(0.66);
+    expect(next).toMatchObject({ phase: 'playing', collisions: 0 });
+  });
+
   it('refills bombs at a checkpoint and on restart, and clears shots on crash', () => {
     let next = stepFlight(start({ courseTime: 4.9, bombsLeft: 1 }), hold, 0.2, armed);
     expect(next.bombsLeft).toBe(5);
-    const crashed = stepFlight({ ...next, bombsLeft: 0, projectiles: [{ id: 'laser-9', kind: 'laser', at_s: 6, origin_s: 6, altitude: 0.6 }], altitude: 0.99 }, hold, 1 / 60, { ...armed, segments: [...armed.segments.slice(0, 1), { id: 'floor', type: 'lower-terrain', start_s: 5, end_s: 8, top: 0.7 }, armed.segments[1]] });
-    expect(crashed).toMatchObject({ phase: 'crashed', projectiles: [] });
+    const crashed = stepFlight({ ...next, bombsLeft: 0, projectiles: [{ id: 'laser-9', kind: 'laser', at_s: 6, origin_s: 6, altitude: 0.6 }], blasts: [{ id: 'bomb-9', at_s: 6, altitude: 0.7, remaining: 0.5 }], altitude: 0.99 }, hold, 1 / 60, { ...armed, segments: [...armed.segments.slice(0, 1), { id: 'floor', type: 'lower-terrain', start_s: 5, end_s: 8, top: 0.7 }, armed.segments[1]] });
+    expect(crashed).toMatchObject({ phase: 'crashed', projectiles: [], blasts: [] });
     const restarted = stepFlight(crashed, hold, armed.rules.restart_delay_s + 0.05, armed);
     expect(restarted).toMatchObject({ phase: 'playing', bombsLeft: 5, projectiles: [], blasts: [] });
   });

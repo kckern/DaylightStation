@@ -60,6 +60,7 @@ function crash(state, course, { cause, segmentId = null, entityId = null, counte
     crashRemaining: course.rules.restart_delay_s,
     crashCause: cause,
     projectiles: [],
+    blasts: [],
     collisions: counted ? state.collisions : state.collisions + 1,
     lastCollisionSegmentId: segmentId,
     lastCollisionEntityId: entityId,
@@ -83,13 +84,14 @@ function collide(state, course) {
   if (state.collisionProtected) return holdInsideTerrain(state, course);
   const terrain = terrainContact(course, state.courseTime, state.altitude);
   if (terrain) return crash(state, course, { cause: 'terrain', segmentId: terrain.id });
-  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude);
+  // Anything already destroyed (by a crash, laser or bomb) is gone for collision.
+  const destroyed = new Set(state.destroyedIds || []);
+  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude).filter((entity) => !destroyed.has(entity.id));
   const solid = touching.find((entity) => entity.class === 'solid');
   if (solid) return crash(state, course, { cause: 'entity', entityId: solid.id });
 
   // Breakables shatter on contact and cost one life, except while blinking.
-  const destroyed = new Set(state.destroyedIds || []);
-  const broken = touching.filter((entity) => entity.class === 'breakable' && !destroyed.has(entity.id));
+  const broken = touching.filter((entity) => entity.class === 'breakable');
   if (!broken.length) return state;
   const next = {
     ...state,

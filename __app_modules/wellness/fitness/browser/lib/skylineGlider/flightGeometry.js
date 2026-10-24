@@ -80,6 +80,30 @@ export function entityAtPoint(entities, atSeconds, altitude) {
   }) || null;
 }
 
+/**
+ * The nearest entity or terrain segment met by a point sweeping from `from` to
+ * `to` at a fixed altitude: `{ entity | segment, at }`, or null. Entities win ties.
+ */
+export function firstHitAlong(entities, course, from, to, altitude) {
+  let best = null;
+  const consider = (hit, start, end) => {
+    if (start > to || end < from) return;
+    const at = Math.max(from, start);
+    if (!best || at < best.at) best = { ...hit, at };
+  };
+  for (const entity of entities || []) {
+    const bounds = entityBounds(entity);
+    if (altitude >= bounds.top && altitude <= bounds.bottom) consider({ entity }, bounds.start, bounds.end);
+  }
+  for (const segment of course?.segments || []) {
+    const bounds = terrainBounds(segment);
+    if (bounds && (altitude < bounds.top || altitude > bounds.bottom)) {
+      consider({ segment }, Number(segment.start_s), Number(segment.end_s ?? segment.start_s));
+    }
+  }
+  return best;
+}
+
 /** Whether an entity overlaps a blast box centred on the detonation point. */
 export function blastTouches(entity, blast, { blast_width_s, blast_height }) {
   const bounds = entityBounds(entity);

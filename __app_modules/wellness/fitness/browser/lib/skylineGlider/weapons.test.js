@@ -70,6 +70,36 @@ describe('advancing shots', () => {
     expect(next.projectiles).toEqual([]);
   });
 
+  it('lets the laser fire again after exactly one cooldown', () => {
+    const next = advance(fireWeapons(flying({ altitude: 0.3 }), ['laser'], course), 0.3);
+    expect(fireWeapons(next, ['laser'], course).shotsFired).toBe(2);
+  });
+
+  it('sweeps the whole step so a narrow entity cannot be skipped', () => {
+    const narrow = { ...course, entities: [{ id: 'post', class: 'breakable', at_s: 2.97, altitude: 0.78, width_s: 0.04, height: 0.3 }] };
+    let state = fireWeapons(flying(), ['laser'], narrow);
+    for (let i = 0; i < 30; i += 1) state = advanceWeapons(state, 1 / 60, narrow);
+    expect(state.destroyedBy).toEqual({ post: 'laser' });
+    expect(state.projectiles).toEqual([]);
+  });
+
+  it('stops at a zero-width terrain wall', () => {
+    const walled = { ...course, entities: [], segments: [{ id: 'wall', type: 'lower-terrain', start_s: 3.03, top: 0.5 }] };
+    let state = fireWeapons(flying(), ['laser'], walled);
+    for (let i = 0; i < 30; i += 1) state = advanceWeapons(state, 1 / 60, walled);
+    expect(state.projectiles).toEqual([]);
+  });
+
+  it('takes the nearest hit along the sweep', () => {
+    const pair = { ...course, entities: [
+      { id: 'far', class: 'breakable', at_s: 2.99, altitude: 0.78, width_s: 0.02, height: 0.3 },
+      { id: 'near', class: 'breakable', at_s: 2.96, altitude: 0.78, width_s: 0.02, height: 0.3 },
+    ] };
+    let state = fireWeapons(flying(), ['laser'], pair);
+    for (let i = 0; i < 30; i += 1) state = advanceWeapons(state, 1 / 60, pair);
+    expect(state.destroyedBy).toEqual({ near: 'laser' });
+  });
+
   it('expires a laser at its range', () => {
     const open = { ...course, entities: [] };
     let state = fireWeapons(flying(), ['laser'], open);

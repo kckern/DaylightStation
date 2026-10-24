@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blastTouches, entityAtPoint, terrainAtPoint } from "./flightGeometry.js";
+import { blastTouches, entityAtPoint, firstHitAlong, terrainAtPoint } from "./flightGeometry.js";
 
 const course = {
   segments: [
@@ -22,6 +22,13 @@ describe('point geometry', () => {
     expect(entityAtPoint([tree], 10.2, 0.7)).toBe(tree);
     expect(entityAtPoint([tree], 10.2, 0.5)).toBeNull();
     expect(entityAtPoint([tree], 11, 0.7)).toBeNull();
+  });
+
+  it('finds the nearest entity or terrain along a sweep', () => {
+    expect(firstHitAlong([tree], course, 9, 10, 0.7)).toMatchObject({ entity: tree, at: 9.75 });
+    expect(firstHitAlong([tree], course, 9, 9.7, 0.7)).toBeNull();
+    expect(firstHitAlong([tree], course, 1, 12, 0.65)).toMatchObject({ segment: { id: 'hill' }, at: 2 });
+    expect(firstHitAlong([], { segments: [{ id: 'wall', type: 'lower-terrain', start_s: 5, top: 0.5 }] }, 4.9, 5.1, 0.6)?.segment.id).toBe('wall');
   });
 
   it('tests an entity against a blast box centred on the detonation', () => {

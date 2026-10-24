@@ -1,4 +1,4 @@
-import { SKYLINE_CRAFT_GEOMETRY, blastTouches, entityAtPoint, terrainAtPoint } from "./flightGeometry.js";
+import { SKYLINE_CRAFT_GEOMETRY, blastTouches, entityAtPoint, firstHitAlong, terrainAtPoint } from "./flightGeometry.js";
 
 // Lasers and bombs live in course coordinates (seconds along the course,
 // altitude 0..1), like entities, so every hit test reuses flightGeometry.
@@ -79,18 +79,21 @@ export function advanceWeapons(state, dt, course) {
   const destroyedBy = { ...(state.destroyedBy || {}) };
   const targets = () => (course?.entities || []).filter((entity) => entity.class !== 'scenery' && !destroyed.has(entity.id));
   const destroy = (entity, by) => { destroyed.add(entity.id); destroyedBy[entity.id] = by; };
+  // Float residue would stretch a cooldown by one sub-step.
+  const cool = (value) => { const left = (value || 0) - dt; return left > 1e-9 ? left : 0; };
   const blasts = (state.blasts || []).map((blast) => ({ ...blast, remaining: blast.remaining - dt })).filter((blast) => blast.remaining > 1e-9);
   const projectiles = [];
   for (const shot of state.projectiles || []) {
     if (shot.kind === 'laser') {
-      const moved = { ...shot, at_s: shot.at_s + (1 + rules.laser_speed_s) * dt };
-      const target = entityAtPoint(targets(), moved.at_s, moved.altitude);
-      if (target) {
-        if (vulnerableTo(target, 'laser')) destroy(target, 'laser');
+      // Sweep the whole step so a narrow entity or zero-width wall is never skipped.
+      const limit = shot.origin_s + rules.laser_range_s;
+      const end = Math.min(shot.at_s + (1 + rules.laser_speed_s) * dt, limit);
+      const hit = firstHitAlong(targets(), course, shot.at_s, end, shot.altitude);
+      if (hit) {
+        if (hit.entity && vulnerableTo(hit.entity, 'laser')) destroy(hit.entity, 'laser');
         continue;
       }
-      if (terrainAtPoint(course, moved.at_s, moved.altitude) || moved.at_s - moved.origin_s > rules.laser_range_s) continue;
-      projectiles.push(moved);
+      if (end < limit) projectiles.push({ ...shot, at_s: end });
       continue;
     }
     const fall = shot.fall + rules.bomb_gravity * dt;
@@ -107,7 +110,7 @@ export function advanceWeapons(state, dt, course) {
     blasts,
     destroyedIds: [...destroyed],
     destroyedBy,
-    laserCooldown: Math.max(0, (state.laserCooldown || 0) - dt),
-    bombCooldown: Math.max(0, (state.bombCooldown || 0) - dt),
+    laserCooldown: cool(state.laserCooldown),
+    bombCooldown: cool(state.bombCooldown),
   };
 }
