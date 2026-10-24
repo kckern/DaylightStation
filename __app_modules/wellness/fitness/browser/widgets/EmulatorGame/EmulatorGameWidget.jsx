@@ -564,6 +564,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         controllerPairing={fitnessContext?.controllerPairing}
         onPairController={fitnessContext?.pairController}
         onForgetController={fitnessContext?.forgetController}
+        controllerForget={fitnessContext?.controllerForget}
       />
       {notice && createPortal(
         <div className="fitness-emulator-notice" role="status">{notice}</div>,

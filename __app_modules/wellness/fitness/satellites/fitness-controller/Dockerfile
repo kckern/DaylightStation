@@ -10,6 +10,8 @@ FROM node:18-slim
 # mounts the template store. Host `fprintd` must be masked so it never claims the
 # reader (libfprint permits a single claimant of the device).
 # Verified to resolve + import on node:18-slim (Debian bookworm) before adding.
+#   - python3-dbus : the controller-pairing helper (src/bt_pair_helper.py) exports
+#                    a BlueZ Agent1 over D-Bus to answer legacy PINs (8BitDo SFC30)
 RUN apt-get update && apt-get install -y \
     usbutils \
     libusb-1.0-0-dev \
@@ -18,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     python3-gi \
+    python3-dbus \
     gir1.2-glib-2.0 \
     gir1.2-fprint-2.0 \
     libfprint-2-2 \

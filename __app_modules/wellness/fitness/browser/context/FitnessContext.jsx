@@ -18,7 +18,7 @@ import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig } from "./fitnessConfigBridge.js";
-import { buildPairRequest, buildRemoveRequest } from "./fitnessBtActions.js";
+import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
 import { buildRiderToast } from "../player/overlays/buildRiderToast.js";
@@ -231,6 +231,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Bluetooth game-controller management (Task 3.3)
   const [btInventory, setBtInventory] = useState(null);
   const [controllerPairing, setControllerPairing] = useState(null);
+  const [controllerForget, setControllerForget] = useState(null);
   const btReqRef = useRef(0);
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
@@ -1484,12 +1485,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
           if (data?.topic === 'bt.pair.progress') {
+            getLogger().info('fitness.bt.pair-progress', {
+              requestId: data.requestId,
+              phase: data.phase,
+              address: data.device?.address,
+              controllerId: data.controllerId,
+              attempt: data.attempt,
+              reason: data.reason,
+              message: data.message,
+            });
             setControllerPairing(data);
             return;
           }
           if (data?.topic === 'bt.remove.result') {
-            // Forget completed (success/failure surfaced by inventory refresh); log only.
             getLogger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
+            setControllerForget({ address: data.address, success: !!data.success, error: data.error || null });
             return;
           }
 
@@ -1586,17 +1596,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   // Bluetooth game-controller management actions (Task 3.3)
-  const pairController = useCallback((durationMs = 30000) => {
-    const requestId = `pair-${++btReqRef.current}`;
-    setControllerPairing({ phase: 'scanning', durationMs });
+  // `targets` (from input.yml controllers) tell the garage box what to look
+  // for and which legacy PIN to answer with.
+  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS } = {}) => {
+    const requestId = `pair-${Date.now().toString(36)}-${++btReqRef.current}`;
+    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true });
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildPairRequest({ requestId, durationMs }));
+      wsService.send(buildPairRequest({ requestId, durationMs, targets }));
     });
-    getLogger().info('fitness.bt.pair-request', { requestId, durationMs });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, targets: targets.length });
+    // The garage box answers within a second with its own `scanning`. Silence
+    // means it is offline — say so instead of spinning forever.
+    setTimeout(() => {
+      setControllerPairing((cur) => {
+        if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
+        getLogger().warn('fitness.bt.pair-no-response', { requestId });
+        return { phase: 'done', paired: [], reason: 'no-response', requestId };
+      });
+    }, 15000);
     return requestId;
   }, []);
 
   const forgetController = useCallback((address) => {
+    setControllerForget(null);
     const requestId = `forget-${++btReqRef.current}`;
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
       wsService.send(buildRemoveRequest({ requestId, address }));
@@ -2885,6 +2907,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Bluetooth game-controller management (Task 3.3)
     btInventory,
     controllerPairing,
+    controllerForget,
     pairController,
     forgetController,
     fitnessDevices,

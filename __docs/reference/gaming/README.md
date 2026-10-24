@@ -30,4 +30,5 @@ above.** For how the house observes that a game is being played, meters the time
 and ends a session when it runs out, see [arcade game sessions](arcade-game-sessions.md); for
 the emulator's boot contract, picture shaders and fault handling, see
 [emulator resilience](emulator-resilience.md); for what a console is made of and
-how to add one, see [arcade consoles](arcade-consoles.md).
+how to add one, see [arcade consoles](arcade-consoles.md); for pairing and keeping
+a Bluetooth controller connected in the garage, see [controller pairing](controller-pairing.md).

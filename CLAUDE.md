@@ -237,6 +237,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
+| Controller pairing (garage BT pads: guided steps from input.yml, D-Bus pair helper, bond/HID checks, reconnect, status badges) | `__docs/reference/gaming/controller-pairing.md` |
 | Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |

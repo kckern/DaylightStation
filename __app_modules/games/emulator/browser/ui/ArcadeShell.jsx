@@ -39,6 +39,7 @@ export function ArcadeShell({
   controllerPairing,
   onPairController,
   onForgetController,
+  controllerForget,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'emu-arcade-shell' }), []);
   // Default the active console to the first real one when not driven externally.
@@ -114,6 +115,7 @@ export function ArcadeShell({
               pairing={controllerPairing}
               onPair={onPairController}
               onForget={onForgetController}
+              forgetResult={controllerForget}
             />
           </div>
         )}

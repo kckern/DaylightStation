@@ -96,14 +96,14 @@ describe('ControllerStatus', () => {
     const sn30 = container.querySelector('[data-controller-id="8bitdo_sn30"] .ccs-os-badge');
     expect(sn30).toBeTruthy();
     expect(sn30.className).toContain('ccs-os-on');
-    expect(sn30.textContent).toContain('BT: connected');
+    expect(sn30.textContent).toContain('Ready');
     expect(sn30.textContent).toContain('75%');
 
-    // Xbox MAC not in feed → BT: off.
+    // Xbox MAC not in the bonded inventory → not paired.
     const xbox = container.querySelector('[data-controller-id="xbox"] .ccs-os-badge');
     expect(xbox).toBeTruthy();
     expect(xbox.className).toContain('ccs-os-off');
-    expect(xbox.textContent).toContain('BT: off');
+    expect(xbox.textContent).toContain('Not paired');
   });
 
   describe('pairing affordance', () => {
@@ -207,6 +207,82 @@ describe('ControllerStatus', () => {
       expect(button.disabled).toBe(false);
       act(() => button.click());
       expect(onPair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('guided pairing (steps from config)', () => {
+    const guided = [{
+      id: '8bitdo_sfc30', label: '8BitDo SFC30', match: '8Bitdo', address: 'E4:17:D8:C6:54:F0',
+      pairing: { pin: '0000', mode: 'Android (D-input)', steps: ['Hold START 3s.', 'Hold SELECT 3s until it blinks fast.'] },
+    }];
+
+    it('Pair opens the steps first; start sends targets with the PIN', () => {
+      const onPair = vi.fn();
+      let container;
+      act(() => {
+        ({ container } = render(<ControllerStatus controllers={guided} getGamepads={() => []} btInventory={[]} onPair={onPair} />));
+      });
+      act(() => container.querySelector('.ccs-pair-button').click());
+      expect(onPair).not.toHaveBeenCalled();
+      const steps = [...container.querySelectorAll('.ccs-guide-steps li')].map((li) => li.textContent);
+      expect(steps).toEqual(['Hold START 3s.', 'Hold SELECT 3s until it blinks fast.']);
+      act(() => container.querySelector('.ccs-guide-start').click());
+      expect(onPair).toHaveBeenCalledWith({
+        controllerId: '8bitdo_sfc30',
+        targets: [{ id: '8bitdo_sfc30', label: '8BitDo SFC30', name: '8Bitdo', macPrefix: 'E4:17:D8', pin: '0000' }],
+      });
+    });
+
+    it('keeps the steps on screen with live progress while the window runs', () => {
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus controllers={guided} getGamepads={() => []} btInventory={[]} onPair={vi.fn()}
+            pairing={{ phase: 'pairing', device: { name: '8Bitdo SFC30 GamePad' } }} />,
+        ));
+      });
+      expect(container.querySelectorAll('.ccs-guide-steps li').length).toBe(2);
+      expect(container.querySelector('.ccs-pair-status').textContent).toMatch(/Pairing 8Bitdo SFC30 GamePad/);
+      expect(container.querySelector('.ccs-guide-start').disabled).toBe(true);
+    });
+
+    it('a pad dialing in without a bond says so and offers Pair', () => {
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus controllers={guided} getGamepads={() => []} onPair={vi.fn()} onForget={vi.fn()}
+            btInventory={[{ address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: true, paired: false, attempting: true }]} />,
+        ));
+      });
+      const row = container.querySelector('[data-controller-id="8bitdo_sfc30"]');
+      expect(row.dataset.osStatus).toBe('unpaired');
+      expect(row.querySelector('.ccs-unpaired-notice').textContent).toMatch(/trying to connect but isn.t paired/);
+      // No bond → nothing to forget.
+      expect(row.querySelector('.ccs-forget-button')).toBeNull();
+      act(() => row.querySelector('.ccs-unpaired-notice button').click());
+      expect(container.querySelector('.ccs-guide-steps')).toBeTruthy();
+    });
+
+    it('an asleep bonded pad says press START', () => {
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus controllers={guided} getGamepads={() => []}
+            btInventory={[{ address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, paired: true, input: false }]} />,
+        ));
+      });
+      expect(container.querySelector('.ccs-os-badge').textContent).toMatch(/press START/);
+    });
+
+    it('a successful forget tells you how to pair again', () => {
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus controllers={guided} getGamepads={() => []} btInventory={[]}
+            forgetResult={{ address: 'E4:17:D8:C6:54:F0', success: true }} />,
+        ));
+      });
+      expect(container.querySelector('.ccs-forget-result').textContent).toMatch(/pairing mode/);
     });
   });
 

@@ -214,9 +214,11 @@ async function handleWebSocketMessage(data) {
       // Progress streams back as `bt.pair.progress`. Best-effort — never throws.
       if (message.topic === 'bt.pair.request') {
         await handleBtPairRequest(message, {
-          exec: execAsync,
           send: (topic, payload) => sendBus(topic, payload),
           logger: console,
+          // Nothing else talks to BlueZ while a pairing window is open: the
+          // inventory poll + reconnect loop pause, then resume and re-send.
+          onWindow: (open) => (open ? btInventoryBroadcast?.pause() : btInventoryBroadcast?.resume()),
         });
         return;
       }
