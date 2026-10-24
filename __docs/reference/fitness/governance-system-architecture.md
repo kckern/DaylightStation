@@ -75,8 +75,10 @@ WebSocket message arrives
     │       │
     │       ├──▶ ZoneProfileStore.syncFromUsers(allUsers)
     │       │       Derives: raw zone from HR + zone thresholds
-    │       │       Requires: accepted real Cool baseline for each wearer
-    │       │       Applies: hysteresis (5s cooldown, 3s stability)
+    │       │       Requires: accepted real Cool baseline for each wearer,
+    │       │                 or recent same-strap evidence (resume, <= 60 min)
+    │       │       Applies: upward confirmation (2 samples >= 1s),
+    │       │                hysteresis (5s cooldown, 3s stability)
     │       │       Stores: zoneTrusted, currentZoneId, accepted zoneEntry evidence
     │       │       Returns: true if zone signature changed
     │       │
@@ -104,13 +106,13 @@ WebSocket message arrives
 |------|---------|------------|
 | Sensor → WebSocket | ~50ms | 50ms |
 | ingestData pipeline | ~5ms | 55ms |
-| Zone hysteresis | 0ms (or 3-5s if jittering) | 55ms |
+| Zone hysteresis | 0ms down / ~1s up (or 3-5s if jittering) | 55ms |
 | notifyZoneChange debounce | 100ms | 155ms |
 | evaluate() | ~5ms | 160ms |
 | React render | ~16ms | 176ms |
 | UI update visible | ~0ms | 176ms |
 
-**Total: ~176ms sensor-to-UI** (when zone is stable). Up to **5 seconds** when zone is jittering near a boundary (by design — hysteresis prevents flicker).
+**Total: ~176ms sensor-to-UI** (when zone is stable). A climb into a higher zone adds about **1 second** (the confirming second sample). Up to **5 seconds** when zone is jittering near a boundary (by design — hysteresis prevents flicker).
 
 ---
 
@@ -382,14 +384,23 @@ Prevents rapid visual toggling when HR hovers near zone boundaries (e.g., 99-101
 **Algorithm:**
 
 ```
+Before the store (DeviceManager slew gate, hrPlausibility.createHrSlewGate):
+  A reading >= 25 BPM away from the strap's previous one within 2s is HELD:
+  it reaches no user, zone store or TreasureBox. The next packet confirms it
+  (agrees with the held value) or rejects it (agrees with the previous one).
+  A packet with no reading clears the baseline.
+
 For each HR update:
-  0. Untrusted → no committed zone until an accepted real Cool reading
+  0. Untrusted → no committed zone until an accepted real Cool reading, or a
+     resume from recent trusted evidence (below)
   1. Derive rawZoneId from HR + validated personal zone thresholds
      No accepted reading → preserve trusted committed zone, commit nothing
   2. If rawZoneId === committedZoneId → no change
   2a. If rawZone is a downgrade and HR >= committedZoneMin - 5 BPM
       → suppress (exit margin, Schmitt trigger)
-  3. If timeSinceLastCommit > 5000ms → commit immediately (first transition)
+  2b. If rawZone is an UPGRADE → wait until it has held for 2 separate
+      samples spanning >= 1000ms (UPWARD_CONFIRM_SAMPLES / _MS)
+  3. If timeSinceLastCommit > 5000ms → commit (confirmed climb, or a drop at once)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
   5. Else → suppress change, keep showing committedZoneId
 ```
@@ -399,14 +410,39 @@ For each HR update:
 - Stability requirement: 3 seconds of continuous new zone
 - Exit margin: 5 BPM below the committed zone's floor before a downgrade can
   commit (`EXIT_MARGIN_BPM`; logged as `zoneprofilestore.exit_margin_suppressed`)
-- First transition: instant (no stability wait)
+- First transition (accepted Cool, or a resume): instant (no stability wait)
+- Upward confirmation: a higher zone commits only on its second separate
+  sample at least 1s after the first. A "sample" is a distinct reading
+  (`zoneReadingAt`, the user's last real HR time): every rider is re-synced on
+  every rider's packet, and a re-sync of the same reading is not a second
+  sample. This is what stopped single corrupt 204 BPM packets committing Fire
+  (2026-10-23). A drop still commits on its first sample.
+- `fitness.zone_state.transition` carries `commitPath`
+  (`instant-first` / `confirmed-upward` / `downgrade` / `stable`),
+  `rawSamples`, `rawStableMs`, `deviceId` and the previous zone and HR.
 - A sample with no reading never commits or establishes Cool trust. Brief
   same-wearer gaps retain the trusted committed zone within the existing
   five-second HR-loss grace, while scoring stops immediately.
 - Confirmed loss, session reset and wearer changes clear trust, smoothing and
-  entry evidence. Recovery requires a fresh accepted Cool baseline. This
-  deliberately replaces the earlier policy of immediately trusting any first
-  restored high reading after confirmed loss.
+  the zone entry. They differ in **resume evidence**: the store keeps each
+  rider's last *confirmed* trusted reading (`{deviceId, zoneId, heartRate, at}`
+  — a reading the committed zone agrees with, so a held spike never qualifies).
+  A confirmed loss keeps it; a wearer change (handover or correction, both
+  identities) and a session reset delete it; a configuration rebuild
+  (`clear({preserveTrust})`) keeps it.
+- **Resume (the water break).** An untrusted rider with evidence at most
+  `ZONE_TRUST_RESUME_WINDOW_MS` (60 min) old, from the same strap
+  (`zoneReadingDeviceId`), regains trust on an eligible reading (the 3-packet
+  reconnect discard still applies) that is within 25 BPM of the evidence — or,
+  failing that, on two consistent readings at least 1s apart. Hysteresis
+  restarts empty, so the zone is that of the **current** reading. The entry is
+  marked `resumed: true` and never celebrates. Logged as
+  `fitness.zone_trust.resumed` (path `evidence-plausible` /
+  `consistent-samples`), `resume_held` (an implausible first reading back) and
+  `resume_refused` (`evidence-expired` / `different-strap`, once per loss).
+- A new session, or a first attach with no evidence, still requires an
+  accepted Cool. That is the only case suppression exists for: a strap still
+  emitting a previous day's Fire.
 - Shared synchronization carries **each user's own selected sample's** startup
   acceptance flag and respects its originating strap. Lowest-HR arbitration
   retains per-sample acceptance, so an accepted higher packet cannot authorize

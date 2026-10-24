@@ -72,21 +72,35 @@ describe('FitnessSession real accepted Cool baseline', () => {
     session.ingestData(hr('f', 90)); observe();
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: true, currentZoneId: 'cool' });
     advance(6000); session.ingestData(hr('f', 181)); observe();
+    expect(session.getZoneProfile('rider-one').currentZoneId).toBe('cool'); // one sample is not a climb
+    advance(1000); session.ingestData(hr('f', 182)); observe();
     expect(session.getZoneProfile('rider-one').currentZoneId).toBe('fire');
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ userId: 'rider-one', heartRate: 181, fireThreshold: 180 });
+    expect(entries[0]).toMatchObject({ userId: 'rider-one', heartRate: 182, fireThreshold: 180 });
   });
 
-  it('preserves a trusted same-wearer climb after one null packet', () => {
+  it('preserves a trusted same-wearer climb after one null packet, and resumes it after a confirmed loss', () => {
     const session = sessionFor([{ id: 'rider-one', name: 'Rider One', hr_device_id: 'f' }]);
+    let tracker = createFireZoneTracker();
+    const entries = [];
+    const observe = () => { const r = nextFireToasts(tracker, session.zoneProfiles); tracker = r.tracker; entries.push(...r.entries); };
     for (let i = 0; i < 4; i++) session.ingestData(hr('f', 90));
     advance(6000); session.ingestData(hr('f', 181));
-    session.ingestData(hr('f', null)); advance(2000); session.ingestData(hr('f', 181));
+    // The null restarts the 3-packet reconnect discard; the 4th packet is the
+    // second Fire sample, 2s after the first, and confirms the climb.
+    session.ingestData(hr('f', null)); advance(2000);
+    for (let i = 0; i < 4; i++) session.ingestData(hr('f', 181));
+    observe();
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
-    advance(6000); session.ingestData(hr('f', null));
+    advance(6000); session.ingestData(hr('f', null)); observe();
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: false, currentZoneId: null });
-    for (let i = 0; i < 5; i++) session.ingestData(hr('f', 181));
+    // Same strap, same session, evidence seconds old (bug #5): the first
+    // eligible packet past the 3-packet reconnect discard resumes the zone.
+    for (let i = 0; i < 3; i++) session.ingestData(hr('f', 181));
     expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+    session.ingestData(hr('f', 181)); observe();
+    expect(session.getZoneProfile('rider-one')).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire', zoneEntry: { resumed: true } });
+    expect(entries).toEqual([]); // a resumed Fire is not a new ceremony
   });
 
   it('requires the new wearer to establish Cool instead of inheriting the old Fire', () => {
@@ -109,6 +123,7 @@ describe('FitnessSession real accepted Cool baseline', () => {
     expect(session.treasureBox.perUser.get('rider-one').highestZone.id).toBe('fire');
     const svc = new GuestAssignmentService({ session, ledger: session.userManager.assignmentLedger });
     expect(svc.assignGuest('f', { name: 'Rider A', profileId: 'rider-a' }).ok).toBe(true);
+    advance(2500); // a strap changing chests, not a 181 -> 90 drop inside the slew window
     for (let i = 0; i < 4; i++) session.ingestData(hr('f', 90));
     expect(session.getZoneProfile('rider-a').zoneTrusted).toBe(true);
     expect(session.treasureBox.perUser.get('rider-a').highestZone.id).toBe('cool');
@@ -138,6 +153,8 @@ describe('FitnessSession real accepted Cool baseline', () => {
     for (const dev of ['strap-a', 'strap-b']) for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 90));
     advance(6000);
     for (const dev of ['strap-a', 'strap-b']) { session.ingestData(hr(dev, 181)); session.ingestData(hr(dev, 181)); }
+    advance(1000); // the second sample a second later confirms the climb
+    for (const dev of ['strap-a', 'strap-b']) session.ingestData(hr(dev, 181));
     for (const id of ['rider-a', 'rider-b']) {
       expect(session.getZoneProfile(id)).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire' });
       expect(session.treasureBox.perUser.get(id).highestZone.id).toBe('fire');

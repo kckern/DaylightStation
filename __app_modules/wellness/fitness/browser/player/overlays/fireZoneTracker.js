@@ -9,6 +9,9 @@
  * - A trusted crossing into 'fire' with new accepted threshold evidence emits, unless that person already
  *   fired within FIRE_TOAST_COOLDOWN_MS.
  * - Staying in Fire emits nothing; only the crossing counts.
+ * - A RESUMED entry (ZoneProfileStore re-admitting a rider after a reading
+ *   loss, from recent evidence) is the zone they already had, not a crossing:
+ *   it seeds `lastEntryId` and never emits, whatever `lastZone` says.
  *
  * Reads the STABILIZED zone (`currentZoneId`), so ZoneProfileStore's hysteresis —
  * 5s cooldown, 3s stability, 5bpm exit margin — is what keeps this from chattering
@@ -53,6 +56,10 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
       if (profile.zoneEntry?.id != null) next.lastEntryId.set(userId, profile.zoneEntry.id);
       return;
     }
+    if (profile.zoneEntry?.resumed === true && profile.zoneEntry.id != null) {
+      next.lastEntryId.set(userId, profile.zoneEntry.id);
+      return;
+    }
     if (!previous || zone !== FIRE_ZONE_ID || previous === FIRE_ZONE_ID) return;
 
     const fireThreshold = (Array.isArray(profile.zoneConfig) ? profile.zoneConfig : [])
@@ -78,7 +85,11 @@ export function nextFireToasts(tracker, profiles, { now = Date.now() } = {}) {
       userId,
       name: profile.name || userId,
       heartRate: entry.heartRate,
-      fireThreshold: Number.isFinite(fireThreshold) ? fireThreshold : null
+      fireThreshold: Number.isFinite(fireThreshold) ? fireThreshold : null,
+      // Join keys to fitness.zone_state.transition, so a ceremony can be
+      // audited without matching rows by time.
+      entryId: entry.id,
+      previousZoneId: previous
     });
   });
 

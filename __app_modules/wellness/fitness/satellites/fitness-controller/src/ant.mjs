@@ -8,16 +8,36 @@ import { promisify } from 'util';
 import { createRequire } from 'module';
 import { createCadenceGate } from "./cadenceGate.mjs";
 import { createHrBeatGate } from "./hrBeatGate.mjs";
+import { createHrSpikeGate } from "./hrSpikeGate.mjs";
+
+// Raw ANT+ HR fields kept on a spike line: they tell a corrupt packet
+// (BeatCount advancing normally) from a beat misdetection.
+function rawHrFields(data) {
+  const out = {};
+  for (const [key, value] of Object.entries(data || {})) {
+    if (key === 'ComputedHeartRate' || key === 'BeatCount' || key === 'BeatTime'
+        || key === 'PreviousBeat' || /page/i.test(key)) out[key] = value;
+  }
+  return out;
+}
 
 const execAsync = promisify(exec);
 const require = createRequire(import.meta.url);
 
 export class ANTPlusManager {
-  constructor(broadcastCallback) {
+  /**
+   * @param {Function} broadcastCallback
+   * @param {{ logEvent?: (level: string, event: string, data: object) => void }} [options]
+   *   logEvent ships a structured event to the app's log store. This
+   *   container's own stdout never reaches it, which is how a spike packet
+   *   went unrecorded on 2026-10-22.
+   */
+  constructor(broadcastCallback, { logEvent = null } = {}) {
     this.devices = new Map(); // Map of device index -> AntDevice
     this.sensors = new Map();
     this.scanInterval = null;
     this.broadcastCallback = broadcastCallback;
+    this._logEvent = typeof logEvent === 'function' ? logEvent : null;
     this._lastLogTime = new Map(); // Throttle logging per device
 
     // Multi-dongle deduplication: when multiple USB dongles receive the same
@@ -42,6 +62,11 @@ export class ANTPlusManager {
     // count; the range check alone passes the replay. HR is withheld until the
     // strap has counted two new beats, and again whenever the count freezes.
     this._hrBeatGate = createHrBeatGate();
+
+    // Slew-limit heart rate: a >= 25 bpm jump inside 2s is held until the next
+    // packet confirms it. One corrupt 204 bpm packet per strap became a Fire
+    // ceremony twice on 2026-10-23; the beat gate and range check both pass it.
+    this._hrSpikeGate = createHrSpikeGate();
 
     /**
      * Which sensors are currently speaking, and when each last did.
@@ -264,6 +289,29 @@ export class ANTPlusManager {
           if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
           if ('heartRate' in data) data.heartRate = null;
           console.log(`[${timestamp}] ${deviceId} HR rejected: ${rawHr} bpm outside ${this._minHr}-${this._maxHr}`);
+          this._logEvent?.('warn', 'fitness.ant.hr_range_rejected', {
+            deviceId, hr: rawHr, min: this._minHr, max: this._maxHr, raw: rawHrFields(data)
+          });
+        }
+        // Spike gate last: only a value that is a heartbeat and in range can
+        // be implausible. Every verdict but a plain accept is logged
+        // UNTHROTTLED — the 1 Hz line below is how a 2026-10-22 spike slipped
+        // between log lines and could never be proven.
+        const spike = this._hrSpikeGate.gate(deviceId, { heartRate: hr, now: Date.now() });
+        if (spike.verdict === 'held' || spike.verdict === 'confirmed' || spike.verdict === 'rejected') {
+          const raw = rawHrFields(data);
+          console.log(`[${timestamp}] ${deviceId} HR spike ${spike.verdict}: held ${spike.heldHr} bpm, previous ${spike.previousHr} bpm (${spike.previousAgeMs}ms ago) raw=${JSON.stringify(raw)}`);
+          this._logEvent?.(spike.verdict === 'confirmed' ? 'info' : 'warn', `fitness.ant.hr_spike_${spike.verdict}`, {
+            deviceId, hr: spike.hr, heldHr: spike.heldHr, previousHr: spike.previousHr,
+            previousAgeMs: spike.previousAgeMs, raw
+          });
+        }
+        if (spike.verdict === 'held') {
+          if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
+          if ('heartRate' in data) data.heartRate = null;
+          // Not a "no reading" either: drop the packet, so the app keeps the
+          // strap's last accepted value instead of seeing a null blip.
+          return;
         }
         const rawCadence = data.CalculatedCadence ?? data.cadence ?? null;
         const revolutionCount = Number.isFinite(data.CumulativeCadenceRevolutionCount)

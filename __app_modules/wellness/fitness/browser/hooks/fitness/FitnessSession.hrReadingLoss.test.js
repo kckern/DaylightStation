@@ -58,8 +58,12 @@ function warmUp(session, deviceId, bpm, extra = 3) {
   const scenarioTime = Date.now();
   vi.setSystemTime(scenarioTime - 6000);
   for (let i = 0; i < STARTUP_DISCARD_COUNT + 1; i += 1) session.ingestData(hr(deviceId, 80));
+  // A climb commits on a second sample at least 1s after the first
+  // (ZoneProfileStore UPWARD_CONFIRM_MS), so one sample lands a second early.
+  vi.setSystemTime(scenarioTime - 1000);
+  session.ingestData(hr(deviceId, bpm));
   vi.setSystemTime(scenarioTime);
-  for (let i = 0; i < STARTUP_DISCARD_COUNT + extra; i += 1) session.ingestData(hr(deviceId, bpm));
+  for (let i = 1; i < STARTUP_DISCARD_COUNT + extra; i += 1) session.ingestData(hr(deviceId, bpm));
 }
 
 const fedValues = (spy, deviceId) => spy.mock.calls
