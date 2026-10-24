@@ -1,5 +1,6 @@
 /** Immutable/runtime assets needed by an emulator session. */
 export class IEmulatorAssetRepository {
+  getResourceDigest(_resource) { throw new Error('IEmulatorAssetRepository.getResourceDigest not implemented'); }
   getEngineResource(_assetId) {
     throw new Error('IEmulatorAssetRepository.getEngineResource not implemented');
   }

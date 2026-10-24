@@ -831,13 +831,28 @@ export function writeBinary(filePath, buffer) {
 }
 
 /** Atomically replace a binary file using a same-directory staging file. */
-export function writeBinaryAtomic(filePath, buffer) {
+export function writeBinaryAtomic(filePath, buffer, { durable = false } = {}) {
   const dir = path.dirname(filePath);
+  const newDirectories = [];
+  if (durable) {
+    for (let current = dir; !fs.existsSync(current); current = path.dirname(current)) newDirectories.push(current);
+  }
   ensureDir(dir);
   const stagingPath = atomicStagingPath(filePath);
   try {
     fs.writeFileSync(stagingPath, buffer);
+    if (durable) {
+      const fd = fs.openSync(stagingPath, 'r');
+      try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
     fs.renameSync(stagingPath, filePath);
+    if (durable) {
+      // A durable new game also needs its ancestor directory entries persisted.
+      for (const directory of new Set([dir, ...newDirectories.map(value => path.dirname(value))])) {
+        const fd = fs.openSync(directory, 'r');
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      }
+    }
   } catch (err) {
     try { if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath); } catch { /* preserve original error */ }
     logPermissionError(filePath, err);

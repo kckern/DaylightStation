@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { FilesystemEmulatorCheckpointRepository } from './FilesystemEmulatorCheckpointRepository.mjs';
+import { assertLegacySaveWritable, withEmulatorSaveLock } from './emulatorSaveLock.mjs';
 import {
   fileExists,
   getStats,
@@ -13,11 +15,13 @@ import { assertSafeSegment, containedPath, fileResource } from "./emulatorFileSu
 /** Filesystem adapter for per-user battery saves and emulator states. */
 export class FilesystemEmulatorSaveRepository extends IEmulatorSaveRepository {
   #emulationDir;
+  #checkpoints;
 
   constructor({ emulationDir } = {}) {
     super();
     if (!emulationDir) throw new Error('FilesystemEmulatorSaveRepository requires emulationDir');
     this.#emulationDir = emulationDir;
+    this.#checkpoints = new FilesystemEmulatorCheckpointRepository({ emulationDir });
   }
 
   #savePath({ system, gameId, user }) {
@@ -41,12 +45,44 @@ export class FilesystemEmulatorSaveRepository extends IEmulatorSaveRepository {
     );
   }
 
-  getSaveResource(key) { return fileResource(this.#savePath(key)); }
-  async storeSaveArtifact(key, artifact) { writeBinaryAtomic(this.#savePath(key), await this.#materialize(artifact)); }
-  async deleteSave(key) { await removeFileAsync(this.#savePath(key), { force: true }); }
-  getStateResource(key) { return fileResource(this.#statePath(key)); }
-  async storeStateArtifact(key, artifact) { writeBinaryAtomic(this.#statePath(key), await this.#materialize(artifact)); }
-  async deleteState(key) { await removeFileAsync(this.#statePath(key), { force: true }); }
+  getSaveResource(key) { return this.#checkpoints.getArtifactResource(key, 'battery') ?? fileResource(this.#savePath(key)); }
+  async storeSaveArtifact(key, artifact) {
+    const target = this.#savePath(key);
+    const bytes = await this.#materialize(artifact);
+    return withEmulatorSaveLock(this.#emulationDir, key, () => {
+      assertLegacySaveWritable(this.#emulationDir, key);
+      writeBinaryAtomic(target, bytes);
+    });
+  }
+  async deleteSave(key) {
+    const target = this.#savePath(key);
+    return withEmulatorSaveLock(this.#emulationDir, key, () => {
+      assertLegacySaveWritable(this.#emulationDir, key);
+      return removeFileAsync(target, { force: true });
+    });
+  }
+  getStateResource(key) {
+    if (key.slot === 'auto') {
+      const checkpoint = this.#checkpoints.getArtifactResource(key, 'snapshot');
+      if (checkpoint) return checkpoint;
+    }
+    return fileResource(this.#statePath(key));
+  }
+  async storeStateArtifact(key, artifact) {
+    const target = this.#statePath(key);
+    const bytes = await this.#materialize(artifact);
+    return withEmulatorSaveLock(this.#emulationDir, key, () => {
+      assertLegacySaveWritable(this.#emulationDir, key);
+      writeBinaryAtomic(target, bytes);
+    });
+  }
+  async deleteState(key) {
+    const target = this.#statePath(key);
+    return withEmulatorSaveLock(this.#emulationDir, key, () => {
+      assertLegacySaveWritable(this.#emulationDir, key);
+      return removeFileAsync(target, { force: true });
+    });
+  }
 
   async #materialize(artifact) {
     if (!artifact || typeof artifact.chunks !== 'function') {
@@ -76,6 +112,15 @@ export class FilesystemEmulatorSaveRepository extends IEmulatorSaveRepository {
       } catch { /* absent or unreadable, matching the prior scan behavior */ }
     }
 
+    const checkpointUsers = containedPath(this.#emulationDir, path.join('_checkpoints', system));
+    for (const user of listDirs(checkpointUsers)) {
+      const gameDir = containedPath(checkpointUsers, path.join(user, gameId));
+      if (fileExists(path.join(gameDir, 'head.json'))) users.add(user);
+      else {
+        try { if (readDirectory(path.join(gameDir, 'revisions')).length > 0) users.add(user); }
+        catch (err) { if (err.code !== 'ENOENT') throw err; }
+      }
+    }
     return [...users].sort();
   }
 }

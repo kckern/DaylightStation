@@ -103,6 +103,31 @@ and offers no claim. The save API is the backstop: `PUT`/`DELETE` of an owned
 game's save or state from any other user is refused with **403**
 (`emulator.blob.write_refused` / `delete_refused`).
 
+## Protected progress checkpoints
+
+Protected saving publishes a snapshot and its battery data together as one revision.
+Every write names the revision that was loaded. A delayed write or another browser
+with an older revision receives a conflict instead of overwriting newer progress.
+The server retains immutable artifacts and revision history under
+`_checkpoints/{system}/{user}/{game}/`; a durable current pointer selects the resume
+point. Reads verify hashes and report damaged data instead of silently selecting
+an older version. Reset, import and recovery create new revisions and retain the
+previous progress.
+
+On first use, existing per-user files are preserved and imported as a baseline.
+After protection begins, unconditional legacy writes and deletes are refused;
+reload an idle client to use the protected protocol. Legacy battery/default-state
+export URLs return the current verified artifacts, while the original files stay
+on disk for recovery. Progress responses use `Cache-Control: no-store`.
+
+The checkpoint API is rooted at `/api/v1/emulator/checkpoint/{system}/{game}?user={user}`.
+`GET` describes the current checkpoint and ROM/core identity; `PUT` commits owned
+base64 snapshot/battery bytes with an explicit `expectedRevision`, `captureId`,
+`sessionId`, and increasing `sequence`. `POST /reset`, `/import`, and `/recover`
+are explicit revisioned operations. `GET /history` lists metadata and
+`GET /revision/{revision}` reads a committed recovery point. Conflicts return
+409, damaged checkpoint data 422, and each artifact is limited to 8 MiB.
+
 ## Sizing the picture inside the cutout
 
 `presentation.screen` is the cutout; `presentation.screen_scaling` says how the
