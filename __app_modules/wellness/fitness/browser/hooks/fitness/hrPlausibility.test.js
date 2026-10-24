@@ -5,7 +5,10 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { sanitizeHeartRate, MIN_PLAUSIBLE_HR, MAX_PLAUSIBLE_HR } from "./hrPlausibility.js";
+import {
+  sanitizeHeartRate, MIN_PLAUSIBLE_HR, MAX_PLAUSIBLE_HR,
+  createHrSlewGate, HR_SLEW_MAX_DELTA_BPM, HR_SLEW_WINDOW_MS
+} from "./hrPlausibility.js";
 
 describe('sanitizeHeartRate', () => {
   it('rejects the phantom-strap lows that leaked into the timeline (11, 10, 2)', () => {
@@ -40,5 +43,62 @@ describe('sanitizeHeartRate', () => {
     expect(sanitizeHeartRate(null)).toBeNull();
     expect(sanitizeHeartRate(undefined)).toBeNull();
     expect(sanitizeHeartRate('abc')).toBeNull();
+  });
+});
+
+/**
+ * 2026-10-23: two straps each sent ONE 204 bpm packet in the middle of a steady
+ * reading (152,152,204,153 and 111,204,110). Both became Fire ceremonies. A real
+ * effort climbs 1-3 bpm/s, so a >=25 bpm jump inside 2s is held until a second
+ * sample confirms it.
+ */
+describe('createHrSlewGate', () => {
+  const feed = (gate, samples, stepMs = 250) => samples.map((hr, i) => gate.evaluate('d1', hr, 1000 + i * stepMs));
+
+  it('holds a lone spike and rejects it when the next sample returns to the steady line (Rider A)', () => {
+    const gate = createHrSlewGate();
+    const out = feed(gate, [152, 152, 204, 153, 153]);
+    expect(out.map(r => r.verdict)).toEqual(['accept', 'accept', 'suspect', 'rejected', 'accept']);
+    expect(out[2]).toMatchObject({ hr: null, heldHr: 204, previousHr: 152 });
+    expect(out[3]).toMatchObject({ hr: 153, heldHr: 204 });
+  });
+
+  it('holds Rider B\'s Cool-to-Fire spike (111, 204, 110)', () => {
+    const gate = createHrSlewGate();
+    expect(feed(gate, [111, 204, 110]).map(r => r.hr)).toEqual([111, null, 110]);
+  });
+
+  it('confirms a real jump when the next sample agrees with the held one', () => {
+    const gate = createHrSlewGate();
+    const out = feed(gate, [100, 140, 141]);
+    expect(out.map(r => r.verdict)).toEqual(['accept', 'suspect', 'confirmed']);
+    expect(out[2].hr).toBe(141);
+  });
+
+  it('never holds a genuine fast climb (3 bpm/s at 4 Hz)', () => {
+    const gate = createHrSlewGate();
+    const climb = Array.from({ length: 40 }, (_, i) => 120 + Math.round(i * 0.75));
+    expect(feed(gate, climb).every(r => r.verdict === 'accept')).toBe(true);
+  });
+
+  it('does not compare against a reading older than the window', () => {
+    const gate = createHrSlewGate();
+    gate.evaluate('d1', 100, 0);
+    expect(gate.evaluate('d1', 160, HR_SLEW_WINDOW_MS + 1).verdict).toBe('accept');
+  });
+
+  it('treats a jump just under the limit as plausible and keeps devices independent', () => {
+    const gate = createHrSlewGate();
+    gate.evaluate('d1', 100, 0);
+    gate.evaluate('d2', 180, 0);
+    expect(gate.evaluate('d1', 100 + HR_SLEW_MAX_DELTA_BPM - 1, 250).verdict).toBe('accept');
+    expect(gate.evaluate('d2', 181, 250).verdict).toBe('accept');
+  });
+
+  it('forgets a device on reset', () => {
+    const gate = createHrSlewGate();
+    gate.evaluate('d1', 100, 0);
+    gate.reset('d1');
+    expect(gate.evaluate('d1', 180, 250).verdict).toBe('accept');
   });
 });

@@ -1,4 +1,17 @@
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
+import { createHrSlewGate } from "./hrPlausibility.js";
+
+// Raw ANT+ fields worth keeping on a spike line: they tell a corrupt packet
+// (BeatCount advancing normally) from a beat misdetection.
+const rawHrFields = (rawData) => {
+  if (!rawData || typeof rawData !== 'object') return null;
+  const out = {};
+  for (const [key, value] of Object.entries(rawData)) {
+    if (key === 'ComputedHeartRate' || key === 'BeatCount' || key === 'BeatTime'
+        || key === 'PreviousBeat' || /page/i.test(key)) out[key] = value;
+  }
+  return out;
+};
 
 /**
  * Authoritative ANT+ profile → fitness device type. The strap's broadcast
@@ -183,6 +196,10 @@ export class DeviceManager {
     // See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
     this.lastPacketAt = 0;
     this._transportStalledSince = null;
+    // A reading that jumps >= 25 bpm inside 2s is held until the next one
+    // decides it (hrPlausibility.createHrSlewGate). Ops: 2026-10-23 single
+    // 204 bpm packets became Fire ceremonies.
+    this._hrSlewGate = createHrSlewGate();
   }
 
   updateDevice(deviceId, profile, rawData) {
@@ -214,13 +231,39 @@ export class DeviceManager {
         normalized.type = normalized.type || 'heart_rate';
       }
     }
+    // Slew gate: a held reading reaches nothing — not the device, the user,
+    // the zone store or TreasureBox. The packet is not a "no reading" either;
+    // the device keeps its last accepted value. Logged unthrottled with the
+    // raw packet fields, because a spike between once-a-second log lines is
+    // what made the 2026-10-22 ceremony unprovable.
+    let hrHeld = false;
+    if (Number.isFinite(normalized.heartRate) && normalized.heartRate > 0) {
+      const slew = this._hrSlewGate.evaluate(id, normalized.heartRate, Date.now());
+      const detail = {
+        deviceId: id, hr: slew.hr, heldHr: slew.heldHr, heldAgeMs: slew.heldAgeMs,
+        previousHr: slew.previousHr, previousAgeMs: slew.previousAgeMs,
+        raw: rawHrFields(rawData)
+      };
+      if (slew.verdict === 'suspect') {
+        hrHeld = true;
+        delete normalized.heartRate;
+        getLogger().warn('fitness.hr.spike_held', { ...detail, replacedHr: slew.replacedHr ?? null });
+      } else if (slew.verdict === 'confirmed') {
+        getLogger().info('fitness.hr.spike_confirmed', detail);
+      } else if (slew.verdict === 'rejected') {
+        getLogger().warn('fitness.hr.spike_rejected', detail);
+      }
+    }
     // A heart-rate packet with no reading (null, missing, out of range) says
     // the strap has nothing — carry that as an explicit null so the device's
     // last value is cleared rather than held.
     const isHrPacket = normalized.type === 'heart_rate'
       || (!normalized.type && this.devices.get(id)?.type === 'heart_rate');
-    if (isHrPacket && !Number.isFinite(normalized.heartRate)) {
+    if (isHrPacket && !hrHeld && !Number.isFinite(normalized.heartRate)) {
       normalized.heartRate = null;
+      // No reading: the strap's last value is no longer a baseline to judge
+      // the next one against (a reconnect is never held for being different).
+      this._hrSlewGate.reset(id);
     }
     if (rawData) {
       if (Number.isFinite(rawData.CalculatedCadence)) {
@@ -240,7 +283,11 @@ export class DeviceManager {
       // Add other mappings as needed
     }
 
-    return this.registerDevice(normalized);
+    const device = this.registerDevice(normalized);
+    // Read (and cleared) by FitnessSession: a held packet carries no reading
+    // for the rider, so it must not be processed as one.
+    if (device) device._hrHeld = hrHeld;
+    return device;
   }
 
   registerDevice(data) {
@@ -270,6 +317,7 @@ export class DeviceManager {
     // Use device ID directly
     const id = deviceId ? String(deviceId) : null;
     if (!id) return false;
+    this._hrSlewGate.reset(id);
     const deleted = this.devices.delete(id);
     if (deleted) this.mutationVersion++;
     return deleted;
