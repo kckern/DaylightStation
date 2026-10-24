@@ -7,12 +7,14 @@ import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import { buildCommandEnvelope, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
 import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isKeepMusicParam, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
 import { END_OF_QUEUE_MODES, isEndOfQueueMode, validateSessionActionParams } from '#shared-contracts/media/sessionControls.mjs';
+import { normalizePlaybackQuality, normalizePlaybackQualityChange } from '#shared-contracts/media/playbackQuality.mjs';
 
 const nonEmpty = value => typeof value === 'string' && value.length > 0;
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const HANDOFF_TERMINAL_PHASES = new Set(['captured', 'started', 'stopped', 'cancelled', 'failed']);
 const parseLoadQuery = (query = {}) => {
-  const content = { ...query };
+  const content = { ...query, ...normalizePlaybackQuality(query) };
+  delete content.maxVideoResolution;
   if (content.volume != null) {
     const value = Number(content.volume);
     content.volume = Number.isFinite(value) ? value : content.volume;
@@ -268,7 +270,7 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
       const hasItems = Array.isArray(items) && items.length > 0 && items.every(nonEmpty);
       if (!hasFromTo && !hasItems) return res.status(400).json(buildErrorBody({ error: 'reorder requires either (from + to) or a non-empty items array of strings' }));
     }
-    const params = { op };
+    const params = { op, ...normalizePlaybackQuality(req.body) };
     if (contentId !== undefined) params.contentId = contentId;
     if (queueItemId !== undefined) params.queueItemId = queueItemId;
     if (from !== undefined) params.from = from;
@@ -355,6 +357,7 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     ...(body.subtitle !== undefined ? { subtitle: body.subtitle } : {}),
   }));
   sessionAction('brief/close', 'close-brief');
+  sessionAction('quality', 'set-quality', normalizePlaybackQualityChange);
   sessionAction('music-behind', 'music-behind', (body) => ({
     op: body.op,
     ...(body.contentId !== undefined ? { contentId: body.contentId } : {}),

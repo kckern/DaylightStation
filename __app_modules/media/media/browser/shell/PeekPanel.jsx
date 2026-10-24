@@ -1,3 +1,4 @@
+import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/shell/PeekPanel.jsx
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
@@ -163,6 +164,7 @@ export function PeekPanel({ deviceId }) {
         availability={availability}
       />
 
+      <ActiveQualityButton target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />
       <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
       <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />
 

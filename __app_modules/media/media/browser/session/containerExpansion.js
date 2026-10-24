@@ -15,6 +15,8 @@
 // single-item behavior — a tap must never be dead.
 
 /** Metadata types that mark a container in search/browse rows. */
+import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
+
 export const CONTAINER_TYPES = new Set([
   'show', 'season', 'album', 'artist', 'collection', 'playlist',
 ]);
@@ -101,6 +103,7 @@ export async function expandContainerInput(input, {
   const doFetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
   const containerTitle = input?.title ?? null;
   const inheritedFormat = input?.format ?? null;
+  const inheritedQuality = normalizePlaybackQuality(input ?? {});
   const out = [];
 
   const fetchChildren = async (contentId) => {
@@ -128,7 +131,7 @@ export async function expandContainerInput(input, {
         continue;
       }
       const queueInput = childToQueueInput(child, { containerTitle, inheritedFormat });
-      if (queueInput) out.push(queueInput);
+      if (queueInput) out.push(queueInput.format === 'video' ? { ...queueInput, ...inheritedQuality } : queueInput);
     }
   };
 

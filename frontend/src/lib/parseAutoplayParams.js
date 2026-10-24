@@ -1,3 +1,4 @@
+import { normalizePlaybackQuality, PLAYBACK_QUALITY_KEYS } from '../../../shared/contracts/media/playbackQuality.mjs';
 import { decodeItemAction } from '../../../shared/contracts/media/item-action.mjs';
 
 /**
@@ -28,6 +29,7 @@ const CONFIG_KEYS = [
   'repeat', 'loop', 'overlay', 'advance', 'interval', 'mode', 'frame',
   'prewarmToken', 'prewarmContentId',
   'endBehavior', 'endDeviceId', 'endLocation',
+  ...PLAYBACK_QUALITY_KEYS, 'maxVideoResolution',
 ];
 
 // Params that ride along in wake-and-load / trigger URLs but are NEVER
@@ -97,8 +99,9 @@ export function parseAutoplayParams(searchString, supportedActions) {
   }
 
   // Extract config modifiers
-  const config = {};
+  const config = normalizePlaybackQuality(queryEntries);
   for (const configKey of CONFIG_KEYS) {
+    if (PLAYBACK_QUALITY_KEYS.includes(configKey) || configKey === 'maxVideoResolution') continue;
     if (queryEntries[configKey] != null) {
       if (configKey === 'overlay') {
         config.overlay = {

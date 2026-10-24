@@ -11,6 +11,8 @@
 //    are spent regardless of their priority flag; advancement and insertion
 //    both reason about the band, never about a global upNext count.
 
+import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
+
 function uid() {
   try {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -24,6 +26,7 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
   }
   return {
     queueItemId: uid(),
+    ...normalizePlaybackQuality(input),
     contentId: input.contentId,
     title: input.title ?? input.contentId,
     format: input.format ?? null,
@@ -69,6 +72,7 @@ function currentIdOf(snapshot) {
 
 function itemFields(entry) {
   return {
+    ...normalizePlaybackQuality(entry),
     contentId: entry.contentId,
     format: entry.format,
     title: entry.title,

@@ -23,6 +23,7 @@
 // Everything is wrapped in try/catch — a broken bridge must never crash a
 // screen (same defensive posture as SessionSource).
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
+import { normalizePlaybackQuality } from '../../../../shared/contracts/media/playbackQuality.mjs';
 
 let _logger;
 function logger() {
@@ -78,7 +79,9 @@ export function normalizePlayableItem(meta, hint = null) {
     ? rawFormat
     : (MEDIA_TYPE_TO_FORMAT[mediaType] ?? 'video');
 
-  const item = { contentId, format };
+  const replacement = fallback?.qualityOverrides ?? src?.qualityOverrides;
+  const item = { contentId, format, ...normalizePlaybackQuality(replacement ?? { ...fallback, ...src }),
+    ...(replacement ? { qualityOverrides: normalizePlaybackQuality(replacement) } : {}) };
 
   const title = firstString(src?.title, src?.label, fallback?.title, fallback?.label);
   if (title) item.title = title;
@@ -462,7 +465,7 @@ export function createPlayerSessionBridge({
       queue,
       problem,
       issuedIdentity: validIssuedIdentity,
-      currentItem: getCurrentItem(),
+      currentItem: getCurrentItem(currentEntry),
       config: getConfig(),
       state: getState(),
       // A pending B load may still expose A's accessor node. Never attach
@@ -547,10 +550,11 @@ export function createPlayerSessionBridge({
     return config;
   };
 
-  const getCurrentItem = () => {
+  const getCurrentItem = (current = null) => {
     const nowPlaying = readNowPlayingMeta();
     if (nowPlaying?.stopped === true && nowPlaying.item === null) return null;
-    const item = normalizePlayableItem(nowPlaying?.item ?? null, readHint());
+    const hint = current?.qualityOverrides ? { ...readHint(), ...current } : readHint();
+    const item = normalizePlayableItem(nowPlaying?.item ?? null, hint);
     if (!item) return null;
     if (item.duration == null) {
       const d = getDuration();

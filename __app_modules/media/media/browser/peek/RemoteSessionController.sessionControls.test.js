@@ -19,6 +19,14 @@ function setup(extra = {}) {
 }
 
 describe('RemoteSessionController — screen session controls (P1, additive)', () => {
+  it('sends target-bound quality overrides and waits for the screen acknowledgment', async () => {
+    const { ackRouter, http, ctl } = setup();
+    const params = { contentId: 'plex:42', queueItemId: 'q1', sessionId: 's1', quality: { maxResolution: '720', adaptive: false } };
+    const pending = ctl.quality.setOverrides(params);
+    expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/quality', { ...params, commandId: 'cmd-1' }, 'POST');
+    ackRouter.resolve({ commandId: 'cmd-1', ok: true });
+    await expect(pending).resolves.toMatchObject({ ok: true });
+  });
   it.each([
     ['setSleepTimer', [{ minutes: 30 }], 'POST', 'sleep-timer', { minutes: 30 }],
     ['setSleepTimer', [{ atEnd: 'item' }], 'POST', 'sleep-timer', { atEnd: 'item' }],

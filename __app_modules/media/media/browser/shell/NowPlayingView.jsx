@@ -1,3 +1,4 @@
+import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/shell/NowPlayingView.jsx
 // Full local player surface. Claims the player host so the ambient Player's
 // visual output portals here; navigation away releases the host and audio
@@ -188,6 +189,7 @@ export function NowPlayingView() {
           </div>}
           <SeekBar target="local" />
           <TransportBar target="local" />
+          <ActiveQualityButton target="local" targetLabel="this device" />
         </>
         )}
         {(item || snapshot?.queue?.items?.length > 0) && <SessionControlsPanel target="local" />}

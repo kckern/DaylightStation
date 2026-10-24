@@ -188,7 +188,7 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
   capabilities(item, resolution) { return derivedCapabilities(item, this.#source(resolution)); }
   supports(resolution, capability) { return typeof this.#source(resolution)?.[capability] === 'function'; }
 
-  describeItem(item, resolution, session = null) {
+  describeItem(item, resolution, session = null, quality = {}) {
     const source = this.#source(resolution);
     return {
       format: resolveFormat(item, source),
@@ -196,6 +196,7 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
       clientIdentifier: typeof source?.resolveClientIdentifier === 'function'
         ? source.resolveClientIdentifier(session)
         : null,
+      ...source?.describePlayback?.(item, quality),
     };
   }
 

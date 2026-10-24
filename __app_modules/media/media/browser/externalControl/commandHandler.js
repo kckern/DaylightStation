@@ -3,6 +3,7 @@
 // Shared by external WS control; validation comes from the shared contracts,
 // not hand-rolled field checks.
 import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
+import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 
 function applyWithOrigin(controller, origin, mutate) {
   // Always (re)stage — even to null for a plain human command — not just
@@ -62,11 +63,12 @@ export function applyCommandEnvelope(controller, envelope) {
     }
     const { op, contentId, queueItemId, clearRest, from, to, items } = params;
     const q = controller.queue;
+    const quality = normalizePlaybackQuality(params);
     const handlers = {
-      'play-now': () => q.playNow({ contentId }, { clearRest }),
-      'play-next': () => q.playNext({ contentId }),
-      'add-up-next': () => q.addUpNext({ contentId }),
-      add: () => q.add({ contentId }),
+      'play-now': () => q.playNow({ contentId, ...quality }, { clearRest }),
+      'play-next': () => q.playNext({ contentId, ...quality }),
+      'add-up-next': () => q.addUpNext({ contentId, ...quality }),
+      add: () => q.add({ contentId, ...quality }),
       remove: () => q.remove(queueItemId),
       jump: () => q.jump(queueItemId),
       clear: () => q.clear(),
@@ -75,6 +77,10 @@ export function applyCommandEnvelope(controller, envelope) {
     if (!handlers[op]) return { ok: false, reason: `unknown-queue-op:${op}` };
     applyWithOrigin(controller, envelope.origin, handlers[op]);
     return { ok: true };
+  }
+  if (command === 'session' && params.action === 'set-quality') {
+    if (!controller.quality?.setOverrides) return { ok: false, code: 'QUALITY_UNSUPPORTED' };
+    return applyWithOrigin(controller, envelope.origin, () => controller.quality.setOverrides(params));
   }
   if (command === 'config') {
     const { setting, value } = params;

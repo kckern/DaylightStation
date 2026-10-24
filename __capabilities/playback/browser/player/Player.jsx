@@ -1,3 +1,4 @@
+import { normalizePlaybackQuality, withPlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
 import './styles/Player.scss';
@@ -170,6 +171,8 @@ const Player = forwardRef(function Player(props, ref) {
     mediaResilienceRef,
     maxVideoBitrate,
     maxResolution,
+    transcode,
+    adaptive,
     plexClientSession: externalPlexClientSession,
     onPlaybackCompleted,
     onError,
@@ -422,13 +425,17 @@ const Player = forwardRef(function Player(props, ref) {
       cloned.plex = String(cloned.plex);
     }
 
+    if (cloned.qualityOverrides) {
+      // This owner visit explicitly replaced its quality policy. Never revive launch caps.
+      Object.assign(cloned, withPlaybackQuality(cloned, cloned.qualityOverrides));
+    }
     const rootPlay = (play && typeof play === 'object' && !Array.isArray(play)) ? play : null;
     const rootQueue = (queue && typeof queue === 'object' && !Array.isArray(queue)) ? queue : null;
     const resolvedMaxVideoBitrate =
       cloned.maxVideoBitrate
-      ?? maxVideoBitrate
-      ?? rootPlay?.maxVideoBitrate
-      ?? rootQueue?.maxVideoBitrate
+      ?? (cloned.qualityOverrides ? null : maxVideoBitrate)
+      ?? (cloned.qualityOverrides ? null : rootPlay?.maxVideoBitrate)
+      ?? (cloned.qualityOverrides ? null : rootQueue?.maxVideoBitrate)
       ?? null;
     if (resolvedMaxVideoBitrate != null && cloned.maxVideoBitrate == null) {
       cloned.maxVideoBitrate = resolvedMaxVideoBitrate;
@@ -436,12 +443,16 @@ const Player = forwardRef(function Player(props, ref) {
 
     const resolvedMaxResolution =
       cloned.maxResolution
-      ?? maxResolution
-      ?? rootPlay?.maxResolution
-      ?? rootQueue?.maxResolution
+      ?? (cloned.qualityOverrides ? null : maxResolution)
+      ?? (cloned.qualityOverrides ? null : rootPlay?.maxResolution)
+      ?? (cloned.qualityOverrides ? null : rootQueue?.maxResolution)
       ?? null;
     if (resolvedMaxResolution != null && cloned.maxResolution == null) {
       cloned.maxResolution = resolvedMaxResolution;
+    }
+    for (const [key, rootValue] of Object.entries({ transcode, adaptive })) {
+      const value = cloned.qualityOverrides ? cloned[key] : cloned[key] ?? rootValue ?? rootPlay?.[key] ?? rootQueue?.[key];
+      if (value != null) cloned[key] = value;
     }
 
     // Resolve upscaleEffects from item, play, or queue level
@@ -453,7 +464,7 @@ const Player = forwardRef(function Player(props, ref) {
     cloned.upscaleEffects = resolvedUpscaleEffects;
 
     return cloned;
-  }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution]);
+  }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution, transcode, adaptive]);
 
   const requestedRendererContentId = singlePlayerProps?.contentId != null
     ? String(singlePlayerProps.contentId)
@@ -826,8 +837,9 @@ const Player = forwardRef(function Player(props, ref) {
     if (!meta) {
       return;
     }
-    setResolvedMeta(meta);
-  }, []);
+    setResolvedMeta(singlePlayerProps?.qualityOverrides
+      ? withPlaybackQuality(meta, singlePlayerProps.qualityOverrides) : meta);
+  }, [singlePlayerProps?.qualityOverrides]);
 
   // --- Subtitles and audio language (RQ-STEER-14) ---------------------------
   // Opt-in: everything below is inert unless an owner claims this Player
@@ -2505,13 +2517,15 @@ const Player = forwardRef(function Player(props, ref) {
     if (!contentId) return;
     if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
 
+    const quality = normalizePlaybackQuality(payload);
     if (op === 'play-now' && payload.clearRest) {
       try {
         const resolvedQueue = await DaylightAPI(`api/v1/queue/${contentId}`);
         if (Array.isArray(resolvedQueue?.items) && resolvedQueue.items.length > 0) {
           ownerStoppedRef.current = false;
           setQueueHasAdvanced(true);
-          replaceQueue(resolvedQueue.items, { audio: resolvedQueue.audio || null });
+          replaceQueue(resolvedQueue.items.map(item => item.format === 'audio' || item.mediaType === 'audio'
+            ? item : withPlaybackQuality(item, quality)), { audio: resolvedQueue.audio || null });
           const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
           if (aliased && classes.includes(aliased)) {
             setShader(aliased);
@@ -2530,7 +2544,8 @@ const Player = forwardRef(function Player(props, ref) {
 
     let info;
     try {
-      info = await DaylightAPI(`api/v1/play/${contentId}`);
+      const query = new URLSearchParams(quality).toString();
+      info = await DaylightAPI(`api/v1/play/${contentId}${query ? `?${query}` : ''}`);
     } catch {
       // Without a mediaUrl we can't safely play. Bail out rather than push
       // a half-built item that will fail at the renderer.
@@ -2538,7 +2553,7 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
     const item = {
-      ...info,
+      ...withPlaybackQuality(info, quality),
       id: info.id || info.contentId || contentId,
       contentId,
       thumbnail: info.thumbnail || `/api/v1/display/${contentId}`,
@@ -2578,6 +2593,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     if (op === 'play-now') {
       ownerStoppedRef.current = false;
+      setQueueHasAdvanced(true);
       playNow(item);
       return;
     }
@@ -2827,6 +2843,8 @@ Player.propTypes = {
   onController: PropTypes.func,
   /** Synchronous semantic notification before natural advance/clear. */
   onPlaybackCompleted: PropTypes.func,
+  transcode: PropTypes.oneOf(['auto', 'force']),
+  adaptive: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   /** External Plex client session ID for multi-player isolation */

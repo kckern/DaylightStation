@@ -38,6 +38,20 @@ does not confirm playback: progress still requires authoritative owner state.
 The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
 verification remains required before claiming acceptance.
 
+## Per-item playback quality
+
+For Plex video, Quality… in an item's More menu or Details sets optional
+resolution, bitrate, forced conversion and Plex automatic-quality overrides for
+that selected item in this tab. Saving does not start playback. Subsequent local
+or remote play/queue actions carry those overrides; Use defaults clears them.
+
+Quality… alongside the local or peeked playback controls applies to that current
+queue visit. The owner captures position and pause state before replacing the
+stream, preserving tracks, queue and device settings. The sheet refuses stale
+targets and reports unconfirmed remote changes. These controls show requested
+limits, not measured stream dimensions. See [Playback quality overrides](../player/playback-quality.md)
+for the parameter contract and remediation ladder.
+
 ## One voice for outcomes
 
 Every play, add, send, queue edit and playback problem reports through one

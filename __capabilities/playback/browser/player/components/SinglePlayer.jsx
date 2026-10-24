@@ -287,6 +287,8 @@ export function SinglePlayer(props = {}) {
       shuffle,
       maxVideoBitrate: play?.maxVideoBitrate,
       maxResolution: play?.maxResolution,
+      transcode: play?.transcode,
+      adaptive: play?.adaptive,
       session: plexClientSession,
       resume: play?.resume
     });
@@ -312,6 +314,8 @@ export function SinglePlayer(props = {}) {
                 shuffle: false,
                 maxVideoBitrate: play?.maxVideoBitrate,
                 maxResolution: play?.maxResolution,
+                transcode: play?.transcode,
+                adaptive: play?.adaptive,
                 session: plexClientSession
               });
               if (playableInfo) {
@@ -369,7 +373,7 @@ export function SinglePlayer(props = {}) {
   // on; the rest (id/contentId/assetId/resumePosition) are read only inside the
   // direct-play bypass's early-return branch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
+  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.transcode, play?.adaptive, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
 
   useEffect(() => {
     fetchVideoInfoCallback();

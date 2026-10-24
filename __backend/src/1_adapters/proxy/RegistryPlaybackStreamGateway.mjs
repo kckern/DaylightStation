@@ -1,4 +1,5 @@
 import { IPlaybackStreamGateway } from "../../../../__capabilities/content-catalog/server/application/proxy/ports/IPlaybackStreamGateway.mjs";
+import { normalizePlaybackQuality } from '#shared-contracts/media/playbackQuality.mjs';
 
 /** Registry-backed playback URL gateway with existing mint telemetry. */
 export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
@@ -14,7 +15,8 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
     this.#logger = logger;
   }
 
-  async mint({ ratingKey, startOffset, session, tracks = null }) {
+  async mint({ ratingKey, startOffset, session, tracks = null, ...options }) {
+    const quality = normalizePlaybackQuality(options);
     const adapter = this.#registry.get('plex');
     if (!adapter) {
       this.#logger.warn?.('plex.stream.mint-skipped', {
@@ -22,7 +24,7 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
       });
       return { kind: 'unconfigured' };
     }
-    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session, ...(tracks ? { tracks } : {}) });
+    const result = await adapter.getMediaUrl(ratingKey, { startOffset, session, ...quality, ...(tracks ? { tracks } : {}) });
     if (!result?.url) {
       this.#logger.warn?.('plex.stream.mint-failed', {
         ratingKey, startOffset, session, reason: result?.reason ?? null,
@@ -33,6 +35,7 @@ export class RegistryPlaybackStreamGateway extends IPlaybackStreamGateway {
       ratingKey,
       startOffset,
       session,
+      ...quality,
       ...(tracks ? { tracks } : {}),
       plexClientIdentifier: typeof adapter.resolveClientIdentifier === 'function'
         ? adapter.resolveClientIdentifier(session)

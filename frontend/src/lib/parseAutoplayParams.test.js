@@ -28,3 +28,8 @@ describe('parseAutoplayParams queue operation routing', () => {
     });
   });
 });
+
+it('preserves validated quality on cold correlated TV loads', () => {
+  const result = autoplayToAction(parseAutoplayParams('?play=plex:42&dispatchId=cold&maxResolution=720p&maxVideoBitrate=4000&transcode=force&adaptive=false', AUTOPLAY_ACTIONS));
+  expect(result.payload).toMatchObject({ contentId: 'plex:42', maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false });
+});

@@ -189,12 +189,17 @@ export function createScreenPlayerFeatures({
   }
 
   // --- Commands ---------------------------------------------------------------
-  const handles = (action) => ['set-tracks', 'close-brief', 'music-behind'].includes(action);
+  const handles = (action) => ['set-tracks', 'set-quality', 'close-brief', 'music-behind'].includes(action);
 
   async function handleSession(action, params = {}) {
     const checked = validatePlayerFeatureParams({ action, ...params });
     if (!checked || !checked.valid) return { ok: false, code: 'INVALID_SESSION_COMMAND', error: checked?.errors?.[0] };
     if (action === 'set-tracks') return setTracks(params);
+    if (action === 'set-quality') {
+      const result = await ports.setQuality?.(params) ?? { ok: false, code: 'QUALITY_UNSUPPORTED' };
+      logger()[result.ok ? 'info' : 'warn']('quality.changed', { ownerId, contentId: params.contentId, quality: params.quality, ok: result.ok, code: result.code });
+      return result;
+    }
     if (action === 'close-brief') return endBrief('remote-close');
     if (action === 'music-behind') return music(params);
     return { ok: false, code: 'INVALID_SESSION_COMMAND' };

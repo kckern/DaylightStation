@@ -1,3 +1,5 @@
+import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
+import { supportsQualityOverrides } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/household/ItemMenu.jsx
 // One ⋯ menu with the whole verb set, used by every start-page tile, by
 // Played earlier rows and Now-on cards. Which household verbs appear depends
@@ -42,6 +44,7 @@ export function ItemMenu({
   item, onVerb, favourite = false, watched = null, removable = false, testId,
   editions = null, onEdition = null, continueLabel = null,
 }) {
+  const quality = usePlaybackQuality();
   const collection = isCollection(item);
   const fire = (kind) => (event) => { event?.stopPropagation?.(); onVerb(kind); };
   return (
@@ -69,6 +72,7 @@ export function ItemMenu({
         <Menu.Item data-testid={`${testId}-verb-add`} onClick={fire('add')}>Add to queue</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>{isShowItem(item) ? 'Show on…' : 'Play on…'}</Menu.Item>
         <Menu.Item data-testid={`${testId}-verb-addOn`} onClick={fire('addOn')}>Add on…</Menu.Item>
+        {quality && supportsQualityOverrides(item) && <Menu.Item onClick={event => { event.stopPropagation(); quality.openForItem(item); }}>Quality…</Menu.Item>}
         <Menu.Item data-testid={`${testId}-verb-details`} onClick={fire('details')}>Details</Menu.Item>
         {Array.isArray(editions) && editions.length > 1 && onEdition && (
           <>

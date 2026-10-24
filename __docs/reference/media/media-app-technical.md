@@ -1437,6 +1437,7 @@ with the screen's `code`). Every body takes `commandId` and optional
 
 | Route | Body | Envelope |
 |---|---|---|
+| `POST /api/v1/device/:id/session/quality` | `{ contentId, queueItemId?, sessionId?, quality: { maxResolution?, maxVideoBitrate?, transcode?, adaptive? } }` | `session` `{ action: "set-quality", … }`; empty quality clears current-visit overrides |
 | `POST /api/v1/device/:id/session/tracks` | `{ audio?: "<track id>", subtitle?: "<track id>" \| "off" }` (at least one) | `session` `{ action: "set-tracks", … }` |
 | `POST /api/v1/device/:id/session/brief/close` | `{}` | `session` `{ action: "close-brief" }` |
 | `POST /api/v1/device/:id/session/music-behind` | `{ op: "start" \| "play" \| "pause" \| "next" \| "prev" \| "stop", contentId?, title? }` (`start` needs `contentId`) | `session` `{ action: "music-behind", … }` |
@@ -2670,3 +2671,11 @@ All 4xx/5xx JSON responses from the APIs defined in §2 and §4 MUST use:
   explicit user action.
 - `DEVICE_OFFLINE` MUST NOT be surfaced as an app-breaking error — the
   device is marked offline and observation continues (C9.6).
+
+
+Quality intent and the current-item replacement contract are specified in
+[player/playback-quality.md](../player/playback-quality.md). Selected overrides
+are stored per content ID in tab session storage (`media-app.quality-overrides.v1`)
+and attached by `useContentDispatch`. The active command validates the captured
+content/visit/session identity at the receiving owner, then adopts a snapshot
+with updated quality fields while preserving hot position and pause intent.
