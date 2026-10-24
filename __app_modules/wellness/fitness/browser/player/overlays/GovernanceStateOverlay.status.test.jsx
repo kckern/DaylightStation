@@ -59,12 +59,27 @@ describe('GovernanceStateOverlay — live current state and percentage', () => {
       expect(view.container.querySelector('.governance-lock__chip-meta').textContent).toBe(`${hr} / 110`);
     }
   });
-  it.each([[-0.1, '0%', '0%'], [0, '0%', '0%'], [0.5, '50%', '50%'], [1, '100%', '100%'], [1.1, '100%', '100%']])('bounds the %s percentage notch inside the bar', (value, label, left) => {
+  it.each([[-0.1, '0%', '0'], [0, '0%', '0'], [0.5, '50%', '0.5'], [0.85, '85%', '0.85'], [1, '100%', '1'], [1.1, '100%', '1']])('drives fill and knob for %s from one --p on the track', (value, label, p) => {
     const { container } = render(<GovernanceStateOverlay display={display([row({ progress: value })])} />);
-    const marker = container.querySelector('.governance-lock__progress-indicator');
-    expect(marker?.textContent).toBe(label);
-    expect(marker?.style.left).toBe(left);
-    expect(marker?.style.transform).toBe(`translateX(-${left})`);
+    const track = container.querySelector('.governance-lock__progress-track');
+    expect(track.style.getPropertyValue('--p')).toBe(p);
+    // The fill and the knob read --p in CSS; neither carries its own position,
+    // so they cannot be told different values (the label used to snap via
+    // inline left/translateX while the fill eased — bug 2026-10-23 #1).
+    const fill = track.querySelector('.governance-lock__progress-fill');
+    expect(fill.style.transform).toBe('');
+    const tip = track.querySelector('.governance-lock__progress-tip');
+    expect(tip).toBeTruthy();
+    expect(tip.getAttribute('style')).toBeNull();
+    const knob = tip.querySelector('.governance-lock__progress-indicator');
+    expect(knob.textContent).toBe(label);
+    expect(knob.style.left).toBe('');
+    expect(knob.style.transform).toBe('');
+  });
+  it('rims the knob in the rider\'s current zone colour', () => {
+    const { container } = render(<GovernanceStateOverlay display={display([row({ progress: 0.4 })])} />);
+    const knob = container.querySelector('.governance-lock__progress-indicator');
+    expect(knob.style.getPropertyValue('--tip-color')).toBe('#94a3b8');
   });
   it('updates the notch with HR progress independently from the secondary hold bar', () => {
     const view = render(<GovernanceStateOverlay display={display([row({ progress: 0.5 })])} />);

@@ -396,16 +396,14 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     }
     return (
       <div className={progressClass}>
-        <div className="governance-lock__progress-track" aria-hidden="true">
+        {/* One input, `--p`, drives both the fill (scaleX) and the knob's
+            wrapper (translateX) with the same transition, so the percentage
+            rides the bar tip instead of snapping ahead of it. */}
+        <div className="governance-lock__progress-track" aria-hidden="true" style={{ '--p': clamped }}>
           <div
             className="governance-lock__progress-fill"
-            style={{
-              transform: `scaleX(${clamped})`,
-              background: fillBackground
-            }}
+            style={{ background: fillBackground }}
           />
-          <span className="governance-lock__progress-indicator"
-            style={{ left: `${widthPercent}%`, transform: `translateX(-${widthPercent}%)` }}>{percentValue}%</span>
           {intermediateZones.map((zone) => {
             const markerPosition = Math.round((zone.position || 0) * 100);
             const isPassed = widthPercent >= markerPosition;
@@ -421,6 +419,10 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
               />
             );
           })}
+          <div className="governance-lock__progress-tip">
+            <span className="governance-lock__progress-indicator"
+              style={{ '--tip-color': currentColor /* data-color */ }}>{percentValue}%</span>
+          </div>
         </div>
         <HoldProgress row={row} />
       </div>
