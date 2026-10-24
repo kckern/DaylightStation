@@ -449,6 +449,58 @@ describe('SkylineGlider', () => {
     vi.useRealTimers();
   });
 
+  it('fires a laser from the keyboard during flight, logs it and shows the bomb rack', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');
+    fireEvent.keyDown(window, { key: 'f' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.objectContaining({ weapon: 'laser', count: 1 }));
+    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.skipped', expect.objectContaining({ effectId: 'laser-cue', reason: 'audio-unavailable' }));
+    fireEvent.keyDown(window, { key: 'b' });
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('4');
+    vi.useRealTimers();
+  });
+
+  it('keeps a press queued through a zero-length frame and fires it on the next one', async () => {
+    vi.useFakeTimers();
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+    act(() => vi.advanceTimersByTime(3200));
+    // Take over animation frames so two callbacks can share one timestamp.
+    const pending = [];
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => pending.push(callback));
+    try {
+      act(() => vi.advanceTimersByTime(50));
+      const tick = (timestamp) => act(() => { pending.splice(0).forEach((callback) => callback(timestamp)); });
+      const fired = () => mockLog.info.mock.calls.filter(([name]) => name === 'skyline_glider.flight.weapon.fired');
+      let now = performance.now();
+      tick(now);
+      tick(now += 16);
+      fireEvent.keyDown(window, { key: 'f' });
+      tick(now);
+      expect(fired()).toHaveLength(0);
+      tick(now += 16);
+      expect(fired()).toHaveLength(1);
+      expect(fired()[0][1]).toMatchObject({ weapon: 'laser', count: 1 });
+    } finally {
+      raf.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores fire keys in the lobby', async () => {
+    render(<SkylineGlider />);
+    await act(async () => Promise.resolve());
+    fireEvent.keyDown(window, { key: 'f' });
+    expect(mockLog.info).not.toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.anything());
+  });
+
   it('prefers NiceDay over CycleAce regardless of equipment order', async () => {
     mockCtx.equipment = [
       { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },

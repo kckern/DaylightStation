@@ -6,6 +6,10 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
   const collectibles = [...new Set(state.collectedIds || [])];
   const completed = status === 'completed';
   const rewardRings = completed ? skylineGliderBonus(collectibles) : 0;
+  const destroyedBy = Object.values(state.destroyedBy || {});
+  const targets = destroyedBy.filter((by) => by === 'laser' || by === 'bomb').length;
+  const shotsFired = state.shotsFired || 0;
+  const bombsDropped = state.bombsDropped || 0;
   return {
     schema: 'skyline-glider-run/v1',
     run: {
@@ -13,6 +17,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
       started_at: startedAt, ended_at: endedAt, status,
       duration_s: Math.round(state.courseTime * 100) / 100,
       collisions: state.collisions, restarts: state.restarts, reward_rings: rewardRings,
+      targets, shots_fired: shotsFired, bombs_dropped: bombsDropped,
       ...(fitnessSessionId ? { fitness_session_id: fitnessSessionId } : {}),
       ...(equipmentId ? { equipment_id: equipmentId } : {}),
       ...(calibration ? { calibration: { low_rpm: calibration.lowRpm, high_rpm: calibration.highRpm } } : {}),
@@ -24,7 +29,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
       started_at: startedAt, ended_at: endedAt,
       participants: [{ id: riderId }],
       outcome: { kind: completed ? 'completed' : 'abandoned', score: collectibles.length, winner_ids: completed ? [riderId] : [] },
-      metrics: { duration_s: Math.round(state.courseTime * 100) / 100, collisions: state.collisions, restarts: state.restarts, collectibles: collectibles.length },
+      metrics: { duration_s: Math.round(state.courseTime * 100) / 100, collisions: state.collisions, restarts: state.restarts, collectibles: collectibles.length, targets, shots_fired: shotsFired, bombs_dropped: bombsDropped },
     },
   };
 }
