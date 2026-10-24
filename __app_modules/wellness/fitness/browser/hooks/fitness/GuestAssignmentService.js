@@ -1,6 +1,7 @@
 // Note: slugifyId removed - we now use explicit IDs
 import { DeviceAssignmentLedger } from "./DeviceAssignmentLedger.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
+import { isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
 
 /**
  * Continuous-usage threshold for session transfers.
@@ -206,6 +207,19 @@ export class GuestAssignmentService {
     if (previousOccupantId && previousOccupantId !== newOccupantId && session.reassignStint) {
       stint = session.reassignStint(key, newOccupantId, { mode, name: value.name })?.stint || null;
     } else if (session.openStint) {
+      // A re-tag under the SAME id is still a new person when the id is the
+      // shared generic guest (guest_<deviceId>: kid -> adult) or the name
+      // changed. reassignStint is a no-op for the same id, so without this the
+      // new wearer inherited the last one's trust, committed zone and
+      // baseline — and a ladder change on top of that could read as a Fire
+      // crossing. Same treatment as a handover to a different id.
+      const previousName = previousEntry?.occupantName || previousEntry?.metadata?.name || null;
+      const retag = previousEntry && previousOccupantId && previousOccupantId === newOccupantId
+        && (isGenericGuestProfileId(newOccupantId) || (previousName != null && previousName !== value.name));
+      if (retag && typeof session._resetWearerZoneState === 'function') {
+        session._resetWearerZoneState(key, newOccupantId, newOccupantId);
+        getLogger().info('guest_assignment.retag_same_id', { deviceId: key, occupantId: newOccupantId });
+      }
       stint = session.openStint({ deviceId: key, profileId: newOccupantId, name: value.name });
     }
     const entityId = stint?.entityId || null;

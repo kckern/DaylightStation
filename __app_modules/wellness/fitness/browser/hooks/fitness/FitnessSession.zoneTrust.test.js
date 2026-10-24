@@ -112,6 +112,8 @@ describe('FitnessSession — implausible spikes and returning riders', () => {
     feed('strap-a1', 'rider-a', [150, 160, 165, 170, 175, 180, 184, 186, 188, 188, 188, 188, 188, 188], 1000);
     feed('strap-a1', 'rider-a', [190, 191, 192, 193], 1000);
     expect(session.getZoneProfile('rider-a').currentZoneId).toBe('fire');
+    expect(toasts).toEqual([]); // a ceremony needs Fire HELD (FIRE_CEREMONY_SUSTAIN_MS)
+    feed('strap-a1', 'rider-a', [193, 193, 193], 1000);
     expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 191, fireThreshold: 190 })]);
   });
 

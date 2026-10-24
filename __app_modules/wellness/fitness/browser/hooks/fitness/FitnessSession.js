@@ -35,6 +35,13 @@ const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
 // mid-session reading loss resumes within (ZoneProfileStore), so both paths
 // apply one rule. A declared handover still wipes trust at once.
 export const ZONE_TRUST_RESUME_GRACE_MS = ZONE_TRUST_RESUME_WINDOW_MS;
+// Packet sources that are not real hardware. The backend rebroadcasts
+// simulator traffic to every client, so the garage kiosk ingests it too.
+const SIMULATED_SOURCES = new Set(['fitness-simulator']);
+// A device that carried simulated traffic stays "simulated" this long after
+// the last such packet: the simulator drives the configured strap ids, and a
+// strap that was just simulated must not celebrate the moment it goes quiet.
+export const SIMULATED_DEVICE_HOLD_MS = 10 * 60 * 1000;
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
@@ -211,6 +218,7 @@ export class FitnessSession {
     this._zoneReadingEligible = new Map(); // userId -> current accepted real sample
     this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
     this._hrReadingState = new Map(); // deviceId -> true (reading) | false (no reading); edges drive _onHrReadingLost
+    this._simulatedDeviceAt = new Map(); // deviceId -> last simulated packet (ms); such a strap never earns a Fire ceremony
 
     // Session Entity Registry - tracks participation segments per device assignment
     // Each device assignment creates a new entity with fresh metrics (rings, start time)
@@ -408,6 +416,13 @@ export class FitnessSession {
     this._onHrReadingLost(key, userId);
   }
 
+  /** Whether this device carried simulator traffic recently (SIMULATED_DEVICE_HOLD_MS). */
+  isSimulatedDevice(deviceId) {
+    if (deviceId == null) return false;
+    const at = this._simulatedDeviceAt.get(String(deviceId));
+    return Number.isFinite(at) && Date.now() - at <= SIMULATED_DEVICE_HOLD_MS;
+  }
+
   _hrOccupantId(deviceId) {
     const ledgerEntry = this.userManager?.assignmentLedger?.get(deviceId);
     const user = this.userManager?.resolveUserForDevice(deviceId);
@@ -489,7 +504,10 @@ export class FitnessSession {
         // re-sync of the same sample (another rider's packet) as no new
         // sample when confirming an upward zone change.
         zoneReadingDeviceId: user.currentData?.heartRateDeviceId ?? null,
-        zoneReadingAt: Number.isFinite(user._lastRealHrAt) ? user._lastRealHrAt : null
+        zoneReadingAt: Number.isFinite(user._lastRealHrAt) ? user._lastRealHrAt : null,
+        // Simulated HR still drives zones and governance (tests depend on
+        // it); it only marks the reading so no Fire ceremony comes of it.
+        zoneReadingSimulated: this.isSimulatedDevice(user.currentData?.heartRateDeviceId)
       })));
       return changed;
     } catch (err) {
@@ -532,6 +550,13 @@ export class FitnessSession {
     // cannot recreate devices, participants, or a replacement session.
     const deviceId = payload.deviceId ?? payload.id;
     const now = Date.now();
+    if (deviceId != null && (SIMULATED_SOURCES.has(payload.source) || payload.simulated === true)) {
+      const key = String(deviceId);
+      if (!this._simulatedDeviceAt.has(key)) {
+        getLogger().info('fitness.device.simulated_source', { deviceId: key, source: payload.source ?? null });
+      }
+      this._simulatedDeviceAt.set(key, now);
+    }
     this._endedDeviceHold.observeAbsence([], this._getTimeouts().remove, now);
     if (!this._endedDeviceHold.filter(deviceId, now)) return;
 
@@ -3044,6 +3069,7 @@ export class FitnessSession {
     this._hrReadingState.clear();
     this._deviceHrSampleCount.clear();
     this._zoneReadingEligible.clear();
+    this._simulatedDeviceAt.clear();
     this.zoneProfileStore?.clear();
     this._userZoneProfilesCache = null;
     this._vibrationTrackers.forEach(t => t.reset());

@@ -87,6 +87,8 @@ describe('ZoneProfileStore — an upward zone change needs confirmation', () => 
     expect(at191.currentZoneId).toBe('fire');
     expect(at191.zoneEntry).toMatchObject({ zoneId: 'fire', heartRate: 191, threshold: 190 });
     expect(at192.zoneEntry.id).toBe(at191.zoneEntry.id);
+    expect(toasts).toEqual([]); // a ceremony needs Fire HELD (FIRE_CEREMONY_SUSTAIN_MS)
+    replay([193, 193, 193, 193], 1000, 'rider-a');
     expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 191, fireThreshold: 190 })]);
     const commit = logger.info.mock.calls.find(([event, data]) => event === 'fitness.zone_state.transition' && data.committedZoneId === 'fire');
     expect(commit[1]).toMatchObject({ commitPath: 'confirmed-upward', rawSamples: 2 });

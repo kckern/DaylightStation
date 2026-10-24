@@ -95,6 +95,19 @@ export class ZoneProfileStore {
     // site to remember, and one that forgets scores rings on stale thresholds.
     this._zoneConfigRevision = 0;
     this._zoneConfigSignature = null;
+    // The ladder (thresholds) each rider's zone was last derived from. Unlike
+    // _lastGoodLadder this survives a config rebuild (clear preserveTrust), so
+    // a mid-session threshold edit is seen as a CHANGE: Map<userId, signature>.
+    this._ladderSignature = new Map();
+    // Riders whose ladder changed and who have not since had a reading below
+    // Fire under the new one. Any zone entry made meanwhile was produced by
+    // reclassifying an unchanged HR, not by a crossing, and is flagged
+    // `reclassified` so it can never be celebrated.
+    this._reclassifyGuard = new Set();
+    // Riders re-admitted by restoreTrust (v1 reload snapshot: trust with no
+    // evidence). Their first commit is instant and unconfirmed, so their first
+    // zone entry is flagged `resumed` and can never be celebrated.
+    this._restoredWithoutEvidence = new Set();
   }
 
   /**
@@ -109,6 +122,9 @@ export class ZoneProfileStore {
     this._zoneEntries.delete(userId);
     this._resumeCandidates.delete(userId);
     this._resumeRefusalLogged.delete(userId);
+    this._reclassifyGuard.delete(userId);
+    this._restoredWithoutEvidence.delete(userId);
+    this._ladderSignature.delete(userId);
     // A confirmed loss is the same rider on the same strap going quiet (a
     // water break): keep the evidence so the return resumes. Anything else —
     // a handover, a correction — is a different person's heart.
@@ -135,6 +151,9 @@ export class ZoneProfileStore {
   restoreTrust(userId) {
     if (userId == null || this._trustedUsers.has(userId)) return;
     this._trustedUsers.add(userId);
+    // No evidence came with it: the first reading commits without the usual
+    // upward confirmation, so that first entry must not count as a crossing.
+    this._restoredWithoutEvidence.add(userId);
     this._signature = null;
   }
 
@@ -207,6 +226,9 @@ export class ZoneProfileStore {
       this._trustEvidence.clear();
       this._resumeCandidates.clear();
       this._resumeRefusalLogged.clear();
+      this._ladderSignature.clear();
+      this._reclassifyGuard.clear();
+      this._restoredWithoutEvidence.clear();
     }
     getLogger().info('fitness.zone_state.reset', { reason: preserveTrust ? 'config-rebuild' : 'session-reset' });
 
@@ -229,10 +251,14 @@ export class ZoneProfileStore {
       }
     }
     const signature = this.#computeSignature(nextMap);
+    // Always keep the newest snapshot: an unchanged signature (same HR, same
+    // zone) still carries a NEW reading time, which is what the Fire ceremony
+    // counts samples and judges freshness by. The return value still reports
+    // only meaningful changes to consumers.
+    this._profiles = nextMap;
     if (signature === this._signature) {
       return false;
     }
-    this._profiles = nextMap;
     this._signature = signature;
     this.#bumpZoneConfigRevisionIfChanged(nextMap);
     return true;
@@ -322,6 +348,7 @@ export class ZoneProfileStore {
     // is the only place a ladder becomes a rider's committed reality, and the
     // only place the ladder is validated.
     const committedLadder = this.#committedLadder(userId, normalizedZoneConfig);
+    this.#observeLadder(userId, committedLadder);
 
     const snapshot = committedLadder
       ? deriveZoneProgressSnapshot({ zoneConfig: committedLadder, heartRate })
@@ -338,6 +365,7 @@ export class ZoneProfileStore {
     // Without a timestamp (standalone callers) each sync is its own sample.
     const sampleAt = Number.isFinite(user.zoneReadingAt) ? user.zoneReadingAt : null;
     const readingDeviceId = user.zoneReadingDeviceId != null ? String(user.zoneReadingDeviceId) : null;
+    const readingSimulated = user.zoneReadingSimulated === true;
     let resumed = null;
     if (!this._trustedUsers.has(userId) && eligible && committedLadder) {
       if (rawZoneId === 'cool') {
@@ -356,7 +384,13 @@ export class ZoneProfileStore {
     // Keep raw display/progress available before trust, without publishing it as
     // earned state. Only an accepted reading can justify a newly committed zone.
     const displayZone = committedLadder?.find(zone => zone.id === rawZoneId);
+    // A trusted real reading below Fire under the current ladder: from here a
+    // Fire entry is a real upward crossing again.
+    if (zoneTrusted && eligible && rawZoneId && rawZoneId !== 'fire' && this._reclassifyGuard.delete(userId)) {
+      getLogger().info('fitness.zone_ladder.reclassify_guard_cleared', { userId, heartRate, rawZoneId });
+    }
     if (zoneTrusted && eligible && stabilized.zoneId !== previousZone && stabilized.zoneId === rawZoneId) {
+      const restoredFirst = this._restoredWithoutEvidence.delete(userId);
       this._zoneEntries.set(userId, {
         id: ++this._zoneEntrySequence,
         zoneId: stabilized.zoneId,
@@ -365,7 +399,13 @@ export class ZoneProfileStore {
         enteredAt: now(),
         // A resumed zone is the zone the rider already had, not a crossing:
         // fireZoneTracker seeds on it and never celebrates it.
-        ...(resumed ? { resumed: true } : {})
+        ...(resumed || restoredFirst ? { resumed: true } : {}),
+        ...(restoredFirst ? { restored: 'no-evidence' } : {}),
+        // Reached by a ladder change under an unchanged HR, not a crossing.
+        ...(this._reclassifyGuard.has(userId) ? { reclassified: true } : {}),
+        // Fed by the simulator: drives zones and governance, never a ceremony.
+        ...(readingSimulated ? { simulated: true } : {}),
+        deviceId: readingDeviceId
       });
     }
     // Evidence for a later resume: only a trusted, eligible reading that the
@@ -421,6 +461,13 @@ export class ZoneProfileStore {
       targetHeartRate: normalizedSnapshot?.targetHeartRate ?? null,
       showBar: normalizedSnapshot?.showBar ?? false,
       source: user.source || null,
+      // The reading this profile was built from: which strap, when, whether
+      // it was an accepted real sample, and whether the simulator sent it.
+      // The Fire ceremony re-checks these at display time.
+      zoneReadingAt: sampleAt,
+      zoneReadingDeviceId: readingDeviceId,
+      zoneReadingEligible: eligible,
+      zoneReadingSimulated: readingSimulated,
       updatedAt: now()
     };
   }
@@ -487,6 +534,25 @@ export class ZoneProfileStore {
       evidenceZoneId: evidence.zoneId, evidenceHeartRate: evidence.heartRate
     });
     return { path, evidence: { ...evidence }, ageMs };
+  }
+
+  /**
+   * Notice a change to the thresholds a rider's zone is derived from. The
+   * first ladder only records; a different one arms the reclassify guard (see
+   * _reclassifyGuard) so a zone the new ladder assigns to an unchanged HR is
+   * never mistaken for a crossing.
+   */
+  #observeLadder(userId, ladder) {
+    if (!Array.isArray(ladder) || ladder.length === 0) return;
+    const signature = ladder.map((zone) => `${zone?.id}:${zone?.min ?? ''}`).join('|');
+    const prior = this._ladderSignature.get(userId);
+    this._ladderSignature.set(userId, signature);
+    if (prior == null || prior === signature) return;
+    this._reclassifyGuard.add(userId);
+    getLogger().info('fitness.zone_ladder.changed', {
+      userId, from: prior, to: signature,
+      committedZoneId: this._hysteresis.get(userId)?.committedZoneId ?? null
+    });
   }
 
   /**
