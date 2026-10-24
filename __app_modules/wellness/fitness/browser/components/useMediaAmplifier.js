@@ -66,7 +66,13 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, trackId } = {}) => {
+// `level` is the viewer's UN-DUCKED video level (usePersistentVolume's
+// `volume`). The gain carries it so normal playback keeps its historical
+// loudness (level^2 x boost: element.volume carries the level once, the gain
+// once more), while a duck, which lowers only element.volume, scales the
+// output by exactly duck_to. Without `level` the gain falls back to
+// element.volume (the pre-2026-10-23 behaviour, which squares a duck).
+export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, trackId, level } = {}) => {
   const { getVolume, setVolume } = useVolumeStore();
 
   const ids = useMemo(
@@ -80,6 +86,9 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
 
   const [boostLevel, setBoostLevel] = useState(1);
   const amplifierRef = useRef(null);
+  const levelRef = useRef(level);
+  levelRef.current = level;
+  const syncGainRef = useRef(null);
 
   useEffect(() => {
     const resolved = getVolume(ids);
@@ -122,21 +131,27 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
     const amp = ensureAmplifier();
     if (!amp) return undefined;
 
-    // Sync gain to the boost alone. A MediaElementAudioSourceNode's output
-    // already carries element.volume (and muted), so multiplying by volume here
-    // would apply it twice: output = volume^2 x boost, which squared every duck
-    // (duck_to 0.15 became ~2%). See
+    // A MediaElementAudioSourceNode's output already carries element.volume
+    // (and muted). The gain used to be element.volume x boost, so the duck
+    // (which lowers element.volume) was applied twice: duck_to 0.15 became
+    // ~2%. The gain now uses the un-ducked level, so normal loudness is
+    // unchanged and the duck is linear. See
     // ops:docs/_wip/bugs/2026-10-23-fitness-audio-ducking-goes-to-zero.md.
     // Mute is already silent upstream; zeroing the gain too is harmless.
     let lastGain = null;
     const syncGain = () => {
       if (!amplifierRef.current) return;
       const { boost } = amplifierRef.current;
-      const totalGain = mediaElement.muted ? 0 : boost;
+      const unducked = Number.isFinite(levelRef.current)
+        ? Math.min(1, Math.max(0, levelRef.current))
+        : mediaElement.volume;
+      const totalGain = mediaElement.muted ? 0 : unducked * boost;
       if (totalGain !== lastGain) {
         logger().debug('media_amplifier.gain', {
           gain: totalGain,
           boost,
+          level: unducked,
+          levelSource: Number.isFinite(levelRef.current) ? 'volume-store' : 'element',
           elementVolume: mediaElement.volume,
           muted: Boolean(mediaElement.muted),
         });
@@ -151,6 +166,7 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
       }
     };
 
+    syncGainRef.current = syncGain;
     // Initial sync
     syncGain();
 
@@ -168,22 +184,21 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
     return () => {
       mediaElement.removeEventListener('volumechange', syncGain);
       mediaElement.removeEventListener('play', handlePlay);
+      if (syncGainRef.current === syncGain) syncGainRef.current = null;
       cleanupAmplifier(mediaElement);
     };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaElement]); // keep listener setup tied to the current element only
 
-  // Effect to handle boost level changes separately
+  // Effect to handle boost and un-ducked level changes separately
+  // (re-sync directly; no synthetic volumechange reaches other listeners).
   useEffect(() => {
     if (amplifierRef.current) {
-        amplifierRef.current.boost = boostLevel;
-        // Trigger sync
-        if (mediaElement) {
-            mediaElement.dispatchEvent(new Event('volumechange'));
-        }
+      amplifierRef.current.boost = boostLevel;
+      syncGainRef.current?.();
     }
-  }, [boostLevel, mediaElement]);
+  }, [boostLevel, level, mediaElement]);
 
   const setBoost = useCallback((level) => {
     setBoostLevel(level);
