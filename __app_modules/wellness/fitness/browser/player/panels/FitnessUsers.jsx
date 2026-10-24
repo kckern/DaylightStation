@@ -11,7 +11,9 @@ import { StepMatCard } from "./RealtimeCards/StepMatCard.jsx";
 import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
-import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX } from "./riderListDensity.js";
+import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
+import { trendVisible, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
+import RiderHrTrend from "./RiderHrTrend.jsx";
 import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
@@ -145,6 +147,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     pressureMatActivities = {},
     assignEquipmentUser,
     disengagePressureMat,
+    getParticipantTimelineSeries,
+    timelineTimebase,
   } = fitnessContext;
   // Use context-provided arrays if available, fallback to derivation for backward compat
   const allDevices = React.useMemo(() => {
@@ -593,6 +597,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, []);
   const onRosterAnimationFinish = React.useCallback(() => setListResizes((n) => n + 1), []);
   const densitySignatureRef = React.useRef('');
+  // HR trend (hrTrend.js): the timeline ticks every 5s; once it has two ticks a
+  // tall card has something to draw, and a single rider may grow past 132px
+  // so the chart gets real room (owner decision 2026-10-23).
+  const timelineTicks = Number(timelineTimebase?.tickCount) || 0;
+  const trendsAvailable = typeof getParticipantTimelineSeries === 'function' && timelineTicks >= 2;
+  const singleCap = trendsAvailable ? TREND_SINGLE_CAP_PX : RIDER_SINGLE_CAP_PX;
+  const trendShownRef = React.useRef(false);
+  const showTrend = trendsAvailable && trendVisible(trendShownRef.current, cardHeight);
+  if (showTrend !== trendShownRef.current) {
+    getLogger().sampled('fitness.sidebar.hr_trend.visibility', { shown: showTrend, cardHeight }, { maxPerMinute: 6, aggregate: true });
+  }
+  trendShownRef.current = showTrend;
   useLayoutEffect(() => {
     const container = containerRef.current;
     const content = contentRef.current;
@@ -602,10 +618,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     // stands in for the room's height.
     const headers = [...content.querySelectorAll('.device-zone-info')].map((el) => el.textContent).join(',');
     const cardsInDom = content.querySelectorAll('.fitness-device').length;
-    const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}`;
+    const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}#${singleCap}`;
     if (signature === densitySignatureRef.current) return;
     densitySignatureRef.current = signature;
-    const next = measureRiderLayout(container, content);
+    const next = measureRiderLayout(container, content, { singleCap });
     if (next.height !== riderLayout.height || next.gap !== riderLayout.gap) setRiderLayout(next);
   });
 
@@ -855,6 +871,27 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               if (zoneIdForGrouping) seenZones.add(zoneIdForGrouping);
               if (!zoneIdForGrouping && device.type === 'heart_rate' && !noZoneShown) noZoneShown = true;
 
+              // Fire has no next zone: committed Fire shows a full, pulsing bar.
+              const zoneBar = zoneBarState({
+                committedZoneId: zoneIdForGrouping,
+                showBar: shouldShowProgressBar,
+                progress: shouldShowProgressBar ? (normalizedProgress ?? 0) : null,
+              });
+              // Same identity order as the race chart (buildBeatsSeries): the
+              // entity's stint first, then the timeline user.
+              const trendEntityId = participantEntry?.entityId || null;
+              const trendUserId = participantEntry?.timelineUserId || participantEntry?.id || participantEntry?.profileId || profileId;
+              const trendParticipantId = `${trendEntityId || ''}|${trendUserId}`;
+              const readTrendSeries = (_key, metric, options) => {
+                if (trendEntityId) {
+                  const entitySeries = getParticipantTimelineSeries(trendEntityId, metric, options);
+                  if (Array.isArray(entitySeries) && entitySeries.length > 0) return entitySeries;
+                }
+                return getParticipantTimelineSeries(trendUserId, metric, options);
+              };
+              const trendSequence = progressInfo?.zoneSequence || userVitalsEntry?.zoneSequence || [];
+              const trendThresholds = Array.isArray(trendSequence) ? trendSequence.map((z) => z?.threshold) : [];
+
               const removalCountdown = device.removalCountdown;
               const isCountdownActive = Number.isFinite(removalCountdown);
               const countdownWidth = isCountdownActive ? Math.round(removalCountdown * 100) : 0;
@@ -894,7 +931,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     )}
                   </div>
                   <div
-                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}`}
+                    className={`fitness-device ${isHeartRate ? 'clickable' : ''} ${isHeartRate && layoutMode === 'vert' ? CONFIG.layout.cards.vertical.cardClass : CONFIG.layout.cards.horizontal.cardClass} ${getDeviceColor(device)} ${isInactive ? 'inactive' : 'active'} ${isCountdownActive ? 'countdown-active' : ''} ${zoneClass}${isHeartRate && showTrend ? ' has-trend' : ''}`}
                     title={`${UI_LABELS.DEVICE_TOOLTIP_PREFIX} ${deviceName} (${device.deviceId}) - ${formatTimeAgo(device.lastSeen)}`}
                     role={isHeartRate ? 'button' : undefined}
                     tabIndex={isHeartRate ? 0 : undefined}
@@ -955,12 +992,19 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>
                     </div>
-                    {isHeartRate && shouldShowProgressBar && (
-                      <div className="zone-progress-bar" aria-label="Zone progress" role="presentation">
-                        <div
-                          className="zone-progress-fill"
-                          style={{ width: `${Math.max(0, Math.min(100, Math.round((normalizedProgress ?? 0) * 100)))}%` }}
-                        />
+                    {isHeartRate && showTrend && (
+                      <RiderHrTrend
+                        participantId={trendParticipantId}
+                        getSeries={readTrendSeries}
+                        tickCount={timelineTicks}
+                        thresholds={trendThresholds}
+                        profileId={profileId}
+                        cardHeight={cardHeight}
+                      />
+                    )}
+                    {isHeartRate && zoneBar.show && (
+                      <div className={`zone-progress-bar${zoneBar.max ? ' zone-progress-bar--max' : ''}`} aria-label="Zone progress" role="presentation">
+                        <div className="zone-progress-fill" style={{ width: `${zoneBar.percent}%` }} />
                       </div>
                     )}
                   </div>

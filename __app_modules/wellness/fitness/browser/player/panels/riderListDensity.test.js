@@ -62,4 +62,11 @@ describe('continuous roster allocation', () => {
     expect(measureRiderLayout(container, container)).toEqual(a);
     expect(a).toEqual({ height: 64, gap: 4 });
   });
+  it('lets a single rider grow to the trend cap when an HR trend has room to draw', () => {
+    expect(allocateRiderHeight({ room: 700, overhead: 30, count: 1, singleCap: 560 })).toBe(560);
+    expect(allocateRiderHeight({ room: 545, overhead: 25, count: 1, singleCap: 560 })).toBe(520);
+    expect(allocateRiderLayout({ room: 700, content: 25, gaps: 0, count: 1, singleCap: 560 })).toEqual({ height: 560, gap: 10 });
+    // Two or more riders were never capped; the trend cap does not touch them.
+    expect(allocateRiderHeight({ room: 700, overhead: 50, count: 2, singleCap: 560 })).toBe(325);
+  });
 });

@@ -129,6 +129,11 @@
 }
 
 // Animations
+@keyframes zone-max-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 @keyframes fitness-pinned-enter {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -415,6 +420,26 @@
       }
       .device-info .device-stats .device-value {
         font-size: clamp(16px, calc(var(--rider-card-height, 64px) * .2), 24px);
+      }
+    }
+
+    // Tall card with an HR trend: avatar + name/BPM on top, the chart fills
+    // the rest of the card's width and height (hrTrend.js thresholds).
+    .device-grid.layout-horiz .fitness-device.heart-rate.has-trend {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      align-items: center;
+      column-gap: 10px;
+      row-gap: 6px;
+      padding: 8px 8px 12px;
+      .card-avatar { --rider-avatar: min(64px, 24cqw); }
+      .rider-hr-trend {
+        grid-column: 1 / -1;
+        align-self: stretch;
+        width: 100%;
+        height: 100%;
+        min-height: 20px;
       }
     }
 
@@ -1752,6 +1777,39 @@
     height: 100%;
     background: rgba(255, 255, 255, 0.4);
     transition: width 0.3s ease-in-out;
+  }
+
+  // Fire has no next zone, so the bar is full, brighter red, and pulses
+  // (opacity only — compositor work; never animate filter or box-shadow).
+  // Selector out-ranks the per-zone fill colour above.
+  &.zone-fire .zone-progress-bar--max { height: 6px; }
+  &.zone-fire .zone-progress-bar--max .zone-progress-fill {
+    width: 100%;
+    background: zones.$zone-fire-hot;
+    transition: none;
+    animation: zone-max-pulse 1.4s ease-in-out infinite;
+    will-change: opacity;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &.zone-fire .zone-progress-bar--max .zone-progress-fill { animation: none; opacity: 1; }
+  }
+
+  // Whole-session HR sparkline (RiderHrTrend). Static SVG, no animation.
+  .rider-hr-trend {
+    display: block;
+    overflow: visible;
+  }
+  .rider-hr-trend__line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .rider-hr-trend__guide {
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
   }
 
   // Countdown bar while a silent device waits to be removed

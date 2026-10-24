@@ -3,7 +3,7 @@
  * Isolated real-component/styles sidebar, menu, and ceremony geometry checks.
  * No backend or hardware connection: all context data is synthetic and every
  * network request is confined to this ephemeral loopback fixture server.
- * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--only=roster,menu,toast,home,transition,integration] [--out-dir <dir>]
+ * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--only=roster,trend,menu,toast,home,transition,integration] [--out-dir <dir>]
  * --only runs just the named sections (cheap targeted checks); the default runs all of them.
  * Screenshots and geometry.json go to a fresh per-run directory under the OS temp dir
  * (fitness-harness-XXXXXX) unless --out-dir or FITNESS_HARNESS_OUT_DIR names one.
@@ -64,7 +64,7 @@ const fixtureMedia = document.createElement('video');
 const root = createRoot(document.getElementById('root'));
 import { installIntegration } from './tests/_infrastructure/harnesses/fitness-integration-fixture.jsx';
 installIntegration(root, FixtureContext);
-window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false, gov = false, media = false }) => {
+window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false, gov = false, media = false, ticks = 0 }) => {
   const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
   const devices = Array.from({ length: count }, (_, i) => ({
     id: 'rider-' + i, profileId: 'rider-' + i, deviceId: String(101 + i), type: 'heart_rate', heartRate: 123 + i,
@@ -79,6 +79,13 @@ window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones =
     deviceAssignments: [], zoneProgressIndex: new Map(), userCollections: { all: [] }, deviceOwnership: {}, pressureMatActivities: {},
     getDisplayName: id => ({ displayName: 'Long Participant Name ' + id, source: 'fixture' }),
     fitnessSessionInstance: { getEquipmentUser: () => null },
+    ...(ticks ? {
+      timelineTimebase: { tickCount: ticks, intervalMs: 5000 },
+      getParticipantTimelineSeries: (id, metric) => Array.from({ length: ticks }, (_, t) => {
+        const hr = Math.round(110 + 40 * Math.sin(t / 15 + id.length));
+        return metric === 'heart_rate' ? hr : (hr >= 140 ? 'hot' : hr >= 120 ? 'warm' : 'active');
+      }),
+    } : {}),
   };
   const contributors = Array.from({length: people}, (_,i) => ({id: 'contributor-' + i, name: 'Long Participant Name ' + i }));
   flushSync(() => root.render(<React.Profiler id="fixture" onRender={() => {window.fixtureRenderCount++;}}><MantineProvider><FixtureContext.Provider value={context}>
@@ -311,6 +318,26 @@ try {
     await page.waitForTimeout(420);
     await page.screenshot({path:artifact(viewport.width+'-roster.png')});
     }
+  }
+  // HR trend (hrTrend.js): cards >= 116px draw a whole-session sparkline; a
+  // single rider grows past 132px to give it room; short cards never draw one.
+  for (const options of (has('trend') ? [{count:1,ticks:600},{count:2,ticks:600},{count:5,ticks:600},{count:1,ticks:1}] : [])) {
+    await page.setViewportSize({width:1381,height:777});
+    await page.evaluate(o=>window.renderFixture({...o,media:true,width:250,height:737,zones:Math.min(3,o.count)}),options);
+    await page.waitForTimeout(900);
+    const trend = await page.evaluate(() => {
+      const cards=[...document.querySelectorAll('.fitness-device.heart-rate')];
+      return cards.map(card=>{const r=card.getBoundingClientRect();const svg=card.querySelector('.rider-hr-trend');const s=svg?.getBoundingClientRect();
+        return {height:r.height,trend:!!svg,lines:card.querySelectorAll('polyline').length,inside:!s||(s.top>=r.top-0.5&&s.bottom<=r.bottom+0.5&&s.left>=r.left-0.5&&s.right<=r.right+0.5),chartHeight:s?.height||0};});
+    });
+    for (const card of trend) {
+      assert.equal(card.trend, card.height>=116 && options.ticks>=2, 'trend iff tall card with a timeline: '+JSON.stringify({options,card}));
+      assert.ok(card.inside,'trend inside its card: '+JSON.stringify(card));
+      if (card.trend) assert.ok(card.lines>0 && card.chartHeight>=20,'chart has room and lines: '+JSON.stringify(card));
+    }
+    if (options.count===1) assert.ok(options.ticks>=2 ? trend[0].height>132 : trend[0].height<=132,'single-rider cap follows the trend: '+JSON.stringify(trend));
+    evidence.push({trend:options,cards:trend});
+    await page.screenshot({path:artifact('trend-'+options.count+'-'+options.ticks+'.png')});
   }
   for(const options of !has('transition') ? [] : [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
     await page.evaluate(options=>window.renderFixture({...options,height:597}),options);

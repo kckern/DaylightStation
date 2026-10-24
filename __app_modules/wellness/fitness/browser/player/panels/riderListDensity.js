@@ -6,23 +6,25 @@ export const RIDER_SINGLE_CAP_PX = 132;
 export const RIDER_GAP_PX = 10;
 export const RIDER_GAP_TIGHT_PX = 4;
 
-export function allocateRiderHeight({ room, overhead, count }) {
+// singleCap: 132 keeps a lone rider's card quiet; with an HR trend to draw the
+// card may grow to TREND_SINGLE_CAP_PX (hrTrend.js) so the chart fills it.
+export function allocateRiderHeight({ room, overhead, count, singleCap = RIDER_SINGLE_CAP_PX }) {
   if (!count) return RIDER_MIN_PX;
   const height = Math.floor((room - overhead) / count);
-  return Math.max(RIDER_MIN_PX, count === 1 ? Math.min(RIDER_SINGLE_CAP_PX, height) : height);
+  return Math.max(RIDER_MIN_PX, count === 1 ? Math.min(singleCap, height) : height);
 }
 
 // Picks the gap and the card height together. `content` is the non-card
 // height with NO gaps in it, so the answer does not depend on the gap the
 // grid currently wears: switching gap can never feed back into the choice.
-export function allocateRiderLayout({ room, content, gaps, count }) {
-  const at = (gap) => allocateRiderHeight({ room, overhead: content + gaps * gap, count });
+export function allocateRiderLayout({ room, content, gaps, count, singleCap }) {
+  const at = (gap) => allocateRiderHeight({ room, overhead: content + gaps * gap, count, singleCap });
   const roomy = Math.floor((room - content - gaps * RIDER_GAP_PX) / Math.max(1, count));
   if (!count || roomy >= RIDER_MIN_PX) return { height: at(RIDER_GAP_PX), gap: RIDER_GAP_PX };
   return { height: at(RIDER_GAP_TIGHT_PX), gap: RIDER_GAP_TIGHT_PX };
 }
 
-export function measureRiderLayout(container, content) {
+export function measureRiderLayout(container, content, { singleCap } = {}) {
   const grid = content?.querySelector('.device-grid');
   if (!container || !grid) return { height: RIDER_MIN_PX, gap: RIDER_GAP_PX };
   const style = getComputedStyle(container);
@@ -40,7 +42,7 @@ export function measureRiderLayout(container, content) {
       nonCard -= card.getBoundingClientRect().height;
     }
   }
-  return allocateRiderLayout({ room, content: nonCard, gaps: Math.max(0, children.length - 1), count });
+  return allocateRiderLayout({ room, content: nonCard, gaps: Math.max(0, children.length - 1), count, singleCap });
 }
 
 export function measureRiderHeight(container, content) {
