@@ -56,6 +56,7 @@ import { FitnessVoiceMemoService } from "../application/services/FitnessVoiceMem
 import { VoiceMemoRetryWorker } from "../application/services/VoiceMemoRetryWorker.mjs";
 import { FitnessSessionOperations } from "../application/services/FitnessSessionOperations.mjs";
 import { GarageHumanActivityService } from "../application/services/GarageHumanActivityService.mjs";
+import { GarageSpeakerHealthService } from "../application/services/GarageSpeakerHealthService.mjs";
 import { CycleRaceApiService } from "../application/services/CycleRaceApiService.mjs";
 import { GetFitnessMenuMusic } from "../application/usecases/GetFitnessMenuMusic.mjs";
 import { PrintFitnessReceipt } from "../application/usecases/PrintFitnessReceipt.mjs";
@@ -409,6 +410,7 @@ export function createFitnessApiRouter(config) {
   });
   const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });
 
+  const garageSpeakerLogger = logger?.child?.({ app: 'fitness', module: 'garage-speaker' }) ?? logger;
   const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     fitnessSessionOperations,
@@ -428,6 +430,21 @@ export function createFitnessApiRouter(config) {
     isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
     fitnessHardwareService,
     garageHumanActivity: new GarageHumanActivityService({ gateway: garageHumanActivityGateway, logger }),
+    garageSpeakerHealth: new GarageSpeakerHealthService({
+      logger: garageSpeakerLogger,
+      liveSessionAuthority,
+      // Same recipient rule as the Strava sync-health push: head of household's
+      // HA notify service, through the HA gateway the garage already uses.
+      sendPush: async ({ title, message, data }) => {
+        const recipient = configService?.getHeadOfHousehold?.();
+        const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
+        if (!garageHumanActivityGateway?.callService || !notifyService) {
+          garageSpeakerLogger?.warn?.('fitness.garage_speaker.no_push_target', { recipient: recipient || null });
+          return;
+        }
+        await garageHumanActivityGateway.callService('notify', notifyService, { title, message, data });
+      },
+    }),
     voiceMemoOperations,
     screenshotService,
     fitnessConfigService,

@@ -143,6 +143,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} config.fitnessContentService - Semantic content/config facade
  * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
  * @param {Object} [config.garageHumanActivity] - Garage TV automatic shutdown guard
+ * @param {Object} [config.garageSpeakerHealth] - Records HA's garage speaker recovery steps (record())
  * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
  * @param {Object} [config.stravaSyncHealth] - Strava sync-health monitor (report())
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
@@ -176,6 +177,7 @@ export function createFitnessRouter(config) {
     fitnessContentService,
     fitnessHardwareService,
     garageHumanActivity = null,
+    garageSpeakerHealth = null,
     fitnessWebhookService,
     stravaSyncHealth = null,
     fitnessConfigService,
@@ -310,6 +312,15 @@ export function createFitnessRouter(config) {
     if (!result.ok) return res.status(503).json({ error: result.reason });
     return res.json(result);
   }));
+
+  // Home Assistant reports each step of its garage speaker recovery
+  // (dropout / power_cycle / recovered / gave_up) so it reaches the log store.
+  router.post('/garage-speaker/events', (req, res) => {
+    if (!garageSpeakerHealth) return res.status(503).json({ error: 'garage speaker health unavailable' });
+    const result = garageSpeakerHealth.record(req.body, req.query.household || defaultHouseholdId);
+    if (!result.ok) return res.status(400).json({ error: result.reason });
+    return res.status(202).json({ accepted: true, event: result.event, sessionId: result.sessionId });
+  });
 
   // Resolve the default household id ONCE — handlers read `req.query.household ||
   // defaultHouseholdId` rather than reloading configuration in the API layer.
