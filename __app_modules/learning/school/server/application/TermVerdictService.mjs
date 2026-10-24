@@ -42,6 +42,7 @@ const pendingRow = (studyDay, today) => ({ ...dayVerdict({ studyDay, today }), s
 export class TermVerdictService {
   #completion; #cache; #periods; #window; #timezone; #clock; #logger; #freshMs;
   #queues = new Map();
+  #changedAt = new Map(); // learnerId -> ms of the last completion input (see `invalidate`)
 
   /**
    * @param {object} deps
@@ -75,6 +76,17 @@ export class TermVerdictService {
 
   today() {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone });
+  }
+
+  /**
+   * A completion input for this learner just landed (a graded sheet, a piano
+   * lesson, a story read): today's and yesterday's rows computed before it
+   * are no longer trusted, however recent. Without this the `freshMs` window
+   * served a payout settled seconds after a day turned green the row from
+   * just before it, and the green day waited for the hourly reconcile.
+   */
+  invalidate(learnerId) {
+    if (typeof learnerId === 'string' && learnerId) this.#changedAt.set(learnerId, this.#clock().getTime());
   }
 
   /** The term the grid draws for `today` (or the named one). Null outside every period. */
@@ -144,9 +156,11 @@ export class TermVerdictService {
     const stale = [];
     const rows = {};
 
+    const changedAt = this.#changedAt.get(learnerId) ?? -Infinity;
     for (const day of termDaysFor(term.from, last)) {
       const row = valid[day] ?? null;
-      const recent = row?.computedAt && nowMs - Date.parse(row.computedAt) < this.#freshMs;
+      const computedMs = row?.computedAt ? Date.parse(row.computedAt) : NaN;
+      const recent = nowMs - computedMs < this.#freshMs && computedMs > changedAt;
       if ((day === today || day === yesterday) && !recent) {
         // eslint-disable-next-line no-await-in-loop
         rows[day] = fresh[day] = await this.computeDay(learnerId, day, today);

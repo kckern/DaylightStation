@@ -51,9 +51,11 @@ function setup({ mode = 'live', settle = async () => ({}), settleAll = async () 
 }
 
 describe('startEconomyPayouts', () => {
-  it('subscribes to school outcomes and piano lessons, and registers the hourly reconcile', () => {
+  it('subscribes to school outcomes, day completion, piano lessons and story reads, and registers the hourly reconcile', () => {
     const { bus, scheduler } = setup();
-    expect(bus.topics()).toEqual(['school.session.outcome-recorded', 'piano.lesson.completed']);
+    expect(bus.topics()).toEqual([
+      'school.session.outcome-recorded', 'school.completion.state-observed', 'piano.lesson.completed', 'school',
+    ]);
     expect(scheduler.registerTask).toHaveBeenCalledWith('economy:payout-reconcile', '0 * * * *', expect.any(Function));
   });
 
@@ -130,6 +132,45 @@ describe('startEconomyPayouts', () => {
     bus.emit('piano.lesson.completed', { userId: 'learner-a', plexId: 'plex:1' });
     await clock.advance(30_000);
     expect(payoutService.settle).toHaveBeenCalledWith({ learnerId: 'learner-a', week: null });
+  });
+
+  it('a day turning green settles that learner, without waiting for the hourly reconcile', async () => {
+    const { bus, clock, payoutService } = setup();
+    bus.emit('school.completion.state-observed', {
+      learnerId: 'learner-a', studyDate: WEDNESDAY, state: 'complete', previousState: 'incomplete',
+    });
+    await clock.advance(30_000);
+    expect(payoutService.settle.mock.calls.map(([a]) => a)).toEqual([{ learnerId: 'learner-a', week: null }]);
+  });
+
+  it('a completion fact naming last week (studyDate) settles last week', async () => {
+    const { bus, clock, payoutService } = setup();
+    bus.emit('school.completion.state-observed', { learnerId: 'learner-a', studyDate: '2026-09-25', state: 'complete' });
+    await clock.advance(30_000);
+    expect(payoutService.settle).toHaveBeenCalledWith({ learnerId: 'learner-a', week: '2026-09-21' });
+  });
+
+  it('a story read or a day bypass on the school broadcast settles; other school events do not', async () => {
+    const { bus, clock, payoutService } = setup();
+    bus.emit('school', { event: 'story-read', learnerId: 'learner-a' });
+    bus.emit('school', { event: 'session-issued', learnerId: 'learner-b' });
+    await clock.advance(30_000);
+    bus.emit('school', { event: 'program-day-bypass-changed', learnerId: 'learner-c' });
+    await clock.advance(30_000);
+    expect(payoutService.settle.mock.calls.map(([a]) => a.learnerId)).toEqual(['learner-a', 'learner-c']);
+  });
+
+  it('settles two seconds after the last fact by default', async () => {
+    const clock = fakeTimers();
+    const bus = fakeBus();
+    const payoutService = { settle: vi.fn(async () => ({})), settleAll: vi.fn(), currentStudyDay: () => WEDNESDAY };
+    startEconomyPayouts({ payoutService, config: { catalog: () => ({ mode: 'live' }) }, eventBus: bus,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, timers: clock.timers });
+    bus.emit('school.session.outcome-recorded', { learnerId: 'learner-a' });
+    await clock.advance(1_999);
+    expect(payoutService.settle).not.toHaveBeenCalled();
+    await clock.advance(1);
+    expect(payoutService.settle).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a payload with no learner', async () => {
