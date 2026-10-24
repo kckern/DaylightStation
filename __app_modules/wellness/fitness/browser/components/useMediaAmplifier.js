@@ -2,6 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useVolumeStore } from "../nav/useVolumeStore.js";
 
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'media-amplifier' });
+  return _logger;
+}
+
 const amplifiers = new WeakMap();
 
 const cleanupAmplifier = (element) => {
@@ -11,17 +17,17 @@ const cleanupAmplifier = (element) => {
   try {
     amp.source?.disconnect?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.disconnect_source_failed', { error: e.message });
+    logger().warn('media_amplifier.disconnect_source_failed', { error: e.message });
   }
   try {
     amp.gainNode?.disconnect?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.disconnect_gain_failed', { error: e.message });
+    logger().warn('media_amplifier.disconnect_gain_failed', { error: e.message });
   }
   try {
     amp.context?.close?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.close_context_failed', { error: e.message });
+    logger().warn('media_amplifier.close_context_failed', { error: e.message });
   }
   amplifiers.delete(element);
 };
@@ -35,7 +41,7 @@ const buildAmplifier = (element, boostLevel) => {
   try {
     source = context.createMediaElementSource(element);
   } catch (e) {
-    console.error('Failed to create MediaElementSource', e);
+    logger().error('media_amplifier.create_source_failed', { error: e.message });
     try {
       context.close();
     } catch (_) {
@@ -116,11 +122,26 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
     const amp = ensureAmplifier();
     if (!amp) return undefined;
 
-    // Sync gain based on element volume and boost
+    // Sync gain to the boost alone. A MediaElementAudioSourceNode's output
+    // already carries element.volume (and muted), so multiplying by volume here
+    // would apply it twice: output = volume^2 x boost, which squared every duck
+    // (duck_to 0.15 became ~2%). See
+    // ops:docs/_wip/bugs/2026-10-23-fitness-audio-ducking-goes-to-zero.md.
+    // Mute is already silent upstream; zeroing the gain too is harmless.
+    let lastGain = null;
     const syncGain = () => {
       if (!amplifierRef.current) return;
-      const volume = mediaElement.muted ? 0 : mediaElement.volume;
-      const totalGain = volume * amplifierRef.current.boost;
+      const { boost } = amplifierRef.current;
+      const totalGain = mediaElement.muted ? 0 : boost;
+      if (totalGain !== lastGain) {
+        logger().debug('media_amplifier.gain', {
+          gain: totalGain,
+          boost,
+          elementVolume: mediaElement.volume,
+          muted: Boolean(mediaElement.muted),
+        });
+        lastGain = totalGain;
+      }
       const currentTime = amplifierRef.current.context.currentTime;
       try {
         amplifierRef.current.gainNode.gain.cancelScheduledValues(currentTime);
