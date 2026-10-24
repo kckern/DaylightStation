@@ -734,4 +734,25 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('course-collectible-bell').querySelector('path')).toBeTruthy();
     expect(screen.getByTestId('course-entity-rock-1').querySelector('.skyline-glider__entity-box')).toBeTruthy();
   });
+  it('draws lasers, bombs and blasts as SVG presets with a blast that fades by progress', () => {
+    const state = { ...flightState, collectedIds: [], projectiles: [
+      { id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 },
+      { id: 'bomb-1', kind: 'bomb', at_s: 8, altitude: 0.6, fall: 0.2 },
+    ], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.25 }] };
+    const { container } = render(<FlightScene state={state} course={course}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1')).toHaveAttribute('data-kind', 'laser');
+    expect(screen.getByTestId('skyline-glider-shot-bomb-1').querySelector('.skyline-glider__bomb-body')).toBeTruthy();
+    const blast = screen.getByTestId('skyline-glider-blast-bomb-0');
+    expect(blast).toHaveAttribute('data-progress', '0.5');
+    expect(container.querySelector('.skyline-glider__laser-core')).toBeTruthy();
+  });
+
+  it('uses weapon sprite frames when the zone names them', () => {
+    const armedZone = { ...zoned, zone: { ...zoned.zone, weapons: { laser: { frame: 'coin' }, blast: { frames: ['ship-1', 'ship-2'] } } } };
+    const state = { ...flightState, collectedIds: [], projectiles: [{ id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 }], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.1 }] };
+    render(<FlightScene state={state} course={armedZone} assets={assets}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('image')).toBeTruthy();
+    // remaining 0.1 of 0.5 s = progress 0.8, so the second of two frames.
+    expect(screen.getByTestId('skyline-glider-blast-bomb-0').querySelector('svg')).toHaveAttribute('viewBox', '32 0 32 16');
+  });
 });
