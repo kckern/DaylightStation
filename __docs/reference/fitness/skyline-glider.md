@@ -18,6 +18,52 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - Mountain Pass (Alpine, Act 1) lasts five minutes and has checkpoints near 25%, 50%, and 75%. Cloud Ridge (Alpine, Act 2) adds pines, a chalet and boulders.
 - Completion awards 10 rings plus one per unique collectible, capped at 30. Normal heart-rate rings continue independently.
 
+## Weapons
+
+The rider can fire a laser and drop bombs from a gamepad or keyboard. Weapons never hurt the rider and cost nothing. They destroy placed entities.
+
+| Input | Laser | Bomb |
+|---|---|---|
+| Gamepad (standard mapping) | A (0) or RT (7) | B (1), X (2) or LT (6) |
+| Keyboard | Space or F | B |
+
+- Each press fires once; holding does not autofire. A button already held when flight starts is ignored until released. A press on a frame where no time passes waits for the next frame. Presses during a sensor pause or crash are dropped.
+- **Laser:** leaves the craft nose at the craft's altitude and travels `laser_speed_s` course-seconds per second faster than the craft, for `laser_range_s`. Each step sweeps its whole path, so thin objects cannot be skipped. It stops at the first terrain or non-scenery entity it reaches, destroying that entity if it is vulnerable to the laser and being absorbed otherwise. It is unlimited, with a `laser_cooldown_s` cooldown.
+- **Bomb:** released under the craft, it keeps pace with the craft while falling under `bomb_gravity`. It detonates on terrain, a non-scenery entity, or the bottom of the screen. The blast (`blast_width_s` × `blast_height`, visible for `blast_s`) destroys every entity it touches that is vulnerable to bombs. The rack holds `bombs` and refills at every checkpoint crossed and on restart.
+- **Vulnerability** defaults by class: `breakable` → laser and bomb, `solid` → bomb only, `scenery` → nothing. An entity definition or placement can set `vulnerable_to: [laser, bomb]` (or `[]`). A destroyed solid stops being a wall.
+- A crash clears shots and blasts in flight. A checkpoint restart restores what was destroyed at that checkpoint, as it does for crash-broken breakables.
+- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. Reward rings do not change.
+
+`rules.weapons` in an act overrides the defaults. Every field except `enabled` must be a non-negative number:
+
+```yaml
+rules:
+  weapons:
+    enabled: true          # false removes weapons from this act
+    laser_cooldown_s: 0.3
+    laser_speed_s: 3
+    laser_range_s: 7
+    bombs: 5
+    bomb_cooldown_s: 0.8
+    bomb_gravity: 1.4
+    blast_width_s: 1.2
+    blast_height: 0.16
+    blast_s: 0.5
+```
+
+Weapons are drawn with the built-in SVG presets `laser`, `bomb` and `blast`. A zone may name sprite frames from its sheet under `weapons:`. The laser and bomb animate by time; a blast steps through its frames once over its lifetime:
+
+```yaml
+weapons:
+  laser: { frames: [laser-0, laser-1], fps: 12 }
+  bomb: { frame: bomb }
+  blast: { frames: [blast-0, blast-1, blast-2, blast-3] }
+```
+
+Sound slots `laser`, `bomb` and `explosion` follow the same file-or-synth rule as the other cues. A laser kill reuses `breakable`.
+
+Logged events: `skyline_glider.flight.weapon.fired` (`weapon`, `count`, `bombsLeft` for bombs), `skyline_glider.flight.bomb.detonated` (`shotId`, `atSeconds`, `altitude`), `skyline_glider.flight.entity.destroyed` (`entityId`, `by`), and `skyline_glider.input.gamepad` once per pad seen during a flight. Per-second flight samples include `bombsLeft`.
+
 ## Persistence
 
 The browser stores the current checkpoint under `fitness:skyline-glider:<userId>:<courseId>`. Reloading offers Resume or Start Over. Finished and abandoned runs are stored under the household Fitness log and projected into session activity history as `skyline-glider`. If a terminal save is pending, a physical start request retries that exact terminal record before creating a new run; a failed retry remains recoverable and never discards the old result.

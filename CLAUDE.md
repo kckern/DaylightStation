@@ -231,7 +231,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
-| Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
+| Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb weapons + `vulnerable_to`, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
 | Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `__docs/reference/fitness/suggestions.md` |
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
