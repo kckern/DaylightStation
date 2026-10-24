@@ -122,6 +122,12 @@ const gateMarks = (gate) => (Array.isArray(gate?.given) ? [...gate.given].sort()
 /** Same row, same marks: nothing about the finish-code row has changed. */
 const sameGateReading = (a, b) => a.status === b.status && gateMarks(a) === gateMarks(b);
 
+/** A row's marks as a comparable key — a multi-select's order carries no meaning. */
+const markKey = (given) => JSON.stringify(Array.isArray(given) ? [...given].sort() : given ?? null);
+
+/** How many retake links `#openCorrectedRetake` follows before giving up on a lineage. */
+const MAX_RETAKE_HOPS = 4;
+
 /**
  * Grown-up-facing guidance for the review queue (rides `rubric`, never
  * `prompt` — `prompt` can reach a resolved item's `StudentPanel` rendering
@@ -139,7 +145,7 @@ function keyAlignmentRubric({
 }
 
 export class RecordCardScanOutcome {
-  #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger; #newAttemptId;
+  #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #openRemediation; #clock; #logger; #newAttemptId;
 
   /**
    * @param {object} deps
@@ -160,11 +166,15 @@ export class RecordCardScanOutcome {
    *   verdict-sheet entry and every ambiguous/write-on row becomes a PENDING
    *   one, and the session holds at `submitted` until a person clears the
    *   pending ones through `GradeSubmission`.
+   * @param {{execute: Function}} [deps.openRemediation] - `OpenRemediation`;
+   *   optional — without it a corrected re-feed of a failed sheet is refused
+   *   the way it always was (see `#openCorrectedRetake`).
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
     datastore, sessions = null, reviewQueue = null, resultArtifacts = null, renderMachineResult = null,
+    openRemediation = null,
     clock = () => new Date(), newAttemptId = () => `att_${shortId(8)}`, logger = console,
   } = {}) {
     if (!datastore?.appendAttempt) throw new Error('RecordCardScanOutcome requires datastore.appendAttempt');
@@ -173,6 +183,7 @@ export class RecordCardScanOutcome {
     this.#reviewQueue = reviewQueue;
     this.#resultArtifacts = resultArtifacts;
     this.#renderMachineResult = renderMachineResult;
+    this.#openRemediation = openRemediation;
     this.#clock = clock;
     this.#newAttemptId = newAttemptId;
     this.#logger = logger;
@@ -192,7 +203,7 @@ export class RecordCardScanOutcome {
    *   session?: {sessionId: string, advancedTo: string|null, reason?: string}}>}
    */
   async execute({ testId, card: scannedCard, cardIdInferred = null } = {}) {
-    const card = withoutGateRow(scannedCard);
+    let card = withoutGateRow(scannedCard);
     if (!card || card.error || !Array.isArray(card.results)) {
       return { recorded: false, reason: 'not-a-graded-result' };
     }
@@ -318,6 +329,15 @@ export class RecordCardScanOutcome {
     const repaired = await this.#reReadGate({ testId, card, state: preReadState, at });
     if (repaired) return repaired;
 
+    // THE CORRECTED-SHEET LANE. A failed sheet fed again with fixed marks is
+    // the retake: from here on `card.sessionId` names the retake session, so
+    // its attempts, verdict sheet and grade all land there.
+    const retake = await this.#openCorrectedRetake({ testId, card, state: preReadState });
+    if (retake) {
+      card = retake.card;
+      preReadState = retake.state;
+    }
+
     const key = scanKey(card);
     // Dedup only ever needs to see attempts from this card's own printing
     // forward — a card rendered today cannot collide with a day file from
@@ -329,7 +349,10 @@ export class RecordCardScanOutcome {
       renderedDay !== null && typeof this.#datastore.readAttemptsInRange === 'function'
         ? this.#datastore.readAttemptsInRange(learnerId, renderedDay, dayOf(at))
         : this.#datastore.readAllAttempts(learnerId)
-    ).filter((attempt) => attempt?.provenance?.recordId === card.recordId);
+    ).filter((attempt) => attempt?.provenance?.recordId === card.recordId
+      // A retake is a new submission: the marks the failed sheet (or an
+      // earlier refused re-feed) left on file are not this session's work.
+      && (!retake || attempt.sessionId === card.sessionId));
     const recordedRows = new Set(
       priorAttempts.map((attempt) => `${attempt.provenance.row}:${JSON.stringify(attempt.given)}`),
     );
@@ -476,7 +499,95 @@ export class RecordCardScanOutcome {
       attemptIds,
       curriculum: { subjectId, courseId, unitId, lessonId: card.lessonId ?? null },
       ...(session ? { session } : {}),
+      ...(retake ? { retakeOf: retake.retakeOf } : {}),
     };
+  }
+
+  /**
+   * THE CORRECTED-SHEET LANE: a failed sheet fed again with fixed marks.
+   *
+   * The result receipt tells the child which rows were wrong, and the natural
+   * thing to do with that is fix them and feed the same card. Before this lane
+   * `#bridgeSession` refused that scan (`state-outcome_recorded`) and the room
+   * said "No new result recorded". On 2026-10-23 a 4/6 sheet was corrected to
+   * 5/6, a pass at 80%, and fed four times without ever counting.
+   *
+   * The corrected sheet IS the retry, so it opens the same linked session the
+   * retry ticket opens (`OpenRemediation`: the failed session goes terminal at
+   * `remediation_opened` with its evidence untouched, and the round cap still
+   * applies). No new paper exists, so the retake is issued on the original
+   * artifact, and the scan carries on down the ordinary path as that session's
+   * submission. The caller's settle then runs outcome, coins, receipt and
+   * ceremony exactly as for a first feed.
+   *
+   * Only when every row is marked and at least one mark differs from the
+   * graded sheet's: an identical re-feed is still a duplicate. A row only the
+   * eraser-leniency rule would credit goes to a grown-up instead, so a right
+   * bubble added beside a wrong one cannot turn a retake into free credit
+   * (the same hazard `#reReadGate` guards against).
+   *
+   * Follows earlier retakes of this same paper, so a second correction after
+   * a second failure opens the next round rather than hitting the original.
+   *
+   * @returns {Promise<{card: object, state: object, retakeOf: string}|null>}
+   *   the card re-pointed at the retake session, or null (ordinary path)
+   */
+  async #openCorrectedRetake({ testId, card, state }) {
+    if (!this.#openRemediation || !this.#reviewQueue || !this.#sessions || card.sessionId == null) return null;
+    if (!state?.sessionId) return null;
+    const artifactId = state.issuedArtifacts?.[0] ?? null;
+    if (!artifactId || card.results.some((row) => row.status === 'blank')) return null;
+    try {
+      let current = state;
+      for (let hops = 0; current.remediation && hops < MAX_RETAKE_HOPS; hops += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const next = reduceSession(await this.#sessions.readEvents(current.remediation.newSessionId));
+        // A retry printed on fresh paper: this card is history, not the retake.
+        if (!next.sessionId || !next.issuedArtifacts?.includes(artifactId)) return null;
+        current = next;
+      }
+      if (current.state !== 'outcome_recorded' || current.outcome?.result !== 'needs_remediation'
+          || current.remediation) return null;
+
+      const graded = new Map((await this.#reviewQueue.listForSession(current.sessionId))
+        .filter((row) => row.reason === 'machine')
+        .map((row) => [row.itemId, markKey(row.given)]));
+      if (!graded.size || card.results.every((row) => graded.get(row.itemId) === markKey(row.given))) return null;
+
+      const opened = await this.#openRemediation.execute({ sessionId: current.sessionId });
+      if (opened?.status !== 'opened' || !opened.newSessionId) {
+        this.#logger.warn?.('school.print.scan-retake-unavailable', {
+          testId, sessionId: current.sessionId, recordId: card.recordId,
+          status: opened?.status ?? null, reason: opened?.reason ?? null,
+        });
+        return null;
+      }
+      const issued = createEvent({
+        type: 'issued', at: this.#clock().toISOString(), sessionId: opened.newSessionId, artifactId, confirmed: true,
+      });
+      if (issued.errors.length) throw new Error(issued.errors.join('; '));
+      await this.#sessions.appendEvent(opened.newSessionId, issued.event);
+      this.#logger.info?.('school.print.scan-corrected-retake', {
+        testId, sessionId: current.sessionId, retakeSessionId: opened.newSessionId,
+        recordId: card.recordId, variant: opened.variant,
+      });
+
+      const results = card.results.map((row) => {
+        if (row.leniency !== 'eraser') return row;
+        const { leniency, ...rest } = row;
+        return { ...rest, status: 'ambiguous', earned: 0 };
+      });
+      return {
+        card: { ...card, sessionId: opened.newSessionId, results },
+        state: reduceSession(await this.#sessions.readEvents(opened.newSessionId)),
+        retakeOf: current.sessionId,
+      };
+    } catch (error) {
+      this.#logger.warn?.('school.print.scan-retake-failed', {
+        testId, sessionId: card.sessionId, recordId: card.recordId, error: error.message,
+      });
+      return null;
+    }
   }
 
   /**

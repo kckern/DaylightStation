@@ -699,7 +699,12 @@ export class ResolveCardScan {
         const sessionIds = [record.sessionId, ...(record.sections ?? []).map(s => s.sessionId)].filter(Boolean);
         for (const sessionId of sessionIds) {
           const state = reduceSession(await this.#sessions.readEvents(sessionId));
-          if (['issued', 'reprinted', 'submitted'].includes(state.state)) {
+          // A failed sheet with no retry opened yet is unfinished too: the
+          // child may fix its marks and feed it again as the retake
+          // (`RecordCardScanOutcome#openCorrectedRetake`).
+          const correctable = state.state === 'outcome_recorded'
+            && state.outcome?.result === 'needs_remediation' && !state.remediation;
+          if (['issued', 'reprinted', 'submitted'].includes(state.state) || correctable) {
             unfinished.push(record); break;
           }
         }

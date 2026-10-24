@@ -250,6 +250,7 @@ try {
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         resultArtifacts: schoolSessionResultArtifacts,
         renderMachineResult: renderSessionResultPng,
+        openRemediation: dependencies.schoolLifecycle.useCases?.openRemediation ?? null,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
       dependencies.schoolLifecycle.useCases?.reviewHeldCardScan?.bindOutcomeRecorder(recordCardScanOutcome);

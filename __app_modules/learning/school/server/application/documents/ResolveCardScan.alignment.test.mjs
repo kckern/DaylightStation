@@ -31,6 +31,33 @@ describe('alignment preflight', () => {
     expect(result.results.some(r => r.recordId === 'covered')).toBe(true);
     expect(repository.getPublished).toHaveBeenCalled();
   });
+  it('keeps a failed sheet with no retry opened scannable beside a live one, so fixed marks can be the retake', async () => {
+    const failed = (extra = []) => ({ readEvents: async () => [
+      { type: 'created', sessionId: 'session-failed', learnerId: 'kid', unitId: 'unit', at: '2026-09-01', seq: 1 },
+      { type: 'issued', sessionId: 'session-failed', artifactId: 'artifact', at: '2026-09-01', seq: 2 },
+      { type: 'submitted', sessionId: 'session-failed', transport: 'paper', at: '2026-09-01', seq: 3 },
+      { type: 'graded', sessionId: 'session-failed', attemptIds: ['a1'], percent: 50, correctCount: 1, totalCount: 2,
+        missedItemIds: ['q2'], at: '2026-09-01', seq: 4 },
+      { type: 'outcome_recorded', sessionId: 'session-failed', outcomeId: 'out:session-failed',
+        result: 'needs_remediation', reason: 'below_passing', at: '2026-09-01', seq: 5 },
+      ...extra,
+    ] });
+    const allocationStore = { findByCard: async () => [record,
+      { ...record, recordId: 'failed', status: 'satisfied', sessionId: 'session-failed', rowRange: { start: 26, end: 30 } }],
+    };
+    const repository = { getPublished: vi.fn(async () => null) };
+    const open = new ResolveCardScan({ allocationStore, repository, sessions: failed(), logger: {} });
+    expect((await open.execute({ testId: '1234567', answers: { 26: 'C' } })).results
+      .some(r => r.recordId === 'failed')).toBe(true);
+
+    // Once a retry is open the old sheet is history again.
+    const retried = new ResolveCardScan({ allocationStore, repository, logger: {}, sessions: failed([
+      { type: 'remediation_opened', sessionId: 'session-failed', newSessionId: 'session-retry', variant: 1,
+        at: '2026-09-01', seq: 6 },
+    ]) });
+    expect((await retried.execute({ testId: '1234567', answers: { 26: 'C' } })).results
+      .some(r => r.recordId === 'failed')).toBe(false);
+  });
   it('rejects before looking up an answer key, satisfying an allocation, or replacing the baseline', async () => {
     const h = setup();
     const shifted = Object.fromEntries(Object.entries(answers).map(([r, v]) => [Number(r) + 1, v]));
