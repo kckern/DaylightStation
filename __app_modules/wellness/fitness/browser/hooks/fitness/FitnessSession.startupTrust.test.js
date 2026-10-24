@@ -75,6 +75,8 @@ describe('FitnessSession real accepted Cool baseline', () => {
     expect(session.getZoneProfile('rider-one').currentZoneId).toBe('cool'); // one sample is not a climb
     advance(1000); session.ingestData(hr('f', 182)); observe();
     expect(session.getZoneProfile('rider-one').currentZoneId).toBe('fire');
+    expect(entries).toEqual([]); // a ceremony needs Fire HELD (FIRE_CEREMONY_SUSTAIN_MS)
+    for (let i = 0; i < 5; i++) { advance(1000); session.ingestData(hr('f', 183)); observe(); }
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ userId: 'rider-one', heartRate: 182, fireThreshold: 180 });
   });
