@@ -126,19 +126,39 @@ const intersects = (a, b) => a && b && a.left < b.right && b.left < a.right && a
  * was given: the scrim's step and darkness, the video's filter, the device
  * scale, where the chips are in device px, and every element on the page that
  * carries a filter or backdrop-filter (the costly, artifact-prone kinds) and
- * whether it overlaps the chips/meter. A full-page style scan, so callers run
+ * whether it overlaps the chips/meter. A bounded style scan (see scanScope), so callers run
  * it a handful of times per warning (shown, each scrim step, dimmed), never on
  * a clock.
  *
  * @param {{ root: Element, targets: { [name: string]: Element|null }, scrim?: Element|null, video?: Element|null }} args
  */
+// The kiosk is playing video while this runs, so the style walk is bounded:
+// the player subtree (where the video, scrim and chips live) plus each
+// target's ancestor chain (the only other elements that can filter them),
+// capped at MAX_SCANNED nodes. A whole-page walk read computed style on every
+// sidebar and menu node up to six times per warning.
+const MAX_SCANNED = 800;
+
+function scanScope(root, targets) {
+  const seen = new Set();
+  const scope = root.closest?.('.fitness-player-content') || root;
+  for (const node of scope.querySelectorAll('*')) {
+    if (seen.size >= MAX_SCANNED) break;
+    seen.add(node);
+  }
+  for (const el of Object.values(targets)) {
+    for (let n = el?.parentElement; n && seen.size < MAX_SCANNED + 64; n = n.parentElement) seen.add(n);
+  }
+  return seen;
+}
+
 export function describeCompositing({ root, targets, scrim = null, video = null }) {
   const doc = root.ownerDocument;
   const win = doc.defaultView;
   const targetRects = Object.values(targets).filter(Boolean).map((el) => el.getBoundingClientRect());
   const filtered = [];
   let filteredCount = 0;
-  for (const node of doc.body ? doc.body.querySelectorAll('*') : []) {
+  for (const node of scanScope(root, targets)) {
     const cs = win.getComputedStyle(node);
     const backdrop = cs.backdropFilter || cs.webkitBackdropFilter;
     if (!isSet(backdrop) && !isSet(cs.filter)) continue;

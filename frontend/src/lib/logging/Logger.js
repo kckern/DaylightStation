@@ -27,7 +27,11 @@ const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
 // garage display from the living-room TV. Read once, at module load, before
 // any router rewrites the URL.
 const DEVICE_ID = typeof window !== 'undefined'
-  ? readLogDeviceId(window.location, (() => { try { return window.localStorage; } catch { return null; } })())
+  ? readLogDeviceId(
+      window.location,
+      (() => { try { return window.sessionStorage; } catch { return null; } })(),
+      (() => { try { return window.localStorage; } catch { return null; } })()
+    )
   : null;
 const DEVICE_CONTEXT = DEVICE_ID ? { deviceId: DEVICE_ID } : {};
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});

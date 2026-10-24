@@ -269,7 +269,10 @@
         min-height: 0;
         overflow: hidden; /* never exceed parent */
       }
-      .tb-color-grid .tb-color-ring { flex: 1 1 48px; min-width: 32px; }
+      /* Rings share whatever the total leaves and shrink together. They used a
+         vw-sized swatch, so four rings plus a 4-digit total overflowed and the
+         grid's overflow:hidden clipped the FIRST ring (2026-10-23 review). */
+      .tb-color-grid .tb-color-ring { flex: 1 1 0; min-width: 0; max-width: calc(2.2rem + 8px); }
       .tb-color-ring { 
         display:flex; 
         flex-direction: column; 
@@ -287,10 +290,10 @@
         overflow: hidden;
       }
       .tb-color-ring .swatch { 
-        width: clamp(1.2rem, 4vw, 2.2rem);
-        height: clamp(1.2rem, 4vw, 2.2rem);
-        min-width: 1.2rem;
-        min-height: 1.2rem;
+        width: min(100%, 2.2rem);
+        height: auto;
+        aspect-ratio: 1 / 1;
+        min-width: 0;
         border-radius: 50%; 
         box-shadow:0 0 0 2px rgba(0,0,0,0.3), 0 0 8px rgba(0,0,0,0.4); 
         display: flex;
@@ -305,8 +308,7 @@
       /* Responsive adjustments for narrow widths */
       @container (max-width: 280px) {
         .tb-color-ring .swatch {
-          width: 1.6rem;
-          height: 1.6rem;
+          width: min(100%, 1.6rem);
           font-size: 0.75rem;
         }
         

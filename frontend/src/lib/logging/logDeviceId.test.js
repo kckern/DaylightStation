@@ -23,6 +23,16 @@ describe('readLogDeviceId', () => {
     expect(readLogDeviceId({ search: '' }, memoryStore({ 'piano.kioskDeviceId': 'piano-tablet' }))).toBe('piano-tablet');
   });
 
+  it('keeps the URL id per tab; the kiosk ids come from the kiosk store', () => {
+    const tab = memoryStore();
+    const kiosk = memoryStore({ 'fitness.fleetDeviceId': 'garage-tv' });
+    expect(readLogDeviceId({ search: '?device=office-tv' }, tab, kiosk)).toBe('office-tv');
+    expect(readLogDeviceId({ search: '' }, tab, kiosk)).toBe('office-tv');
+    expect(kiosk.data[LOG_DEVICE_STORAGE_KEY]).toBeUndefined();
+    expect(readLogDeviceId({ search: '' }, memoryStore(), kiosk)).toBe('garage-tv');
+    expect(readLogDeviceId({ search: '' }, memoryStore(), memoryStore())).toBeNull();
+  });
+
   it('is null when nothing identifies the screen, and never throws', () => {
     expect(readLogDeviceId({ search: '' }, memoryStore())).toBeNull();
     expect(readLogDeviceId(undefined, null)).toBeNull();

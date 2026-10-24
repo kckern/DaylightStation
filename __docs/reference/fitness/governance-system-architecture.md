@@ -440,6 +440,10 @@ For each HR update:
   `fitness.zone_trust.resumed` (path `evidence-plausible` /
   `consistent-samples`), `resume_held` (an implausible first reading back) and
   `resume_refused` (`evidence-expired` / `different-strap`, once per loss).
+  Known, accepted miss: a rider who comes back already in Fire gets no
+  ceremony for that return; the next real crossing into Fire celebrates. A
+  kiosk reload resumes the same way (v2 snapshot), so riders are untrusted for
+  about a second after a reload, well inside governance grace.
 - A new session, or a first attach with no evidence, still requires an
   accepted Cool. That is the only case suppression exists for: a strap still
   emitting a previous day's Fire.

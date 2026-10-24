@@ -1540,9 +1540,10 @@ dash-video {
   filter:
     brightness(calc(1 - var(--cycle-dim, 0) * 0.4))
     grayscale(calc(var(--cycle-dim, 0) * 1))
-    sepia(calc(var(--cycle-dim, 0) * 0.4))
-    blur(calc(var(--cycle-dim, 0) * 4px));
-  transition: filter 0.3s ease;
+    sepia(calc(var(--cycle-dim, 0) * 0.4));
+  /* No blur and no filter transition: --cycle-dim updates continuously, so
+     either one re-rasterised the playing video every frame — the same
+     compositing load the 2026-10-23 warning-scrim fix removed (#8). */
 }
 
 }
