@@ -97,6 +97,29 @@ describe('TermVerdictService.read', () => {
     expect(completion.asked).toEqual([]);
   });
 
+  it('a completion input voids a fresh row, so a payout settled seconds after a day turns green sees it', async () => {
+    const cache = new MemoryCache();
+    let at = NOW;
+    const completion = completionDouble({ [TODAY]: { state: 'incomplete', sections: [{ subject: 'math', state: 'obligated', reason: null }] } });
+    const service = new TermVerdictService({
+      getLearnerDayCompletion: completion, cache, academicPeriods: periods, window: { from: '2026-09-01' },
+      timezone: 'America/Los_Angeles', clock: () => new Date(at), freshMs: 60_000, logger: silent,
+    });
+    await service.read('kid'); await service.read('other'); await settle();
+    expect((await service.read('kid')).days.at(-1).state).not.toBe('met');
+
+    at = `${TODAY}T18:00:10.000Z`;
+    // The last sheet is graded: the day is complete now, ten seconds after the row was computed.
+    const done = completionDouble();
+    completion.execute = done.execute.bind(done);
+    service.invalidate('kid');
+    expect((await service.read('kid')).days.at(-1)).toMatchObject({ studyDay: TODAY, state: 'met' });
+    // Only the learner whose work changed is recomputed.
+    expect(done.asked).toEqual(['2026-09-08', TODAY]);
+    await service.read('other');
+    expect(done.asked).toEqual(['2026-09-08', TODAY]);
+  });
+
   it('a cache from an older ladder version is discarded whole', async () => {
     const cache = new MemoryCache();
     cache.docs.set('kid/2026-fall', { version: 0, computedAt: NOW, days: { '2026-09-02': { state: 'met', computedAt: NOW } } });

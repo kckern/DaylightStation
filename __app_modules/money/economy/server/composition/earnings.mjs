@@ -181,7 +181,15 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     return { router, earningsPreview, payoutService, weekCloseService, workoutEarnings };
 }
 
-const PAYOUT_TOPICS = ['school.session.outcome-recorded', 'piano.lesson.completed'];
+// Every fact that can move a payout line, by topic. School's `school`
+// broadcast carries many kinds of fact, so it names the ones that count:
+// a story read or a day bypass changes the day without recording an outcome.
+const PAYOUT_TOPICS = new Map([
+  ['school.session.outcome-recorded', null],
+  ['school.completion.state-observed', null],
+  ['piano.lesson.completed', null],
+  ['school', new Set(['story-read', 'program-day-bypass-changed'])],
+]);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Monday, Tuesday, Wednesday: last week is still re-priced (late grades).
 const GRACE_WEEKDAYS = new Set([1, 2, 3]);
@@ -192,18 +200,22 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
 /**
  * When payouts settle. Two triggers, one path (`PayoutService`):
  *
- *   events     `school.session.outcome-recorded` ({learnerId, studyDay?}) and
- *              `piano.lesson.completed` ({userId}), debounced per learner and
- *              week (default 30 s) so a burst of grades settles once. A fact
- *              naming a study day settles that day's week, so a grade
+ *   events     `school.session.outcome-recorded` ({learnerId, studyDay?}),
+ *              `school.completion.state-observed` ({learnerId, studyDate}: a
+ *              day turning green), `piano.lesson.completed` ({userId}), and a
+ *              story read or day bypass on `school`. Debounced per learner and
+ *              week (default 2 s) so one scan's burst of grades settles once.
+ *              This is where awards happen: a green day pays seconds after it
+ *              turns green, and the mint's `coins-changed` plays the ceremony.
+ *              A fact naming a study day settles that day's week, so a grade
  *              corrected late re-prices the week the work belongs to.
- *   schedule   `economy:payout-reconcile`, the hourly reconcile, settles the
- *              whole roster for the current week, and for the previous week
- *              too while today's study day is Monday to Wednesday (the grace
- *              window). It catches what no event announces: day-met and
- *              week-met lines turn true as days close, and the ring contest
- *              at Saturday noon. (The scheduler runs a task at most once per
- *              clock hour, so the cron is hourly.)
+ *   schedule   `economy:payout-reconcile`, the hourly reconcile, is the
+ *              failsafe: it settles the whole roster for the current week, and
+ *              for the previous week too while today's study day is Monday to
+ *              Wednesday (the grace window). It catches what a missed or
+ *              failed event left behind, week-met lines as weeks close, and
+ *              the ring contest at Saturday noon. (The scheduler runs a task
+ *              at most once per clock hour, so the cron is hourly.)
  *
  * Disabled (`enabled: false`, the same gate as the scheduler) it subscribes to
  * nothing and registers nothing. Enabled, it always subscribes, so a reload
@@ -222,7 +234,7 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
  *   has no unregister) keeps calling a task that now returns at once.
  */
 export function startEconomyPayouts({ payoutService, config, enabled = true, eventBus = null, scheduler = null, logger = console,
-  debounceMs = 30_000, timers = { setTimeout, clearTimeout } }) {
+  debounceMs = 2_000, timers = { setTimeout, clearTimeout } }) {
   if (!enabled) {
     logger.info?.('economy.payout.disabled', { reason: 'scheduler disabled (production or ENABLE_CRON only)' });
     return { stop() {} };
@@ -256,15 +268,17 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
     timer?.unref?.();
     pending.set(key, timer);
   };
-  const onEvent = (payload) => {
+  const onEvent = (kinds) => (payload) => {
     try {
       if (stopped) return;
+      if (kinds && !kinds.has(payload?.event)) return;
       const raw = payload?.learnerId ?? payload?.userId;
       const learnerId = typeof raw === 'string' ? raw.trim() : '';
       if (!learnerId || off()) return;
       // The week the work belongs to; the current week reads as null so it
       // shares a debounce with the facts that carry no study day.
-      const studyDay = DAY.test(payload?.studyDay ?? '') ? payload.studyDay : null;
+      const named = payload?.studyDay ?? payload?.studyDate ?? '';
+      const studyDay = DAY.test(named) ? named : null;
       const week = studyDay && mondayOf(studyDay) !== mondayOf(today()) ? mondayOf(studyDay) : null;
       schedule(learnerId, week);
     } catch (err) {
@@ -272,7 +286,7 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
     }
   };
   const unsubscribers = eventBus?.subscribe
-    ? PAYOUT_TOPICS.map((topic) => eventBus.subscribe(topic, onEvent))
+    ? [...PAYOUT_TOPICS].map(([topic, kinds]) => eventBus.subscribe(topic, onEvent(kinds)))
     : [];
   scheduler?.registerTask?.('economy:payout-reconcile', '0 * * * *', async () => {
     if (stopped) return;

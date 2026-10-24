@@ -1575,6 +1575,11 @@ export async function createSchoolLifecycle({
       window: lifecycleCfg.board?.term ?? null,
       timezone, clock, logger,
     });
+    // Any completion input makes today's cached row out of date at once, so a
+    // payout settled seconds later reads the day as it now is.
+    if (realtimeSubscriptionsAvailable && schoolRealtime?.onCompletionInputChanged) {
+      schoolRealtime.onCompletionInputChanged((fact) => termVerdicts.invalidate(fact?.learnerId));
+    }
     getLearnerTerm = new GetLearnerTerm({ termVerdicts });
     rebuildLearnerTerm = new RebuildLearnerTerm({ termVerdicts, teacherGate, clock, logger });
   } else {
