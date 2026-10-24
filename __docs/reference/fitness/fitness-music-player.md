@@ -82,14 +82,19 @@ The component does **not** maintain its own queue — that's the inner `<Player>
 
 ### Pause coordination
 
-A single effect (FitnessMusicPlayer.jsx:123) watches two flags from `FitnessContext`:
+Music is background for a **playing** video. `musicShouldPause` (`musicVideoSync.js`) decides the hold from `FitnessContext`:
 
-| Flag                 | Source                             | Effect on music |
-|----------------------|------------------------------------|-----------------|
-| `videoPlayerPaused`  | Set by video player                | Pause music    |
-| `voiceMemoOpen`      | `voiceMemoOverlayState.open`       | Pause music    |
+| Flag                    | Source                                                   | Effect on music |
+|-------------------------|----------------------------------------------------------|-----------------|
+| `videoPlayerPaused`     | Video element paused, or a governance/budget lock (the progress enforcer writes `paused || locked`) | Pause music |
+| `videoLoading`          | Video loading, recovering, or source unavailable         | Music plays through (nobody chose that pause) |
+| `voiceMemoOpen`         | `voiceMemoOverlayState.open`                             | Pause music    |
+| `emergencyPlaybackHold` | Emergency shutdown / lockdown                            | Pause music    |
 
-`shouldPause = videoPlayerPaused || voiceMemoOpen`. Music resumes only if `wasPlayingBeforePauseRef` is true AND both signals are clear.
+Two places enforce it:
+
+1. **On a change of the hold** (an effect on `shouldPauseForVideo`): pause and remember `wasPlayingBeforePauseRef`; when the hold clears, resume only if the music was playing before.
+2. **On every music progress tick** (`musicPlaysThroughHold`): audio that started while the video was *already* paused — the music player just mounted (the Music toggle turned back on, a playlist change, a recovery remount) or a new track autoplayed — is paused on its first tick and marked to resume with the video. The change-only effect cannot see these, because the hold never changed. Logged as `fitness.music.hold_enforced` (debug).
 
 ### Two volume curves
 
@@ -186,7 +191,7 @@ The playlist picker is rendered **outside** the collapsible panel. Opening it ca
 
 If the user lands on the fitness session with `selectedPlaylistId === null`, the component picks the first available playlist from `plexConfig.music_playlists`. The `hasAutoSelectedRef` guard ensures this fires exactly once per mount. Selecting this default never creates a manual music override.
 
-The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle, and a manual request cannot enable music. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music is allowed only as an overlay for a queued video carrying the configured `NoMusic` label; changing to an untagged video or clearing the video queue stops it immediately. Internal callers may still force an allowed overlay off after a player error. The `fitness.music.decision` event records previous/current content IDs, labels, automatic state, effective enablement, and whether an internal manual-off is active.
+The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle, and a manual request cannot enable music on a video that does not allow it. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music is allowed only as an overlay for a queued video carrying the configured `NoMusic` label; changing to an untagged video or clearing the video queue stops it immediately. The settings menu's **Music** toggle (restored 2026-10-23) is shown only while the queued video allows music (`musicAllowed` in the context): off calls `setMusicOverride(false)`, on calls `setMusicOverride(null)`, which only clears the silence and can never start music on an untagged video. Internal callers may also force an allowed overlay off after a player error; the toggle is how a rider turns it back on. The `fitness.music.decision` event records previous/current content IDs, labels, automatic state, effective enablement, and whether an internal manual-off is active.
 
 ## Data Sources
 

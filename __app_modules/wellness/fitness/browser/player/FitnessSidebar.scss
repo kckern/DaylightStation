@@ -1789,9 +1789,76 @@
   .visibility-controls { display: grid; gap: 0.35rem; }
   .menu-item { min-height: 40px; font-size: max(14px, 0.875rem); }
   .touch-volume-item { padding: 0.5rem; }
-  .menu-more {
-    border-top: 1px solid rgba(255,255,255,.15);
-    summary { min-height: 40px; display: list-item; padding: 0.65rem 0.4rem; cursor: pointer; font-size: 1rem; }
-  }
   .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid #6ab8ff; outline-offset: 3px; }
+  button:focus-visible { outline: 2px solid #6ab8ff; outline-offset: 2px; }
+
+  // Close is a full-width footer at the bottom, in reach of a short rider and
+  // right where the gear that opened the menu sits (2026-10-23).
+  .sidebar-menu-footer {
+    flex-shrink: 0;
+    padding: 8px 0.75rem 0.75rem;
+    .close-btn {
+      width: 100%;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 10px;
+      cursor: pointer;
+      .close-glyph { font-size: 1.2rem; line-height: 1; }
+    }
+  }
+
+  // Settings: bottom-anchored, priority bottom-up. margin-top:auto (not
+  // justify-content:flex-end) keeps the top reachable by scroll if a short
+  // viewport ever overflows; at the kiosk's 777px the stack fits unscrolled.
+  &.settings-mode .sidebar-menu-content {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+  .settings-stack {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    // Selectors match the base menu rules' specificity and come later, so they win.
+    .menu-section { margin: 0; }
+    .menu-section .menu-item { margin: 0; min-height: 48px; font-size: 1rem; }
+    .settings-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.55);
+      padding: 0 2px;
+    }
+    .settings-tools {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      .menu-item { text-align: center; padding: 0.5rem; white-space: nowrap; }
+      &.menu-section .menu-item { text-align: center; padding: 0.5rem; }
+    }
+    .settings-divider { height: 1px; background: rgba(255, 255, 255, 0.12); margin: 2px 0; }
+    .visibility-controls { gap: 8px; }
+    .menu-section .boost-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      cursor: default;
+      .mix-label { font-size: 0.875rem; font-weight: 600; color: rgba(255, 255, 255, 0.8); }
+      .volume-boost-controls { flex: 1; margin: 0; gap: 4px; }
+      .boost-btn { min-height: 40px; padding: 0; }
+    }
+    .menu-section .menu-item.touch-volume-item { padding: 8px; gap: 6px; }
+    .menu-section .menu-item.touch-volume-item .touch-volume-button { height: 44px; }
+  }
 }

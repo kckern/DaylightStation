@@ -3,7 +3,8 @@
  * Isolated real-component/styles sidebar, menu, and ceremony geometry checks.
  * No backend or hardware connection: all context data is synthetic and every
  * network request is confined to this ephemeral loopback fixture server.
- * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--out-dir <dir>]
+ * Run: node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs [chromium|firefox] [--integration-only] [--only=roster,menu,toast,home,transition,integration] [--out-dir <dir>]
+ * --only runs just the named sections (cheap targeted checks); the default runs all of them.
  * Screenshots and geometry.json go to a fresh per-run directory under the OS temp dir
  * (fitness-harness-XXXXXX) unless --out-dir or FITNESS_HARNESS_OUT_DIR names one.
  * The directory is printed to stderr at start and reported as `outDir` in the result line.
@@ -33,6 +34,9 @@ for (let i = 0; i < args.length; i++) {
 }
 assert.ok(requestedOutDir !== undefined && requestedOutDir !== '', '--out-dir needs a directory');
 const engine = positional[0] || 'chromium';
+const onlyArg = args.find(a => a.startsWith('--only='));
+const onlySections = onlyArg ? new Set(onlyArg.slice('--only='.length).split(',')) : null;
+const has = section => !onlySections || onlySections.has(section);
 assert.ok(['chromium', 'firefox'].includes(engine), 'Select chromium or firefox');
 const outDir = requestedOutDir
   ? (mkdirSync(resolve(requestedOutDir), { recursive: true }), resolve(requestedOutDir))
@@ -157,7 +161,7 @@ try {
   if (!process.argv.includes('--integration-only')) {
   for (const viewport of [{width:1920,height:1080},{width:1381,height:777},{width:1024,height:640}]) {
     await page.setViewportSize(viewport);
-    for (const count of [1,3,4,5,8]) {
+    for (const count of (has('roster') ? [1,3,4,5,8] : [])) {
       for (const rpm of [0,1,2,3,4,5]) for (const gov of [false,true]) {
         // media: the real 16:9 camera/controls panel below the roster; gov: the
         // ~59px governance lock panel that took the 2026-10-23 roster under.
@@ -236,35 +240,46 @@ try {
         evidence.push({viewport,...options,...geometry});
       }
     }
-    for (const menu of ['settings','guest']) {
-      await page.evaluate(options=>window.renderFixture(options), {menu,width:viewport.width===1024?250:300,height:viewport.height-100,count:3});
+    for (const menu of (has('menu') ? ['settings','guest'] : [])) {
+      await page.evaluate(options=>window.renderFixture(options), {menu,width:viewport.width===1024?250:300,height:viewport.height,count:3});
       await page.waitForTimeout(120);
-      if(menu==='settings') await page.locator('.menu-more summary').click();
       const geometry = await page.evaluate(() => {
         const root=document.querySelector('.fitness-sidebar-menu');
         const body=root.querySelector('.sidebar-menu-content');
-        const header=root.querySelector('.sidebar-menu-header');
-        body.scrollTop=body.scrollHeight;
-        return { root:root.getBoundingClientRect().toJSON(), body:body.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON(),
+        const rect=el=>el.getBoundingClientRect().toJSON();
+        const controls=[...root.querySelectorAll('.settings-stack button, .settings-stack input')].map(el=>{const t=el.closest('label')||el;return {name:el.getAttribute('aria-label')||el.textContent.trim(),top:rect(t).top,bottom:rect(t).bottom,height:rect(t).height};});
+        const overflow=body.scrollHeight-body.clientHeight;
+        body.scrollTop=0;
+        const firstTop=controls.length?rect(root.querySelector('.settings-stack button, .settings-stack input')).top:null;
+        return { root:rect(root), body:rect(body), overflow, firstTopAtScrollTop0:firstTop, controls,
+          details:root.querySelectorAll('details').length,
+          focused:document.activeElement?.getAttribute('aria-label')||null,
           labels:[...root.querySelectorAll('.visibility-controls label > span:first-child')].map(el=>({text:el.textContent,width:el.clientWidth,scrollWidth:el.scrollWidth})),
-          foreground:getComputedStyle(root.querySelector('summary')||root).color,
           fonts:[...root.querySelectorAll('.guest-menu-hint,.guest-menu-note,.guest-tab,.guest-option-name,.guest-option-source')].map(el=>({selector:el.className,size:parseFloat(getComputedStyle(el).fontSize)})),
-          last:root.querySelector('.menu-more button:last-child')?.getBoundingClientRect().toJSON(),
-          close:root.querySelector('.close-btn').getBoundingClientRect().toJSON() };
+          close:rect(root.querySelector('.sidebar-menu-footer .close-btn')) };
       });
-      assert.ok(geometry.body.bottom<=geometry.root.bottom+1 && geometry.header.top>=geometry.root.top-1, JSON.stringify(geometry));
-      assert.ok(geometry.close.width>=40 && geometry.close.height>=40,'close target');
+      assert.ok(geometry.body.bottom<=geometry.close.top+1 && geometry.body.top>=geometry.root.top-1, JSON.stringify(geometry));
+      // Close is a bottom footer in both modes, in reach of a short rider.
+      assert.ok(geometry.close.bottom>=geometry.root.bottom-80 && geometry.close.height>=56 && geometry.close.width>=geometry.root.width-30,'bottom close target: '+JSON.stringify(geometry.close));
+      assert.ok(/^Close /.test(geometry.focused||''),'Close focused on open');
       if(menu==='settings') {
-        assert.ok(geometry.last.bottom<=geometry.body.bottom+1,'More tools reachable');
+        assert.equal(geometry.details,0,'no More overflow');
         assert.ok(geometry.labels.every(label=>label.width>=label.scrollWidth),'normal controls untruncated: '+JSON.stringify(geometry));
-        assert.notEqual(geometry.foreground,'rgb(0, 0, 0)','visible More foreground');
+        assert.ok(geometry.controls.every(c=>c.height>=40),'touch targets: '+JSON.stringify(geometry.controls));
+        if(viewport.height>=777) {
+          // Kiosk height and up: everything fits without scrolling, in the lower 60%.
+          assert.ok(geometry.overflow<=0,'settings fit unscrolled: '+geometry.overflow);
+          assert.ok(geometry.controls.every(c=>c.top>=geometry.root.top+geometry.root.height*0.35),'controls in the lower band: '+JSON.stringify(geometry.controls));
+        } else {
+          assert.ok(geometry.firstTopAtScrollTop0>=geometry.body.top-1,'top of a short stack stays reachable by scroll');
+        }
       }
       assert.ok(geometry.fonts.every(f=>f.size>=14),JSON.stringify(geometry));
       if(menu==='guest') assert.ok(geometry.fonts.length>=5,'guest selectors rendered');
       evidence.push({viewport,menu,...geometry});
       await page.screenshot({path:artifact(viewport.width+'-'+menu+'.png')});
     }
-    for(const achievement of [false,true]) for(const people of [1,2,5]) {
+    for(const achievement of (has('toast') ? [false,true] : [])) for(const people of [1,2,5]) {
       await page.evaluate(options=>window.renderFixture(options),{people,achievement,width:300,height:500});
       await page.waitForTimeout(60);
       const geometry=await page.evaluate(()=>{
@@ -279,6 +294,7 @@ try {
       evidence.push({viewport,people,achievement,...geometry});
       if(people===5) await page.screenshot({path:artifact(viewport.width+'-ceremony-'+achievement+'.png')});
     }
+    if (has('home')) {
     await page.evaluate(()=>window.renderFixture({home:true,count:0}));
     await page.waitForSelector('.show-card');
     const homeGeometry = await page.evaluate(()=>{
@@ -294,8 +310,9 @@ try {
     await page.evaluate(()=>window.renderFixture({count:5,rpm:5,zones:3,width:300,height:597}));
     await page.waitForTimeout(420);
     await page.screenshot({path:artifact(viewport.width+'-roster.png')});
+    }
   }
-  for(const options of [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
+  for(const options of !has('transition') ? [] : [{count:8,rpm:5,zones:3},{count:3,rpm:1,zones:1},{count:5,rpm:5,zones:3,width:250},{count:5,rpm:2,zones:2,width:345}]) {
     await page.evaluate(options=>window.renderFixture({...options,height:597}),options);
     await page.waitForTimeout(650);
     const before=await page.evaluate(()=>({commits:window.fixtureRenderCount,height:document.querySelector('.device-grid').style.getPropertyValue('--rider-card-height')}));
@@ -305,7 +322,7 @@ try {
     evidence.push({transition:options,settled:after});
   }
   }
-  await verifyIntegration(page, evidence, engine, outDir);
+  if (has('integration')) await verifyIntegration(page, evidence, engine, outDir);
   assert.deepEqual(errors,[]);
   const {writeFile}=await import('node:fs/promises');
   await writeFile(artifact('geometry.json'),JSON.stringify(evidence,null,2));

@@ -8,6 +8,8 @@ import { genericGuestImageId } from "../../lib/guestPlaceholders.js";
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import hardReload from "../../lib/hardReload.js";
 import "../FitnessSidebar.scss";
+import { menuFocusStops, nextFocusStop, rowNeighbour } from "./sidebarMenuFocus.js";
+import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -158,6 +160,9 @@ const FitnessSidebarMenu = ({
     scheduleIdleClose();
   }, [scheduleIdleClose]);
 
+  const rootRef = React.useRef(null);
+  const closeRef = React.useRef(null);
+  const programmaticFocusRef = React.useRef(false);
   // Keyboard focus inside the menu holds it open. A tap also focuses the
   // button or checkbox it lands on; that focus must not cancel the idle close.
   const pointerOriginRef = React.useRef(false);
@@ -171,7 +176,11 @@ const FitnessSidebarMenu = ({
       onWheel: scheduleIdleClose,
       onTouchMove: scheduleIdleClose,
       onScrollCapture: scheduleIdleClose,
-      onFocusCapture: () => { focusWithinRef.current = !pointerOriginRef.current; scheduleIdleClose(); },
+      onFocusCapture: () => {
+        // Focusing Close on open is not a user's keyboard focus: no hold, no timer.
+        if (programmaticFocusRef.current) return;
+        focusWithinRef.current = !pointerOriginRef.current; scheduleIdleClose();
+      },
       onBlurCapture: (event) => {
         focusWithinRef.current = !pointerOriginRef.current && event.currentTarget.contains(event.relatedTarget);
         scheduleIdleClose();
@@ -270,46 +279,23 @@ const FitnessSidebarMenu = ({
 
   const canRemoveUser = Boolean(deviceIdStr && suppressDeviceUntilNextReading);
 
+  // Music is background for a video that asks for it (the NoMusic label), so
+  // the toggle exists only for such a video. Off = setMusicOverride(false),
+  // on = clear the override (null); the context never lets "on" start music
+  // on any other video (FitnessContext.setMusicOverrideState).
+  const musicAllowed = Boolean(fitnessContext?.musicAllowed);
+  const musicOn = musicAllowed && fitnessContext?.musicOverride !== false;
+  const handleMusicToggle = () => {
+    fitnessContext?.setMusicOverride?.(musicOn ? false : null);
+    ackSelection('music');
+  };
+
+  // Bottom-anchored, priority bottom-up (2026-10-23): the controls a child
+  // needs most sit lowest, within reach; Close is the footer below this list.
+  // DOM order = visual order, so Up/Down walk it top to bottom.
   const renderSettings = () => (
-    <>
-      {appMode === 'player' && (
-        <section className="menu-section" aria-label="Workout audio">
-          <div className="menu-item touch-volume-item">
-            <div className="mix-label" id="settings-video-volume-label">Video volume</div>
-            <TouchVolumeButtons controlId="settings-video-volume" currentLevel={videoDisplayLevel}
-              disabled={!videoMediaAvailable} onSelect={handleVideoLevelSelect} />
-            {!videoMediaAvailable && <div className="menu-item-subtext">Video player inactive.</div>}
-          </div>
-          <div className="menu-item touch-volume-item" role="group" aria-labelledby="settings-video-boost-label">
-            <div className="mix-label" id="settings-video-boost-label">Video volume boost</div>
-            <div className="volume-boost-controls">
-              {[1, 5, 10, 20].map(level => (
-                <button key={level} type="button"
-                  className={`boost-btn ${boostLevel === level ? 'active' : ''}${flashingId === `boost-${level}` ? ' is-ack-flash' : ''}`}
-                  onClick={() => handleBoostSelect(level)} disabled={!videoMediaAvailable}
-                  aria-label={`Video boost ${level} times`} aria-pressed={boostLevel === level}>
-                  {level}x
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-      <section className="menu-section visibility-controls" aria-label="Workout visibility">
-        {[
-          ['sidebarCam', 'Sidebar Webcam', '📹'],
-          ['treasureBox', 'Treasure Box', <RingIcon key="ring" />],
-        ].map(([key, label, icon]) => (
-          <label key={key} className={`menu-item toggle-item${flashingId === key ? ' is-ack-flash' : ''}`}>
-            <span>{icon} {key === 'sidebarCam' ? 'Webcam' : label}</span>
-            <span className="toggle-switch">
-              <input type="checkbox" aria-label={label} checked={Boolean(visibility[key])}
-                onChange={() => handleToggle(key)} />
-              <span className="toggle-slider" />
-            </span>
-          </label>
-        ))}
-      </section>
+    <div className="settings-stack">
+      <div className="settings-title" aria-hidden="true">Settings</div>
       {activeSessionId && onEndSession && (
         <section className="menu-section" aria-label="Session">
           {endSessionError && <div className="menu-item-subtext fitness-sidebar-end-session-error" role="alert">{endSessionError}</div>}
@@ -321,19 +307,71 @@ const FitnessSidebarMenu = ({
           </button>
         </section>
       )}
-      <details className="menu-section menu-more" onToggle={scheduleIdleClose}>
-        <summary>More</summary>
+      <section className="menu-section settings-tools" aria-label="Tools">
+        <button type="button" className="menu-item" aria-label="Send feedback" onClick={() => setFeedbackOpen(true)}>
+          💬 Feedback
+        </button>
         <button type="button" className="menu-item" onClick={handleReloadPage}
           aria-label="Hard-reload the app (bypasses cache)" title="Hard-reload the app — picks up new versions">
-          🔄 Reload App
+          🔄 Reload
         </button>
-        <button type="button" className="menu-item" aria-label="Send feedback" onClick={() => setFeedbackOpen(true)}>
-          💬 Send feedback
-        </button>
-      </details>
+      </section>
+      <div className="settings-divider" role="presentation" />
+      <section className="menu-section visibility-controls" aria-label="Workout settings">
+        <label className={`menu-item toggle-item${flashingId === 'sidebarCam' ? ' is-ack-flash' : ''}`}>
+          <span>📹 Webcam</span>
+          <span className="toggle-switch">
+            <input type="checkbox" aria-label="Sidebar Webcam" checked={Boolean(visibility.sidebarCam)}
+              onChange={() => handleToggle('sidebarCam')} />
+            <span className="toggle-slider" />
+          </span>
+        </label>
+        {appMode === 'player' && (
+          <div className="menu-item boost-item" role="group" aria-labelledby="settings-video-boost-label">
+            <span className="mix-label" id="settings-video-boost-label">Boost</span>
+            <div className="volume-boost-controls">
+              {[1, 5, 10, 20].map(level => (
+                <button key={level} type="button"
+                  className={`boost-btn ${boostLevel === level ? 'active' : ''}${flashingId === `boost-${level}` ? ' is-ack-flash' : ''}`}
+                  onClick={() => handleBoostSelect(level)} disabled={!videoMediaAvailable}
+                  aria-label={`Video boost ${level} times`} aria-pressed={boostLevel === level}>
+                  {level}x
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <label className={`menu-item toggle-item${flashingId === 'treasureBox' ? ' is-ack-flash' : ''}`}>
+          <span><RingIcon /> Treasure Box</span>
+          <span className="toggle-switch">
+            <input type="checkbox" aria-label="Treasure Box" checked={Boolean(visibility.treasureBox)}
+              onChange={() => handleToggle('treasureBox')} />
+            <span className="toggle-slider" />
+          </span>
+        </label>
+        {appMode === 'player' && musicAllowed && (
+          <label className={`menu-item toggle-item${flashingId === 'music' ? ' is-ack-flash' : ''}`}>
+            <span>🎵 Music</span>
+            <span className="toggle-switch">
+              <input type="checkbox" aria-label="Background music" checked={musicOn} onChange={handleMusicToggle} />
+              <span className="toggle-slider" />
+            </span>
+          </label>
+        )}
+      </section>
+      {appMode === 'player' && (
+        <section className="menu-section" aria-label="Workout audio">
+          <div className="menu-item touch-volume-item">
+            <div className="mix-label" id="settings-video-volume-label">Video volume</div>
+            <TouchVolumeButtons controlId="settings-video-volume" currentLevel={videoDisplayLevel}
+              disabled={!videoMediaAvailable} onSelect={handleVideoLevelSelect} />
+            {!videoMediaAvailable && <div className="menu-item-subtext">Video player inactive.</div>}
+          </div>
+        </section>
+      )}
       <FeedbackOverlay open={feedbackOpen} app="fitness" onClose={() => { setFeedbackOpen(false); scheduleIdleClose(); }}
         onPauseMusic={onFeedbackPauseMusic} onResumeMusic={onFeedbackResumeMusic} />
-    </>
+    </div>
   );
 
   const renderGuestAssignment = () => {
@@ -450,17 +488,77 @@ const FitnessSidebarMenu = ({
 
   const isGuestMode = mode === 'guest';
 
+  // Close is focused on open, so a keyboard or gamepad user starts on the
+  // most important control and presses Up to reach volume. Programmatic focus
+  // is not "keyboard focus": it must not hold the menu open past idle.
+  React.useEffect(() => {
+    programmaticFocusRef.current = true;
+    closeRef.current?.focus?.({ preventScroll: true });
+    programmaticFocusRef.current = false;
+  }, []);
+
+  // A tap on the menu's own empty background (above the bottom-anchored
+  // stack) closes it, like a tap outside the sidebar does (SidebarMenuScrim).
+  const handleBackgroundTap = (event) => {
+    if (event.target === event.currentTarget) onClose?.();
+  };
+
+  const handleRootKeyDown = (event) => {
+    rootInteractionHandlers.onKeyDown(event);
+    if (feedbackOpenRef.current) return; // the feedback dialog owns its keys
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (confirmEndSession) setConfirmEndSession(false);
+      else onClose?.();
+      return;
+    }
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const neighbour = rowNeighbour(document.activeElement, event.key === 'ArrowLeft' ? -1 : 1);
+      if (neighbour) {
+        event.preventDefault();
+        neighbour.focus();
+        // The volume strip steps on Left/Right; boost waits for Enter.
+        if (neighbour.closest('.touch-volume')) neighbour.click();
+      }
+      return;
+    }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    const stops = menuFocusStops(rootRef.current);
+    const target = nextFocusStop(stops, document.activeElement, event.key === 'ArrowUp' ? -1 : 1);
+    if (target) {
+      event.preventDefault();
+      target.focus();
+    }
+  };
+  useGamepadKeys(true, (key) => {
+    const root = rootRef.current;
+    if (!root) return;
+    const active = root.contains(document.activeElement) ? document.activeElement : closeRef.current;
+    if (key === 'Enter') { active?.click?.(); return; }
+    active?.dispatchEvent?.(new KeyboardEvent('keydown', { key, bubbles: true }));
+  });
+
+
   return (
     <div
-      className={`fitness-sidebar-menu ${isGuestMode ? 'guest-mode' : ''}`}
+      ref={rootRef}
+      className={`fitness-sidebar-menu ${isGuestMode ? 'guest-mode' : 'settings-mode'}`}
       {...rootInteractionHandlers}
+      onKeyDown={handleRootKeyDown}
     >
-      <div className="sidebar-menu-header">
-        <h3>{isGuestMode ? 'Assign Guest' : 'Settings'}</h3>
-        <button type="button" className="close-btn" aria-label={isGuestMode ? 'Close guest assignment' : 'Close settings'} onClick={onClose}>✕</button>
-      </div>
-      <div className="sidebar-menu-content">
+      {isGuestMode && (
+        <div className="sidebar-menu-header">
+          <h3>Assign Guest</h3>
+        </div>
+      )}
+      <div className="sidebar-menu-content" onClick={handleBackgroundTap}>
         {isGuestMode ? renderGuestAssignment() : renderSettings()}
+      </div>
+      <div className="sidebar-menu-footer">
+        <button ref={closeRef} type="button" className="close-btn"
+          aria-label={isGuestMode ? 'Close guest assignment' : 'Close settings'} onClick={onClose}>
+          <span>Close</span><span className="close-glyph" aria-hidden="true">✕</span>
+        </button>
       </div>
       {confirmEndSession && (
         <div

@@ -33,15 +33,15 @@ describe('FitnessSidebarMenu — Reload App', () => {
     />
   );
 
-  it('renders a Reload App item in settings mode', () => {
+  it('renders a Reload item directly in settings mode (no More overflow)', () => {
     renderMenu();
-    expect(screen.getByText(/Reload App/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hard-reload/ })).toBeInTheDocument();
+    expect(screen.queryByText('More')).toBeNull();
   });
 
   it('fires hardReload with the settings-menu source on click', () => {
     renderMenu();
-    fireEvent.click(screen.getByText('More'));
-    fireEvent.click(screen.getByText(/Reload App/));
+    fireEvent.click(screen.getByRole('button', { name: /Hard-reload/ }));
     expect(hardReloadSpy).toHaveBeenCalledTimes(1);
     expect(hardReloadSpy).toHaveBeenCalledWith('settings-menu');
   });

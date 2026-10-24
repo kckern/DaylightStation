@@ -10,7 +10,7 @@ import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import { durationFromSeconds } from "../../../../../../__capabilities/playback/browser/contracts.mjs";
 import { guid } from "../../../../../../__capabilities/playback/browser/contracts.mjs";
 import getLogger from '@/lib/logging/Logger.js';
-import { musicShouldPause } from "./musicVideoSync.js";
+import { musicPlaysThroughHold, musicShouldPause } from "./musicVideoSync.js";
 import { marqueeScrollDistance } from "./marqueeDistance.js";
 import { useMusicRecovery } from "./useMusicRecovery.js";
 import { formatMusicErrorMessage, isRecoverableMusicError } from "./musicPlayerErrorFormat.js";
@@ -131,6 +131,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const shouldPauseForVideo = musicShouldPause({
     videoPlayerPaused, videoLoading, voiceMemoOpen, emergencyHold: Boolean(emergencyPlaybackHold),
   });
+  const shouldPauseRef = useRef(shouldPauseForVideo);
+  shouldPauseRef.current = shouldPauseForVideo;
   useEffect(() => {
     if (!audioPlayerRef.current) return;
 
@@ -291,6 +293,16 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   }, [selectedPlaylistId]);
 
   const handleProgress = (progressData) => {
+    // The sync effect above only acts on a CHANGE of the hold. Audio that
+    // started while the video was already paused (this player just mounted,
+    // or a new track autoplayed) is caught here, on its first tick, and
+    // resumes with the video.
+    if (musicPlaysThroughHold({ shouldPause: shouldPauseRef.current, musicPaused: progressData?.paused })) {
+      getLogger().debug('fitness.music.hold_enforced', { reason: 'video-paused' });
+      wasPlayingBeforePauseRef.current = true;
+      audioPlayerRef.current?.pause?.();
+      setIsPlaying(false);
+    }
     // Update current track from progress data (Player handles queue internally)
     if (progressData?.media) {
       const mediaData = progressData.media;
