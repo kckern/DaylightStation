@@ -29,6 +29,7 @@ import { mergeRingCelebrationToast } from "../player/overlays/buildRingCelebrati
 import { createFireZoneTracker, nextFireToasts } from "../player/overlays/fireZoneTracker.js";
 import { buildFireToast } from "../player/overlays/buildFireToast.js";
 import { planFireToasts } from "../player/overlays/fireToastQueue.js";
+import { evaluateFireCeremony } from "../player/overlays/fireCeremonyEligibility.js";
 import { createRingCelebrationTracker, normalizeRingCelebrationsConfig, ringCelebrationsForAward, seedRingCelebrationTracker } from "../player/overlays/ringCelebrations.js";
 import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
 import { playRingCelebrationCue } from "../player/overlays/ringCelebrationAudio.js";
@@ -206,6 +207,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const fitnessToastRef = useRef(null);
   const fireZoneTrackerRef = useRef(createFireZoneTracker());
   const pendingFireEntriesRef = useRef([]);
+  // The session the tracker and queue belong to. A new session object or id
+  // (end, reset, new session) clears both: an entry must never leak across.
+  const fireSessionKeyRef = useRef({ session: null, sessionId: null });
   const ringCelebrationTrackerRef = useRef(createRingCelebrationTracker());
   const pendingRingEntriesRef = useRef([]);
   const ringFlushTimerRef = useRef(null);
@@ -2318,43 +2322,89 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [zoneProfileLookup]);
 
   // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
-  // ZoneProfileStore's hysteresis (5s cooldown / 3s stability / 5bpm exit
-  // margin) is what keeps this from chattering at the 160bpm line; the tracker
-  // adds a per-person quiet period on top, because interval work legitimately
-  // re-crosses that line many times in a session.
+  // ZoneProfileStore's hysteresis (2-sample upward confirm / 5s cooldown / 3s
+  // stability / 5bpm exit margin) is what keeps this from chattering at the
+  // line; the tracker then requires Fire HELD (FIRE_CEREMONY_SUSTAIN_MS, 3+
+  // readings all at or above the line) and adds a per-person quiet period,
+  // because interval work legitimately re-crosses that line many times.
+  // The flush re-checks the rider's live state before showing anything.
   //
   // Must live BELOW `zoneProfiles` — a dep array referencing it from an earlier
   // effect would read the const before initialization.
   const flushFireToasts = useCallback(() => {
-    const { show, queue } = planFireToasts({
-      currentToast: fitnessToastRef.current,
-      queue: pendingFireEntriesRef.current,
-    });
-    pendingFireEntriesRef.current = queue;
-    if (!show) return;
-    pushFitnessToast(buildFireToast(
-      {
+    // Owner rule: a Fire ceremony never happens if the rider is not actually
+    // in Fire. An entry may have waited a long time behind another toast, so
+    // it is judged again against the rider's LIVE state at the moment it would
+    // appear; one that no longer holds is dropped and the next one tried.
+    for (;;) {
+      const { show, queue } = planFireToasts({
+        currentToast: fitnessToastRef.current,
+        queue: pendingFireEntriesRef.current,
+      });
+      pendingFireEntriesRef.current = queue;
+      if (!show) return;
+      const live = fitnessSessionRef.current;
+      const now = Date.now();
+      const queuedForMs = Number.isFinite(show.queuedAt) ? now - show.queuedAt : null;
+      const verdict = evaluateFireCeremony(show, live?.zoneProfileStore?.getProfile?.(show.userId) || null, {
+        now, sessionId: live?.sessionId ?? null
+      });
+      if (!verdict.show) {
+        getLogger().info('fitness.fire_ceremony.dropped', {
+          reason: verdict.reason, userId: show.userId, entryId: show.entryId ?? null, queuedForMs,
+          hr: verdict.heartRate, entryHr: show.heartRate ?? null, fireThreshold: verdict.fireThreshold
+        });
+        continue;
+      }
+      pushFitnessToast(buildFireToast(
+        {
+          userId: show.userId,
+          name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
+        },
+        { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
+      ));
+      getLogger().info('fitness.fire_toast.shown', {
         userId: show.userId,
-        name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
-      },
-      { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
-    ));
-    getLogger().info('fitness.fire_toast.shown', {
-      userId: show.userId,
-      hr: show.heartRate ?? null,
-      fireThreshold: show.fireThreshold ?? null,
-      zoneEntryId: show.entryId ?? null,
-      previousZoneId: show.previousZoneId ?? null
-    });
+        // The HR at the moment of the ceremony, and the HR that crossed.
+        hr: verdict.heartRate,
+        entryHr: show.heartRate ?? null,
+        fireThreshold: verdict.fireThreshold,
+        zoneEntryId: show.entryId ?? null,
+        previousZoneId: show.previousZoneId ?? null,
+        deviceId: show.deviceId ?? null,
+        sustainedMs: show.sustainedMs ?? null,
+        samples: show.samples ?? null,
+        queuedForMs
+      });
+      return;
+    }
   }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
 
   useEffect(() => {
     // The mirror screen shadows the real one; it must not double-celebrate.
     if (session?._liveSessionRole === 'mirror') return;
-    const { entries, tracker } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now: Date.now() });
+    const sessionId = session?.sessionId ?? null;
+    const key = fireSessionKeyRef.current;
+    if (key.session !== session || key.sessionId !== sessionId) {
+      if (pendingFireEntriesRef.current.length) {
+        getLogger().info('fitness.fire_ceremony.queue_cleared', {
+          reason: 'session-changed', count: pendingFireEntriesRef.current.length,
+          fromSessionId: key.sessionId, toSessionId: sessionId
+        });
+      }
+      fireSessionKeyRef.current = { session, sessionId };
+      fireZoneTrackerRef.current = createFireZoneTracker();
+      pendingFireEntriesRef.current = [];
+    }
+    const now = Date.now();
+    const { entries, tracker, dropped } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now });
     fireZoneTrackerRef.current = tracker;
+    (dropped || []).forEach((d) => getLogger().info('fitness.fire_ceremony.dropped', {
+      reason: d.reason, userId: d.userId, entryId: d.entryId ?? null, queuedForMs: null,
+      stage: 'stint', samples: d.samples ?? null, heldMs: d.heldMs ?? null
+    }));
     if (!entries.length) return;
-    pendingFireEntriesRef.current.push(...entries);
+    pendingFireEntriesRef.current.push(...entries.map((entry) => ({ ...entry, sessionId, queuedAt: now })));
     flushFireToasts();
   }, [zoneProfiles, session, flushFireToasts]);
 

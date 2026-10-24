@@ -417,6 +417,14 @@ For each HR update:
   every rider's packet, and a re-sync of the same reading is not a second
   sample. This is what stopped single corrupt 204 BPM packets committing Fire
   (2026-10-23). A drop still commits on its first sample.
+- Slew gate (`hrPlausibility.createHrSlewGate`, in DeviceManager): a ≥25 BPM
+  jump inside 2s is held for the next sample. After a short *silent* gap
+  (no packets, baseline under `HR_SLEW_MEMORY_MS` = 30s old) a jump is
+  accepted only **provisionally**: if the next sample returns to the pre-gap
+  line, the gap reading was the spike and the next sample is accepted
+  (`spike_rejected`, `rejectedProvisional`). A 204/real alternation after a
+  gap therefore never keeps the spike as the baseline. A no-reading packet
+  still resets the device, so a reconnect is never held.
 - `fitness.zone_state.transition` carries `commitPath`
   (`instant-first` / `confirmed-upward` / `downgrade` / `stable`),
   `rawSamples`, `rawStableMs`, `deviceId` and the previous zone and HR.
@@ -444,6 +452,27 @@ For each HR update:
   ceremony for that return; the next real crossing into Fire celebrates. A
   kiosk reload resumes the same way (v2 snapshot), so riders are untrusted for
   about a second after a reload, well inside governance grace.
+- **Reload restore without evidence (v1 snapshot).** `restoreTrust` re-admits
+  the rider with no evidence and no smoothing state, so their first reading
+  commits instantly with no upward confirmation. That first entry is marked
+  `resumed: true, restored: 'no-evidence'` and never celebrates; later real
+  crossings do.
+- **Ladder change (reclassification).** The store remembers each rider's ladder
+  signature across a config rebuild (`clear({preserveTrust})` keeps it; a
+  session reset or wearer reset drops it). When the thresholds change
+  (`fitness.zone_ladder.changed`), every zone entry is marked
+  `reclassified: true` until the rider has a trusted real reading **below
+  Fire** under the new ladder (`fitness.zone_ladder.reclassify_guard_cleared`).
+  A lowered Fire line at an unchanged HR therefore commits Fire for
+  governance and rings, but never celebrates; the next real upward crossing
+  under the new ladder does.
+- **Simulated input.** Packets with `source: 'fitness-simulator'` (the backend
+  rebroadcasts them to every client, so the garage kiosk ingests them too)
+  mark their device simulated for `SIMULATED_DEVICE_HOLD_MS` (10 min) after the
+  last such packet (`fitness.device.simulated_source`). Zones, governance and
+  rings work exactly as before; the profile carries
+  `zoneReadingSimulated: true` and the entry `simulated: true`, and no Fire
+  ceremony comes of it.
 - A new session, or a first attach with no evidence, still requires an
   accepted Cool. That is the only case suppression exists for: a strap still
   emitting a previous day's Fire.
@@ -454,12 +483,20 @@ For each HR update:
 - Correction and ordinary handover reset both identities synchronously, before
   another packet or sync: pending HR provenance, earned zones, cached profile
   maps and unfinished intervals clear; historical totals remain intact.
+  A **re-tag under the same id** (the shared generic `guest_<deviceId>`, or a
+  changed name) is treated the same way (`guest_assignment.retag_same_id`):
+  the new wearer never inherits the last one's trust, zone or baseline.
 - Every sync advances smoothing even for repeated HR. Profile memoization is
   unsafe: its key cannot describe elapsed stability or interrupted raw-zone
   runs, and historical profiles must not survive resets.
 
-The public profile adds `zoneTrusted: boolean` and
-`zoneEntry: { id, zoneId, heartRate, threshold, enteredAt } | null`. The entry
+The public profile adds `zoneTrusted: boolean`,
+`zoneEntry: { id, zoneId, heartRate, threshold, enteredAt, deviceId, resumed?,
+restored?, reclassified?, simulated? } | null`, and the reading it was built
+from: `zoneReadingAt`, `zoneReadingDeviceId`, `zoneReadingEligible`,
+`zoneReadingSimulated`. The store keeps the newest snapshot on every sync even
+when the signature is unchanged, so a repeated HR still advances
+`zoneReadingAt`. The entry
 captures an accepted reading that justified the current committed transition;
 its ID is monotonic for the store lifetime. Read APIs clone the evidence.
 A reset clears published trust and current-zone fields immediately, before the
@@ -471,12 +508,46 @@ interval. It cannot fall back to global thresholds while the profile is absent
 or untrusted. The roster and participant display map retain the authoritative
 null earned zone, so governance cannot count a startup spike.
 
-Fire ceremonies require a trusted non-Fire → Fire crossing with new entry
-identity, matching personal threshold and captured HR at/above that threshold.
-Retained Fire under hysteresis is not another entry. The captured evidence,
-not a later display HR, travels through the toast queue. First observation in
-Fire, a default Cool baseline, a reused entry or contradictory HR/threshold
-cannot invent an achievement.
+#### Fire ceremony (toast + fireball sound)
+
+Owner rule: **a Fire ceremony never happens if the rider is not actually in
+Fire.** Missing a real ceremony in an ambiguous case is acceptable; a false one
+never is. Three stages, each able only to say no:
+
+1. **Crossing** (`fireZoneTracker.nextFireToasts`). A trusted non-Fire → Fire
+   crossing with new entry identity, matching personal threshold and captured
+   HR at/above it. Retained Fire under hysteresis is not another entry. First
+   observation in Fire, a default Cool baseline, a reused entry, a
+   `resumed` / `reclassified` / `simulated` entry, a changed Fire line, or
+   contradictory HR/threshold never qualifies. A 5-minute per-rider cooldown
+   applies.
+2. **Sustained Fire.** A crossing only opens a candidate stint. It becomes a
+   ceremony after committed Fire has been held for `FIRE_CEREMONY_SUSTAIN_MS`
+   (5s) with at least `FIRE_CEREMONY_MIN_SAMPLES` (3) distinct readings
+   (`zoneReadingAt`), **every one at or above the Fire minimum**, from the same
+   strap, under the same ladder. Leaving Fire, a new entry, any reading below
+   the line (Fire held only by the exit margin), a strap change (two straps on
+   one rider), a ladder change or a simulated reading abandons the stint
+   (logged `fitness.fire_ceremony.dropped` with `stage: 'stint'`); only a new
+   real crossing opens another. This is the main defense against spike,
+   alternation and two-strap artifacts.
+3. **Display-time re-check** (`fireCeremonyEligibility.evaluateFireCeremony`,
+   run by FitnessContext's flush). A qualified entry may wait behind a ring
+   card or another rider's toast. When it reaches the slot it is shown only if
+   the rider's **live** profile still has: the same session id, trust,
+   committed zone Fire, the same zone entry id (same uninterrupted stint), the
+   same strap, a non-simulated reading, a fresh eligible reading
+   (`FIRE_CEREMONY_FRESH_MS`, 5s) and current HR ≥ the current Fire minimum.
+   Otherwise it is dropped: `fitness.fire_ceremony.dropped`
+   `{ reason, userId, entryId, queuedForMs }` with reason `session-changed`,
+   `rider-gone`, `untrusted`, `not-in-fire`, `entry-changed`, `simulated`,
+   `device-changed`, `hr-stale` or `hr-below-fire`.
+
+The tracker and the queue belong to one session: a new session object or
+session id (end, reset, new session) clears both
+(`fitness.fire_ceremony.queue_cleared`). `fitness.fire_toast.shown` logs the HR
+**at display time** (`hr`), the crossing HR (`entryHr`), `fireThreshold`,
+`zoneEntryId`, `deviceId`, `sustainedMs`, `samples` and `queuedForMs`.
 
 ### Layer 2: GovernanceEngine (no unlock hold)
 
