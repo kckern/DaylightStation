@@ -92,3 +92,38 @@ describe('usePersistentVolume — reapplyKey', () => {
     expect(new Set(seenIds)).toEqual(new Set(['playlist']));
   });
 });
+
+describe('usePersistentVolume — a child Player cannot clobber the duck', () => {
+  // The Player (a child of FitnessPlayer) re-writes element.volume from its
+  // `volume` prop in a passive effect whenever that prop changes. Child effects
+  // run before the parent's, so without a parent re-apply a volume tap during a
+  // duck lifts the duck until the SFX ends.
+  it('keeps the element ducked after a mid-duck volume change', async () => {
+    const { render: rtlRender } = await import('@testing-library/react');
+    const React = await import('react');
+    const el = { volume: 1 };
+    const applyToPlayer = store.applyToPlayer;
+    store.applyToPlayer = (_ref, state) => { if (typeof state.level === 'number') el.volume = state.level; };
+    const playerRef = { current: { getMediaElement: () => el } };
+    const FakePlayer = ({ volume }) => {
+      React.useEffect(() => { el.volume = volume; }, [volume]);
+      return null;
+    };
+    let api;
+    const Host = () => {
+      api = usePersistentVolume({ grandparentId: 'fitness', parentId: 'global', trackId: 'video', playerRef });
+      return <FakePlayer volume={api.volume} />;
+    };
+    try {
+      rtlRender(<Host />);
+      act(() => api.setDuck(0.1));
+      expect(el.volume).toBeCloseTo(0.08, 5);
+      act(() => api.setVolume(0.5));
+      expect(el.volume).toBeCloseTo(0.05, 5);
+      act(() => api.setDuck(1));
+      expect(el.volume).toBeCloseTo(0.5, 5);
+    } finally {
+      store.applyToPlayer = applyToPlayer;
+    }
+  });
+});
