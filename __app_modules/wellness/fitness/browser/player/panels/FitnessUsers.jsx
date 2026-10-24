@@ -11,7 +11,7 @@ import { StepMatCard } from "./RealtimeCards/StepMatCard.jsx";
 import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
-import { measureRiderHeight } from "./riderListDensity.js";
+import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX } from "./riderListDensity.js";
 import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
@@ -342,7 +342,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
-  const [cardHeight, setCardHeight] = useState(64);
+  const [riderLayout, setRiderLayout] = useState({ height: RIDER_MIN_PX, gap: RIDER_GAP_PX });
+  const cardHeight = riderLayout.height;
   const layoutMode = 'horiz'; // One bounded allocation at every roster size.
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
@@ -604,9 +605,76 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const signature = `${rosterKey}#${headers}#${cardsInDom}#${listResizes}`;
     if (signature === densitySignatureRef.current) return;
     densitySignatureRef.current = signature;
-    const next = measureRiderHeight(container, content);
-    if (next !== cardHeight) setCardHeight(next);
+    const next = measureRiderLayout(container, content);
+    if (next.height !== riderLayout.height || next.gap !== riderLayout.gap) setRiderLayout(next);
   });
+
+  // Equipment that must stay in view (RPM meters, step mats) is pinned below
+  // the scrolling rider list, never inside it: when the roster overflows at
+  // the 64px floor only rider cards scroll (2026-10-23 cutout bug).
+  const renderRpmGroup = (device) => {
+    const rpmDevices = device.devices;
+
+    // One fixed circle size at every bike count; the grid wraps
+    // instead of shrinking (FitnessSidebar.scss .rpm-devices).
+    return (
+      <div key="rpm-group" className="rpm-group-container">
+        <div className="rpm-devices">
+          {rpmDevices.map(rpmDevice => {
+            const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
+            const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
+            const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
+            const claimedRiderId = fitnessContext.fitnessSessionInstance?.getEquipmentRider?.(equipmentId) || null;
+            const riderAvatarSrc = claimedRiderId
+              ? DaylightMediaPath(`/static/img/users/${claimedRiderId}`)
+              : null;
+            const rpmValue = Number.isFinite(rpmDevice.cadence)
+              ? Math.max(0, Math.round(rpmDevice.cadence))
+              : 0;
+            const animationDuration = rpmValue > 0
+              ? `${CONFIG.rpm.animationBase / Math.max(rpmValue, 1)}s`
+              : '0s';
+            const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
+            const colorMap = CONFIG.rpm.colorMap;
+            const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
+
+            return (
+              <RpmDeviceAvatar
+                key={`rpm-${rpmDevice.deviceId}`}
+                rpm={rpmValue}
+                animationDuration={animationDuration}
+                avatarSrc={riderAvatarSrc || DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
+                avatarAlt={claimedRiderId ? claimedRiderId : deviceName}
+                imageClassName="rpm-device-image"
+                spinnerStyle={{ borderColor }}
+                valueStyle={{ background: CONFIG.rpm.overlayBg }}
+                fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+    };
+  const renderStepMat = (device) => {
+    const equipmentId = device.snapshot.equipmentId;
+    const assignedUserId = fitnessContext.fitnessSessionInstance?.getEquipmentUser?.(equipmentId) || null;
+    return (
+      <div key={`step-mat-${equipmentId}`} className="step-mat-list-item">
+        <StepMatCard
+          equipment={device.equipment}
+          snapshot={device.snapshot}
+          participants={activeHeartRateParticipants || []}
+          assignedUserId={assignedUserId}
+          onAssign={(userId) => assignEquipmentUser?.(equipmentId, userId)}
+          onDisengage={() => disengagePressureMat?.(equipmentId)}
+        />
+      </div>
+    );
+    };
+  const isPinnedEntry = (device) => device.type === 'rpm-group' || device.type === 'pressure-mat-activity';
+  const listDevices = sortedDevices.filter((device) => !isPinnedEntry(device));
+  const pinnedDevices = sortedDevices.filter(isPinnedEntry);
 
   return (
     <>
@@ -617,7 +685,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
         {sortedDevices.length > 0 ? (
           <FlipMove 
             className={`device-grid ${layoutMode === 'vert' ? 'layout-vert' : 'layout-horiz'}`}
-            style={{ '--rider-card-height': `${cardHeight}px` }}
+            style={{ '--rider-card-height': `${cardHeight}px`, '--rider-gap': `${riderLayout.gap}px` }}
             duration={CONFIG.animation.flipMove.duration}
             easing={CONFIG.animation.flipMove.easing}
             staggerDelayBy={CONFIG.animation.flipMove.staggerDelayBy}
@@ -629,69 +697,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
             {(() => {
               const seenZones = new Set();
               let noZoneShown = false;
-              return sortedDevices.map((device) => {
-              if (device.type === 'rpm-group') {
-                const rpmDevices = device.devices;
-
-                // One fixed circle size at every bike count; the grid wraps
-                // instead of shrinking (FitnessSidebar.scss .rpm-devices).
-                return (
-                  <div key="rpm-group" className="rpm-group-container">
-                    <div className="rpm-devices">
-                      {rpmDevices.map(rpmDevice => {
-                        const equipmentInfo = equipmentMap[String(rpmDevice.deviceId)];
-                        const deviceName = equipmentInfo?.name || String(rpmDevice.deviceId);
-                        const equipmentId = equipmentInfo?.id || String(rpmDevice.deviceId);
-                        const claimedRiderId = fitnessContext.fitnessSessionInstance?.getEquipmentRider?.(equipmentId) || null;
-                        const riderAvatarSrc = claimedRiderId
-                          ? DaylightMediaPath(`/static/img/users/${claimedRiderId}`)
-                          : null;
-                        const rpmValue = Number.isFinite(rpmDevice.cadence)
-                          ? Math.max(0, Math.round(rpmDevice.cadence))
-                          : 0;
-                        const animationDuration = rpmValue > 0
-                          ? `${CONFIG.rpm.animationBase / Math.max(rpmValue, 1)}s`
-                          : '0s';
-                        const deviceColor = cadenceColorMap[String(rpmDevice.deviceId)];
-                        const colorMap = CONFIG.rpm.colorMap;
-                        const borderColor = deviceColor ? (colorMap[deviceColor] || deviceColor) : colorMap.green;
-
-                        return (
-                          <RpmDeviceAvatar
-                            key={`rpm-${rpmDevice.deviceId}`}
-                            rpm={rpmValue}
-                            animationDuration={animationDuration}
-                            avatarSrc={riderAvatarSrc || DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
-                            avatarAlt={claimedRiderId ? claimedRiderId : deviceName}
-                            imageClassName="rpm-device-image"
-                            spinnerStyle={{ borderColor }}
-                            valueStyle={{ background: CONFIG.rpm.overlayBg }}
-                            fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              }
-
-              if (device.type === 'pressure-mat-activity') {
-                const equipmentId = device.snapshot.equipmentId;
-                const assignedUserId = fitnessContext.fitnessSessionInstance?.getEquipmentUser?.(equipmentId) || null;
-                return (
-                  <div key={`step-mat-${equipmentId}`} className="step-mat-list-item">
-                    <StepMatCard
-                      equipment={device.equipment}
-                      snapshot={device.snapshot}
-                      participants={activeHeartRateParticipants || []}
-                      assignedUserId={assignedUserId}
-                      onAssign={(userId) => assignEquipmentUser?.(equipmentId, userId)}
-                      onDisengage={() => disengagePressureMat?.(equipmentId)}
-                    />
-                  </div>
-                );
-              }
-
+              return listDevices.map((device) => {
               // Vibration devices: render VibrationCard with live activity avatar
               if (VIBRATION_DEVICE_TYPES.has(device.type)) {
                 const equipmentInfo = equipmentMap[String(device.deviceId)];
@@ -758,11 +764,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
                 ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
                 : profileId;
-              // §3: surface the physical sticker color as a dot by the name (the
-              // heart identifies the same strap; the avatar ring belongs to the zone). Configured color wins;
-              // unidentified cards (no user, no assignment) get a deterministic
-              // per-device hash color so simultaneous unknown straps are distinct.
-              const strapDotColor = isHeartRate
+              // §3: the heart wears the physical strap's sticker colour and is the
+              // card's only strap identifier (the avatar ring and zone header
+              // carry the zone). Configured colour wins; unidentified cards (no
+              // user, no assignment) get a deterministic per-device hash colour
+              // so simultaneous unknown straps stay distinct.
+              const strapColor = isHeartRate
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
@@ -940,18 +947,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     </div>
                     <div className="device-info">
                       <div className="device-name">
-                        {strapDotColor ? (
-                          <span
-                            className="strap-dot"
-                            style={{ background: strapDotColor }}
-                            title={strapLabel(hrColorMap[deviceIdStr]) || 'Strap'}
-                            aria-hidden="true"
-                          />
-                        ) : null}
                         {deviceName}
                       </div>
                       <div className="device-stats">
-                        <span className="device-icon">{getDeviceIcon(device, strapDotColor)}</span>
+                        <span className="device-icon" title={isHeartRate ? (strapLabel(hrColorMap[deviceIdStr]) || 'Strap') : undefined}>{getDeviceIcon(device, strapColor)}</span>
                         <span className="device-value">{deviceValue}</span>
                         <span className="device-unit">{getDeviceUnit(device)}</span>
                       </div>
@@ -1019,6 +1018,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
         )}
         </div>
       </div>
+      {pinnedDevices.length > 0 && (
+        <div className="fitness-devices-pinned">
+          {pinnedDevices.map((device) => (device.type === 'rpm-group' ? renderRpmGroup(device) : renderStepMat(device)))}
+        </div>
+      )}
     </>
   );
 };

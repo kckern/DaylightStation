@@ -42,6 +42,8 @@ describe('FitnessUsers strap identity and earned zone', () => {
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.fitness-heart-icon')).toBeTruthy());
     expect(hex(container.querySelector('.fitness-heart-icon').style.color)).toBe('#b07cf7');
+    // The heart is the only strap identifier; the old name dot duplicated it.
+    expect(container.querySelector('.strap-dot')).toBeNull();
     expect(container.querySelector('.fitness-device').classList.contains(zoneId ? `zone-${zoneId}` : 'no-zone')).toBe(true);
   });
 

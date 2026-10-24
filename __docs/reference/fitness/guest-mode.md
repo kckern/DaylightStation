@@ -98,9 +98,9 @@ A guest arrives wanting to join the workout
       ├─ Strap is mapped to a household user → card shows THAT user's
       │   name/photo (wrong person!). Tap the card → pick the guest.
       ├─ Strap is a color-allocated visitor slot → untagged placeholder card with a
-      │   sticker-color dot by a "Purple strap" label. Tap → tag it.
+      │   "Purple strap" label and a sticker-color heart. Tap → tag it.
       └─ Strap is totally unknown → untagged placeholder card labeled #<deviceId>,
-          dot in a deterministic hash color. Tap → tag it.
+          heart in a deterministic hash color. Tap → tag it.
 ```
 
 Step-by-step for the common borrow case:
@@ -245,12 +245,12 @@ Before loading, generic-Guest profileIds (prefix `guest_`) are swapped to a plac
 
 The physical-sticker mapping (`device_colors.heart_rate`) surfaces through the shared `strapColors.js` helpers:
 
-1. **Heart and strap dot** — both keep the configured monitor color across every zone, before baseline trust, and during signal loss. They follow the physical strap when a guest takes it over. Fully unidentified devices (no mapped user or assignment) use the existing deterministic per-device hash color.
+1. **Heart** — the card's only strap identifier (the name carries no dot; one was removed 2026-10-23 as a duplicate). It keeps the configured monitor color across every zone, before baseline trust, and during signal loss. They follow the physical strap when a guest takes it over. Fully unidentified devices (no mapped user or assignment) use the existing deterministic per-device hash color.
 2. **Color-name card label** — when name resolution falls through to its device-ID fallback, a configured sticker color renders as "Purple strap" instead of the device number.
 
 The avatar ring, group heading, zone tag, tint and progress fill use the shared zone palette and the trusted committed zone used by governance. Raw heart rate remains visible while the zone is untrusted; a raw high reading cannot color the card, ambient lighting or zone-driven fan input as an earned high zone. Cadence-driven fan behavior remains independent.
 
-Roster cards use the room available after group headings and equipment, with bounded card sizes and scrolling when readable minimums require it. Startup and hold instructions belong to the governance surface, without an extra text row on each rider card. RPM circles retain their size and gap and center each occupied wrapped row. Challenge contributors center and wrap in both success presentations.
+Roster cards use the room available after group headings, with bounded card sizes and scrolling when readable minimums require it. RPM meters and step mats are pinned below the scrolling rider list (`.fitness-devices-pinned`), so they are always fully visible: when five or more riders plus a governance panel overflow the 64px card floor, only rider cards scroll. At the floor the gap between roster rows tightens from 10px to 4px before anything scrolls (`riderListDensity.allocateRiderLayout`). An 8px gap separates the roster (or the pinned block) from the camera/controls panel below. Startup and hold instructions belong to the governance surface, without an extra text row on each rider card. RPM circles retain their size and gap and center each occupied wrapped row. Challenge contributors center and wrap in both success presentations.
 
 Settings places video volume and boost first, followed by webcam/treasure visibility and End Session. The collapsed More group contains Reload App and Feedback. End Session still requires confirmation. Feedback uses the shared body-portalled voice dialog above the Settings scrim, so its controls remain clickable while Settings stays mounted. The header stays reachable while the inner body scrolls; scrolling renews the idle timer and focus keeps the menu open until focus leaves. Guest labels and sidebar units retain a 14px minimum.
 

@@ -129,6 +129,15 @@
 }
 
 // Animations
+@keyframes fitness-pinned-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fitness-sidebar-container .fitness-sidebar-devices .fitness-devices-pinned { animation: none; }
+}
+
 @keyframes spin-rpm {
   from {
     transform: rotate(0deg);
@@ -337,7 +346,9 @@
     min-height: 0;
     overflow: hidden; // Changed from overflow-y: auto
     margin: 6px 0 0;
-    padding: 0;
+    // The camera/controls panel below has no margin of its own: this is the
+    // gap that keeps the last card (or the pinned RPM block) off it.
+    padding: 0 0 8px;
     display: flex;
     flex-direction: column;
     background: transparent;
@@ -351,16 +362,30 @@
       position: relative;
       min-height: 0;
       container-type: inline-size;
-      /* Align with treasure box horizontal margins. No bottom padding: the
-         camera panel below supplies the gap, and every pixel here decides
-         whether five riders get regular or compact cards. */
+      /* Align with treasure box horizontal margins. The bottom gap above the
+         camera panel is .fitness-sidebar-devices' padding, outside this box,
+         so riderListDensity's room already excludes it. */
       padding: 0 1ex;
+    }
+
+    // RPM meters and step mats: always fully visible below the rider list.
+    // Only the list above scrolls; its room shrinks by this block's height
+    // through the list's ResizeObserver.
+    .fitness-devices-pinned {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 1ex 0;
+      animation: fitness-pinned-enter 0.3s ease-out;
     }
 
     .device-grid {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      // JS picks 10px, or 4px when cards sit at the 64px floor
+      // (riderListDensity.allocateRiderLayout).
+      gap: var(--rider-gap, 10px);
       width: 100%;
     }
 
@@ -1757,16 +1782,6 @@
 
   }
 
-  // Strap dot and heart identify the physical monitor.
-  .device-name .strap-dot {
-    display: inline-block;
-    width: 0.6em;
-    height: 0.6em;
-    margin-right: 0.35em;
-    border-radius: 50%;
-    vertical-align: 0.12em;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-  }
 }
 
 .fitness-sidebar-container .fitness-sidebar-menu {

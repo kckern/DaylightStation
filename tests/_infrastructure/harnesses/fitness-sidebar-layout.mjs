@@ -60,7 +60,7 @@ const fixtureMedia = document.createElement('video');
 const root = createRoot(document.getElementById('root'));
 import { installIntegration } from './tests/_infrastructure/harnesses/fitness-integration-fixture.jsx';
 installIntegration(root, FixtureContext);
-window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false }) => {
+window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones = 1, inactive = false, menu = null, people = 0, achievement = false, home = false, gov = false, media = false }) => {
   const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
   const devices = Array.from({ length: count }, (_, i) => ({
     id: 'rider-' + i, profileId: 'rider-' + i, deviceId: String(101 + i), type: 'heart_rate', heartRate: 123 + i,
@@ -83,7 +83,10 @@ window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones =
       <div id="home-scroll" style={{position:'absolute',left:80,right:0,top:0,bottom:0,overflowY:'auto'}}><FitnessMenu activeCollection="fixture" onContentSelect={()=>{}} /></div>
       <FeedbackCornerButton onOpen={()=>{}} />
     </div> : <div style={{ position:'relative', width, height, background:'#080808' }}>
-      <div className="fitness-sidebar-container"><div className="fitness-sidebar-devices"><FitnessUsersList /></div>
+      <div className="fitness-sidebar-container">
+      {gov && <div className="fitness-sidebar-governance" style={{height:59,flexShrink:0}} />}
+      <div className="fitness-sidebar-devices"><FitnessUsersList /></div>
+      {media && <div className="fitness-sidebar-media" style={{background:'#222'}} />}
       {menu && <FitnessSidebarMenu mode={menu} targetDeviceId="unknown" guestCandidates={Array.from({length:15},(_,i) => ({ id:'guest-'+i, name:'Guest Person '+i, source:'friend' }))}
         onClose={() => {window.closedCount = (window.closedCount || 0)+1;}} visibility={{}} onToggleVisibility={() => {}}
         playerRef={{current:{getMediaElement:()=>fixtureMedia}}} boostLevel={1} setBoost={()=>{}} videoVolume={{volume:.5}}
@@ -155,12 +158,27 @@ try {
   for (const viewport of [{width:1920,height:1080},{width:1381,height:777},{width:1024,height:640}]) {
     await page.setViewportSize(viewport);
     for (const count of [1,3,4,5,8]) {
-      for (const rpm of [0,1,2,3,4,5]) {
-        const options = { count, rpm, width: viewport.width === 1024 ? 250 : 300, height: viewport.height - 180, zones: Math.min(3,count), inactive: count===8 };
+      for (const rpm of [0,1,2,3,4,5]) for (const gov of [false,true]) {
+        // media: the real 16:9 camera/controls panel below the roster; gov: the
+        // ~59px governance lock panel that took the 2026-10-23 roster under.
+        const options = { count, rpm, gov, media: true, width: viewport.width === 1024 ? 250 : 300, height: viewport.height - 40, zones: Math.min(3,count), inactive: count===8 };
         await page.evaluate(options => window.renderFixture(options), options);
         await page.waitForFunction(count => document.querySelectorAll('.fitness-device.heart-rate').length === count &&
           [...document.querySelectorAll('.device-grid > *')].every(el => !el.style.transform && el.style.position !== 'absolute'), count);
-        await page.waitForTimeout(60);
+        // A pinned RPM block appearing or leaving resizes the list after the
+        // roster settles, which re-sizes cards and starts a second FLIP pass.
+        // Wait until two reads 150ms apart agree and nothing is mid-animation.
+        let previous = null;
+        for (let i = 0; i < 20; i++) {
+          await page.waitForTimeout(150);
+          const snapshot = await page.evaluate(() => {
+            const grid = document.querySelector('.device-grid');
+            const moving = [...grid.children].some(el => el.style.transform || el.style.transition || el.style.position === 'absolute' || (el.style.opacity && el.style.opacity !== '1'));
+            return moving ? null : grid.style.getPropertyValue('--rider-card-height') + '|' + document.querySelector('.fitness-devices').clientHeight;
+          });
+          if (snapshot && snapshot === previous) break;
+          previous = snapshot;
+        }
         const geometry = await page.evaluate(() => {
           const list = document.querySelector('.fitness-devices');
           const cards = [...document.querySelectorAll('.fitness-device.heart-rate')];
@@ -180,7 +198,13 @@ try {
             rows.set(key, [...(rows.get(key)||[]), r]);
           }
           const rpmGroup = document.querySelector('.rpm-devices');
+          const pinned = document.querySelector('.fitness-devices-pinned');
+          const mediaPanel = document.querySelector('.fitness-sidebar-media');
+          const visibleBottom = Math.max(Math.min(rect(list).bottom, Math.max(...cards.map(el=>rect(el).bottom))), pinned ? rect(pinned).bottom : 0);
           return { grouping, room:list.clientHeight, scroll:list.scrollHeight,
+            rpmInList: !!list.querySelector('.rpm-group-container'),
+            pinned: pinned ? rect(pinned).toJSON() : null, listRect: rect(list).toJSON(),
+            mediaGap: rect(mediaPanel).top - visibleBottom,
             height: parseFloat(grid.style.getPropertyValue('--rider-card-height')),
             cardHeights: cards.map(el=>rect(el).height),
             bottom:Math.max(...[...grid.children].map(el=>rect(el).bottom)) - rect(list).top,
@@ -193,10 +217,17 @@ try {
         assert.ok(geometry.units.every(size=>size>=14), '14px floor');
         assert.ok(geometry.cardHeights.every(h=>h>=63.5 && Math.abs(h-geometry.height)<0.5), JSON.stringify({options,geometry}));
         if(count===1) assert.ok(geometry.height<=132,'single rider height cap');
+        assert.ok(geometry.mediaGap>=7.5,'gap above the camera panel: '+JSON.stringify({options,mediaGap:geometry.mediaGap}));
+        assert.ok(!geometry.rpmInList,'RPM never inside the scrolling list');
+        if(rpm>0) {
+          assert.ok(geometry.pinned && geometry.pinned.top>=geometry.listRect.bottom-0.5,'RPM pinned below the list: '+JSON.stringify({options,geometry}));
+          assert.ok(geometry.pinned.bottom<=viewport.height && geometry.pinned.bottom<=geometry.listRect.bottom+geometry.pinned.height+0.5,'RPM fully visible: '+JSON.stringify({options,geometry}));
+        }
         const overhead=geometry.bottom-geometry.cardHeights.reduce((sum,height)=>sum+height,0);
         if(count>1 && count*64+overhead<=geometry.room+1) {
           assert.ok(geometry.bottom<=geometry.room+1,'no needless overflow: '+JSON.stringify({options,geometry}));
-          assert.ok(geometry.room-geometry.bottom<=count+2,'fill fitting multi-rider room: '+JSON.stringify({options,geometry}));
+          // floor() loses <1px per card; fractional header heights add up to ~1px more.
+          assert.ok(geometry.room-geometry.bottom<=count+3,'fill fitting multi-rider room: '+JSON.stringify({options,geometry}));
         }
         for (const row of geometry.rpmRows) {
           assert.ok(Math.abs(row.center-row.expected)<1, JSON.stringify({options,row}));

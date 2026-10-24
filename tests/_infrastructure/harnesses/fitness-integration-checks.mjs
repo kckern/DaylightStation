@@ -44,21 +44,25 @@ export async function verifyIntegration(page,evidence,engine,outDir=mkdtempSync(
       const rect=sel=>document.querySelector(sel).getBoundingClientRect().toJSON();
       const list=document.querySelector('.fitness-devices');
       const grid=document.querySelector('.device-grid');
-      return {viewport:{width:innerWidth,height:innerHeight},frame:rect('.fitness-player-frame'),sidebar:rect('.fitness-sidebar-container'),list:rect('.fitness-devices'),media:rect('.fitness-sidebar-media'),footer:rect('#fixture-footer'),scroll:list.scrollHeight,room:list.clientHeight,
+      return {viewport:{width:innerWidth,height:innerHeight},frame:rect('.fitness-player-frame'),sidebar:rect('.fitness-sidebar-container'),list:rect('.fitness-devices'),pinned:rect('.fitness-devices-pinned'),media:rect('.fitness-sidebar-media'),footer:rect('#fixture-footer'),scroll:list.scrollHeight,room:list.clientHeight,
         bottom:Math.max(...[...grid.children].map(e=>e.getBoundingClientRect().bottom)),cards:[...document.querySelectorAll('.fitness-device.heart-rate')].map(e=>e.getBoundingClientRect().height)};
     });
     assert.equal(parent.cards.length,5);
     assert.ok(parent.cards.every(h=>h>=63.5),'readable cards in parent');
     const minimumContent=5*64+(parent.bottom-parent.list.top-parent.cards.reduce((sum,h)=>sum+h,0));
-    if(minimumContent<=parent.room) assert.ok(parent.scroll<=parent.room+3,'five cards and RPM fit actual parent '+JSON.stringify(parent));
+    if(minimumContent<=parent.room) assert.ok(parent.scroll<=parent.room+3,'five cards fit actual parent '+JSON.stringify(parent));
     else {
       assert.ok(parent.cards.every(h=>Math.abs(h-64)<1),'scroll only at readable minimum');
       const scrolled=await page.locator('.fitness-devices').evaluate(list=>{list.scrollTop=list.scrollHeight;return {last:list.querySelector('.device-grid').lastElementChild.getBoundingClientRect().bottom,bottom:list.getBoundingClientRect().bottom};});
-      assert.ok(scrolled.last<=scrolled.bottom+1,'RPM remains reachable at minimum-supported height');
+      assert.ok(scrolled.last<=scrolled.bottom+1,'last rider reachable at minimum-supported height');
       parent.scrolled=scrolled;
     }
     assert.ok(parent.media.bottom<=parent.sidebar.bottom+1,'media reservation fits');
-    assert.ok(parent.media.top-parent.list.bottom<2,'list fills above media');
+    // RPM is pinned below the scrolling list (never scrolled away), and an 8px
+    // gap keeps both off the camera panel (2026-10-23 cutout bug).
+    assert.ok(parent.pinned.top>=parent.list.bottom-0.5,'RPM pinned below the list '+JSON.stringify(parent));
+    const gapAboveMedia=parent.media.top-parent.pinned.bottom;
+    assert.ok(gapAboveMedia>=7.5&&gapAboveMedia<10,'8px gap above media '+JSON.stringify(parent));
     assert.ok(Math.abs(parent.list.bottom-(parent.scrolled?.last??parent.bottom))<8,'no parent allocation gap '+JSON.stringify(parent));
     assert.equal(Math.round(parent.footer.height),80);
     assert.equal(Math.round(parent.sidebar.height),viewport.height);
