@@ -112,9 +112,32 @@ export class EmulatorCheckpointService {
     await this.#context(key);
     return this.#checkpoints.readRevision({ ...key, user: String(key.user).toLowerCase() }, revision);
   }
+  async inspectRecovery(key, options = {}) {
+    // Preserve legacy progress before a claim/recovery can supersede it. A
+    // damaged head remains inspectable; other I/O failures still fail closed.
+    let context;
+    try { const description = await this.#description(key, options, false); context = { saveMode: description.saveMode, provenance: description.provenance }; }
+    catch (error) { if (error.code !== 'ECHECKPOINTCORRUPT') throw error; context = await this.#context(key, options.variant); }
+    return { ...context, ...await this.#checkpoints.inspectRecovery({ ...key, user: String(key.user).toLowerCase() }) };
+  }
+  async recoveryRevision(key, revision) {
+    await this.#context(key);
+    return this.#checkpoints.readRecoveryRevision({ ...key, user: String(key.user).toLowerCase() }, revision);
+  }
+  async repair(key, payload) {
+    const context = await this.#context(key, payload.provenance?.core?.variant);
+    const normalized = { ...key, user: String(key.user).toLowerCase() };
+    const source = payload.sourceRevision ? await this.#checkpoints.readRecoveryRevision(normalized, payload.sourceRevision) : null;
+    if (!source && !['import', 'reset'].includes(payload.intent)) throw error('ECHECKPOINTINVALID', 'An explicit repair selection is required');
+    if (!source && payload.intent === 'import') this.#requiredBytes(context.saveMode, payload, { importOnly: true });
+    if (!sameProvenance(payload.provenance, context.provenance) || (source && source.provenance.romHash !== context.provenance.romHash)) {
+      throw error('ECHECKPOINTCOMPAT', 'This checkpoint belongs to a different game');
+    }
+    return this.#checkpoints.repairHead(normalized, { ...payload, provenance: context.provenance });
+  }
   async recover(key, payload) {
     const description = await this.#description(key, { variant: payload.provenance?.core?.variant }, false);
-    const source = await this.#checkpoints.readRevision({ ...key, user: String(key.user).toLowerCase() }, payload.sourceRevision);
+    const source = await this.#checkpoints.readRecoveryRevision({ ...key, user: String(key.user).toLowerCase() }, payload.sourceRevision);
     if (!sameProvenance(payload.provenance, description.provenance) || source.provenance.romHash !== description.provenance.romHash) {
       throw error('ECHECKPOINTCOMPAT', 'This checkpoint belongs to a different game');
     }

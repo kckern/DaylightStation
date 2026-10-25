@@ -143,3 +143,63 @@ describe('durable emulator checkpoints', () => {
   });
 
 });
+
+describe('explicit damaged progress recovery', () => {
+  it('inspects independently sealed revisions and repairs only the selected point with a matching damaged-head token', async () => {
+    const first = await repository.commit(key, capture('first'));
+    const second = await repository.commit(key, capture('second', first.revision, { sequence: 2 }));
+    fs.writeFileSync(path.join(gameDir(), 'head.json'), 'damaged-pointer');
+    await expect(repository.read(key)).rejects.toMatchObject({ code: 'ECHECKPOINTCORRUPT' });
+    const inspection = await repository.inspectRecovery(key);
+    expect(inspection.damagedHead).toBe(true);
+    expect(inspection.checkpoints.filter(item => item.usable).map(item => item.revision)).toEqual(expect.arrayContaining([first.revision, second.revision]));
+    await expect(repository.repairHead(key, { sourceRevision: first.revision, expectedHeadToken: 'wrong',
+      provenance, captureId: 'repair-one', sessionId: 'repair-session', sequence: 1 })).rejects.toMatchObject({ code: 'ECHECKPOINTCONFLICT' });
+    const recovered = await repository.repairHead(key, { sourceRevision: first.revision, expectedHeadToken: inspection.headToken,
+      provenance, captureId: 'repair-one', sessionId: 'repair-session', sequence: 1 });
+    expect(recovered.revision).not.toBe(first.revision);
+    expect(recovered.snapshot).toEqual(first.snapshot);
+    expect((await repository.read(key)).revision).toBe(recovered.revision);
+    expect((await repository.readRecoveryRevision(key, second.revision)).snapshot).toEqual(second.snapshot);
+    expect(fs.readFileSync(path.join(gameDir(), 'damaged', `head-${inspection.headToken}.json`), 'utf8')).toBe('damaged-pointer');
+    await expect(repository.repairHead(key, { sourceRevision: first.revision, expectedHeadToken: inspection.headToken,
+      provenance, captureId: 'repair-two', sessionId: 'repair-session', sequence: 2 })).rejects.toMatchObject({ code: 'ECHECKPOINTCONFLICT' });
+  });
+  it('does not accept a damaged revision merely because its filename is present', async () => {
+    const first = await repository.commit(key, capture('first'));
+    fs.unlinkSync(path.join(gameDir(), 'head.json'));
+    fs.writeFileSync(path.join(gameDir(), 'revisions', `${first.revision}.json`), JSON.stringify({ ...first, createdAt: 'changed' }));
+    const inspection = await repository.inspectRecovery(key);
+    expect(inspection.damagedHead).toBe(true);
+    expect(inspection.checkpoints.find(item => item.revision === first.revision).usable).toBe(false);
+    await expect(repository.readRecoveryRevision(key, first.revision)).rejects.toMatchObject({ code: 'ECHECKPOINTCORRUPT' });
+  });
+  it('repairs a damaged content blob only from explicitly imported good bytes and retains the damage evidence', async () => {
+    const first = await repository.commit(key, capture('first'));
+    const descriptor = first.artifacts.snapshot;
+    const file = path.join(gameDir(), 'blobs', `${descriptor.hash}.bin`);
+    fs.writeFileSync(file, 'damaged-blob');
+    await expect(repository.commit(key, capture('ordinary', first.revision, { snapshot: first.snapshot, sequence: 2 }))).rejects.toMatchObject({ code: 'ECHECKPOINTCORRUPT' });
+    const repaired = await repository.commit(key, capture('repair', first.revision, { snapshot: first.snapshot, kind: 'import', sequence: 2 }));
+    expect(repaired.snapshot).toEqual(first.snapshot);
+    expect((await repository.readRevision(key, first.revision)).snapshot).toEqual(first.snapshot);
+    const evidenceDir = path.join(gameDir(), 'damaged', 'blobs', descriptor.hash);
+    expect(fs.readdirSync(evidenceDir)).toHaveLength(1);
+    expect(fs.readFileSync(path.join(evidenceDir, fs.readdirSync(evidenceDir)[0]), 'utf8')).toBe('damaged-blob');
+  });
+});
+
+it('can explicitly repair a damaged pointer from a durable local branch or reset without dropping prior recovery records', async () => {
+  const first = await repository.commit(key, capture('first'));
+  fs.unlinkSync(path.join(gameDir(), 'head.json'));
+  const repaired = await repository.repairHead(key, { ...capture('local'), sourceRevision: null,
+    expectedHeadToken: 'missing', intent: 'import' });
+  expect(repaired.kind).toBe('import'); expect(repaired.snapshot.toString()).toBe('state-local');
+  expect((await repository.readRecoveryRevision(key, first.revision)).snapshot).toEqual(first.snapshot);
+  fs.writeFileSync(path.join(gameDir(), 'head.json'), 'damaged-again');
+  const inspection = await repository.inspectRecovery(key);
+  const reset = await repository.repairHead(key, { ...capture('reset'), snapshot: null, battery: null,
+    sourceRevision: null, expectedHeadToken: inspection.headToken, intent: 'reset' });
+  expect(reset.kind).toBe('reset'); expect(reset.snapshot).toBeNull();
+  expect((await repository.readRecoveryRevision(key, repaired.revision)).snapshot.toString()).toBe('state-local');
+});

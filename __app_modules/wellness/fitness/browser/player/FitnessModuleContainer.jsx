@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useFitnessContext } from "../context/FitnessContext.jsx";
 import { getModule, getModuleManifest } from "../index.js";
 import FitnessModuleErrorBoundary from "./FitnessModuleErrorBoundary.jsx";
@@ -10,6 +10,16 @@ const FitnessModuleContainer = ({ moduleId, mode = 'standalone', deviceId = null
   const ModuleComponent = getModule(moduleId);
   const manifest = getModuleManifest(moduleId);
   const [, setLoading] = useState(true);
+  const closeGuardRef = useRef(null);
+  const moduleIdRef = useRef(moduleId);
+  moduleIdRef.current = moduleId;
+  const registerCloseGuard = useCallback(guard => { closeGuardRef.current = guard; }, []);
+  const requestClose = useCallback(async () => {
+    const guard = closeGuardRef.current;
+    if (!guard) { onClose?.(); return; }
+    const result = await guard();
+    if (result?.status === 'ok' && closeGuardRef.current === guard && moduleIdRef.current === moduleId) onClose?.();
+  }, [moduleId, onClose]);
 
   if (!ModuleComponent) {
     return <div className="fitness-module-not-found">Module not found: {moduleId}</div>;
@@ -21,11 +31,12 @@ const FitnessModuleContainer = ({ moduleId, mode = 'standalone', deviceId = null
       moduleId={moduleId}
       manifest={manifest}
       sessionInstance={fitnessCtx.fitnessSessionInstance}
-      onClose={onClose}
+      onClose={requestClose}
     >
       <ModuleComponent
         mode={mode}
-        onClose={onClose}
+        registerCloseGuard={registerCloseGuard}
+        onClose={requestClose}
         fitnessContext={fitnessCtx}
         deviceId={deviceId}
         config={config}

@@ -121,7 +121,61 @@ export class FilesystemEmulatorCheckpointRepository extends IEmulatorCheckpointR
     if (!record) throw fail('ENOENT', 'Checkpoint revision not found in committed history');
     return this.#materialize(key, record);
   }
-  async commit(key, checkpoint) {
+  #sealedReference(key, revision) {
+    assertSafeSegment(revision);
+    const bytes = optionalBytes(path.join(this.#directory(key), 'seals', `${revision}.json`));
+    if (!bytes) throw corrupt('Checkpoint has no independent integrity seal');
+    const reference = parse(bytes);
+    if (reference.schema !== 1 || reference.revision !== revision || !validHash(reference.hash)) throw corrupt('Invalid checkpoint integrity seal');
+    return reference;
+  }
+  async readRecoveryRevision(key, revision) {
+    return this.#materialize(key, this.#record(key, this.#sealedReference(key, revision)));
+  }
+  #damagedProtection(key) {
+    const bytes = optionalBytes(path.join(this.#directory(key), 'protected.json'));
+    if (!bytes) return null;
+    try { return parse(bytes).schema === 1 ? null : bytes; }
+    catch (error) { if (error.code !== 'ECHECKPOINTCORRUPT') throw error; return bytes; }
+  }
+  async inspectRecovery(key) {
+    const dir = this.#directory(key);
+    const raw = optionalBytes(path.join(dir, 'head.json'));
+    let current = null, damagedHead = false;
+    try { const ref = this.#head(key); current = ref ? this.#record(key, ref) : null; }
+    catch (error) { if (error.code !== 'ECHECKPOINTCORRUPT') throw error; damagedHead = true; }
+    let files;
+    try { files = readDirectory(path.join(dir, 'revisions')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; files = []; }
+    const checkpoints = [];
+    for (const file of files.sort()) {
+      const revision = file.endsWith('.json') ? file.slice(0, -5) : null;
+      if (!validId(revision)) continue;
+      try {
+        const record = this.#record(key, this.#sealedReference(key, revision));
+        this.#materialize(key, record);
+        checkpoints.push({ ...record, usable: true });
+      } catch (error) {
+        if (error.code !== 'ECHECKPOINTCORRUPT') throw error;
+        checkpoints.push({ revision, usable: false, error: error.message });
+      }
+    }
+    return { headToken: raw ? digest(raw) : 'missing', damagedHead, damagedProtection: !!this.#damagedProtection(key),
+      requiresRepair: damagedHead || !!this.#damagedProtection(key), currentRevision: current?.revision ?? null,
+      head: current, checkpoints };
+  }
+  async repairHead(key, payload) {
+    const source = payload.sourceRevision ? await this.readRecoveryRevision(key, payload.sourceRevision) : null;
+    if (!source && !['import', 'reset'].includes(payload.intent)) throw invalid('An explicit repair selection is required');
+    const kind = source ? (source.kind === 'reset' ? 'reset' : 'recover') : payload.intent;
+    return this.#commit(key, { ...payload, expectedRevision: source?.revision ?? null,
+      snapshot: kind === 'reset' ? null : source ? source.snapshot : payload.snapshot,
+      battery: kind === 'reset' ? null : source ? source.battery : payload.battery,
+      kind, restoredFrom: source?.revision,
+    }, { expectedHeadToken: payload.expectedHeadToken, sourceRevision: source?.revision ?? null });
+  }
+  commit(key, checkpoint) { return this.#commit(key, checkpoint); }
+  async #commit(key, checkpoint, repair = null) {
     this.#directory(key); // validate before accepting or materializing anything
     const { expectedRevision, provenance, captureId, sessionId, sequence, kind = 'save' } = checkpoint;
     if ((expectedRevision !== null && !validId(expectedRevision)) || !Object.hasOwn(checkpoint, 'expectedRevision')
@@ -138,14 +192,39 @@ export class FilesystemEmulatorCheckpointRepository extends IEmulatorCheckpointR
     const battery = ownedBytes(checkpoint.battery);
     if (kind === 'reset' ? !!(snapshot || battery) : !(snapshot || battery)) throw invalid('Incomplete checkpoint');
     const artifacts = { snapshot: artifact(snapshot), battery: artifact(battery) };
+    const sameRetry = current => current.sessionId === sessionId && current.sequence === sequence && current.kind === kind
+      && (current.parent?.revision ?? null) === expectedRevision && same(current.provenance, provenance)
+      && same(current.artifacts, artifacts) && current.restoredFrom === checkpoint.restoredFrom
+      && current.repairToken === repair?.expectedHeadToken;
     return withEmulatorSaveLock(this.#root, key, () => {
-      const head = this.#head(key);
+      let head;
+      if (repair) {
+        const raw = optionalBytes(path.join(this.#directory(key), 'head.json'));
+        let published = null;
+        try { const ref = this.#head(key); published = ref ? this.#record(key, ref) : null; }
+        catch (error) { if (error.code !== 'ECHECKPOINTCORRUPT') throw error; }
+        if (published?.captureId === captureId) {
+          if (!sameRetry(published)) throw conflict();
+          return this.#materialize(key, published);
+        }
+        if ((raw ? digest(raw) : 'missing') !== repair.expectedHeadToken) throw conflict();
+        let damaged = false;
+        try { const ref = this.#head(key); if (ref) this.#record(key, ref); }
+        catch (error) { if (error.code !== 'ECHECKPOINTCORRUPT') throw error; damaged = true; }
+        const protectionDamage = this.#damagedProtection(key);
+        if (!damaged && !protectionDamage) throw fail('ECHECKPOINTREQUIRED', 'Current metadata is healthy; use guarded recovery');
+        if (protectionDamage) {
+          writeBinaryAtomic(path.join(this.#directory(key), 'damaged', `protected-${digest(protectionDamage)}.json`), protectionDamage, { durable: true });
+          writeBinaryAtomic(path.join(this.#directory(key), 'protected.json'), Buffer.from(JSON.stringify({ schema: 1 })), { durable: true });
+        }
+        head = repair.sourceRevision ? this.#sealedReference(key, repair.sourceRevision) : null;
+        if (head && !same(this.#record(key, head).artifacts, artifacts)) throw corrupt('Selected recovery bytes changed');
+        if (raw) writeBinaryAtomic(path.join(this.#directory(key), 'damaged', `head-${digest(raw)}.json`), raw, { durable: true });
+      } else head = this.#head(key);
       const current = head ? this.#record(key, head) : null;
       // A lost HTTP response is retriable without creating a second checkpoint.
       if (current?.captureId === captureId) {
-        if (current.sessionId !== sessionId || current.sequence !== sequence || current.kind !== kind
-          || (current.parent?.revision ?? null) !== expectedRevision || !same(current.provenance, provenance)
-          || !same(current.artifacts, artifacts)) throw conflict();
+        if (!sameRetry(current)) throw conflict();
         return this.#materialize(key, current);
       }
       if ((head?.revision ?? null) !== expectedRevision) throw conflict();
@@ -155,8 +234,11 @@ export class FilesystemEmulatorCheckpointRepository extends IEmulatorCheckpointR
         if (!bytes) continue;
         const file = path.join(dir, 'blobs', `${artifacts[name].hash}.bin`);
         const existing = optionalBytes(file);
-        if (existing && digest(existing) !== artifacts[name].hash) throw corrupt('An existing checkpoint artifact is damaged');
-        if (!existing) writeBinaryAtomic(file, bytes, { durable: true });
+        if (existing && digest(existing) !== artifacts[name].hash) {
+          if (kind !== 'import') throw corrupt('An existing checkpoint artifact is damaged');
+          writeBinaryAtomic(path.join(dir, 'damaged', 'blobs', artifacts[name].hash, `${digest(existing)}.bin`), existing, { durable: true });
+          writeBinaryAtomic(file, bytes, { durable: true });
+        } else if (!existing) writeBinaryAtomic(file, bytes, { durable: true });
         // Verify staged contents before publication; never publish a partial bundle.
         this.#blob(key, artifacts[name]);
       }
@@ -164,11 +246,13 @@ export class FilesystemEmulatorCheckpointRepository extends IEmulatorCheckpointR
         createdAt: new Date().toISOString(), kind, captureId, sessionId, sequence,
         provenance: JSON.parse(JSON.stringify(provenance)), artifacts,
         ...(checkpoint.restoredFrom ? { restoredFrom: checkpoint.restoredFrom } : {}),
+        ...(repair ? { repairToken: repair.expectedHeadToken } : {}),
       };
       const recordBytes = Buffer.from(JSON.stringify(record));
       writeBinaryAtomic(path.join(dir, 'revisions', `${record.revision}.json`), recordBytes, { durable: true });
       const nextHead = { schema: 1, revision: record.revision, hash: digest(recordBytes) };
       this.#record(key, nextHead);
+      writeBinaryAtomic(path.join(dir, 'seals', `${record.revision}.json`), Buffer.from(JSON.stringify(nextHead)), { durable: true });
       writeBinaryAtomic(path.join(dir, 'head.json'), Buffer.from(JSON.stringify(nextHead)), { durable: true });
       return this.#materialize(key, record);
     });

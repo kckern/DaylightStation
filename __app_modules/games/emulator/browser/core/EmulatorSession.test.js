@@ -495,3 +495,26 @@ describe('createEmulatorSession.start custom shaders', () => {
     expect(logger.error).toHaveBeenCalledWith('emulator.shader.textures-missing', expect.objectContaining({ shader: 'dm.glslp' }));
   });
 });
+
+it('waits for the protected restore barrier before governance can resume gameplay', async () => {
+  let release;
+  const barrier = new Promise(done => { release = done; });
+  const engine = makeEngine(), gate = makeGate(), scheduler = makeScheduler();
+  const provenance = { romHash: 'rom', core: { bundleHash: 'core' } };
+  const afterBoot = vi.fn(() => barrier);
+  const session = createEmulatorSession({ engine, mixer: makeMixer(), governanceGate: gate, game: { ...GAME, states: null },
+    engineConfig: { pathtodata: '/engine/', checkpointProvenance: provenance, afterBoot }, scheduler });
+  const starting = session.start({ mount: '#m' });
+  await new Promise(done => setTimeout(done, 0));
+  expect(afterBoot).toHaveBeenCalledWith(engine); expect(engine.resume).not.toHaveBeenCalled();
+  expect(engine.boot.mock.calls[0][0].checkpointProvenance).toBe(provenance);
+  release(); await starting; expect(engine.resume).toHaveBeenCalledTimes(1); session.destroy();
+});
+
+it('does not start governance or state polling after the restore barrier rejects', async () => {
+  const engine = makeEngine(), scheduler = makeScheduler();
+  const session = createEmulatorSession({ engine, mixer: makeMixer(), governanceGate: makeGate(), game: { ...GAME, states: null },
+    engineConfig: { pathtodata: '/engine/', afterBoot: async () => { throw new Error('Restore rejected'); } }, scheduler });
+  await expect(session.start({ mount: '#m' })).rejects.toThrow('Restore rejected');
+  expect(engine.resume).not.toHaveBeenCalled(); expect(scheduler.set).not.toHaveBeenCalled(); session.destroy();
+});

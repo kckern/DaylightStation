@@ -1,4 +1,6 @@
 // @vitest-environment node
+import fs from 'node:fs';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createEmulatorCheckpointHarness, createMemoryCheckpointJournal } from '../../../../../tests/_lib/emulatorCheckpointHarness.mjs';
@@ -158,4 +160,150 @@ describe('checkpoint lifecycle against real server persistence', () => {
     expect((await env.repository.read(env.key)).revision).toBe(first.revision);
   });
 
+});
+
+
+describe('explicit checkpoint recovery choices', () => {
+  async function conflict() {
+    const first = await seed();
+    const interrupted = makeSession({ client: { ...client, putCheckpoint: async () => ({ status: 'error', code: 'ECHECKPOINTUNAVAILABLE' }) } });
+    await ready(interrupted); await interrupted.save(captured('local'));
+    const remote = await client.putCheckpoint(env.key, { expectedRevision: first.revision, captureId: randomUUID(), sessionId: randomUUID(), sequence: 1,
+      provenance: first.provenance, snapshot: captured('remote').state, battery: captured('remote').battery });
+    expect(remote.status).toBe('ok');
+    const session = makeSession(); expect((await session.prepare()).status).toBe('recovery');
+    return { session, remote: remote.data.head };
+  }
+  const proof = point => ({ status: 'ok', verified: true, provenance: point.provenance, artifactHash: point.artifactHash });
+  it('restores only the explicitly chosen local branch and preserves the competing server and local copies', async () => {
+    const { session, remote } = await conflict();
+    const copies = await session.inspectRecovery(); expect(copies.status).toBe('ok');
+    const point = await session.selectRecovery({ type: 'local', captureId: copies.pending[0].captureId });
+    expect(point.status).toBe('ready'); expect(Buffer.from(point.resume.data).toString()).toBe('state-local');
+    expect(session.getState().canPlay).toBe(false);
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect(session.getState().canPlay).toBe(true);
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-local');
+    expect((await env.repository.readRecoveryRevision(env.key, remote.revision)).snapshot.toString()).toBe('state-remote');
+    expect(await journal.list(env.key)).toHaveLength(0); expect(await journal.listArchived(env.key)).toHaveLength(1);
+  });
+  it('keeps a nonselected local branch available after choosing the current server copy', async () => {
+    const { session, remote } = await conflict();
+    await session.inspectRecovery();
+    const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-remote');
+    expect(Buffer.from((await journal.listArchived(env.key))[0].snapshot).toString()).toBe('state-local');
+  });
+  it('cannot publish an explicit recovery when the native selected-state proof fails', async () => {
+    const { session, remote } = await conflict(); const copies = await session.inspectRecovery();
+    await session.selectRecovery({ type: 'local', captureId: copies.pending[0].captureId });
+    expect((await session.confirmRecoveryRestored({ status: 'error' })).status).toBe('error');
+    expect(session.getState().canSave).toBe(false);
+    expect((await env.repository.read(env.key)).revision).toBe(remote.revision); expect(await journal.list(env.key)).toHaveLength(1);
+  });
+  it('repairs a damaged head from the selected durable local copy after native verification', async () => {
+    const { session } = await conflict();
+    fs.writeFileSync(path.join(env.root, '_checkpoints', env.key.system, env.key.user, env.key.gameId, 'head.json'), 'damaged');
+    const copies = await session.inspectRecovery(); expect(copies.inspection.damagedHead).toBe(true);
+    const point = await session.selectRecovery({ type: 'local', captureId: copies.pending[0].captureId });
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-local');
+  });
+  it('preserves the latest paused capture before offering recovery after a failed upload', async () => {
+    await seed(); const session = makeSession({ client: { ...client, putCheckpoint: async () => ({ status: 'error', code: 'ECHECKPOINTUNAVAILABLE' }) } });
+    await ready(session); await session.save(captured('earlier'));
+    const copies = await session.inspectRecovery({ captured: captured('latest-paused') });
+    expect(copies.pending.map(item => Buffer.from(item.snapshot).toString())).toContain('state-latest-paused');
+    expect(session.getState().canPlay).toBe(false);
+  });
+  it('retries local archive cleanup after a recovery was acknowledged without publishing a second head', async () => {
+    const { session, remote } = await conflict(); await session.inspectRecovery();
+    const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    journal.failWrites = true;
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('error');
+    const committed = await env.repository.read(env.key);
+    expect(session.getState().canPlay).toBe(false); expect(await journal.list(env.key)).toHaveLength(1);
+    journal.failWrites = false;
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect((await env.repository.read(env.key)).revision).toBe(committed.revision);
+  });
+  it('does not silently resolve a local branch that arrived after the user saw the choices', async () => {
+    const { session, remote } = await conflict(); await session.inspectRecovery();
+    const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    await journal.put({ key: env.key, saveMode: 'battery', captureId: randomUUID(), sessionId: randomUUID(), sequence: 1,
+      expectedRevision: remote.revision, previousCaptureId: remote.captureId, createdAt: 9999, provenance: remote.provenance,
+      snapshot: captured('late-arrival').state, battery: captured('late-arrival').battery });
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('recovery');
+    expect(session.getState().canPlay).toBe(false); expect(await journal.list(env.key)).toHaveLength(1);
+    expect(Buffer.from((await journal.list(env.key))[0].snapshot).toString()).toBe('state-late-arrival');
+  });
+  it('rejects a head change after selecting recovery instead of rebasing over it', async () => {
+    const { session, remote } = await conflict(); await session.inspectRecovery();
+    const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    const newer = await client.putCheckpoint(env.key, { expectedRevision: remote.revision, captureId: randomUUID(), sessionId: randomUUID(), sequence: 1,
+      provenance: remote.provenance, snapshot: captured('even-newer').state, battery: captured('even-newer').battery });
+    expect((await session.confirmRecoveryRestored(proof(point))).code).toBe('ECHECKPOINTCONFLICT');
+    expect((await env.repository.read(env.key)).revision).toBe(newer.data.head.revision);
+    expect(await journal.list(env.key)).toHaveLength(1); expect(session.getState().canPlay).toBe(false);
+  });
+  it('retries a lost damaged-head repair acknowledgment as the same operation', async () => {
+    const { remote } = await conflict();
+    fs.writeFileSync(path.join(env.root, '_checkpoints', env.key.system, env.key.user, env.key.gameId, 'head.json'), 'damaged');
+    let loseAck = true;
+    const session = makeSession({ client: { ...client, repairCheckpoint: async (...args) => {
+      const response = await client.repairCheckpoint(...args);
+      if (response.status === 'ok' && loseAck) { loseAck = false; return { status: 'error', code: 'ECHECKPOINTUNAVAILABLE' }; }
+      return response;
+    } } });
+    await session.inspectRecovery(); const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('error');
+    const committed = await env.repository.read(env.key);
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect((await env.repository.read(env.key)).revision).toBe(committed.revision);
+  });
+  it('claims current guest progress only after verified restoration and keeps the prior player checkpoint recoverable', async () => {
+    const first = await seed(); const session = makeSession();
+    const point = await session.prepareClaim(captured('guest'), { allowExisting: true });
+    expect(point.status).toBe('ready'); expect((await env.repository.read(env.key)).revision).toBe(first.revision);
+    expect(session.getState().canSave).toBe(false);
+    expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-guest');
+    expect((await env.repository.readRecoveryRevision(env.key, first.revision)).snapshot.toString()).toBe('state-seed');
+    expect(await journal.listArchived(env.key)).toHaveLength(1);
+  });
+  it('does not upload an interrupted claim on reload before native verification', async () => {
+    const first = await seed(); const session = makeSession(); const input = captured('guest');
+    const pending = session.prepareClaim(input, { allowExisting: true }); input.state.fill(0);
+    const point = await pending; expect(point.status).toBe('ready');
+    expect(Buffer.from(point.resume.data).toString()).toBe('state-guest');
+    const reopened = makeSession(); const prepared = await reopened.prepare();
+    expect(prepared.status).toBe('recovery'); expect(prepared.reason).toBe('verification');
+    expect((await env.repository.read(env.key)).revision).toBe(first.revision);
+    expect(Buffer.from((await journal.list(env.key))[0].snapshot).toString()).toBe('state-guest');
+  });
+  it('requires an explicit replacement choice if an apparently new claim finds existing saved progress', async () => {
+    const first = await seed(); const session = makeSession();
+    const point = await session.prepareClaim(captured('guest'));
+    expect(point.status).toBe('recovery'); expect(point.reason).toBe('confirmation');
+    expect((await env.repository.read(env.key)).revision).toBe(first.revision);
+    expect(await journal.list(env.key)).toHaveLength(1);
+  });
+  it('can explicitly reset an unreadable head after inspection while retaining its prior recovery copies', async () => {
+    const first = await seed(); const session = makeSession();
+    fs.writeFileSync(path.join(env.root, '_checkpoints', env.key.system, env.key.user, env.key.gameId, 'head.json'), 'damaged');
+    await session.inspectRecovery();
+    expect((await session.resetFromRecovery()).status).toBe('ok');
+    expect((await env.repository.read(env.key)).kind).toBe('reset');
+    expect((await env.repository.readRecoveryRevision(env.key, first.revision)).snapshot.toString()).toBe('state-seed');
+    expect(session.getState().canPlay).toBe(false);
+  });
+  it('does not restart or discard the running point when an explicit reset fails', async () => {
+    const first = await seed(); const session = makeSession({ client: { ...client, resetCheckpoint: async () => ({ status: 'error', code: 'ECHECKPOINTUNAVAILABLE' }) } });
+    await ready(session);
+    expect((await session.resetProgress(captured('latest'))).status).toBe('error');
+    expect(session.getState().canPlay).toBe(false);
+    expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
+    expect((await env.repository.readRecoveryRevision(env.key, first.revision)).snapshot.toString()).toBe('state-seed');
+  });
 });

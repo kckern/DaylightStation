@@ -1,6 +1,7 @@
 import { ownCheckpointBytes, checkpointDigest, validProvenance } from './checkpointClient.js';
 
 const STORE = 'captures';
+const ARCHIVE = 'resolvedCaptures';
 const ID = /^[a-zA-Z0-9_-]{1,128}$/;
 const id = value => typeof value === 'string' && ID.test(value);
 const issue = (message, code = 'ECHECKPOINTINVALID') => Object.assign(new Error(message), { code });
@@ -27,6 +28,7 @@ export async function sealCheckpointCapture(input, { cryptoImpl = globalThis.cry
     captureId: input.captureId, sessionId: input.sessionId, sequence: input.sequence,
     expectedRevision: input.expectedRevision, previousCaptureId: input.previousCaptureId ?? null,
     createdAt: input.createdAt, saveMode: input.saveMode,
+    ...(input.requiresRestoreVerification === true ? { requiresRestoreVerification: true } : {}),
     provenance: { romHash: input.provenance.romHash, core: { name: core.name, bundleHash: core.bundleHash, format: core.format, variant: core.variant } },
   };
   const artifacts = { snapshot: { hash: await checkpointDigest(snapshot, cryptoImpl), bytes: snapshot.length },
@@ -45,10 +47,13 @@ export function createCheckpointJournal({ indexedDB: databaseApi = globalThis.in
     opening = new Promise((resolve, reject) => {
       if (!databaseApi) return reject(issue('Local recovery storage is unavailable', 'ECHECKPOINTJOURNALUNAVAILABLE'));
       let blocked = false;
-      const request = databaseApi.open(name, 1);
+      const request = databaseApi.open(name, 2);
       request.onupgradeneeded = () => {
-        const store = request.result.createObjectStore(STORE, { keyPath: ['gameKey', 'captureId'] });
-        store.createIndex('game', 'gameKey', { unique: false });
+        for (const storeName of [STORE, ARCHIVE]) {
+          if (request.result.objectStoreNames.contains(storeName)) continue;
+          const store = request.result.createObjectStore(storeName, { keyPath: ['gameKey', 'captureId'] });
+          store.createIndex('game', 'gameKey', { unique: false });
+        }
       };
       request.onblocked = () => { blocked = true; reject(issue('Another page is blocking recovery storage', 'ECHECKPOINTJOURNALUNAVAILABLE')); };
       request.onerror = () => reject(unavailable(request.error));
@@ -61,48 +66,76 @@ export function createCheckpointJournal({ indexedDB: databaseApi = globalThis.in
     }).catch(error => { opening = null; throw unavailable(error); });
     return opening;
   }
-  async function execute(mode, work) {
+  async function execute(mode, work, stores = STORE) {
     try {
       const db = await open();
       return await new Promise((resolve, reject) => {
         // Strict durability waits for the browser's durable transaction commit.
-        const tx = mode === 'readwrite' ? db.transaction(STORE, mode, { durability: 'strict' }) : db.transaction(STORE, mode);
+        const tx = mode === 'readwrite' ? db.transaction(stores, mode, { durability: 'strict' }) : db.transaction(stores, mode);
         let result, error;
         const fail = reason => { error = reason; tx.abort(); };
         tx.oncomplete = () => resolve(result);
         tx.onabort = () => reject(unavailable(error || tx.error));
         tx.onerror = () => { error ||= tx.error; };
-        try { work(tx.objectStore(STORE), { fail, done: value => { result = value; } }); }
+        try { work(tx.objectStore(STORE), { fail, done: value => { result = value; } }, tx); }
         catch (reason) { fail(reason); }
       });
     } catch (error) { throw unavailable(error); }
   }
-  return {
-    async put(input) {
-      const record = await sealCheckpointCapture(input, { cryptoImpl });
-      return execute('readwrite', (store, { fail, done }) => {
-        const existing = store.get([record.gameKey, record.captureId]);
-        existing.onsuccess = () => {
-          if (existing.result && existing.result.fingerprint !== record.fingerprint) {
-            fail(issue('Another recovery capture already uses this identity', 'ECHECKPOINTJOURNALCONFLICT')); return;
-          }
-          if (!existing.result) store.add(record);
-          done(record);
-        };
-      });
-    },
-    async list(key) {
+  async function readRecords(key, storeName) {
       const gameKey = checkpointGameKey(key);
-      const records = await execute('readonly', (store, { done }) => {
-        const request = store.index('game').getAll(gameKey);
+      const records = await execute('readonly', (_store, { done }, tx) => {
+        const request = tx.objectStore(storeName).index('game').getAll(gameKey);
         request.onsuccess = () => done(request.result);
-      });
+      }, storeName === STORE ? STORE : [STORE, ARCHIVE]);
       const verified = [];
       for (const record of records) {
         if (record.schema !== 1 || typeof record.fingerprint !== 'string' || record.gameKey !== gameKey) throw issue('Invalid recovery journal data', 'ECHECKPOINTCORRUPT');
         verified.push(await sealCheckpointCapture(record, { cryptoImpl }));
       }
       return verified.sort((a, b) => a.createdAt - b.createdAt || a.sequence - b.sequence);
+    }
+  return {
+    async put(input) {
+      const record = await sealCheckpointCapture(input, { cryptoImpl });
+      return execute('readwrite', (store, { fail, done }, tx) => {
+        const archived = tx.objectStore(ARCHIVE).get([record.gameKey, record.captureId]);
+        archived.onsuccess = () => {
+          if (archived.result) return fail(issue('A resolved recovery capture already uses this identity', 'ECHECKPOINTJOURNALCONFLICT'));
+          const existing = store.get([record.gameKey, record.captureId]);
+          existing.onsuccess = () => {
+            if (existing.result && existing.result.fingerprint !== record.fingerprint) {
+              fail(issue('Another recovery capture already uses this identity', 'ECHECKPOINTJOURNALCONFLICT')); return;
+            }
+            if (!existing.result) store.add(record);
+            done(record);
+          };
+        };
+      }, [STORE, ARCHIVE]);
+    },
+    list: key => readRecords(key, STORE),
+    listArchived: key => readRecords(key, ARCHIVE),
+    async archive(key, records) {
+      const gameKey = checkpointGameKey(key);
+      if (!Array.isArray(records) || records.some(record => !id(record.captureId) || typeof record.fingerprint !== 'string')) throw issue('Invalid recovery selection');
+      return execute('readwrite', (store, { fail, done }, tx) => {
+        const archive = tx.objectStore(ARCHIVE);
+        for (const selected of records) {
+          const request = store.get([gameKey, selected.captureId]);
+          request.onsuccess = () => {
+            const active = request.result;
+            if (active && active.fingerprint !== selected.fingerprint) return fail(issue('The recovery branch changed', 'ECHECKPOINTJOURNALCONFLICT'));
+            const existing = archive.get([gameKey, selected.captureId]);
+            existing.onsuccess = () => {
+              const archived = existing.result;
+              if ((!active && !archived) || (archived && archived.fingerprint !== selected.fingerprint)) return fail(issue('The recovery branch changed', 'ECHECKPOINTJOURNALCONFLICT'));
+              if (!archived) archive.add(active);
+              if (active) store.delete([gameKey, selected.captureId]);
+            };
+          };
+        }
+        done(true);
+      }, [STORE, ARCHIVE]);
     },
     async acknowledge(key, captureId, fingerprint) {
       const gameKey = checkpointGameKey(key);

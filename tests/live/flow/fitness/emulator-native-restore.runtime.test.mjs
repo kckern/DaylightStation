@@ -46,9 +46,10 @@ test.describe('native checkpoint restore completion', () => {
         }
         if (url.pathname === '/') {
           return route.fulfill({ contentType: 'text/html', body: `<div id="game" style="width:640px;height:576px"></div><script type="module">
-            import { prepareProtectedAssets, createNativeCheckpointBridge } from '/modules/nativeCheckpoint.js';
-            window.makeBridge=createNativeCheckpointBridge;window.provenance=${JSON.stringify(provenance)};
+            import { prepareProtectedAssets, createNativeCheckpointBridge, assertProtectedBoot } from '/modules/nativeCheckpoint.js';
+            window.makeBridge=createNativeCheckpointBridge;window.assertBoot=assertProtectedBoot;window.provenance=${JSON.stringify(provenance)};
             const assets=await prepareProtectedAssets({provenance:window.provenance,romUrl:${JSON.stringify(game.romUrl)},pathtodata:'/api/v1/emulator/engine/'});
+            window.bootAssets=assets;
             window.EJS_player='#game';window.EJS_core=${JSON.stringify(definition.core)};window.EJS_gameUrl=assets.romFile;
             window.EJS_pathtodata='/api/v1/emulator/engine/';window.EJS_startOnLoaded=true;window.EJS_threads=false;window.EJS_volume=0;
             window.EJS_disableDatabases=true;window.EJS_forceLegacyCores=${JSON.stringify(legacy)};window.EJS_paths=assets.paths;
@@ -72,6 +73,7 @@ test.describe('native checkpoint restore completion', () => {
       const contract = await page.evaluate(() => typeof EJS_emulator.gameManager.Module._daylight_checkpoint_contract_version);
       expect(contract, 'The stock load_state return is not a restore acknowledgment').toBe('function');
       const result = await page.evaluate(async () => {
+        window.assertBoot(EJS_emulator, window.bootAssets);
         const emulator = EJS_emulator, gm = emulator.gameManager, module = gm.Module;
         emulator.pause(); gm.clearEJSResetTimer();
         const version = module._daylight_checkpoint_contract_version();

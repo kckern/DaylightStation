@@ -1,3 +1,4 @@
+import { createCheckpointJournal } from './checkpointJournal.js';
 import { createCheckpointClient } from './checkpointClient.js';
 /**
  * saveClient — thin, injectable HTTP client for per-user emulator saves/states.
@@ -112,6 +113,7 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
   }
 
   return {
+    journal: createCheckpointJournal(),
     ...createCheckpointClient({ fetchImpl: doFetch, baseUrl, logger: { warn: (...args) => log().warn(...args) } }),
     // --- low-level, explicit (all return discriminated results) ---
     getSave: (system, gameId, user) => getBlob(saveUrl(system, gameId, user)),

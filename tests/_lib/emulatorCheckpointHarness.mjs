@@ -34,24 +34,36 @@ export function createEmulatorCheckpointHarness() {
     const response = await call;
     return { ok: response.status >= 200 && response.status < 300, status: response.status, json: async () => response.body };
   };
-  return { key, repository, service, fetchImpl, calls, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+  return { key, root, repository, service, fetchImpl, calls, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
 /** Test journal port; production IndexedDB behavior has separate real-browser coverage. */
 export function createMemoryCheckpointJournal() {
-  const records = new Map();
+  const records = new Map(), archived = new Map();
+  const sameKey = (r, key) => r.key.system === key.system && r.key.gameId === key.gameId && r.key.user === key.user;
   return {
     failWrites: false,
     async put(input) {
       if (this.failWrites) throw Object.assign(new Error('local disk unavailable'), { code: 'ECHECKPOINTJOURNALUNAVAILABLE' });
       const sealed = await sealCheckpointCapture(input);
       const key = `${sealed.gameKey}:${sealed.captureId}`;
+      if (archived.has(key)) throw new Error('resolved journal identity conflict');
       if (records.has(key) && records.get(key).fingerprint !== sealed.fingerprint) throw new Error('journal identity conflict');
       records.set(key, structuredClone(sealed));
       return structuredClone(sealed);
     },
     async list(key) {
       return [...records.values()].filter(r => r.key.system === key.system && r.key.gameId === key.gameId && r.key.user === key.user).map(r => structuredClone(r));
+    },
+    async listArchived(key) { return [...archived.values()].filter(r => sameKey(r, key)).map(r => structuredClone(r)); },
+    async archive(key, selected) {
+      if (this.failWrites) throw Object.assign(new Error('local disk unavailable'), { code: 'ECHECKPOINTJOURNALUNAVAILABLE' });
+      const resolved = selected.map(item => {
+        const record = [...records.values(), ...archived.values()].find(r => sameKey(r, key) && r.captureId === item.captureId);
+        if (!record || record.fingerprint !== item.fingerprint) throw new Error('wrong archive fingerprint');
+        return record;
+      });
+      for (const record of resolved) { const id = `${record.gameKey}:${record.captureId}`; archived.set(id, structuredClone(record)); records.delete(id); }
     },
     async acknowledge(key, captureId, fingerprint) {
       const record = [...records.values()].find(r => r.key.system === key.system && r.key.gameId === key.gameId && r.key.user === key.user && r.captureId === captureId);

@@ -139,6 +139,7 @@ export function createEmulatorSession({
       pathtodata: engineConfig.pathtodata,
       core: engineConfig.core || system,
       controls: engineConfig.controls,
+      checkpointProvenance: engineConfig.checkpointProvenance,
       // Hand EJS the user's persisted volume so the value it re-asserts during
       // its own start chain is already correct (see loadEmulatorJS EJS_volume).
       volume: engineConfig.volume,
@@ -147,6 +148,8 @@ export function createEmulatorSession({
       // them at the settle barrier.
       shaders,
     });
+
+    await engineConfig.afterBoot?.(engine);
 
     // Calibrate WRAM via a harmless cheat ping — but ONLY for a game that
     // declares a semantic state map, since the base address exists to read that

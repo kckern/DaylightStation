@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { checkpointDigest } from './checkpointClient.js';
-import { createNativeCheckpointBridge, prepareProtectedAssets } from './nativeCheckpoint.js';
+import { createNativeCheckpointBridge, prepareProtectedAssets, selectCheckpointVariant } from './nativeCheckpoint.js';
 
 const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 async function provenance() {
@@ -60,4 +60,12 @@ describe('actual boot asset verification', () => {
     await expect(prepareProtectedAssets({ provenance: await provenance(), romUrl: '/rom', pathtodata: '/engine/', cryptoImpl: webcrypto,
       fetchImpl: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([9]).buffer }) })).rejects.toThrow(/changed|hash|match/i);
   });
+});
+
+
+it('selects a supported native variant before reading progress and honors an explicit legacy selection', () => {
+  const probe = vi.fn(() => ({})), win = { document: { createElement: () => ({ getContext: probe }) } };
+  expect(selectCheckpointVariant({ win })).toBe('wasm');
+  probe.mockReturnValue(null); expect(selectCheckpointVariant({ win })).toBe('legacy-wasm');
+  probe.mockClear(); expect(selectCheckpointVariant({ win, preferred: 'legacy-wasm' })).toBe('legacy-wasm'); expect(probe).not.toHaveBeenCalled();
 });

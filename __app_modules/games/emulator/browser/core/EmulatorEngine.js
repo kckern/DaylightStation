@@ -8,7 +8,7 @@
  */
 
 import { loadEmulatorJS, resetEmulatorJSLoader } from "./loadEmulatorJS.js";
-import { createNativeCheckpointBridge, prepareProtectedAssets } from "./nativeCheckpoint.js";
+import { assertProtectedBoot, createNativeCheckpointBridge, prepareProtectedAssets } from "./nativeCheckpoint.js";
 import getLogger from '@/lib/logging/Logger.js';
 
 let _log;
@@ -36,6 +36,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   let instance = null;
   let ready = false;
   let bootPromise = null;
+  let bootGeneration = 0;
   // Our own picture-shader presets, as handed to boot(). Kept so applyShader
   // can find a preset's binary textures — see the note there.
   let shaderTable = {};
@@ -80,14 +81,20 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders, checkpointProvenance } = {}) {
     if (bootPromise) return bootPromise;
 
+    const generation = ++bootGeneration;
+    let ownedAssets = null;
     shaderTable = shaders || {};
     log().info('boot.start', { core, customShaders: Object.keys(shaderTable) });
     if (checkpointProvenance) progressPlayable = false;
     bootPromise = Promise.resolve().then(async () => {
-      if (checkpointProvenance) protectedAssets = await prepareAssets({ provenance: checkpointProvenance, romUrl, pathtodata, win, cryptoImpl });
+      if (checkpointProvenance) ownedAssets = await prepareAssets({ provenance: checkpointProvenance, romUrl, pathtodata, win, cryptoImpl });
+      if (generation !== bootGeneration) { ownedAssets?.dispose(); throw new Error('Emulator boot cancelled'); }
+      protectedAssets = ownedAssets;
       return load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win, protectedAssets });
     })
       .then((emu) => {
+        if (generation !== bootGeneration) { emu?.pause?.(); throw new Error('Emulator boot cancelled'); }
+        if (checkpointProvenance) { emu?.pause?.(); assertProtectedBoot(emu, ownedAssets); }
         instance = emu;
         ready = true;
         if (checkpointProvenance) checkpointBridge = createNativeCheckpointBridge({ instance, provenance: checkpointProvenance, cryptoImpl });
@@ -96,7 +103,11 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
         return instance;
       })
       .catch((err) => {
-        bootPromise = null; // allow a retry after a hard failure
+        if (generation === bootGeneration) {
+          instance?.pause?.(); instance = null; ready = false;
+          protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null;
+          bootPromise = null; // allow a retry after a hard failure
+        }
         log().error('boot.failed', { error: err?.message });
         throw err;
       });
@@ -555,6 +566,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
    * this just releases what it can so a reload starts clean.
    */
   function destroy() {
+    bootGeneration++;
     try {
       if (ready && instance?.pause) instance.pause();
     } catch (err) {

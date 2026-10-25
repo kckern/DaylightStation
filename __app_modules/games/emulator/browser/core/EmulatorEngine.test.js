@@ -569,7 +569,8 @@ describe('protected engine boot', () => {
       _daylight_restore_last_request_v1: () => lastRequest,
       cwrap: () => (path, id) => { lastRequest = id; return 1; },
     });
-    const assets = { romFile: {}, paths: {}, provenance, dispose: vi.fn() };
+    const assets = { romFile: { name: 'verified-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
+    instance.config = { gameUrl: assets.romFile.name, filePaths: assets.paths, disableDatabases: true };
     const prepareAssets = vi.fn(async () => assets), load = vi.fn(async () => instance);
     const engine = createEmulatorEngine({ load, prepareAssets, win: makeFakeWin(), cryptoImpl: webcrypto });
     await engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance });
@@ -583,4 +584,29 @@ describe('protected engine boot', () => {
     engine.setProgressPlayable(false); engine.resume(); expect(instance.play).toHaveBeenCalledTimes(1);
     engine.destroy(); expect(assets.dispose).toHaveBeenCalled();
   });
+});
+
+it('rejects a late boot after destruction and pauses the abandoned instance', async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const instance = makeFakeInstance();
+  const engine = createEmulatorEngine({ load: () => pending, win: makeFakeWin() });
+  const boot = engine.boot({ mount: '#m', romUrl: 'old-rom', pathtodata: '/engine/' });
+  await Promise.resolve(); engine.destroy(); resolve(instance);
+  await expect(boot).rejects.toThrow(/cancel/i);
+  expect(engine.isReady()).toBe(false); expect(instance.pause).toHaveBeenCalled();
+});
+
+it('rejects a returned instance that actually booted a different verified ROM', async () => {
+  const { webcrypto } = await import('node:crypto');
+  const { checkpointDigest } = await import('./checkpointClient.js');
+  const hash = await checkpointDigest(new Uint8Array([1]), webcrypto);
+  const provenance = { romHash: hash, core: { name: 'gambatte', bundleHash: hash, format: 1, variant: 'wasm' } };
+  const instance = makeFakeInstance({ getCore: () => 'gambatte', config: { gameUrl: 'a-different-game.rom', disableDatabases: true, filePaths: { 'gambatte-wasm.data': 'blob:verified' } } });
+  Object.assign(instance.gameManager, { clearEJSResetTimer() {} });
+  Object.assign(instance.gameManager.Module, { _daylight_checkpoint_contract_version: () => 1, _daylight_enable_checkpoint_protection_v1: () => 1, cwrap: () => () => 1 });
+  const assets = { romFile: { name: 'expected-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
+  const engine = createEmulatorEngine({ load: async () => instance, prepareAssets: async () => assets, win: makeFakeWin() });
+  await expect(engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance })).rejects.toThrow(/identity|different|match/i);
+  expect(engine.isReady()).toBe(false);
 });

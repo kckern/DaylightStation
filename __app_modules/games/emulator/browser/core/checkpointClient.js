@@ -102,11 +102,13 @@ export function createCheckpointClient({ fetchImpl = (...args) => globalThis.fet
     return result;
   }
   const write = (key, capture, operation) => protect(async () => {
-    const snapshot = ['reset', 'recover'].includes(operation) ? null : ownCheckpointBytes(capture.snapshot);
-    const battery = ['reset', 'recover'].includes(operation) ? null : ownCheckpointBytes(capture.battery);
+    const recovery = ['recover', 'repair'].includes(operation);
+    const snapshot = operation === 'reset' ? null : ownCheckpointBytes(capture.snapshot);
+    const battery = operation === 'reset' ? null : ownCheckpointBytes(capture.battery);
     const metadata = { expectedRevision: capture.expectedRevision, captureId: capture.captureId,
       sessionId: capture.sessionId, sequence: capture.sequence, provenance: capture.provenance,
-      ...(operation === 'recover' ? { sourceRevision: capture.sourceRevision } : {}),
+      ...(recovery ? { sourceRevision: capture.sourceRevision } : {}),
+      ...(operation === 'repair' ? { expectedHeadToken: capture.expectedHeadToken, intent: capture.intent } : {}),
       ...(!['reset', 'recover'].includes(operation) ? { snapshot: base64(snapshot), battery: base64(battery) } : {}),
     };
     const suffix = operation === 'commit' ? '' : `/${operation}`;
@@ -114,8 +116,9 @@ export function createCheckpointClient({ fetchImpl = (...args) => globalThis.fet
     if (result.status !== 'ok') return result;
     const head = await verifyHead(key, result.data.head);
     if (head.captureId !== capture.captureId || head.sessionId !== capture.sessionId || head.sequence !== capture.sequence
-      || (head.parent?.revision ?? null) !== capture.expectedRevision || !sameProvenance(head.provenance, capture.provenance)
-      || (!['reset', 'recover'].includes(operation) && (!sameBytes(head.snapshot, snapshot) || !sameBytes(head.battery, battery)))) throw failure('The save acknowledgment did not match this capture');
+      || (head.parent?.revision ?? null) !== (operation === 'repair' ? capture.sourceRevision ?? null : capture.expectedRevision) || !sameProvenance(head.provenance, capture.provenance)
+      || (recovery && capture.sourceRevision && head.restoredFrom !== capture.sourceRevision)
+      || !sameBytes(head.snapshot, snapshot) || !sameBytes(head.battery, battery)) throw failure('The save acknowledgment did not match this capture');
     return { status: 'ok', data: { head } };
   });
   return {
@@ -133,6 +136,26 @@ export function createCheckpointClient({ fetchImpl = (...args) => globalThis.fet
     importCheckpoint: (key, captured) => write(key, captured, 'import'),
     resetCheckpoint: (key, captured) => write(key, captured, 'reset'),
     recoverCheckpoint: (key, captured) => write(key, captured, 'recover'),
+    repairCheckpoint: (key, captured) => write(key, captured, 'repair'),
+    getRecoveryInspection: (key, { variant = 'wasm' } = {}) => protect(async () => {
+      const result = await request(`${url(key, '/recovery')}&variant=${encodeURIComponent(variant)}`);
+      if (result.status !== 'ok') return result;
+      const data = result.data;
+      if (!data || !validProvenance(data.provenance) || !['state', 'battery'].includes(data.saveMode)
+        || typeof data.damagedHead !== 'boolean' || typeof data.requiresRepair !== 'boolean' || !(data.headToken === 'missing' || HASH.test(data.headToken))
+        || (data.currentRevision !== null && !id(data.currentRevision)) || !Array.isArray(data.checkpoints)
+        || data.checkpoints.some(point => !id(point.revision) || typeof point.usable !== 'boolean'
+          || (point.usable && (point.key?.system !== key.system || point.key?.gameId !== key.gameId
+            || point.key?.user !== String(key.user).toLowerCase() || !validProvenance(point.provenance))))) throw failure('Invalid recovery inspection');
+      return result;
+    }),
+    getRecoveryRevision: (key, revision) => protect(async () => {
+      const result = await request(url(key, `/recovery/revision/${encodeURIComponent(revision)}`));
+      if (result.status !== 'ok') return result;
+      const selected = await verifyHead(key, result.data.head);
+      if (selected.revision !== revision) throw failure('The selected recovery point was not returned');
+      return { status: 'ok', data: { head: selected } };
+    }),
     getCheckpointHistory: (key) => protect(async () => {
       const result = await request(url(key, '/history'));
       if (result.status === 'ok' && !Array.isArray(result.data?.checkpoints)) throw failure('Invalid recovery history');

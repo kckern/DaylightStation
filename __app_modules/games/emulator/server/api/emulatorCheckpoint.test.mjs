@@ -35,6 +35,65 @@ const payload = (description, extra = {}) => ({
   snapshot: bytes('state-one'), battery: bytes('battery-one'), ...extra,
 });
 describe('checkpoint HTTP contract with real persistence', () => {
+  it('offers explicit sealed recovery when the current pointer is damaged, using a compare-and-swap token', async () => {
+    const empty = (await request(app).get(url)).body;
+    const first = (await request(app).put(url).send(payload(empty))).body.head;
+    const second = (await request(app).put(url).send(payload({ ...empty, head: first }, { captureId: 'second', sequence: 2, snapshot: bytes('state-two') }))).body.head;
+    const headFile = path.join(root, '_checkpoints', 'gb', 'user_5', 'example-quest', 'head.json');
+    fs.writeFileSync(headFile, 'damaged-pointer');
+    expect((await request(app).get(url)).status).toBe(422);
+    const inspection = await request(app).get(url.replace('?', '/recovery?'));
+    expect(inspection.status).toBe(200); expect(inspection.headers['cache-control']).toBe('no-store');
+    expect(inspection.body.damagedHead).toBe(true);
+    expect(inspection.body.checkpoints.filter(item => item.usable)).toHaveLength(2);
+    expect(inspection.body.provenance).toEqual(empty.provenance);
+    const selected = await request(app).get(url.replace('?', `/recovery/revision/${first.revision}?`));
+    expect(selected.status).toBe(200); expect(selected.body.head.snapshot).toBe(first.snapshot);
+    const body = { ...payload(empty, { captureId: 'repaired', sequence: 3 }), sourceRevision: first.revision, expectedHeadToken: inspection.body.headToken };
+    expect((await request(app).post(url.replace('?', '/repair?')).send({ ...body, expectedHeadToken: 'wrong' })).status).toBe(409);
+    const repaired = await request(app).post(url.replace('?', '/repair?')).send(body);
+    expect(repaired.status).toBe(200); expect(repaired.body.head.snapshot).toBe(first.snapshot);
+    expect(repaired.body.head.restoredFrom).toBe(first.revision);
+    const preserved = await request(app).get(url.replace('?', `/recovery/revision/${second.revision}?`));
+    expect(preserved.body.head.snapshot).toBe(second.snapshot);
+    expect((await request(app).get(url.replace('?', '/recovery?').replace('user_5', 'user_4'))).status).toBe(403);
+  });
+  it('repairs from an explicitly imported local branch when no current pointer can be read', async () => {
+    const empty = (await request(app).get(url)).body;
+    const first = (await request(app).put(url).send(payload(empty))).body.head;
+    fs.unlinkSync(path.join(root, '_checkpoints', 'gb', 'user_5', 'example-quest', 'head.json'));
+    const imported = await request(app).post(url.replace('?', '/repair?')).send(payload(empty, {
+      captureId: 'local-repair', intent: 'import', sourceRevision: null, expectedHeadToken: 'missing', snapshot: bytes('local-progress'),
+    }));
+    expect(imported.status).toBe(200); expect(imported.body.head.kind).toBe('import');
+    expect(imported.body.head.snapshot).toBe(bytes('local-progress'));
+    expect((await request(app).get(url.replace('?', `/recovery/revision/${first.revision}?`))).body.head.snapshot).toBe(first.snapshot);
+  });
+  it('preserves a legacy baseline before presenting recovery or claim choices', async () => {
+    const saves = path.join(root, 'gb', 'saves', 'user_5'); fs.mkdirSync(saves, { recursive: true });
+    fs.writeFileSync(path.join(saves, 'example-quest.srm'), 'legacy-battery');
+    const result = await request(app).get(url.replace('?', '/recovery?'));
+    expect(result.status).toBe(200); expect(result.body.checkpoints).toHaveLength(1);
+    expect(result.body.checkpoints[0].kind).toBe('baseline');
+    const selected = await request(app).get(url.replace('?', `/recovery/revision/${result.body.checkpoints[0].revision}?`));
+    expect(selected.body.head.battery).toBe(bytes('legacy-battery'));
+    expect(fs.readFileSync(path.join(saves, 'example-quest.srm'), 'utf8')).toBe('legacy-battery');
+  });
+  it('explicitly repairs damaged protection metadata while preserving the chosen point and damaged marker', async () => {
+    const empty = (await request(app).get(url)).body;
+    const first = (await request(app).put(url).send(payload(empty))).body.head;
+    const directory = path.join(root, '_checkpoints', 'gb', 'user_5', 'example-quest');
+    fs.writeFileSync(path.join(directory, 'protected.json'), 'damaged-marker');
+    expect((await request(app).get(url)).status).toBe(422);
+    const inspection = await request(app).get(url.replace('?', '/recovery?'));
+    expect(inspection.status).toBe(200); expect(inspection.body.damagedHead).toBe(false); expect(inspection.body.requiresRepair).toBe(true);
+    const result = await request(app).post(url.replace('?', '/repair?')).send(payload(empty, { captureId: 'marker-repair', sequence: 2,
+      sourceRevision: first.revision, expectedHeadToken: inspection.body.headToken }));
+    expect(result.status).toBe(200); expect(result.body.head.snapshot).toBe(first.snapshot);
+    expect((await request(app).get(url)).status).toBe(200);
+    const damaged = fs.readdirSync(path.join(directory, 'damaged')).filter(file => file.startsWith('protected-'));
+    expect(damaged).toHaveLength(1); expect(fs.readFileSync(path.join(directory, 'damaged', damaged[0]), 'utf8')).toBe('damaged-marker');
+  });
   it('reads absent progress and round-trips an atomic checkpoint without caching', async () => {
     const empty = await request(app).get(url);
     expect(empty.status).toBe(200);

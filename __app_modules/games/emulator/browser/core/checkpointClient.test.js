@@ -14,6 +14,30 @@ const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, s
 const capture = () => ({ expectedRevision: null, captureId: 'capture-one', sessionId: 'session-one', sequence: 1,
   provenance, snapshot: new Uint8Array(Buffer.from('state-one')), battery: new Uint8Array(Buffer.from('battery-one')) });
 describe('protected checkpoint client', () => {
+  it('verifies a separately selected sealed recovery point and rejects a repair acknowledgment for different bytes', async () => {
+    const fetchImpl = vi.fn(async () => response({ head: head() }));
+    const client = createCheckpointClient({ fetchImpl });
+    const selected = await client.getRecoveryRevision(key, 'revision-one');
+    expect(selected.status).toBe('ok');
+    expect(fetchImpl.mock.calls[0][0]).toContain('/recovery/revision/revision-one?');
+    const repaired = await client.repairCheckpoint(key, { ...capture(), sourceRevision: 'revision-one', expectedHeadToken: 'c'.repeat(64) });
+    expect(repaired.status).toBe('error');
+    expect(fetchImpl.mock.calls[1][1].cache).toBe('no-store');
+  });
+  it('acknowledges an exact selected recovery repair and its source linkage', async () => {
+    const fetchImpl = vi.fn(async () => response({ head: head({ kind: 'recover', parent: { revision: 'source-one', hash: 'd'.repeat(64) }, restoredFrom: 'source-one' }) }));
+    const client = createCheckpointClient({ fetchImpl });
+    const result = await client.repairCheckpoint(key, { ...capture(), sourceRevision: 'source-one', expectedHeadToken: 'c'.repeat(64) });
+    expect(result.status).toBe('ok');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).expectedHeadToken).toBe('c'.repeat(64));
+  });
+  it('does not acknowledge recovering the wrong source or different selected bytes', async () => {
+    for (const extra of [{ restoredFrom: 'wrong-source' }, { restoredFrom: 'source-one', snapshot: Buffer.from('wrong-progress') }]) {
+      const client = createCheckpointClient({ fetchImpl: async () => response({ head: head({ kind: 'recover', ...extra }) }) });
+      const result = await client.recoverCheckpoint(key, { ...capture(), sourceRevision: 'source-one' });
+      expect(result.status).toBe('error');
+    }
+  });
   it('loads and verifies both artifacts without using cached responses', async () => {
     const fetchImpl = vi.fn(async () => response({ head: head(), provenance, saveMode: 'battery', compatible: true }));
     const result = await createCheckpointClient({ fetchImpl }).getCheckpoint(key);

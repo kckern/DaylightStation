@@ -51,7 +51,7 @@ function resolveControllerGamepad(controllers) {
  * The console + engine lifecycle lives in EmulatorConsole; this widget owns
  * the session unlock, identity surface, and save decisions.
  */
-export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount }) {
+export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount, registerCloseGuard }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-emulator' }), []);
   const { registerIdentify, registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
 
@@ -61,6 +61,16 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const [arcadeUnlocked, setArcadeUnlocked] = useState(false);
   const [pendingGame, setPendingGame] = useState(null);
   const [launch, setLaunch] = useState(null);
+  const launchRef = useRef(null);
+  const launchSequenceRef = useRef(0);
+  const identityRequestRef = useRef(0);
+  const saversRequestRef = useRef(0);
+  launchRef.current = launch;
+  const gameExitGuardRef = useRef(null);
+  const setGameExitGuard = useCallback(guard => {
+    gameExitGuardRef.current = guard; registerCloseGuard?.(guard);
+  }, [registerCloseGuard]);
+  useEffect(() => () => { launchRef.current = null; identityRequestRef.current++; saversRequestRef.current++; registerCloseGuard?.(null); }, [registerCloseGuard]);
   // null = this launch's save list has not arrived yet (PlayerPanel holds the
   // row's place). The ref lets a scan that started before it arrived check
   // the list as it stands when the scan ends.
@@ -77,6 +87,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   const [notice, setNotice] = useState(null);
 
   const saveClient = useMemo(() => createSaveClient(), []);
+  const saveJournal = saveClient.journal;
   const getActivePlayerId = useMemo(
     () => fitnessContext?.getActivePlayerId
       || (() => fitnessContext?.fitnessSessionInstance?.roster?.[0]?.userId ?? null),
@@ -208,18 +219,15 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     };
   }, [fitnessContext]);
 
-  // Build the per-user save/resume contract (snapshot-preferred via saveClient).
-  const buildPersistence = useCallback((game, { userId, persist }) => {
-    const ctx = { system: game.system, gameId: game.id, user: userId, saveMode: game.saveMode };
-    return {
-      saveMode: game.saveMode,
-      persist: !!persist,
-      userId: userId || null,
-      loadResume: () => (userId ? saveClient.loadResume(ctx) : Promise.resolve({ status: 'absent' })),
-      saveResume: (captured) => (persist && userId ? saveClient.persistResume({ ...ctx, captured }) : Promise.resolve({ status: 'skipped' })),
-      clearResume: () => (userId ? saveClient.clearResume(ctx) : Promise.resolve({ status: 'skipped' })),
-    };
-  }, [saveClient]);
+  // Identified play uses the revisioned protocol; anonymous play has no writer.
+  const buildPersistence = useCallback((game, { userId, persist, intent = 'resume', claimId, replaceExisting = false }) => ({
+    saveMode: game.saveMode, persist: !!persist, userId: userId || null,
+    intent: userId ? intent : 'fresh', claimId, replaceExisting,
+    checkpoint: persist && userId ? {
+      key: { system: game.system, gameId: game.id, user: String(userId).toLowerCase() },
+      client: saveClient, journal: saveJournal,
+    } : null,
+  }), [saveClient, saveJournal]);
 
   const buildLaunchContext = useCallback((game, { userId, persist }) => {
     const controls = buildEjsControls(library?.input?.keyboard || {}, resolveControllerGamepad(library?.input?.controllers));
@@ -251,19 +259,21 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
 
   // Commit a launch. `remountKey` forces a fresh console mount (the load path).
   const startGame = useCallback((game, decision, { remountKey } = {}) => {
+    identityRequestRef.current++; saversRequestRef.current++;
     const ctx = buildLaunchContext(game, decision);
     // Ask "continue / save as me / just play" before any progress exists:
     // only where a fingerprint can answer (kiosk), only for a shared save
     // game, only when nobody's save is loaded. Never for owned games.
     const askAtLaunch = isKioskEnv() && supportsSave(game.saveMode) && !game.saveOwner && !decision.userId;
-    setLaunch({
+    const nextLaunch = {
       ...ctx,
       userId: decision.userId,
       person: resolvePersonCard(decision.userId),
       startedAt: Date.now(),
       askAtLaunch,
-      key: remountKey ?? `${game.id}:${decision.userId || 'anon'}:${Date.now()}`,
-    });
+      key: remountKey ?? `${game.id}:${decision.userId || 'anon'}:${++launchSequenceRef.current}`,
+    };
+    launchRef.current = nextLaunch; setLaunch(nextLaunch); setClaimConflict(null);
     setView('playing');
     logger.info('fitness-emulator.launch', { game: game.id, action: decision.action, persist: decision.persist, user: decision.userId || null, askAtLaunch });
   }, [buildLaunchContext, resolvePersonCard, logger]);
@@ -272,12 +282,16 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   // (save-enabled, kiosk only: the fingerprint reader lives there).
   const loadSavers = useCallback((game) => {
     if (!supportsSave(game.saveMode) || !isKioskEnv()) return;
+    const request = ++saversRequestRef.current;
     DaylightAPI(`api/v1/emulator/saves/${game.system}/${game.id}`).then((r) => {
-      const users = Array.isArray(r?.users) ? r.users : [];
+      if (request !== saversRequestRef.current) return;
+      if (!Array.isArray(r?.users)) throw new Error('Unreadable save list');
+      const users = r.users;
       setSavers(users.map((uid) => resolvePersonCard(uid)).filter(Boolean));
       logger.info('fitness-emulator.savers-loaded', { game: game.id, count: users.length });
     }).catch((e) => {
-      setSavers([]);
+      if (request !== saversRequestRef.current) return;
+      setSavers(null);
       logger.warn('fitness-emulator.savers-failed', { error: e.message });
     });
   }, [resolvePersonCard, logger]);
@@ -307,7 +321,9 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     setPendingGame(game);
     setView('identify');
     logger.info('fitness-emulator.owned-launch.verify', { game: game.id, owner });
+    const request = ++identityRequestRef.current;
     registerIdentify(`${title} — ${ownerCard?.name || owner}'s game`).then((verdict) => {
+      if (request !== identityRequestRef.current) return;
       setPendingGame(null);
       if (verdict?.matched && String(verdict.userId).toLowerCase() === String(owner).toLowerCase()) {
         logger.info('fitness-emulator.owned-launch.match', { game: game.id, owner });
@@ -359,7 +375,9 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
     }
     setPendingGame(game);
     setView('admin');
+    const request = ++identityRequestRef.current;
     registerAdmin('emulator').then((verdict) => {
+      if (request !== identityRequestRef.current) return;
       setPendingGame(null);
       if (verdict?.matched) {
         setArcadeUnlocked(true);
@@ -389,33 +407,44 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
   }, [library, directLaunch, launchFresh, logger]);
 
   const cancelGate = useCallback(() => {
+    identityRequestRef.current++;
     setView(launch ? 'playing' : 'arcade');
     clearUnlock();
   }, [clearUnlock, launch]);
 
   // Flip the running session to persist under userId (post-mount; no remount).
-  const activateSave = useCallback((userId) => {
+  const activateSave = useCallback((userId, expectedKey = launchRef.current?.key, { replaceExisting = false } = {}) => {
+    if (!expectedKey || launchRef.current?.key !== expectedKey) return;
+    const claimId = globalThis.crypto.randomUUID();
     setClaimConflict(null);
     setSelectMessage(null);
-    setLaunch((prev) => (prev
-      ? { ...prev, userId, person: resolvePersonCard(userId), persistence: buildPersistence(prev.game, { userId, persist: true }) }
+    setLaunch((prev) => (prev?.key === expectedKey
+      ? { ...prev, userId, person: resolvePersonCard(userId), persistence: buildPersistence(prev.game, { userId, persist: true, intent: 'claim', claimId, replaceExisting }) }
       : prev));
     logger.info('fitness-emulator.claim', { user: userId });
   }, [buildPersistence, resolvePersonCard, logger]);
 
   // Load a saver's existing save: verify it IS them, then remount as that user.
   const handleLoadSaver = useCallback((userId) => {
+    const requestedKey = launch?.key;
     const game = launch?.game;
     if (!game) return;
     const name = resolvePersonCard(userId)?.name || userId;
     setPendingGame(game);
     setView('identify');
-    registerIdentify(`Continue as ${name}`).then((verdict) => {
+    const request = ++identityRequestRef.current;
+    registerIdentify(`Continue as ${name}`).then(async (verdict) => {
+      if (request !== identityRequestRef.current || launchRef.current?.key !== requestedKey) return;
       setPendingGame(null);
       setView('playing');
       if (verdict?.matched && String(verdict.userId).toLowerCase() === String(userId).toLowerCase()) {
+        const saved = await gameExitGuardRef.current?.();
+        if (request !== identityRequestRef.current || launchRef.current?.key !== requestedKey) return;
+        if (saved && saved.status !== 'ok') {
+          setSelectMessage('Could not save progress. Retry before switching players.'); reopenMenu(); return;
+        }
         setSelectMessage(null);
-        startGame(game, loadLaunch(userId), { remountKey: `${game.id}:${userId}:${Date.now()}` });
+        startGame(game, loadLaunch(userId));
         return;
       }
       if (verdict?.matched) setSelectMessage(`That's not ${name}.`);
@@ -426,11 +455,14 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
 
   // "Save my game": identify whoever scans → claim (warn if they already have a save).
   const handleClaim = useCallback(() => {
+    const requestedKey = launch?.key;
     const game = launch?.game;
     if (!game) return;
     setPendingGame(game);
     setView('identify');
+    const request = ++identityRequestRef.current;
     registerIdentify('Save my game').then((verdict) => {
+      if (request !== identityRequestRef.current || launchRef.current?.key !== requestedKey) return;
       setPendingGame(null);
       setView('playing');
       if (!verdict?.matched) {
@@ -442,22 +474,29 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       const known = saversRef.current;
       if (known === null) {
         // The list never arrived: claiming now could overwrite a save nobody was warned about.
+        loadSavers(game);
         setSelectMessage('Still checking who has a save. Try again.');
         logger.warn('fitness-emulator.claim.reask', { game: game.id, reason: 'savers-unknown', user: uid });
         reopenMenu();
         return;
       }
       if (known.some((s) => String(s.userId).toLowerCase() === String(uid).toLowerCase())) {
-        setClaimConflict(resolvePersonCard(uid));
+        setClaimConflict({ ...resolvePersonCard(uid), launchKey: requestedKey });
         logger.info('fitness-emulator.claim.reask', { game: game.id, reason: 'conflict', user: uid });
         reopenMenu();
       } else {
-        activateSave(uid);
+        activateSave(uid, requestedKey);
       }
     });
-  }, [launch, registerIdentify, resolvePersonCard, activateSave, reopenMenu, logger]);
+  }, [launch, registerIdentify, resolvePersonCard, activateSave, reopenMenu, loadSavers, logger]);
 
-  const handleExitGame = useCallback(() => {
+  const handleExitGame = useCallback(async () => {
+    identityRequestRef.current++;
+    const requestedKey = launchRef.current?.key;
+    const result = await gameExitGuardRef.current?.();
+    if (result && result.status !== 'ok') return;
+    if (launchRef.current?.key !== requestedKey) return;
+    launchRef.current = null;
     setLaunch(null);
     setView('arcade');
     setSavers(null);
@@ -535,7 +574,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         conflict={claimConflict}
         onLoad={(uid) => { closeMenu(); handleLoadSaver(uid); }}
         onClaim={() => { closeMenu(); handleClaim(); }}
-        onConfirmOverwrite={(uid) => activateSave(uid)}
+        onConfirmOverwrite={(uid) => activateSave(uid, claimConflict?.launchKey, { replaceExisting: true })}
         onCancelOverwrite={() => setClaimConflict(null)}
         canIdentify={isKioskEnv()}
         onJustPlay={() => { logger.info('fitness-emulator.just-play', { game: launch.game.id }); closeMenu(); }}
@@ -603,6 +642,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             showInputActivity={settings.inputActivityLed !== false}
             onArcadeGameSessionStateChange={handleArcadeGameSessionStateChange}
             onExit={handleExitGame}
+            onExitGuardReady={setGameExitGuard}
             menuSection={menuSection}
             menuAttention={saveGame && !launch.userId}
             menuInitiallyOpen={!!launch.askAtLaunch}

@@ -24,6 +24,24 @@ const capture = {
   provenance: { romHash: 'a'.repeat(64), core: { name: 'gambatte', bundleHash: 'b'.repeat(64), format: 1, variant: 'wasm' } },
 };
 test.describe('durable emulator journal with real IndexedDB', () => {
+  test('archives only explicitly resolved branches atomically and retains their bytes across reload', async ({ page }) => {
+    await openJournal(page);
+    const before = await page.evaluate(async input => {
+      const first = await journal.put({ ...input, snapshot: new Uint8Array([1]), battery: new Uint8Array([2]) });
+      const second = await journal.put({ ...input, captureId: 'second', snapshot: new Uint8Array([3]), battery: new Uint8Array([4]) });
+      let wrong;
+      try { await journal.archive(input.key, [first, { ...second, fingerprint: 'wrong' }]); } catch (error) { wrong = error.code; }
+      const untouched = [(await journal.list(input.key)).length, (await journal.listArchived(input.key)).length];
+      await journal.archive(input.key, [first, second]);
+      let reuse;
+      try { await journal.put({ ...input, snapshot: new Uint8Array([9]), battery: new Uint8Array([2]) }); } catch (error) { reuse = error.code; }
+      return { wrong, reuse, untouched, remaining: (await journal.list(input.key)).length };
+    }, capture);
+    expect(before).toEqual({ wrong: 'ECHECKPOINTJOURNALCONFLICT', reuse: 'ECHECKPOINTJOURNALCONFLICT', untouched: [2, 0], remaining: 0 });
+    await page.reload(); await page.waitForFunction(() => !!window.journal);
+    const after = await page.evaluate(async key => (await journal.listArchived(key)).map(record => [...record.snapshot]), capture.key);
+    expect(after.sort()).toEqual([[1], [3]]);
+  });
   test('retains bytes across reload and removes only the acknowledged record', async ({ page }) => {
     await openJournal(page);
     const fingerprint = await page.evaluate(async input => {

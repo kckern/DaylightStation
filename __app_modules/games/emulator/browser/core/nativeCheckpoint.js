@@ -2,6 +2,19 @@ import { checkpointDigest, ownCheckpointBytes, validProvenance } from './checkpo
 
 const fail = message => Object.assign(new Error(message), { code: 'ECHECKPOINTRESTORE' });
 
+/** Choose the actual native format before requesting its progress metadata. */
+export function selectCheckpointVariant({ win = globalThis.window, preferred } = {}) {
+  if (preferred != null) {
+    if (!['wasm', 'legacy-wasm'].includes(preferred)) throw fail('Unsupported emulator variant');
+    return preferred;
+  }
+  let context;
+  try { context = win?.document?.createElement('canvas').getContext('webgl2'); }
+  catch { return 'legacy-wasm'; }
+  finally { context?.getExtension?.('WEBGL_lose_context')?.loseContext?.(); }
+  return context ? 'wasm' : 'legacy-wasm';
+}
+
 /** Own and hash the actual boot inputs; EJS caches must never substitute them. */
 export async function prepareProtectedAssets({ provenance, romUrl, pathtodata,
   fetchImpl = (...args) => globalThis.fetch(...args), cryptoImpl = globalThis.crypto,
@@ -28,13 +41,27 @@ export async function prepareProtectedAssets({ provenance, romUrl, pathtodata,
     ]);
     const bundleUrl = win.URL.createObjectURL(new win.Blob([bundle]));
     return {
-      romFile: new win.File([rom], 'verified-game.rom'), provenance,
+      romFile: new win.File([rom], `verified-${provenance.romHash}.rom`), provenance,
       // If EJS selects a different GL setting, it still cannot load different
       // bytes. An unsupported GL mode fails boot instead of changing provenance.
-      paths: { [`${core.name}-wasm.data`]: bundleUrl, [`${core.name}-legacy-wasm.data`]: bundleUrl },
+      paths: Object.fromEntries(['wasm', 'legacy-wasm', 'thread-wasm', 'thread-legacy-wasm'].map(variant => [`${core.name}-${variant}.data`, bundleUrl])),
       dispose() { win.URL.revokeObjectURL(bundleUrl); },
     };
   } finally { clearTimeout(timer); controller.abort(); }
+}
+
+/** EJS mutates a File input into its filename; read back its processed config.
+ * The ROM hash in that name and per-boot blob URL distinguish overlapping boots.
+ */
+export function assertProtectedBoot(instance, assets) {
+  const config = instance?.config, core = assets?.provenance?.core;
+  const archive = core && `${core.name}-${core.variant}.data`;
+  if (!core || !assets.romFile?.name || config?.gameUrl !== assets.romFile.name
+    || config.disableDatabases !== true || instance.getCore?.() !== core.name
+    || typeof assets.paths?.[archive] !== 'string' || config.filePaths?.[archive] !== assets.paths[archive]) {
+    throw fail('The running emulator identity does not match the verified game assets');
+  }
+  return true;
 }
 
 /** The protected native RPC runs synchronously while paused, with no game frame. */

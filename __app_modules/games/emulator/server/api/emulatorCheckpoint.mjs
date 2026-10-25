@@ -45,6 +45,12 @@ export function createEmulatorCheckpointRouter({ service, logger }) {
     const result = await service.read(req.checkpointKey, { variant: req.query.variant });
     res.json({ ...result, head: encode(result.head) });
   }));
+  router.get('/:system/:gameId/recovery', route(async (req, res) => {
+    res.json(await service.inspectRecovery(req.checkpointKey, { variant: req.query.variant }));
+  }));
+  router.get('/:system/:gameId/recovery/revision/:revision', route(async (req, res) => {
+    res.json({ head: encode(await service.recoveryRevision(req.checkpointKey, safeSegment(req.params.revision))) });
+  }));
   router.get('/:system/:gameId/history', route(async (req, res) => {
     res.json({ checkpoints: await service.history(req.checkpointKey) });
   }));
@@ -59,7 +65,8 @@ export function createEmulatorCheckpointRouter({ service, logger }) {
     }
     const payload = { expectedRevision: body.expectedRevision, captureId: body.captureId,
       sessionId: body.sessionId, sequence: body.sequence, provenance: body.provenance,
-      ...(operation === 'recover' ? { sourceRevision: body.sourceRevision } : {}),
+      ...(['recover', 'repair'].includes(operation) ? { sourceRevision: body.sourceRevision } : {}),
+      ...(operation === 'repair' ? { expectedHeadToken: body.expectedHeadToken, intent: body.intent } : {}),
       ...(includeBytes ? { snapshot: decode(body.snapshot), battery: decode(body.battery) } : {}),
     };
     const head = await service[operation](req.checkpointKey, payload);
@@ -71,6 +78,7 @@ export function createEmulatorCheckpointRouter({ service, logger }) {
   router.post('/:system/:gameId/reset', write('reset', false));
   router.post('/:system/:gameId/import', write('import'));
   router.post('/:system/:gameId/recover', write('recover', false));
+  router.post('/:system/:gameId/repair', write('repair'));
   router.use((err, _req, res, next) => {
     if (!['entity.too.large', 'entity.parse.failed'].includes(err.type)) return next(err);
     res.status(err.type === 'entity.too.large' ? 413 : 400).json({ error: 'Invalid checkpoint request', code: 'ECHECKPOINTINVALID' });

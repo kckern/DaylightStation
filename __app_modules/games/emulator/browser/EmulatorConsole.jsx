@@ -12,6 +12,8 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
+import { selectCheckpointVariant } from "./core/nativeCheckpoint.js";
+import { createCheckpointConsoleLifecycle, captureCheckpoint } from "./core/checkpointConsoleLifecycle.js";
 import { createEmulatorEngine } from "./core/EmulatorEngine.js";
 import { createAudioMixer } from "./audio/AudioMixer.js";
 import { createEmulatorSession } from "./core/EmulatorSession.js";
@@ -66,6 +68,7 @@ const SESSION_SOURCES = { player: 'current_player' };
 
 const DEFAULT_FACTORIES = {
   createEngine: createEmulatorEngine,
+  createCheckpointLifecycle: createCheckpointConsoleLifecycle,
   createMixer: createAudioMixer,
   createSession: createEmulatorSession,
   createClip: createHtmlAudioClip,
@@ -110,6 +113,7 @@ export function EmulatorConsole({
   actionHandlers = {},
   resolveMediaUrl = (p) => p,
   onExit,
+  onExitGuardReady,
   // Bezel control surface: hotspots (clickable engravings) + overlays
   // (environmental UI). Defaults to the game's own `presentation` block; a
   // host may override. `overlayData` is the injected data bag overlays read
@@ -174,6 +178,15 @@ export function EmulatorConsole({
   const gridCanvasRef = useRef(null);
   const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
   const controllerRef = useRef(null); // hotspot controller
+  const checkpointRef = useRef(null);
+  const recoveryHandoffRef = useRef(null);
+  const claimTransferRef = useRef(null);
+  const mountedRef = useRef(false);
+  const [progress, setProgress] = useState(null);
+  const [recoveryCopies, setRecoveryCopies] = useState(null);
+  const checkpointKey = persistence?.persist && persistence?.checkpoint
+    ? JSON.stringify(persistence.checkpoint.key) : null;
+  useLayoutEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   // Stable indirection so the mount-once hotspot controller can open the (live)
@@ -217,6 +230,42 @@ export function EmulatorConsole({
   const holdPausedRef = useRef(false);
   holdPausedRef.current = !!holdPaused;
 
+  const flushBeforeExit = useCallback(() => checkpointRef.current
+    ? checkpointRef.current.exit() : Promise.resolve({ status: 'ok' }), []);
+  const requestExit = useCallback(async () => {
+    if (!checkpointRef.current) { onExitRef.current?.(); return; }
+    const result = await flushBeforeExit();
+    if (result.status === 'ok') onExitRef.current?.();
+  }, [flushBeforeExit]);
+  const requestExitRef = useRef(requestExit);
+  requestExitRef.current = requestExit;
+  useEffect(() => {
+    onExitGuardReady?.(flushBeforeExit);
+    return () => onExitGuardReady?.(null);
+  }, [onExitGuardReady, flushBeforeExit]);
+  const inspectRecovery = useCallback(async () => {
+    const checkpoint = checkpointRef.current;
+    if (!checkpoint) return;
+    setRecoveryCopies({ loading: true });
+    const result = await checkpoint.inspectRecovery();
+    if (!mountedRef.current || checkpointRef.current !== checkpoint) return;
+    setRecoveryCopies(result.status === 'ok' ? result : { error: result.error, loading: false });
+  }, []);
+  const chooseRecovery = useCallback(async choice => {
+    const checkpoint = checkpointRef.current;
+    if (!checkpoint) return;
+    setRecoveryCopies(previous => ({ ...previous, loading: true }));
+    const point = await checkpoint.selectRecovery(choice);
+    if (!mountedRef.current || checkpointRef.current !== checkpoint) return;
+    if (point.status !== 'ready') { setRecoveryCopies(previous => ({ ...previous, loading: false, error: point.error })); return; }
+    recoveryHandoffRef.current = { checkpoint, point };
+    setRecoveryCopies(null); setError(null); setBootNonce(value => value + 1);
+  }, []);
+  const retryProgress = useCallback(async () => {
+    const result = await checkpointRef.current?.retry();
+    if (result?.status !== 'ok' && result?.code === 'ECHECKPOINTRESTORE') retryBoot();
+  }, [retryBoot]);
+
   let governancePlaying = status.state === 'playing';
   try {
     governancePlaying = typeof governanceGate?.isPlayable === 'function'
@@ -224,7 +273,7 @@ export function EmulatorConsole({
       : governancePlaying;
   } catch { governancePlaying = false; }
   // The open game menu holds the game paused, so it is paused to the meter too.
-  const effectiveArcadeGameSessionState = playReady && governancePlaying && !hotspotState.paused && !settingsOpen && !holdPaused
+  const effectiveArcadeGameSessionState = playReady && (!checkpointKey || progress?.canPlay) && governancePlaying && !hotspotState.paused && !settingsOpen && !holdPaused
     ? 'playing'
     : 'paused';
   useEffect(() => {
@@ -239,6 +288,10 @@ export function EmulatorConsole({
     const id = setInterval(() => {
       const cur = persistenceRef.current;
       const eng = runtimeRef.current?.engine;
+      if (cur?.checkpoint) {
+        checkpointRef.current?.save();
+        return;
+      }
       if (!eng || !cur?.persist || !cur?.userId || !cur?.saveResume) return;
       const captured = captureForMode(eng, cur.saveMode);
       if (!captured) return;
@@ -735,12 +788,19 @@ export function EmulatorConsole({
   const confirmReset = useCallback(async () => {
     setResetOpen(false);
     const p = persistenceRef.current;
+    if (p?.checkpoint) {
+      const checkpoint = checkpointRef.current;
+      const result = await (recoveryCopies ? checkpoint?.resetFromRecovery() : checkpoint?.reset());
+      if (result?.status === 'ok') { setRecoveryCopies(null); setError(null); setBootNonce(value => value + 1); }
+      else if (recoveryCopies) setRecoveryCopies(previous => ({ ...previous, error: result?.error || 'Could not start a fresh game. Retry.' }));
+      return;
+    }
     try { if (p?.clearResume) await p.clearResume(); }
     catch (err) { logger.warn('emulator.console.reset-clear-failed', { error: err && err.message }); }
     try { runtimeRef.current?.engine?.restart?.(); }
     catch (err) { logger.warn('emulator.console.reset-restart-failed', { error: err && err.message }); }
     logger.info('emulator.console.reset', { game: game?.id, user: p?.userId || null });
-  }, [game, logger]);
+  }, [game, logger, recoveryCopies]);
 
   // Console-owned animation handler: flash a transient CSS class on the shader.
   const triggerAnim = (name) => {
@@ -764,6 +824,24 @@ export function EmulatorConsole({
     logger.info('emulator.console.mount', { game: game?.id, system: game?.system });
 
     const engine = fns.createEngine({ logger });
+    const bootPersistence = persistenceRef.current;
+    const bootCheckpointKey = checkpointKey;
+    const handoff = recoveryHandoffRef.current;
+    recoveryHandoffRef.current = null;
+    let checkpoint = null;
+    if (bootPersistence?.persist && bootPersistence.checkpoint) {
+      checkpoint = handoff?.checkpoint || fns.createCheckpointLifecycle({
+        ...bootPersistence.checkpoint, saveMode: bootPersistence.saveMode, engine, logger,
+        isHeld: () => settingsOpenRef.current || holdPausedRef.current || hotspotPausedRef.current || !governanceGate.isPlayable(),
+        onStateChange: state => {
+          if (mountedRef.current && checkpointRef.current === checkpoint) setProgress(state);
+        },
+      });
+      checkpointRef.current = checkpoint;
+      if (handoff) checkpoint.attachEngine(engine);
+      setProgress(checkpoint.getState());
+    } else { checkpointRef.current = null; setProgress(null); }
+    const sessionEngineConfig = { ...engineConfig, volume: logVolumeFromLevel(volumeLevelRef.current) };
     const mixer = fns.createMixer({
       setGameVolume: engine.setVolume,
       createClip: fns.createClip,
@@ -780,7 +858,7 @@ export function EmulatorConsole({
       // Carry the persisted volume into EJS's own config so its late self-assert
       // lands on the user's level rather than the hard-coded 0.5 that made every
       // game boot loud until the volume panel was opened.
-      engineConfig: { ...engineConfig, volume: logVolumeFromLevel(volumeLevelRef.current) },
+      engineConfig: sessionEngineConfig,
       actionHandlers: mergedHandlers,
       deps: { resolveMediaUrl },
       logger,
@@ -794,7 +872,7 @@ export function EmulatorConsole({
     controllerRef.current = createHotspotController({
       mixer,
       engine,
-      onExit: () => onExitRef.current?.(),
+      onExit: () => requestExitRef.current?.(),
       onReset: () => openResetRef.current?.(),
       runActions: (doMap, ctx) => session.runActions?.(doMap, ctx),
       saveState: actionHandlers.saveState,
@@ -805,8 +883,40 @@ export function EmulatorConsole({
 
     // Kick off boot/start asynchronously; never block render.
     Promise.resolve()
-      .then(() => session.start({ mount: mountRef.current }))
+      .then(async () => {
+        if (checkpoint) {
+          let point = handoff?.point;
+          if (!point) {
+            const needsClaim = bootPersistence.intent === 'claim' && !claimTransferRef.current?.completed;
+            if (needsClaim && !claimTransferRef.current?.captured) {
+              setProgress({ phase: 'error', canPlay: false, error: { code: 'ECHECKPOINTINVALID', error: 'Current game progress could not be captured. Retry before claiming it.' } });
+              return false;
+            }
+            point = await checkpoint.prepare({ variant: selectCheckpointVariant({ preferred: bootPersistence.checkpoint.variant }),
+              ...(needsClaim ? { claimCapture: claimTransferRef.current.captured, claimId: bootPersistence.claimId, allowExisting: bootPersistence.replaceExisting === true } : {}) });
+          }
+          if (cancelled) return false;
+          if (point.status !== 'ready') {
+            if (point.status === 'recovery') {
+              const copies = await checkpoint.inspectRecovery();
+              if (!cancelled) setRecoveryCopies(copies.status === 'ok' ? copies : { error: copies.error });
+            }
+            return false;
+          }
+          sessionEngineConfig.checkpointProvenance = point.provenance;
+          sessionEngineConfig.afterBoot = async () => {
+            if (cancelled) throw new Error('Emulator boot cancelled');
+            const result = await checkpoint.restore(point);
+            if (cancelled) throw new Error('Emulator boot cancelled');
+            if (result.status !== 'ok') throw Object.assign(new Error(result.error || 'Could not restore saved progress.'), { code: result.code });
+            if (bootPersistence.intent === 'claim' && claimTransferRef.current) claimTransferRef.current.completed = true;
+          };
+        }
+        if (cancelled) return false;
+        return session.start({ mount: mountRef.current });
+      })
       .then(async (res) => {
+        if (res === false) return;
         if (cancelled) return;
         // Apply the persisted (or default) volume to the game bus on boot — and
         // LOG it (info), so "did the saved volume take on load?" is answerable.
@@ -932,6 +1042,7 @@ export function EmulatorConsole({
         if (cancelled) return;
         if (rendered === false) {
           logger.error('emulator.console.no-frames', { game: game?.id });
+          checkpoint?.abortBoot?.();
           setError({ kind: 'no-frames', message: 'The game booted but never appeared.' });
           return;
         }
@@ -952,7 +1063,7 @@ export function EmulatorConsole({
         // saveClient returns a discriminated result so an absent save and a
         // failed load are distinct — a failed load is surfaced, never silent.
         const p = persistenceRef.current;
-        if (p?.loadResume) {
+        if (!checkpoint && p?.loadResume) {
           try {
             const result = await p.loadResume();
             if (cancelled) return;
@@ -971,8 +1082,9 @@ export function EmulatorConsole({
       })
       .catch((err) => {
         if (cancelled) return;
+        checkpoint?.abortBoot?.();
         logger.error('emulator.console.start-error', { error: err && err.message });
-        setError({ kind: 'start-error', message: err && err.message, error: err });
+        if (!checkpoint || checkpoint.getState().phase !== 'error') setError({ kind: 'start-error', message: err && err.message, error: err });
       });
 
     // Seed + subscribe + poll governance status.
@@ -1011,6 +1123,22 @@ export function EmulatorConsole({
         clearTimeout(animTimerRef.current);
         animTimerRef.current = null;
       }
+      const nextPersistence = persistenceRef.current;
+      const nextKey = nextPersistence?.checkpoint ? JSON.stringify(nextPersistence.checkpoint.key) : null;
+      if (nextPersistence?.intent === 'claim' && nextKey !== bootCheckpointKey) {
+        try {
+          claimTransferRef.current = { captured: captureCheckpoint(engine, nextPersistence.saveMode), claimId: nextPersistence.claimId, completed: false };
+        } catch (captureError) {
+          claimTransferRef.current = { error: captureError.message, claimId: nextPersistence.claimId, completed: false };
+        }
+      }
+      if (checkpoint) {
+        if (recoveryHandoffRef.current?.checkpoint === checkpoint) checkpoint.detachEngine();
+        else {
+          checkpoint.interrupted(); checkpoint.dispose();
+          if (checkpointRef.current === checkpoint) checkpointRef.current = null;
+        }
+      }
       // Persist the resume point on exit (battery .srm or save-state) BEFORE
       // teardown, for an identified, save-enabled session. The write outlives
       // this synchronous cleanup, but its OUTCOME is logged when it settles —
@@ -1018,7 +1146,7 @@ export function EmulatorConsole({
       try {
         const p = persistenceRef.current;
         const eng = runtimeRef.current?.engine;
-        if (p?.persist && p?.saveResume) {
+        if (!p?.checkpoint && p?.persist && p?.saveResume) {
           const captured = captureForMode(eng, p.saveMode);
           if (captured) {
             logger.info('emulator.console.persist-start', { saveMode: p.saveMode });
@@ -1045,7 +1173,13 @@ export function EmulatorConsole({
     // Re-runs on retry (bootNonce). Cleanup fully tears down the prior session +
     // loader memo, so each retry boots clean. Other collaborators are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootNonce]);
+  }, [bootNonce, checkpointKey, persistence?.claimId]);
+
+  useEffect(() => {
+    const interrupted = () => { checkpointRef.current?.interrupted(); };
+    window.addEventListener('pagehide', interrupted);
+    return () => window.removeEventListener('pagehide', interrupted);
+  }, []);
 
   // No controller nag: the panel starts collapsed and is only opened via the
   // 🎮 toggle. Keyboard always works (arrows = D-pad, Enter = Start, Space =
@@ -1184,6 +1318,43 @@ export function EmulatorConsole({
           <span>{overlayText(status)}</span>
         </div>
       )}
+      {checkpointKey && progress && !progress.canPlay && !recoveryCopies && !error && !resetOpen && (
+        <div className="emulator-progress-overlay" role={progress.error ? 'alertdialog' : 'status'} aria-label="Saved progress">
+          <div className="emulator-progress-card">
+            <p>{progress.error?.code === 'ECHECKPOINTRESTORE' ? 'Could not restore saved progress.'
+              : progress.error?.error || (progress.phase === 'loading' || progress.phase === 'idle' ? 'Loading saved progress…'
+                : progress.phase === 'restoring' ? 'Restoring saved progress…' : progress.phase === 'recovery' ? 'Choose a recovery copy to continue.' : 'Saving progress…')}</p>
+            {progress.error && <button type="button" onClick={playReady ? retryProgress : retryBoot}>{playReady ? 'Retry saving' : 'Retry'}</button>}
+            {(progress.error || progress.phase === 'recovery') && <button type="button" onClick={inspectRecovery}>Review recovery copies</button>}
+            {typeof onExit === 'function' && <button type="button" onClick={requestExit}>Exit game</button>}
+          </div>
+        </div>
+      )}
+      {recoveryCopies && !resetOpen && (
+        <div className="emulator-progress-overlay" role="dialog" aria-modal="true" aria-label="Recover progress">
+          <div className="emulator-progress-card">
+            <h2>Recover progress</h2>
+            <p>Choose the game to continue. Other copies stay available.</p>
+            {recoveryCopies.error && <p role="alert">{recoveryCopies.error}</p>}
+            {recoveryCopies.loading ? <p>Checking recovery copies…</p> : (
+              <>
+                {(recoveryCopies.inspection?.checkpoints || []).filter(point => point.usable).map((point, index) => (
+                  <button type="button" key={point.revision} onClick={() => chooseRecovery({ type: 'server', revision: point.revision })}>
+                    {point.kind === 'reset' ? 'Fresh start recorded' : 'Restore saved copy'} {index + 1}{point.createdAt ? ` · ${new Date(point.createdAt).toLocaleString()}` : ''}
+                  </button>
+                ))}
+                {[...(recoveryCopies.pending || []), ...(recoveryCopies.archived || [])].map((point, index) => (
+                  <button type="button" key={point.captureId} onClick={() => chooseRecovery({ type: 'local', captureId: point.captureId })}>
+                    {point.requiresRestoreVerification ? 'Continue captured game' : 'Restore local copy'} {index + 1} · {new Date(point.createdAt).toLocaleString()}
+                  </button>
+                ))}
+                <button type="button" onClick={inspectRecovery}>Refresh copies</button>
+                <button type="button" onClick={() => setResetOpen(true)}>Start a fresh game</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {error && (
         <div className="emulator-error-overlay" role="alertdialog" aria-label="Emulator error">
           <div className="emulator-error-card">
@@ -1195,7 +1366,7 @@ export function EmulatorConsole({
             <div className="emulator-error-actions">
               <button type="button" className="emulator-error-retry" onClick={retryBoot}>Retry</button>
               {typeof onExit === 'function' && (
-                <button type="button" className="emulator-error-exit" onClick={onExit}>Exit</button>
+                <button type="button" className="emulator-error-exit" onClick={requestExit}>Exit</button>
               )}
             </div>
           </div>
@@ -1206,7 +1377,7 @@ export function EmulatorConsole({
           type="button"
           className="emulator-exit-affordance"
           aria-label="Exit emulator"
-          onClick={onExit}
+          onClick={requestExit}
         >
           ✕
         </button>
@@ -1276,8 +1447,9 @@ export function EmulatorConsole({
                 {shade.name}
               </button>
             </div>
+            {checkpointKey && <button type="button" onClick={inspectRecovery}>Recover progress</button>}
             {typeof onExit === 'function' && (
-              <button type="button" className="emulator-settings-modal__exit" onClick={onExit}>
+              <button type="button" className="emulator-settings-modal__exit" onClick={requestExit}>
                 Exit game
               </button>
             )}
@@ -1293,12 +1465,12 @@ export function EmulatorConsole({
             <div className="emulator-reset-modal__title">Start {game?.title || 'this game'} over?</div>
             <div className="emulator-reset-modal__body">
               {persistence?.persist && nowPlaying?.name
-                ? `This erases ${nowPlaying.name}'s save and begins a fresh game.`
+                ? `This begins a fresh game for ${nowPlaying.name}. Their previous progress stays available in recovery.`
                 : 'This restarts the game from the beginning.'}
             </div>
             <div className="emulator-reset-modal__actions">
               <button type="button" className="emulator-reset-modal__cancel" onPointerDown={() => setResetOpen(false)}>
-                Keep playing
+                {recoveryCopies ? 'Back to recovery' : 'Keep playing'}
               </button>
               <button type="button" className="emulator-reset-modal__confirm" onPointerDown={confirmReset}>
                 Start over
