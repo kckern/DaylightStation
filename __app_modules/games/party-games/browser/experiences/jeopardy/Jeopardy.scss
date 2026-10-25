@@ -187,8 +187,9 @@
 }
 
 .jp-board__tile { flex-direction: column; gap: 0.2rem; }
-.jp-board__kids { font-family: var(--gp-font-ui); font-size: clamp(0.65rem, 2cqh, 1rem); color: var(--gp-paper); text-shadow: none; }
-.jp-clue__kids { font-family: var(--gp-font-ui); font-size: clamp(1rem, 2.8cqh, 1.4rem); color: var(--gp-brass); }
+.jp-board__kids, .jp-clue__kids { color: var(--jp-kids-color, #89cff0); flex-shrink: 0; }
+.jp-board__kids { width: clamp(16px, 4cqh, 26px); height: clamp(16px, 4cqh, 26px); }
+.jp-clue__kids { width: 30px; height: 30px; }
 
 // TV composition: one bounded content slot between compact chrome and scores.
 .jeopardy {

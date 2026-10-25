@@ -5,6 +5,7 @@ import TimerRing from "../../../../../../__capabilities/gaming/browser/platform/
 import { useCountdown } from "../../../../../../__capabilities/gaming/browser/platform/ui/useCountdown.js";
 import { onColor } from "../../../../../../__capabilities/gaming/browser/platform/ui/teamColors.js";
 import MemberAvatar from "../../../../../../__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx";
+import BabyIcon from "./BabyIcon.jsx";
 import "./Jeopardy.scss";
 
 /**
@@ -24,7 +25,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
   return (
     <div className={`jp-clue${revealed ? ' jp-clue--revealed' : ''}${active.clue.media && !mediaError ? ' jp-clue--media' : ''}`} data-testid="clue-screen">
       <div className="jp-clue__banner">
-        {active.clue.little_kids && <span className="jp-clue__kids">Little kids’ turn</span>}
+        {active.clue.little_kids && <BabyIcon className="jp-clue__kids" />}
         {isDailyDouble && <span className="jp-clue__dd">DAILY DOUBLE</span>}
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
         {!state.set.open_book && !judging && !revealed && <TimerRing progress={progress} remaining={remaining} size={72} />}

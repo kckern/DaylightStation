@@ -130,8 +130,8 @@ an assigned-team clue; once revealed, Up marks correct and Down marks wrong.
 Back times out an unanswered clue, and OK returns from its revealed answer.
 Wagers and Final judgments use ordinary arrow/OK button navigation.
 
-A clue may declare `little_kids: true` to show Little kids’ turn on its tile
-and clue screen. This is a room-level prompt, not a registered participant:
+A clue may declare `little_kids: true` to show a baby-blue baby icon on its tile
+and clue screen, with “Little kids’ turn” as its accessible label. This is a room-level prompt, not a registered participant:
 an adult gives a toddler on the active team the first chance to answer. Other
 spokespersons can rotate in seating order without entering anybody's name.
 

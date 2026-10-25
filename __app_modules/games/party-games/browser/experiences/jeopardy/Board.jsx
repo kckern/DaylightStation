@@ -1,4 +1,5 @@
 import React, {useLayoutEffect, useRef} from 'react';
+import BabyIcon from "./BabyIcon.jsx";
 import "./Jeopardy.scss";
 
 export function Board({ round, used, roundIndex, cursor = {cat:0,row:0}, onSelect, interactive = true }) {
@@ -30,7 +31,7 @@ export function Board({ round, used, roundIndex, cursor = {cat:0,row:0}, onSelec
               tabIndex={interactive ? (isCursor && !isUsed && clue ? 0 : -1) : undefined}
               onClick={interactive ? () => clue && !isUsed && onSelect?.(c, r) : undefined}
               className={`jp-board__tile${isUsed || !clue ? ' is-used' : ''}${isCursor ? ' is-cursor' : ''}`}>
-              {!isUsed && clue ? <><span>${clue.value * Number(round.multiplier ?? 1)}</span>{clue.little_kids && <small className="jp-board__kids">Little kids’ turn</small>}</> : ''}
+              {!isUsed && clue ? <><span>${clue.value * Number(round.multiplier ?? 1)}</span>{clue.little_kids && <BabyIcon className="jp-board__kids" decorative />}</> : ''}
             </Tile>
           );
         })

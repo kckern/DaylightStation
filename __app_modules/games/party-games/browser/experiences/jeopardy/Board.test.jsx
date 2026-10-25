@@ -23,7 +23,10 @@ describe('Jeopardy Board', () => {
 
 it('marks little-kid picture questions visibly and accessibly',()=>{
  render(<Board round={{...round,categories:[{name:'Pictures',clues:[{value:100,little_kids:true}]}]}} used={{}} roundIndex={0} cursor={{cat:0,row:0}}/>);
- expect(screen.getByRole('gridcell',{name:/Little kids/})).toHaveTextContent("Little kids");
+ const tile = screen.getByRole('gridcell', { name: /Little kids/ });
+ expect(tile.querySelector('svg')).toBeVisible();
+ expect(tile).toHaveTextContent('$100');
+ expect(screen.queryByText('Little kids’ turn')).toBeNull();
 });
 
 it('keeps DOM focus on the same question that Enter will select',()=>{
