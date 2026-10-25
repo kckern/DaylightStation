@@ -8,8 +8,9 @@ const low = candidate('protein_gap:other:2026-10-24', 20);
 const snapshot = (extra = {}) => ({ userId: 'user-1', type: 'morning-brief', date: '2026-10-25', observations: [low, high], recent_coaching: [], ...extra });
 const setup = response => {
   const runtime = { execute: vi.fn().mockResolvedValue({ output: response }) };
-  const service = new CoachingCommentaryService({ runtime, logger: { debug: vi.fn(), warn: vi.fn() } });
-  return { service, runtime };
+  const logger = { debug: vi.fn(), warn: vi.fn() };
+  const service = new CoachingCommentaryService({ runtime, logger });
+  return { service, runtime, logger };
 };
 
 describe('supported commentary selection', () => {
@@ -52,6 +53,14 @@ describe('supported commentary selection', () => {
     expect(input.current_evidence.observations).toEqual([high, low]);
     expect(input.historical_context.recent_coaching[0].text).toBe('old 999 calories');
     expect(runtime.execute.mock.calls[0][0].input).not.toContain('9999');
+  });
+  it('keeps provider and parse-error details out of selection-failure diagnostics', async () => {
+    const { service, runtime, logger } = setup('');
+    // Engines/providers can include input excerpts in exception messages.
+    runtime.execute.mockRejectedValue(new SyntaxError('PRIVATE_FOOD_HISTORY rice 700 cal is not valid JSON'));
+    expect(await service.generate(snapshot())).toEqual(high);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/PRIVATE_FOOD_HISTORY|rice|700/);
   });
   it('supports the legacy provider seam with the same strict selection', async () => {
     const service = new CoachingCommentaryService({ agentFactory: () => ({ generate: async () => ({ text: JSON.stringify({ observationId: low.id }) }) }), logger: {} });

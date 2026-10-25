@@ -39,7 +39,7 @@ export class CoachingCommentaryService {
       this.#logger.debug?.('coaching.commentary.selected', { type: snapshot.type, observationId: observation.id, kind: observation.kind });
       return observation;
     } catch (error) {
-      this.#logger.warn?.('coaching.commentary.selection_failed', { type: snapshot.type, error: error.message });
+      this.#logger.warn?.('coaching.commentary.selection_failed', { type: snapshot.type, reason: error instanceof SyntaxError ? 'invalid-json' : 'provider-failure' });
       return fallback;
     }
   }
