@@ -1,9 +1,9 @@
+import { automatedAssignmentDeps, canonicalCoachingResult, assignmentEvidence } from './budgetContext.mjs';
 // __backend/src/3_applications/agents/health-coach/assignments/MorningBrief.mjs
 
 import { Assignment } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/Assignment.mjs";
-import { OutputValidator } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/OutputValidator.mjs";
 import { coachingMessageSchema } from "../schemas/coachingMessage.mjs";
-import { localDate, goalsWithRange, rangeOf } from "./budgetContext.mjs";
+import { localDate, goalsWithRange } from "./budgetContext.mjs";
 
 // F-003 / F2-C compliance CTA suppression TTL. The thresholds + CTA text
 // themselves come entirely from playbook YAML (`coaching_dimensions[*]`);
@@ -40,12 +40,16 @@ const DEXA_STALENESS_MEMORY_KEY = 'dexa_stale_warned';
  * 5. ACT - set last_morning_brief in working memory (24h TTL)
  *
  * Note: Message delivery (send_channel_message) is NOT done here.
- * It is handled by HealthCoachAgent.runAssignment() post-execute.
+ * This legacy assignment returns a validated payload to its caller; scheduled notifications use CoachingOrchestrator.
  */
 export class MorningBrief extends Assignment {
   static id = 'morning-brief';
   static description = 'Daily nutrition brief with reconciled data';
   static schedule = '0 10 * * *';
+
+  async execute(deps) {
+    return super.execute(automatedAssignmentDeps(deps));
+  }
 
   /**
    * Gather phase — programmatic tool calls (no LLM).
@@ -143,6 +147,7 @@ export class MorningBrief extends Assignment {
     });
 
     return {
+      userId,
       reconciliation,
       weight,
       goals,
@@ -514,7 +519,7 @@ export class MorningBrief extends Assignment {
   }
 
   /**
-   * Inspect the last 7 days of nutrition history for a trailing calorie-surplus
+   * Inspect the last 7 days of nutrition history for a trailing over-plan
    * or protein-shortfall streak (≥3 days). When detected, build a 7-day pattern
    * signature and query find_similar_period for the closest historical analog.
    * Returns the top match, or null when no streak is present / the lookup fails.
@@ -532,42 +537,33 @@ export class MorningBrief extends Assignment {
   }
 
   // Streaks and the signature read JUDGED days only: finished (before today —
-  // this morning's partial row would zero a surplus streak and fake a protein
+  // this morning's partial row would zero a over-plan streak and fake a protein
   // shortfall) and, for budget rows, complete (an under-logged day is missing
   // data, not a light one).
   async #streakQuery({ tools, userId, days: allDays, weight, goals, logger }) {
-    const todayDate = localDate(0);
-    const days = allDays.filter(d => (d?.range ? d.date < todayDate && d.complete : true));
+    const evidence = assignmentEvidence({ nutritionHistory: { days: allDays } });
+    // Keep ineligible dates in the walk: missing/incomplete dates break a streak.
+    const history = evidence.days.filter(day => day.assessment.finished).sort((a, b) => a.date.localeCompare(b.date));
+    const days = history.filter(day => day.assessment.availability === 'available' && day.assessment.trustworthy);
     if (days.length === 0) return null;
-
-    const calMax = goals?.goals?.nutrition?.calories_max;
     const proteinMin = goals?.goals?.nutrition?.protein_min;
-
-    // Trailing streak counters — start from the most recent day and walk back
-    // until the streak breaks. This favors today's coaching relevance over
-    // arbitrary windows earlier in the week.
-    const trailingStreak = (predicate) => {
+    const trailingStreak = predicate => {
       let count = 0;
-      for (let i = days.length - 1; i >= 0; i--) {
-        if (predicate(days[i])) count += 1;
-        else break;
+      let nextDate = null;
+      for (let i = history.length - 1; i >= 0; i--) {
+        const day = history[i];
+        if (nextDate && new Date(`${nextDate}T12:00:00Z`) - new Date(`${day.date}T12:00:00Z`) !== 86400000) break;
+        if (!day.assessment.trustworthy || !predicate(day)) break;
+        count += 1;
+        nextDate = day.date;
       }
       return count;
     };
-
-    // A budget day (it has a range) is over plan when NET passes its own top,
-    // exactly as the Today bar judges it; a plain history row compares food
-    // against the configured max.
-    const overPlan = (d) => (d?.range
-      ? typeof d.net === 'number' && d.net > d.range.top
-      : typeof calMax === 'number' && typeof d?.calories === 'number' && d.calories > calMax);
-    const calorieSurplusStreak = trailingStreak(overPlan);
+    const overPlanStreak = trailingStreak(day => day.assessment.planState === 'over');
+    const energySurplusStreak = trailingStreak(day => day.assessment.energyState === 'surplus');
     const proteinShortfallStreak = typeof proteinMin === 'number'
-      ? trailingStreak(d => typeof d?.protein === 'number' && d.protein < proteinMin)
-      : 0;
-
-    const streakDetected = calorieSurplusStreak >= 3 || proteinShortfallStreak >= 3;
-    if (!streakDetected) return null;
+      ? trailingStreak(day => day.assessment.proteinKnown && typeof day.protein === 'number' && day.protein < proteinMin) : 0;
+    if (overPlanStreak < 3 && proteinShortfallStreak < 3) return null;
 
     const tool = tools.find(t => t.name === 'find_similar_period');
     if (!tool) {
@@ -579,7 +575,7 @@ export class MorningBrief extends Assignment {
     // weight history we already gathered. Missing dimensions are simply
     // omitted from the resulting object — the finder ignores them.
     const numericCalories = days.map(d => d?.calories).filter(v => typeof v === 'number');
-    const numericProtein = days.map(d => d?.protein).filter(v => typeof v === 'number');
+    const numericProtein = days.filter(d => d.assessment.proteinKnown).map(d => d?.protein).filter(v => typeof v === 'number');
     const trackedDays = days.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
 
     const weightHistory = Array.isArray(weight?.history) ? weight.history : [];
@@ -594,7 +590,7 @@ export class MorningBrief extends Assignment {
     if (proteinAvg !== null) signature.protein_avg_g = proteinAvg;
     const calorieAvg = avg(numericCalories);
     if (calorieAvg !== null) signature.calorie_avg = calorieAvg;
-    if (days.length > 0) signature.tracking_rate = trackedDays / days.length;
+    if (days.length > 0) signature.tracking_rate = trackedDays / allDays.length;
     const weightAvg = avg(numericWeights);
     if (weightAvg !== null) signature.weight_avg_lbs = weightAvg;
     if (numericWeights.length >= 2) {
@@ -603,7 +599,8 @@ export class MorningBrief extends Assignment {
 
     logger?.info?.('morning_brief.similar_period.queried', {
       userId,
-      calorieSurplusStreak,
+      overPlanStreak,
+      energySurplusStreak,
       proteinShortfallStreak,
       signatureDimensions: Object.keys(signature),
     });
@@ -721,51 +718,19 @@ export class MorningBrief extends Assignment {
       );
     }
 
-    // Detect likely incomplete logging yesterday
-    const yesterdayDate = localDate(-1);
-    const history = gathered.nutritionHistory?.days || gathered.nutritionHistory || [];
-    const yesterdayEntry = Array.isArray(history)
-      ? history.find(d => d.date === yesterdayDate)
-      : history[yesterdayDate];
-    const { floor: calorieFloor } = rangeOf(yesterdayEntry || gathered.todayNutrition, gathered.goals);
-    const yesterdayCals = yesterdayEntry?.calories ?? yesterdayEntry?.total_calories ?? null;
-    // Incomplete = under the floor and not declared done/fasted. The budget
-    // decides it (`complete`); a history row without it falls back to the floor.
-    const incompleteDay = yesterdayCals !== null && !gathered.yesterdayClosed
-      && (typeof yesterdayEntry?.complete === 'boolean' ? !yesterdayEntry.complete : yesterdayCals < calorieFloor);
-
+    const evidence = assignmentEvidence(gathered);
+    const yesterday = evidence.days.at(-1);
+    const incompleteDay = yesterday?.assessment.availability === 'available' && !yesterday.assessment.trustworthy;
+    sections.push(`\n## Assessed Budget Evidence\n${JSON.stringify(evidence, null, 2)}`);
     sections.push(`\n## Instructions
-Produce a JSON object matching the coachingMessageSchema:
-- should_send: true (morning brief always sends unless there is genuinely nothing to say)
-- text: the message body (HTML formatted, under 200 words)
-- parse_mode: "HTML"
-${incompleteDay ? `
-INCOMPLETE LOGGING DETECTED — OVERRIDE NORMAL COACHING:
-Yesterday's tracked calories (~${Math.round((yesterdayCals || 0) / 50) * 50}) are below the logging floor (${calorieFloor}), and the user did NOT mark the day as done via /done or fasted via /fast. This almost certainly means the user forgot to log one or more meals — NOT that they actually ate this little. DO NOT lecture about missed goals or undereating. Instead:
-1. Note what WAS logged yesterday (name the specific items)
-2. Point out the total looks incomplete — "looks like dinner didn't get logged" or similar
-3. Ask the user what they had for the missing meal(s) so it can be logged — never a meal listed in yesterday's fastedMeals (declared intentionally skipped)
-4. Keep it brief and helpful, not judgmental
-This takes priority over ALL other coaching rules below.
-` : ''}
-Writing rules:
-- Lead with yesterday's ACTUAL tracked calories AND protein vs goals with exact deltas — use the nutrition history data, not reconciliation (which lacks protein)
-- Then zoom out: what does the 7-day trend look like? Are calories consistently over/under? Is protein chronically short? Identify the pattern, not just yesterday's snapshot
-- If yesterday exceeded the calorie ceiling, prescribe a specific compensatory target for today (e.g., "aim for ${calorieFloor} today to offset")
-- If there's a multi-day overshoot streak, calculate the cumulative surplus and what it takes to get back on track this week
-- If protein is short: state the gap in grams and the weekly average vs target
-- USE THE FOOD ITEMS to give specific, comparative insight across days:
-  - Find a recent "good day" from nutrition history and CONTRAST it with yesterday: "On the 24th you hit 148g protein at 1425 cal with salmon + protein shake + Premier Protein — yesterday was all appetizer food, 83g protein at 1628 cal"
-  - Name the specific items that made the good day work AND the specific items that derailed yesterday
-  - Frame it as a tradeoff: "the fried mac & cheese balls (330 cal, 9g protein) vs a Premier Protein (160 cal, 30g protein) — same slot, wildly different outcome"
-  - Use the good day as a blueprint for today: "get back to the salmon + shake pattern and you'll hit protein while staying under 1400"
-- Reference weight trend direction to ground the stakes (e.g., "weight up 0.4 lbs — the 3-day calorie surplus is showing up on the scale")
-- Never say "great job", "awesome", or similar empty praise
-- Do NOT reference implied intake, calorie adjustments, or tracking accuracy for any day in the last 14 days
-- Round calories to the nearest 50 and protein to the nearest 5g — "~1650 cal" not "1628 cal". False precision undermines trust
-- Do NOT give generic advice like "consider adjusting your intake" or "ensure you're logging all meals" — be specific and prescriptive based on the actual numbers
-- Flag missed tracking days (days with 0 tracked calories) if present
-- Return raw JSON only, no markdown code fences`);
+Produce raw JSON matching coachingMessageSchema, including should_send and text.
+${incompleteDay ? 'INCOMPLETE LOGGING DETECTED: yesterday has an incomplete log; ask only about meals not explicitly skipped.' : ''}
+Use only eligible assessed observations for calorie-plan and protein verdicts. The food logging floor is not an intake target.
+Plan comparisons use exercise-adjusted food boundaries; surplus requires exceeding estimated maintenance.
+A complete log may still be live. Protein failures require a trustworthy finished day and known protein.
+Calendar gaps break streaks. Period comparisons use matched eligible dates and disclose coverage and current configured goals.
+No compensatory targets or calorie arithmetic from legacy goals. Reconciliation, playbook and calibration context remain available above.
+Delivered budget facts are rendered deterministically from shared observations.`);
 
     return sections.join('\n');
   }
@@ -786,25 +751,12 @@ Writing rules:
    * @throws {Error} If output is not valid JSON or fails schema validation
    */
   async validate(raw, gathered, logger) {
-    let parsed;
-    try {
-      parsed = typeof raw.output === 'string' ? JSON.parse(raw.output) : raw.output;
-    } catch {
-      throw new Error('MorningBrief output is not valid JSON');
-    }
-
-    const result = OutputValidator.validate(parsed, coachingMessageSchema);
-    if (!result.valid) {
-      logger?.warn?.('validate.schema_failure', { errors: result.errors });
-      throw new Error(`MorningBrief validation failed: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data;
+    return canonicalCoachingResult(raw, gathered, 'morning-brief', logger);
   }
 
   /**
    * Act phase — record that the brief ran in working memory.
-   * Message delivery is handled by HealthCoachAgent after execute() returns.
+   * This assignment returns the validated payload without sending a message.
    */
   async act(validated, { memory, userId, logger }) {
     memory.set('last_morning_brief', new Date().toISOString(), { ttl: 24 * 60 * 60 * 1000 });

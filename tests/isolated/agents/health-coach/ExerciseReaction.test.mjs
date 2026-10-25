@@ -29,7 +29,7 @@ describe('ExerciseReaction', () => {
   it('gather reads activity from context', async () => {
     const er = new ExerciseReaction();
     const mockTools = [
-      { name: 'get_today_nutrition', execute: async () => ({ calories: 800 }) },
+      { name: 'get_day_budget', execute: async () => ({ calories: 800 }) },
       { name: 'get_user_goals', execute: async () => ({ goals: { calories: 2000 } }) },
     ];
     const gathered = await er.gather({
@@ -59,4 +59,12 @@ describe('ExerciseReaction', () => {
     expect(memory.set.mock.calls.length).toBe(1);
     expect(memory.set.mock.calls[0][0]).toBe('exercise_today');
   });
+});
+
+it.each([{ caloriesBurned: 100 }, {}, { calories: null }, { calories: NaN }])('does not start automated reasoning for an unknown or trivial burn: %j', async activity => {
+  const result = await new ExerciseReaction().execute({ context: { activity }, tools: [], logger: {},
+    workingMemory: { load: async () => ({ pruneExpired() {}, serialize: () => '', set() {} }), save: async () => {} },
+    agentRuntime: { execute: async () => ({ output: '{"should_send":true,"text":"reaction"}' }) },
+  });
+  expect(result).toEqual({ should_send: false });
 });

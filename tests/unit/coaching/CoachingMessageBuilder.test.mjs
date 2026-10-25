@@ -141,11 +141,14 @@ describe('CoachingMessageBuilder', () => {
       });
       expect(html).toContain('<b>Run:</b> 45 min');
       expect(html).toContain('320 cal burned');
-      expect(html).toContain('~150 extra cal earned');
+      expect(html).toContain('150 cal exercise credit included today');
     });
   });
 
   describe('wrapCommentary', () => {
+    it('escapes plain text exactly once at the channel boundary', () => {
+      expect(CoachingMessageBuilder.wrapCommentary('Rice & beans <b>food</b>')).toBe('\n\n<blockquote>Rice &amp; beans &lt;b&gt;food&lt;/b&gt;</blockquote>');
+    });
     it('wraps non-empty commentary in blockquote', () => {
       const html = CoachingMessageBuilder.wrapCommentary('That chicken hit hard.');
       expect(html).toBe('\n\n<blockquote>That chicken hit hard.</blockquote>');
@@ -155,5 +158,25 @@ describe('CoachingMessageBuilder', () => {
       expect(CoachingMessageBuilder.wrapCommentary('')).toBe('');
       expect(CoachingMessageBuilder.wrapCommentary(null)).toBe('');
     });
+  });
+});
+
+describe('historical evidence gaps', () => {
+  it('labels reconstructed intake as an estimate and protein as unknown', () => {
+    const text = CoachingMessageBuilder.buildMorningBriefBlock({
+      yesterday: { date: '2026-10-24', calories: 1600, protein: null, estimatedCalories: 2200, status: 'reconstructed' },
+      weekAvg: { calories: null, protein: null, trustedDays: 0, totalDays: 7 }, proteinGoal: 120, weight: null, minCalories: 1200,
+    });
+    expect(text).toContain('2200 cal estimated');
+    expect(text).toContain('protein unknown');
+    expect(text).not.toContain('nullg');
+  });
+  it('does not turn an unavailable amount into zero intake', () => {
+    const text = CoachingMessageBuilder.buildMorningBriefBlock({
+      yesterday: { date: '2026-10-24', calories: null, protein: null, status: 'unavailable' },
+      weekAvg: { calories: null, protein: null, trustedDays: 0, totalDays: 7 }, proteinGoal: 120, weight: null, minCalories: 1200,
+    });
+    expect(text).toContain('data unavailable');
+    expect(text).not.toContain('null cal');
   });
 });
