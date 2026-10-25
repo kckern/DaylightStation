@@ -59,7 +59,7 @@ rounds:
             scripture_reference: Jeremiah 2:13
           - value: 200
             clue: >-
-              The people deserted the Lord, the spring of water that gives life, and dug their own of these.
+              The people deserted the Lord, the spring of water that gives life, and dug these for themselves.
               But they were broken and couldn't hold any water.
             answer: What are wells?
             scripture_reference: Jeremiah 2:13
@@ -163,11 +163,11 @@ rounds:
             answer: Who is Ebed-Melek?
             scripture_reference: Jeremiah 38:7–9
           - value: 200
-            clue: The king told Ebed-Melek to take this many men to lift Jeremiah out of the well.
+            clue: The king told the palace official to take this many men to lift Jeremiah out of the well.
             answer: What is 30?
             scripture_reference: Jeremiah 38:10
           - value: 300
-            clue: Ebed-Melek told Jeremiah to put these under his arms to pad the ropes.
+            clue: The palace official told Jeremiah to put these under his arms to pad the ropes.
             answer: What are old rags and worn-out clothes?
             scripture_reference: Jeremiah 38:11–12
       - name: Lamentations

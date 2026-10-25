@@ -26,6 +26,11 @@ describe('reviewed Jeremiah open-book pack', () => {
     expect(regular.filter(c => c.daily_double)).toHaveLength(2);
     expect(regular.filter(c => c.media)).toHaveLength(4);
   });
+  it('keeps_the_rescuer_name_out_of_other_selectable_prompts', () => {
+    const rescuer = raw.rounds[1].categories[3].clues;
+    expect(rescuer[0].answer).toBe('Who is Ebed-Melek?');
+    for (const clue of rescuer.slice(1)) expect(clue.clue).not.toMatch(/Ebed[–— -]Melek/i);
+  });
   it('uses_reviewed_categories_and_final', () => {
     expect(raw.rounds.flatMap(r => r.categories.map(c => c.name)).slice(0, 6)).toEqual(['Jeremiah’s Calling', 'At the Workshop', 'Pictures of Trust', 'Speaking for God', 'Messages to Judah', 'Promises and Tears']);
     expect(raw.final).toMatchObject({ category: 'Hope for the Future', scripture_reference: 'Jeremiah 32:15', answer: 'What are houses, fields, and vineyards?' });
