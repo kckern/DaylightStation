@@ -11,6 +11,7 @@ import { sendJeopardyCommand } from "./jeopardyClient.js";
 import { JEOPARDY_PACK, actionCue, phaseCues } from "./jeopardyCues.js";
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import WagerPanel from "./ui/WagerPanel.jsx";
+import ControlLegend from "../../../../../../__capabilities/gaming/browser/platform/ui/ControlLegend.jsx";
 import Board from "./Board.jsx";
 import ClueScreen from "./ClueScreen.jsx";
 import FinalRound from "./FinalRound.jsx";
@@ -116,7 +117,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   useEffect(() => {
     const onKey = (e) => {
       if (!state) return;
-      const action = resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, key: e.key });
+      const action = resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, mode: currentRound(state)?.mode, key: e.key });
       if (action) applyAction(action);
     };
     window.addEventListener('keydown', onKey);
@@ -130,7 +131,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     if (!state) return false;
     if (remote.repeat && state.phase !== 'board') return true;
     const key = remoteActionKey(remote);
-    const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, key });
+    const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, mode: currentRound(state)?.mode, key });
     if (!action) return false;
     logger.debug('jeopardy.remote-action', { phase: state.phase, key, type: action.type });
     applyAction(action);
@@ -155,7 +156,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
         </div>
       )}
       {phase === 'board' && (
-        <Board round={round} used={state.used} roundIndex={state.roundIndex} cursor={state.cursor} onSelect={(cat, row) => applyAction({ type: 'SELECT_AT', cat, row })} />
+        <><Board round={round} used={state.used} roundIndex={state.roundIndex} cursor={state.cursor} onSelect={(cat, row) => applyAction({ type: 'SELECT_AT', cat, row })} /><ControlLegend items={[{ key: 'Arrows', label: 'Choose a question' }, { key: 'OK', label: 'Open question' }]} /></>
       )}
       {phase === 'wager' && (
         <WagerPanel

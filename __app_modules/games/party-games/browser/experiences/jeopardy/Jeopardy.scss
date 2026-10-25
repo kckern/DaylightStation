@@ -110,7 +110,7 @@
   // stays below the picture instead of overflowing onto it at 960×540.
   &--media {
     .gp-media--image { max-height: 34%; }
-    .gp-reveal { gap: 0.75rem; }
+    .gp-reveal { flex: 1 0 auto; gap: 0.75rem; }
     .gp-reveal__prompt { font-size: 1.5rem; }
   }
 }

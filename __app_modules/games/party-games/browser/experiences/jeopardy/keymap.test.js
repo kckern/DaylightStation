@@ -37,5 +37,10 @@ describe('remoteActionKey', () => {
 
 it('reveals an assigned-team clue on OK without requiring a buzzer',()=>{
  expect(resolveJeopardyKey({phase:'clue',revealed:false,answeringTeamId:'team_1',key:'Enter'})).toEqual({type:'REVEAL'});
- expect(resolveJeopardyKey({phase:'judging',revealed:false,key:'ArrowUp'})).toBe(null);
+ expect(resolveJeopardyKey({phase:'judging',mode:'turns',revealed:false,key:'ArrowUp'})).toBe(null);
+});
+
+it('preserves hosted judging without revealing answers to teams waiting to steal',()=>{
+ expect(resolveJeopardyKey({phase:'judging',mode:'hosted',revealed:false,key:'ArrowDown'})).toEqual({type:'JUDGE',correct:false});
+ expect(resolveJeopardyKey({phase:'judging',mode:'turns',revealed:false,key:'ArrowDown'})).toBe(null);
 });

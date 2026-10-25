@@ -23,7 +23,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
   const value = isDailyDouble ? wager : active.clue.value * Number(round.multiplier ?? 1);
   const judging = phase === 'judging';
   const legend = judging
-    ? (revealed ? [{ key: '↑', label: 'Correct' }, { key: '↓', label: 'Wrong' }] : [{ key: 'OK', label: 'Show answer' }])
+    ? [...(revealed || round.mode === 'hosted' ? [{ key: '↑', label: 'Correct' }, { key: '↓', label: 'Wrong' }] : []), ...(!revealed ? [{ key: 'OK', label: 'Show answer' }] : [])]
     : revealed
       ? [{ key: 'OK', label: 'Back to board' }]
       : [...(state.answeringTeamId ? [{ key: 'OK', label: 'Show answer' }] : []), { key: 'Back', label: 'Time out' }];

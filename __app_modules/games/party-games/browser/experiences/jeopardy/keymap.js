@@ -3,7 +3,7 @@
 
 const ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
-export function resolveJeopardyKey({ phase, revealed = false, answeringTeamId = null, key }) {
+export function resolveJeopardyKey({ phase, revealed = false, answeringTeamId = null, mode = 'hosted', key }) {
   if (phase === 'board') {
     if (ARROWS[key]) return { type: 'MOVE_CURSOR', dir: ARROWS[key] };
     if (key === 'Enter') return { type: 'SELECT_TILE' };
@@ -16,8 +16,8 @@ export function resolveJeopardyKey({ phase, revealed = false, answeringTeamId = 
     return null;
   }
   if (phase === 'judging') {
-    if (key === 'ArrowUp' && revealed) return { type: 'JUDGE', correct: true };
-    if (key === 'ArrowDown' && revealed) return { type: 'JUDGE', correct: false };
+    if (key === 'ArrowUp' && (revealed || mode === 'hosted')) return { type: 'JUDGE', correct: true };
+    if (key === 'ArrowDown' && (revealed || mode === 'hosted')) return { type: 'JUDGE', correct: false };
     if (key === 'Enter' && !revealed) return { type: 'REVEAL' };
     return null;
   }
