@@ -169,7 +169,7 @@ negative and an in-range `remaining` can exceed the top (that much really is lef
 **History:** goals apply as *current* to every day (`goalBasis: 'current'`), so
 changing `targetDate` or `targetWeightLbs` recolours past days.
 
-`__backend/src/3_applications/health/BudgetService.mjs` is the only calculation owner.
+`__app_modules/wellness/health/server/application/health/BudgetService.mjs` is the only calculation owner.
 It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today reads
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log.
@@ -181,11 +181,13 @@ rows into shared energy facts using `budgetLines` and `zoneFor`. It takes explic
 `date` and `today` values and never reads a clock. `trustworthy` means the log is
 complete; `finished` means a past date or an explicit done/fasting closure. A
 skipped meal can establish completeness without finishing today. The Today card
-uses the same finished-day projection and retains its existing price ladder.
+uses the same finished-day projection and retains its existing tier ladder.
 
 Plan and maintenance states are independent: food of 1,800 against a 1,600 plan
 and 2,000 maintenance is over plan by 200 and below maintenance. Exercise shifts
-both food-scale limits once, in full. Equality is neither over plan nor surplus;
+both food-scale limits once, in full; the shared tier rules cap the food plan at
+food break-even if the configured floor/plan would exceed it. Equality is neither
+over plan nor surplus;
 passing the logging floor alone never establishes a surplus. An incomplete log
 retains its known boundaries but has unknown verdicts. Missing budgets are
 unavailable; missing numeric facts remain null. Unknown maintenance preserves
@@ -200,12 +202,27 @@ exercise-adjusted limits. If any eligible row lacks a metric, that metric's
 average is null so compared averages never use different day counts.
 `proteinKnown` coverage counts eligible rows with a finite measured protein macro
 and non-reconstructed provenance. Protein averages belong to callers and use only
-those rows. Reconstructed calories remain energy evidence with unknown protein.
+those rows, with a separate `proteinDays` denominator. In coaching, the evidence
+reader excludes reconstructed and unknown-provenance rows from intake verdicts
+and period comparisons; reconstructed calories remain separately labelled estimates
+with unknown protein, even after a day closure.
 The projections retain an explicit `goalBasis`; absent or mixed bases stay null.
 Historical API rows currently use `goalBasis: 'current'`, not recovered historical
 goals.
 
-Automated coach assignments, agent budget tools and Nutribot captions consume the same assessments. Caption food ranges end at the exercise-adjusted food plan and label the exercise adjustment; missing budgets display logged totals with assessment unavailable. Activity burn is separate from daily synchronized credit, and unknown/reconstructed provenance supports no intake verdict. Dashboard coach assessment prose is deterministic while curated fitness recommendations retain their existing domain workflow.
+Automated coach assignments, agent budget tools and Nutribot captions consume the
+same assessments. Caption food ranges end at the exercise-adjusted food plan and
+label the exercise adjustment; missing budgets display logged totals with
+assessment unavailable. Activity burn is separate from daily synchronized credit,
+and unknown/reconstructed provenance supports no intake verdict. Automated
+nutrition prose is rendered from supported observations; model prose is discarded.
+Assignment reasoning receives no tools and disables SDK memory per request;
+programmatic gathering retains its tools. Legacy notification assignments return
+validated results, the lightweight orchestrator sends scheduled notifications, and
+HealthCoachAgent persists dashboard output only after validation. Dashboard coach
+assessment prose is deterministic while curated fitness rationale and interactive
+chat retain their existing domain/conversational behavior. Delivery and repetition
+limits are documented in [Health coaching](coaching-system.md).
 
 ### The Today budget card — one job at a time
 
@@ -1676,7 +1693,7 @@ Failures remain visible rather than appearing as empty history.
 
 ## Coach `log_food`
 
-`__backend/src/3_applications/agents/health-coach/tools/NutritionActionToolFactory.mjs`
+`__app_modules/wellness/health/server/application/agents/health-coach/tools/NutritionActionToolFactory.mjs`
 registers `log_food` — the coach's only write path into nutrition. It takes `{ userId,
 description }` and calls the identical text pipeline the web combobox's sentence path
 uses (`nutritionInput.process({ type: 'text', content: description, userId })` —
@@ -1693,7 +1710,7 @@ reviews or undoes it in the app.
 
 ## Goals
 
-`__backend/src/2_domains/health/services/BudgetMath.mjs` — pure, no IO, no clock — implements
+`__app_modules/wellness/health/server/domain/health/services/BudgetMath.mjs` — pure, no IO, no clock — implements
 Mifflin-St Jeor:
 
 ```
