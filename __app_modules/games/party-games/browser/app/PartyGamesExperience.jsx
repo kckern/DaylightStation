@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useBuzzers } from "../interaction/useBuzzers.js";
 import { GuessingMusic } from "../effects/GuessingMusic.js";
 import { AudioCueEngine } from "../effects/AudioCueEngine.js";
-import { restoreGamepadRoleBindings, clearGamepadRoleBindings } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { restoreGamepadRoleBindings, clearGamepadRoleBindings, acquireGamepadBuzzerCapture } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 
 // Adapts Party Games hardware/effects to the environment-neutral capability
 // ports consumed by experiences. Experiences never import this environment.
@@ -16,7 +16,7 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
   const onBuzz = useCallback((teamId) => {
     for (const listener of buzzListeners.current) listener(teamId);
   }, []);
-  const { arbiter, locked, arm, disarm } = useBuzzers({ teams: seats, onLock: onBuzz });
+  const { arbiter, locked, arm, disarm, subscribeInput } = useBuzzers({ teams: seats, onLock: onBuzz });
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
 
@@ -46,8 +46,11 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
       arm,
       disarm,
       subscribe,
+      subscribeInput,
+      capture: acquireGamepadBuzzerCapture,
+      restore(bindings) { arbiter.restore({ slotToTeam: bindings }); clearGamepadRoleBindings(); restoreGamepadRoleBindings(bindings); },
     },
-  }), [audio, music, arm, disarm, subscribe]);
+  }), [audio, music, arm, disarm, subscribe, subscribeInput, arbiter]);
 
   return <Experience {...props} seats={seats} config={config} gamingServices={gamingServices} />;
 }

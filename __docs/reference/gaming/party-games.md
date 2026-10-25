@@ -123,17 +123,22 @@ sequential IDs/slots; additional anonymous teams can be added or removed down
 to two. The host can operate setup and the whole game with the TV remote.
 
 When every Jeopardy round uses `mode: turns`, its projected gamepad profile is
-`host`, so Party Games skips buzzer binding. Mixed and hosted rounds preserve
-the manifest's buzzer behavior. The active team chooses and answers, then the
-next team plays after a correct answer, wrong answer, or timeout. OK reveals
-an assigned-team clue; once revealed, Up marks correct and Down marks wrong.
-Back times out an unanswered clue, and OK returns from its revealed answer.
-Wagers and Final judgments use ordinary arrow/OK button navigation.
+`host`, so Party Games skips hardware readiness. This explicit noncompetitive
+mode keeps its active-team rotation. Hosted/self and mixed packs require one
+connected, assigned, tested physical gamepad per team before Start. Phone host
+controls select, reveal, judge, and manage wagers; TV navigation does not issue
+those commands.
 
-A clue may declare `little_kids: true` to show a baby-blue baby icon on its tile
-and clue screen, with “Little kids’ turn” as its accessible label. This is a room-level prompt, not a registered participant:
-an adult gives a toddler on the active team the first chance to answer. Other
-spokespersons can rotate in seating order without entering anybody's name.
+A clue marked `little_kids: true` receives a fixed `assigned_team_id` when the
+session initializes. Flagged clues are distributed across teams in round,
+category, then clue order, independently of price or selection order. Both boards
+show the owner; opening a flagged clue grants that team the answer, disables
+buzzing, and waits for host judgment without a countdown. A miss closes under
+host control with no steal. The little-kids assignment takes precedence over a
+Daily Double marker. Ordinary hosted clues retain the first-buzz race and steals.
+Restored older boards acquire the same deterministic assignments without
+changing scores or used clues. Public projections retain owner badges while
+hiding unopened prompts, answers, Daily Doubles, and physical controller IDs.
 
 Automatic local-session recovery compares the pinned definition's
 `party_games.setup_revision` with the current catalog. An older saved session
@@ -168,7 +173,38 @@ and authoritative rules.
 
 ### Gamepad buzzers
 
-On the Buzzer check screen, choosing a team and pressing any controller button binds that controller to the team. The controller becomes buzzer slot `gamepad:<index>:<id>` in `BuzzerArbiter`, beside Zigbee buttons (`slot_N` over the `gaming` WebSocket) and the number keys. A team-bound controller is a buzzer only. Every input it reports (face, shoulder, d-pad, stick clicks, Home, stick deflection) is a semantic press, and none of it navigates the UI, so a buzz can never pick a board tile. Binding a controller replaces that team's number-key slot, but the phone host's "[Team] answers" button still works. Bindings are saved per session in local storage, so a refresh restores them. They are released when the experience unmounts (results, play again or exit), and the controllers then navigate menus again. A bind that is started but never pressed is cancelled when the Buzzer check screen closes.
+The TV's **Ready to play** view keeps the host QR visible and guides each team
+through an assignment press followed by a released, fresh test press. Assigned
+and Tested are separate statuses shared with the phone. A controller already
+assigned to another team cannot be stolen. Start/Back and all other gamepad
+inputs are captured by the existing shared `GamepadAdapter` during setup; there
+is no second gamepad poller. The phone can reassign a team and must wait for the
+TV to assign/test its new mapping.
+
+The session owns `buzzerSetup` (`epoch`, `seenAt`, per-team `generation`, `slot`,
+`connected`, `tested`). TV mounts reset all live tests. Disconnect invalidates
+the team's test and advances its generation; reconnect requires a fresh press.
+Saved roles do not count as a current test. TV presence renews every five
+seconds; a fifteen-second absence disables phone Start and the authoritative
+server Start gate. The server uses its recorded command time, never the client's
+timestamp, for this lease. Every round in a mixed pack participates in readiness,
+so a later competitive round cannot bypass the gate.
+
+The host-only Jeopardy commands are `BUZZER_SETUP`, `BUZZER_PRESENCE`,
+`BUZZER_REPORT` (`assign`, `test`, `disconnect`), and `BUZZER_REASSIGN`. Reports
+must match the TV epoch, team generation and slot; stale reports and participant
+attempts are rejected. `START_ROUND` returns `buzzers_not_ready` (HTTP 422)
+until every required team is ready. Arbiter slots are `gamepad:<index>:<id>`;
+ordinary keyboard/WS buzz inputs cannot satisfy physical-gamepad readiness.
+Team-bound controllers remain buzzers during play and return to navigation on
+exit. Host phone answer controls remain available for ordinary competitive clues.
+
+On the board the canonical chooser appears prominently as **[Team] — choose
+the next question**, with team color. A newly observed selection keeps the board
+visible and lights the selected tile for exactly 500 ms before showing its clue
+or wager. All local buzzer sources remain disarmed during that acknowledgment.
+Direct refresh into a clue skips the animation; score-only snapshots do not
+replay it, and session/round changes and unmount cancel stale timers.
 
 ### Jeopardy sound pack
 
@@ -384,3 +420,33 @@ Restart preserves the same teams and their saved physical buzzer roles, clears t
 For isolated browser acceptance, run `node tests/_lib/jeopardy-acceptance-server.mjs`, then set `BASE_URL` to its printed loopback URL before running the focused `fhe-jeopardy.runtime.test.mjs` browser suite. `BASE_URL` disables automatic backend startup. The harness mounts real Party Games TV/host surfaces, fonts, router, gaming diagnostic authority and WebSocket events; sessions are ephemeral and cleaned up by the tests. It starts no household services or durable games. The harness serves reviewed local authored art through the production gaming media service and does not exercise the outer screen renderer or physical kiosk/buzzer hardware.
 
 Embedded admin previews ignore ambient URL session attachments and leave the admin URL unchanged. Direct game routes validate attached definition identity against the requested pack.
+
+
+### Opting an unstarted pinned practice session into competition
+
+Changing authored round modes affects future sessions; an attached session keeps
+its pinned set. For an explicitly selected unstarted practice session, the host
+may send `jeopardy.configure.competitive` through the ordinary session command
+endpoint. This converts its rounds to `hosted` and resets readiness while keeping
+the session ID, teams, scores, QR and question pack. It is rejected unless the
+session is at the first round introduction with no used clues and all scores
+zero. It is not exposed as a general phone workflow and never changes an
+in-progress/scored session. Unrelated authored `turns` packs retain that mode.
+
+
+Jeopardy hardware/readiness and gameplay commands share one local per-session
+write lane. Explicit revision conflicts refetch and retry against the server;
+semantic phase/epoch/generation checks still reject obsolete commands. Failed
+hardware facts remain pending for reconnect/periodic reconciliation. Presence
+cannot renew readiness while a safety report is unacknowledged, and bind/test
+feedback follows successful acknowledgment or verified committed state.
+
+Accepted sound-bearing actions carry a small `acceptedAction` hint containing
+only normalized type, judgment correctness when applicable, and server revision.
+Only Start, tile selection, timeout and judgment advance that hint; presence and
+other silent commands preserve it. The TV establishes a silent baseline on its
+initial fetch, then plays each newly observed hint once through the existing
+Jeopardy cue map. Phone actions and local accepted actions use the same path;
+rejected requests, duplicate WebSocket snapshots and direct refresh do not replay
+cues. Existing phase theme/think/Daily Double/win behavior and audio files are
+unchanged.

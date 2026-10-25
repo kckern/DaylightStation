@@ -93,3 +93,25 @@ describe('GamepadAdapter team buzzers', () => {
     spy.mockRestore(); h.done();
   });
 });
+
+it('setup capture swallows Start/Back from every pad without assigning a duplicate team', async () => {
+  const { acquireGamepadBuzzerCapture } = await import('./GamepadAdapter.js');
+  const h = harness(); const gp = pad();
+  const stop = acquireGamepadBuzzerCapture();
+  h.adapter._pollOne(gp);
+  press(gp, 9); h.adapter._pollOne(gp);
+  press(gp, 8); h.adapter._pollOne(gp);
+  expect(h.keys).toEqual([]);
+  expect(h.emitted).not.toHaveBeenCalled();
+  expect(h.intents.filter(i => i.phase === 'press')).toHaveLength(2);
+  stop(); h.done();
+});
+
+it('emits stick release so setup requires and accepts a fresh second deflection', () => {
+  const h = harness(); const gp = pad();
+  restoreGamepadRoleBindings({ 'gamepad:0:Buzzer Pad': 'red' });
+  h.adapter._pollOne(gp); gp.axes[0] = 0.9; h.adapter._pollOne(gp);
+  gp.axes[0] = 0; h.adapter._pollOne(gp);
+  expect(h.intents.map(i => [i.action, i.phase])).toEqual([['stick.right', 'press'], ['stick.right', 'release']]);
+  h.done(); clearGamepadRoleBindings();
+});

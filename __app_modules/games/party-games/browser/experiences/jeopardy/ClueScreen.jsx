@@ -15,7 +15,7 @@ import "./Jeopardy.scss";
 export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = null }) {
   const [mediaError, setMediaError] = useState(null);
   const { active, revealed, isDailyDouble, wager, phase } = state;
-  const running = !state.set.open_book && phase === 'clue' && !revealed;
+  const running = !state.set.open_book && !active?.clue.little_kids && phase === 'clue' && !revealed;
   const { progress, remaining } = useCountdown({ seconds: timerSeconds, running, onExpire: onTimeout });
   if (!active) return null;
   const round = state.set.rounds[state.roundIndex];
@@ -28,7 +28,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
         {active.clue.little_kids && <BabyIcon className="jp-clue__kids" />}
         {isDailyDouble && <span className="jp-clue__dd">DAILY DOUBLE</span>}
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
-        {!state.set.open_book && !judging && !revealed && <TimerRing progress={progress} remaining={remaining} size={72} />}
+        {!state.set.open_book && !active.clue.little_kids && !judging && !revealed && <TimerRing progress={progress} remaining={remaining} size={72} />}
       </div>
       {active.clue.media && !mediaError && (
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />
@@ -44,7 +44,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
               ))}
             </span>
           )}
-          {lockedTeam.name}{round.mode === 'turns' || isDailyDouble ? ' answers' : ' buzzed in!'}
+          {lockedTeam.name}{round.mode === 'turns' || isDailyDouble || active.clue.little_kids ? ' answers' : ' buzzed in!'}
         </div>
       )}
     </div>

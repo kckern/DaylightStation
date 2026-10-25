@@ -1,6 +1,7 @@
 import { validateJeopardyScriptureMetadata } from "./content.mjs";
 import { defineRuleModule } from "../../kernel/index.mjs";
-import { initJeopardy, jeopardyReducer, scoreDelta } from "./stateMachine.mjs";
+import { initJeopardy, jeopardyReducer, scoreDelta, migrateJeopardyState } from "./stateMachine.mjs";
+import { buzzersReady, reduceBuzzerSetup } from "./buzzerReadiness.mjs";
 import { adjustScore } from "../../mechanics/scoring.mjs";
 
 export function validateJeopardyDefinition(definition) {
@@ -18,18 +19,23 @@ function participantProjection(state, viewer) {
   const projected = structuredClone(state);
   const viewerTeam = teamForActor(state, viewer?.participant_id);
   delete projected.team_actors;
+  if (projected.buzzerSetup) {
+    delete projected.buzzerSetup.epoch;
+    for (const entry of Object.values(projected.buzzerSetup.teams)) { entry.assigned = Boolean(entry.slot); delete entry.slot; }
+  }
   const showActiveAnswer = state.revealed === true || ['final-judging', 'done'].includes(state.phase);
   projected.set.rounds = projected.set.rounds.map((round) => ({
     ...round,
     categories: round.categories.map((category) => ({
       ...category,
-      clues: category.clues.map((clue) => ({ value: clue.value })),
+      clues: category.clues.map((clue) => ({ value: clue.value, ...(clue.little_kids ? { little_kids: true, assigned_team_id: clue.assigned_team_id } : {}) })),
     })),
   }));
   if (projected.active?.clue) {
     const clue = state.active.clue;
     projected.active.clue = {
       value: clue.value,
+      ...(clue.little_kids ? { little_kids: true, assigned_team_id: clue.assigned_team_id } : {}),
       clue: clue.clue,
       ...(clue.scripture_reference ? { scripture_reference: clue.scripture_reference } : {}),
       ...(clue.media ? { media: structuredClone(clue.media) } : {}),
@@ -51,7 +57,8 @@ function participantProjection(state, viewer) {
   return projected;
 }
 
-const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL']);
+const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE']);
+const CUE_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'TIMEOUT', 'JUDGE', 'JUDGE_FINAL']);
 const actorIsHost = (actorId) => actorId === 'host' || actorId === 'system';
 
 function teamForActor(state, actorId) {
@@ -100,10 +107,23 @@ export const jeopardyRuleModule = defineRuleModule({
     return { ...initJeopardy(normalizedDefinition, teamIds), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
   },
   handleCommand(state, command, _definition, context) {
+    state = migrateJeopardyState(state);
     if (state.status !== 'active') return { error: { code: 'session_terminal', message: 'Jeopardy session is complete' } };
     const action = { ...command, type: command.type.replace(/^jeopardy\./, '').replaceAll('.', '_').toUpperCase() };
     const authorizationError = authorizeAction(state, action, context.actorId);
     if (authorizationError) return { error: authorizationError };
+    if (action.type === 'CONFIGURE_COMPETITIVE') {
+      if (state.phase !== 'round-intro' || state.roundIndex !== 0 || Object.values(state.used || {}).some(Boolean) || Object.values(state.scores || {}).some(score => Number(score) !== 0)) {
+        return { error: { code: 'illegal_command', message: 'Competitive setup can change only before the first round starts' } };
+      }
+      return { state: { ...state, set: { ...state.set, rounds: state.set.rounds.map(round => ({ ...round, mode: 'hosted' })) }, buzzerSetup: null }, events: [{ type: command.type, competitive: true }] };
+    }
+    const now = context.recordedAt ? Date.parse(context.recordedAt) : Number(context.logicalTime) || 0;
+    if (action.type.startsWith('BUZZER_')) {
+      const result = reduceBuzzerSetup(state, action, now);
+      return result.error ? result : { ...result, events: [{ type: command.type, ...(action.teamId ? { teamId: action.teamId } : {}), ...(action.kind ? { kind: action.kind } : {}) }] };
+    }
+    if (action.type === 'START_ROUND' && state.phase === 'round-intro' && !buzzersReady(state, now)) return { error: { code: 'buzzers_not_ready', message: 'Every team needs a connected, assigned and tested buzzer on the TV' } };
     const wagerError = validateWager(state, action);
     if (wagerError) return { error: wagerError };
     let delta = action.type === 'JUDGE' ? scoreDelta(state, action.correct) : null;
@@ -113,14 +133,18 @@ export const jeopardyRuleModule = defineRuleModule({
     }
     const reduced = jeopardyReducer(state, action);
     if (reduced === state) return { error: { code: 'illegal_command', message: `${command.type} is not legal during ${state.phase}` } };
-    const next = { ...reduced, scores: delta ? adjustScore(state.scores, delta.teamId, delta.delta) : state.scores };
+    const acceptedAction = CUE_ACTIONS.has(action.type) ? { type: action.type, ...(action.type.startsWith('JUDGE') ? { correct: Boolean(action.correct) } : {}), revision: (context.revision ?? 0) + 1 } : state.acceptedAction;
+    const next = { ...reduced, ...(acceptedAction ? { acceptedAction } : {}), scores: delta ? adjustScore(state.scores, delta.teamId, delta.delta) : state.scores };
     if (next.phase === 'done') next.status = 'complete';
-    return { state: next, status: next.status, events: [{ type: command.type, phase: next.phase, ...(delta ? { score_delta: delta } : {}) }] };
+    return { state: next, status: next.status, events: [{ type: command.type, phase: next.phase, ...(delta ? { score_delta: delta } : {}), ...(action.type.startsWith('SELECT_') && next.active?.clue.little_kids ? { assigned_team_id: next.answeringTeamId } : {}) }] };
   },
   project(state, _definition, viewer) {
+    state = migrateJeopardyState(state);
     return { state: viewer?.role === 'host' || viewer?.role === 'system' ? structuredClone(state) : participantProjection(state, viewer), interaction: { phase: state.phase } };
   },
 });
 
 export * from "./stateMachine.mjs";
 export * from "./content.mjs";
+
+export { buzzersReady, requiresBuzzers, BUZZER_LEASE_MS } from "./buzzerReadiness.mjs";

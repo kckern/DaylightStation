@@ -10,6 +10,12 @@ const SEMANTIC_BUTTON_ACTIONS = Object.freeze({
 });
 const roleBindings = new Map();
 let pendingRole = null;
+let buzzerCaptures = 0;
+export function acquireGamepadBuzzerCapture() {
+  buzzerCaptures += 1;
+  let released = false;
+  return () => { if (!released) { released = true; buzzerCaptures -= 1; } };
+}
 let sharedHost = null;
 let sharedHostConsumers = 0;
 export function bindNextGamepadPress(role) { pendingRole = role; }
@@ -308,7 +314,7 @@ export class GamepadAdapter {
 
     // A controller bound to a team (or the next press while a bind is pending)
     // is a buzzer: every input is a semantic press, nothing navigates the UI.
-    if (pendingRole !== null || roleBindings.has(`${gpIdx}:${gp.id}`)) {
+    if (buzzerCaptures > 0 || pendingRole !== null || roleBindings.has(`${gpIdx}:${gp.id}`)) {
       this._pollBuzzer(gp, prev, prevStick);
       return;
     }
@@ -387,8 +393,8 @@ export class GamepadAdapter {
       const value = gp.axes[dir.axis] || 0;
       const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
       const stickKey = `stick_${dir.key}`;
-      if (active && !prevStick[stickKey] && this._claimFire(gp.id, stickKey)) {
-        this._emitSemantic(gp, null, 'press', `stick.${dir.payload.direction}`);
+      if (active !== !!prevStick[stickKey] && this._claimFire(gp.id, `${stickKey}${active ? '' : ':release'}`)) {
+        this._emitSemantic(gp, null, active ? 'press' : 'release', `stick.${dir.payload.direction}`);
       }
       prevStick[stickKey] = active;
     }
@@ -433,7 +439,7 @@ export class GamepadAdapter {
 
   _emitSemantic(gamepad, buttonIndex, phase, action = SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`) {
     const controllerId = `${gamepad.index}:${gamepad.id}`;
-    if (phase === 'press' && pendingRole) { roleBindings.set(controllerId, pendingRole); logger().info('gamepad.role-bound', { controllerId, role: pendingRole }); pendingRole = null; }
+    if (phase === 'press' && pendingRole && (!roleBindings.has(controllerId) || roleBindings.get(controllerId) === pendingRole)) { roleBindings.set(controllerId, pendingRole); logger().info('gamepad.role-bound', { controllerId, role: pendingRole }); pendingRole = null; }
     const button = buttonIndex == null ? null : gamepad.buttons[buttonIndex];
     const intent = interactionIntent({
       action,

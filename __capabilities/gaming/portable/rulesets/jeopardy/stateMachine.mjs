@@ -22,9 +22,33 @@ export function scoreDelta(state, correct) {
   return { teamId, delta: currentRound(state).penalize_wrong ? -base : 0 };
 }
 
-export function initJeopardy(set, teamIds) {
+export function assignKidsTeams(set, teamIds) {
+  let assigned = 0;
   return {
-    set,
+    ...set,
+    rounds: set.rounds.map(round => ({
+      ...round,
+      categories: round.categories.map(category => ({
+        ...category,
+        clues: category.clues.map(clue => {
+          if (!clue.little_kids) return { ...clue };
+          const teamId = teamIds[assigned++ % teamIds.length] || null;
+          return { ...clue, assigned_team_id: teamId };
+        }),
+      })),
+    })),
+  };
+}
+
+export function migrateJeopardyState(state) {
+  const missing = state.set.rounds.some(round => round.categories.some(category => category.clues.some(clue => clue.little_kids && !clue.assigned_team_id)));
+  return missing ? { ...state, set: assignKidsTeams(state.set, state.teamIds) } : state;
+}
+
+export function initJeopardy(set, teamIds) {
+  const assignedSet = assignKidsTeams(set, teamIds);
+  return {
+    set: assignedSet,
     teamIds,
     roundIndex: 0,
     phase: 'round-intro',
@@ -120,10 +144,10 @@ export function jeopardyReducer(state, action) {
       const clue = clueAt(state, cat, row);
       if (!clue || isUsed(state, cat, row)) return state;
       const active = { cat, row, clue };
-      if (clue.daily_double) {
+      if (clue.daily_double && !clue.little_kids) {
         return { ...state, cursor, phase: 'wager', active, isDailyDouble: true, answeringTeamId: state.turnTeamId };
       }
-      const answeringTeamId = round.mode === 'turns' ? state.turnTeamId : null;
+      const answeringTeamId = clue.little_kids ? clue.assigned_team_id : round.mode === 'turns' ? state.turnTeamId : null;
       return { ...state, cursor, phase: 'clue', active, answeringTeamId, revealed: false, attempted: [] };
     }
 
@@ -142,7 +166,7 @@ export function jeopardyReducer(state, action) {
       return { ...state, phase: 'clue', wager: action.amount, revealed: false };
 
     case 'BUZZ': {
-      if (state.phase !== 'clue' || state.isDailyDouble || round.mode === 'turns') return state;
+      if (state.phase !== 'clue' || state.active?.clue.little_kids || state.isDailyDouble || round.mode === 'turns') return state;
       if (state.answeringTeamId || state.attempted.includes(action.teamId)) return state;
       const revealed = round.mode === 'self' ? true : state.revealed;
       return { ...state, phase: 'judging', answeringTeamId: action.teamId, revealed };
@@ -158,7 +182,7 @@ export function jeopardyReducer(state, action) {
       if (state.phase !== 'judging') return state;
       if (action.correct) return closeClue({ ...state, turnTeamId: state.answeringTeamId || state.turnTeamId });
       // wrong:
-      if (state.isDailyDouble || round.mode !== 'hosted') return closeClue(state);
+      if (state.active?.clue.little_kids || state.isDailyDouble || round.mode !== 'hosted') return closeClue(state);
       const attempted = [...state.attempted, state.answeringTeamId];
       if (attempted.length >= state.teamIds.length) {
         // everyone missed — show the answer, host returns to board

@@ -56,3 +56,84 @@ it('open book ignores legacy and default clue timers for sixty seconds',async()=
  const view=render(<Jeopardy sessionId="test" seats={teams} config={{defaults:{timer_seconds:12}}}/>);
  await act(async()=>{await Promise.resolve();});act(()=>vi.advanceTimersByTime(60000));expect(sendJeopardyCommand).not.toHaveBeenCalled();expect(screen.queryByText('Answer',{exact:true})).toBeNull();expect(document.querySelector('.gp-timerring')).toBeNull();view.unmount();vi.useRealTimers();
 });
+
+it('acknowledges canonical selection for exactly 500ms without buzzing and skips it on direct clue load', async () => {
+ vi.useFakeTimers();
+ const next={...base,phase:'clue',active:{cat:0,row:0,clue:set.rounds[0].categories[0].clues[0]}};
+ fetchSession.mockResolvedValueOnce({state:base}).mockResolvedValueOnce({state:next});
+ const buzzers={subscribe:()=>()=>{},arm:vi.fn(),disarm:vi.fn()};
+ const view=render(<Jeopardy sessionId="test" seats={teams} gamingServices={{buzzers}}/>);
+ await act(async()=>{});
+ expect(screen.getByText('Blue Team — choose the next question')).toBeVisible();
+ await act(async()=>ws.handler({kind:'session-updated',sessionId:'test'}));
+ expect(screen.getByTestId('jeopardy-board')).toBeVisible();
+ expect(screen.getByRole('gridcell')).toHaveClass('is-selected');
+ expect(screen.queryByTestId('clue-screen')).toBeNull();
+ act(()=>vi.advanceTimersByTime(499));expect(screen.queryByTestId('clue-screen')).toBeNull();
+ act(()=>vi.advanceTimersByTime(1));expect(screen.getByTestId('clue-screen')).toBeVisible();
+ expect(sendJeopardyCommand).not.toHaveBeenCalled();
+ view.unmount();
+ fetchSession.mockResolvedValue({state:next});
+ const direct=render(<Jeopardy sessionId="new" seats={teams}/>);await act(async()=>{});
+ expect(screen.getByTestId('clue-screen')).toBeVisible();
+ direct.unmount();vi.useRealTimers();
+});
+
+it('keeps the visible chooser aligned with canonical turns after assigned misses and ordinary correct answers', async () => {
+ const {jeopardyRuleModule: rules}=await import('../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs');
+ const seats=[{id:'red',name:'Red',color:'#f00'},{id:'blue',name:'Blue',color:'#00f'}];
+ const pack={open_book:true,rounds:[{mode:'hosted',categories:[{name:'Mixed',clues:[{value:100,little_kids:true,clue:'Kids',answer:'One'},{value:200,clue:'Regular',answer:'Two'},{value:300,clue:'Remaining',answer:'Three'}]}]}]};
+ let state={...rules.createInitialState(pack,{seats}),phase:'board'}; let revision=0;
+ fetchSession.mockImplementation(async()=>({header:{revision},state}));
+ render(<Jeopardy sessionId="choose" seats={seats}/>);
+ await screen.findByText('Red — choose the next question');
+ const host=async actions=>{for(const action of actions){const result=rules.handleCommand(state,action,pack,{actorId:'host'});state=result.state;revision++;}await act(async()=>ws.handler({kind:'session-updated',sessionId:'choose'}));};
+ await host([{type:'SELECT_AT',cat:0,row:0},{type:'REVEAL'},{type:'JUDGE',correct:false}]);
+ expect(screen.getByText('Red — choose the next question')).toBeVisible();
+ await host([{type:'SELECT_AT',cat:0,row:1},{type:'BUZZ',teamId:'blue'},{type:'JUDGE',correct:true}]);
+ expect(screen.getByText('Blue — choose the next question')).toBeVisible();
+ expect(document.querySelector('.jp-choose').style.getPropertyValue('--team-color')).toBe('#00f');
+});
+
+it('plays accepted phone-host action cues once and stays silent on duplicate/replayed snapshots and direct clue refresh', async () => {
+ const {jeopardyRuleModule:rules}=await import('../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs');
+ const pack={...set,rounds:[{...set.rounds[0],mode:'turns',penalize_wrong:false,categories:[{name:'Two',clues:[{value:100,clue:'One',answer:'A'},{value:200,clue:'Two',answer:'B'}]}]}]};
+ let state=rules.createInitialState(pack,{seats:teams});let revision=0;
+ const audio={play:vi.fn(),stopChannel:vi.fn()};
+ fetchSession.mockImplementation(async()=>({header:{revision},state}));
+ const view=render(<Jeopardy sessionId="audio" seats={teams} gamingServices={{audio}}/>);
+ await screen.findByText('Ready to play');audio.play.mockClear();
+ const phone=async (command,observe=true)=>{const result=rules.handleCommand(state,command,pack,{actorId:'host',revision});expect(result.error).toBeUndefined();state=result.state;revision++;if(observe)await act(async()=>ws.handler({kind:'session-updated',sessionId:'audio'}));};
+ await phone({type:'START_ROUND'});expect(audio.play).toHaveBeenCalledWith('board-fill',{pack:'jeopardy'});
+ await phone({type:'SELECT_AT',cat:0,row:0});expect(audio.play).toHaveBeenCalledWith('reveal',{pack:'jeopardy'});
+ await phone({type:'REVEAL'});await phone({type:'JUDGE',correct:false},false);
+ await phone({type:'BUZZER_SETUP',epoch:'audio-tv'},false);
+ await phone({type:'BUZZER_PRESENCE',epoch:'audio-tv'}); // heartbeat must preserve unobserved wrong cue
+ expect(state.scores.team_1).toBe(0);expect(audio.play).toHaveBeenCalledWith('wrong',{pack:'jeopardy'});
+ const heard=audio.play.mock.calls.length;
+ await act(async()=>ws.handler({kind:'session-updated',sessionId:'audio'}));
+ expect(audio.play.mock.calls.length).toBe(heard);
+ // An unrelated accepted setup/presence snapshot must not replay judgment.
+ revision++;await act(async()=>ws.handler({kind:'session-updated',sessionId:'audio'}));
+ expect(audio.play.mock.calls.length).toBe(heard);
+ await phone({type:'SELECT_AT',cat:0,row:1});
+ view.unmount();audio.play.mockClear();
+ const direct=render(<Jeopardy sessionId="direct-audio" seats={teams} gamingServices={{audio}}/>);
+ await screen.findByTestId('clue-screen');expect(audio.play).not.toHaveBeenCalledWith('reveal',{pack:'jeopardy'});
+ direct.unmount();
+});
+
+it.each([true,false])('local timeout cue follows accepted=%s and never doubles on its WS echo', async accepted => {
+ const {jeopardyRuleModule:rules}=await import('../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs');
+ vi.useFakeTimers();
+ const pack={...set,open_book:false,rounds:[{...set.rounds[0],mode:'hosted',timer_seconds:1}]};
+ let state={...rules.createInitialState(pack,{seats:teams}),phase:'clue',active:{cat:0,row:0,clue:pack.rounds[0].categories[0].clues[0]}};let revision=0;
+ const audio={play:vi.fn(),stopChannel:vi.fn()};
+ fetchSession.mockImplementation(async()=>({header:{revision},state}));
+ sendJeopardyCommand.mockImplementation(async()=>{if(!accepted)throw new Error('Rejected');state=rules.handleCommand(state,{type:'TIMEOUT'},pack,{actorId:'host',revision}).state;revision++;return{header:{revision},state};});
+ const view=render(<Jeopardy sessionId="local-audio" seats={teams} gamingServices={{audio}}/>);
+ await act(async()=>{});await act(async()=>vi.advanceTimersByTime(1200));
+ expect(audio.play.mock.calls.filter(([cue])=>cue==='time-up')).toHaveLength(accepted?1:0);
+ if(accepted){await act(async()=>ws.handler({kind:'session-updated',sessionId:'local-audio'}));expect(audio.play.mock.calls.filter(([cue])=>cue==='time-up')).toHaveLength(1);}
+ view.unmount();vi.useRealTimers();
+});

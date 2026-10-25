@@ -9,6 +9,8 @@ import { fetchSession } from "../../../../../../__capabilities/gaming/browser/pl
 import { sendJeopardyCommand } from "./jeopardyClient.js";
 import { JEOPARDY_PACK, actionCue, phaseCues } from "./jeopardyCues.js";
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
+import { useBuzzerSetup } from "./useBuzzerSetup.js";
+import BuzzerStatus from "./ui/BuzzerStatus.jsx";
 import HostLobby from "./ui/HostLobby.jsx";
 import Board from "./Board.jsx";
 import ClueScreen from "./ClueScreen.jsx";
@@ -35,6 +37,10 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const [state, setState] = useState(null);
   const errorRef = useRef(error);
   errorRef.current = error;
+  const [selection, setSelection] = useState(null);
+  const selectionTimer = useRef(null);
+  const latestRevision = useRef(-1);
+  const heardActionRevision = useRef(-1);
   const [completion, setCompletion] = useState(null);
   const scores = useMemo(() => state?.scores || {}, [state?.scores]);
   const audio = gamingServices?.audio || SILENT_AUDIO;
@@ -45,7 +51,10 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const pendingCommand = useRef(false);
   const actionRef = useRef(() => {});
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const activeSessionId = useRef(sessionId);
+  activeSessionId.current = sessionId;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(selectionTimer.current); }; }, []);
+  useEffect(() => { latestRevision.current = -1; heardActionRevision.current = -1; stateRef.current = null; setSelection(null); return () => clearTimeout(selectionTimer.current); }, [sessionId]);
 
   useEffect(() => {
     return buzzers.subscribe((teamId) => {
@@ -55,12 +64,33 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   }, [audio, buzzers]);
 
   const acceptSession = useCallback((session) => {
-    if (!mounted.current) return;
+    if (!mounted.current || activeSessionId.current !== sessionId) return;
+    const revision = session.header?.revision;
+    if (revision != null && revision < latestRevision.current) return;
+    if (revision != null) latestRevision.current = revision;
+    if (session.state.active?.clue.little_kids && !stateRef.current?.active) logger.info('jeopardy.assigned-clue', { teamId: session.state.answeringTeamId, roundIndex: session.state.roundIndex });
+    const previous = stateRef.current;
+    const next = session.state;
+    const accepted = next.acceptedAction;
+    if (accepted && accepted.revision > heardActionRevision.current) {
+      heardActionRevision.current = accepted.revision;
+      const cue = previous ? actionCue(accepted) : null;
+      if (cue) audio.play(cue, { pack: JEOPARDY_PACK });
+    }
+    if (previous?.phase === 'board' && ['clue', 'wager'].includes(next.phase) && next.active && previous.roundIndex === next.roundIndex) {
+      clearTimeout(selectionTimer.current);
+      setSelection({ state: previous, selected: { cat: next.active.cat, row: next.active.row } });
+      selectionTimer.current = setTimeout(() => { if (mounted.current) setSelection(null); }, 500);
+    } else if (previous && (previous.roundIndex !== next.roundIndex || !['clue', 'judging', 'wager'].includes(next.phase))) {
+      clearTimeout(selectionTimer.current); setSelection(null);
+    }
     // Input can arrive after the HTTP acknowledgment and before React paints.
     stateRef.current = session.state;
     errorRef.current = null;
     setState(session.state); setSet(session.state.set); setCompletion(session.result || null); setError(null);
-  }, []);
+  }, [logger, sessionId, audio]);
+
+  useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio, logger });
 
   // Load the coordinator projection, which includes the pinned content pack.
   useEffect(() => {
@@ -78,7 +108,6 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const applyAction = useCallback(async (action) => {
     if (!action || !stateRef.current || pendingCommand.current) return;
     pendingCommand.current = true;
-    const cue = actionCue(action); if (cue) audio.play(cue, { pack: JEOPARDY_PACK });
     try { const result = await sendJeopardyCommand(sessionId, action); acceptSession(result); }
     catch (cause) { if (!mounted.current) return; logger.warn('jeopardy.command-failed', { type: action.type, phase: stateRef.current?.phase, error: cause.message }); errorRef.current = cause.message; setError(cause.message); }
     finally { pendingCommand.current = false; }
@@ -103,10 +132,10 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   useEffect(() => {
     if (!set || !state) return;
     const round = currentRound(state);
-    const buzzable = state.phase === 'clue' && !state.isDailyDouble && round.mode !== 'turns' && !state.revealed;
+    const buzzable = !selection && state.phase === 'clue' && !state.isDailyDouble && !state.active?.clue.little_kids && round.mode !== 'turns' && !state.revealed;
     if (buzzable) buzzers.arm(teamIds.filter((id) => !state.attempted.includes(id)));
     else buzzers.disarm();
-  }, [state?.phase, state?.attempted, state?.revealed, state?.isDailyDouble, set, buzzers, teamIds, state]);
+  }, [state?.phase, state?.attempted, state?.revealed, state?.isDailyDouble, set, buzzers, teamIds, state, selection]);
 
   // Host updates reload the authoritative projection.
   useWebSocketSubscription('gaming', (msg) => {
@@ -151,11 +180,16 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     <div className="jeopardy" data-phase={phase}>
       {phase !== 'round-intro' && !phase.startsWith('final-') && <ShowHeader eyebrow={round?.name} title={set.title} status={phase === 'board' ? `${teams.find(team => team.id === state.turnTeamId)?.name || 'Next team'} chooses — Round ${state.roundIndex + 1}` : state.active ? round.categories[state.active.cat]?.name : null} />}
       {phase === 'round-intro' && (state.roundIndex === 0 && Object.keys(state.used || {}).length === 0
-        ? <HostLobby sessionId={sessionId} title={set.title} />
-        : <div className="jp-final"><TitleCard title={round.name} subtitle={`${set.title} — round ${state.roundIndex + 1}`} /><p>Waiting for the host to open the board.</p></div>)}
-      {phase === 'board' && <Board round={round} used={state.used} roundIndex={state.roundIndex} cursor={state.cursor} interactive={false} />}
-      {phase === 'wager' && <div className="jp-final"><TitleCard title="Daily Double" subtitle={`${teams.find(t => t.id === state.answeringTeamId)?.name || 'Team'} is choosing a wager`} /><p>Waiting for the host to lock the wager.</p></div>}
-      {(phase === 'clue' || phase === 'judging') && (
+        ? <HostLobby sessionId={sessionId} title={set.title} state={state} teams={teams} />
+        : <div className="jp-final"><TitleCard title={round.name} subtitle={`${set.title} — round ${state.roundIndex + 1}`} /><BuzzerStatus state={state} teams={teams} /><p>Waiting for the host to open the board.</p></div>)}
+      {(phase === 'board' || selection) && <>
+        <div className="jp-choose" role="status" style={{ '--team-color': teams.find(t => t.id === (selection?.state || state).turnTeamId)?.color }}>
+          {teams.find(t => t.id === (selection?.state || state).turnTeamId)?.name || 'Next team'} — choose the next question
+        </div>
+        <Board round={round} used={(selection?.state || state).used} roundIndex={state.roundIndex} cursor={state.cursor} teams={teams} selected={selection?.selected} interactive={false} />
+      </>}
+      {!selection && phase === 'wager' && <div className="jp-final"><TitleCard title="Daily Double" subtitle={`${teams.find(t => t.id === state.answeringTeamId)?.name || 'Team'} is choosing a wager`} /><p>Waiting for the host to lock the wager.</p></div>}
+      {!selection && (phase === 'clue' || phase === 'judging') && (
         <ClueScreen
           key={`${state.roundIndex}:${state.active?.cat}:${state.active?.row}:${state.attempted.length}`}
           state={state}

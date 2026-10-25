@@ -55,3 +55,11 @@ describe('BuzzerArbiter', () => {
     expect(b.bindings()).toEqual({ slot_5: 'team_1', slot_2: 'team_2' });
   });
 });
+
+it('rejects a slot already owned by another team instead of stealing it', () => {
+  const arbiter = new BuzzerArbiter([{ id: 'red', slot: 'gamepad:0:Pad' }, { id: 'blue' }]);
+  arbiter.startBind('blue');
+  expect(arbiter.handleBindPress('gamepad:0:Pad')).toBe(false);
+  expect(arbiter.bindings()).toEqual({ 'gamepad:0:Pad': 'red' });
+  expect(arbiter.bindingTeamId).toBe('blue');
+});

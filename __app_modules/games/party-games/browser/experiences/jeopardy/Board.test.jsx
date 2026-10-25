@@ -39,3 +39,10 @@ it('keeps DOM focus on the same question that Enter will select',()=>{
 });
 
 it('renders passive tiles without focus, selection or cursor highlight',()=>{const onSelect=vi.fn();render(<Board round={round} used={{}} roundIndex={0} cursor={{cat:0,row:0}} interactive={false} onSelect={onSelect}/>);const tile=screen.getByRole('gridcell');fireEvent.click(tile);expect(tile).not.toHaveFocus();expect(tile).not.toHaveClass('is-cursor');expect(tile.tagName).toBe('DIV');expect(onSelect).not.toHaveBeenCalled();});
+
+it('shows the canonical owner badge and lights the selected passive tile', () => {
+  render(<Board round={{ categories: [{ name: 'Kids', clues: [{ value: 100, little_kids: true, assigned_team_id: 'red' }] }] }} used={{}} roundIndex={0} teams={[{ id: 'red', name: 'Red', color: '#f00' }]} interactive={false} selected={{cat:0,row:0}} />);
+  const tile = screen.getByRole('gridcell', { name: /Red/ });
+  expect(tile).toHaveTextContent('Red');
+  expect(tile).toHaveClass('is-selected');
+});
