@@ -125,3 +125,21 @@ describe('external Charades clue bank', () => {
     expect(() => store.getCurrent('demo')).toThrow(/contained/i);
   });
 });
+
+it('pins_reference_content_without_rewriting_old_sessions', () => {
+  const { root, store } = fixture();
+  const dir = path.join(root, 'games', 'jeopardy');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'rules.yml'), 'artifact: { kind: gaming-rules, version: 1, id: jeopardy }\nrule_module: { id: jeopardy, version: 1 }\nexperience: { id: jeopardy, version: 1 }\n');
+  const file = path.join(dir, 'content.yml');
+  const write = (reference) => fs.writeFileSync(file, `artifact: { kind: gaming-content, version: 1, id: jeopardy }\nopen_book: true\nrounds: [{categories: [{name: Prophets, clues: [{value: 100, clue: Prompt, answer: Answer, scripture_reference: "${reference}"}]}]}]\nfinal: {category: Final, clue: Prompt, answer: Answer, scripture_reference: "${reference}"}\n`);
+  write('Jeremiah 2:13');
+  const first = store.getCurrent('jeopardy'); store.pin(first);
+  write('Jeremiah 3:1');
+  const second = store.getCurrent('jeopardy'); store.pin(second);
+  expect(second.hash).not.toBe(first.hash);
+  for (const [pinned, reference] of [[first, 'Jeremiah 2:13'], [second, 'Jeremiah 3:1']]) {
+    expect(store.getPinned(pinned.hash).rounds[0].categories[0].clues[0].scripture_reference).toBe(reference);
+    expect(store.getPinned(pinned.hash).final.scripture_reference).toBe(reference);
+  }
+});

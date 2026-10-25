@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
+import { validateJeopardyDefinition } from "./index.mjs";
 import { validateGameSet } from "./content.mjs";
 
 const goodSet = {
@@ -80,4 +81,54 @@ it('preserves explicit little-kid clue metadata and rejects nonboolean flags',()
  expect(validateGameSet(raw).set.rounds[0].categories[0].clues[0].little_kids).toBe(true);
  raw.rounds[0].categories[0].clues[0].little_kids='yes';
  expect(validateGameSet(raw).valid).toBe(false);
+});
+
+it('preserves_regular_and_final_references', () => {
+  const raw = structuredClone(goodSet);
+  raw.rounds[0].categories[0].clues[0].scripture_reference = ' Jeremiah 2:13 ';
+  raw.final.scripture_reference = ' Jonah 1:17 ';
+  const { set } = validateGameSet(raw);
+  expect(set.rounds[0].categories[0].clues[0].scripture_reference).toBe('Jeremiah 2:13');
+  expect(set.final.scripture_reference).toBe('Jonah 1:17');
+});
+
+it('accepts_legacy_trivia_and_preserves_little_kids', () => {
+  const raw = structuredClone(goodSet);
+  raw.rounds[0].categories[0].clues[0].little_kids = true;
+  const { set } = validateGameSet(raw);
+  expect(set.open_book).toBe(false);
+  expect(set.rounds[0].categories[0].clues[0]).toMatchObject({ little_kids: true, scripture_reference: null });
+  expect(set.final.scripture_reference).toBeNull();
+  expect(validateGameSet(set)).toEqual({ valid: true, errors: [], set });
+  expect(validateJeopardyDefinition(set).valid).toBe(true);
+});
+
+for (const target of ['regular', 'final']) {
+  for (const reference of [undefined, null, '', '   ', 12, false, {}]) {
+    it(`requires_references_for_open_book_in_both_validation_paths: ${target} ${JSON.stringify(reference)}`, () => {
+      const raw = structuredClone(goodSet);
+      raw.open_book = true;
+      for (const clue of raw.rounds[0].categories[0].clues) clue.scripture_reference = 'Jeremiah 2:13';
+      raw.final.scripture_reference = 'Jonah 1:17';
+      const clue = target === 'regular' ? raw.rounds[0].categories[0].clues[0] : raw.final;
+      clue.scripture_reference = reference;
+      const field = target === 'regular' ? 'rounds[0].categories[0].clues[0].scripture_reference' : 'final.scripture_reference';
+      for (const validate of [validateGameSet, validateJeopardyDefinition]) {
+        expect(validate(raw).valid).toBe(false);
+        expect(validate(raw).errors).toEqual([`${field} must be a nonblank string`]);
+      }
+    });
+  }
+}
+it.each([null, 'true', 1, {}])('rejects invalid open_book %j in both paths', (open_book) => {
+  for (const validate of [validateGameSet, validateJeopardyDefinition]) {
+    expect(validate({ ...goodSet, open_book })).toMatchObject({ valid: false, errors: ['open_book must be a boolean'] });
+  }
+});
+it.each(['', '  ', 1, false, {}])('rejects supplied malformed optional reference %j', (reference) => {
+  const raw = structuredClone(goodSet);
+  raw.final.scripture_reference = reference;
+  for (const validate of [validateGameSet, validateJeopardyDefinition]) {
+    expect(validate(raw)).toMatchObject({ valid: false, errors: ['final.scripture_reference must be a nonblank string'] });
+  }
 });

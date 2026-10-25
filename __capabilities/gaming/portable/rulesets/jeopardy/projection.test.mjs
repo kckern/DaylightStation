@@ -37,3 +37,20 @@ describe('Jeopardy viewer projections', () => {
     expect(jeopardyRuleModule.project({ ...state, phase: 'final-judging' }, definition, { role: 'participant', participant_id: 'r' }).state.finalWagers).toEqual({ red: 100, blue: 200 });
   });
 });
+
+it('hides_future_references and preserves selected references before reveal', () => {
+  const pack = structuredClone(definition);
+  pack.rounds[0].categories[0].clues[0].scripture_reference = 'Jeremiah 2:13';
+  pack.final.scripture_reference = 'Jonah 1:17';
+  let state = { ...jeopardyRuleModule.createInitialState(pack, { seats: [{ id: 'team' }] }), phase: 'board' };
+  const project = () => jeopardyRuleModule.project(state, pack, { role: 'participant' }).state;
+  expect(project().set.rounds[0].categories[0].clues[0]).toEqual({ value: 100 });
+  state = jeopardyRuleModule.handleCommand(state, { type: 'SELECT_TILE' }, pack, { actorId: 'host' }).state;
+  expect(project().active.clue.scripture_reference).toBe('Jeremiah 2:13');
+  expect(project().active.clue).not.toHaveProperty('answer');
+  state = { ...state, phase: 'final-wager' };
+  expect(project().set.final).toEqual({ category: 'Final' });
+  state = { ...state, phase: 'final-clue' };
+  expect(project().set.final).toMatchObject({ clue: 'Final question?', scripture_reference: 'Jonah 1:17' });
+  expect(project().set.final).not.toHaveProperty('answer');
+});

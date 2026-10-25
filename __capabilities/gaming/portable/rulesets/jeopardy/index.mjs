@@ -1,9 +1,10 @@
+import { validateJeopardyScriptureMetadata } from "./content.mjs";
 import { defineRuleModule } from "../../kernel/index.mjs";
 import { initJeopardy, jeopardyReducer, scoreDelta } from "./stateMachine.mjs";
 import { adjustScore } from "../../mechanics/scoring.mjs";
 
 export function validateJeopardyDefinition(definition) {
-  const errors = [];
+  const errors = validateJeopardyScriptureMetadata(definition);
   if (!definition || typeof definition !== 'object') errors.push('definition is required');
   if (!Array.isArray(definition?.rounds) || definition.rounds.length === 0) errors.push('rounds are required');
   for (const [roundIndex, round] of (definition?.rounds || []).entries()) {
@@ -30,6 +31,7 @@ function participantProjection(state, viewer) {
     projected.active.clue = {
       value: clue.value,
       clue: clue.clue,
+      ...(clue.scripture_reference ? { scripture_reference: clue.scripture_reference } : {}),
       ...(clue.media ? { media: structuredClone(clue.media) } : {}),
       ...(showActiveAnswer ? { answer: clue.answer } : {}),
     };
@@ -39,7 +41,7 @@ function participantProjection(state, viewer) {
     const showFinalClue = ['final-clue', 'final-judging', 'done'].includes(state.phase);
     projected.set.final = {
       category: final.category,
-      ...(showFinalClue ? { clue: final.clue, ...(final.media ? { media: structuredClone(final.media) } : {}) } : {}),
+      ...(showFinalClue ? { clue: final.clue, ...(final.scripture_reference ? { scripture_reference: final.scripture_reference } : {}), ...(final.media ? { media: structuredClone(final.media) } : {}) } : {}),
       ...(['final-judging', 'done'].includes(state.phase) ? { answer: final.answer } : {}),
     };
   }
