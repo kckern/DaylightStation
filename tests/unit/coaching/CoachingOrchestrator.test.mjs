@@ -260,7 +260,7 @@ describe('CoachingOrchestrator', () => {
       const [, text] = mockMessaging.sendMessage.mock.calls[0];
       expect(text).toContain('<b>700 cal so far</b> · exercise-adjusted plan: 1791 cal');
       const snapshot = mockCommentary.generate.mock.calls[0][0];
-      expect(snapshot.calories).toMatchObject({ consumed: 700, goal_min: 1300, goal_max: 1791, zone: 'incomplete', complete: false, remaining: 1091 });
+      expect(snapshot.calories).toMatchObject({ consumed: 700, logging_floor: 1300, plan_food: 1791, zone: 'incomplete', complete: false, remaining: 1091 });
       expect(snapshot.logging.min_calories).toBe(1300);
     });
 
@@ -278,7 +278,17 @@ describe('CoachingOrchestrator', () => {
       await withBudget(vi.fn().mockResolvedValue(budget())).sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123',
         activity: { id: 5, type: 'Ride', durationMin: 45, caloriesBurned: 420 } });
       expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('0 cal exercise credit included today');
-      expect(mockCommentary.generate.mock.calls[0][0].today_calories).toMatchObject({ consumed: 700, goal_max: 1791, zone: 'incomplete' });
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('activity budget synchronization pending');
+      expect(mockCommentary.generate.mock.calls[0][0].today_calories).toMatchObject({ consumed: 700, plan_food: 1791, zone: 'incomplete' });
+    });
+
+    it('reports synchronized activity credit once after canonical enrichment', async () => {
+      await withBudget(vi.fn().mockResolvedValue(budget({ exercise: 420, net: 280, sessions: [{ id: 5, calories: 420 }] })))
+        .sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123', activity: { id: 5, type: 'Ride', durationMin: 45, caloriesBurned: 420 } });
+      const text = mockMessaging.sendMessage.mock.calls[0][1];
+      expect(text).toContain('420 cal exercise credit included today');
+      expect(text).not.toContain('pending');
+      expect(text).not.toContain('840 cal');
     });
 
     it('tells the model which meals were declared fasted, without closing the day', async () => {

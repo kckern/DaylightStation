@@ -22,7 +22,7 @@ export function observationFingerprintsOf(entry) {
  * Period facts: {from,to,trustedDays,totalDays,goalBasis}, plus verdict counts
  * for period_summary. evidenceDates lists precisely the dates supporting a claim.
  */
-export function buildObservations({ type, evidence, proteinGoal, recentObservations = [], eventItems = [] } = {}) {
+export function buildObservations({ type, evidence, proteinGoal, recentObservations = [], eventItems = [], activity = null } = {}) {
   if (!evidence) return [];
   const result = [];
   const seen = new Set(recentObservations.flatMap(observationFingerprintsOf));
@@ -62,7 +62,7 @@ export function buildObservations({ type, evidence, proteinGoal, recentObservati
       const eventFoods = type === 'post-report'
         ? eventItems.filter(item => typeof item?.name === 'string' && item.name.trim()).slice(0, 3).map(item => item.name.trim()) : [];
       if (!trustworthy) {
-        const status = reconstructed ? 'reconstructed' : !available ? 'unavailable' : day.status === 'unlogged' ? 'unlogged' : assessment.finished ? 'incomplete' : 'in_progress';
+        const status = reconstructed ? 'reconstructed' : !available || day.provenance === 'unknown' ? 'unavailable' : day.status === 'unlogged' ? 'unlogged' : assessment.finished ? 'incomplete' : 'in_progress';
         add('logging_incomplete', date, [date], { ...facts, status, eventFoods }, 90);
       } else {
         const proteinKnown = assessment.finished && assessment.proteinKnown && finite(day.protein) && finite(proteinGoal) && proteinGoal > 0;
@@ -75,7 +75,14 @@ export function buildObservations({ type, evidence, proteinGoal, recentObservati
         if (assessment.energyState === 'surplus' && finite(assessment.surplusKcal) && assessment.surplusKcal > 0) {
           add('energy_surplus', date, [date], { ...facts, surplusKcal: assessment.surplusKcal }, 95);
         }
-        if (proteinGap > 0 && assessment.planState !== 'within') add('protein_gap', date, [date], { ...facts, ...proteinFacts }, 80);
+        if (proteinGap > 0 && (assessment.planState !== 'within' || seen.has(`within_plan:day:${date}`))) add('protein_gap', date, [date], { ...facts, ...proteinFacts }, 80);
+      }
+      // Webhook burn describes an activity, never additional budget credit.
+      if (type === 'exercise-reaction' && activity) {
+        const activityBurn = activity.calories ?? activity.caloriesBurned;
+        const sessions = day.sessions || day.budget?.sessions || [];
+        const synced = activity.id != null && sessions.some(session => session.id != null && String(session.id) === String(activity.id));
+        if (finite(activityBurn)) add('activity_burn', date, [date], { ...facts, activityBurn, synced }, 110, `activity:${activity.id ?? 'unknown'}`);
       }
       // Exercise arithmetic is available even while food logging is partial.
       if (type === 'exercise-reaction' && available && finite(assessment.exercise) && assessment.exercise > 0 && finite(assessment.planFood)) {

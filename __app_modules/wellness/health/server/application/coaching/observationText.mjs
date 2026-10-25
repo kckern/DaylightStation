@@ -27,6 +27,8 @@ export function renderObservation(observation) {
       return `${prefix}${number(f.surplusKcal)} cal above estimated maintenance${f.finished ? '' : ' so far'}.${basis(f)}`;
     case 'protein_gap':
       return `${prefix}Protein was ${number(f.proteinGap)}g below your ${number(f.proteinGoal)}g target (${number(f.protein)}g logged).${basis(f)}`;
+    case 'activity_burn':
+      return `${prefix}Activity burn: ${number(f.activityBurn)} cal. ${f.synced ? 'Activity is synchronized to the daily budget.' : 'Activity budget synchronization is pending; no additional credit has been assumed.'}`;
     case 'exercise_budget':
       return `${prefix}${number(f.exercise)} cal of exercise credit is included once in your ${number(f.planFood)} cal food plan.${basis(f)}`;
     case 'period_summary':

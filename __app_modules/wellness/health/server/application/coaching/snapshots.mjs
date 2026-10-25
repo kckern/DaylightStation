@@ -36,16 +36,8 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     time_of_day: timeOfDay,
     today_status: todayStatus,
     logging: loggingContext(minCalories),
-    calories: {
-      consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max,
-      // With the budget the percentage is NET of the plan's top, as the bar fills.
-      pct: calories.goal_max > 0 ? Math.round(((calories.net ?? calories.consumed) / calories.goal_max) * 100) : 0,
-      // From the budget contract when available: the zone the Today bar shows,
-      // whether the log is trustworthy yet, and the headline's number.
-      ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
-      ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
-    },
-    protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
+    calories: calorieContext(calories, evidence),
+    protein: { consumed: evidence?.current?.assessment.proteinKnown ? evidence.current.protein : null, goal: protein.goal ?? null },
     notable_items: notable,
     notable_items_scope: 'foods_logged_today',
     recent_pattern: recentPattern,
@@ -124,9 +116,24 @@ function pickDay(day) {
   };
 }
 
+function calorieContext(calories = {}, evidence) {
+  const a = evidence?.current?.assessment;
+  return { consumed: a?.food ?? calories.consumed ?? null, logging_floor: a?.floorFood ?? null,
+    plan_food: a?.planFood ?? null, exercise_credit: a?.exercise ?? null, net: a?.net ?? null,
+    ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
+    ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
+  };
+}
+
 function evidenceContext(evidence) {
-  return evidence ? { period: evidence.period, source_state: evidence.sourceState,
-    today: evidence.today, timezone: evidence.timezone, current_assessment: evidence.current.assessment } : {};
+  if (!evidence) return {};
+  const { current } = evidence;
+  return { userId: evidence.userId, period: evidence.period, source_state: evidence.sourceState,
+    today: evidence.today, timezone: evidence.timezone, current_assessment: current.assessment,
+    current_budget: { maintenance: current.budget?.maintenance ?? current.maintenance ?? null,
+      exercise: current.assessment.exercise, net: current.assessment.net, planFood: current.assessment.planFood,
+      loggingFloor: current.assessment.floorFood },
+  };
 }
 
 function loggingContext(minCalories) {
@@ -148,12 +155,12 @@ export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCal
     type: 'exercise-reaction',
     date: evidence?.date,
     ...evidenceContext(evidence),
-    observations: buildObservations({ type: 'exercise-reaction', evidence, recentObservations: recentCoaching }),
+    observations: buildObservations({ type: 'exercise-reaction', evidence, recentObservations: recentCoaching, activity }),
     today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
     ...(budgetImpactNote ? { budget_impact_note: budgetImpactNote } : {}),
-    today_calories: todayCalories,
+    today_calories: calorieContext(todayCalories, evidence),
     recent_coaching: recentCoaching || [],
   };
 }

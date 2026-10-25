@@ -101,3 +101,12 @@ describe('supported observations', () => {
     expect(render(snapshot.observations)).not.toMatch(/just logged/i);
   });
 });
+
+it('allows a newly eligible protein gap after a live within-plan fact was delivered', () => {
+  const current = day({ date: '2026-10-25', food: 1500, exercise: 0, protein: 105 });
+  const live = build(evidence([], current), { type: 'post-report' })[0];
+  current.assessment.finished = true;
+  const result = build(evidence([], current), { type: 'post-report', recentObservations: [live] });
+  expect(result.map(o => o.kind)).toEqual(['protein_gap']);
+  expect(render(result)).toContain('45g below your 150g target');
+});

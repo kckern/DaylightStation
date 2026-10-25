@@ -5,11 +5,14 @@ import { classifyDay, closureStatus, fastedMealsOf, resolveMinCalories, shiftDat
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 
 /** Reusable coach projection. Lifecycle context is explicit; no hidden clock. */
-export function budgetDayView(budget, { today = null, provenance = 'logged', date = budget?.date ?? null } = {}) {
+export function budgetDayView(budget, { today = null, provenance = 'logged', date = budget?.date ?? null, userId = null } = {}) {
   const assessment = assessBudgetDay(budget, { date, today, provenance });
-  if (!budget || budget.error) return { date, ...(budget?.error ? { error: budget.error } : {}), assessment };
+  if (provenance !== 'logged') {
+    Object.assign(assessment, { trustworthy: false, proteinKnown: false, planState: 'unknown', energyState: 'unknown', overPlanKcal: null, surplusKcal: null });
+  }
+  if (!budget || budget.error) return { date, today, userId, provenance, ...(budget?.error ? { error: budget.error } : {}), assessment };
   return {
-    date, calories: budget.food, protein: assessment.proteinKnown ? budget.macros.protein : null,
+    date, today, userId, provenance, sessions: budget.sessions || [], calories: budget.food, protein: assessment.proteinKnown ? budget.macros.protein : null,
     exercise: budget.exercise, net: budget.net, range: budget.range, maintenance: budget.maintenance,
     deficit: budget.deficit, deficitSource: budget.deficitSource, zone: budget.zone,
     complete: budget.complete, declared: budget.declared, fastedMeals: budget.fastedMeals || [],
@@ -24,7 +27,7 @@ export function evidenceAverage(days) {
   return {
     calories: period.averages.food == null ? null : Math.round(period.averages.food),
     protein: proteinDays.length ? Math.round(proteinDays.reduce((sum, day) => sum + day.protein, 0) / proteinDays.length) : null,
-    trustedDays: period.coverage.trustedFinished, totalDays: period.coverage.total,
+    proteinDays: proteinDays.length, trustedDays: period.coverage.trustedFinished, totalDays: period.coverage.total,
   };
 }
 
@@ -74,7 +77,7 @@ export class CoachingEvidenceService {
       if (provenance === 'unknown') assessment.proteinKnown = false;
       // BudgetService counts measured food only. The summary's backfill must
       // not turn that partial measured amount into a verdict on estimated intake.
-      if (provenance === 'reconstructed') {
+      if (provenance !== 'logged') {
         assessment.trustworthy = false;
         assessment.planState = 'unknown';
         assessment.energyState = 'unknown';

@@ -239,6 +239,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/playback/server/domain/services/MediaProgressClassificationStrategy.mjs': 'domain',
   '__app_modules/games/arcade/server/application/ContentAccessPolicyService.mjs': 'application',
   '__app_modules/wellness/health/portable/contracts/health/budgetZone.mjs': 'domain',
+  '__app_modules/wellness/health/portable/contracts/health/budgetAssessment.mjs': 'domain',
   '__app_modules/wellness/health/server/application/health/analytics/WeightProcessor.mjs': 'application',
   '__app_modules/wellness/health/cli/curate-nutrition-icons.mjs': null,
   '__app_modules/wellness/health/cli/health-artwork-sweep.cli.mjs': null,

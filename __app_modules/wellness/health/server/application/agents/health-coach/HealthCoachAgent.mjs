@@ -274,7 +274,7 @@ export class HealthCoachAgent extends BaseAgent {
     // The health budget contract: the same floor/top/zone/completeness the
     // Today bar shows (get_day_budget, get_budget_range).
     if (budgetService) {
-      this.addToolFactory(new BudgetToolFactory({ budgetService, nutriListStore, today }));
+      this.addToolFactory(new BudgetToolFactory({ budgetService, nutriListStore, today, evidenceService: this.deps.coachingEvidenceService, logger: this.deps.logger }));
     }
 
     // Messaging channel delivery (only if gateway available)

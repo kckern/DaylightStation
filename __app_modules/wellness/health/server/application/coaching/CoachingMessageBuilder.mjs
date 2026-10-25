@@ -74,7 +74,7 @@ export class CoachingMessageBuilder {
     const lines = [...CoachingMessageBuilder.#yesterdayLines(yesterday, minCalories)];
 
     lines.push(weekAvg.trustedDays > 0
-      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} ${Number.isFinite(proteinGoal) && proteinGoal > 0 ? `(target: ${proteinGoal}g)` : ''}${CoachingMessageBuilder.#coverage(weekAvg)}`
+      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} ${Number.isFinite(proteinGoal) && proteinGoal > 0 ? `(target: ${proteinGoal}g)` : ''}${CoachingMessageBuilder.#coverage(weekAvg)}${CoachingMessageBuilder.#proteinCoverage(weekAvg)}`
       : `\u{1F4C9} <b>7-day avg:</b> no fully logged days`);
 
     if (weight) {
@@ -92,11 +92,11 @@ export class CoachingMessageBuilder {
    */
   static buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight }) {
     const lines = [thisWeek.trustedDays > 0
-      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${CoachingMessageBuilder.#protein(thisWeek.protein, 'avg ')}${CoachingMessageBuilder.#coverage(thisWeek)}`
+      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${CoachingMessageBuilder.#protein(thisWeek.protein, 'avg ')}${CoachingMessageBuilder.#coverage(thisWeek)}${CoachingMessageBuilder.#proteinCoverage(thisWeek)}`
       : `\u{1F4CA} <b>This week:</b> no fully logged days`];
 
     if (longTermAvg.trustedDays > 0) {
-      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(longTermAvg.protein)}`);
+      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(longTermAvg.protein)}${CoachingMessageBuilder.#proteinCoverage(longTermAvg)}`);
     }
     if (weight) {
       lines.push(`\u{2696}\u{FE0F} <b>Weight trend:</b> ${CoachingMessageBuilder.#signed(weight.trend7d)} lbs this week \u{00B7} ${weight.weekStart.toFixed(1)} \u{2192} ${weight.weekEnd.toFixed(1)}`);
@@ -128,6 +128,11 @@ export class CoachingMessageBuilder {
     }
   }
 
+  static #proteinCoverage({ proteinDays, trustedDays }) {
+    return Number.isInteger(proteinDays) && proteinDays > 0 && proteinDays !== trustedDays
+      ? ` · protein based on ${proteinDays} measured day${proteinDays === 1 ? '' : 's'}` : '';
+  }
+
   static #coverage({ trustedDays, totalDays }) {
     return trustedDays < totalDays ? ` \u{00B7} ${trustedDays} of ${totalDays} days fully logged` : '';
   }
@@ -145,10 +150,10 @@ export class CoachingMessageBuilder {
    * @param {{activity: {type, durationMin, caloriesBurned}, budgetImpact: number}} data
    * @returns {string} Telegram HTML
    */
-  static buildExerciseReactionBlock({ activity, budgetImpact }) {
+  static buildExerciseReactionBlock({ activity, budgetImpact, activitySynced = null }) {
     return [
       `\u{1F3C3} <b>${String(activity.type).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}:</b> ${activity.durationMin} min \u{00B7} ${activity.caloriesBurned} cal burned`,
-      `\u{1F525} <b>Budget update:</b> ${budgetImpact == null ? 'exercise credit unavailable' : `${Math.round(budgetImpact)} cal exercise credit included today`}`,
+      `\u{1F525} <b>Budget update:</b> ${budgetImpact == null ? 'exercise credit unavailable' : `${Math.round(budgetImpact)} cal exercise credit included today`}${activitySynced === false ? ' · activity budget synchronization pending' : ''}`,
     ].join('\n');
   }
 

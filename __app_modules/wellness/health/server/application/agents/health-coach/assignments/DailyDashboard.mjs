@@ -1,3 +1,4 @@
+import { automatedAssignmentDeps, canonicalCoachingResult, goalsWithRange, localDate } from './budgetContext.mjs';
 // __backend/src/3_applications/agents/health-coach/assignments/DailyDashboard.mjs
 
 import { Assignment } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/Assignment.mjs";
@@ -23,6 +24,10 @@ export class DailyDashboard extends Assignment {
   static description = "Prepare today's fitness dashboard";
   static schedule = '0 4 * * *';
 
+  async execute(deps) {
+    return super.execute(automatedAssignmentDeps(deps));
+  }
+
   /**
    * Gather phase - programmatic tool calls (no LLM involved).
    * Calls health, nutrition, workout, program, and content tools in parallel.
@@ -43,8 +48,8 @@ export class DailyDashboard extends Assignment {
     const [weight, nutrition, nutritionHistory, workouts, fitnessSessions, recentlyWatched, programState, goals] =
       await Promise.all([
         call('get_weight_trend', { userId, days: 7 }),
-        call('get_today_nutrition', { userId }),
-        call('get_nutrition_history', { userId, days: 7 }),
+        call('get_day_budget', { userId, date: localDate() }),
+        call('get_budget_range', { userId, days: 7 }),
         call('get_recent_workouts', { userId, days: 7 }),
         call('get_recent_fitness_sessions', { days: 7 }),
         call('get_recently_watched_fitness', { days: 7 }),
@@ -75,7 +80,7 @@ export class DailyDashboard extends Assignment {
       hasGoals: !!goals,
     });
 
-    return { weight, nutrition, nutritionHistory, workouts, fitnessSessions, recentlyWatched, content, catalog, programState, goals };
+    return { userId, weight, nutrition, nutritionHistory, workouts, fitnessSessions, recentlyWatched, content, catalog, programState, goals };
   }
 
   /**
@@ -93,7 +98,7 @@ export class DailyDashboard extends Assignment {
     sections.push(`\n## Recent Fitness Sessions (Home Gym)\n${JSON.stringify(gathered.fitnessSessions || {}, null, 2)}`);
     sections.push(`\n## Recently Watched Fitness Videos\n${JSON.stringify(gathered.recentlyWatched || {}, null, 2)}`);
     sections.push(`\n## Program State\n${JSON.stringify(gathered.programState || {}, null, 2)}`);
-    sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
+    sections.push(`\n## User Goals\n${JSON.stringify(goalsWithRange(gathered.goals, gathered.nutrition), null, 2)}`);
 
     if (gathered.content) {
       sections.push(`\n## Available Fitness Content (Active Program)\n${JSON.stringify(gathered.content, null, 2)}`);
@@ -158,7 +163,17 @@ Produce a JSON object matching the dashboard schema.
       }
     }
 
-    return result.data;
+    // The dashboard schema and curated recommendations stay intact. All coach
+    // prose can contain nutrition claims, so its delivered text is canonical.
+    const facts = canonicalCoachingResult(null, gathered, 'post-report');
+    const canonicalContent = gathered.content?.episodes?.find(item => item.id === primary.content_id)
+      || gathered.catalog?.shows?.find(item => `plex:${item.id}` === primary.content_id);
+    const cta = typeof canonicalContent?.title === 'string' && canonicalContent.title.trim()
+      ? [{ type: 'nudge', message: `Selected fitness content: ${canonicalContent.title.trim()}.` }] : [];
+    return { ...result.data, coach: { ...result.data.coach,
+      briefing: facts.text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'),
+      cta, prompts: [],
+    } };
   }
 
   /**

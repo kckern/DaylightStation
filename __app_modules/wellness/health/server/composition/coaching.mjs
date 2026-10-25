@@ -48,6 +48,13 @@ export function registerHealthCoaching({ healthStore, healthService, configServi
   // registration block below and exposed on the returned router so app.mjs
   // can wire it into the health-mentions router (listPeriods support).
   let sharedHealthAnalyticsService = null;
+  const coachingTimezone = configService?.getTimezone?.() || nutribotConfig.getUserTimezone?.() || 'America/Los_Angeles';
+  const evidenceService = new CoachingEvidenceService({
+    budgetService: healthBudget, healthStore, clock: { now: () => new Date() },
+    timezoneForUser: () => coachingTimezone,
+    completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
+    logger,
+  });
 
   // Register health coach agent (requires health services)
   if (healthStore && healthService) {
@@ -207,13 +214,12 @@ export function registerHealthCoaching({ healthStore, healthService, configServi
         nutritionInput: webNutribotAdapter,
         // get_day_budget / get_budget_range (BudgetToolFactory).
         budgetService: healthBudget,
+        coachingEvidenceService: evidenceService,
         nutriListStore,
         today: coachToday,
       });
     }
   }
-
-  const coachingTimezone = configService?.getTimezone?.() || nutribotConfig.getUserTimezone?.() || 'America/Los_Angeles';
 
   // Create coaching orchestrator (new template-driven system)
   let coachingOrchestrator = null;
@@ -224,12 +230,6 @@ export function registerHealthCoaching({ healthStore, healthService, configServi
       logger,
     });
 
-    const evidenceService = new CoachingEvidenceService({
-      budgetService: healthBudget, healthStore, clock: { now: () => new Date() },
-      timezoneForUser: () => coachingTimezone,
-      completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
-      logger,
-    });
     coachingOrchestrator = new CoachingOrchestrator({
       evidenceService,
       commentaryService,

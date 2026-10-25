@@ -251,8 +251,6 @@ export class CoachingOrchestrator {
       const budgetImpact = evidence.current.assessment.exercise;
       const recentCoaching = buildRecentCoaching(coachingData);
 
-      const statusBlock = CoachingMessageBuilder.buildExerciseReactionBlock({ activity, budgetImpact });
-
       const snapshot = buildExerciseReactionSnapshot({
         activity, budgetImpact,
         todayCalories: {
@@ -265,6 +263,9 @@ export class CoachingOrchestrator {
         todayStatus: evidence.current.declared || 'in_progress',
         recentCoaching, evidence,
       });
+
+      const activitySynced = snapshot.observations.find(observation => observation.kind === 'activity_burn')?.facts.synced ?? false;
+      const statusBlock = CoachingMessageBuilder.buildExerciseReactionBlock({ activity, budgetImpact, activitySynced });
 
       const observation = await this.#commentaryService.generate({ ...snapshot, userId }).catch(() => null);
       const commentary = renderObservation(observation);

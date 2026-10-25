@@ -115,3 +115,10 @@ describe('CoachingEvidenceService', () => {
     expect(result).not.toHaveProperty('goals');
   });
 });
+
+it('reports the measured protein denominator separately from trusted calorie days', async () => {
+  const { evidenceAverage } = await import('../../../__app_modules/wellness/health/server/application/coaching/CoachingEvidenceService.mjs');
+  const rows = [budgetDayView(day('2026-10-23', 1500, 0), { today: '2026-10-25' }),
+    budgetDayView(day('2026-10-24', 1600, 0, { macros: {} }), { today: '2026-10-25' })];
+  expect(evidenceAverage(rows)).toMatchObject({ calories: 1550, protein: 125, trustedDays: 2, proteinDays: 1 });
+});

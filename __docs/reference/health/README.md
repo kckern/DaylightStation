@@ -205,6 +205,8 @@ The projections retain an explicit `goalBasis`; absent or mixed bases stay null.
 Historical API rows currently use `goalBasis: 'current'`, not recovered historical
 goals.
 
+Automated coach assignments, agent budget tools and Nutribot captions consume the same assessments. Caption food ranges end at the exercise-adjusted food plan and label the exercise adjustment; missing budgets display logged totals with assessment unavailable. Activity burn is separate from daily synchronized credit, and unknown/reconstructed provenance supports no intake verdict. Dashboard coach assessment prose is deterministic while curated fitness recommendations retain their existing domain workflow.
+
 ### The Today budget card — one job at a time
 
 Design: `ops:docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
