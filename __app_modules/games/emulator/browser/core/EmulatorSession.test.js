@@ -518,3 +518,18 @@ it('does not start governance or state polling after the restore barrier rejects
   await expect(session.start({ mount: '#m' })).rejects.toThrow('Restore rejected');
   expect(engine.resume).not.toHaveBeenCalled(); expect(scheduler.set).not.toHaveBeenCalled(); session.destroy();
 });
+
+it.each([128, null])('uses read-only protected WRAM discovery after restore without cheat writes (base %s)', async base => {
+  const heap = new Uint8Array(8192).fill(7), calibrate = vi.fn(async () => { heap.fill(99); return { wramBase: 42 }; });
+  const engine = makeEngine({ getHeap: () => heap, getWramBase: vi.fn(() => base) });
+  const createStateMap = vi.fn(() => ({ start: vi.fn(), stop: vi.fn() }));
+  const session = createEmulatorSession({ engine, mixer: makeMixer(), governanceGate: makeGate(), game: GAME,
+    engineConfig: { ...ENGINE_CONFIG, checkpointProvenance: {}, afterBoot: async () => { heap.fill(7); } }, scheduler: makeScheduler(),
+    deps: { createWramCalibrator: () => ({ calibrate }), createStateMap } });
+  await session.start({ mount: '#m' });
+  expect(calibrate).not.toHaveBeenCalled(); expect(engine.getWramBase).toHaveBeenCalled();
+  expect([...heap]).toEqual([...new Uint8Array(8192).fill(7)]);
+  if (base != null) expect(createStateMap).toHaveBeenCalledWith(expect.objectContaining({ wramBase: base }));
+  else expect(createStateMap).not.toHaveBeenCalled();
+  session.destroy();
+});

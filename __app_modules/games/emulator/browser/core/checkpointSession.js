@@ -200,7 +200,7 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       } catch (reason) { return markFailure(reason); }
       finally {
         retrying = false;
-        if (!fault && !disposed) phase = 'ready';
+        if (!fault && !disposed) { phase = 'ready'; pendingRecovery = []; recoveryReason = null; recoveryInspection = null; recoveryReset = null; }
         publish();
       }
     })();
@@ -221,18 +221,20 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       const [remote, pending, archived] = await Promise.all([
         client.getRecoveryInspection(key, { variant }), journal.list(key), journal.listArchived(key),
       ]);
-      if (remote.status !== 'ok') return markFailure(remote);
+      if (remote.status !== 'ok') { restored = wasRestored; return markFailure(remote); }
       if (remote.data.saveMode !== saveMode) throw issue('The save configuration changed', 'ECHECKPOINTCOMPAT');
       recoveryInspection = remote.data; pendingRecovery = pending;
-      description = { provenance: remote.data.provenance, saveMode, head: remote.data.head };
-      fault = null; phase = 'recovery'; publish();
+      // Inspection may describe a new ROM/core release. The still-running
+      // verified engine retains its original identity until an explicit reboot.
+      if (!wasRestored) description = { provenance: remote.data.provenance, saveMode, head: remote.data.head };
+      restored = wasRestored; fault = null; phase = 'recovery'; publish();
       return { status: 'ok', inspection: recoveryInspection, pending, archived };
-    } catch (reason) { return markFailure(reason); }
+    } catch (reason) { restored = wasRestored; return markFailure(reason); }
   }
   async function selectRecovery(choice) {
     if (disposed) return { status: 'skipped' };
     if (!recoveryInspection) return markFailure(issue('Inspect recovery copies first', 'ECHECKPOINTINVALID'));
-    restored = false; fault = null;
+    fault = null; phase = 'selecting'; publish();
     try {
       let source;
       if (choice.type === 'server') {
@@ -249,6 +251,7 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       const kind = source.kind === 'reset' ? 'fresh' : source.snapshot ? 'state' : source.battery ? 'battery' : null;
       if (!kind) throw issue('That recovery copy has no saved progress', 'ECHECKPOINTCORRUPT');
       const artifactHash = kind === 'fresh' ? null : source.artifacts[kind === 'state' ? 'snapshot' : 'battery'].hash;
+      restored = false;
       selection = { choice: { ...choice }, source, artifactHash, inspection: recoveryInspection, pending: [...pendingRecovery] };
       phase = 'restoring'; publish();
       return { status: 'ready', recovery: true, provenance: recoveryInspection.provenance, saveMode, artifactHash,
@@ -337,12 +340,14 @@ export function createCheckpointSession({ key, saveMode, client, journal,
         sourceRevision: null, intent: 'reset', snapshot: null, battery: null,
         captureId: makeId(), sessionId, sequence: ++sequence, provenance: recoveryInspection.provenance },
     };
+    const wasRestored = restored;
+    const resetFailure = reason => { restored = wasRestored; return markFailure(reason); };
     restored = false; phase = 'resetting'; fault = null; publish();
     const work = async () => {
       try {
         if (!recoveryReset.acknowledgedHead) {
           const result = await client[recoveryReset.inspection.requiresRepair ? 'repairCheckpoint' : 'resetCheckpoint'](key, recoveryReset.payload);
-          if (result.status !== 'ok') return markFailure(result);
+          if (result.status !== 'ok') return resetFailure(result);
           recoveryReset.acknowledgedHead = result.data.head;
         }
         await journal.archive(key, recoveryReset.pending);
@@ -353,24 +358,26 @@ export function createCheckpointSession({ key, saveMode, client, journal,
         entries.length = 0; pendingRecovery = []; lastCaptureId = head.captureId;
         selection = null; recoveryReset = null; phase = 'idle'; fault = null; publish();
         return { status: 'ok', data: { head } };
-      } catch (reason) { return markFailure(reason); }
+      } catch (reason) { return resetFailure(reason); }
     };
     return track(gameKey, work());
   }
   function resetProgress(captured) {
     if (!getState().canSave) return Promise.resolve({ status: 'skipped' });
+    const wasRestored = restored;
+    const resetFailure = reason => { restored = wasRestored; return markFailure(reason); };
     const saved = save(captured);
     restored = false; phase = 'resetting'; publish();
     const work = async () => {
       const result = await saved;
-      if (result.status !== 'ok') return markFailure(result);
+      if (result.status !== 'ok') return resetFailure(result);
       try {
         const reset = await client.resetCheckpoint(key, { expectedRevision: head?.revision ?? null,
           captureId: makeId(), sessionId, sequence: ++sequence, provenance: description.provenance });
-        if (reset.status !== 'ok') return markFailure(reset);
+        if (reset.status !== 'ok') return resetFailure(reset);
         head = reset.data.head; description = { ...description, head }; lastCaptureId = head.captureId;
         phase = 'idle'; fault = null; publish(); return reset;
-      } catch (reason) { return markFailure(reason); }
+      } catch (reason) { return resetFailure(reason); }
     };
     return track(gameKey, work());
   }

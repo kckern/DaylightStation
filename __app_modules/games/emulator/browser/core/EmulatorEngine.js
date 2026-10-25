@@ -265,6 +265,15 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     return instance.gameManager.Module.HEAPU8;
   }
 
+  /** Protected cores expose system RAM without writing a calibration signature. */
+  function getWramBase() {
+    if (!ready || !checkpointBridge) return null;
+    const m = instance.gameManager.Module;
+    const pointer = m._daylight_memory_data_v1?.(2), size = m._daylight_memory_size_v1?.(2);
+    return Number.isInteger(pointer) && pointer > 0 && Number.isInteger(size) && size > 0
+      && pointer + size <= m.HEAPU8.length ? pointer : null;
+  }
+
   function setCheat(i, enabled, code) {
     if (!ready) return;
     instance.gameManager.functions.setCheat(i, enabled, code);
@@ -603,6 +612,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     setVolume,
     getAudioContextState,
     getHeap,
+    getWramBase,
     setCheat,
     resetCheat,
     getFrameNum,

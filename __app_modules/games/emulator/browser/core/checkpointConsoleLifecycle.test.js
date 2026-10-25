@@ -72,3 +72,37 @@ describe('console checkpoint lifecycle against real server persistence', () => {
     expect(controller.getState().canPlay).toBe(false); expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
   });
 });
+
+it('can cancel inspection and resume the same verified game after saving its latest paused bytes', async () => {
+  const { controller, native } = make(); await start(controller, native); native.advance('latest'); await controller.save();
+  expect((await controller.inspectRecovery()).status).toBe('ok'); expect(controller.getState().canPlay).toBe(false);
+  expect((await controller.cancelRecovery()).status).toBe('ok'); expect(controller.getState().canPlay).toBe(true);
+  expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
+});
+it('can exit directly from inspection and acknowledge the verified paused game', async () => {
+  const { controller, native } = make(); await start(controller, native); native.advance('latest'); await controller.save();
+  expect((await controller.inspectRecovery()).status).toBe('ok');
+  expect((await controller.exit()).status).toBe('ok');
+  expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
+});
+it.each(['running', 'recovery'])('can retry and exit after a rejected %s reset without losing native verification', async mode => {
+  const { controller, native } = make({ client: { ...client, resetCheckpoint: async () => ({ status: 'error', code: 'ECHECKPOINTUNAVAILABLE' }) } });
+  await start(controller, native); native.advance('latest');
+  if (mode === 'recovery') await controller.inspectRecovery();
+  expect((await controller[mode === 'recovery' ? 'resetFromRecovery' : 'reset']()).status).toBe('error');
+  expect((await controller.retry()).status).toBe('ok'); expect(controller.getState().canPlay).toBe(true);
+  expect((await controller.exit()).status).toBe('ok');
+  expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
+});
+
+it('keeps the running native provenance when recovery inspection describes different assets', async () => {
+  const { controller, native } = make({ client: { ...client, getRecoveryInspection: async (...args) => {
+    const result = await client.getRecoveryInspection(...args);
+    return { ...result, data: { ...result.data, provenance: { ...result.data.provenance,
+      core: { ...result.data.provenance.core, bundleHash: 'f'.repeat(64) } } } };
+  } } });
+  await start(controller, native); native.advance('verified-assets');
+  expect((await controller.inspectRecovery()).status).toBe('ok');
+  expect((await controller.exit()).status).toBe('ok');
+  expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-verified-assets');
+});

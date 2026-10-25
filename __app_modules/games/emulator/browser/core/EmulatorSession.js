@@ -158,7 +158,12 @@ export function createEmulatorSession({
     // level for every title without states (Sonic, and five of the seven Game
     // Boy titles) — a permanent false alarm that would bury a real failure.
     let cal = null;
-    if (game.states) {
+    if (game.states && engineConfig.checkpointProvenance) {
+      // Restored SRAM/WRAM must never be probed with writes or calibration frames.
+      // Missing optional state instrumentation cannot justify a destructive fallback.
+      const nativeBase = engine.getWramBase?.();
+      if (nativeBase != null) cal = { wramBase: nativeBase };
+    } else if (game.states) {
       const calibrator = createWramCalibrator({
         setCheat: engine.setCheat,
         resetCheat: engine.resetCheat,

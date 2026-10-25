@@ -107,9 +107,9 @@ export async function createEmulatorConsoleFixture({ frontendUrl, upstream, prot
   const address = `http://127.0.0.1:${server.address().port}`;
   const key = game => ({ system: game.system, gameId: game.id, user: 'test_user' });
   return {
-    registerGame({ saveMode = 'battery' } = {}) {
+    registerGame({ saveMode = 'battery', states = null } = {}) {
       const id = `example-${randomUUID()}`;
-      const game = { id, system: 'gbc', title: 'Example Quest', saveMode, romUrl: `/api/v1/emulator/rom/gbc/${id}`,
+      const game = { id, system: 'gbc', title: 'Example Quest', saveMode, states, romUrl: `/api/v1/emulator/rom/gbc/${id}`,
         native: { width: 160, height: 144 }, presentation: { hotspots: [{ id: 'logo', action: 'exit', label: 'Bezel exit', region: { x: 4, y: 20, width: 8, height: 8 } }] } };
       games.set(id, game); return { ...game, url: `${address}/?game=${id}` };
     },

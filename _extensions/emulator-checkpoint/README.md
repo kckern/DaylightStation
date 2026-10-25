@@ -12,7 +12,9 @@ Once enabled, the native guard rejects unmanaged state load/undo, SRAM refresh,
 reset and rewind. An explicit application reset creates a revision and boots a
 new instance. The browser verifies the actual ROM and core archive hashes before
 boot, passes owned files to EJS, disables its asset databases and cancels its late
-reset timer before restoring. A failed native restore cannot enable saving.
+reset timer before restoring. Semantic state tracking uses read-only native RAM
+pointer/size exports instead of writing a calibration signature. A failed native
+restore cannot enable saving.
 
 ## Build
 

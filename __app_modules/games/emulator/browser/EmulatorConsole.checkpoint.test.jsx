@@ -114,6 +114,8 @@ describe('console recovery, claims and failed exits', () => {
     await waitFor(() => expect(view.getByText('Reset is unavailable')).toBeTruthy());
     expect(view.engines).toHaveLength(1); expect(view.engines[0].destroy).not.toHaveBeenCalled();
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
+    fireEvent.click(view.getByRole('button', { name: 'Retry saving' })); await playable(view);
+    expect(view.engines).toHaveLength(1);
   });
   it('retains the current paused branch when explicitly restoring an earlier saved copy through a native reboot', async () => {
     const first = await seed('first'); const second = await seed('second');
@@ -168,4 +170,22 @@ it('supports keyboard reset confirmation and submits only one reset for pointer-
   const next = view.getByRole('button', { name: 'Start over' });
   fireEvent.pointerDown(next); fireEvent.click(next); await waitFor(() => expect(view.engines).toHaveLength(3));
   expect(resetCheckpoint).toHaveBeenCalledTimes(2);
+});
+
+for (const exit of ['back', 'cancel', 'bezel', 'menu', 'host']) it(`can leave recovery inspection with ${exit} and preserve the running game`, async () => {
+  const view = setup(); await playable(view); view.advance('inspected');
+  fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
+  await waitFor(() => expect(view.getByRole('button', { name: 'Refresh copies' })).toBeTruthy());
+  if (exit === 'host') expect((await view.getGuard()()).status).toBe('ok');
+  else if (exit === 'bezel') fireEvent.click(view.getByRole('button', { name: 'Exit emulator' }));
+  else {
+    if (exit === 'cancel') fireEvent.click(view.getByRole('button', { name: 'Cancel', exact: true }));
+    else fireEvent.keyDown(window, { key: 'Escape' });
+    await playable(view);
+    expect(view.engines).toHaveLength(1);
+    if (['back', 'cancel'].includes(exit)) expect(view.onExit).not.toHaveBeenCalled();
+    else { fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Exit game' })); }
+  }
+  if (['bezel', 'menu'].includes(exit)) await waitFor(() => expect(view.onExit).toHaveBeenCalledTimes(1));
+  await waitFor(async () => expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-inspected'));
 });

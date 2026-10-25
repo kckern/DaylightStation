@@ -106,6 +106,36 @@ test.describe('real console progress integrity with isolated saves', () => {
     await expect(page.getByTestId('session-state')).toHaveText('playing'); expect((await fixture.read(game)).kind).toBe('reset');
     expect((await fixture.history(game)).some(point => point.revision === previous.revision)).toBe(true);
   });
+  test('cancels recovery inspection and exits the same native game with its latest progress', async ({ page }) => {
+    const game = fixture.registerGame(); await open(page, game); await mark(page, 29);
+    await page.getByRole('button', { name: 'Recover progress', exact: true }).click();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('playing'); expect(await marker(page)).toBe(29);
+    await page.getByRole('button', { name: 'Exit emulator', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Open game', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Open game', exact: true }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('playing'); expect(await marker(page)).toBe(29);
+  });
+  test('starts and reopens a semantic-state game without modifying RAM through cheat calibration', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.fixtureCheatWrites = [];
+      let callback;
+      Object.defineProperty(window, 'EJS_onGameStart', { configurable: true, get: () => callback, set: value => {
+        callback = typeof value !== 'function' ? value : (...args) => {
+          const f = EJS_emulator.gameManager.functions, original = f.setCheat;
+          f.setCheat = function (...parameters) { window.fixtureCheatWrites.push(parameters); return original.apply(this, parameters); };
+          return value(...args);
+        };
+      } });
+    });
+    const game = fixture.registerGame({ states: { hours: { addr: 0xd4c5, type: 'number' } } });
+    await open(page, game); expect(await page.evaluate(() => fixtureCheatWrites)).toEqual([]);
+    await mark(page, 28); await page.getByRole('button', { name: 'Exit game', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Open game', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Open game', exact: true }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('playing');
+    expect(await marker(page)).toBe(28); expect(await page.evaluate(() => fixtureCheatWrites)).toEqual([]);
+  });
   test('does not seed a fresh game from another game session in EmulatorJS native browser storage', async ({ page }) => {
     const game = fixture.registerGame(); await open(page, game); await mark(page, 27);
     const previous = await page.evaluate(async () => {

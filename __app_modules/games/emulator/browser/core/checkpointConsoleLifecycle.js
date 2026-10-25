@@ -66,6 +66,12 @@ export function createCheckpointConsoleLifecycle({ engine: initialEngine, key, s
       }).catch(fail));
     } catch (reason) { return Promise.resolve(fail(reason)); }
   }
+  async function retry() {
+    localFault = null; exitPromise = null;
+    const result = await saving({ retry: true });
+    if (result.status === 'ok') { verified = true; held = false; resume(); }
+    return result;
+  }
   return {
     getState,
     abortBoot() { verified = false; held = true; publish(); },
@@ -87,12 +93,8 @@ export function createCheckpointConsoleLifecycle({ engine: initialEngine, key, s
       } catch (reason) { return fail(reason); }
     },
     save() { return getState().canSave ? saving() : Promise.resolve({ status: 'skipped' }); },
-    async retry() {
-      localFault = null; exitPromise = null;
-      const result = await saving({ retry: true });
-      if (result.status === 'ok') { verified = true; held = false; resume(); }
-      return result;
-    },
+    retry,
+    cancelRecovery() { return verified ? retry() : Promise.resolve({ status: 'skipped' }); },
     exit() {
       if (exitPromise) return exitPromise;
       held = true; engine?.pause?.(); publish();

@@ -267,6 +267,15 @@ export function EmulatorConsole({
     if (result?.status !== 'ok' && result?.code === 'ECHECKPOINTRESTORE') retryBoot();
   }, [retryBoot]);
 
+  const cancelRecovery = useCallback(async () => {
+    const checkpoint = checkpointRef.current;
+    setRecoveryCopies(previous => previous ? { ...previous, loading: true } : previous);
+    const result = await checkpoint?.cancelRecovery();
+    if (!mountedRef.current || checkpointRef.current !== checkpoint) return;
+    setRecoveryCopies(null);
+    return result;
+  }, []);
+
   let governancePlaying = status.state === 'playing';
   try {
     governancePlaying = typeof governanceGate?.isPlayable === 'function'
@@ -714,7 +723,7 @@ export function EmulatorConsole({
   const modalStateRef = useRef(null);
   const progressBlocked = !!checkpointKey && !!progress && !progress.canPlay;
   const modalInputActive = resetOpen || !!recoveryCopies || !!error || progressBlocked;
-  modalStateRef.current = { resetOpen, recovery: !!recoveryCopies, error: !!error, progressBlocked };
+  modalStateRef.current = { resetOpen, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
   const activeInputSheet = () => resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
   const menuDefaultButton = () => {
     const sheet = activeInputSheet();
@@ -731,7 +740,7 @@ export function EmulatorConsole({
     if (intent === 'back') {
       const modal = modalStateRef.current;
       if (modal.resetOpen) setResetOpen(false);
-      else if (modal.recovery) setRecoveryCopies(null);
+      else if (modal.recovery) { if (!modal.recoveryLoading) cancelRecovery(); }
       else if (modal.error || modal.progressBlocked) requestExitRef.current?.();
       else setSettingsOpen(false);
       return;
@@ -1376,6 +1385,7 @@ export function EmulatorConsole({
                   </button>
                 ))}
                 <button type="button" data-autofocus onClick={inspectRecovery}>Refresh copies</button>
+                <button type="button" onClick={cancelRecovery}>Cancel</button>
                 <button type="button" onClick={() => setResetOpen(true)}>Start a fresh game</button>
               </>
             )}

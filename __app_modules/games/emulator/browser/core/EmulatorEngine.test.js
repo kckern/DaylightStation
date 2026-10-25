@@ -565,6 +565,7 @@ describe('protected engine boot', () => {
     Object.assign(instance.gameManager, { clearEJSResetTimer: vi.fn(), FS: { writeFile: vi.fn(), unlink: vi.fn() }, loadState: vi.fn(), restart: vi.fn() });
     Object.assign(instance.gameManager.Module, {
       _daylight_checkpoint_contract_version: () => 1,
+      _daylight_memory_data_v1: () => 256, _daylight_memory_size_v1: () => 512, HEAPU8: new Uint8Array(4096),
       _daylight_enable_checkpoint_protection_v1: () => 1,
       _daylight_restore_last_request_v1: () => lastRequest,
       cwrap: () => (path, id) => { lastRequest = id; return 1; },
@@ -577,6 +578,7 @@ describe('protected engine boot', () => {
     const engine = createEmulatorEngine({ load, prepareAssets, win: makeFakeWin(), cryptoImpl: webcrypto });
     await engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance });
     expect(prepareAssets).toHaveBeenCalled(); expect(load.mock.calls[0][0].protectedAssets).toBe(assets);
+    expect(engine.getWramBase()).toBe(256);
     engine.resume(); expect(instance.play).not.toHaveBeenCalled();
     expect(engine.loadState(bytes)).toBe(false); expect(engine.restart()).toBe(false);
     const proof = await engine.restoreCheckpoint({ kind: 'state', data: bytes });
