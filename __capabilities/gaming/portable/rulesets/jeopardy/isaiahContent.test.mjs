@@ -52,4 +52,21 @@ describe('Isaiah open-book practice artifacts', () => {
       expect(round.categories.flatMap(c => c.clues).filter(c => c.daily_double)).toHaveLength(1);
     }
   });
+  it('keeps the trust answer and ruler title out of other visible clue text', () => {
+    const raw = load('content.yml');
+    const categories = raw.rounds.flatMap(r => r.categories);
+    const clues = categories.flatMap(c => c.clues);
+    const eagle = clues.find(c => c.scripture_reference === 'Isaiah 40:31');
+    const trust = clues.find(c => c.scripture_reference === 'Isaiah 26:3');
+    expect(trust.answer).toMatch(/trust in the Lord/);
+    expect(eagle.clue).not.toMatch(/trust/i);
+    expect(clues.find(c => c.scripture_reference === 'Isaiah 9:6').clue).not.toMatch(/advis[eo]r|counsell?or|wonderful/i);
+    expect(categories.find(c => c.clues.some(q => q.scripture_reference === 'Isaiah 40:8')).name).toBe('Enduring Guidance');
+    expect(categories.find(c => c.clues.some(q => q.scripture_reference === 'Isaiah 42:3')).name).toBe('Gentle Deliverance');
+    for (const answer of ['wolves', 'plows', 'figs', 'eagles', 'tears', 'cobras', 'wells', 'mountains']) {
+      expect(clues.find(c => c.answer.includes(answer)).answer).toBe(`What are ${answer}?`);
+    }
+    expect(clues.find(c => c.scripture_reference === 'Isaiah 6:8').answer).toBe('What is “Here I am. Send me!”?');
+  });
+
 });

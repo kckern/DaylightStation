@@ -29,7 +29,7 @@ rounds:
             scripture_reference: Isaiah 6:6
           - value: 300
             clue: How did Isaiah answer when the Lord asked who would go?
-            answer: What is Here I am. Send me!?
+            answer: What is “Here I am. Send me!”?
             scripture_reference: Isaiah 6:8
       - name: Word Pictures
         clues:
@@ -51,11 +51,11 @@ rounds:
           - value: 100
             little_kids: true
             clue: Which animals will live with lambs?
-            answer: What is wolves?
+            answer: What are wolves?
             scripture_reference: Isaiah 11:6
           - value: 200
             clue: What farming equipment will people hammer their swords into?
-            answer: What is plows?
+            answer: What are plows?
             scripture_reference: Isaiah 2:4
           - value: 300
             daily_double: true
@@ -71,7 +71,7 @@ rounds:
             scripture_reference: Isaiah 58:7
           - value: 200
             clue: What fruit did Isaiah say to press together and apply to the king’s boil?
-            answer: What is figs?
+            answer: What are figs?
             scripture_reference: Isaiah 38:21
           - value: 300
             clue: How much must the invited people pay for the offered drinks and grain?
@@ -81,8 +81,8 @@ rounds:
         clues:
           - value: 100
             little_kids: true
-            clue: Those who trust in the Lord will fly as high as which birds?
-            answer: What is eagles?
+            clue: In this promise of renewed strength, people will fly as high as which birds?
+            answer: What are eagles?
             scripture_reference: Isaiah 40:31
           - value: 200
             clue: Where has the Lord written the person’s name?
@@ -110,7 +110,7 @@ rounds:
             answer: Who is Eliakim?
             scripture_reference: Isaiah 22:22
           - value: 300
-            clue: Which title in this verse calls the promised ruler an adviser?
+            clue: What is the first title listed for the promised ruler in this verse?
             answer: What is Wonderful Adviser?
             scripture_reference: Isaiah 9:6
       - name: Changes to Come
@@ -121,13 +121,13 @@ rounds:
             scripture_reference: Isaiah 35:6
           - value: 200
             clue: What will the Lord wipe away from everyone’s face?
-            answer: What is tears?
+            answer: What are tears?
             scripture_reference: Isaiah 25:8
           - value: 300
             clue: What will the Lord pour out on the people’s children?
             answer: What is his Spirit?
             scripture_reference: Isaiah 44:3
-      - name: Words to Remember
+      - name: Enduring Guidance
         clues:
           - value: 100
             clue: What will stand forever after the plants fade?
@@ -146,7 +146,7 @@ rounds:
         clues:
           - value: 100
             clue: Near the hole of which snakes will a baby play?
-            answer: What is cobras?
+            answer: What are cobras?
             scripture_reference: Isaiah 11:8
           - value: 200
             clue: What structure did the vineyard owner build as a place to keep watch?
@@ -156,15 +156,15 @@ rounds:
             clue: What two things does the king say the Lord has made?
             answer: What is heaven and earth?
             scripture_reference: Isaiah 37:16
-      - name: Good News and Joy
+      - name: Gentle Deliverance
         clues:
           - value: 100
             clue: Being saved brings joy like a drink drawn up from what places?
-            answer: What is wells?
+            answer: What are wells?
             scripture_reference: Isaiah 12:3
           - value: 200
             clue: From what landforms are the messengers coming down?
-            answer: What is mountains?
+            answer: What are mountains?
             scripture_reference: Isaiah 52:7
           - value: 300
             clue: What bent object will the servant refuse to break?
