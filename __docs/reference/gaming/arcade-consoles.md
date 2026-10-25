@@ -120,6 +120,15 @@ reload an idle client to use the protected protocol. Legacy battery/default-stat
 export URLs return the current verified artifacts, while the original files stay
 on disk for recovery. Progress responses use `Cache-Control: no-store`.
 
+The client stores pending captures in a dedicated IndexedDB recovery journal
+before uploading. A failed local transaction is reported rather than treated as
+a successful save. Uploads follow capture order; only the matching acknowledged
+capture is retired. On reopening, a unique pending successor chain can finish
+against its recorded parent. Conflicting branches require an explicit recovery
+choice and are never selected by timestamp. In-page reopen also waits for the
+previous console's outstanding write. Saving remains disabled until the engine
+confirms restoration of the exact expected artifact and compatible core identity.
+
 The checkpoint API is rooted at `/api/v1/emulator/checkpoint/{system}/{game}?user={user}`.
 `GET` describes the current checkpoint and ROM/core identity; `PUT` commits owned
 base64 snapshot/battery bytes with an explicit `expectedRevision`, `captureId`,
