@@ -36,7 +36,7 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  *   `resources` reach EmulatorJS — see below.
  * @returns {object} key/value map of EJS_* globals.
  */
-export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders } = {}) {
+export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls, volume, shaders, protectedAssets } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
   if (!pathtodata) throw new Error('buildEjsGlobals: pathtodata is required');
@@ -61,10 +61,13 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
   const globals = {
     EJS_player: playerSelector,
     EJS_core: core,
-    EJS_gameUrl: romUrl,
+    EJS_gameUrl: protectedAssets?.romFile || romUrl,
     EJS_pathtodata: normalizedPath,
     EJS_startOnLoaded: true,
     EJS_threads: false,
+    EJS_paths: {}, EJS_disableDatabases: false, EJS_forceLegacyCores: false,
+    EJS_loadStateURL: null, EJS_gamePatchUrl: null, EJS_gameParentUrl: null,
+    EJS_externalFiles: {}, EJS_softLoad: false,
     // The volume EmulatorJS itself will assert. This MUST be the user's persisted
     // level, not a fixed default: EJS re-asserts `config.volume` late in its own
     // start chain (`this.muted||this.setVolume(this.volume)`), overwriting whatever
@@ -75,6 +78,13 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
     // NOTE: deliberately NOT setting EJS_DEBUG_XX — it forces unminified
     // src/* loads that 404 on the self-hosted bundle.
   };
+  if (protectedAssets) Object.assign(globals, {
+    EJS_paths: protectedAssets.paths,
+    EJS_disableDatabases: true,
+    EJS_forceLegacyCores: protectedAssets.provenance.core.variant === 'legacy-wasm',
+    EJS_loadStateURL: null, EJS_gamePatchUrl: null, EJS_gameParentUrl: null,
+    EJS_externalFiles: {}, EJS_softLoad: false,
+  });
   if (onReady) globals.EJS_ready = onReady;
   if (onGameStart) globals.EJS_onGameStart = onGameStart;
   if (controls) globals.EJS_defaultControls = controls;
@@ -99,7 +109,7 @@ let _loadPromise = null;
 // made a second game silently never appear.
 let _loadedKey = null;
 
-const loadKey = (core, romUrl) => `${core}::${romUrl}`;
+const loadKey = (core, romUrl, assets) => `${core}::${romUrl}::${assets ? JSON.stringify(assets.provenance) : 'unprotected'}`;
 
 /**
  * Tear down the single-instance EmulatorJS so a different game can boot clean:
@@ -164,8 +174,8 @@ export function forceNearestFiltering(win = window) {
  * @param {object} [args.controls] - EJS_defaultControls (keyboard+gamepad mapping).
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
-export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume, shaders } = {}) {
-  const requestedKey = loadKey(core, romUrl);
+export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls, volume, shaders, protectedAssets } = {}) {
+  const requestedKey = loadKey(core, romUrl, protectedAssets);
   if (_loadPromise) {
     if (_loadedKey === requestedKey) {
       // Same game/core: legitimate single-instance reuse. Logged at info (not
@@ -196,6 +206,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
       if (settled) return;
       settled = true;
       cleanup();
+      if (protectedAssets) { win.EJS_emulator?.pause?.(); win.EJS_emulator?.gameManager?.clearEJSResetTimer?.(); }
       log().info('load.game-start', { core });
       resolve(win.EJS_emulator);
     };
@@ -213,7 +224,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 
     let globals;
     try {
-      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume, shaders });
+      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls, volume, shaders, protectedAssets });
     } catch (err) {
       fail(err);
       return;

@@ -27,6 +27,12 @@ const input = (description, extra = {}) => ({
   snapshot: Buffer.from('new-state'), battery: Buffer.from('new-battery'), ...extra,
 });
 describe('checkpoint application policy', () => {
+  it('hashes the side-by-side protected contract bundle for the selected variant', async () => {
+    let requested;
+    assets.getEngineResource = pathname => { requested = pathname; return resource(Buffer.from('protected-core')); };
+    await service.read(key, { variant: 'legacy-wasm' });
+    expect(requested).toBe('cores/gambatte-legacy-wasm.protected-v1.data');
+  });
   it('imports the legacy baseline without changing or deleting source files', async () => {
     const artifact = text => ({ async *chunks() { yield Buffer.from(text); } });
     await saves.storeStateArtifact({ ...key, slot: 'auto' }, artifact('legacy-state'));

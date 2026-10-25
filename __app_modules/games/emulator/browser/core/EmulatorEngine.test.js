@@ -553,3 +553,34 @@ describe('EmulatorEngine custom shader binaries', () => {
     expect(instance.enableShader).toHaveBeenCalledWith('x.glslp');
   });
 });
+
+describe('protected engine boot', () => {
+  it('gates gameplay and unmanaged restores until the coordinator accepts the verified native proof', async () => {
+    const { webcrypto } = await import('node:crypto');
+    const { checkpointDigest } = await import('./checkpointClient.js');
+    const bytes = new Uint8Array([1,2,3,4,5,6,7,8]), hash = await checkpointDigest(bytes, webcrypto);
+    const provenance = { romHash: hash, core: { name: 'gambatte', bundleHash: hash, format: 1, variant: 'wasm' } };
+    let lastRequest = 0;
+    const instance = makeFakeInstance({ getCore: () => 'gambatte' });
+    Object.assign(instance.gameManager, { clearEJSResetTimer: vi.fn(), FS: { writeFile: vi.fn(), unlink: vi.fn() }, loadState: vi.fn(), restart: vi.fn() });
+    Object.assign(instance.gameManager.Module, {
+      _daylight_checkpoint_contract_version: () => 1,
+      _daylight_enable_checkpoint_protection_v1: () => 1,
+      _daylight_restore_last_request_v1: () => lastRequest,
+      cwrap: () => (path, id) => { lastRequest = id; return 1; },
+    });
+    const assets = { romFile: {}, paths: {}, provenance, dispose: vi.fn() };
+    const prepareAssets = vi.fn(async () => assets), load = vi.fn(async () => instance);
+    const engine = createEmulatorEngine({ load, prepareAssets, win: makeFakeWin(), cryptoImpl: webcrypto });
+    await engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance });
+    expect(prepareAssets).toHaveBeenCalled(); expect(load.mock.calls[0][0].protectedAssets).toBe(assets);
+    engine.resume(); expect(instance.play).not.toHaveBeenCalled();
+    expect(engine.loadState(bytes)).toBe(false); expect(engine.restart()).toBe(false);
+    const proof = await engine.restoreCheckpoint({ kind: 'state', data: bytes });
+    expect(proof).toMatchObject({ status: 'ok', verified: true, artifactHash: hash });
+    engine.resume(); expect(instance.play).not.toHaveBeenCalled();
+    engine.setProgressPlayable(true); engine.resume(); expect(instance.play).toHaveBeenCalledTimes(1);
+    engine.setProgressPlayable(false); engine.resume(); expect(instance.play).toHaveBeenCalledTimes(1);
+    engine.destroy(); expect(assets.dispose).toHaveBeenCalled();
+  });
+});

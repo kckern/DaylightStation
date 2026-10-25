@@ -1,0 +1,62 @@
+{
+  "gambatte-legacy-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "gambatte",
+    "source": "4ac2b30d196a842061d6b333ea5e523a7c1a7cce",
+    "variant": "legacy-wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "68c444a288edfe5fc9da496951a64fa5a77c91a77febb1f63cb796b88fc8e51d"
+  },
+  "gambatte-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "gambatte",
+    "source": "4ac2b30d196a842061d6b333ea5e523a7c1a7cce",
+    "variant": "wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "fb92ca246161624830920fb2dac0dd8c27efda251cdcf6e45bb854d5a5461d6d"
+  },
+  "genesis_plus_gx-legacy-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "genesis_plus_gx",
+    "source": "594cdf3a666546f65f46391c3615ac5e9550bfc1",
+    "variant": "legacy-wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "6a382ca6872f8043920e50f6dc0a815f2083918acccbaa07c2432d95f33378ab"
+  },
+  "genesis_plus_gx-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "genesis_plus_gx",
+    "source": "594cdf3a666546f65f46391c3615ac5e9550bfc1",
+    "variant": "wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "f777af70a69d6354529604874ebf7fad096c645956bb039bb68a5face6305581"
+  },
+  "mgba-legacy-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "mgba",
+    "source": "1d9dbb1dc8d51ed744fe6be82183f7f5076e549d",
+    "variant": "legacy-wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "e21bb90db14c2110eb7266cce564a462b40f302b3bf7ab57527660708500f6dc"
+  },
+  "mgba-wasm.protected-v1.data": {
+    "contract": 1,
+    "emscripten": "3.1.74",
+    "retroarch": "31ccb892522a7b0e914dc71731f0834c6495a218",
+    "core": "mgba",
+    "source": "1d9dbb1dc8d51ed744fe6be82183f7f5076e549d",
+    "variant": "wasm",
+    "patchSha256": "3ebc45d757b80a14a410d3f3afb1f1d20b9abcfc8822cef7ea4bdd58f6192a51",
+    "bundleSha256": "1a95991a2b3347fb7ca0382f096e1b2c702af7a209a248b5a990399a0dfeea4e"
+  }
+}

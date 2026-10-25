@@ -8,6 +8,7 @@
  */
 
 import { loadEmulatorJS, resetEmulatorJSLoader } from "./loadEmulatorJS.js";
+import { createNativeCheckpointBridge, prepareProtectedAssets } from "./nativeCheckpoint.js";
 import getLogger from '@/lib/logging/Logger.js';
 
 let _log;
@@ -27,7 +28,7 @@ function clamp01(v) {
  * @param {Window} [opts.win=window]
  * @returns engine object
  */
-export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logger } = {}) {
+export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logger, prepareAssets = prepareProtectedAssets, cryptoImpl = globalThis.crypto } = {}) {
   // Inherit the console's child logger (carries the per-play correlation id) when
   // provided, so engine events join the same play session in the logs.
   const _engineLog = logger ? logger.child({ component: 'emulator-engine' }) : null;
@@ -38,6 +39,8 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   // Our own picture-shader presets, as handed to boot(). Kept so applyShader
   // can find a preset's binary textures — see the note there.
   let shaderTable = {};
+  let protectedAssets = null, checkpointBridge = null;
+  let progressPlayable = true;
 
   /**
    * Boot the emulator. Idempotent: a second call returns the same readiness
@@ -74,15 +77,20 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     }
   }
 
-  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls, volume, shaders, checkpointProvenance } = {}) {
     if (bootPromise) return bootPromise;
 
     shaderTable = shaders || {};
     log().info('boot.start', { core, customShaders: Object.keys(shaderTable) });
-    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win })
+    if (checkpointProvenance) progressPlayable = false;
+    bootPromise = Promise.resolve().then(async () => {
+      if (checkpointProvenance) protectedAssets = await prepareAssets({ provenance: checkpointProvenance, romUrl, pathtodata, win, cryptoImpl });
+      return load({ player: mount, core, romUrl, pathtodata, controls, volume, shaders, win, protectedAssets });
+    })
       .then((emu) => {
         instance = emu;
         ready = true;
+        if (checkpointProvenance) checkpointBridge = createNativeCheckpointBridge({ instance, provenance: checkpointProvenance, cryptoImpl });
         const audioCtxState = getAudioContextState();
         log().info('boot.ready', { core, audioContext: audioCtxState });
         return instance;
@@ -228,7 +236,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   function resume() {
-    if (!ready) return;
+    if (!ready || !progressPlayable) return;
     instance.play();
     log().debug('resume', {});
   }
@@ -324,6 +332,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
 
   /** Restore a save-state snapshot (Uint8Array). Returns success. */
   function loadState(data) {
+    if (checkpointBridge) return false;
     if (!ready || !data) return false;
     try {
       instance.gameManager.loadState(toU8(data));
@@ -347,6 +356,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
 
   /** Inject a battery save (.srm): write to the FS path, then load it. */
   function loadSave(data) {
+    if (checkpointBridge) return false;
     if (!ready || !data) return false;
     try {
       const gm = instance.gameManager;
@@ -362,6 +372,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
 
   /** Restart the ROM from power-on (used by the reset / start-over hotspot). */
   function restart() {
+    if (checkpointBridge) return false;
     if (!ready) return false;
     try {
       instance.gameManager.restart();
@@ -557,6 +568,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     } catch (err) {
       log().warn('destroy.loader-reset-failed', { error: err?.message });
     }
+    protectedAssets?.dispose(); protectedAssets = null; checkpointBridge = null;
     instance = null;
     ready = false;
     bootPromise = null;
@@ -564,6 +576,11 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   return {
+    setProgressPlayable(value) { progressPlayable = value === true; if (!progressPlayable) pause(); },
+    restoreCheckpoint(resume) {
+      if (!checkpointBridge) return Promise.resolve({ status: 'error', code: 'ECHECKPOINTRESTORE', error: 'Protected restore unavailable' });
+      return checkpointBridge.restore(resume);
+    },
     boot,
     isReady,
     applyShader,

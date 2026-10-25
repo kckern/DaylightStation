@@ -1,0 +1,167 @@
+diff --git a/retroarch.c b/retroarch.c
+index 505f4ec..9936ce4 100644
+--- a/retroarch.c
++++ b/retroarch.c
+@@ -53,6 +53,9 @@
+ #include <stdlib.h>
+ #include <stdarg.h>
+ #include <stdint.h>
++#ifdef EMULATORJS
++extern int daylight_checkpoint_is_protected_v1(void);
++#endif
+ #include <string.h>
+ #include <ctype.h>
+ #include <math.h>
+@@ -3431,6 +3434,9 @@ bool command_event(enum event_command cmd, void *data)
+ #endif
+          break;
+       case CMD_EVENT_RESET:
++#ifdef EMULATORJS
++         if (daylight_checkpoint_is_protected_v1()) return false;
++#endif
+          {
+             const char *_msg = msg_hash_to_str(MSG_RESET);
+             RARCH_LOG("[Core]: %s.\n", _msg);
+@@ -6249,7 +6255,7 @@ void toggle_rewind(bool enabled)
+ }
+ bool EJS_IS_REWIND()
+ {
+-   return REWIND_ACTIVE;
++   return REWIND_ACTIVE && !daylight_checkpoint_is_protected_v1();
+ }
+ void set_rewind_granularity(uint granularity)
+ {
+diff --git a/tasks/task_save.c b/tasks/task_save.c
+index 5498e51..72d83ad 100644
+--- a/tasks/task_save.c
++++ b/tasks/task_save.c
+@@ -50,6 +50,11 @@
+ #include "tasks_internal.h"
+ 
+ #ifdef EMSCRIPTEN
++#include <emscripten/emscripten.h>
++static bool daylight_checkpoint_protected = false;
++static unsigned daylight_last_request = 0;
++extern bool ejs_is_paused(void);
++extern char *save_file_path(void);
+ /* Filesystem is in-memory anyway, use huge chunks since each
+    read/write is a possible suspend to JS code */
+ #define SAVE_STATE_CHUNK 4096 * 4096
+@@ -156,6 +161,9 @@ typedef struct rastate_size_info
+  **/
+ bool content_undo_load_state(void)
+ {
++#ifdef EMSCRIPTEN
++   if (daylight_checkpoint_protected) return false;
++#endif
+    unsigned i;
+    size_t temp_data_size;
+    bool ret                  = false;
+@@ -1556,6 +1564,9 @@ void content_wait_for_load_state_task(void)
+ bool content_load_state(const char *path,
+       bool load_to_backup_buffer, bool autoload)
+ {
++#ifdef EMSCRIPTEN
++   if (daylight_checkpoint_protected) return false;
++#endif
+    retro_task_t       *task        = NULL;
+    save_task_state_t *state        = NULL;
+    video_driver_state_t *video_st  = video_state_get_ptr();
+@@ -1877,7 +1888,96 @@ bool supports_states(void)
+ }
+ void refresh_save_files(void)
+ {
+-    event_load_save_files(false);
++    if (!daylight_checkpoint_protected) event_load_save_files(false);
++}
++
++/* Synchronous, paused restore: return the core's deserialize result itself,
++ * never the task-queue submission/old load_state rv echo. */
++EMSCRIPTEN_KEEPALIVE int daylight_checkpoint_contract_version(void) { return 1; }
++EMSCRIPTEN_KEEPALIVE int daylight_enable_checkpoint_protection_v1(void)
++{
++   if (!ejs_is_paused() || content_load_state_in_progress(NULL)) return 0;
++   daylight_checkpoint_protected = true;
++   return 1;
++}
++EMSCRIPTEN_KEEPALIVE int daylight_restore_pending_v1(void)
++{
++   return content_load_state_in_progress(NULL) ? 1 : 0;
++}
++/* Validate the container before the upstream parser examines its blocks. */
++static bool daylight_state_envelope(const unsigned char *bytes, size_t size)
++{
++   size_t offset = 8;
++   bool core = false;
++   if (size < 8) return false;
++   if (memcmp(bytes, "RASTATE", 7) != 0) return true; /* raw core format */
++   if (bytes[7] != 1) return false;
++   while (offset <= size && size - offset >= 8)
++   {
++      const unsigned char *block = bytes + offset;
++      size_t length = (uint32_t)block[4] | ((uint32_t)block[5] << 8)
++         | ((uint32_t)block[6] << 16) | ((uint32_t)block[7] << 24);
++      offset += 8;
++      if (memcmp(block, "END ", 4) == 0) return core && !length && offset == size;
++      if (length > size - offset) return false;
++      if (memcmp(block, "MEM ", 4) == 0) { if (core || !length) return false; core = true; }
++      length = CONTENT_ALIGN_SIZE(length);
++      if (length > size - offset) return false;
++      offset += length;
++   }
++   return false;
++}
++EMSCRIPTEN_KEEPALIVE unsigned daylight_restore_last_request_v1(void)
++{
++   return daylight_last_request;
++}
++EMSCRIPTEN_KEEPALIVE int daylight_checkpoint_is_protected_v1(void)
++{
++   return daylight_checkpoint_protected;
++}
++EMSCRIPTEN_KEEPALIVE int daylight_restore_state_v1(const char *path, unsigned request)
++{
++   void *bytes = NULL;
++   int64_t size = 0;
++   bool restored = false;
++   if (!request || !daylight_checkpoint_protected || !ejs_is_paused()) return 0;
++   daylight_last_request = request;
++   if (filestream_read_file(path, &bytes, &size) && size >= 8 && size <= 8388608
++         && daylight_state_envelope((const unsigned char*)bytes, (size_t)size))
++      restored = content_deserialize_state(bytes, (size_t)size);
++   free(bytes);
++   return restored ? 1 : 0;
++}
++EMSCRIPTEN_KEEPALIVE uintptr_t daylight_memory_data_v1(unsigned type)
++{
++   retro_ctx_memory_info_t info;
++   memset(&info, 0, sizeof(info)); info.id = type; core_get_memory(&info);
++   return (uintptr_t)info.data;
++}
++EMSCRIPTEN_KEEPALIVE size_t daylight_memory_size_v1(unsigned type)
++{
++   retro_ctx_memory_info_t info;
++   memset(&info, 0, sizeof(info)); info.id = type; core_get_memory(&info);
++   return info.size;
++}
++EMSCRIPTEN_KEEPALIVE int daylight_restore_battery_v1(const char *path, unsigned request)
++{
++   void *bytes = NULL;
++   int64_t size = 0;
++   bool restored = false;
++   retro_ctx_memory_info_t info;
++   if (!request || !daylight_checkpoint_protected || !ejs_is_paused()) return 0;
++   daylight_last_request = request;
++   if (strcmp(path, save_file_path()) != 0) return 0;
++   memset(&info, 0, sizeof(info)); info.id = RETRO_MEMORY_SAVE_RAM; core_get_memory(&info);
++   if (info.data && info.size && filestream_read_file(path, &bytes, &size)
++         && size > 0 && (uint64_t)size == info.size)
++   {
++      event_load_save_files(false);
++      restored = memcmp(info.data, bytes, info.size) == 0;
++   }
++   free(bytes);
++   return restored ? 1 : 0;
+ }
+ 
+ #endif

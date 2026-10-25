@@ -42,7 +42,7 @@ export class EmulatorCheckpointService {
     const provenance = {
       romHash: await this.#assets.getResourceDigest(this.#assets.getRomResource(key)),
       core: { name: coreName,
-        bundleHash: await this.#assets.getResourceDigest(this.#assets.getEngineResource(`cores/${coreName}-${variant}.data`)),
+        bundleHash: await this.#assets.getResourceDigest(this.#assets.getEngineResource(`cores/${coreName}-${variant}.protected-v1.data`)),
         format: 1, variant,
       },
     };
