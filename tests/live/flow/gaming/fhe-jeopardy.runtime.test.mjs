@@ -82,6 +82,10 @@ test('Jeremiah: anonymous teams complete both boards and Final using only the re
     }else{
      const value=s.isDailyDouble?s.wager:s.active.clue.value*(round===0?1:2);
      await key('Enter');await expect(page.locator('.jeopardy')).toHaveAttribute('data-phase','judging');
+     await expect.poll(async()=>{
+      const [answer,team]=await Promise.all([page.locator('.gp-reveal__answer').boundingBox(),page.locator('.jp-clue__locked').boundingBox()]);
+      return team.y-(answer.y+answer.height);
+     }).toBeGreaterThanOrEqual(0);
      const correct=clueIndex!==1;await key(correct?'ArrowUp':'ArrowDown');if(correct)expectedScores[team]+=value;
     }
     expect((await state()).scores).toEqual(expectedScores);clueIndex++;
@@ -107,3 +111,24 @@ test('Jeremiah: anonymous teams complete both boards and Final using only the re
   if(sessionId)await request.delete(`/api/v1/gaming/diagnostics/sessions/${encodeURIComponent(sessionId)}`);
  }
 });
+
+for(const phase of ['judging','clue']) {
+test(`revealed paragraph clues fit above controls on a TV: ${phase}`,async({page,request})=>{
+ const response=await request.post('/api/v1/gaming/diagnostics/sessions',{data:{definition_id:'jeopardy:fhe-jeremiah',seats:[{id:'team_1',name:'Blue Team',members:[]},{id:'team_2',name:'Gold Team',members:[]}]}});
+ expect(response.ok()).toBe(true);const session=await response.json();const id=session.header.session_id;
+ try{
+  const candidates=session.state.set.rounds.flatMap((r,roundIndex)=>r.categories.flatMap((c,cat)=>c.clues.map((clue,row)=>({clue,roundIndex,cat,row}))));
+  const longest=candidates.sort((a,b)=>b.clue.clue.length-a.clue.clue.length)[0];
+  const patched=await request.patch(`/api/v1/gaming/diagnostics/sessions/${encodeURIComponent(id)}/state`,{data:{patch:{phase,roundIndex:longest.roundIndex,active:{cat:longest.cat,row:longest.row,clue:longest.clue},revealed:true,answeringTeamId:phase==='judging'?'team_1':null}}});
+  expect(patched.ok()).toBe(true);
+  await page.setViewportSize({width:960,height:540});
+  await page.goto(`${routePath}&diagnostic_session=${encodeURIComponent(id)}`);
+  await expect(page.locator('.gp-reveal__answer')).toBeVisible();
+  await expect.poll(async()=>{
+   const [answer,team]=await Promise.all([page.locator('.gp-reveal__answer').boundingBox(),page.locator(phase==='judging'?'.jp-clue__locked':'.gp-legend').boundingBox()]);
+   return team.y-(answer.y+answer.height);
+  }).toBeGreaterThanOrEqual(0);
+ }finally{await request.delete(`/api/v1/gaming/diagnostics/sessions/${encodeURIComponent(id)}`);}
+});
+
+}

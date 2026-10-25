@@ -29,12 +29,12 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
       : [...(state.answeringTeamId ? [{ key: 'OK', label: 'Show answer' }] : []), { key: 'Back', label: 'Time out' }];
 
   return (
-    <div className={`jp-clue${active.clue.media && !mediaError ? ' jp-clue--media' : ''}`} data-testid="clue-screen">
+    <div className={`jp-clue${revealed ? ' jp-clue--revealed' : ''}${active.clue.media && !mediaError ? ' jp-clue--media' : ''}`} data-testid="clue-screen">
       <div className="jp-clue__banner">
         {active.clue.little_kids && <span className="jp-clue__kids">Little kids’ turn</span>}
         {isDailyDouble && <span className="jp-clue__dd">DAILY DOUBLE</span>}
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
-        {!judging && <TimerRing progress={progress} remaining={remaining} size={72} />}
+        {!judging && !revealed && <TimerRing progress={progress} remaining={remaining} size={72} />}
       </div>
       {active.clue.media && !mediaError && (
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />

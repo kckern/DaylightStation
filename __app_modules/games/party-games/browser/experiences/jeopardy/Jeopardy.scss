@@ -148,8 +148,11 @@
   height: auto;
 }
 
-.jeopardy[data-phase='judging'] .gp-reveal {
+.jeopardy[data-phase='judging'] .gp-reveal,
+.jp-clue--revealed .gp-reveal {
   gap: 0.5rem;
+
+  &__prompt { font-size: 1.5rem; }
 
   &__answer {
     padding-top: 0.5rem;
