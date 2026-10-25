@@ -151,12 +151,7 @@ instead of activating the first incidental button. A first directional press
 with no eligible focus restores the primary focus. Anonymous team edits return
 focus to Start, and held OK presses cannot keep adding teams.
 
-Left only invokes an experience's explicitly registered Back action; otherwise
-it navigates buttons. Escape/Back remains the shell's exit action. Jeopardy
-keeps DOM focus and the board cursor on the same playable question, skips used
-or absent squares, and advances the cursor after a clue closes. Left/Right cycle
-through remaining questions in reading order, while Up/Down move between rows. Old saved
-cursors on used squares are normalized on display and selection.
+Left invokes an experience’s registered Back action or moves focus among shell buttons. Escape/Back opens the shell’s leave confirmation. Jeopardy gameplay is controlled from the phone host: TV arrows, Enter, and board clicks never select, reveal, judge, or change wagers. Hosted/self games still accept physical team buzzers. Turns games skip buzzer setup.
 
 A failed game request exposes a focused Retry connection button. Retry loads
 the authoritative session rather than replaying a command that may already
@@ -168,7 +163,8 @@ and authoritative rules.
 
 ### Remote keys inside the shell
 
-`PartyGamesApp` owns the TV remote through `useScopedRemoteControls`, which captures arrows, Enter and Escape before any window listener. While a game is playing (and no leave dialog is open), the shell first offers each action to the experience through `registerRemoteAction(handler)`. A handler that returns `true` claims it; anything unclaimed falls through to focus movement, button activation, Back and Forward. Jeopardy claims exactly the keys its phase uses (board cursor and select, clue time-out and return, ↑ correct / ↓ wrong / ↵ reveal while judging), so wager and round-intro buttons keep ordinary focus navigation.
+`PartyGamesApp` owns the TV remote through `useScopedRemoteControls`. Experiences can register a handler through `registerRemoteAction(handler)`; unclaimed input falls through to shell focus and leave behavior. Jeopardy registers no gameplay handler. Phone buttons retain ordinary keyboard activation and focus accessibility.
+
 
 ### Gamepad buzzers
 
@@ -375,3 +371,14 @@ The Jeopardy phone controller offers an inline-confirmed **Restart game** utilit
 Open-book practice packs use separate `gaming-rules` and `gaming-content` artifacts with the same definition ID. Keep `party_games.setup_revision` and anonymous Blue/Gold team metadata in rules; put `open_book: true`, boards, Final, and each clue’s `scripture_reference` in content. Use short supported prompts, distinct passages, and review every clue and answer against every other tile because the host may select tiles in any order. Two untimed turns rounds use five categories of 100/200/300 clues, multipliers 1/2, no wrong-answer penalty, and one Daily Double per round. Mark the first round’s five 100 clues `little_kids: true`.
 
 The reviewed Isaiah fixture is `tests/_fixtures/group-play/isaiah-practice/{rules.yml,content.yml}` with definition ID `jeopardy:practice-isaiah`. Stage and validate both artifacts before installing them with the gaming artifact workflow. Once installed, launch `/screens/living-room/party-games/jeopardy:practice-isaiah` and scan the phone controller QR code. The phone host selects, reveals, and judges; the shared display shows the clue and scripture reference for family lookup. Content updates apply to newly created sessions; existing pinned sessions retain their original pack.
+
+
+### Open-book Jeopardy on TV
+
+Scan the prominent opening QR code to open the phone host, then tap **Start game** there. The QR disappears once play starts; the TV uses its full stage for the board and clues. Select tiles, lock Daily Double/Final wagers, reveal answers, and judge from the phone. The first round’s youngest-player cues remain visible, and used phone tiles keep their fixed height and row position.
+
+Content may set `open_book: true` and add `scripture_reference: "Jeremiah 1:5"` to regular clues and Final. TV readers see the prompt, **Look up:** reference, then the revealed answer in reading order. Final’s question/reference remain hidden during category and wagering. References are optional; legacy null or absent references add no line. Open-book clues wait without a countdown until the host reveals/judges. Existing pinned sessions retain their original pack and timing; content changes apply to newly created or restarted sessions.
+
+Restart preserves the same teams and their saved physical buzzer roles, clears the arbiter’s prior locks by remounting the experience, and moves both phone and TV to a fresh opening lobby. Confirm/cancel is available during play and completed results. TV results offer Exit; the phone host owns Restart game.
+
+For isolated browser acceptance, run `node tests/_lib/jeopardy-acceptance-server.mjs`, then set `BASE_URL` to its printed loopback URL before running the focused `fhe-jeopardy.runtime.test.mjs` browser suite. `BASE_URL` disables automatic backend startup. The harness mounts real Party Games TV/host surfaces, fonts, router, gaming diagnostic authority and WebSocket events; sessions are ephemeral and cleaned up by the tests. It starts no household services or durable games. The harness serves reviewed local authored art through the production gaming media service and does not exercise the outer screen renderer or physical kiosk/buzzer hardware.

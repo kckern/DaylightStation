@@ -189,3 +189,66 @@
 .jp-board__tile { flex-direction: column; gap: 0.2rem; }
 .jp-board__kids { font-family: var(--gp-font-ui); font-size: clamp(0.65rem, 2cqh, 1rem); color: var(--gp-paper); text-shadow: none; }
 .jp-clue__kids { font-family: var(--gp-font-ui); font-size: clamp(1rem, 2.8cqh, 1.4rem); color: var(--gp-brass); }
+
+// TV composition: one bounded content slot between compact chrome and scores.
+.jeopardy {
+  container-type: size;
+  overflow: hidden;
+  .gp-show-header {
+    height: 48px;
+    min-height: 48px;
+    padding: 4px 20px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 12px;
+    h1 { font-size: 24px; }
+    &__eyebrow, &__status { font-size: 12px; letter-spacing: 0.03em; }
+  }
+  .gp-scoreboard {
+    height: 64px;
+    flex: 0 0 64px;
+    padding: 6px 16px;
+    gap: 12px;
+    &__team { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 12px; border-top-width: 3px; }
+    &__name { font-size: 14px; }
+    &__members { display: flex; margin: 0; }
+    &__score { font-size: 28px; margin-left: auto; }
+  }
+  .jp-host-lobby {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    .gp-titlecard { padding: 0; gap: 8px; h1 { font-size: 36px; } p { font-size: 20px; } }
+    > p { margin: 0; font-size: 18px; }
+    .gp-companion { font-size: 14px; padding: 8px; }
+  }
+  .jp-clue, .jp-final { padding: 10px 24px; gap: 10px; overflow: hidden; }
+  .jp-clue__banner { font-size: 26px; min-height: 30px; gap: 18px; }
+  .jp-clue__locked { font-size: 18px; padding: 4px 18px; }
+  .gp-media--image, .gp-media--video { max-height: 26%; max-width: 60%; flex: 0 1 26%; object-fit: contain; }
+  .gp-reveal {
+    padding: 0 12px;
+    justify-content: center;
+    gap: 10px;
+    flex: 1 1 0;
+    min-height: 0;
+    &__prompt { font-size: clamp(24px, 4.5cqh, 40px); line-height: 1.22; }
+    &__prompt--sm { font-size: clamp(20px, 3.8cqh, 32px); }
+    &__reference { color: var(--gp-brass-bright); font: 500 clamp(16px, 3.3cqh, 26px)/1.2 var(--gp-font-ui); }
+    // The answer uses the same reserved space before and after reveal.
+    &::after { content: ''; min-height: 38px; }
+    &:has(.gp-reveal__answer)::after { display: none; }
+    &__answer { font-size: clamp(22px, 4cqh, 34px); line-height: 1.2; padding-top: 8px; }
+  }
+  .jp-clue--media .gp-reveal__prompt { font-size: clamp(19px, 3.6cqh, 30px); }
+  .jp-final {
+    .gp-titlecard h1 { font-size: 40px; }
+    .gp-titlecard p { font-size: 24px; }
+    > p { margin: 0; }
+    &__judging { gap: 6px; }
+    &__team { font-size: 18px; }
+  }
+}

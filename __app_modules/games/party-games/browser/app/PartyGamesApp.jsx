@@ -173,13 +173,17 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     if (message?.kind !== 'session-restarted' || message.sessionId !== flow.sessionId || !message.replacementSessionId) return;
     const replacement = message.replacementSessionId;
     logger.info('party-games.session-restarting', {sessionId: flow.sessionId, replacementSessionId: replacement});
+    // Team IDs survive restart; carry hardware roles into the newly keyed arbiter.
+    const bindings = flow.buzzerBindings ?? loadBuzzerBindings(flow.sessionId);
+    const teamIds = new Set(flow.seats.map(team => team.id));
+    if (bindings) saveBuzzerBindings(replacement, Object.fromEntries(Object.entries(bindings).filter(([, teamId]) => teamIds.has(teamId))));
     forgetBuzzerBindings(flow.sessionId);
     creation.current = null;
     backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
     setConfirmExit(false);
     dispatchFlow({type: 'SESSION_RESTARTING'});
     setAttachment({diagnosticSessionId: replacement.startsWith('diagnostic:') ? replacement : null, sessionId: replacement.startsWith('diagnostic:') ? null : replacement, savedSession: false});
-  }, [flow.sessionId, logger]);
+  }, [flow.sessionId, flow.buzzerBindings, flow.seats, logger]);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,7 +233,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
   useEffect(() => {
     if (flow.phase === 'playing' && flow.sessionId && flow.buzzerBindings) saveBuzzerBindings(flow.sessionId, flow.buzzerBindings);
-    else if (flow.phase === 'results' && flow.sessionId) forgetBuzzerBindings(flow.sessionId);
+    // Keep roles available for a host restart from completed results.
   }, [flow.phase, flow.sessionId, flow.buzzerBindings]);
   // A refreshed page has no flow bindings; the saved ones keep controllers bound.
   const buzzerBindings = useMemo(() => flow.buzzerBindings ?? loadBuzzerBindings(flow.sessionId), [flow.buzzerBindings, flow.sessionId]);
@@ -345,7 +349,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       )}
 
       {flow.phase === 'results' && (
-        <PartyGamesResults competition={flow.competition} seats={flow.seats} result={flow.result}
+        <PartyGamesResults allowPlayAgain={!isJeopardy} competition={flow.competition} seats={flow.seats} result={flow.result}
           onPlayAgain={playAgain}
           onExit={exit} />
       )}

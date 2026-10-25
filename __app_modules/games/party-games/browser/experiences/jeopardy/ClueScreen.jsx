@@ -33,7 +33,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />
       )}
       {mediaError && <div className="jp-clue__media-error">{mediaError}</div>}
-      <RevealPanel prompt={active.clue.clue} revealed={revealed} answer={active.clue.answer} />
+      <RevealPanel reference={active.clue.scripture_reference} prompt={active.clue.clue} revealed={revealed} answer={active.clue.answer} />
       {lockedTeam && (
         <div className="jp-clue__locked" style={{ '--team-color': lockedTeam.color, '--team-on': onColor(lockedTeam.color) }}>
           {lockedTeam.members?.length > 0 && (

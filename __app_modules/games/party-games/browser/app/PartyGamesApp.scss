@@ -194,3 +194,9 @@
   .party-games__play { grid-template-columns: minmax(0, 1fr); }
   .party-games-effect { right: 1rem; }
 }
+
+// Clip the stage entrance translation at the Jeopardy frame boundary.
+.party-games-container:has(> .party-games--jeopardy) { overflow: hidden; }
+
+.party-games--jeopardy { animation-name: jp-stage-fade; }
+@keyframes jp-stage-fade { from { opacity: 0; } to { opacity: 1; } }

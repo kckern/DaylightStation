@@ -4,7 +4,7 @@ import GameButton from "../../../../../__capabilities/gaming/browser/platform/ui
 import OutcomeReveal from "../../../../../__capabilities/gaming/browser/platform/ui/OutcomeReveal.jsx";
 import "./PartyGamesResults.scss";
 
-export default function PartyGamesResults({ seats = [], result = null, competition = true, onPlayAgain, onExit }) {
+export default function PartyGamesResults({ seats = [], result = null, competition = true, onPlayAgain, onExit, allowPlayAgain = true }) {
   const casual = competition === false;
   const scoreMap = Object.fromEntries((casual ? [] : result?.scores || []).map((score) => [score.subject_id, score.value]));
   const ranked = [...seats].sort((left, right) => (scoreMap[right.id] ?? 0) - (scoreMap[left.id] ?? 0));
@@ -30,8 +30,8 @@ export default function PartyGamesResults({ seats = [], result = null, competiti
         {ranked.length === 0 && <p>{result?.status === 'abandoned' ? 'Session ended.' : 'Thanks for playing.'}</p>}
       </OutcomeReveal>
       <div className="party-games-results__actions">
-        <GameButton tone="primary" autoFocus onClick={onPlayAgain}>Play another game</GameButton>
-        <GameButton tone="quiet" onClick={onExit}>Exit Party Games</GameButton>
+        {allowPlayAgain && <GameButton tone="primary" autoFocus onClick={onPlayAgain}>Play another game</GameButton>}
+        <GameButton tone="quiet" autoFocus={!allowPlayAgain} onClick={onExit}>Exit Party Games</GameButton>
       </div>
     </div>
   );

@@ -23,7 +23,7 @@ export function FinalRound({ state, teams }) {
   if (phase === 'final-clue' || phase === 'final-judging') {
     return <div className="jp-final">
       {set.final.media && <MediaCluePlayer media={set.final.media} />}
-      <RevealPanel prompt={set.final.clue} revealed={phase === 'final-judging'} answer={set.final.answer} />
+      <RevealPanel reference={set.final.scripture_reference} prompt={set.final.clue} revealed={phase === 'final-judging'} answer={set.final.answer} />
       {phase === 'final-judging' && <div className="jp-final__judging">
         {teams.map(team => <div className="jp-final__team" key={team.id}>
           <span>{team.name} (wagered {finalWagers[team.id]})</span>

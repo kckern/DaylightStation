@@ -252,3 +252,26 @@ it('keeps other game QR while Jeopardy owns its lobby QR and disconnect copy',as
  fetchBoot.mockResolvedValue({config,sets:[other],attachedSession:{...attached('other'),header:{session_id:'other',experience:{id:'charades'},seats:[]}}});
  render(<PartyGamesApp definitionId="charades:family"/>);await screen.findByRole('button',{name:'Complete other'});expect(screen.getByRole('img',{name:/Scan/})).toBeVisible();
 });
+
+it.each(['active','complete'])('transfers same-team physical buzzer bindings from %s before restart remount', async status => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=old');
+  const seats = [{id:'red',name:'Red'}];
+  const bindings = { 'gamepad:0:button:0': 'red' };
+  window.localStorage.setItem('party-games:buzzers:old', JSON.stringify(bindings));
+  fetchBoot.mockResolvedValueOnce({config, sets:[jeopardySet], attachedSession:{...attached('old',status),header:{...attached('old',status).header,seats}}})
+    .mockResolvedValueOnce({config, sets:[jeopardySet], attachedSession:{...attached('new'),header:{...attached('new').header,seats}}});
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  if (status === 'active') await screen.findByRole('button', {name:'Complete old'});
+  else await screen.findByTestId('results');
+  act(() => socket.handler({kind:'session-restarted',sessionId:'old',replacementSessionId:'new'}));
+  await screen.findByRole('button', {name:'Complete new'});
+  expect(JSON.parse(window.localStorage.getItem('party-games:buzzers:new'))).toEqual(bindings);
+  expect(window.localStorage.getItem('party-games:buzzers:old')).toBeNull();
+});
+it('completed Jeopardy leaves game restart with the phone host', async () => {
+  fetchBoot.mockResolvedValue({config,sets:[jeopardySet],attachedSession:attached('old','complete')});
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByTestId('results');
+  expect(screen.queryByRole('button',{name:'Play another game'})).toBeNull();
+  expect(screen.getByRole('button',{name:'Exit Party Games'})).toBeVisible();
+});

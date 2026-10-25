@@ -1,4 +1,4 @@
-// Buzzer bindings outlive a page refresh: keyed by session, cleared at results.
+// Buzzer bindings outlive refresh/results so a phone-host restart can transfer roles.
 const key = (sessionId) => `party-games:buzzers:${sessionId}`;
 
 export function saveBuzzerBindings(sessionId, bindings) {

@@ -10,10 +10,11 @@ function promptSize(prompt) {
   return 'lg';
 }
 
-export function RevealPanel({ prompt, revealed = false, answer = null }) {
+export function RevealPanel({ prompt, revealed = false, answer = null, reference = null }) {
   return (
     <div className="gp-reveal" data-testid="reveal-panel">
       <div className={`gp-reveal__prompt gp-reveal__prompt--${promptSize(prompt)}`}>{prompt}</div>
+      {reference && <div className="gp-reveal__reference" data-testid="scripture-reference">Look up: {reference}</div>}
       {revealed && answer && <div className="gp-reveal__answer">{answer}</div>}
     </div>
   );
