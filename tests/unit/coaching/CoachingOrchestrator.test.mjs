@@ -329,18 +329,19 @@ describe('canonical historical budgets in coaching snapshots', () => {
     ['2026-10-19', 2030, 684], ['2026-10-20', 806, 302], ['2026-10-21', 1726, 882],
     ['2026-10-22', 1532, 275], ['2026-10-23', 330, 413], ['2026-10-24', 1704, 997],
   ].map(([date, food, exercise]) => ({ date, food, exercise, net: food - exercise, range: { floor: 1200, top: 1791 }, maintenance: 2291, complete: food >= 1200, macros: { protein: 125 }, goalBasis: 'current' }));
-  const setup = () => {
+  const setup = (nutrition = { '2026-10-24': { calories: 9999, protein: 999 } }) => {
     const commentary = { generate: vi.fn().mockResolvedValue('A comment') };
     const budgetService = { getBudgetRange: vi.fn().mockResolvedValue([...rows].reverse()), getBudget: vi.fn().mockResolvedValue({ ...rows[0], date: '2026-10-25', food: 700 }) };
+    const messaging = { sendMessage: vi.fn().mockResolvedValue({}) };
     const orchestrator = new CoachingOrchestrator({
       commentaryService: commentary, budgetService,
-      healthStore: { loadNutritionData: async () => ({ '2026-10-24': { calories: 9999, protein: 999 } }), loadCoachingData: async () => ({}), loadWeightData: async () => ({}), saveCoachingData: async () => {} },
-      nutriListStore: { findByDate: async () => [] }, messagingGateway: { sendMessage: async () => ({}) },
+      healthStore: { loadNutritionData: async () => nutrition, loadCoachingData: async () => ({}), loadWeightData: async () => ({}), saveCoachingData: async () => {} },
+      nutriListStore: { findByDate: async () => [] }, messagingGateway: messaging,
       config: { getUserGoals: () => ({ calories_min: 1200, calories_max: 1600, protein: 120 }), getUserTimezone: () => 'America/Los_Angeles' },
       clock: { now: () => new Date('2026-10-25T18:00:00Z') },
       logger: { info() {}, warn() {}, error() {} },
     });
-    return { orchestrator, commentary, budgetService };
+    return { orchestrator, commentary, budgetService, messaging };
   };
 
   it('morning uses yesterday’s own budget and exposes matched period coverage', async () => {
@@ -351,6 +352,22 @@ describe('canonical historical budgets in coaching snapshots', () => {
     expect(snapshot.period).toMatchObject({ coverage: { trustedFinished: 4, total: 7 }, counts: { withinPlan: 4, overPlan: 0, surplus: 0 } });
     expect(snapshot.week_avg).toMatchObject({ calories: 1748, trustedDays: 4, totalDays: 7 });
     expect(snapshot.recent_pattern).toBeNull();
+  });
+
+  it.each(['done', 'fasting'])('morning labels a reconstructed %s day as estimated intake', async declared => {
+    const { orchestrator, commentary, budgetService, messaging } = setup({
+      '2026-10-24': { calories: 2200, protein: 150, reconstructed_calories: 600 },
+    });
+    budgetService.getBudgetRange.mockResolvedValue([{ ...rows[5], food: 1600, exercise: 0, net: 1600, declared }]);
+    await orchestrator.sendMorningBrief({ userId: 'u', conversationId: 'c' });
+    const text = messaging.sendMessage.mock.calls[0][1];
+    expect(text).toContain('2200 cal estimated');
+    expect(text).toContain('protein unknown');
+    expect(text).not.toContain('1600 cal');
+    const snapshot = commentary.generate.mock.calls[0][0];
+    expect(snapshot.yesterday).toMatchObject({ declared, status: 'reconstructed', estimated_calories: 2200, protein: null });
+    expect(snapshot.yesterday.assessment).toMatchObject({ trustworthy: false, proteinKnown: false, planState: 'unknown', energyState: 'unknown' });
+    expect(snapshot.period.coverage.trustedFinished).toBe(0);
   });
 
   it('prints yesterday’s own completeness floor even when today’s floor differs', async () => {

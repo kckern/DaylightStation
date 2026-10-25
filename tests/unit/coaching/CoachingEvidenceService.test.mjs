@@ -61,6 +61,19 @@ describe('CoachingEvidenceService', () => {
     expect(result.period.coverage.trustedFinished).toBe(0);
   });
 
+  it.each(['done', 'fasting'])('keeps %s closure separate from reconstructed intake presentation', async declared => {
+    const { service } = fixture([day('2026-10-24', 1600, 0, { declared })], {
+      '2026-10-24': { calories: 2200, protein: 150, reconstructed_calories: 600 },
+    });
+    const result = await service.load({ userId: 'u', date: '2026-10-25', historyDays: 1 });
+    expect(result.days[0]).toMatchObject({
+      declared, provenance: 'reconstructed', status: 'reconstructed', calories: 1600,
+      estimatedCalories: 2200, protein: null,
+      assessment: { finished: true, trustworthy: false, proteinKnown: false, planState: 'unknown', energyState: 'unknown' },
+    });
+    expect(result.period.coverage.trustedFinished).toBe(0);
+  });
+
   it('requires a finite macro to claim protein is known, including declared fasting', async () => {
     const { service } = fixture([day('2026-10-24', 0, 0, { declared: 'fasting', macros: {} })]);
     const result = await service.load({ userId: 'u', date: '2026-10-25', historyDays: 1 });

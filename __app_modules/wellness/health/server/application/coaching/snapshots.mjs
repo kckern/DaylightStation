@@ -110,6 +110,7 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
 function pickDay(day) {
   return {
     date: day.date, calories: day.calories, protein: day.protein, status: day.status,
+    ...(day.declared ? { declared: day.declared } : {}),
     ...(day.assessment ? { assessment: day.assessment, provenance: day.provenance } : {}),
     ...(day.estimatedCalories != null ? { estimated_calories: day.estimatedCalories } : {}),
     ...(day.fastedMeals ? { fasted_meals: day.fastedMeals } : {}),

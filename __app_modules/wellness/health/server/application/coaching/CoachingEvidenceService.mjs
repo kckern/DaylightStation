@@ -85,13 +85,13 @@ export class CoachingEvidenceService {
       const calories = available ? assessment.food : finite(entry?.calories) ? entry.calories : null;
       const declared = available ? budget.declared : closureStatus(closures[dayDate]);
       const fastedMeals = available ? budget.fastedMeals || [] : fastedMealsOf(closures[dayDate]);
-      const status = available
-        ? declared || (provenance === 'reconstructed' ? 'reconstructed'
-          : assessment.trustworthy ? 'complete' : calories > 0 ? 'incomplete' : 'unlogged')
+      // A closure finishes the day; it cannot turn estimated intake into measured intake.
+      const status = provenance === 'reconstructed' ? 'reconstructed' : available
+        ? declared || (assessment.trustworthy ? 'complete' : calories > 0 ? 'incomplete' : 'unlogged')
         : sourceState.nutrition === 'unavailable' && !declared && !fastedMeals.length ? 'unavailable'
           : classifyDay(entry, closures[dayDate], this.#minCalories);
       return {
-        date: dayDate, budget: budget || null, assessment, provenance,
+        date: dayDate, budget: budget || null, assessment, provenance, declared,
         ...(provenance === 'reconstructed' && finite(entry?.calories) ? { estimatedCalories: entry.calories } : {}),
         calories: finite(calories) ? Math.round(calories) : null,
         protein: assessment.proteinKnown ? budget.macros.protein : null,
