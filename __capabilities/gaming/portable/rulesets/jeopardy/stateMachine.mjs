@@ -120,6 +120,7 @@ export function jeopardyReducer(state, action) {
     }
 
     case 'REVEAL':
+      if (state.phase === 'judging' && !state.revealed) return { ...state, revealed: true };
       if (state.phase === 'clue') return { ...state, revealed: true, phase: state.answeringTeamId ? 'judging' : state.phase };
       if (state.phase === 'final-clue') return { ...state, phase: 'final-judging' };
       return state;

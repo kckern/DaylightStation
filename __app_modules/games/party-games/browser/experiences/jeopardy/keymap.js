@@ -3,20 +3,21 @@
 
 const ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
-export function resolveJeopardyKey({ phase, revealed = false, key }) {
+export function resolveJeopardyKey({ phase, revealed = false, answeringTeamId = null, key }) {
   if (phase === 'board') {
     if (ARROWS[key]) return { type: 'MOVE_CURSOR', dir: ARROWS[key] };
     if (key === 'Enter') return { type: 'SELECT_TILE' };
     return null;
   }
   if (phase === 'clue') {
+    if (key === 'Enter' && !revealed && answeringTeamId) return { type: 'REVEAL' };
     if (key === 'Escape' && !revealed) return { type: 'TIMEOUT' };
     if (key === 'Enter' && revealed) return { type: 'RETURN_TO_BOARD' };
     return null;
   }
   if (phase === 'judging') {
-    if (key === 'ArrowUp') return { type: 'JUDGE', correct: true };
-    if (key === 'ArrowDown') return { type: 'JUDGE', correct: false };
+    if (key === 'ArrowUp' && revealed) return { type: 'JUDGE', correct: true };
+    if (key === 'ArrowDown' && revealed) return { type: 'JUDGE', correct: false };
     if (key === 'Enter' && !revealed) return { type: 'REVEAL' };
     return null;
   }

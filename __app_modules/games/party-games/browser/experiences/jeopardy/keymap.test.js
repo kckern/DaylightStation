@@ -34,3 +34,8 @@ describe('remoteActionKey', () => {
     expect(remoteActionKey({ action: 'other' })).toBe(null);
   });
 });
+
+it('reveals an assigned-team clue on OK without requiring a buzzer',()=>{
+ expect(resolveJeopardyKey({phase:'clue',revealed:false,answeringTeamId:'team_1',key:'Enter'})).toEqual({type:'REVEAL'});
+ expect(resolveJeopardyKey({phase:'judging',revealed:false,key:'ArrowUp'})).toBe(null);
+});

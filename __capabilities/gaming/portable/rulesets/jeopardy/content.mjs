@@ -44,7 +44,9 @@ function normalizeClue(clue, path, errors) {
   if (typeof clue.answer !== 'string' || !clue.answer) {
     errors.push(`${path}.answer is required`);
   }
+  if (clue.little_kids != null && typeof clue.little_kids !== 'boolean') errors.push(`${path}.little_kids must be a boolean`);
   return {
+    ...(clue.little_kids === true ? { little_kids: true } : {}),
     value: clue.value,
     clue: clue.clue,
     answer: clue.answer,

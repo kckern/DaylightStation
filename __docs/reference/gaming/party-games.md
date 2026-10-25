@@ -112,6 +112,35 @@ renderer does not flash the clue or change its visibility over time.
 
 `GamepadAdapter` preserves ABXY/LR identity and binds a stable controller ID to a semantic role on press. The Gaming platform's `DrawingTabletAdapter` emits Pointer Event pressure and eraser metadata with touch/mouse normalization. It converts responsive CSS coordinates into the canvas backing-store coordinate system, clamps captured strokes to the canvas, and preserves independent pointer identities. Browser input is hosted by screen-framework and translated to `InteractionIntent` before experience code sees it.
 
+### Anonymous teams and turn-based Jeopardy
+
+A team-based definition can author `party_games.anonymous_teams` (at least two
+`{name, color}` entries, with six-digit hex colors) and a nonempty
+`party_games.setup_revision` in its rules artifact. The catalog projects these
+into `setup_profile`; setup starts with those teams, hides household roster and
+guest entry, and focuses Start. Teams carry empty member lists and ordinary
+sequential IDs/slots; additional anonymous teams can be added or removed down
+to two. The host can operate setup and the whole game with the TV remote.
+
+When every Jeopardy round uses `mode: turns`, its projected gamepad profile is
+`host`, so Party Games skips buzzer binding. Mixed and hosted rounds preserve
+the manifest's buzzer behavior. The active team chooses and answers, then the
+next team plays after a correct answer, wrong answer, or timeout. OK reveals
+an assigned-team clue; once revealed, Up marks correct and Down marks wrong.
+Back times out an unanswered clue, and OK returns from its revealed answer.
+Wagers and Final judgments use ordinary arrow/OK button navigation.
+
+A clue may declare `little_kids: true` to show Little kids’ turn on its tile
+and clue screen. This is a room-level prompt, not a registered participant:
+an adult gives a toddler on the active team the first chance to answer. Other
+spokespersons can rotate in seating order without entering anybody's name.
+
+Automatic local-session recovery compares the pinned definition's
+`party_games.setup_revision` with the current catalog. An older saved session
+is discarded locally so it cannot silently replace new anonymous defaults;
+explicit session links remain attachable and refresh preserves the current
+session. Change the revision when replacing a preset's setup policy.
+
 ### Remote keys inside the shell
 
 `PartyGamesApp` owns the TV remote through `useScopedRemoteControls`, which captures arrows, Enter and Escape before any window listener. While a game is playing (and no leave dialog is open), the shell first offers each action to the experience through `registerRemoteAction(handler)`. A handler that returns `true` claims it; anything unclaimed falls through to focus movement, button activation, Back and Forward. Jeopardy claims exactly the keys its phase uses (board cursor and select, clue time-out and return, ↑ correct / ↓ wrong / ↵ reveal while judging), so wager and round-intro buttons keep ordinary focus navigation.

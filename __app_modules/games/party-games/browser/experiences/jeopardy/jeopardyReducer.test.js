@@ -174,3 +174,20 @@ describe('round + final progression', () => {
   });
 
 });
+
+it('lets the host reveal a hidden answer after a hosted buzz',()=>{
+ let s=toBoard(); s=jeopardyReducer(s,{type:'SELECT_TILE'}); s=jeopardyReducer(s,{type:'BUZZ',teamId:'team_1'});
+ s=jeopardyReducer(s,{type:'REVEAL'}); expect(s.phase).toBe('judging'); expect(s.revealed).toBe(true);
+});
+
+it.each(['correct','wrong','timeout'])('rotates three anonymous teams after %s',outcome=>{
+ let s=jeopardyReducer(initJeopardy(makeSet({mode:'turns'}),['blue','gold','green']),{type:'START_ROUND'});
+ for(const [index,pick] of [{cat:0,row:0},{cat:0,row:1},{cat:1,row:0}].entries()) {
+  expect(s.turnTeamId).toBe(['blue','gold','green'][index]);
+  s=jeopardyReducer(s,{type:'SELECT_AT',...pick});
+  if(s.phase==='wager')s=jeopardyReducer(s,{type:'SET_WAGER',amount:100});
+  if(outcome==='timeout') { s=jeopardyReducer(s,{type:'TIMEOUT'}); s=jeopardyReducer(s,{type:'RETURN_TO_BOARD'}); }
+  else {s=jeopardyReducer(s,{type:'REVEAL'});expect(scoreDelta(s,outcome==='correct').teamId).toBe(['blue','gold','green'][index]);s=jeopardyReducer(s,{type:'JUDGE',correct:outcome==='correct'});}
+ }
+ expect(s.turnTeamId).toBe('blue'); expect(s.phase).toBe('final-category');
+});

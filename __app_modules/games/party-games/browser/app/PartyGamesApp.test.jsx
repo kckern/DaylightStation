@@ -9,7 +9,7 @@ vi.mock("../../../../../__capabilities/screen-host/browser/menu-navigation.mjs",
 vi.mock("../../../../../frontend/src/composition/screens/widgets/builtins.js",()=>({registerBuiltinWidgets:()=>{}}));
 vi.mock('@/lib/fkb.js',async importOriginal=>({...await importOriginal(),bindBackButton:()=>{},enableGlobalKeyCapture:()=>{}}));
 import {fetchBoot,createSession} from "./sessionClient.js";
-vi.mock("./sessionClient.js",()=>({fetchBoot:vi.fn(),createSession:vi.fn()}));
+vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.fn(),createSession:vi.fn()}));
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
 vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
@@ -199,4 +199,14 @@ it('uses the same named preset defaults when selected from the game picker',asyn
  await screen.findByRole('button',{name:'Complete session-one'});
  expect(screen.queryByTestId('team-setup')).toBeNull();
  expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['a','b']);
+});
+
+it('discards only automatic sessions with obsolete setup metadata',async()=>{
+ window.localStorage.setItem('party-games:jeopardy:night:active-session','old-session');
+ const jeopardy={...sets[0],id:'jeopardy:night',definitionId:'jeopardy:night',game:'jeopardy',presenter_id:'jeopardy-board',competition:true,setup:'teams',setupProfile:{kind:'teams',setup_revision:'new',anonymous_teams:[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}]}};
+ fetchBoot.mockResolvedValueOnce({config,sets:[jeopardy],attachedSession:{header:{session_id:'old-session'},state:{set:{}}}}).mockResolvedValueOnce({config,sets:[jeopardy]});
+ render(<PartyGamesApp definitionId="jeopardy:night"/>);
+ expect(await screen.findByRole('button',{name:'Start with 2 teams'})).toHaveFocus();
+ expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBeNull();
+ expect(createSession).not.toHaveBeenCalled();
 });

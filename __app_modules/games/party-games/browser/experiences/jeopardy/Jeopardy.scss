@@ -182,3 +182,7 @@
     button { @include gs.gp-button-primary; }
   }
 }
+
+.jp-board__tile { flex-direction: column; gap: 0.2rem; }
+.jp-board__kids { font-family: var(--gp-font-ui); font-size: clamp(0.65rem, 2cqh, 1rem); color: var(--gp-paper); text-shadow: none; }
+.jp-clue__kids { font-family: var(--gp-font-ui); font-size: clamp(1rem, 2.8cqh, 1.4rem); color: var(--gp-brass); }

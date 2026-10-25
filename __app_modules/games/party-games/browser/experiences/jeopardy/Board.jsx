@@ -17,11 +17,11 @@ export function Board({ round, used, roundIndex, cursor, onSelect }) {
           return (
             <button key={`${c}:${r}`} type="button" role="gridcell"
               disabled={isUsed || !clue}
-              aria-label={clue ? `${cat.name} for $${clue.value * Number(round.multiplier ?? 1)}${isUsed ? ', used' : ''}` : `${cat.name}, no clue`}
+              aria-label={clue ? `${cat.name} for $${clue.value * Number(round.multiplier ?? 1)}${isUsed ? ', used' : ''}${clue.little_kids && !isUsed ? ', Little kids’ turn' : ''}` : `${cat.name}, no clue`}
               tabIndex={isCursor && !isUsed && clue ? 0 : -1}
               onClick={() => clue && !isUsed && onSelect?.(c, r)}
               className={`jp-board__tile${isUsed || !clue ? ' is-used' : ''}${isCursor ? ' is-cursor' : ''}`}>
-              {!isUsed && clue ? `$${clue.value * Number(round.multiplier ?? 1)}` : ''}
+              {!isUsed && clue ? <><span>${clue.value * Number(round.multiplier ?? 1)}</span>{clue.little_kids && <small className="jp-board__kids">Little kids’ turn</small>}</> : ''}
             </button>
           );
         })

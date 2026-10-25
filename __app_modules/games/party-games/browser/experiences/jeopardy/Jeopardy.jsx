@@ -42,6 +42,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const finishedRef = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const pendingCommand = useRef(false);
   const actionRef = useRef(() => {});
 
   useEffect(() => {
@@ -66,10 +67,12 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // Single funnel: keyboard, on-screen buttons, and remote host commands all
   // call this. Reads live state via ref so it stays referentially stable.
   const applyAction = useCallback(async (action) => {
-    if (!action || !stateRef.current) return;
+    if (!action || !stateRef.current || pendingCommand.current) return;
+    pendingCommand.current = true;
     const cue = actionCue(action); if (cue) audio.play(cue, { pack: JEOPARDY_PACK });
     try { const result = await sendJeopardyCommand(sessionId, action); setState(result.state); setSet(result.state.set); setCompletion(result.result || null); setError(null); }
     catch (cause) { setError(cause.message); }
+    finally { pendingCommand.current = false; }
   }, [audio, sessionId]);
   actionRef.current = applyAction;
 
@@ -113,7 +116,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   useEffect(() => {
     const onKey = (e) => {
       if (!state) return;
-      const action = resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, key: e.key });
+      const action = resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, key: e.key });
       if (action) applyAction(action);
     };
     window.addEventListener('keydown', onKey);
@@ -125,8 +128,9 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // buttons keep ordinary focus navigation.
   useEffect(() => registerRemoteAction?.((remote) => {
     if (!state) return false;
+    if (remote.repeat && state.phase !== 'board') return true;
     const key = remoteActionKey(remote);
-    const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, key });
+    const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, key });
     if (!action) return false;
     logger.debug('jeopardy.remote-action', { phase: state.phase, key, type: action.type });
     applyAction(action);
@@ -143,7 +147,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
 
   return (
     <div className="jeopardy" data-phase={phase}>
-      {phase !== 'round-intro' && !phase.startsWith('final-') && <ShowHeader eyebrow={round?.name} title={set.title} status={phase === 'board' ? `Round ${state.roundIndex + 1}` : state.active ? round.categories[state.active.cat]?.name : null} />}
+      {phase !== 'round-intro' && !phase.startsWith('final-') && <ShowHeader eyebrow={round?.name} title={set.title} status={phase === 'board' ? `${teams.find(team => team.id === state.turnTeamId)?.name || 'Next team'} chooses — Round ${state.roundIndex + 1}` : state.active ? round.categories[state.active.cat]?.name : null} />}
       {phase === 'round-intro' && (
         <div className="jp-final">
           <TitleCard title={round.name} subtitle={`${set.title} — round ${state.roundIndex + 1}`} />

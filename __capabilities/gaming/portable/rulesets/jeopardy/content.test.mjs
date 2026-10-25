@@ -74,3 +74,10 @@ describe('validateGameSet', () => {
     expect(errors.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+it('preserves explicit little-kid clue metadata and rejects nonboolean flags',()=>{
+ const raw=structuredClone(goodSet); raw.rounds[0].categories[0].clues[0].little_kids=true;
+ expect(validateGameSet(raw).set.rounds[0].categories[0].clues[0].little_kids).toBe(true);
+ raw.rounds[0].categories[0].clues[0].little_kids='yes';
+ expect(validateGameSet(raw).valid).toBe(false);
+});

@@ -20,3 +20,8 @@ describe('Jeopardy Board', () => {
     expect(screen.getByRole('gridcell', { name: 'History for $100, used' })).toBeDisabled();
   });
 });
+
+it('marks little-kid picture questions visibly and accessibly',()=>{
+ render(<Board round={{...round,categories:[{name:'Pictures',clues:[{value:100,little_kids:true}]}]}} used={{}} roundIndex={0} cursor={{cat:0,row:0}}/>);
+ expect(screen.getByRole('gridcell',{name:/Little kids/})).toHaveTextContent("Little kids");
+});

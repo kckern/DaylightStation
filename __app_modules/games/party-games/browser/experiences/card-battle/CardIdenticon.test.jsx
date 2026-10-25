@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { CardIdenticon } from "./CardIdenticon.jsx";
-import { cardIdenticonCells, cardIdenticonHue } from "./cardIdenticonModel.js";
+import { cardIdenticonCells, cardIdenticonHue } from "../../../../../../__capabilities/gaming/browser/identiconModel.js";
 
 describe('CardIdenticon', () => {
   it('is deterministic, symmetric, and distinct across card definitions', () => {
