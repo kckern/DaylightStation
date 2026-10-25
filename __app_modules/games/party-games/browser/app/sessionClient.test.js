@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 import { DaylightAPI } from '@/lib/api.mjs';
-import { createSession, fetchBoot } from "./sessionClient.js";
+import { createSession, fetchBoot, canResumeSavedSession } from "./sessionClient.js";
 
 describe('party-games session client', () => {
   beforeEach(() => DaylightAPI.mockReset());
@@ -53,4 +53,11 @@ describe('party-games session client', () => {
     expect(DaylightAPI.mock.calls[0][1].setup).toEqual({ seats: teams, teams, host: { mode: 'computer' }, verifier_id: 'b' });
   });
 
+});
+
+it('requires saved sessions to match current setup revision while preserving ordinary resume',()=>{
+ const set={setupProfile:{setup_revision:'guest-teams-v1'}};
+ expect(canResumeSavedSession({state:{set:{}}},set)).toBe(false);
+ expect(canResumeSavedSession({state:{set:{party_games:{setup_revision:'guest-teams-v1'}}}},set)).toBe(true);
+ expect(canResumeSavedSession({state:{}},{setupProfile:{}})).toBe(true);
 });

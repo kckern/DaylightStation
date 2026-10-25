@@ -33,3 +33,20 @@ it('preselects household members for casual individual setup', () => {
  fireEvent.click(screen.getByRole('button',{name:'A'}));
  expect(screen.getByRole('button',{name:'Start with 1 players'})).toBeEnabled();
 });
+
+
+it('offers anonymous teams without household roster and starts with focus on Start', () => {
+ const onConfirm=vi.fn();
+ render(<TeamSetup config={config} anonymousTeams={[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}]} onConfirm={onConfirm} />);
+ expect(screen.queryAllByRole('button',{name:/Guest|\+ A|\+ B/})).toHaveLength(0);
+ expect(screen.getByRole('button',{name:'Start with 2 teams'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'+ Team'}));
+ fireEvent.click(screen.getByRole('button',{name:'Start with 3 teams'}));
+ expect(onConfirm).toHaveBeenCalledWith([
+  expect.objectContaining({name:'Blue Team',members:[],slot:'slot_1'}),
+  expect.objectContaining({name:'Gold Team',members:[],slot:'slot_2'}),
+  expect.objectContaining({name:'Team 3',members:[],slot:'slot_3'}),
+ ]);
+ fireEvent.click(screen.getAllByRole('button',{name:'Remove team'})[2]);
+ expect(screen.queryByRole('button',{name:'Remove team'})).not.toBeInTheDocument();
+});

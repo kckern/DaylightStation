@@ -22,8 +22,8 @@ function defaultTeams() {
   ]);
 }
 
-export function initTeamSetup(config = {}) {
-  const preset = (config.team_presets || [])[0] || null;
+export function initTeamSetup(config = {}, anonymousTeams = null) {
+  const preset = anonymousTeams ? { id: null, teams: anonymousTeams } : (config.team_presets || [])[0] || null;
   return {
     presetId: preset?.id || null,
     teams: preset ? fromPreset(preset) : defaultTeams(),

@@ -33,6 +33,21 @@ function catalogEntry(definitionId, loaded, manifest) {
   const setup = casual && manifestKind === 'individuals-or-teams' ? 'individuals' : manifestKind;
   const setupProfile = casual ? { kind: setup } : structuredClone(manifest.setup || { kind: 'none' });
   if (!['none', 'individuals', 'teams', 'individuals-or-teams'].includes(setup)) throw new Error(`invalid setup kind: ${setup}`);
+  const partyGames = loaded.definition?.party_games;
+  if (partyGames != null) {
+    const teams = partyGames.anonymous_teams;
+    if (!teams || !Array.isArray(teams) || teams.length < 2 || setup !== 'teams'
+      || teams.some(team => !team || typeof team.name !== 'string' || !team.name.trim()
+        || !/^#[0-9a-f]{6}$/i.test(team.color || ''))
+      || typeof partyGames.setup_revision !== 'string' || !partyGames.setup_revision.trim()) {
+      throw new Error('party_games requires at least two named/color anonymous teams and a setup_revision');
+    }
+    setupProfile.anonymous_teams = teams.map(({name, color}) => ({name: name.trim(), color}));
+    setupProfile.setup_revision = partyGames.setup_revision;
+  }
+  const inputProfile = structuredClone(manifest.input_profile || null);
+  if (manifest.id === 'jeopardy' && loaded.definition?.rounds?.length
+    && loaded.definition.rounds.every(round => round.mode === 'turns') && inputProfile) inputProfile.gamepad = 'host';
   const launch = loaded.definition?.launch;
   if (launch != null && (
     typeof launch !== 'object' || Array.isArray(launch)
@@ -56,7 +71,7 @@ function catalogEntry(definitionId, loaded, manifest) {
     ...(launch ? { launch: structuredClone(launch) } : {}),
     ...(casual ? { competition: false } : {}),
     theme: structuredClone(manifest.theme || null),
-    input_profile: structuredClone(manifest.input_profile || null),
+    input_profile: inputProfile,
     lifecycle_capabilities: structuredClone(manifest.lifecycle_capabilities || []),
     inputs: structuredClone(surface.inputs || []),
     ...(Number.isInteger(authored.round_count) ? { round_count: authored.round_count } : {}),

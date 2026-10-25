@@ -7,17 +7,18 @@ import { TEAM_COLORS } from "../../../../../__capabilities/gaming/browser/platfo
 import MemberAvatar from "../../../../../__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx";
 import "./TeamSetup.scss";
 
-export function TeamSetup({ config, setupKind = 'teams', selectAll = false, onConfirm }) {
-  const [state, dispatch] = useReducer(teamSetupReducer, config, initTeamSetup);
+export function TeamSetup({ config, setupKind = 'teams', selectAll = false, anonymousTeams = null, onConfirm }) {
+  const [state, dispatch] = useReducer(teamSetupReducer, config, (value) => initTeamSetup(value, anonymousTeams));
   const [mode, setMode] = useState(setupKind === 'individuals' ? 'individuals' : 'teams');
 
-  const presets = useMemo(() => config?.team_presets || [], [config?.team_presets]);
+  const presets = useMemo(() => anonymousTeams ? [] : config?.team_presets || [], [anonymousTeams, config?.team_presets]);
 
   const members = useMemo(() => {
+    if (anonymousTeams) return [];
     const all = new Map((config?.household_members || []).map((member) => [member.id, member]));
     for (const preset of presets) for (const team of preset.teams) for (const member of team.members) all.set(member.id, member);
     return [...all.values()];
-  }, [config?.household_members, presets]);
+  }, [anonymousTeams, config?.household_members, presets]);
 
   const [individuals, setIndividuals] = useState(() => selectAll ? members : []);
 
@@ -37,6 +38,7 @@ export function TeamSetup({ config, setupKind = 'teams', selectAll = false, onCo
 
   return (
     <div className="gp-teamsetup" data-testid="team-setup">
+      {anonymousTeams && <p className="gp-teamsetup__instructions">Make two mixed-age teams. Take turns choosing questions. Little kids answer the marked picture questions first; for other questions, rotate the spokesperson around your seats. The host uses the TV remote. No names or controllers needed.</p>}
       {setupKind === 'individuals-or-teams' && <div className="gp-teamsetup__presets" aria-label="Play mode">
         <button type="button" className={`gp-chip${mode === 'individuals' ? ' is-active' : ''}`} aria-pressed={mode === 'individuals'} onClick={() => setMode('individuals')}>Individuals</button>
         <button type="button" className={`gp-chip${mode === 'teams' ? ' is-active' : ''}`} aria-pressed={mode === 'teams'} onClick={() => setMode('teams')}>Teams</button>
@@ -84,10 +86,10 @@ export function TeamSetup({ config, setupKind = 'teams', selectAll = false, onCo
                 + {m.name}
               </button>
             ))}
-            <button type="button" className="gp-chip gp-chip--pool"
+            {!anonymousTeams && <button type="button" className="gp-chip gp-chip--pool"
               onClick={() => dispatch({ type: 'ADD_GUEST', teamId: team.id })}>
               + Guest
-            </button>
+            </button>}
             {state.teams.length > 2 && (
               <button type="button" className="gp-chip gp-chip--danger"
                 onClick={() => dispatch({ type: 'REMOVE_TEAM', teamId: team.id })}>
@@ -100,7 +102,7 @@ export function TeamSetup({ config, setupKind = 'teams', selectAll = false, onCo
       </div>
       </>}
 
-      <button type="button" autoFocus={selectAll} className="gp-teamsetup__confirm" data-testid="teams-confirm"
+      <button type="button" autoFocus={selectAll || Boolean(anonymousTeams)} className="gp-teamsetup__confirm" data-testid="teams-confirm"
         disabled={mode === 'individuals' && individualSeats.length === 0}
         onClick={() => onConfirm?.(mode === 'individuals' ? individualSeats : state.teams)}>
         {mode === 'individuals' ? `Start with ${individualSeats.length} players` : `Start with ${state.teams.length} teams`}

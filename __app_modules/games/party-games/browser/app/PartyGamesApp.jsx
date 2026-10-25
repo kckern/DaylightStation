@@ -4,7 +4,7 @@
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useWebSocketStatus } from '@/hooks/useWebSocket.js';
 import { flowReducer, initialFlowState } from "./flowReducer.js";
-import { fetchBoot, createSession } from "./sessionClient.js";
+import { fetchBoot, createSession, canResumeSavedSession } from "./sessionClient.js";
 import TeamSetup from "../setup/TeamSetup.jsx";
 import { useBuzzers } from "../interaction/useBuzzers.js";
 import TitleCard from "../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
@@ -175,6 +175,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
       .then(({ config, sets, attachedSession }) => {
         if (!cancelled) {
+          if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
+            throw new Error('Saved session uses an older team setup');
+          }
           if (attachedSession) {
             const expectedPolicy = launch.historyPolicy === 'disabled' ? 'disabled' : 'recorded';
             const actualPolicy = attachedSession.state?.charades_history_policy;
@@ -283,7 +286,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       {flow.phase === 'team-setup' && (
         <div className="party-games__team-and-host">
           {(flow.setupProfile.host_modes || []).length > 0 && <fieldset className="party-games__host-mode"><legend>Host</legend>{flow.setupProfile.host_modes.map((mode) => <button key={mode} type="button" aria-pressed={flow.hostMode === mode} onClick={() => dispatchFlow({ type: 'SET_HOST_MODE', hostMode: mode })}>{mode.replace('-', ' ')}</button>)}</fieldset>}
-          <TeamSetup selectAll={flow.competition === false} config={flow.config} setupKind={flow.setupProfile.kind} onConfirm={(seats) => dispatchFlow({ type: 'PLAYERS_CONFIRMED', seats })} />
+          <TeamSetup selectAll={flow.competition === false} config={flow.config} anonymousTeams={flow.setupProfile.anonymous_teams} setupKind={flow.setupProfile.kind} onConfirm={(seats) => { logger.info('party-games.teams-confirmed', { count: seats.length, anonymous: Boolean(flow.setupProfile.anonymous_teams) }); dispatchFlow({ type: 'PLAYERS_CONFIRMED', seats }); }} />
         </div>
       )}
 

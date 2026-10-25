@@ -40,3 +40,10 @@ export function createSession({ definitionId, seats = [], teams = null, hostMode
 }
 
 export function printHostPacket(id) { return DaylightAPI(`api/v1/gaming/sessions/${id}/host-packet/print`, {}, 'POST'); }
+
+// Explicit session links remain attachable; automatic local recovery follows the
+// currently authored setup revision so an old roster cannot replace new defaults.
+export function canResumeSavedSession(session, set) {
+  const revision = set?.setupProfile?.setup_revision;
+  return !revision || session?.state?.set?.party_games?.setup_revision === revision;
+}
