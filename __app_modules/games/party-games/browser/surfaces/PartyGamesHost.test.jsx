@@ -9,7 +9,8 @@ import { fetchSession } from '../../../../../__capabilities/gaming/browser/platf
 import { sendJeopardyCommand } from '../experiences/jeopardy/jeopardyClient.js';
 import { restartJeopardySession } from '../app/sessionClient.js';
 vi.mock('@/hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: vi.fn()
+  useWebSocketSubscription: (_, fn) => { socket.handler = fn; },
+  useWebSocketStatus: () => ({ connected: socket.connected })
 }));
 vi.mock('../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js', () => ({
   fetchSession: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../app/sessionClient.js', () => ({
   printHostPacket: vi.fn(),
   restartJeopardySession: vi.fn()
 }));
+const socket = vi.hoisted(() => ({ handler: null, connected: true }));
 const clue = {
   clue: 'Regular question',
   answer: 'Regular answer',
@@ -277,4 +279,56 @@ it('rapid restart confirmation sends once and does not replay on Retry', async (
   }));
   await waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(2));
   expect(restartJeopardySession).toHaveBeenCalledTimes(1);
+});
+
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
+const identified = (id, phase = 'round-intro', revision = 0) => ({ ...session(phase), header: { ...session().header, session_id: id, revision } });
+it.each(['success', 'failure'])('ignores old deferred refresh %s after restart navigation', async outcome => {
+  const old = deferred();
+  fetchSession.mockResolvedValueOnce(identified('game:one')).mockImplementationOnce(() => old.promise).mockResolvedValue(identified('game:new', 'board'));
+  mount();
+  await screen.findByRole('button', { name: 'Start game' });
+  act(() => socket.handler({ kind: 'session-updated', sessionId: 'game:one' }));
+  act(() => socket.handler({ kind: 'session-restarted', sessionId: 'game:one', replacementSessionId: 'game:new' }));
+  await screen.findByRole('button', { name: /Creation \$100/ });
+  await act(async () => { if (outcome === 'success') old.resolve(identified('game:one')); else old.reject(new Error('old offline')); });
+  expect(screen.queryByRole('button', { name: 'Start game' })).toBeNull();
+  expect(screen.queryByText('Controller unavailable')).toBeNull();
+  expect(screen.getByRole('button', { name: /Creation \$100/ })).toBeTruthy();
+});
+it('follows restart WebSocket before a rejected HTTP acknowledgement without undoing new route', async () => {
+  const post = deferred();
+  restartJeopardySession.mockImplementation(() => post.promise);
+  fetchSession.mockImplementation(async id => identified(id, id === 'game:one' ? 'round-intro' : 'board'));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Restart game' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm restart' }));
+  act(() => socket.handler({ kind: 'session-restarted', sessionId: 'game:one', replacementSessionId: 'game:new' }));
+  await screen.findByRole('button', { name: /Creation \$100/ });
+  await act(async () => post.reject(new Error('response lost')));
+  expect(screen.queryByText('Controller unavailable')).toBeNull();
+  expect(screen.getByRole('button', { name: /Creation \$100/ })).toBeTruthy();
+});
+it('does not regress when an older revision refresh completes last', async () => {
+  const old = deferred();
+  fetchSession.mockResolvedValueOnce(identified('game:one')).mockImplementationOnce(() => old.promise).mockResolvedValueOnce(identified('game:one', 'board', 3));
+  mount(); await screen.findByRole('button', { name: 'Start game' });
+  act(() => socket.handler({ kind: 'session-updated', sessionId: 'game:one' }));
+  act(() => socket.handler({ kind: 'session-updated', sessionId: 'game:one' }));
+  await screen.findByRole('button', { name: /Creation \$100/ });
+  await act(async () => old.resolve(identified('game:one', 'round-intro', 1)));
+  expect(screen.queryByRole('button', { name: 'Start game' })).toBeNull();
+});
+
+it('ignores an old refresh error after a newer command revision succeeds', async () => {
+  const old = deferred();
+  fetchSession.mockResolvedValueOnce(identified('game:one')).mockImplementationOnce(() => old.promise);
+  sendJeopardyCommand.mockResolvedValue(identified('game:one', 'board', 2));
+  mount();
+  const start = await screen.findByRole('button', { name: 'Start game' });
+  act(() => socket.handler({ kind: 'session-updated', sessionId: 'game:one' }));
+  fireEvent.click(start);
+  await screen.findByRole('button', { name: /Creation \$100/ });
+  await act(async () => old.reject(new Error('old offline')));
+  expect(screen.queryByText('Controller unavailable')).toBeNull();
 });

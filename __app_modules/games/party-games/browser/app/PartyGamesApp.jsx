@@ -4,6 +4,7 @@
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { flowReducer, initialFlowState } from "./flowReducer.js";
+import { fetchSession } from "../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
 import { fetchBoot, createSession, canResumeSavedSession } from "./sessionClient.js";
 import TeamSetup from "../setup/TeamSetup.jsx";
 import { useBuzzers } from "../interaction/useBuzzers.js";
@@ -110,8 +111,11 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   }, [needsDocumentReturn, returnTo, restoreLocation, shellExit]);
   const [attachment, setAttachment] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    const diagnosticSessionId = params.get('diagnostic_session');
-    const explicitSessionId = params.get('session');
+    // Embedded previews must not inherit a previous game's ambient URL attachment.
+    const directRoute = /^\/screens?\/[^/]+\/(?:party-games(?:\/|$)|fhe\/charades(?:\/test)?$)/.test(window.location.pathname)
+      || /^\/app\/party-games(?:\/|$)/.test(window.location.pathname);
+    const diagnosticSessionId = directRoute ? params.get('diagnostic_session') : null;
+    const explicitSessionId = directRoute ? params.get('session') : null;
     let savedSessionId = null;
     if (!diagnosticSessionId && !explicitSessionId && requestedDefinition) {
       try { savedSessionId = window.localStorage.getItem(activeSessionKey(requestedDefinition)); }
@@ -169,27 +173,53 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return () => lease.release();
   }, []);
 
-  useWebSocketSubscription('gaming', (message) => {
-    if (message?.kind !== 'session-restarted' || message.sessionId !== flow.sessionId || !message.replacementSessionId) return;
-    const replacement = message.replacementSessionId;
+  const restarting = useRef(null);
+  const followReplacement = useCallback((sourceId, replacement, source = null) => {
+    const activeId = flow.sessionId || attachment.diagnosticSessionId || attachment.sessionId;
+    if (!replacement || sourceId !== activeId || restarting.current === sourceId) return;
+    restarting.current = sourceId;
     logger.info('party-games.session-restarting', {sessionId: flow.sessionId, replacementSessionId: replacement});
     // Team IDs survive restart; carry hardware roles into the newly keyed arbiter.
-    const bindings = flow.buzzerBindings ?? loadBuzzerBindings(flow.sessionId);
-    const teamIds = new Set(flow.seats.map(team => team.id));
+    const bindings = flow.buzzerBindings ?? loadBuzzerBindings(sourceId);
+    const teamIds = new Set((source?.header?.seats || flow.seats).map(team => team.id));
     if (bindings) saveBuzzerBindings(replacement, Object.fromEntries(Object.entries(bindings).filter(([, teamId]) => teamIds.has(teamId))));
-    forgetBuzzerBindings(flow.sessionId);
+    forgetBuzzerBindings(sourceId);
     creation.current = null;
     backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
     setConfirmExit(false);
     dispatchFlow({type: 'SESSION_RESTARTING'});
     setAttachment({diagnosticSessionId: replacement.startsWith('diagnostic:') ? replacement : null, sessionId: replacement.startsWith('diagnostic:') ? null : replacement, savedSession: false});
-  }, [flow.sessionId, flow.buzzerBindings, flow.seats, logger]);
+  }, [flow.sessionId, flow.buzzerBindings, flow.seats, attachment, logger]);
+  useWebSocketSubscription('gaming', (message) => {
+    if (message?.kind === 'session-restarted') followReplacement(message.sessionId, message.replacementSessionId);
+  }, [followReplacement]);
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    const reconnected = connected && !wasConnected.current;
+    wasConnected.current = connected;
+    if (!reconnected || !flow.sessionId) return;
+    let cancelled = false;
+    fetchSession(flow.sessionId).then(session => {
+      if (!cancelled) followReplacement(flow.sessionId, session.replacementSessionId, session);
+    }).catch(error => {
+      if (cancelled) return;
+      logger.warn('party-games.restart-reconcile-failed', { sessionId: flow.sessionId, message: error.message });
+      dispatchFlow({ type: 'BOOT_FAILED', error: error.message });
+    });
+    return () => { cancelled = true; };
+  }, [connected, flow.sessionId, followReplacement, logger]);
 
   useEffect(() => {
     let cancelled = false;
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
       .then(({ config, sets, attachedSession }) => {
         if (!cancelled) {
+          const attachedDefinition = attachedSession?.diagnostic?.definition_id || attachedSession?.header?.artifacts?.rules_definition?.id;
+          if (requestedDefinition && attachedDefinition && attachedDefinition !== requestedDefinition) throw new Error('Attached session belongs to a different game definition');
+          if (attachedSession?.replacementSessionId) {
+            followReplacement(attachedSession.header.session_id, attachedSession.replacementSessionId, attachedSession);
+            return;
+          }
           if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
             throw new Error('Saved session uses an older team setup');
           }
@@ -259,6 +289,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useLayoutEffect(() => {
     if (!flow.definitionId || !['team-setup', 'buzzer-bind', 'playing', 'results'].includes(flow.phase)) return;
     const screenBase = window.location.pathname.match(/^(\/screens?\/[^/]+)/)?.[1];
+    if (!screenBase && !/^\/app\/party-games(?:\/|$)/.test(window.location.pathname)) return;
     const location = new URL(window.location.href);
     if (screenBase) location.pathname = friendlyPath || `${screenBase}/party-games/${flow.definitionId}`;
     location.searchParams.set('return_to', returnTo);

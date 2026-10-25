@@ -473,3 +473,54 @@ test('Isaiah preview route creates a fresh ephemeral game and phone host', async
     expect((await request.delete(`/api/v1/gaming/diagnostics/sessions/${encodeURIComponent(id)}`)).ok()).toBe(true);
   }
 });
+
+test('restart recovers disconnected TV and old URLs while host loses HTTP acknowledgement', async ({ page: host, context, browser, request }) => {
+  const created = await json(await request.post('/api/v1/gaming/diagnostics/sessions', { data: {
+    definition_id: 'jeopardy:practice-isaiah', surface_id: 'party-games', seats: teams, setup: { teams, seats: teams },
+  } }));
+  const oldId = created.header.session_id;
+  let replacementId;
+  const tvContext = await browser.newContext();
+  const tv = await tvContext.newPage();
+  const otherHost = await context.newPage();
+  try {
+    await tv.goto(`${test.info().project.use.baseURL}${tvPath('jeopardy:practice-isaiah')}?diagnostic_session=${encodeURIComponent(oldId)}`);
+    await host.goto(`/party-games/host/${encodeURIComponent(oldId)}`);
+    await otherHost.goto(`/party-games/host/${encodeURIComponent(oldId)}`);
+    await expect(tv.getByTestId('host-lobby')).toBeVisible();
+    await expect(otherHost.getByRole('button', { name: 'Start game', exact: true })).toBeVisible();
+    await tvContext.setOffline(true);
+    await tv.evaluate(async () => { const { wsService } = await import('/frontend/src/services/WebSocketService.js'); wsService.disconnect(); });
+    await expect(tv.getByText('Host controls are unavailable. Reconnecting…')).toBeVisible();
+    const preserved = await json(await request.get(`/api/v1/gaming/sessions/${encodeURIComponent(oldId)}`));
+    await host.route('**/restart', async route => {
+      const committed = await route.fetch();
+      const fresh = await committed.json();
+      replacementId = fresh.header.session_id;
+      await route.abort('failed');
+    });
+    await host.getByRole('button', { name: 'Restart game', exact: true }).click();
+    await host.getByRole('button', { name: 'Confirm restart', exact: true }).click();
+    await expect.poll(() => replacementId).toBeTruthy();
+    await expect(host).toHaveURL(new RegExp(encodeURIComponent(replacementId)));
+    await expect(otherHost).toHaveURL(new RegExp(encodeURIComponent(replacementId)));
+    await expect(host.getByRole('button', { name: 'Start game', exact: true })).toBeVisible();
+    await tvContext.setOffline(false);
+    await tv.evaluate(async () => { const { wsService } = await import('/frontend/src/services/WebSocketService.js'); wsService.connect(); });
+    await expect(tv).toHaveURL(new RegExp(encodeURIComponent(replacementId)));
+    await expect(tv.getByTestId('host-lobby')).toBeVisible();
+    // A bookmarked old URL also discovers the successor without a WS replay.
+    await tv.goto(`${test.info().project.use.baseURL}${tvPath('jeopardy:practice-isaiah')}?diagnostic_session=${encodeURIComponent(oldId)}`);
+    await expect(tv).toHaveURL(new RegExp(encodeURIComponent(replacementId)));
+    await host.goto(`/party-games/host/${encodeURIComponent(oldId)}`);
+    await expect(host).toHaveURL(new RegExp(encodeURIComponent(replacementId)));
+    const old = await json(await request.get(`/api/v1/gaming/sessions/${encodeURIComponent(oldId)}`));
+    expect(old.replacementSessionId).toBe(replacementId);
+    expect(old.header).toEqual(preserved.header); expect(old.state).toEqual(preserved.state);
+    const retried = await json(await request.post(`/api/v1/gaming/sessions/${encodeURIComponent(oldId)}/restart`));
+    expect(retried.header.session_id).toBe(replacementId);
+  } finally {
+    await tvContext.close(); await otherHost.close();
+    for (const id of [oldId, replacementId].filter(Boolean)) await request.delete(`/api/v1/gaming/diagnostics/sessions/${encodeURIComponent(id)}`);
+  }
+});

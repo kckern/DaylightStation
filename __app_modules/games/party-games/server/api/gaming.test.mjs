@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGamingRouter } from "./gaming.mjs";
+import { GamingSessionRestarts } from "../application/runtime/GamingSessionRestarts.mjs";
+import { createGamingRouter as buildGamingRouter } from "./gaming.mjs";
+
+const createGamingRouter = options => buildGamingRouter({ gamingSessionRestarts: new GamingSessionRestarts(), ...options });
 
 async function invoke(router, method, routePath, req = {}) {
   const layer = router.stack.find((candidate) => candidate.route?.path === routePath && candidate.route.methods[method]);
@@ -154,4 +157,16 @@ it('restarts a completed real diagnostic from current content with empty gamepla
   expect(result.body.state).toMatchObject({phase:'round-intro',scores:{red:0,blue:0},used:{},finalWagers:{},set:{title:'After edit'}});
   expect(diagnostics.resumeSession(oldId,viewer)).toEqual(preserved);
   expect(pin).not.toHaveBeenCalled();
+});
+
+it('GET exposes committed replacement and restart retries return it without new creation', async () => {
+  const old = { header: { session_id: 'game:old', ruleset: { id: 'jeopardy' }, artifacts: { rules_definition: { id: 'jeopardy:night' } } } };
+  const fresh = { header: { session_id: 'game:new' } };
+  const application = { resumeSession: vi.fn(async id => id === 'game:old' ? old : fresh), createSession: vi.fn(async () => fresh) };
+  const router = createGamingRouter({ gamingApplication: application });
+  const request = { roles: ['gaming-host'], params: { sessionId: 'game:old' } };
+  await invoke(router, 'post', '/sessions/:sessionId/restart', request);
+  expect((await invoke(router, 'get', '/sessions/:sessionId', request)).body).toEqual({ ...old, replacementSessionId: 'game:new' });
+  expect((await invoke(router, 'post', '/sessions/:sessionId/restart', request)).body).toEqual(fresh);
+  expect(application.createSession).toHaveBeenCalledTimes(1);
 });

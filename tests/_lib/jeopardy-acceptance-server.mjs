@@ -1,3 +1,4 @@
+import { GamingSessionRestarts } from '../../__app_modules/games/party-games/server/application/runtime/GamingSessionRestarts.mjs';
 // Isolated loopback preview: real gaming authority, no household boot or effects.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -106,6 +107,7 @@ const application = {
 };
 let wss;
 app.use('/api/v1/gaming', createGamingRouter({
+  gamingSessionRestarts: new GamingSessionRestarts(),
   gamingApplication: application,
   gamingDiagnostics: diagnostics,
   gamingMediaService: new GamingMediaService({

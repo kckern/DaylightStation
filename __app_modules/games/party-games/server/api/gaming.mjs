@@ -27,7 +27,7 @@ function requireHost(req) {
   return viewer;
 }
 
-export function createGamingRouter({ gamingApplication, gamingDiagnostics = null, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
+export function createGamingRouter({ gamingApplication, gamingDiagnostics = null, gamingSessionRestarts = null, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
   if (!gamingApplication) throw new Error('createGamingRouter: gamingApplication required');
   const router = express.Router();
   const applicationFor = (sessionId) => {
@@ -106,7 +106,12 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
   }));
   router.delete('/diagnostics/sessions/:sessionId', handle((req, res) => res.json(diagnostics().deleteSession(req.params.sessionId, requireHost(req)))));
 
-  router.get('/sessions/:sessionId', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).resumeSession(req.params.sessionId, requireViewer(req)))));
+  router.get('/sessions/:sessionId', handle(async (req, res) => {
+    const sessionId = req.params.sessionId;
+    const session = await applicationFor(sessionId).resumeSession(sessionId, requireViewer(req));
+    const replacementSessionId = await gamingSessionRestarts?.replacementFor(sessionId);
+    return res.json({ ...session, ...(replacementSessionId ? { replacementSessionId } : {}) });
+  }));
   router.post('/sessions/:sessionId/commands', handle(async (req, res) => {
     if (!req.body?.command_id) return res.status(400).json({ error: 'command_envelope_required' });
     const result = await applicationFor(req.params.sessionId).dispatch(req.params.sessionId, req.body, requireViewer(req));
@@ -117,15 +122,8 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
     const viewer = requireHost(req);
     const sessionId = req.params.sessionId;
     const application = applicationFor(sessionId);
-    const source = await application.resumeSession(sessionId, viewer);
-    if (source.header.ruleset.id !== 'jeopardy') throw Object.assign(new Error('Only Jeopardy sessions support restart'), { code: 'invalid_session_setup' });
-    const definitionId = source.diagnostic?.definition_id || source.header.artifacts?.rules_definition?.id;
-    if (!definitionId) throw Object.assign(new Error('Session definition identity is unavailable'), { code: 'invalid_session_setup' });
-    const seats = source.header.seats || [];
-    const result = await application.createSession({
-      definitionId, surfaceId: source.header.launch?.surface_id || source.header.surface_id || 'party-games',
-      seats, participants: source.header.participants || [], setup: { teams: seats, seats }, viewer,
-    });
+    if (!gamingSessionRestarts) throw new Error('Gaming session restart service is required');
+    const result = await gamingSessionRestarts.restart(sessionId, application, viewer);
     broadcastEvent?.({ topic: 'gaming', kind: 'session-restarted', sessionId, replacementSessionId: result.header.session_id });
     return res.status(201).json(result);
   }));
