@@ -174,6 +174,37 @@ It serves `/budget`, `/budget/range`, and the budget portion of `/day`. Today re
 one `/day?date=` snapshot containing entries, their ledger revision, and a budget
 computed from those exact entries. A budget setup error does not hide the food log.
 
+### Shared daily and period assessments
+
+`portable/contracts/health/budgetAssessment.mjs` projects assembled BudgetService
+rows into shared energy facts using `budgetLines` and `zoneFor`. It takes explicit
+`date` and `today` values and never reads a clock. `trustworthy` means the log is
+complete; `finished` means a past date or an explicit done/fasting closure. A
+skipped meal can establish completeness without finishing today. The Today card
+uses the same finished-day projection and retains its existing price ladder.
+
+Plan and maintenance states are independent: food of 1,800 against a 1,600 plan
+and 2,000 maintenance is over plan by 200 and below maintenance. Exercise shifts
+both food-scale limits once, in full. Equality is neither over plan nor surplus;
+passing the logging floor alone never establishes a surplus. An incomplete log
+retains its known boundaries but has unknown verdicts. Missing budgets are
+unavailable; missing numeric facts remain null. Unknown maintenance preserves
+known plan facts while leaving maintenance verdicts unknown. A complete live day
+can show its current position without being included in a finished-period verdict.
+
+`portable/contracts/health/budgetPeriod.mjs` summarizes the same finished,
+trustworthy rows for every energy average and count. Coverage records all
+requested dates, including unavailable dates; gaps never become zero intake or
+exercise. Plan and maintenance deltas are signed differences from each day's own
+exercise-adjusted limits. If any eligible row lacks a metric, that metric's
+average is null so compared averages never use different day counts.
+`proteinKnown` coverage counts eligible rows with a finite measured protein macro
+and non-reconstructed provenance. Protein averages belong to callers and use only
+those rows. Reconstructed calories remain energy evidence with unknown protein.
+The projections retain an explicit `goalBasis`; absent or mixed bases stay null.
+Historical API rows currently use `goalBasis: 'current'`, not recovered historical
+goals.
+
 ### The Today budget card — one job at a time
 
 Design: `ops:docs/_wip/plans/2026-09-25-health-budget-card-jobs.md`. The card is read
