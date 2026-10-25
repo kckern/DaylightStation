@@ -14,7 +14,7 @@
  * @param {number|null} opts.weightTrend7d
  * @param {Array<{type: string, hours_ago: number, text: string}>} opts.recentCoaching
  */
-export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories }) {
+export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories, evidence }) {
   // Pick top 3 notable items by protein contribution, then calories
   const notable = (items || [])
     .filter(i => i.calories > 0)
@@ -28,6 +28,7 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
 
   return {
     type: 'post-report',
+    ...evidenceContext(evidence),
     date,
     time_of_day: timeOfDay,
     today_status: todayStatus,
@@ -66,13 +67,14 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
  * @param {Array<{date, calories, protein, status}>} opts.recentDays
  * @param {number} opts.minCalories
  */
-export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories }) {
+export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories, evidence }) {
   return {
     type: 'morning-brief',
+    ...evidenceContext(evidence),
     date,
     time_of_day: 'morning',
     logging: loggingContext(minCalories),
-    yesterday,
+    yesterday: yesterday ? pickDay(yesterday) : null,
     week_avg: weekAvg,
     protein_goal: proteinGoal,
     weight: weight ? { current: weight.current, trend_7d: weight.trend7d } : null,
@@ -91,9 +93,11 @@ export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoa
  * @param {Array<{date, calories, protein, status}>} opts.weekDays
  * @param {number} opts.minCalories
  */
-export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories }) {
+export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories, evidence, longTermPeriod }) {
   return {
     type: 'weekly-digest',
+    ...evidenceContext(evidence),
+    ...(longTermPeriod ? { long_term_period: longTermPeriod } : {}),
     logging: loggingContext(minCalories),
     this_week: thisWeek,
     long_term_avg: longTermAvg,
@@ -103,14 +107,24 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
   };
 }
 
-function pickDay(d) {
-  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status, ...(d.fastedMeals ? { fasted_meals: d.fastedMeals } : {}) };
+function pickDay(day) {
+  return {
+    date: day.date, calories: day.calories, protein: day.protein, status: day.status,
+    ...(day.assessment ? { assessment: day.assessment, provenance: day.provenance } : {}),
+    ...(day.estimatedCalories != null ? { estimated_calories: day.estimatedCalories } : {}),
+    ...(day.fastedMeals ? { fasted_meals: day.fastedMeals } : {}),
+  };
+}
+
+function evidenceContext(evidence) {
+  return evidence ? { period: evidence.period, source_state: evidence.sourceState,
+    today: evidence.today, timezone: evidence.timezone, current_assessment: evidence.current.assessment } : {};
 }
 
 function loggingContext(minCalories) {
   return {
     min_calories: minCalories,
-    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only. fasted_meals = meals the user declared intentionally skipped: those meals are really empty (never ask about them), and a day with any skipped meal is trusted — its total is what was eaten.',
+    note: 'Status describes logging; assessment controls intake judgments. Only finished trustworthy assessments enter averages and patterns. Incomplete means missing meals, not low intake; use each assessment.floorFood for its date rather than one window-wide floor. Unlogged means no data; unavailable means the source could not be read. Reconstructed estimated_calories is a separate estimate; calories remains canonical measured food and supports no intake verdict for that row. Reconstructed protein is unknown. Protein is known only when assessment.proteinKnown is true. Missing budget assessments stay unavailable, never inferred from summary calories. goalBasis current means current configured goals apply to historical dates, not recovered historical goal versions. fasted_meals are intentionally skipped meals: never ask about those meals. A skipped meal can make logging complete but does not finish a live day',
   };
 }
 

@@ -1,6 +1,8 @@
+import { CoachingEvidenceService, evidenceAverage } from "./CoachingEvidenceService.mjs";
+import { summarizeBudgetPeriod } from "../../../portable/contracts/health/budgetPeriod.mjs";
 import { CoachingMessageBuilder } from "./CoachingMessageBuilder.mjs";
 import { detectPattern } from "./patterns.mjs";
-import { buildCalendarDays, averageTrusted, resolveMinCalories, closureStatus, fastedMealsOf } from "./dayCompleteness.mjs";
+import { resolveMinCalories, closureStatus, fastedMealsOf } from "./dayCompleteness.mjs";
 import { buildPostReportSnapshot, buildMorningBriefSnapshot, buildWeeklyDigestSnapshot, buildExerciseReactionSnapshot, buildRecentCoaching, getTimeOfDay } from "./snapshots.mjs";
 
 /**
@@ -15,6 +17,8 @@ export class CoachingOrchestrator {
   #minCalories;
   #budgetService;
   #logger;
+  #evidenceService;
+  #clock;
 
   /**
    * @param {Object} deps
@@ -26,7 +30,7 @@ export class CoachingOrchestrator {
    *   day's floor (completeness), top (the plan), counted food and zone, so
    *   the coach quotes exactly what the Today bar shows.
    */
-  constructor({ commentaryService, messagingGateway, healthStore, nutriListStore, config, completeness, budgetService = null, logger }) {
+  constructor({ commentaryService, messagingGateway, healthStore, nutriListStore, config, completeness, budgetService = null, evidenceService = null, clock = { now: () => new Date() }, logger }) {
     this.#commentaryService = commentaryService;
     this.#messagingGateway = messagingGateway;
     this.#healthStore = healthStore;
@@ -35,6 +39,11 @@ export class CoachingOrchestrator {
     this.#minCalories = resolveMinCalories(completeness);
     this.#budgetService = budgetService;
     this.#logger = logger || console;
+    this.#clock = clock;
+    this.#evidenceService = evidenceService || new CoachingEvidenceService({
+      budgetService, healthStore, clock, completeness, logger: this.#logger,
+      timezoneForUser: userId => config.getUserTimezone?.(userId),
+    });
   }
 
   // The day's budget contract, or null (no service, no goals, no weight). A
@@ -80,14 +89,14 @@ export class CoachingOrchestrator {
         this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'not-today' });
         return;
       }
-      const [coachingData, nutritionData, weightData, closures, items, budget] = await Promise.all([
+      const [coachingData, evidence, weightData, closures, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
-        this.#healthStore.loadNutritionData(userId).catch(() => ({})),
+        this.#evidenceService.load({ userId, date, historyDays: 5 }),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
         this.#loadClosures(userId),
         this.#nutriListStore.findByDate(userId, date).catch(() => []),
-        this.#dayBudget(userId, date),
       ]);
+      const budget = evidence.current.assessment.availability === 'available' ? evidence.current.budget : null;
       const goals = this.#goalsFor(budget, this.#config.getUserGoals(userId));
       const minCalories = this.#minCaloriesFor(budget);
 
@@ -101,7 +110,7 @@ export class CoachingOrchestrator {
       }
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const recentDays = this.#getRecentDays(nutritionData, closures, date, 5, minCalories);
+      const recentDays = [...evidence.days].reverse();
       const pattern = detectPattern(recentDays, goals);
       const weightTrend = this.#getWeightTrend7d(weightData, date);
       const timeOfDay = getTimeOfDay(this.#config.getUserTimezone?.(userId));
@@ -120,7 +129,7 @@ export class CoachingOrchestrator {
         date, timeOfDay, calories, protein, items,
         todayStatus,
         recentPattern: pattern, weightTrend7d: weightTrend, recentCoaching, recentDays,
-        minCalories,
+        minCalories, evidence,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
@@ -149,20 +158,19 @@ export class CoachingOrchestrator {
   async sendMorningBrief({ userId, conversationId }) {
     try {
       const today = this.#getToday(userId);
-      const [coachingData, nutritionData, weightData, closures, budget] = await Promise.all([
+      const [coachingData, evidence, weightData] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
-        this.#healthStore.loadNutritionData(userId).catch(() => ({})),
+        this.#evidenceService.load({ userId, date: today, historyDays: 7 }),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
-        this.#loadClosures(userId),
-        this.#dayBudget(userId, today),
       ]);
+      const budget = evidence.current.assessment.availability === 'available' ? evidence.current.budget : null;
       const goals = this.#goalsFor(budget, this.#config.getUserGoals(userId));
-      const minCalories = this.#minCaloriesFor(budget);
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const recentDays = this.#getRecentDays(nutritionData, closures, today, 7, minCalories);
+      const recentDays = [...evidence.days].reverse();
       const yesterday = recentDays[0];
-      const weekAvg = averageTrusted(recentDays);
+      const minCalories = yesterday.assessment.floorFood ?? this.#minCaloriesFor(budget);
+      const weekAvg = evidenceAverage(recentDays);
       const pattern = detectPattern(recentDays, goals);
       const weight = this.#getWeightSnapshot(weightData, today);
 
@@ -172,7 +180,7 @@ export class CoachingOrchestrator {
 
       const snapshot = buildMorningBriefSnapshot({
         date: today, yesterday, weekAvg, proteinGoal: goals.protein,
-        weight, recentPattern: pattern, recentCoaching, recentDays, minCalories,
+        weight, recentPattern: pattern, recentCoaching, recentDays, minCalories, evidence,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
@@ -190,26 +198,25 @@ export class CoachingOrchestrator {
   async sendWeeklyDigest({ userId, conversationId }) {
     try {
       const today = this.#getToday(userId);
-      const [coachingData, nutritionData, weightData, closures, budget] = await Promise.all([
+      const [coachingData, evidence, weightData] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
-        this.#healthStore.loadNutritionData(userId).catch(() => ({})),
+        this.#evidenceService.load({ userId, date: today, historyDays: 56 }),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
-        this.#loadClosures(userId),
-        this.#dayBudget(userId, today),
       ]);
-      const minCalories = this.#minCaloriesFor(budget);
+      const minCalories = this.#minCaloriesFor(evidence.current.budget);
 
       const recentCoaching = buildRecentCoaching(coachingData);
-      const weekDays = this.#getRecentDays(nutritionData, closures, today, 7, minCalories);
-      const longTermDays = this.#getRecentDays(nutritionData, closures, today, 56, minCalories);
-      const thisWeek = averageTrusted(weekDays);
-      const longTermAvg = averageTrusted(longTermDays);
+      const longTermDays = [...evidence.days].reverse();
+      const weekDays = longTermDays.slice(0, 7);
+      const thisWeek = evidenceAverage(weekDays);
+      const longTermAvg = evidenceAverage(longTermDays);
+      const weekEvidence = { ...evidence, period: summarizeBudgetPeriod(weekDays.map(day => day.assessment)) };
       const weight = this.#getWeightSnapshotWeekly(weightData, today);
 
       const statusBlock = CoachingMessageBuilder.buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight });
 
       const snapshot = buildWeeklyDigestSnapshot({
-        thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories,
+        thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories, evidence: weekEvidence, longTermPeriod: evidence.period,
       });
 
       const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
@@ -285,12 +292,7 @@ export class CoachingOrchestrator {
 
   #getToday(userId) {
     const tz = this.#config.getUserTimezone?.(userId) || 'America/Los_Angeles';
-    return new Date().toLocaleDateString('en-CA', { timeZone: tz });
-  }
-
-  /** Calendar days before `beforeDate`, each classified for logging completeness. */
-  #getRecentDays(nutritionData, closures, beforeDate, count, minCalories = this.#minCalories) {
-    return buildCalendarDays({ nutritionData, closures, beforeDate, count, minCalories });
+    return new Date(this.#clock.now()).toLocaleDateString('en-CA', { timeZone: tz });
   }
 
   /** Sum a day's ledger rows; group parents store zero so children count once. */

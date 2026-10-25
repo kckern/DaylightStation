@@ -13,6 +13,7 @@ describe('BudgetToolFactory', () => {
   it('get_day_budget returns the day in the shape the assignments read, with its counted foods', async () => {
     const t = tools({
       budgetService: { getBudget: vi.fn().mockResolvedValue(contract('2026-09-24')) },
+      today: () => '2026-09-25',
       nutriListStore: { findByDate: vi.fn().mockResolvedValue([
         { name: 'Chili', calories: 319, protein: 20, mealTime: 'evening', status: 'accepted' },
         { name: 'Pending thing', calories: 999, status: 'pending' },
@@ -21,7 +22,7 @@ describe('BudgetToolFactory', () => {
     });
     const day = await t.get_day_budget.execute({ userId: 'kc', date: '2026-09-24' });
     expect(day).toMatchObject({ date: '2026-09-24', calories: 1257, protein: 67, zone: 'in-range', complete: true,
-      declared: null, remaining: 782, range: { floor: 1200, top: 1791 } });
+      declared: null, remaining: 782, range: { floor: 1200, top: 1791 }, assessment: { finished: true, planState: 'within', energyState: 'below-maintenance' } });
     expect(day.items).toEqual([{ name: 'Chili', calories: 319, protein: 20, mealTime: 'evening' }]);
     expect(day).not.toHaveProperty('goals');
   });
@@ -38,7 +39,9 @@ describe('BudgetToolFactory', () => {
     expect(res.days.map(d => [d.date, d.calories ?? null, d.complete ?? null])).toEqual([
       ['2026-09-22', 700, false], ['2026-09-23', null, null], ['2026-09-24', 1257, true],
     ]);
-    expect(res.days[1]).toMatchObject({ error: 'NO_WEIGHT_DATA' });
+    expect(res.days[1]).toMatchObject({ error: 'NO_WEIGHT_DATA', assessment: { availability: 'unavailable' } });
+    expect(res.days[0].assessment).toMatchObject({ finished: true, trustworthy: false });
+    expect(res.days[2].assessment).toMatchObject({ finished: false, trustworthy: true, planState: 'within' });
   });
 
   it('reports an error instead of throwing when the budget is unavailable', async () => {

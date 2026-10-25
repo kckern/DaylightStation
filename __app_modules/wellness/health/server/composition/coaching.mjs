@@ -23,6 +23,7 @@ import { buildAgentMemory } from "../../../../../__capabilities/agent-runtime/se
 import { buildAgentEventQueryService } from "../application/agents/buildAgentEventQueryService.mjs";
 import { buildAgentRuntime } from "../../../../../__capabilities/agent-runtime/server/application/framework/buildAgentRuntime.mjs";
 import { CoachingCommentaryService } from "../application/coaching/index.mjs";
+import { CoachingEvidenceService } from "../application/coaching/CoachingEvidenceService.mjs";
 import { CoachingOrchestrator } from "../application/coaching/index.mjs";
 import { MealCoachingTrigger } from "../application/coaching/index.mjs";
 
@@ -223,7 +224,14 @@ export function registerHealthCoaching({ healthStore, healthService, configServi
       logger,
     });
 
+    const evidenceService = new CoachingEvidenceService({
+      budgetService: healthBudget, healthStore, clock: { now: () => new Date() },
+      timezoneForUser: () => coachingTimezone,
+      completeness: configService?.getHouseholdAppConfig?.(null, 'coaching')?.logging_completeness,
+      logger,
+    });
     coachingOrchestrator = new CoachingOrchestrator({
+      evidenceService,
       commentaryService,
       messagingGateway,
       healthStore,

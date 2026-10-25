@@ -14,6 +14,8 @@ import { ToolFactory } from "../../../../../../../../__capabilities/agent-runtim
 import { createTool } from "../../../../../../../../__capabilities/agent-runtime/server/application/ports/ITool.mjs";
 import { isCountedRow } from '../../../../../portable/contracts/nutrition/countedRows.mjs';
 
+import { budgetDayView } from '../../../coaching/CoachingEvidenceService.mjs';
+
 const MAX_DAYS = 62;
 
 const shiftDate = (iso, days) => {
@@ -21,29 +23,6 @@ const shiftDate = (iso, days) => {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 };
-
-/** The contract fields a coach needs — no goals document, no raw sessions. */
-export function dayView(b) {
-  if (!b || b.error) return b ? { date: b.date, error: b.error } : null;
-  return {
-    date: b.date,
-    calories: b.food,
-    protein: b.macros?.protein ?? null,
-    exercise: b.exercise,
-    net: b.net,
-    range: b.range,
-    maintenance: b.maintenance,
-    deficit: b.deficit,
-    deficitSource: b.deficitSource,
-    zone: b.zone,
-    complete: b.complete,
-    declared: b.declared,
-    // Meals the user declared intentionally skipped: a gap in them is a real
-    // deficit, not missing data — never ask about them.
-    fastedMeals: b.fastedMeals || [],
-    remaining: b.remaining,
-  };
-}
 
 export class BudgetToolFactory extends ToolFactory {
   static domain = 'budget';
@@ -72,7 +51,7 @@ export class BudgetToolFactory extends ToolFactory {
             ]);
             const items = (rows || []).filter(r => isCountedRow(r) && r?.kind !== 'group')
               .map(r => ({ name: r.name || r.item || null, calories: r.calories ?? null, protein: r.protein ?? null, mealTime: r.mealTime ?? null }));
-            return { ...dayView(budget), items };
+            return { ...budgetDayView(budget, { today: today() }), items };
           } catch (err) {
             logger.warn?.('health-coach.tool.get-day-budget.failed', { userId, date, error: err.message });
             return failed(err);
@@ -94,7 +73,7 @@ export class BudgetToolFactory extends ToolFactory {
             const n = Math.min(MAX_DAYS, Math.max(1, Math.round(Number(days) || 7)));
             const to = today();
             const list = await budgetService.getBudgetRange(userId, shiftDate(to, -(n - 1)), to);
-            return { days: (list || []).map(dayView) };
+            return { days: (list || []).map(budget => budgetDayView(budget, { today: to })) };
           } catch (err) {
             logger.warn?.('health-coach.tool.get-budget-range.failed', { userId, error: err.message });
             return failed(err);

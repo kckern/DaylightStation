@@ -15,7 +15,7 @@ A coaching message is the end of a five-stage pipeline. Each stage is per-user; 
 ```
    pattern detection   →   snapshot   →   LLM commentary   ┐
    -----------------       --------       ---------------  │
-   read recent daily       compact         short prose     │
+   read daily budget       compact         short prose     │
    summaries and           structured      anchored on     │
    longitudinal            object of       the snapshot    ├─→   delivery
    aggregates;             pre-computed    and the status  │     --------
@@ -31,9 +31,9 @@ A coaching message is the end of a five-stage pipeline. Each stage is per-user; 
    in parallel with the snapshot from the same data
 ```
 
-Status block and snapshot are computed **in parallel** from the same daily-summary and longitudinal data — the status block is not derived from the snapshot, and the LLM cannot influence it.
+Status block and snapshot are computed from the same assessed daily budgets and longitudinal data — the status block is not derived from the snapshot, and the LLM cannot influence it.
 
-**Pattern detection.** The coach reads a small window of the user's recent daily summaries and longitudinal aggregates, classifies the most notable trend or break, and tags the snapshot with a single pattern label. The label is not shown to the user; it is a hint to the LLM about what is worth noticing.
+**Pattern detection.** The coach reads a calendar window of the user's assessed daily budgets, classifies the most notable trend or break, and tags the snapshot with a single pattern label. The label is not shown to the user; it is a hint to the LLM about what is worth noticing.
 
 **Snapshot.** The pattern, the day's totals, the recent comparisons, the weight trend, the most prominent food items, and a short window of recent coaching messages are gathered into one compact, structured object. The snapshot is the LLM's entire view of the world for this call. Anything not in the snapshot is invisible to the LLM.
 
@@ -53,17 +53,13 @@ The patterns the coach detects:
 
 | Pattern | Meaning |
 |---|---|
-| Binge after deficit | A day above the calorie ceiling following two or more days below the calorie floor |
-| Missed logging | One or more days in the recent window with no food logged |
-| Calorie surplus | Two or more of the last three days above the calorie ceiling |
-| Calorie deficit | Two or more of the last three days below the calorie floor (excluding zero-log days, which are missed-logging) |
-| Protein short | Protein under eighty percent of goal on three or more of the last five days |
-| On track | Within calorie band and at or above protein goal for three consecutive days |
-| Exercise spike | A burned-calorie spike from a completed session that materially expands the day's budget |
-| Weight plateau | The smoothed weight trend flat over a multi-week window when goal direction is loss or gain |
-| Streak break | An on-track streak ending the previous day |
+| `missed_logging` | The most recent historical day is incomplete or unlogged |
+| `energy_surplus` | Two or more of the last three eligible days exceed estimated maintenance |
+| `over_plan` | Two or more of the last three eligible days exceed their own exercise-adjusted plan |
+| `protein_short` | Known protein under eighty percent of the configured target on three or more of the last five eligible days |
+| `on_track` | Three consecutive finished, trustworthy days within their own plan and at or above the configured protein target |
 
-Pattern detection is **comparison-driven**: every pattern is a relation between the day at hand and either a goal or a recent baseline, never an absolute judgment. "Calorie surplus" is *above the user's own ceiling*. "Protein short" is *short of the user's own target*. "Weight plateau" is *flat against the user's own goal direction*. The coach does not have absolute opinions about how much anyone should eat or weigh — every claim is anchored on a user-declared goal or a user-specific baseline.
+Eligible intake days are finished and trustworthy. An over-plan day may still be below estimated maintenance; surplus is reserved for intake above maintenance. Equality is not over. Below-floor food logging is incomplete evidence and produces no calorie-deficit or binge label. Missing assessments suppress intake patterns; explicit logging facts remain available. Protein patterns require a finite positive configured target and known measured protein.
 
 Pattern detection is deterministic: the same recent-window data and the same goal configuration always classify to the same pattern. There is no model in this stage.
 
@@ -99,7 +95,7 @@ So every day the coach reads is classified before anything else happens:
 | `fasting` | The user said the day was a fast (`/fast`) | yes, whatever the total |
 | `incomplete` | Something logged, under the threshold, not confirmed | **no** — missing data |
 | `unlogged` | Nothing logged | **no** — missing data |
-| `reconstructed` | Untracked intake backfilled from weight ([reconstruction](README.md#untracked-intake-reconstruction)) | calories yes. Protein is **unknown** and never averaged |
+| `reconstructed` | Untracked intake backfilled from weight ([reconstruction](README.md#untracked-intake-reconstruction)) | **no intake verdict** from the measured budget row; the estimate stays separately labelled. Protein is **unknown** |
 
 **The threshold is the health budget's floor** — the user's `budgetFloor` in `users/{id}/apps/health/goals.yml` (default 1200), the lower edge of the goal range the Today bar draws ([budget equation](README.md#the-budget-equation--one-server-side-home)). The coach reads it through the budget contract (`BudgetService`), the same one that computes the day's zone and `complete` flag, so the coach and the bar can never disagree about whether a day is trustworthy. `logging_completeness.min_calories` in the household `coaching` config (`household/coaching/config.yml`) is now only the **fallback**, used when the budget cannot be computed (no goals or no weight yet).
 
@@ -110,11 +106,11 @@ Close a day from the nutribot chat with `/done` or `/fast`. With no argument it 
 Consequences:
 
 - **Days are calendar days.** The morning brief's "yesterday" is yesterday. An unlogged day reads "nothing logged". It is never skipped, so an earlier day's numbers never stand in for it.
-- **Averages cover trusted days only**, and the status block states the coverage ("3 of 7 days fully logged"). With no trusted days it says so instead of averaging.
+- **Averages cover finished trustworthy budget assessments only**, and the status block states the coverage ("3 of 7 days fully logged"). With no trusted days it says so instead of averaging.
 - **An incomplete yesterday is labelled as such** in the status block, with the command that would close it.
-- **Patterns and commentary never read an untrusted day as intake.** An untrusted most-recent day yields `missed_logging`, never `calorie_deficit`. Older untrusted days are dropped and the trusted remainder is still evaluated. A confirmed fast is never `missed_logging`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
+- **Patterns and commentary never read an untrusted day as intake.** An incomplete or unlogged most-recent day yields `missed_logging`, never an intake deficit. Older untrusted days are dropped and the trusted remainder is still evaluated. A confirmed fast is never `missed_logging`. The snapshot carries each day's `status` and the threshold, and the LLM is told to say nothing about an incomplete yesterday's intake and to stay silent when fewer than half the days are trusted.
 
-Implementation: `__backend/src/3_applications/coaching/dayCompleteness.mjs` (classification), with the floor from the budget contract.
+Implementation: `server/application/coaching/CoachingEvidenceService.mjs` loads one bulk `getBudgetRange` for history, a separate `getBudget` for the requested date, and nutrition data for reconstruction provenance. History ends the day before the requested date, oldest first, and retains gaps and per-day errors. Actual local today comes from the injected clock and user timezone. Morning and post-report snapshots adapt days to newest first; weekly coaching loads one 56-day range and derives both windows from it. Snapshots include per-day assessments, provenance, source availability and period coverage. Current configured goals apply to historical budgets (`goalBasis: current`); this does not recover historical goal versions. `budgetDayView` lives in the evidence module and supplies agent tools with legacy fields plus the shared assessment.
 
 ### One budget, every surface
 
@@ -127,7 +123,7 @@ Every surface that judges a day takes the goal range and zone from the health bu
 | `EndOfDayReport`, `MorningBrief`, `WeeklyDigest` | "Logging Complete" from `complete`; floor/top from the range; the goals shown to the model carry the range, not the stale `nutrition.calories_min/max`; dates are the user's local dates, not UTC. A budget day is "over plan" when net passes its own top; weekly averages use complete days only. |
 | Nutribot daily report caption (`nutribot/usecases/reportCaption.mjs`) | "🔥 1257 / 1200–1791 cal • 782 cal left" — the range and the zone's own words ("left", "over", "past break even", "Fasted"). |
 
-Each composition scope builds its own `BudgetService` over the shared stores (`createHealthBudget` in `bootstrap.mjs`, the `healthApi.mjs` pattern). When the budget is unavailable every surface falls back to its configured goals (`nutrition.calories_min/max`, `coaching.logging_completeness.min_calories`) and logs `coaching.budget.unavailable` / `report.budget.unavailable`.
+Each composition scope builds its own `BudgetService` over the shared stores (`createHealthBudget` in `bootstrap.mjs`, the `healthApi.mjs` pattern). When historical coaching budgets are unavailable, logging facts may still be shown but intake assessments and averages are unavailable. Existing current-day status formatting falls back to its configured goals (`nutrition.calories_min/max`, `coaching.logging_completeness.min_calories`) and logs `coaching.budget.unavailable` / `report.budget.unavailable`.
 
 ---
 

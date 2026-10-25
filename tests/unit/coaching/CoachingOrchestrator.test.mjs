@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CoachingOrchestrator } from "../../../__app_modules/wellness/health/server/application/coaching/CoachingOrchestrator.mjs";
 
+// In-memory I/O boundary: source budgets retain each date's actual food and closure.
+const historyBudgets = (store, range = { floor: 1200, top: 1600 }) => async (_userId, from, to) => {
+  const nutrition = await store.loadNutritionData();
+  const closures = await store.loadDayClosedData?.() || {};
+  return [...new Set([...Object.keys(nutrition), ...Object.keys(closures)])].filter(date => date >= from && date <= to).map(date => ({
+    date, food: nutrition[date]?.calories || 0, exercise: 0, net: nutrition[date]?.calories || 0,
+    range, maintenance: 2291, macros: { protein: nutrition[date]?.protein },
+    declared: closures[date]?.status || null, goalBasis: 'current',
+  }));
+};
+
 describe('CoachingOrchestrator', () => {
   let orchestrator;
   let mockCommentary;
@@ -37,6 +48,7 @@ describe('CoachingOrchestrator', () => {
       healthStore: mockHealthStore,
       nutriListStore: mockNutriListStore,
       config: mockConfig,
+      budgetService: { getBudgetRange: historyBudgets(mockHealthStore) },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
   });
@@ -239,7 +251,7 @@ describe('CoachingOrchestrator', () => {
     });
     const withBudget = (getBudget) => new CoachingOrchestrator({
       commentaryService: mockCommentary, messagingGateway: mockMessaging, healthStore: mockHealthStore,
-      nutriListStore: mockNutriListStore, config: mockConfig, budgetService: { getBudget },
+      nutriListStore: mockNutriListStore, config: mockConfig, budgetService: { getBudget, getBudgetRange: historyBudgets(mockHealthStore, { floor: 1300, top: 1791 }) },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
@@ -311,3 +323,58 @@ describe('CoachingOrchestrator', () => {
   });
 });
 
+
+describe('canonical historical budgets in coaching snapshots', () => {
+  const rows = [
+    ['2026-10-19', 2030, 684], ['2026-10-20', 806, 302], ['2026-10-21', 1726, 882],
+    ['2026-10-22', 1532, 275], ['2026-10-23', 330, 413], ['2026-10-24', 1704, 997],
+  ].map(([date, food, exercise]) => ({ date, food, exercise, net: food - exercise, range: { floor: 1200, top: 1791 }, maintenance: 2291, complete: food >= 1200, macros: { protein: 125 }, goalBasis: 'current' }));
+  const setup = () => {
+    const commentary = { generate: vi.fn().mockResolvedValue('A comment') };
+    const budgetService = { getBudgetRange: vi.fn().mockResolvedValue([...rows].reverse()), getBudget: vi.fn().mockResolvedValue({ ...rows[0], date: '2026-10-25', food: 700 }) };
+    const orchestrator = new CoachingOrchestrator({
+      commentaryService: commentary, budgetService,
+      healthStore: { loadNutritionData: async () => ({ '2026-10-24': { calories: 9999, protein: 999 } }), loadCoachingData: async () => ({}), loadWeightData: async () => ({}), saveCoachingData: async () => {} },
+      nutriListStore: { findByDate: async () => [] }, messagingGateway: { sendMessage: async () => ({}) },
+      config: { getUserGoals: () => ({ calories_min: 1200, calories_max: 1600, protein: 120 }), getUserTimezone: () => 'America/Los_Angeles' },
+      clock: { now: () => new Date('2026-10-25T18:00:00Z') },
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    return { orchestrator, commentary, budgetService };
+  };
+
+  it('morning uses yesterday’s own budget and exposes matched period coverage', async () => {
+    const { orchestrator, commentary } = setup();
+    await orchestrator.sendMorningBrief({ userId: 'u', conversationId: 'c' });
+    const snapshot = commentary.generate.mock.calls[0][0];
+    expect(snapshot.yesterday).toMatchObject({ date: '2026-10-24', calories: 1704, assessment: { planState: 'within' } });
+    expect(snapshot.period).toMatchObject({ coverage: { trustedFinished: 4, total: 7 }, counts: { withinPlan: 4, overPlan: 0, surplus: 0 } });
+    expect(snapshot.week_avg).toMatchObject({ calories: 1748, trustedDays: 4, totalDays: 7 });
+    expect(snapshot.recent_pattern).toBeNull();
+  });
+
+  it('prints yesterday’s own completeness floor even when today’s floor differs', async () => {
+    const { orchestrator, commentary, budgetService } = setup();
+    budgetService.getBudgetRange.mockResolvedValue([{ ...rows[5], food: 1250, range: { floor: 1500, top: 1791 } }]);
+    await orchestrator.sendMorningBrief({ userId: 'u', conversationId: 'c' });
+    expect(commentary.generate.mock.calls[0][0].logging.min_calories).toBe(1500);
+    expect(commentary.generate.mock.calls[0][0].yesterday.status).toBe('incomplete');
+  });
+
+  it('weekly shares the assessed 56-day range rather than refetching each window', async () => {
+    const { orchestrator, commentary, budgetService } = setup();
+    await orchestrator.sendWeeklyDigest({ userId: 'u', conversationId: 'c' });
+    const snapshot = commentary.generate.mock.calls[0][0];
+    expect(snapshot.this_week).toMatchObject({ calories: 1748, trustedDays: 4, totalDays: 7 });
+    expect(snapshot.period.counts).toEqual({ withinPlan: 4, overPlan: 0, surplus: 0 });
+    expect(budgetService.getBudgetRange).toHaveBeenCalledExactlyOnceWith('u', '2026-08-30', '2026-10-24');
+  });
+
+  it('post-report historical patterns use assessed budgets too', async () => {
+    const { orchestrator, commentary } = setup();
+    await orchestrator.sendPostReport({ userId: 'u', conversationId: 'c' });
+    const snapshot = commentary.generate.mock.calls[0][0];
+    expect(snapshot.recent_days[0]).toMatchObject({ date: '2026-10-24', assessment: { planState: 'within', finished: true } });
+    expect(snapshot.period.counts.overPlan).toBe(0);
+  });
+});

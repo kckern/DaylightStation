@@ -89,8 +89,12 @@ export class CoachingMessageBuilder {
   }
 
   static #yesterdayLines(day, minCalories) {
-    const totals = `${day.calories} cal \u{00B7} ${day.protein}g protein`;
+    const totals = `${day.calories == null ? 'calories unknown' : `${day.calories} cal`} \u{00B7} ${CoachingMessageBuilder.#protein(day.protein)}`;
     switch (day.status) {
+      case 'unavailable':
+        return [`\u{1F4CA} <b>Yesterday:</b> data unavailable`];
+      case 'reconstructed':
+        return [`\u{1F4CA} <b>Yesterday:</b> ${day.estimatedCalories == null ? 'intake estimate unavailable' : `${Math.round(day.estimatedCalories)} cal estimated`} \u{00B7} protein unknown`];
       case 'fasting':
         return [`\u{1F4CA} <b>Yesterday:</b> fast \u{00B7} ${totals}`];
       case 'incomplete':
