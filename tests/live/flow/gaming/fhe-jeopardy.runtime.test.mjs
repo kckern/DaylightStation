@@ -114,11 +114,34 @@ for (const definitionId of ['jeopardy:fhe-jeremiah', 'jeopardy:practice-isaiah']
     }).click();
     if (command) await command;
   };
-  const restart = async () => {
+  const selectAt = async (cat, row) => {
+    const selected = host.waitForResponse(r => r.url().endsWith('/commands'));
+    await host.locator('.gp-host__col').nth(cat).locator('.gp-host__tile').nth(row).click();
+    await selected;
+  };
+  const restart = async ({ requirePlayed = false } = {}) => {
     const prior = await get();
+    if (requirePlayed) {
+      expect(prior.state.phase).toBe('clue');
+      expect(Object.values(prior.state.scores).some(score => score > 0)).toBe(true);
+      expect(Object.values(prior.state.used).some(Boolean)).toBe(true);
+      expect(prior.state.isDailyDouble).toBe(true);
+      expect(prior.state.wager).toBeGreaterThan(0);
+    }
     await click('Restart game');
     await click('Cancel');
-    expect((await get()).header.revision).toBe(prior.header.revision);
+    const cancelled = await get();
+    expect(cancelled.header.revision).toBe(prior.header.revision);
+    expect(cancelled.state).toEqual(prior.state);
+    await phase(prior.state.phase);
+    if (requirePlayed) {
+      for (const team of teams) {
+        await expect(page.getByLabel(`${team.name} score`)).toHaveText(prior.state.scores[team.id].toLocaleString());
+        await expect(host.locator('.gp-host__score').filter({hasText: team.name})).toContainText(`${team.name} ${prior.state.scores[team.id].toLocaleString()}`);
+      }
+      await page.screenshot({animations:'disabled',path:test.info().outputPath('active-restart-before-tv.png')});
+      await host.screenshot({animations:'disabled',path:test.info().outputPath('active-restart-before-host.png')});
+    }
     await click('Restart game');
     const response = host.waitForResponse(r => r.url().endsWith('/restart') && r.request().method() === 'POST');
     await click('Confirm restart');
@@ -134,6 +157,23 @@ for (const definitionId of ['jeopardy:fhe-jeremiah', 'jeopardy:practice-isaiah']
     });
     expect(fresh.state.used).toEqual({});
     expect(fresh.state.finalWagers).toEqual({});
+    expect(fresh.state.finalJudged).toEqual({});
+    expect(fresh.state.active).toBeNull();
+    expect(fresh.state.wager).toBeNull();
+    expect(fresh.state.isDailyDouble).toBe(false);
+    expect(id).not.toBe(prior.header.session_id);
+    expect(new URL(host.url()).pathname).toBe(`/party-games/host/${encodeURIComponent(id)}`);
+    for (const team of teams) {
+      await expect(page.getByLabel(`${team.name} score`)).toHaveText('0');
+      await expect(host.locator('.gp-host__score').filter({hasText: team.name})).toContainText(`${team.name} 0`);
+    }
+    const preserved = await json(await request.get(`/api/v1/gaming/sessions/${encodeURIComponent(prior.header.session_id)}`));
+    expect(preserved.state).toEqual(prior.state);
+    expect(preserved.header.revision).toBe(prior.header.revision);
+    if (requirePlayed) {
+      await page.screenshot({animations:'disabled',path:test.info().outputPath('active-restart-after-tv.png')});
+      await host.screenshot({animations:'disabled',path:test.info().outputPath('active-restart-after-host.png')});
+    }
     expect(fresh.diagnostic.ephemeral).toBe(true);
     expect(new URL(page.url()).searchParams.get('diagnostic_session')).toBe(id);
   };
@@ -163,7 +203,26 @@ for (const definitionId of ['jeopardy:fhe-jeremiah', 'jeopardy:practice-isaiah']
       animations: 'disabled',
       path: test.info().outputPath('lobby-960.png')
     });
-    await restart();
+    // Establish real in-progress state: score/use one clue, then lock a DD wager.
+    await click('Start game');
+    await phase('board');
+    await selectAt(0, 0);
+    await phase('clue');
+    await click('Reveal answer');
+    await phase('judging');
+    await click('Correct ✓');
+    await phase('board');
+    const scored = (await get()).state;
+    expect(scored.scores.red).toBe(100);
+    expect(scored.used['0:0:0']).toBe(true);
+    const dailyDouble = scored.set.rounds[0].categories.flatMap((category, cat) =>
+      category.clues.map((clue, row) => ({clue, cat, row}))).find(cell => cell.clue.daily_double);
+    expect(dailyDouble).toBeDefined();
+    await selectAt(dailyDouble.cat, dailyDouble.row);
+    await phase('wager');
+    await click('Lock wager');
+    await phase('clue');
+    await restart({ requirePlayed: true });
     // A real host request fails once; Retry reloads and the next phone tap commits.
     await host.route('**/commands', route => route.fulfill({
       status: 503,
@@ -187,6 +246,8 @@ for (const definitionId of ['jeopardy:fhe-jeremiah', 'jeopardy:practice-isaiah']
       animations: 'disabled',
       path: test.info().outputPath('board-960.png')
     });
+    await expect(host.locator('.gp-host__tile.is-used')).toHaveCount(0);
+    await expect(page.locator('.jp-board__tile.is-used')).toHaveCount(0);
     let baseline = await tileGeometry(host);
     let dd = 0;
     const expected = {
@@ -203,9 +264,7 @@ for (const definitionId of ['jeopardy:fhe-jeremiah', 'jeopardy:practice-isaiah']
       for (let cat = 0; cat < 5; cat++) for (let row = 0; row < 3; row++) {
         const before = (await get()).state;
         const clue = before.set.rounds[roundIndex].categories[cat].clues[row];
-        const selected = host.waitForResponse(r => r.url().endsWith('/commands'));
-        await host.locator('.gp-host__col').nth(cat).locator('.gp-host__tile').nth(row).click();
-        await selected;
+        await selectAt(cat, row);
         let current = (await get()).state;
         if (current.phase === 'wager') {
           dd++;
