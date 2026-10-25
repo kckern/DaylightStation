@@ -697,6 +697,11 @@ export class ListAdapter {
     };
 
     const results = [];
+    if (typeof listMetadata?.resume === 'boolean' || Number.isFinite(listMetadata?.seconds)) {
+      this.logger?.debug?.('list.playback-start-policy', {
+        listName, listPrefix, resume: listMetadata.resume ?? null, seconds: listMetadata.seconds ?? null,
+      });
+    }
 
     // Bulk-load progress once per namespace/category instead of one disk read
     // per child. mediaProgressMemory.findProgress() → _readFile() does an uncached
@@ -797,6 +802,16 @@ export class ListAdapter {
       } else {
         // Default: play
         Object.assign(playAction, baseAction);
+      }
+
+      // Start policy belongs to this menu launch, never the saved media progress.
+      // Explicit action options win over item fields, then menu metadata defaults.
+      for (const action of [playAction, queueAction]) {
+        if (Object.keys(action).length === 0) continue;
+        const resume = item.resume ?? listMetadata?.resume;
+        const seconds = item.seconds ?? listMetadata?.seconds;
+        if (action.resume === undefined && typeof resume === 'boolean') action.resume = resume;
+        if (action.seconds === undefined && Number.isFinite(seconds) && seconds >= 0) action.seconds = seconds;
       }
 
       // Merge display hints into the resolved action object

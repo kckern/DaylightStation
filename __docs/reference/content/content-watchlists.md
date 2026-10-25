@@ -379,3 +379,20 @@ Watchlist items reference content via compound IDs that pass through the full re
 | `__backend/src/4_api/v1/routers/admin/content.mjs` | API | Admin CRUD HTTP endpoints |
 | `frontend/src/modules/Admin/ContentLists/ListsFolder.jsx` | Frontend | Admin watchlist editor |
 | `frontend/src/hooks/admin/useAdminLists.js` | Frontend | Admin CRUD hook |
+
+
+### Menu playback start defaults
+
+A menu can give every direct Play/Queue launch a start policy through its metadata:
+
+```yaml
+metadata:
+  resume: false
+  seconds: 0
+```
+
+These options reach the existing player start contract: ignore saved resume progress
+and begin at zero. They do not erase watch history or change launches from other
+menus. Explicit action options override item-level fields, which override these
+menu defaults. Legacy item `resume` and `seconds` fields survive configuration
+normalization and serialization. Open/Display actions are unaffected.
