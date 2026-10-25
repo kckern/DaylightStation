@@ -22,7 +22,7 @@ describe('summarizeBudgetPeriod', () => {
     // Eligible: food 1704+2100+1800+2200; exercise 997+100+0+0;
     // plan deltas -893+200+200+600; maintenance deltas -1293-100-200+200.
     expect(summarizeBudgetPeriod(rows)).toEqual({
-      coverage: { total: 7, available: 6, trustedFinished: 4, proteinKnown: 3 },
+      coverage: { total: 7, available: 6, trustedFinished: 4, proteinKnown: 3, planKnown: 4, maintenanceKnown: 4 },
       averages: { food: 1951, exercise: 274.25, net: 1676.75, planDelta: 26.75, maintenanceDelta: -348.25 },
       counts: { withinPlan: 1, overPlan: 3, surplus: 1 }, goalBasis: 'current',
     });
@@ -30,7 +30,7 @@ describe('summarizeBudgetPeriod', () => {
 
   it('excludes a complete in-progress day from every average and count', () => {
     expect(summarizeBudgetPeriod([assess(today, 2100)])).toEqual({
-      coverage: { total: 1, available: 1, trustedFinished: 0, proteinKnown: 0 },
+      coverage: { total: 1, available: 1, trustedFinished: 0, proteinKnown: 0, planKnown: 0, maintenanceKnown: 0 },
       averages: { food: null, exercise: null, net: null, planDelta: null, maintenanceDelta: null },
       counts: { withinPlan: 0, overPlan: 0, surplus: 0 }, goalBasis: 'current',
     });
@@ -47,6 +47,7 @@ describe('summarizeBudgetPeriod', () => {
 
   it('keeps an unknown maintenance average unknown without discarding known plan evidence', () => {
     expect(summarizeBudgetPeriod([assess('2026-10-24', 1800, { maintenance: null })])).toMatchObject({
+      coverage: { trustedFinished: 1, planKnown: 1, maintenanceKnown: 0 },
       averages: { food: 1800, exercise: 0, net: 1800, planDelta: 200, maintenanceDelta: null },
       counts: { withinPlan: 0, overPlan: 1, surplus: 0 },
     });
@@ -57,14 +58,25 @@ describe('summarizeBudgetPeriod', () => {
       assess('2026-10-23', 1800),
       assess('2026-10-24', 1600, { maintenance: null }),
     ])).toMatchObject({
-      coverage: { trustedFinished: 2 },
+      coverage: { trustedFinished: 2, planKnown: 2, maintenanceKnown: 1 },
       averages: { food: 1700, exercise: 0, net: 1700, planDelta: 100, maintenanceDelta: null },
+    });
+  });
+
+  it('retains unknown plan coverage without shrinking energy-average denominators', () => {
+    expect(summarizeBudgetPeriod([
+      assess('2026-10-23', 1500),
+      assess('2026-10-24', 1800, { range: { floor: 1200 } }),
+    ])).toMatchObject({
+      coverage: { trustedFinished: 2, planKnown: 1, maintenanceKnown: 2 },
+      averages: { food: 1650, exercise: 0, net: 1650, planDelta: null, maintenanceDelta: -350 },
+      counts: { withinPlan: 1, overPlan: 0, surplus: 0 },
     });
   });
 
   it('empty coverage has null averages and goal basis', () => {
     expect(summarizeBudgetPeriod([])).toEqual({
-      coverage: { total: 0, available: 0, trustedFinished: 0, proteinKnown: 0 },
+      coverage: { total: 0, available: 0, trustedFinished: 0, proteinKnown: 0, planKnown: 0, maintenanceKnown: 0 },
       averages: { food: null, exercise: null, net: null, planDelta: null, maintenanceDelta: null },
       counts: { withinPlan: 0, overPlan: 0, surplus: 0 }, goalBasis: null,
     });

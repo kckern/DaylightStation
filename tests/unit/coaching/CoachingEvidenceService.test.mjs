@@ -109,6 +109,18 @@ describe('CoachingEvidenceService', () => {
     expect(result.current.assessment.availability).toBe('available');
   });
 
+  it.each([null, 'done', 'fasting'])('keeps numeric budget facts separate from unknown nutrition provenance with %s closure', async declared => {
+    const { service, healthStore } = fixture([day('2026-10-24', 1704, 997, { declared })]);
+    healthStore.loadNutritionData.mockRejectedValue(new Error('nutrition offline'));
+    const result = await service.load({ userId: 'u', date: '2026-10-25', historyDays: 1 });
+    expect(result.days[0]).toMatchObject({
+      status: 'unavailable', provenance: 'unknown', declared, calories: 1704, protein: null,
+      assessment: { availability: 'available', finished: true, trustworthy: false, food: 1704,
+        exercise: 997, planFood: 2788, proteinKnown: false, planState: 'unknown', energyState: 'unknown' },
+    });
+    expect(result.period.coverage.trustedFinished).toBe(0);
+  });
+
   it('projects legacy tool fields and assessment using explicit lifecycle context', () => {
     const result = budgetDayView(day('2026-10-24', 2030, 684), { today: '2026-10-25' });
     expect(result).toMatchObject({ calories: 2030, protein: 125, exercise: 684, net: 1346, range: { floor: 1200, top: 1791 }, assessment: { finished: true, planState: 'within', energyState: 'below-maintenance' } });

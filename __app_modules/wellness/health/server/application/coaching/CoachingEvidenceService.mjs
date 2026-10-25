@@ -88,11 +88,12 @@ export class CoachingEvidenceService {
       const calories = available ? assessment.food : finite(entry?.calories) ? entry.calories : null;
       const declared = available ? budget.declared : closureStatus(closures[dayDate]);
       const fastedMeals = available ? budget.fastedMeals || [] : fastedMealsOf(closures[dayDate]);
-      // A closure finishes the day; it cannot turn estimated intake into measured intake.
-      const status = provenance === 'reconstructed' ? 'reconstructed' : available
+      // A closure finishes the day; it cannot establish missing source provenance.
+      // Keep known budget numbers separate from logging completeness status.
+      const status = provenance === 'unknown' ? 'unavailable'
+        : provenance === 'reconstructed' ? 'reconstructed' : available
         ? declared || (assessment.trustworthy ? 'complete' : calories > 0 ? 'incomplete' : 'unlogged')
-        : sourceState.nutrition === 'unavailable' && !declared && !fastedMeals.length ? 'unavailable'
-          : classifyDay(entry, closures[dayDate], this.#minCalories);
+        : classifyDay(entry, closures[dayDate], this.#minCalories);
       return {
         date: dayDate, budget: budget || null, assessment, provenance, declared,
         ...(provenance === 'reconstructed' && finite(entry?.calories) ? { estimatedCalories: entry.calories } : {}),

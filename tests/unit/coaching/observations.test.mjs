@@ -5,8 +5,8 @@ import { assessBudgetDay } from '../../../__app_modules/wellness/health/portable
 import { summarizeBudgetPeriod } from '../../../__app_modules/wellness/health/portable/contracts/health/budgetPeriod.mjs';
 import { buildPostReportSnapshot, buildRecentCoaching } from '../../../__app_modules/wellness/health/server/application/coaching/snapshots.mjs';
 
-const day = ({ date = '2026-10-24', food = 1704, exercise = 997, protein = 118, declared = null, provenance = 'logged' } = {}) => {
-  const budget = { date, food, exercise, range: { floor: 1200, top: 1791 }, maintenance: 2291, macros: { protein }, declared, goalBasis: 'current' };
+const day = ({ date = '2026-10-24', food = 1704, exercise = 997, protein = 118, declared = null, provenance = 'logged', maintenance = 2291, range = { floor: 1200, top: 1791 } } = {}) => {
+  const budget = { date, food, exercise, range, maintenance, macros: { protein }, declared, goalBasis: 'current' };
   const assessment = assessBudgetDay(budget, { date, today: '2026-10-25', provenance });
   return { date, budget, assessment, calories: food, protein: assessment.proteinKnown ? protein : null, provenance, status: assessment.trustworthy ? 'complete' : 'incomplete' };
 };
@@ -75,6 +75,23 @@ describe('supported observations', () => {
     const summary = build(evidence(days), { type: 'weekly-digest' }).find(o => o.kind === 'period_summary');
     expect(summary).toMatchObject({ evidenceDates: ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'], facts: { trustedDays: 4, totalDays: 7, withinPlan: 4, goalBasis: 'current' } });
     expect(text.renderObservation(summary)).toContain('current configured goals');
+  });
+  it('projects separate verdict coverage into weekly facts and qualifies partial maintenance', () => {
+    const days = [day({ date: '2026-10-23', food: 3500 }), day({ maintenance: null })];
+    const summary = build(evidence(days), { type: 'weekly-digest' }).find(o => o.kind === 'period_summary');
+    expect(summary.facts).toMatchObject({ trustedDays: 2, planKnown: 2, maintenanceKnown: 1, withinPlan: 1, overPlan: 1, surplus: 1 });
+    expect(text.renderObservation(summary)).toContain('1 of 1 days with known maintenance were above estimated maintenance.');
+    expect(text.renderObservation(summary)).toContain('Maintenance comparisons are unavailable for 1 of 2 trustworthy finished days.');
+  });
+  it('keeps all-unknown verdict clauses unavailable independently', () => {
+    const maintenanceUnknown = build(evidence([day({ maintenance: null })]), { type: 'weekly-digest' });
+    expect(render(maintenanceUnknown)).toContain('1 of 1 trustworthy finished days were within');
+    expect(render(maintenanceUnknown)).toContain('Maintenance comparisons are unavailable.');
+    expect(render(maintenanceUnknown)).not.toContain('0 were above estimated maintenance');
+    const planUnknown = build(evidence([day({ range: { floor: 1200 } })]), { type: 'weekly-digest' });
+    expect(render(planUnknown)).toContain('Plan comparisons are unavailable.');
+    expect(render(planUnknown)).toContain('0 were above estimated maintenance');
+    expect(render(planUnknown)).not.toMatch(/within the exercise-adjusted plan|were over plan/);
   });
   it('does not claim just logged without event items and preserves fingerprint after text truncation', () => {
     const current = day({ date: '2026-10-25', food: 700 });

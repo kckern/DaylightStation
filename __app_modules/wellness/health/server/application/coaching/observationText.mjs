@@ -31,8 +31,19 @@ export function renderObservation(observation) {
       return `${prefix}Activity burn: ${number(f.activityBurn)} cal. ${f.synced ? 'Activity is synchronized to the daily budget.' : 'Activity budget synchronization is pending; no additional credit has been assumed.'}`;
     case 'exercise_budget':
       return `${prefix}${number(f.exercise)} cal of exercise credit is included once in your ${number(f.planFood)} cal food plan.${basis(f)}`;
-    case 'period_summary':
-      return `${f.from} to ${f.to}: ${f.withinPlan} of ${f.trustedDays} trustworthy finished days were within the exercise-adjusted plan; ${f.overPlan} were over plan and ${f.surplus} were above estimated maintenance. Coverage: ${f.trustedDays} of ${f.totalDays} days.${basis(f)}`;
+    case 'period_summary': {
+      const plan = f.planKnown > 0
+        ? `${f.withinPlan} of ${f.planKnown} trustworthy finished days${f.planKnown < f.trustedDays ? ' with known plan comparisons' : ''} were within the exercise-adjusted plan; ${f.overPlan} were over plan.`
+        : 'Plan comparisons are unavailable.';
+      const maintenance = f.maintenanceKnown > 0
+        ? `${f.surplus}${f.maintenanceKnown < f.trustedDays ? ` of ${f.maintenanceKnown} days with known maintenance` : ''} were above estimated maintenance.`
+        : 'Maintenance comparisons are unavailable.';
+      const missingPlan = f.planKnown > 0 && f.planKnown < f.trustedDays
+        ? ` Plan comparisons are unavailable for ${f.trustedDays - f.planKnown} of ${f.trustedDays} trustworthy finished days.` : '';
+      const missingMaintenance = f.maintenanceKnown > 0 && f.maintenanceKnown < f.trustedDays
+        ? ` Maintenance comparisons are unavailable for ${f.trustedDays - f.maintenanceKnown} of ${f.trustedDays} trustworthy finished days.` : '';
+      return `${f.from} to ${f.to}: ${plan}${missingPlan} ${maintenance}${missingMaintenance} Coverage: ${f.trustedDays} of ${f.totalDays} days.${basis(f)}`;
+    }
     default:
       return '';
   }

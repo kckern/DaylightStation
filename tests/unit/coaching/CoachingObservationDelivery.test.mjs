@@ -2,15 +2,18 @@ import { describe, it, expect, vi } from 'vitest';
 import { CoachingOrchestrator } from '../../../__app_modules/wellness/health/server/application/coaching/CoachingOrchestrator.mjs';
 import { CoachingCommentaryService } from '../../../__app_modules/wellness/health/server/application/coaching/CoachingCommentaryService.mjs';
 
-function setup({ output = '{"observationId":"unsupported"}', currentFood = 1704, currentProtein = 105, declared = null, reconstructed = false, missingBudget = false, proteinGoal = 150 } = {}) {
+function setup({ output = '{"observationId":"unsupported"}', currentFood = 1704, currentProtein = 105, declared = null, reconstructed = false, missingBudget = false, proteinGoal = 150, nutritionFailure = false, budgetOverrides = () => ({}) } = {}) {
   let history = { '2026-10-25': [{ type: 'legacy', text: 'old message', timestamp: '2026-10-25T15:00:00Z' }] };
-  const budget = date => ({ date, food: currentFood, exercise: 997, net: currentFood - 997, range: { floor: 1200, top: 1791 }, maintenance: 2291, macros: { protein: currentProtein }, declared, goalBasis: 'current' });
+  const budget = date => ({ date, food: currentFood, exercise: 997, net: currentFood - 997, range: { floor: 1200, top: 1791 }, maintenance: 2291, macros: { protein: currentProtein }, declared, goalBasis: 'current', ...budgetOverrides(date) });
   const runtime = { execute: vi.fn().mockResolvedValue({ output }) };
   const logger = { info() {}, warn() {}, error() {}, debug() {} };
   const messaging = { sendMessage: vi.fn().mockResolvedValue({ messageId: 'sent-1' }), deleteMessage: vi.fn().mockResolvedValue(undefined) };
   const healthStore = {
     loadCoachingData: async () => structuredClone(history), saveCoachingData: async (_u, data) => { history = data; },
-    loadNutritionData: async () => reconstructed ? { '2026-10-25': { calories: 2500, reconstructed_calories: 796, protein: 200 } } : {},
+    loadNutritionData: async () => {
+      if (nutritionFailure) throw new Error('nutrition offline');
+      return reconstructed ? { '2026-10-25': { calories: 2500, reconstructed_calories: 796, protein: 200 } } : {};
+    },
     loadWeightData: async () => ({ '2026-10-18': { lbs: 170 }, '2026-10-25': { lbs: 172 } }), loadDayClosedData: async () => ({}),
   };
   const orchestrator = new CoachingOrchestrator({
@@ -71,6 +74,31 @@ describe('evidence-backed observation delivery', () => {
     expect(message).toContain('2026-10-18 to 2026-10-24');
     expect(message).toContain('7 of 7');
     expect(message).not.toContain('2026-08-30 to 2026-10-24');
+  });
+  it.each([null, 'done', 'fasting'])('does not diagnose missing meals after a nutrition failure, even with %s closure', async declared => {
+    const { orchestrator, messaging } = setup({ nutritionFailure: true, declared });
+    await orchestrator.sendMorningBrief({ userId: 'u', conversationId: 'c' });
+    const message = messaging.sendMessage.mock.calls[0][1];
+    expect(message).toContain('Yesterday:</b> data unavailable');
+    expect(message).toContain('Calorie-budget evidence is unavailable');
+    expect(message).not.toMatch(/looks incomplete|under 1200|nothing logged|send \/done|send \/fast|Within your|above.*plan/i);
+  });
+  it.each([
+    ['unknown maintenance', () => ({ maintenance: null }), '7 of 7 trustworthy finished days were within', 'Maintenance comparisons are unavailable.', /\d+ (?:were|days.*were) above estimated maintenance/],
+    ['mixed maintenance', date => date === '2026-10-18' ? { food: 3500, net: 2503 } : { maintenance: null }, '6 of 7 trustworthy finished days were within', '1 of 1 days with known maintenance were above estimated maintenance.', /0 were above estimated maintenance/],
+    ['unknown plan', () => ({ range: { floor: 1200 } }), 'Plan comparisons are unavailable.', '0 were above estimated maintenance.', /\d+ of \d+.*within the exercise-adjusted plan|\d+ were over plan/],
+    ['mixed plan', date => date === '2026-10-18' ? {} : { range: { floor: 1200 } }, '1 of 1 trustworthy finished days with known plan comparisons were within', '0 were above estimated maintenance.', /7 of 7 trustworthy finished days were within/],
+  ])('renders weekly %s verdict coverage without unsupported claims', async (_name, budgetOverrides, planText, maintenanceText, unsupported) => {
+    const { orchestrator, messaging } = setup({ budgetOverrides });
+    await orchestrator.sendWeeklyDigest({ userId: 'u', conversationId: 'c' });
+    const message = messaging.sendMessage.mock.calls[0][1];
+    expect(message).toContain(planText);
+    expect(message).toContain(maintenanceText);
+    expect(message).toContain('Coverage: 7 of 7 days');
+    expect(message).toContain(_name === 'mixed maintenance' ? '1961 avg cal' : '1704 avg cal');
+    expect(message).not.toMatch(unsupported);
+    if (_name === 'mixed maintenance') expect(message).toContain('Maintenance comparisons are unavailable for 6 of 7 trustworthy finished days.');
+    if (_name === 'mixed plan') expect(message).toContain('Plan comparisons are unavailable for 6 of 7 trustworthy finished days.');
   });
   it('escapes event food names exactly once and preserves replacement receipt order', async () => {
     const { orchestrator, messaging, history } = setup({ currentFood: 700 });

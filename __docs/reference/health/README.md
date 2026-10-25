@@ -195,17 +195,25 @@ known plan facts while leaving maintenance verdicts unknown. A complete live day
 can show its current position without being included in a finished-period verdict.
 
 `portable/contracts/health/budgetPeriod.mjs` summarizes the same finished,
-trustworthy rows for every energy average and count. Coverage records all
+trustworthy rows for every energy average and verdict count. Coverage records all
 requested dates, including unavailable dates; gaps never become zero intake or
 exercise. Plan and maintenance deltas are signed differences from each day's own
 exercise-adjusted limits. If any eligible row lacks a metric, that metric's
 average is null so compared averages never use different day counts.
+Verdict coverage separately records `planKnown` and `maintenanceKnown` within
+that eligible set. The within/over-plan counts describe `planKnown` rows; the
+surplus count describes `maintenanceKnown` rows. Weekly text qualifies partial
+verdict coverage and marks wholly unknown comparisons unavailable, so a zero
+known surplus count never implies unknown days were below maintenance.
 `proteinKnown` coverage counts eligible rows with a finite measured protein macro
 and non-reconstructed provenance. Protein averages belong to callers and use only
 those rows, with a separate `proteinDays` denominator. In coaching, the evidence
 reader excludes reconstructed and unknown-provenance rows from intake verdicts
 and period comparisons; reconstructed calories remain separately labelled estimates
-with unknown protein, even after a day closure.
+with unknown protein, even after a day closure. Unknown nutrition provenance
+keeps logging status unavailable before closure or completeness is considered;
+known numeric budget fields remain available separately and do not justify
+missing-meal verdicts or closure prompts.
 The projections retain an explicit `goalBasis`; absent or mixed bases stay null.
 Historical API rows currently use `goalBasis: 'current'`, not recovered historical
 goals.

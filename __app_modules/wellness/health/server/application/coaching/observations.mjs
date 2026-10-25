@@ -20,7 +20,8 @@ export function observationFingerprintsOf(entry) {
  * over_plan {overPlanKcal, belowMaintenance}; energy_surplus {surplusKcal};
  * protein_gap {protein,proteinGoal,proteinGap}; exercise_budget {exercise,planFood}.
  * Period facts: {from,to,trustedDays,totalDays,goalBasis}, plus verdict counts
- * for period_summary. evidenceDates lists precisely the dates supporting a claim.
+ * and planKnown/maintenanceKnown coverage for period_summary. evidenceDates
+ * lists precisely the dates supporting a claim.
  */
 export function buildObservations({ type, evidence, proteinGoal, recentObservations = [], eventItems = [], activity = null } = {}) {
   if (!evidence) return [];
@@ -43,7 +44,7 @@ export function buildObservations({ type, evidence, proteinGoal, recentObservati
     if (totalDays > 0 && trustedDays >= totalDays / 2 && from && to) {
       const eligibleDates = days.filter(day => day.assessment?.availability === 'available' && day.assessment.finished && day.assessment.trustworthy && day.provenance !== 'reconstructed').map(day => day.date).sort();
       add('period_summary', `${from}/${to}`, eligibleDates,
-        { ...periodFacts, ...period.counts }, 100, 'period');
+        { ...periodFacts, ...period.counts, planKnown: period.coverage.planKnown, maintenanceKnown: period.coverage.maintenanceKnown }, 100, 'period');
     }
     if (totalDays > trustedDays && from && to) {
       add('logging_incomplete', `${from}/${to}`, periodDates, { ...periodFacts, status: 'period' }, 70, 'period');

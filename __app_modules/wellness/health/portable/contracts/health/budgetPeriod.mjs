@@ -6,7 +6,7 @@ const average = (values) => {
 };
 const delta = (food, boundary) => food == null || boundary == null ? null : food - boundary;
 
-/** All energy averages and verdict counts use the same trusted finished set. */
+/** Energy averages share one trusted finished set; verdict counts expose known coverage. */
 export function summarizeBudgetPeriod(assessments) {
   const available = assessments.filter(day => day.availability === 'available');
   const eligible = available.filter(day => day.trustworthy && day.finished);
@@ -15,6 +15,8 @@ export function summarizeBudgetPeriod(assessments) {
     coverage: {
       total: assessments.length, available: available.length, trustedFinished: eligible.length,
       proteinKnown: eligible.filter(day => day.proteinKnown).length,
+      planKnown: eligible.filter(day => day.planState === 'within' || day.planState === 'over').length,
+      maintenanceKnown: eligible.filter(day => ['below-maintenance', 'at-maintenance', 'surplus'].includes(day.energyState)).length,
     },
     averages: {
       food: average(eligible.map(day => day.food)),
