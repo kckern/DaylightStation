@@ -4,13 +4,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PartyGamesApp from "./PartyGamesApp.jsx";
 import AppContainer from '@/modules/AppContainer/AppContainer.jsx';
 import { ScreenAutoplay } from "../../../../../frontend/src/composition/screens/ScreenRenderer.jsx";
+const socket=vi.hoisted(()=>({handler:null,connected:true}));
 const navigation = vi.hoisted(() => ({ push: null }));
 vi.mock("../../../../../__capabilities/screen-host/browser/menu-navigation.mjs",()=>({useMenuNavigationContext:()=>({push:navigation.push})}));
 vi.mock("../../../../../frontend/src/composition/screens/widgets/builtins.js",()=>({registerBuiltinWidgets:()=>{}}));
 vi.mock('@/lib/fkb.js',async importOriginal=>({...await importOriginal(),bindBackButton:()=>{},enableGlobalKeyCapture:()=>{}}));
 import {fetchBoot,createSession} from "./sessionClient.js";
 vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.fn(),createSession:vi.fn()}));
-vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
+vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:socket.connected}),useWebSocketSubscription:(_,fn)=>{socket.handler=fn;}}));
 vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
 vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction}) {
@@ -20,7 +21,7 @@ vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComple
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
 const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
 afterEach(()=>vi.restoreAllMocks());
-beforeEach(()=>{window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
+beforeEach(()=>{socket.connected=true;window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
 it('propagates AppContainer definition into casual setup and creates only one session in StrictMode', async()=>{
  render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
  const start=await screen.findByRole('button',{name:'Start with 2 players'});
@@ -226,4 +227,28 @@ it('lets an experience that owns its remote matrix use Left for button focus ins
  expect(screen.getByRole('button',{name:'Decrease wager'})).toHaveFocus();
  fireEvent.keyDown(window,{key:'Escape'});
  expect(screen.getByRole('dialog',{name:'Leave game?'})).toBeVisible();
+});
+
+const jeopardySet={id:'jeopardy:night',definitionId:'jeopardy:night',game:'jeopardy',setId:'night',presenter_id:'jeopardy-board',setup:'none',setupProfile:{kind:'none'},competition:true,valid:true};
+const attached=(id,status='active')=>({header:{session_id:id,experience:{id:'jeopardy'},seats:[],status},state:{competition:true},...(status==='complete'?{result:{outcome:{kind:'completed'},scores:[]}}:{})});
+it.each(['active','complete'])('follows host restart from %s and completes replacement',async status=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/jeopardy:night?session=old');
+ fetchBoot.mockResolvedValueOnce({config,sets:[jeopardySet],attachedSession:attached('old',status)}).mockResolvedValueOnce({config,sets:[jeopardySet],attachedSession:attached('diagnostic:new')});
+ render(<PartyGamesApp definitionId="jeopardy:night"/>);
+ if(status==='active') {await screen.findByRole('button',{name:'Complete old'});fireEvent.keyDown(window,{key:'Escape'});await screen.findByRole('dialog');}else await screen.findByTestId('results');
+ act(()=>socket.handler({kind:'session-restarted',sessionId:'unrelated',replacementSessionId:'ignored'}));expect(fetchBoot).toHaveBeenCalledTimes(1);
+ act(()=>socket.handler({kind:'session-restarted',sessionId:'old',replacementSessionId:'diagnostic:new'}));
+ const completeNew=await screen.findByRole('button',{name:'Complete diagnostic:new'});
+ expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBe('diagnostic:new');
+ fireEvent.click(completeNew);await screen.findByTestId('results');
+ expect(screen.queryByRole('dialog')).toBeNull();expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:'diagnostic:new',sessionId:null});
+ expect(new URLSearchParams(window.location.search).get('diagnostic_session')).toBe('diagnostic:new');
+});
+it('keeps other game QR while Jeopardy owns its lobby QR and disconnect copy',async()=>{
+ socket.connected=false;fetchBoot.mockResolvedValue({config,sets:[jeopardySet],attachedSession:attached('old')});
+ const view=render(<PartyGamesApp definitionId="jeopardy:night"/>);await screen.findByRole('button',{name:'Complete old'});
+ expect(screen.queryByRole('img',{name:/Scan/})).toBeNull();expect(screen.getByText('Host controls are unavailable. Reconnecting…')).toBeVisible();view.unmount();
+ const other={...jeopardySet,id:'charades:family',definitionId:'charades:family',game:'charades',presenter_id:'charades-stage'};
+ fetchBoot.mockResolvedValue({config,sets:[other],attachedSession:{...attached('other'),header:{session_id:'other',experience:{id:'charades'},seats:[]}}});
+ render(<PartyGamesApp definitionId="charades:family"/>);await screen.findByRole('button',{name:'Complete other'});expect(screen.getByRole('img',{name:/Scan/})).toBeVisible();
 });

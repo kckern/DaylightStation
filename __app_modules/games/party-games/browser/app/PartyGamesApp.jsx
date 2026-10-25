@@ -2,7 +2,7 @@
 // playing → results). Mounts the selected game from the registry
 // during 'playing'. Game-agnostic — knows nothing about clues or boards.
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useWebSocketStatus } from '@/hooks/useWebSocket.js';
+import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { flowReducer, initialFlowState } from "./flowReducer.js";
 import { fetchBoot, createSession, canResumeSavedSession } from "./sessionClient.js";
 import TeamSetup from "../setup/TeamSetup.jsx";
@@ -133,8 +133,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     forwardActionRef.current = handler;
     return () => { if (forwardActionRef.current === handler) forwardActionRef.current = null; };
   }, []);
-  // An experience with its own remote matrix (Jeopardy's cursor and judging keys)
-  // claims actions here before the shell's focus/back handling sees them.
+  // Experiences can claim remote actions before shell focus/back handling.
   const remoteActionRef = useRef(null);
   const registerRemoteAction = useCallback((handler) => {
     remoteActionRef.current = handler;
@@ -162,13 +161,25 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return remoteActionRef.current?.(remote) === true;
   }, [confirmExit, flow.phase]);
   useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction });
-  // Spec §9: WS disconnect badge — buzzer modes degrade to keyboard/inject.
+  // Keep disconnect guidance specific to the mounted controller model.
   const { connected } = useWebSocketStatus();
 
   useEffect(() => {
     const lease = acquireGamepadInputHost(getActionBus());
     return () => lease.release();
   }, []);
+
+  useWebSocketSubscription('gaming', (message) => {
+    if (message?.kind !== 'session-restarted' || message.sessionId !== flow.sessionId || !message.replacementSessionId) return;
+    const replacement = message.replacementSessionId;
+    logger.info('party-games.session-restarting', {sessionId: flow.sessionId, replacementSessionId: replacement});
+    forgetBuzzerBindings(flow.sessionId);
+    creation.current = null;
+    backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
+    setConfirmExit(false);
+    dispatchFlow({type: 'SESSION_RESTARTING'});
+    setAttachment({diagnosticSessionId: replacement.startsWith('diagnostic:') ? replacement : null, sessionId: replacement.startsWith('diagnostic:') ? null : replacement, savedSession: false});
+  }, [flow.sessionId, logger]);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,12 +272,13 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
   const onComplete = useCallback((result) => { dispatchFlow({ type: 'GAME_FINISHED', result }); }, []);
 
+  const isJeopardy = flow.presenterId === 'jeopardy-board';
   const Game = EXPERIENCE_REGISTRY[flow.presenterId]?.component;
 
   return (
-    <div ref={rootRef} className="party-games-container"><PartyStage className="party-games" theme={flow.theme?.id} phase={flow.phase}>
+    <div ref={rootRef} className="party-games-container"><PartyStage className={`party-games${isJeopardy ? ' party-games--jeopardy' : ''}`} theme={flow.theme?.id} phase={flow.phase}>
       {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => setBootAttempt((value) => value + 1)}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
-      {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>Keyboard and on-screen controls still work.</span></div>}
+      {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>{isJeopardy ? 'Host controls are unavailable. Reconnecting…' : 'Keyboard and on-screen controls still work.'}</span></div>}
 
       {flow.phase === 'loading' && <TitleCard title="Party Games" subtitle="Loading…" />}
 
@@ -298,6 +310,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
         <>
           <div className="party-games__play" aria-hidden={confirmExit || undefined}>
             <div className="party-games__play-stage"><PartyGamesExperience
+              key={flow.sessionId}
               component={Game}
               setId={flow.setId}
               seats={flow.seats}
@@ -309,7 +322,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
               registerRemoteAction={registerRemoteAction}
               onComplete={onComplete}
             /></div>
-            {flow.competition !== false && <div className="party-games__companion-rail"><HostQr sessionId={flow.sessionId} /></div>}
+            {flow.competition !== false && !isJeopardy && <div className="party-games__companion-rail"><HostQr sessionId={flow.sessionId} /></div>}
           </div>
           {flow.competition !== false && <EffectOverlay sessionId={flow.sessionId} />}
         </>

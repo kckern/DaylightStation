@@ -34,3 +34,5 @@ it('keeps DOM focus on the same question that Enter will select',()=>{
  expect(screen.getByRole('gridcell',{name:'B for $100'})).toHaveFocus();
  expect(document.activeElement).toHaveClass('is-cursor');
 });
+
+it('renders passive tiles without focus, selection or cursor highlight',()=>{const onSelect=vi.fn();render(<Board round={round} used={{}} roundIndex={0} cursor={{cat:0,row:0}} interactive={false} onSelect={onSelect}/>);const tile=screen.getByRole('gridcell');fireEvent.click(tile);expect(tile).not.toHaveFocus();expect(tile).not.toHaveClass('is-cursor');expect(tile.tagName).toBe('DIV');expect(onSelect).not.toHaveBeenCalled();});

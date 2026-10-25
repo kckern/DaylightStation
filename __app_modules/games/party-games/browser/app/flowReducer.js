@@ -101,6 +101,8 @@ export function flowReducer(state, action) {
       if (requestedSet || action.launch?.autostart) return selectConfiguredSet(next, requestedSet, action.launch);
       return { ...next, phase: 'set-picker' };
     }
+    case 'SESSION_RESTARTING':
+      return { ...state, phase: 'loading', sessionId: null, result: null, buzzerBindings: null, error: null };
     case 'BOOT_FAILED':
       return { ...state, error: action.error };
     case 'PICK_SET':

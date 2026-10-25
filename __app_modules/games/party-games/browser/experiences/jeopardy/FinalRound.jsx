@@ -2,78 +2,35 @@ import React from 'react';
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import RevealPanel from "../../../../../../__capabilities/gaming/browser/platform/ui/RevealPanel.jsx";
 import MediaCluePlayer from "../../../../../../__capabilities/gaming/browser/platform/ui/MediaCluePlayer.jsx";
-import WagerPanel from "./ui/WagerPanel.jsx";
-import ControlLegend from "../../../../../../__capabilities/gaming/browser/platform/ui/ControlLegend.jsx";
-import GameButton from "../../../../../../__capabilities/gaming/browser/platform/ui/GameButton.jsx";
-import StageActions from "../../../../../../__capabilities/gaming/browser/platform/ui/StageActions.jsx";
 import "./Jeopardy.scss";
 
-function finalRoundMax(set) {
-  const last = set.rounds[set.rounds.length - 1];
-  return Math.max(...last.categories.flatMap((c) => c.clues.map((q) => q.value))) * Number(last.multiplier ?? 1);
-}
-
-export function FinalRound({ state, teams, scores, wagerDrafts = {}, onWagerChange, onAction }) {
-  const { phase, set, finalWagers, finalJudged } = state;
-
+export function FinalRound({ state, teams }) {
+  const { phase, set, finalWagers = {}, finalJudged = {} } = state;
   if (phase === 'final-category') {
-    return (
-      <div className="jp-final">
-        <TitleCard title="Final Jeopardy" subtitle={set.final.category} />
-        <GameButton tone="primary" autoFocus onClick={() => onAction({ type: 'START_ROUND' })}>Continue</GameButton>
-      </div>
-    );
+    return <div className="jp-final">
+      <TitleCard title="Final Jeopardy" subtitle={set.final.category} />
+      <p>Waiting for the host.</p>
+    </div>;
   }
-
   if (phase === 'final-wager') {
-    const pending = teams.find((t) => finalWagers[t.id] == null);
-    const lockedNames = teams.filter((t) => finalWagers[t.id] != null).map((t) => t.name);
-    return (
-      <div className="jp-final">
-        {lockedNames.length > 0 && <div className="jp-final__locked">Wagers locked: {lockedNames.join(', ')}</div>}
-        <WagerPanel
-          teamName={pending.name}
-          score={Math.max(scores[pending.id] ?? 0, 0)}
-          roundMax={finalRoundMax(set)}
-          value={wagerDrafts[pending.id] ?? 100}
-          onChange={(amount) => onWagerChange(pending.id, amount)}
-          onConfirm={(amount) => onAction({ type: 'SET_FINAL_WAGER', teamId: pending.id, amount })}
-        />
-      </div>
-    );
+    return <div className="jp-final">
+      <TitleCard title="Final Jeopardy" subtitle="Wagers" />
+      {teams.map(team => <div className="jp-final__locked" key={team.id}>
+        {team.name}: {finalWagers[team.id] == null ? 'Choosing a wager' : 'Wager locked'}
+      </div>)}
+    </div>;
   }
-
-  if (phase === 'final-clue') {
-    return (
-      <div className="jp-final">
-        {set.final.media && <MediaCluePlayer media={set.final.media} />}
-        <RevealPanel prompt={set.final.clue} revealed={false} />
-        <ControlLegend items={[{ key: '↵', label: 'Reveal answer' }]} />
-      </div>
-    );
-  }
-
-  if (phase === 'final-judging') {
-    return (
-      <div className="jp-final">
-        <RevealPanel prompt={set.final.clue} revealed answer={set.final.answer} />
-        <div className="jp-final__judging">
-          {teams.map((team) => (
-            <div key={team.id} className="jp-final__team">
-              <span>{team.name} (wagered {finalWagers[team.id]})</span>
-              {finalJudged[team.id] == null ? (
-                <StageActions>
-                  <GameButton tone="success" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: true })}>Correct</GameButton>
-                  <GameButton tone="danger" onClick={() => onAction({ type: 'JUDGE_FINAL', teamId: team.id, correct: false })}>Wrong</GameButton>
-                </StageActions>
-              ) : (
-                <span>{finalJudged[team.id] ? '✓' : '✗'}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  if (phase === 'final-clue' || phase === 'final-judging') {
+    return <div className="jp-final">
+      {set.final.media && <MediaCluePlayer media={set.final.media} />}
+      <RevealPanel prompt={set.final.clue} revealed={phase === 'final-judging'} answer={set.final.answer} />
+      {phase === 'final-judging' && <div className="jp-final__judging">
+        {teams.map(team => <div className="jp-final__team" key={team.id}>
+          <span>{team.name} (wagered {finalWagers[team.id]})</span>
+          <span>{finalJudged[team.id] == null ? 'Waiting for host judgment' : finalJudged[team.id] ? '✓' : '✗'}</span>
+        </div>)}
+      </div>}
+    </div>;
   }
   return null;
 }
