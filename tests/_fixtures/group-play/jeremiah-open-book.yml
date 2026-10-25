@@ -1,0 +1,192 @@
+# Reviewed against local NIrV scripture; four pictures intentionally assist youngest players.
+artifact:
+  kind: gaming-content
+  version: 1
+  id: jeopardy:fhe-jeremiah
+id: fhe-jeremiah
+title: Jeremiah Jeopardy
+catalog:
+  description: Come, Follow Me — Jeremiah and Lamentations. $100 picture clues are for the littlest ones.
+  round_count: 2
+rounds:
+  - name: Jeremiah 1–20
+    mode: turns
+    multiplier: 1
+    penalize_wrong: false
+    categories:
+      - name: Jeremiah’s Calling
+        clues:
+          - value: 100
+            little_kids: true
+            clue: Before Jeremiah was born, the Lord appointed him to speak to the nations as one of these.
+            answer: What is a prophet?
+            scripture_reference: Jeremiah 1:5
+          - value: 200
+            clue: Jeremiah said, "I don't know how to speak. I'm too" this.
+            answer: What is young?
+            scripture_reference: Jeremiah 1:6
+          - value: 300
+            clue: The Lord touched this part of Jeremiah and said, "I have put my words in your" this.
+            answer: What is his mouth?
+            scripture_reference: Jeremiah 1:9
+      - name: At the Workshop
+        clues:
+          - value: 100
+            little_kids: true
+            clue: In this passage, the potter’s hands were shaping one of these out of clay.
+            answer: What is a pot?
+            media:
+              type: image
+              src: jeremiah/potter.svg
+            scripture_reference: Jeremiah 18:3–4
+          - value: 200
+            clue: When the potter saw something was wrong with the clay pot, he did this with it.
+            answer: What is form it into another pot?
+            scripture_reference: Jeremiah 18:4
+          - value: 300
+            clue: "\"The clay is in the potter's hand. And you are in\" this."
+            answer: What is my hand (the Lord's hand)?
+            scripture_reference: Jeremiah 18:6
+      - name: Pictures of Trust
+        clues:
+          - value: 100
+            little_kids: true
+            clue: The Lord calls himself a spring of this, which gives life.
+            answer: What is water?
+            media:
+              type: image
+              src: jeremiah/water.svg
+            scripture_reference: Jeremiah 2:13
+          - value: 200
+            clue: >-
+              The people deserted the Lord, the spring of water that gives life, and dug their own of these.
+              But they were broken and couldn't hold any water.
+            answer: What are wells?
+            scripture_reference: Jeremiah 2:13
+          - value: 300
+            clue: >-
+              Anyone who trusts in the Lord will be like this, planted near water, sending out its roots
+              beside a stream.
+            answer: What is a tree?
+            scripture_reference: Jeremiah 17:7–8
+      - name: Speaking for God
+        clues:
+          - value: 100
+            little_kids: true
+            clue: Jeremiah says the Lord’s message burns in his heart like this hot, glowing thing.
+            answer: What is fire?
+            media:
+              type: image
+              src: jeremiah/fire.svg
+            scripture_reference: Jeremiah 20:9
+          - value: 200
+            clue: Pashhur had Jeremiah beaten and put him here, at the Upper Gate of Benjamin.
+            answer: What is prison?
+            scripture_reference: Jeremiah 20:2
+          - value: 300
+            daily_double: true
+            clue: >-
+              Jeremiah tried to stop speaking, but the Lord's message burned in his heart. "It's like a fire
+              deep inside my" these.
+            answer: What are my bones?
+            scripture_reference: Jeremiah 20:9
+      - name: Messages to Judah
+        clues:
+          - value: 100
+            little_kids: true
+            clue: The Lord says he will send for fishermen. What animal do fishermen catch?
+            answer: What is a fish?
+            media:
+              type: image
+              src: jeremiah/fish.svg
+            scripture_reference: Jeremiah 16:16
+          - value: 200
+            clue: The Lord will send for many fishermen, and after that many of these.
+            answer: What are hunters?
+            scripture_reference: Jeremiah 16:16
+          - value: 300
+            clue: At the temple, the Lord said the people had made His house "a den for" these.
+            answer: What are robbers?
+            scripture_reference: Jeremiah 7:11
+  - name: Jeremiah 31–38 & Lamentations
+    mode: turns
+    multiplier: 2
+    penalize_wrong: false
+    categories:
+      - name: Promises and Tears
+        clues:
+          - value: 100
+            clue: "\"I have loved you with a love that lasts\" this long."
+            answer: What is forever?
+            scripture_reference: Jeremiah 31:3
+          - value: 200
+            clue: In the covenant, the Lord said He would put His law in their minds and write it here.
+            answer: What are their hearts?
+            scripture_reference: Jeremiah 31:33
+          - value: 300
+            clue: "A voice is heard in Ramah: this mother \"is weeping for her children.\""
+            answer: Who is Rachel?
+            scripture_reference: Jeremiah 31:15
+      - name: The Burned Scroll
+        clues:
+          - value: 100
+            clue: This man, the son of Neriah, wrote down the Lord's words as Jeremiah spoke them.
+            answer: Who is Baruch?
+            scripture_reference: Jeremiah 36:4
+          - value: 200
+            clue: The king cut pieces off the scroll with this and threw them into the fire pot.
+            answer: What is a knife (a secretary's knife)?
+            scripture_reference: Jeremiah 36:23
+          - value: 300
+            daily_double: true
+            clue: After the king burned the scroll, the Lord told Jeremiah to get another scroll and do this.
+            answer: What is write all the words on it again?
+            scripture_reference: Jeremiah 36:28
+      - name: Down the Well
+        clues:
+          - value: 100
+            clue: The king's men lowered Jeremiah into an empty well with these.
+            answer: What are ropes?
+            scripture_reference: Jeremiah 38:6
+          - value: 200
+            clue: The well didn't have any water in it, only this, and Jeremiah sank down into it.
+            answer: What is mud?
+            scripture_reference: Jeremiah 38:6
+          - value: 300
+            clue: The well belonged to this member of the royal court.
+            answer: Who is Malkijah?
+            scripture_reference: Jeremiah 38:6
+      - name: The Rescuer
+        clues:
+          - value: 100
+            clue: This palace official from the land of Cush spoke up to save Jeremiah.
+            answer: Who is Ebed-Melek?
+            scripture_reference: Jeremiah 38:7–9
+          - value: 200
+            clue: The king told Ebed-Melek to take this many men to lift Jeremiah out of the well.
+            answer: What is 30?
+            scripture_reference: Jeremiah 38:10
+          - value: 300
+            clue: Ebed-Melek told Jeremiah to put these under his arms to pad the ropes.
+            answer: What are old rags and worn-out clothes?
+            scripture_reference: Jeremiah 38:11–12
+      - name: Lamentations
+        clues:
+          - value: 100
+            clue: The book of Lamentations mourns this city, which used to be full of people.
+            answer: What is Jerusalem?
+            scripture_reference: Lamentations 1:1
+          - value: 200
+            clue: "\"His great love is new every\" this."
+            answer: What is morning?
+            scripture_reference: Lamentations 3:23
+          - value: 300
+            clue: The Lord is good to those who put this in him.
+            answer: What is their hope?
+            scripture_reference: Lamentations 3:25
+final:
+  category: Hope for the Future
+  clue: The Lord said which three things would again be bought in this land?
+  answer: What are houses, fields, and vineyards?
+  scripture_reference: Jeremiah 32:15
+open_book: true
