@@ -61,3 +61,5 @@ it('requires saved sessions to match current setup revision while preserving ord
  expect(canResumeSavedSession({state:{set:{party_games:{setup_revision:'guest-teams-v1'}}}},set)).toBe(true);
  expect(canResumeSavedSession({state:{}},{setupProfile:{}})).toBe(true);
 });
+
+it('restarts through the dedicated authenticated session endpoint', async () => { const { restartJeopardySession } = await import('./sessionClient.js'); await restartJeopardySession('diagnostic:one'); expect(DaylightAPI).toHaveBeenLastCalledWith('api/v1/gaming/sessions/diagnostic%3Aone/restart', {}, 'POST'); });

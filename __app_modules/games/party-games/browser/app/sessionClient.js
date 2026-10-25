@@ -47,3 +47,5 @@ export function canResumeSavedSession(session, set) {
   const revision = set?.setupProfile?.setup_revision;
   return !revision || session?.state?.set?.party_games?.setup_revision === revision;
 }
+
+export function restartJeopardySession(sessionId) { return DaylightAPI(`api/v1/gaming/sessions/${encodeURIComponent(sessionId)}/restart`, {}, 'POST'); }

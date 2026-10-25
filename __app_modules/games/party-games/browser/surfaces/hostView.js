@@ -8,7 +8,7 @@ export function hostButtons(jeopardy) {
   if (!j) return [];
   switch (j.phase) {
     case 'round-intro':
-      return [{ label: 'Start round', command: { type: 'START_ROUND' }, tone: 'primary' }];
+      return [{ label: j.roundIndex === 0 && !Object.values(j.used || {}).some(Boolean) ? 'Start game' : 'Start round', command: { type: 'START_ROUND' }, tone: 'primary' }];
     case 'clue':
       if (j.revealed) return [{ label: 'Back to board', command: { type: 'RETURN_TO_BOARD' }, tone: 'primary' }];
       return [

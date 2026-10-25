@@ -3,8 +3,8 @@ import { hostButtons } from "./hostView.js";
 
 describe('hostButtons', () => {
   it('round-intro → start', () => {
-    expect(hostButtons({ phase: 'round-intro' })).toEqual([
-      { label: 'Start round', command: { type: 'START_ROUND' }, tone: 'primary' },
+    expect(hostButtons({ phase: 'round-intro', roundIndex: 0, used: {} })).toEqual([
+      { label: 'Start game', command: { type: 'START_ROUND' }, tone: 'primary' },
     ]);
   });
   it('clue unrevealed → reveal + timeout; revealed → back to board', () => {
@@ -28,3 +28,5 @@ describe('hostButtons', () => {
     expect(hostButtons(null)).toEqual([]);
   });
 });
+
+it('later introductions start a round', () => expect(hostButtons({phase:'round-intro',roundIndex:1,used:{}})[0].label).toBe('Start round'));

@@ -369,3 +369,5 @@ reveal the clue without adjudication. Verify the complete flow with
 server through `BASE_URL`. That test uses real media and remote keys. Physical
 red-card readability still requires assessment on the intended display;
 rendered SVGs and successful HTTP responses alone do not establish it.
+
+The Jeopardy phone controller offers an inline-confirmed **Restart game** utility in every phase, including results. Restart creates a new session from the current authored definition with the same teams and participants; scores, used clues, and wagers start empty. The original pinned session and journal remain available. Diagnostic restarts use process-memory sessions and never create durable history. The host-only `POST /api/v1/gaming/sessions/:sessionId/restart` returns the new session and broadcasts `{topic: "gaming", kind: "session-restarted", sessionId, replacementSessionId}` for attached screens to follow. Retry after an error refetches state and never replays a mutation.

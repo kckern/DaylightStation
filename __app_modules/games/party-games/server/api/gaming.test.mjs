@@ -103,3 +103,55 @@ describe('gaming API router', () => {
     const image = await invoke(router, 'get', '/assets/:packId/:assetId/image', { roles: ['gaming-host'], params: { packId: 'default', assetId: 'approved' } }); expect(image.body.file).toBe('/tmp/a.png');
   });
 });
+
+ describe('Jeopardy restart', () => {
+  it.each(['game:old','diagnostic:old'])('creates a fresh current-pack session without modifying completed source %s', async (id) => {
+    const seats=[{id:'red',name:'Red',members:[]}];
+    const old={header:{session_id:id,status:'complete',ruleset:{id:'jeopardy'},surface_id:'party-games',seats,participants:[],artifacts:{rules_definition:{id:'jeopardy:night'}}},state:{phase:'done',scores:{red:500}}};
+    if(id.startsWith('diagnostic:')) old.diagnostic={definition_id:'jeopardy:night'};
+    const fresh={header:{session_id:id.replace('old','new')},state:{phase:'round-intro',scores:{red:0},used:{},finalWagers:{}}};
+    const selected={resumeSession:vi.fn(async()=>old),createSession:vi.fn(async()=>fresh)};
+    const other={resumeSession:vi.fn(),createSession:vi.fn()}; const broadcastEvent=vi.fn();
+    const router=createGamingRouter({gamingApplication:id.startsWith('diagnostic:')?other:selected,gamingDiagnostics:id.startsWith('diagnostic:')?selected:other,broadcastEvent});
+    const response=await invoke(router,'post','/sessions/:sessionId/restart',{roles:['gaming-host'],params:{sessionId:id}});
+    expect(response).toMatchObject({statusCode:201,body:fresh});
+    expect(selected.createSession).toHaveBeenCalledWith({definitionId:'jeopardy:night',surfaceId:'party-games',seats,participants:[],setup:{teams:seats,seats},viewer:{role:'host',participant_id:null}});
+    expect(other.createSession).not.toHaveBeenCalled(); expect(old.state.scores.red).toBe(500);
+    expect(broadcastEvent).toHaveBeenCalledWith({topic:'gaming',kind:'session-restarted',sessionId:id,replacementSessionId:fresh.header.session_id});
+  });
+  it('denies anonymous/participant restart and other rulesets without creation or broadcasts',async()=>{
+    const app={resumeSession:vi.fn(async()=>({header:{ruleset:{id:'dice'}}})),createSession:vi.fn()}; const broadcastEvent=vi.fn(); const router=createGamingRouter({gamingApplication:app,broadcastEvent});
+    for(const [auth,status] of [[{},401],[{user:{sub:'child'}},403],[{roles:['gaming-host']},422]]) expect((await invoke(router,'post','/sessions/:sessionId/restart',{...auth,params:{sessionId:'game:one'}})).statusCode).toBe(status);
+    expect(app.createSession).not.toHaveBeenCalled();expect(broadcastEvent).not.toHaveBeenCalled();
+  });
+ });
+it('does not announce restart when fresh creation fails',async()=>{const broadcastEvent=vi.fn();const app={resumeSession:vi.fn(async()=>({header:{ruleset:{id:'jeopardy'},artifacts:{rules_definition:{id:'jeopardy:night'}}}})),createSession:vi.fn(async()=>{throw new Error('failed')})};const result=await invoke(createGamingRouter({gamingApplication:app,broadcastEvent}),'post','/sessions/:sessionId/restart',{roles:['gaming-host'],params:{sessionId:'game:old'}});expect(result.statusCode).toBe(500);expect(broadcastEvent).not.toHaveBeenCalled();});
+it('restarts a completed real diagnostic from current content with empty gameplay state', async () => {
+  const { GameRuntime, SessionActorAuthorization } = await import('../../../../../__capabilities/gaming/portable/kernel/index.mjs');
+  const { jeopardyRuleModule } = await import('../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs');
+  const { GamingDiagnosticSessions } = await import('../application/runtime/GamingDiagnosticSessions.mjs');
+  let definition = {rule_module:{id:'jeopardy',version:1},experience:{id:'jeopardy',version:1},title:'Before edit',rounds:[{name:'Round',mode:'turns',categories:[{name:'Creation',clues:[{value:100,clue:'Old question',answer:'Answer'}]}]}],final:{category:'Final',clue:'Final question',answer:'Answer'}};
+  const pin = vi.fn(() => { throw new Error('diagnostics must never pin artifacts'); });
+  let sequence=0;
+  const diagnostics = new GamingDiagnosticSessions({
+    runtime:new GameRuntime({rulesets:[jeopardyRuleModule]}), authorization:new SessionActorAuthorization(),
+    definitions:{getCurrent:async()=>({definition,hash:'a'.repeat(64),artifacts:{}}),pin},
+    manifestStore:{get:()=>({id:'jeopardy',version:1,hash:'b'.repeat(64),setup:{kind:'teams'},surfaces:[{id:'party-games',presenter:'jeopardy'}]})},
+    ids:{session:()=>`game:${++sequence}`,command:()=>`cmd:${++sequence}`,seed:()=>7},
+  });
+  const viewer={role:'host',participant_id:null};
+  const seats=[{id:'red',name:'Red',members:[]},{id:'blue',name:'Blue',members:[]}];
+  const original=await diagnostics.createSession({definitionId:'jeopardy:night',surfaceId:'party-games',seats,viewer});
+  const oldId=original.header.session_id;
+  diagnostics.overrideState(oldId,{scores:{red:900,blue:500},used:{'0:0:0':true},finalWagers:{red:100}},viewer);
+  diagnostics.closeSession(oldId,{reason:'experience_complete'},viewer);
+  const preserved=diagnostics.resumeSession(oldId,viewer);
+  definition={...definition,title:'After edit'};
+  const result=await invoke(createGamingRouter({gamingApplication:{},gamingDiagnostics:diagnostics}),'post','/sessions/:sessionId/restart',{roles:['gaming-host'],params:{sessionId:oldId}});
+  expect(result.statusCode).toBe(201);
+  expect(result.body.header.session_id).not.toBe(oldId);
+  expect(result.body.header).toMatchObject({status:'active',seats,launch:{authority_mode:'ephemeral'}});
+  expect(result.body.state).toMatchObject({phase:'round-intro',scores:{red:0,blue:0},used:{},finalWagers:{},set:{title:'After edit'}});
+  expect(diagnostics.resumeSession(oldId,viewer)).toEqual(preserved);
+  expect(pin).not.toHaveBeenCalled();
+});
