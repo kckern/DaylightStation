@@ -8,6 +8,7 @@ import { restoreGamepadRoleBindings, clearGamepadRoleBindings, acquireGamepadBuz
 // ports consumed by experiences. Experiences never import this environment.
 export default function PartyGamesExperience({ component: Experience, seats, buzzerBindings, config, ...props }) {
   const buzzListeners = useRef(new Set());
+  const appliedBindings = useRef(null);
   const audio = useMemo(
     () => new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
     [config?.defaults?.mute, config?.sounds?.pack],
@@ -24,8 +25,8 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
   // a refresh), and return to navigation when the game unmounts.
   useEffect(() => {
     if (buzzerBindings) { arbiter.restore({ slotToTeam: buzzerBindings }); restoreGamepadRoleBindings(buzzerBindings); }
-    return () => clearGamepadRoleBindings();
   }, [arbiter, buzzerBindings]);
+  useEffect(() => () => clearGamepadRoleBindings(), []);
 
   useEffect(() => () => {
     music.stop();
@@ -48,7 +49,12 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
       subscribe,
       subscribeInput,
       capture: acquireGamepadBuzzerCapture,
-      restore(bindings) { arbiter.restore({ slotToTeam: bindings }); clearGamepadRoleBindings(); restoreGamepadRoleBindings(bindings); },
+      restore(bindings) {
+        const key = JSON.stringify(Object.entries(bindings).sort(([a], [b]) => a.localeCompare(b)));
+        if (appliedBindings.current === key) return;
+        appliedBindings.current = key;
+        arbiter.restore({ slotToTeam: bindings }); clearGamepadRoleBindings(); restoreGamepadRoleBindings(bindings);
+      },
     },
   }), [audio, music, arm, disarm, subscribe, subscribeInput, arbiter]);
 

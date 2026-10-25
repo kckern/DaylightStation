@@ -78,3 +78,13 @@ describe('AudioCueEngine', () => {
     expect(() => engine.play('correct')).not.toThrow();
   });
 });
+
+it('releases failed and completed cues while retaining contextual failure attribution', async () => {
+  const listeners = {}; const failed = new Error('autoplay denied');
+  const engine = new AudioCueEngine({ audioFactory: () => ({ play: () => Promise.reject(failed), addEventListener: (type, fn) => { listeners[type] = fn; } }) });
+  engine.log = { info: vi.fn(), warn: vi.fn() };
+  engine.play('buzz', { context: { sessionId: 'safe', revision: 3 } });
+  await Promise.resolve(); await Promise.resolve();
+  expect(engine.channels.sfx).toHaveLength(0);
+  expect(engine.log.warn).toHaveBeenCalledWith('jeopardy.cue-result', expect.objectContaining({ cue: 'buzz', channel: 'sfx', sessionId: 'safe', revision: 3, result: 'failed' }));
+});

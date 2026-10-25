@@ -30,5 +30,7 @@ export function prepareGamingSessionSetup({ manifest, request, partyGamesCatalog
     if (!partyGamesCatalog) throw new GamingKernelError('invalid_session_setup', 'Household candidates require the Party Games environment');
     setup.candidates = partyGamesCatalog.getConfig().household_members;
   }
+  // Persist the flow contract in the creation journal; old journals omit it.
+  if (manifest.id === 'jeopardy') setup.jeopardy_flow_version = 2;
   return { participants, seats, setup };
 }

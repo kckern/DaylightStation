@@ -450,3 +450,15 @@ Jeopardy cue map. Phone actions and local accepted actions use the same path;
 rejected requests, duplicate WebSocket snapshots and direct refresh do not replay
 cues. Existing phase theme/think/Daily Double/win behavior and audio files are
 unchanged.
+
+### Jeopardy family flow
+
+New Jeopardy sessions persist `setup.jeopardy_flow_version: 2`; sessions created without that field retain their original replay semantics. A host may explicitly enable the new experience only before play or at the untouched second-round introduction after all first-round clues were used. Upgrading preserves scores and used clues.
+
+The Ready screen guides each team through assignment and a fresh second press to test. Successful tests are acknowledged by the session authority. Pressing an already-tested buzzer has no extra sound or setup effect. Disconnected, expired and untested buzzers block Start. The TV mirrors accepted role changes without resetting roles on unchanged presence snapshots.
+
+After judgment, the answer stays visible until the host chooses Next question. A wrong ordinary hosted answer can reopen attempts only while the answer is hidden; revealing ends attempts. An active answerer must still be judged before advancing. A late timeout cannot erase that answerer. After the last first-round answer review, the host chooses Continue to Round 2 or Finish game; Finish keeps current scores and skips remaining rounds and Final.
+
+Daily Doubles belong exclusively to the selecting team. The team chooses an amount before the clue appears; the host sees the allowed range and the actual penalty policy. Family rounds with wrong-answer penalties disabled award the wager for a correct answer and deduct nothing for a wrong answer. Final wagers follow their separate existing scoring rules.
+
+Presentation cues follow accepted v2 transitions, retained in a bounded sequence of 32 safe events. Initial attachment is silent for historical stings; live snapshots deliver unseen retained cues once. Repeated setup presses, rejected commands and presence updates are silent. Structured buzzer-report and audio start/failure diagnostics identify the session, team and accepted revision when available; they do not contain question answers or controller credentials. A playback-start record confirms browser playback acceptance, not physical speaker audibility.

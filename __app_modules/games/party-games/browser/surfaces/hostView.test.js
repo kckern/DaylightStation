@@ -30,3 +30,10 @@ describe('hostButtons', () => {
 });
 
 it('later introductions start a round', () => expect(hostButtons({phase:'round-intro',roundIndex:1,used:{}})[0].label).toBe('Start round'));
+
+it('review requires judgment before advancing and round completion is a host decision', () => {
+ expect(hostButtons({phase:'answer-review',answerReview:{judgmentPending:true}}).map(b=>b.command.type)).toEqual(['JUDGE','JUDGE']);
+ expect(hostButtons({phase:'answer-review',answerReview:{judgmentPending:false}})[0].command.type).toBe('RETURN_TO_BOARD');
+ expect(hostButtons({phase:'round-decision'}).map(b=>b.command.type)).toEqual(['CONTINUE_ROUND','FINISH_GAME']);
+ expect(hostButtons({phase:'clue',answeringTeamId:'blue',jeopardyFlowVersion:2}).map(b=>b.command.type)).toContain('JUDGE');
+});

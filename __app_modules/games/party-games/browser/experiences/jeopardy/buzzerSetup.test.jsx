@@ -23,7 +23,7 @@ it('TV guides distinct assignment/test presses and phone uses the same authorita
     if (result.error) throw new Error(result.error.message);
     state = result.state; revision++; return current();
   });
-  const services = { audio: { play() {}, stopChannel() {} }, buzzers: { arm() {}, disarm() {}, subscribe: () => () => {}, subscribeInput: fn => { const listener = e => fn(e.detail); window.addEventListener('gaming:interaction', listener); return () => window.removeEventListener('gaming:interaction', listener); }, capture: acquireGamepadBuzzerCapture, restore: restoreGamepadRoleBindings } };
+  const services = { audio: { play: vi.fn(), stopChannel() {} }, buzzers: { arm() {}, disarm() {}, subscribe: () => () => {}, subscribeInput: fn => { const listener = e => fn(e.detail); window.addEventListener('gaming:interaction', listener); return () => window.removeEventListener('gaming:interaction', listener); }, capture: acquireGamepadBuzzerCapture, restore: restoreGamepadRoleBindings } };
   const view = render(<Jeopardy sessionId="fixture" seats={teams} gamingServices={services} />);
   await screen.findByText('Ready to play');
   expect(screen.getByRole('img', { name: /Scan/ })).toBeVisible();
@@ -41,9 +41,12 @@ it('TV guides distinct assignment/test presses and phone uses the same authorita
   await waitFor(() => expect(state.buzzerSetup.teams.red.tested).toBe(true));
   await press('0:Pad', 'release'); await press('0:Pad'); // cannot steal red's controller
   expect(state.buzzerSetup.teams.blue.slot).toBe(null);
+  const cuesBeforeMash = services.audio.play.mock.calls.length;
+  for (let i = 0; i < 50; i++) { await press('0:Pad', 'release'); await press('0:Pad'); }
+  expect(services.audio.play.mock.calls).toHaveLength(cuesBeforeMash);
   await press('1:Pad'); await press('1:Pad', 'release'); await press('1:Pad');
   await waitFor(() => expect(state.buzzerSetup.teams.blue.tested).toBe(true));
-  expect(screen.getAllByText(/Tested/)).toHaveLength(2);
+  expect(screen.getAllByText(/Ready ✓/)).toHaveLength(2);
   await press('0:Pad', 'release');
   await act(async () => window.dispatchEvent(Object.assign(new Event('gamepaddisconnected'), { gamepad: { index: 0, id: 'Pad' } })));
   expect(state.buzzerSetup.teams.red.connected).toBe(true); // first network failure must remain pending

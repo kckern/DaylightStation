@@ -289,3 +289,29 @@
   padding: 0.4rem;
   font-size: 1.2em;
 }
+
+// Keep the Ready screen and four-team footer within the fixed TV stage.
+.jeopardy {
+  .jp-host-lobby { padding: 20px 28px; gap: 18px; justify-content: center; }
+  .jp-host-lobby__columns { display: grid; grid-template-columns: 230px minmax(0, 1fr); align-items: center; gap: 28px; width: 100%; min-height: 0; }
+  .jp-buzzer-setup { text-align: left; min-width: 0; }
+  .jp-buzzer-setup h2 { margin: 0 0 8px; font-size: 22px; }
+  .jp-buzzer-setup p { margin: 0 0 12px; font-size: 22px; line-height: 1.25; }
+  .jp-buzzer-setup [role='status'] { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 4px 0; padding: 8px 10px; background: var(--gp-well); border-radius: 8px; font-size: 18px; border: 2px solid transparent; }
+  .jp-buzzer-setup [data-active] { border-color: currentColor; font-size: 18px; }
+  .gp-scoreboard { height: 76px; flex-basis: 76px; gap: 10px; }
+  .gp-scoreboard__team { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; background: var(--gp-well); border-radius: 10px; border: 2px solid var(--team-color); padding: 6px 10px; }
+  .gp-scoreboard__team::before, .gp-scoreboard__team::after { display: none; }
+  .gp-scoreboard__name { font-size: 22px; line-height: 1.05; overflow-wrap: anywhere; }
+  .gp-scoreboard__members { display: none; }
+  .gp-scoreboard__score { font-size: 28px; }
+  .jp-clue__locked { font-size: 22px; }
+  .gp-reveal { overflow-y: auto; width: 100%; }
+  .gp-reveal__prompt, .gp-reveal__prompt--sm, .jp-clue--media .gp-reveal__prompt { font-size: clamp(28px, 4.5cqh, 40px); }
+  .gp-reveal__answer { font-size: clamp(26px, 4cqh, 34px); }
+  .jp-clue__review { margin: 0; font-size: 22px; text-align: center; }
+  button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
+}
+@media (prefers-reduced-motion: reduce) { .jp-clue__locked, .jp-clue__dd { animation: none; } }
+
+.jeopardy .jp-choose { border-left: 0; background: transparent; padding: 8px 16px 0; font-size: 22px; }

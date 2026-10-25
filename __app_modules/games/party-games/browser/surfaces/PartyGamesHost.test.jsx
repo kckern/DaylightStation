@@ -182,7 +182,7 @@ it('host_has_every_phase_action with exact command envelopes', () => {
     active: {
       clue
     }
-  }, 'Reveal answer', {
+  }, 'Show answer — end attempts', {
     type: 'REVEAL'
   }], ['clue', {
     active: {
@@ -218,7 +218,7 @@ it('host_has_every_phase_action with exact command envelopes', () => {
     type: 'SET_FINAL_WAGER',
     teamId: 'red',
     amount: 100
-  }], ['final-clue', {}, 'Reveal answer', {
+  }], ['final-clue', {}, 'Show answer — end attempts', {
     type: 'REVEAL'
   }], ['final-judging', {}, 'Correct', {
     type: 'JUDGE_FINAL',

@@ -65,7 +65,7 @@ function attachSession(state, sets, session, requestedDefinition) {
 }
 
 function needsBuzzerBinding(state) {
-  return state.inputProfile?.gamepad === 'host-and-buzzer';
+  return state.game !== 'jeopardy' && state.inputProfile?.gamepad === 'host-and-buzzer';
 }
 
 function selectConfiguredSet(state, set, overrides = {}) {

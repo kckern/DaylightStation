@@ -18,7 +18,7 @@ export class AudioCueEngine {
     if (mute) Object.keys(this.channels).forEach((c) => this.stopChannel(c));
   }
 
-  play(cue, { channel = 'sfx', loop = false, pack = this.pack, volume = 1 } = {}) {
+  play(cue, { channel = 'sfx', loop = false, pack = this.pack, volume = 1, context = {} } = {}) {
     if (this.mute) return;
     try {
       // served by the party-games router's /media route (raw /media/* is not served)
@@ -28,10 +28,18 @@ export class AudioCueEngine {
       audio.volume = Number.isFinite(requestedVolume) ? Math.max(0, Math.min(1, requestedVolume)) : 1;
       (this.channels[channel] ||= []).push(audio);
       if (channel === 'clue-media') this.#setChannelVolume('music', DUCKED);
+      const attribution = { cue, channel, pack, ...context };
+      const release = () => {
+        this.channels[channel] = (this.channels[channel] || []).filter(item => item !== audio);
+        if (channel === 'clue-media' && !this.channels[channel].length) this.#setChannelVolume('music', 1);
+      };
+      audio.addEventListener?.('ended', release, { once: true });
+      audio.addEventListener?.('error', () => { release(); this.log.warn('jeopardy.cue-result', { ...attribution, result: 'failed', reason: 'media-error' }); }, { once: true });
       const p = audio.play();
-      p?.catch?.((err) => this.log.warn('party-games.audio.play_failed', { cue, error: err.message }));
+      p?.then?.(() => this.log.info('jeopardy.cue-result', { ...attribution, result: 'started' }), () => {});
+      p?.catch?.((err) => { release(); this.log.warn('jeopardy.cue-result', { ...attribution, result: 'failed', reason: err.message }); });
     } catch (err) {
-      this.log.warn('party-games.audio.error', { cue, error: err.message });
+      this.log.warn('party-games.audio.error', { cue, channel, pack, ...context, error: err.message });
     }
   }
 

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { JEOPARDY_PACK, actionCue, phaseCues } from './jeopardyCues.js';
+import { describe, expect, it, vi } from 'vitest';
+import { JEOPARDY_PACK, actionCue, phaseCues, consumePresentationEvents } from './jeopardyCues.js';
 
 describe('jeopardy cues', () => {
   it('maps host actions to sfx', () => {
@@ -17,4 +17,16 @@ describe('jeopardy cues', () => {
     expect(phaseCues('board')).toEqual({ music: null, sting: null });
     expect(JEOPARDY_PACK).toBe('jeopardy');
   });
+});
+
+it('baselines silently, consumes bursts in order once, and skips missing history', () => {
+  const cursor = { seq: null }; const play = vi.fn(); const gap = vi.fn();
+  consumePresentationEvents(cursor, { presentationSeq: 2, presentationEvents: [{ seq: 2, type: 'BUZZ' }] }, { play, gap });
+  expect(play).not.toHaveBeenCalled();
+  const snapshot = { presentationSeq: 4, presentationEvents: [{ seq: 3, type: 'BUZZ' }, { seq: 4, type: 'REVEAL' }] };
+  consumePresentationEvents(cursor, snapshot, { play, gap });
+  consumePresentationEvents(cursor, snapshot, { play, gap });
+  expect(play.mock.calls.map(([cue]) => cue)).toEqual(['buzz', 'reveal']);
+  consumePresentationEvents(cursor, { presentationSeq: 40, presentationEvents: [{ seq: 40, type: 'BUZZ' }] }, { play, gap });
+  expect(gap).toHaveBeenCalledOnce(); expect(play).toHaveBeenCalledTimes(2);
 });

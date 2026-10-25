@@ -44,11 +44,11 @@ function participantProjection(state, viewer) {
   }
   if (projected.set.final) {
     const final = state.set.final;
-    const showFinalClue = ['final-clue', 'final-judging', 'done'].includes(state.phase);
+    const showFinalClue = !state.skippedFinal && ['final-clue', 'final-judging', 'done'].includes(state.phase);
     projected.set.final = {
       category: final.category,
       ...(showFinalClue ? { clue: final.clue, ...(final.scripture_reference ? { scripture_reference: final.scripture_reference } : {}), ...(final.media ? { media: structuredClone(final.media) } : {}) } : {}),
-      ...(['final-judging', 'done'].includes(state.phase) ? { answer: final.answer } : {}),
+      ...(!state.skippedFinal && ['final-judging', 'done'].includes(state.phase) ? { answer: final.answer } : {}),
     };
   }
   if (!['final-judging', 'done'].includes(state.phase)) {
@@ -57,7 +57,7 @@ function participantProjection(state, viewer) {
   return projected;
 }
 
-const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE']);
+const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE', 'ENABLE_EXPERIENCE_V2', 'CONTINUE_ROUND', 'FINISH_GAME']);
 const CUE_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'TIMEOUT', 'JUDGE', 'JUDGE_FINAL']);
 const actorIsHost = (actorId) => actorId === 'host' || actorId === 'system';
 
@@ -104,7 +104,7 @@ export const jeopardyRuleModule = defineRuleModule({
       ...definition,
       rounds: definition.rounds.map((round) => ({ ...round, multiplier: Number(round.multiplier) > 0 ? Number(round.multiplier) : 1 })),
     };
-    return { ...initJeopardy(normalizedDefinition, teamIds), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
+    return { ...initJeopardy(normalizedDefinition, teamIds), ...(setup.jeopardy_flow_version === 2 ? { jeopardyFlowVersion: 2, presentationSeq: 0, presentationEvents: [] } : {}), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
   },
   handleCommand(state, command, _definition, context) {
     state = migrateJeopardyState(state);
@@ -135,6 +135,20 @@ export const jeopardyRuleModule = defineRuleModule({
     if (reduced === state) return { error: { code: 'illegal_command', message: `${command.type} is not legal during ${state.phase}` } };
     const acceptedAction = CUE_ACTIONS.has(action.type) ? { type: action.type, ...(action.type.startsWith('JUDGE') ? { correct: Boolean(action.correct) } : {}), revision: (context.revision ?? 0) + 1 } : state.acceptedAction;
     const next = { ...reduced, ...(acceptedAction ? { acceptedAction } : {}), scores: delta ? adjustScore(state.scores, delta.teamId, delta.delta) : state.scores };
+    if (next.jeopardyFlowVersion === 2) {
+      const meaningful = CUE_ACTIONS.has(action.type) || ['BUZZ', 'REVEAL', 'SET_WAGER', 'FINISH_GAME', 'CONTINUE_ROUND'].includes(action.type);
+      let seq = state.presentationSeq || 0;
+      const ring = [...(state.presentationEvents || [])];
+      if (meaningful) {
+        ring.push({ seq: ++seq, revision: (context.revision ?? 0) + 1, type: action.type,
+          ...(action.teamId ? { teamId: action.teamId } : {}),
+          ...(action.type.startsWith('JUDGE') ? { correct: Boolean(action.correct) } : {}),
+          ...(next.phase === 'wager' && state.phase !== 'wager' ? { reason: 'daily-double' } : {}) });
+      }
+      if (next.phase === 'done' && state.phase !== 'done' && action.type !== 'FINISH_GAME') ring.push({ seq: ++seq, revision: (context.revision ?? 0) + 1, type: 'GAME_DONE' });
+      next.presentationSeq = seq;
+      next.presentationEvents = ring.slice(-32);
+    }
     if (next.phase === 'done') next.status = 'complete';
     return { state: next, status: next.status, events: [{ type: command.type, phase: next.phase, ...(delta ? { score_delta: delta } : {}), ...(action.type.startsWith('SELECT_') && next.active?.clue.little_kids ? { assigned_team_id: next.answeringTeamId } : {}) }] };
   },

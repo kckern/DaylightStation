@@ -76,11 +76,13 @@ function closeClue(state) {
   const used = { ...state.used, [`${state.roundIndex}:${state.active.cat}:${state.active.row}`]: true };
   let s = {
     ...state, used, phase: 'board', active: null, isDailyDouble: false,
+    ...(state.jeopardyFlowVersion === 2 ? { answerReview: null } : {}),
     wager: null, answeringTeamId: null, attempted: [], revealed: false,
   };
   if (currentRound(s).mode === 'turns') s = { ...s, turnTeamId: nextTurn(s) };
   if (!boardDone(s)) return { ...s, cursor: playableCursor(s) };
   if (s.roundIndex + 1 < s.set.rounds.length) {
+    if (s.jeopardyFlowVersion === 2 && s.roundIndex === 0) return { ...s, phase: 'round-decision' };
     return { ...s, roundIndex: s.roundIndex + 1, phase: 'round-intro', cursor: { cat: 0, row: 0 } };
   }
   return s.set.final ? { ...s, phase: 'final-category' } : { ...s, phase: 'done' };
@@ -127,7 +129,21 @@ function moveCursor(state, dir) {
 
 export function jeopardyReducer(state, action) {
   const round = currentRound(state);
+  const v2 = state.jeopardyFlowVersion === 2;
   switch (action.type) {
+    case 'ENABLE_EXPERIENCE_V2': {
+      if (v2 || state.phase !== 'round-intro' || state.active || state.wager != null || state.answeringTeamId) return state;
+      const usedKeys = Object.keys(state.used || {}).filter(key => state.used[key]);
+      const untouched = state.roundIndex === 0 && usedKeys.length === 0 && Object.values(state.scores || {}).every(score => Number(score) === 0);
+      const firstComplete = state.set.rounds[0].categories.every((category, cat) => category.clues.every((_, row) => state.used[`0:${cat}:${row}`]));
+      const paused = state.roundIndex === 1 && firstComplete && usedKeys.every(key => key.startsWith('0:'));
+      if (!untouched && !paused) return state;
+      return { ...state, jeopardyFlowVersion: 2, ...(paused ? { phase: 'round-decision', roundIndex: 0 } : {}) };
+    }
+    case 'CONTINUE_ROUND':
+      return v2 && state.phase === 'round-decision' ? { ...state, roundIndex: state.roundIndex + 1, phase: 'round-intro', cursor: { cat: 0, row: 0 } } : state;
+    case 'FINISH_GAME':
+      return v2 && state.phase === 'round-decision' ? { ...state, phase: 'done', skippedFinal: true } : state;
     case 'START_ROUND':
       if (state.phase === 'round-intro') return { ...state, phase: 'board' };
       if (state.phase === 'final-category') return { ...state, phase: 'final-wager' };
@@ -173,12 +189,21 @@ export function jeopardyReducer(state, action) {
     }
 
     case 'REVEAL':
-      if (state.phase === 'judging' && !state.revealed) return { ...state, revealed: true };
+      if (v2 && state.phase === 'clue' && !state.revealed) return { ...state, revealed: true, phase: state.answeringTeamId ? 'judging' : 'answer-review', answerReview: { teamId: state.answeringTeamId, correct: null, scoreDelta: 0, judgmentPending: Boolean(state.answeringTeamId) } };
+      if (state.phase === 'judging' && !state.revealed) return { ...state, revealed: true, ...(v2 ? { answerReview: { teamId: state.answeringTeamId, correct: null, scoreDelta: 0, judgmentPending: true } } : {}) };
       if (state.phase === 'clue') return { ...state, revealed: true, phase: state.answeringTeamId ? 'judging' : state.phase };
       if (state.phase === 'final-clue') return { ...state, phase: 'final-judging' };
       return state;
 
     case 'JUDGE': {
+      if (v2) {
+        if (!state.answeringTeamId || !['clue', 'judging'].includes(state.phase)) return state;
+        const attempted = [...state.attempted, state.answeringTeamId];
+        if (!action.correct && !state.revealed && !state.active?.clue.little_kids && !state.isDailyDouble && round.mode === 'hosted' && attempted.length < state.teamIds.length) {
+          return { ...state, phase: 'clue', attempted, answeringTeamId: null };
+        }
+        return { ...state, phase: 'answer-review', revealed: true, attempted, answerReview: { teamId: state.answeringTeamId, correct: Boolean(action.correct), scoreDelta: scoreDelta(state, action.correct)?.delta ?? 0, judgmentPending: false }, ...(action.correct ? { turnTeamId: state.answeringTeamId } : {}) };
+      }
       if (state.phase !== 'judging') return state;
       if (action.correct) return closeClue({ ...state, turnTeamId: state.answeringTeamId || state.turnTeamId });
       // wrong:
@@ -192,10 +217,12 @@ export function jeopardyReducer(state, action) {
     }
 
     case 'TIMEOUT':
+      if (v2) return state.phase === 'clue' && !state.answeringTeamId && !state.revealed ? { ...state, phase: 'answer-review', revealed: true, answerReview: { teamId: null, correct: null, scoreDelta: 0, judgmentPending: false } } : state;
       if (state.phase !== 'clue' && state.phase !== 'judging') return state;
       return { ...state, phase: 'clue', revealed: true, answeringTeamId: null };
 
     case 'RETURN_TO_BOARD':
+      if (v2) return state.phase === 'answer-review' ? closeClue(state) : state;
       if (state.phase !== 'clue' || !state.revealed) return state;
       return closeClue(state);
 

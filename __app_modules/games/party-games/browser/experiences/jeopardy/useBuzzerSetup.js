@@ -11,6 +11,7 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
   const queue = useRef(Promise.resolve());
   const busySlots = useRef(new Set());
   const held = useRef(new Map());
+  const appliedSetup = useRef(null);
   const enabled = Boolean(state && state.phase !== 'done' && requiresBuzzers(state) && buzzers.subscribeInput);
   useEffect(() => {
     if (!enabled) return undefined;
@@ -24,6 +25,7 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
       if (command.type === 'BUZZER_SETUP') return setup?.epoch === command.epoch;
       const entry = setup?.teams[command.teamId];
       if (!entry) return false;
+      if (command.kind === 'disconnect') return setup.epoch === command.epoch && entry.generation === command.generation + 1 && entry.slot === command.slot && !entry.connected && !entry.tested;
       return setup?.epoch === command.epoch && entry?.generation === command.generation && entry.slot === command.slot &&
         (command.kind === 'test' ? entry.tested : command.kind === 'assign' ? entry.connected : false);
     };
@@ -32,9 +34,9 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
       const setup = current?.buzzerSetup;
       return setup && (setup.epoch !== command.epoch || setup.teams[command.teamId]?.generation > command.generation);
     };
-    const feedback = command => {
+    const feedback = (command, revision) => {
       if (!command.kind || command.kind === 'disconnect') return;
-      logger.info(`jeopardy.buzzer-${command.kind}`, { teamId: command.teamId });
+      logger.info('jeopardy.buzzer.report-result', { sessionId, teamId: command.teamId, epoch: command.epoch, generation: command.generation, kind: command.kind, revision, result: 'accepted' });
       if (command.kind === 'test') audio.play('buzz', { pack: 'jeopardy' });
     };
     const send = command => {
@@ -49,7 +51,9 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
         try {
           const result = await sendJeopardyCommand(sessionId, command);
           if (!active) return false;
-          if (pending.get(key) === command) pending.delete(key); accept.current(result); feedback(command);
+          accept.current(result);
+          if (command.type !== 'BUZZER_PRESENCE' && !acknowledged(command, result.state)) return false;
+          if (pending.get(key) === command) pending.delete(key); feedback(command, result.header?.revision);
           return true;
         } catch (cause) {
           if (!active) return false;
@@ -59,7 +63,7 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
             const result = await fetchSession(sessionId);
             if (!active) return false;
             accept.current(result);
-            if (acknowledged(command, result.state)) { if (pending.get(key) === command) pending.delete(key); feedback(command); return true; }
+            if (acknowledged(command, result.state)) { if (pending.get(key) === command) pending.delete(key); feedback(command, result.header?.revision); return true; }
             if (superseded(command, result.state)) { if (pending.get(key) === command) pending.delete(key); return false; }
           } catch { /* retain pending facts until authority can be reached */ }
           logger.warn('jeopardy.buzzer-report-failed', { type: command.type, kind: command.kind, message: cause.message, retryPending: pending.has(key) });
@@ -103,12 +107,13 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
       const entries = current.teamIds.map(id => [id, setup.teams[id]]);
       const owner = entries.find(([, entry]) => entry.slot === slot);
       const guided = entries.find(([, entry]) => !entry.tested || !entry.connected);
-      const pendingTeam = guided && !guided[1].slot ? guided : null;
+      const reservedTeams = new Set([...pending.values()].map(command => command.teamId));
+      const pendingTeam = guided && !guided[1].slot && !reservedTeams.has(guided[0]) ? guided : null;
       // A known controller tests its own mapping, never claims the next team.
       const target = owner || pendingTeam;
       if (!target) return;
       const [teamId, entry] = target;
-      if (owner && entry.tested) { audio.play('buzz', { pack: 'jeopardy' }); return; }
+      if (owner && entry.tested) return;
       const kind = owner ? 'test' : 'assign';
       busySlots.current.add(slot);
       send({ type: 'BUZZER_REPORT', epoch: token, generation: entry.generation, teamId, slot, kind }).finally(() => busySlots.current.delete(slot));
@@ -122,6 +127,11 @@ export function useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio
   useEffect(() => {
     if (!enabled || !state.buzzerSetup) return;
     const bindings = Object.fromEntries(Object.entries(state.buzzerSetup.teams).filter(([, entry]) => entry.slot).map(([id, entry]) => [entry.slot, id]));
+    const signature = JSON.stringify({ epoch: state.buzzerSetup.epoch, teams: state.buzzerSetup.teams });
+    if (appliedSetup.current !== signature) {
+      appliedSetup.current = signature;
+      logger.info('jeopardy.buzzer.readiness-changed', { sessionId, epoch: state.buzzerSetup.epoch, teams: Object.entries(state.buzzerSetup.teams).map(([teamId, entry]) => ({ teamId, generation: entry.generation, connected: entry.connected, tested: entry.tested })) });
+    }
     buzzers.restore?.(bindings);
   }, [enabled, state?.buzzerSetup, buzzers]);
 }

@@ -198,3 +198,9 @@
   &:disabled { opacity: 0.5; cursor: default; }
   &[aria-busy='true'] { cursor: wait; }
 }
+
+.gp-host { font-size: 16px; }
+.gp-host-btn { min-height: 44px; }
+.gp-host-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.gp-host .jp-buzzer-setup { text-align: left; }
+.gp-host .jp-buzzer-setup [role='status'] { padding: 10px; border-radius: 8px; margin: 6px 0; }

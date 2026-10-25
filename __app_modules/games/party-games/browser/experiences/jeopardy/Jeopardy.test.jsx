@@ -137,3 +137,19 @@ it.each([true,false])('local timeout cue follows accepted=%s and never doubles o
  if(accepted){await act(async()=>ws.handler({kind:'session-updated',sessionId:'local-audio'}));expect(audio.play.mock.calls.filter(([cue])=>cue==='time-up')).toHaveLength(1);}
  view.unmount();vi.useRealTimers();
 });
+
+it('hides pregame scores and renders durable answer review and round decision', async () => {
+ fetchSession.mockResolvedValue({state:{...base,phase:'round-intro'}});
+ const view=render(<Jeopardy sessionId="ready" seats={teams}/>);
+ await screen.findByTestId('host-lobby');
+ expect(screen.queryByTestId('scoreboard')).toBeNull();
+ view.unmount();
+ fetchSession.mockResolvedValue({state:{...base,phase:'answer-review',active:{cat:0,row:0,clue:set.rounds[0].categories[0].clues[0]},answerReview:{teamId:'team_1',correct:true,scoreDelta:100,judgmentPending:false}}});
+ const review=render(<Jeopardy sessionId="review" seats={teams}/>);
+ await screen.findByText('Answer',{exact:true});
+ expect(screen.getByText(/Next question on your phone/)).toBeVisible();
+ review.unmount();
+ fetchSession.mockResolvedValue({state:{...base,phase:'round-decision'}});
+ render(<Jeopardy sessionId="decision" seats={teams}/>);
+ expect(await screen.findByText('Round 1 complete')).toBeVisible();
+});
