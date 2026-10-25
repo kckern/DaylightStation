@@ -25,3 +25,12 @@ it('marks little-kid picture questions visibly and accessibly',()=>{
  render(<Board round={{...round,categories:[{name:'Pictures',clues:[{value:100,little_kids:true}]}]}} used={{}} roundIndex={0} cursor={{cat:0,row:0}}/>);
  expect(screen.getByRole('gridcell',{name:/Little kids/})).toHaveTextContent("Little kids");
 });
+
+it('keeps DOM focus on the same question that Enter will select',()=>{
+ const round={name:'Round',categories:[{name:'A',clues:[{value:100}]},{name:'B',clues:[{value:100}]}]};
+ const view=render(<Board round={round} used={{}} roundIndex={0} cursor={{cat:0,row:0}}/>);
+ expect(screen.getByRole('gridcell',{name:'A for $100'})).toHaveFocus();
+ view.rerender(<Board round={round} used={{}} roundIndex={0} cursor={{cat:1,row:0}}/>);
+ expect(screen.getByRole('gridcell',{name:'B for $100'})).toHaveFocus();
+ expect(document.activeElement).toHaveClass('is-cursor');
+});

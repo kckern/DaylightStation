@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
+import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 import { getActionBus } from './ActionBus.js';
+
+let _logger;
+const logger = () => _logger ||= getLogger().child({ component: 'scoped-remote-controls' });
 
 // Modal apps own their native remote keys before the legacy menu and browser
 // default click handlers. Other adapters can use the ordinary semantic bus.
@@ -18,7 +22,10 @@ export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight, on
     // `click is not a function` (17 times in Charades, 2026-09-13..14).
     const buttons = () => [...root.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled)')]
       .filter(node => node instanceof HTMLElement && !node.closest('[hidden], [aria-hidden="true"]'));
-    const focus = () => { if (!root.contains(document.activeElement)) (root.querySelector('[autofocus]:not(:disabled)') || buttons()[0])?.focus(); };
+    // React autoFocus moves focus once but does not leave an HTML autofocus
+    // attribute. Keep a DOM marker so recovery can find the intended action.
+    const primary = controls => controls.find(node => node.matches('[data-remote-autofocus="true"], [autofocus]')) || controls[0];
+    const focus = () => { const controls = buttons(); if (!controls.includes(document.activeElement)) primary(controls)?.focus(); };
     const handle = ({ action, direction, repeat } = {}) => {
       if (actionRef.current?.({ action, direction, repeat: Boolean(repeat) }) === true) return;
       if (action === 'escape') { if (!repeat) escapeRef.current?.(); return; }
@@ -30,7 +37,14 @@ export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight, on
       }
       const controls = buttons(); if (!controls.length) return;
       const index = controls.indexOf(document.activeElement);
-      if (action === 'select') { if (!repeat) (controls[index] || controls[0])?.click(); return; }
+      if (index < 0) {
+        const target = primary(controls);
+        target?.focus();
+        logger().info('remote.focus-recovered', { action, preferred: target?.dataset.remoteAutofocus === 'true', controlId: target?.dataset.testid || target?.tagName });
+        if (action === 'select' && !repeat) target?.click();
+        return;
+      }
+      if (action === 'select') { if (!repeat) controls[index]?.click(); return; }
       const delta = direction === 'up' || direction === 'left' ? -1 : 1;
       controls[(Math.max(0,index) + delta + controls.length) % controls.length]?.focus();
     };
@@ -47,7 +61,8 @@ export function useScopedRemoteControls(rootRef, { onEscape, onLeft, onRight, on
       bus.emit('controls:action', {action,direction,repeat:event.repeat});
     };
     window.addEventListener('keydown',keydown,true);
+    window.addEventListener('focus',focus);
     const observer = new MutationObserver(focus); observer.observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled']}); focus();
-    return () => { window.removeEventListener('keydown',keydown,true); observer.disconnect(); unsubscribe(); release(); };
+    return () => { window.removeEventListener('keydown',keydown,true); window.removeEventListener('focus',focus); observer.disconnect(); unsubscribe(); release(); };
   }, [rootRef]);
 }

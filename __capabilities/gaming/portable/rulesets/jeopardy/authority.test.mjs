@@ -45,3 +45,21 @@ describe('Jeopardy semantic authority', () => {
     expect(state.scores.red).toBe(100);
   });
 });
+
+it('never applies a Final score twice when another team is still pending',()=>{
+ const initial=jeopardyRuleModule.createInitialState(definition,{seats:[{id:'blue',members:[]},{id:'gold',members:[]}]});
+ const state={...initial,phase:'final-judging',finalWagers:{blue:100,gold:100}};
+ const action={type:'JUDGE_FINAL',teamId:'blue',correct:true};
+ const first=jeopardyRuleModule.handleCommand(state,action,definition,{actorId:'host'});
+ expect(first.state.scores.blue).toBe(100);
+ const duplicate=jeopardyRuleModule.handleCommand(first.state,action,definition,{actorId:'host'});
+ expect(duplicate.error?.code).toBe('illegal_command');
+ expect(first.state.scores.blue).toBe(100);
+});
+it('keeps a locked Final wager unchanged on a repeated team submission',()=>{
+ const initial=jeopardyRuleModule.createInitialState(definition,{seats:[{id:'blue',members:[]},{id:'gold',members:[]}]});
+ const state={...initial,phase:'final-wager',finalWagers:{blue:100}};
+ const duplicate=jeopardyRuleModule.handleCommand(state,{type:'SET_FINAL_WAGER',teamId:'blue',amount:50},definition,{actorId:'host'});
+ expect(duplicate.error?.code).toBe('illegal_command');
+ expect(state.finalWagers.blue).toBe(100);
+});

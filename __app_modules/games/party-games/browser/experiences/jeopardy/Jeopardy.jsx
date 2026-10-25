@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import getLogger from '@/lib/logging/Logger.js';
-import { currentRound } from "../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/stateMachine.mjs";
+import { currentRound, playableCursor } from "../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/stateMachine.mjs";
 import { resolveJeopardyKey, remoteActionKey } from "./keymap.js";
 import Scoreboard from "../../../../../../__capabilities/gaming/browser/platform/ui/Scoreboard.jsx";
 import { fetchSession } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
@@ -26,6 +26,8 @@ const NO_BUZZERS = Object.freeze({
   subscribe() { return () => {}; },
 });
 
+const BUTTON_ACTION_PHASES = { START_ROUND: ['round-intro', 'final-category'], SET_WAGER: ['wager'], SET_FINAL_WAGER: ['final-wager'], JUDGE_FINAL: ['final-judging'] };
+
 const roundMultiplier = (round) => Number(round?.multiplier ?? 1);
 
 export default function Jeopardy({ setId, seats = [], sessionId, config, gamingServices, onComplete, registerRemoteAction }) {
@@ -35,8 +37,12 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const [set, setSet] = useState(null);
   const [error, setError] = useState(null);
   const [state, setState] = useState(null);
+  const errorRef = useRef(error);
+  errorRef.current = error;
   const [completion, setCompletion] = useState(null);
   const [wagerDraft, setWagerDraft] = useState(100);
+  const [finalWagerDrafts, setFinalWagerDrafts] = useState({});
+  useEffect(() => { if (state?.phase !== 'wager') setWagerDraft(100); }, [state?.phase]);
   const scores = useMemo(() => state?.scores || {}, [state?.scores]);
   const audio = gamingServices?.audio || SILENT_AUDIO;
   const buzzers = gamingServices?.buzzers || NO_BUZZERS;
@@ -53,28 +59,54 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     });
   }, [audio, buzzers]);
 
+  const acceptSession = useCallback((session) => {
+    // Input can arrive after the HTTP acknowledgment and before React paints.
+    stateRef.current = session.state;
+    errorRef.current = null;
+    setState(session.state); setSet(session.state.set); setCompletion(session.result || null); setError(null);
+  }, []);
+
   // Load the coordinator projection, which includes the pinned content pack.
   useEffect(() => {
     let cancelled = false;
     fetchSession(sessionId)
       .then((session) => {
         if (cancelled) return;
-        setState(session.state); setSet(session.state.set); setCompletion(session.result || null);
+        acceptSession(session);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => { errorRef.current = err.message; setError(err.message); });
     return () => { cancelled = true; };
-  }, [sessionId, setId]);
+  }, [sessionId, setId, acceptSession]);
 
   // Single funnel: keyboard, on-screen buttons, and remote host commands all
   // call this. Reads live state via ref so it stays referentially stable.
   const applyAction = useCallback(async (action) => {
     if (!action || !stateRef.current || pendingCommand.current) return;
+    const current = stateRef.current;
+    // A button from the previous render may still receive a second activation
+    // after the response arrives. Do not replay its completed team action.
+    if (BUTTON_ACTION_PHASES[action.type] && !BUTTON_ACTION_PHASES[action.type].includes(current.phase)) return;
+    if (action.type === 'JUDGE_FINAL' && current.finalJudged?.[action.teamId] != null) return;
+    if (action.type === 'SET_FINAL_WAGER' && current.finalWagers?.[action.teamId] != null) return;
     pendingCommand.current = true;
     const cue = actionCue(action); if (cue) audio.play(cue, { pack: JEOPARDY_PACK });
-    try { const result = await sendJeopardyCommand(sessionId, action); setState(result.state); setSet(result.state.set); setCompletion(result.result || null); setError(null); }
-    catch (cause) { setError(cause.message); }
+    try { const result = await sendJeopardyCommand(sessionId, action); acceptSession(result); }
+    catch (cause) { logger.warn('jeopardy.command-failed', { type: action.type, phase: stateRef.current?.phase, error: cause.message }); errorRef.current = cause.message; setError(cause.message); }
     finally { pendingCommand.current = false; }
-  }, [audio, sessionId]);
+  }, [audio, sessionId, logger, acceptSession]);
+  const recoverConnection = useCallback(async () => {
+    if (pendingCommand.current) return;
+    pendingCommand.current = true;
+    logger.info('jeopardy.connection-retry', { sessionId });
+    try {
+      const session = await fetchSession(sessionId);
+      acceptSession(session);
+      logger.info('jeopardy.connection-recovered', { phase: session.state.phase });
+    } catch (cause) {
+      logger.warn('jeopardy.connection-retry-failed', { error: cause.message });
+      errorRef.current = cause.message; setError(cause.message);
+    } finally { pendingCommand.current = false; }
+  }, [sessionId, logger, acceptSession]);
   actionRef.current = applyAction;
 
   // Buzzer arming window (hosted/self buzz races only).
@@ -89,9 +121,9 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // Remote host commands (from the phone companion) → same funnel.
   useWebSocketSubscription('gaming', (msg) => {
     if (msg?.kind === 'session-updated' && msg.sessionId === sessionId) {
-      fetchSession(sessionId).then((result) => { setState(result.state); setSet(result.state.set); setCompletion(result.result || null); }).catch((cause) => setError(cause.message));
+      fetchSession(sessionId).then((result) => { acceptSession(result); }).catch((cause) => { errorRef.current = cause.message; setError(cause.message); });
     }
-  }, [applyAction, sessionId]);
+  }, [applyAction, sessionId, acceptSession]);
 
   // Finish
   useEffect(() => {
@@ -116,19 +148,21 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // Host keyboard (also fed by GamepadAdapter synthetic keys).
   useEffect(() => {
     const onKey = (e) => {
-      if (!state) return;
+      const state = stateRef.current;
+      if (!state || errorRef.current) return;
       const action = resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, mode: currentRound(state)?.mode, key: e.key });
       if (action) applyAction(action);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state?.phase, state?.revealed, state, applyAction]);
+  }, [state?.phase, state?.revealed, state, applyAction, error]);
 
   // Inside Party Games the shell captures remote keys; it offers each action here
   // first. Claim only what this phase's key matrix uses, so wager and intro
   // buttons keep ordinary focus navigation.
   useEffect(() => registerRemoteAction?.((remote) => {
-    if (!state) return false;
+    const state = stateRef.current;
+    if (!state || errorRef.current) return false;
     if (remote.repeat && state.phase !== 'board') return true;
     const key = remoteActionKey(remote);
     const action = key && resolveJeopardyKey({ phase: state.phase, revealed: state.revealed, answeringTeamId: state.answeringTeamId, mode: currentRound(state)?.mode, key });
@@ -136,9 +170,13 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     logger.debug('jeopardy.remote-action', { phase: state.phase, key, type: action.type });
     applyAction(action);
     return true;
-  }), [registerRemoteAction, state, applyAction, logger]);
+  }), [registerRemoteAction, state, applyAction, logger, error]);
 
-  if (error) return <div className="party-games__error">{error}</div>;
+  if (error) return <div className="party-games__error" role="alert">
+    <strong>Game connection interrupted</strong>
+    <span>{error}</span>
+    <GameButton tone="primary" autoFocus onClick={recoverConnection}>Retry connection</GameButton>
+  </div>;
   if (!set || !state) return <TitleCard title="Loading…" />;
 
   const round = currentRound(state);
@@ -156,7 +194,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
         </div>
       )}
       {phase === 'board' && (
-        <><Board round={round} used={state.used} roundIndex={state.roundIndex} cursor={state.cursor} onSelect={(cat, row) => applyAction({ type: 'SELECT_AT', cat, row })} /><ControlLegend items={[{ key: 'Arrows', label: 'Choose a question' }, { key: 'OK', label: 'Open question' }]} /></>
+        <><Board round={round} used={state.used} roundIndex={state.roundIndex} cursor={playableCursor(state) || state.cursor} onSelect={(cat, row) => applyAction({ type: 'SELECT_AT', cat, row })} /><ControlLegend items={[{ key: 'Arrows', label: 'Choose a question' }, { key: 'OK', label: 'Open question' }]} /></>
       )}
       {phase === 'wager' && (
         <WagerPanel
@@ -165,7 +203,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
           roundMax={Math.max(...round.categories.flatMap((c) => c.clues.map((q) => q.value))) * roundMultiplier(round)}
           value={wagerDraft}
           onChange={setWagerDraft}
-          onConfirm={(amount) => { applyAction({ type: 'SET_WAGER', amount }); setWagerDraft(100); }}
+          onConfirm={(amount) => applyAction({ type: 'SET_WAGER', amount })}
         />
       )}
       {(phase === 'clue' || phase === 'judging') && (
@@ -178,7 +216,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
         />
       )}
       {['final-category', 'final-wager', 'final-clue', 'final-judging'].includes(phase) && (
-        <FinalRound state={state} teams={teams} scores={scores} onAction={applyAction} />
+        <FinalRound state={state} teams={teams} scores={scores} wagerDrafts={finalWagerDrafts} onWagerChange={(teamId, amount) => setFinalWagerDrafts(drafts => ({ ...drafts, [teamId]: amount }))} onAction={applyAction} />
       )}
       <Scoreboard teams={teams} scores={scores} lockedTeamId={state.answeringTeamId} activeTeamId={state.turnTeamId} />
     </div>

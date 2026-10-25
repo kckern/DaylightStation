@@ -150,9 +150,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     exit();
   }, [confirmExit, exit, flow.phase, flow.sessionId, logger]);
   const requestDirectionalBack = useCallback(() => {
-    if (flow.phase !== 'playing') return false;
-    requestExit(); return true;
-  }, [flow.phase, requestExit]);
+    if (flow.phase !== 'playing' || confirmExit) return false;
+    return backActionRef.current?.() === true;
+  }, [flow.phase, confirmExit]);
   const requestAdvance = useCallback(() => {
     if (flow.phase !== 'playing' || confirmExit) return false;
     return forwardActionRef.current?.() ?? false;

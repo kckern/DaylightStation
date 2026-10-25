@@ -55,23 +55,50 @@ function closeClue(state) {
     wager: null, answeringTeamId: null, attempted: [], revealed: false,
   };
   if (currentRound(s).mode === 'turns') s = { ...s, turnTeamId: nextTurn(s) };
-  if (!boardDone(s)) return s;
+  if (!boardDone(s)) return { ...s, cursor: playableCursor(s) };
   if (s.roundIndex + 1 < s.set.rounds.length) {
     return { ...s, roundIndex: s.roundIndex + 1, phase: 'round-intro', cursor: { cat: 0, row: 0 } };
   }
   return s.set.final ? { ...s, phase: 'final-category' } : { ...s, phase: 'done' };
 }
 
+function boardCells(state) {
+  const categories = currentRound(state)?.categories || [];
+  const rows = Math.max(0, ...categories.map(category => category.clues.length));
+  return Array.from({ length: rows }).flatMap((_, row) => categories.flatMap((category, cat) => category.clues[row] ? [{ cat, row }] : []));
+}
+
+// Also normalizes old saved games whose cursor still points at the used clue.
+export function playableCursor(state) {
+  const cells = boardCells(state);
+  const start = Math.max(0, cells.findIndex(cell => cell.cat === state.cursor.cat && cell.row === state.cursor.row));
+  for (let step = 0; step < cells.length; step += 1) {
+    const cell = cells[(start + step) % cells.length];
+    if (!isUsed(state, cell.cat, cell.row)) return cell;
+  }
+  return null;
+}
+
 function moveCursor(state, dir) {
-  const round = currentRound(state);
-  const cats = round.categories.length;
-  let { cat, row } = state.cursor;
-  if (dir === 'left') cat = Math.max(0, cat - 1);
-  if (dir === 'right') cat = Math.min(cats - 1, cat + 1);
-  if (dir === 'up') row = Math.max(0, row - 1);
-  if (dir === 'down') row = row + 1;
-  row = Math.min(row, round.categories[cat].clues.length - 1);
-  return { ...state, cursor: { cat, row } };
+  const origin = playableCursor(state);
+  if (!origin) return state;
+  const horizontal = dir === 'left' || dir === 'right';
+  if (horizontal) {
+    const cells = boardCells(state).filter(cell => !isUsed(state, cell.cat, cell.row));
+    const index = cells.findIndex(cell => cell.cat === origin.cat && cell.row === origin.row);
+    const offset = dir === 'left' ? -1 : 1;
+    // Reading-order horizontal traversal keeps every sparse board connected;
+    // spatial-only neighbor choices can trap a center tile behind its corners.
+    return { ...state, cursor: cells[(index + offset + cells.length) % cells.length] };
+  }
+  const axis = horizontal ? 'cat' : 'row';
+  const cross = horizontal ? 'row' : 'cat';
+  const sign = dir === 'left' || dir === 'up' ? -1 : 1;
+  const candidates = boardCells(state).filter(cell => !isUsed(state, cell.cat, cell.row) && (cell[axis] - origin[axis]) * sign > 0);
+  // Vertical movement prefers the same column, then the nearest question
+  // in the requested direction. Left/Right can always reach every question.
+  candidates.sort((a, b) => Math.abs(a[cross] - origin[cross]) - Math.abs(b[cross] - origin[cross]) || Math.abs(a[axis] - origin[axis]) - Math.abs(b[axis] - origin[axis]));
+  return { ...state, cursor: candidates[0] || origin };
 }
 
 export function jeopardyReducer(state, action) {
@@ -87,15 +114,17 @@ export function jeopardyReducer(state, action) {
 
     case 'SELECT_TILE': {
       if (state.phase !== 'board') return state;
-      const { cat, row } = state.cursor;
+      const cursor = playableCursor(state);
+      if (!cursor) return state;
+      const { cat, row } = cursor;
       const clue = clueAt(state, cat, row);
       if (!clue || isUsed(state, cat, row)) return state;
       const active = { cat, row, clue };
       if (clue.daily_double) {
-        return { ...state, phase: 'wager', active, isDailyDouble: true, answeringTeamId: state.turnTeamId };
+        return { ...state, cursor, phase: 'wager', active, isDailyDouble: true, answeringTeamId: state.turnTeamId };
       }
       const answeringTeamId = round.mode === 'turns' ? state.turnTeamId : null;
-      return { ...state, phase: 'clue', active, answeringTeamId, revealed: false, attempted: [] };
+      return { ...state, cursor, phase: 'clue', active, answeringTeamId, revealed: false, attempted: [] };
     }
 
     case 'SELECT_AT': {
@@ -147,14 +176,14 @@ export function jeopardyReducer(state, action) {
       return closeClue(state);
 
     case 'SET_FINAL_WAGER': {
-      if (state.phase !== 'final-wager') return state;
+      if (state.phase !== 'final-wager' || state.finalWagers[action.teamId] != null || !state.teamIds.includes(action.teamId)) return state;
       const finalWagers = { ...state.finalWagers, [action.teamId]: action.amount };
       const allIn = state.teamIds.every((id) => finalWagers[id] != null);
       return { ...state, finalWagers, phase: allIn ? 'final-clue' : 'final-wager' };
     }
 
     case 'JUDGE_FINAL': {
-      if (state.phase !== 'final-judging') return state;
+      if (state.phase !== 'final-judging' || state.finalJudged[action.teamId] != null || !state.teamIds.includes(action.teamId)) return state;
       const finalJudged = { ...state.finalJudged, [action.teamId]: action.correct };
       const allJudged = state.teamIds.every((id) => finalJudged[id] != null);
       return { ...state, finalJudged, phase: allJudged ? 'done' : 'final-judging' };

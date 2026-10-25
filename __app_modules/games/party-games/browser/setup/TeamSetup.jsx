@@ -1,7 +1,7 @@
 // TV-friendly team editor: preset row on top, team columns, all-users pool
 // at the bottom. Every control is a <button> so arrow-key / gamepad focus
 // traversal works without a custom focus engine.
-import React, { useReducer, useMemo, useState } from 'react';
+import React, { useReducer, useMemo, useState, useRef, useLayoutEffect } from 'react';
 import { teamSetupReducer, initTeamSetup } from "./teamSetupReducer.js";
 import { TEAM_COLORS } from "../../../../../__capabilities/gaming/browser/platform/ui/teamColors.js";
 import MemberAvatar from "../../../../../__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx";
@@ -9,6 +9,8 @@ import "./TeamSetup.scss";
 
 export function TeamSetup({ config, setupKind = 'teams', selectAll = false, anonymousTeams = null, onConfirm }) {
   const [state, dispatch] = useReducer(teamSetupReducer, config, (value) => initTeamSetup(value, anonymousTeams));
+  const confirmRef = useRef(null);
+  useLayoutEffect(() => { if (anonymousTeams) confirmRef.current?.focus(); }, [anonymousTeams, state.teams.length]);
   const [mode, setMode] = useState(setupKind === 'individuals' ? 'individuals' : 'teams');
 
   const presets = useMemo(() => anonymousTeams ? [] : config?.team_presets || [], [anonymousTeams, config?.team_presets]);
@@ -102,7 +104,7 @@ export function TeamSetup({ config, setupKind = 'teams', selectAll = false, anon
       </div>
       </>}
 
-      <button type="button" autoFocus={selectAll || Boolean(anonymousTeams)} className="gp-teamsetup__confirm" data-testid="teams-confirm"
+      <button ref={confirmRef} type="button" data-remote-autofocus={selectAll || Boolean(anonymousTeams) || undefined} autoFocus={selectAll || Boolean(anonymousTeams)} className="gp-teamsetup__confirm" data-testid="teams-confirm"
         disabled={mode === 'individuals' && individualSeats.length === 0}
         onClick={() => onConfirm?.(mode === 'individuals' ? individualSeats : state.teams)}>
         {mode === 'individuals' ? `Start with ${individualSeats.length} players` : `Start with ${state.teams.length} teams`}

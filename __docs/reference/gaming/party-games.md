@@ -141,6 +141,31 @@ is discarded locally so it cannot silently replace new anonymous defaults;
 explicit session links remain attachable and refresh preserves the current
 session. Change the revision when replacing a preset's setup policy.
 
+### Remote usability and recovery
+
+`GameButton autoFocus` and the team/wager confirmation controls carry a
+`data-remote-autofocus` DOM marker. React's `autoFocus` alone does not leave an
+HTML autofocus attribute. Scoped remote controls use that marker after focus
+loss or window activation; OK therefore returns to the intended primary action
+instead of activating the first incidental button. A first directional press
+with no eligible focus restores the primary focus. Anonymous team edits return
+focus to Start, and held OK presses cannot keep adding teams.
+
+Left only invokes an experience's explicitly registered Back action; otherwise
+it navigates buttons. Escape/Back remains the shell's exit action. Jeopardy
+keeps DOM focus and the board cursor on the same playable question, skips used
+or absent squares, and advances the cursor after a clue closes. Left/Right cycle
+through remaining questions in reading order, while Up/Down move between rows. Old saved
+cursors on used squares are normalized on display and selection.
+
+A failed game request exposes a focused Retry connection button. Retry loads
+the authoritative session rather than replaying a command that may already
+have committed. Game commands are suspended while the recovery screen is up.
+Acknowledged state is available to subsequent input before React's next paint,
+so a fast second press cannot judge the previous clue again. Completed Final
+judgments and locked wagers reject duplicate submissions in both the presenter
+and authoritative rules.
+
 ### Remote keys inside the shell
 
 `PartyGamesApp` owns the TV remote through `useScopedRemoteControls`, which captures arrows, Enter and Escape before any window listener. While a game is playing (and no leave dialog is open), the shell first offers each action to the experience through `registerRemoteAction(handler)`. A handler that returns `true` claims it; anything unclaimed falls through to focus movement, button activation, Back and Forward. Jeopardy claims exactly the keys its phase uses (board cursor and select, clue time-out and return, ↑ correct / ↓ wrong / ↵ reveal while judging), so wager and round-intro buttons keep ordinary focus navigation.

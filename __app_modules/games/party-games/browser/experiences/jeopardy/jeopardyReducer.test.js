@@ -191,3 +191,38 @@ it.each(['correct','wrong','timeout'])('rotates three anonymous teams after %s',
  }
  expect(s.turnTeamId).toBe('blue'); expect(s.phase).toBe('final-category');
 });
+
+it('advances the cursor to an unused question after closing a clue',()=>{
+ let s=toBoard(makeSet({mode:'turns'}));s=jeopardyReducer(s,{type:'SELECT_TILE'});
+ s=jeopardyReducer(s,{type:'TIMEOUT'});s=jeopardyReducer(s,{type:'RETURN_TO_BOARD'});
+ expect(s.cursor).toEqual({cat:1,row:0});
+ s=jeopardyReducer(s,{type:'SELECT_TILE'});expect(s.active.clue.clue).toBe('b1');
+});
+it('selects a playable question when resuming a legacy cursor on a used tile',()=>{
+ const s={...toBoard(),used:{'0:0:0':true}};
+ const next=jeopardyReducer(s,{type:'SELECT_TILE'});expect(next.phase).toBe('clue');expect(next.active.clue.clue).toBe('b1');
+});
+it('skips used and missing cells without trapping the cursor on sparse boards',()=>{
+ let s={...toBoard(),cursor:{cat:1,row:0},used:{'0:0:0':true}};
+ s=jeopardyReducer(s,{type:'MOVE_CURSOR',dir:'left'});expect(s.cursor).toEqual({cat:0,row:1});
+ s=jeopardyReducer(s,{type:'MOVE_CURSOR',dir:'right'});expect(s.cursor).toEqual({cat:1,row:0});
+});
+
+it('can reach every remaining question on every nonempty 3-by-3 board',()=>{
+ const set={id:'sparse',title:'Sparse',rounds:[{name:'Round',mode:'turns',categories:Array.from({length:3},(_,cat)=>({name:`C${cat}`,clues:Array.from({length:3},()=>({value:100,clue:'Question',answer:'Answer'}))}))}]};
+ const cells=Array.from({length:9},(_,index)=>({cat:index%3,row:Math.floor(index/3)}));
+ for(let mask=1;mask<512;mask++){
+  const remaining=cells.filter((_,index)=>mask&(1<<index));
+  const used=Object.fromEntries(cells.filter((_,index)=>!(mask&(1<<index))).map(c=>[`0:${c.cat}:${c.row}`,true]));
+  const state={...initJeopardy(set,TEAM_IDS),phase:'board',used,cursor:remaining[0]};
+  const seen=new Set(),queue=[remaining[0]];
+  while(queue.length){
+   const cell=queue.shift(),key=`${cell.cat}:${cell.row}`;if(seen.has(key))continue;seen.add(key);
+   for(const dir of ['left','right','up','down']){
+    const next=jeopardyReducer({...state,cursor:cell},{type:'MOVE_CURSOR',dir});
+    if(!seen.has(`${next.cursor.cat}:${next.cursor.row}`))queue.push(next.cursor);
+   }
+  }
+  expect([...seen].sort(),`remaining board mask ${mask}`).toEqual(remaining.map(c=>`${c.cat}:${c.row}`).sort());
+ }
+});

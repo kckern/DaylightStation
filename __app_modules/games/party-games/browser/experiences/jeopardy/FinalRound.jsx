@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import RevealPanel from "../../../../../../__capabilities/gaming/browser/platform/ui/RevealPanel.jsx";
 import MediaCluePlayer from "../../../../../../__capabilities/gaming/browser/platform/ui/MediaCluePlayer.jsx";
@@ -13,9 +13,8 @@ function finalRoundMax(set) {
   return Math.max(...last.categories.flatMap((c) => c.clues.map((q) => q.value))) * Number(last.multiplier ?? 1);
 }
 
-export function FinalRound({ state, teams, scores, onAction }) {
+export function FinalRound({ state, teams, scores, wagerDrafts = {}, onWagerChange, onAction }) {
   const { phase, set, finalWagers, finalJudged } = state;
-  const [draft, setDraft] = useState(100);
 
   if (phase === 'final-category') {
     return (
@@ -36,9 +35,9 @@ export function FinalRound({ state, teams, scores, onAction }) {
           teamName={pending.name}
           score={Math.max(scores[pending.id] ?? 0, 0)}
           roundMax={finalRoundMax(set)}
-          value={draft}
-          onChange={setDraft}
-          onConfirm={(amount) => { onAction({ type: 'SET_FINAL_WAGER', teamId: pending.id, amount }); setDraft(100); }}
+          value={wagerDrafts[pending.id] ?? 100}
+          onChange={(amount) => onWagerChange(pending.id, amount)}
+          onConfirm={(amount) => onAction({ type: 'SET_FINAL_WAGER', teamId: pending.id, amount })}
         />
       </div>
     );

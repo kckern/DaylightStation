@@ -13,7 +13,10 @@ vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
 vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
-vi.mock("./PartyGamesExperience.jsx",()=>({default:({onComplete,sessionId})=><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>}));
+vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction}) {
+ React.useEffect(()=>setId==='remote-navigation'?registerRemoteAction(()=>false):undefined,[setId,registerRemoteAction]);
+ return setId==='remote-navigation'?<><button>Decrease wager</button><button>Increase wager</button><button>Lock wager</button></>:<button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>;
+}}));
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
 const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
 afterEach(()=>vi.restoreAllMocks());
@@ -209,4 +212,18 @@ it('discards only automatic sessions with obsolete setup metadata',async()=>{
  expect(await screen.findByRole('button',{name:'Start with 2 teams'})).toHaveFocus();
  expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBeNull();
  expect(createSession).not.toHaveBeenCalled();
+});
+
+it('lets an experience that owns its remote matrix use Left for button focus instead of exit',async()=>{
+ const mounted={id:'jeopardy:remote-navigation',definitionId:'jeopardy:remote-navigation',game:'jeopardy',setId:'remote-navigation',presenter_id:'jeopardy-board',setup:'none',setupProfile:{kind:'none'},valid:true};
+ fetchBoot.mockResolvedValue({config,sets:[mounted]});
+ render(<PartyGamesApp definitionId="jeopardy:remote-navigation"/>);
+ await screen.findByRole('button',{name:'Increase wager'});
+ fireEvent.keyDown(window,{key:'ArrowRight'});
+ expect(screen.getByRole('button',{name:'Increase wager'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'ArrowLeft'});
+ expect(screen.queryByRole('dialog',{name:'Leave game?'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Decrease wager'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Escape'});
+ expect(screen.getByRole('dialog',{name:'Leave game?'})).toBeVisible();
 });
