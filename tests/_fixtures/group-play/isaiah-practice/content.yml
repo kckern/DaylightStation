@@ -1,0 +1,177 @@
+artifact:
+  kind: gaming-content
+  version: 1
+  id: jeopardy:practice-isaiah
+id: practice-isaiah
+title: Isaiah Practice Jeopardy
+catalog:
+  description: >-
+    An open-book family journey through Isaiah. The first round’s 100-point clues welcome youngest
+    readers.
+  round_count: 2
+open_book: true
+rounds:
+  - name: Exploring Isaiah
+    mode: turns
+    multiplier: 1
+    penalize_wrong: false
+    categories:
+      - name: A Prophet’s Vision
+        clues:
+          - value: 100
+            little_kids: true
+            clue: How many wings did each seraph have?
+            answer: What is six?
+            scripture_reference: Isaiah 6:2
+          - value: 200
+            clue: What hot object did a seraph take from the altar?
+            answer: What is a hot coal?
+            scripture_reference: Isaiah 6:6
+          - value: 300
+            clue: How did Isaiah answer when the Lord asked who would go?
+            answer: What is Here I am. Send me!?
+            scripture_reference: Isaiah 6:8
+      - name: Word Pictures
+        clues:
+          - value: 100
+            little_kids: true
+            clue: What frozen white substance describes how clean sins can become?
+            answer: What is snow?
+            scripture_reference: Isaiah 1:18
+          - value: 200
+            clue: What material does Isaiah compare the people to in their Father’s hands?
+            answer: What is clay?
+            scripture_reference: Isaiah 64:8
+          - value: 300
+            clue: What building object is laid in Zion for a firm foundation?
+            answer: What is a stone?
+            scripture_reference: Isaiah 28:16
+      - name: A Peaceful World
+        clues:
+          - value: 100
+            little_kids: true
+            clue: Which animals will live with lambs?
+            answer: What is wolves?
+            scripture_reference: Isaiah 11:6
+          - value: 200
+            clue: What farming equipment will people hammer their swords into?
+            answer: What is plows?
+            scripture_reference: Isaiah 2:4
+          - value: 300
+            daily_double: true
+            clue: What will lions eat like oxen?
+            answer: What is straw?
+            scripture_reference: Isaiah 65:25
+      - name: Care for Others
+        clues:
+          - value: 100
+            little_kids: true
+            clue: What should people share with those who are hungry?
+            answer: What is food?
+            scripture_reference: Isaiah 58:7
+          - value: 200
+            clue: What fruit did Isaiah say to press together and apply to the king’s boil?
+            answer: What is figs?
+            scripture_reference: Isaiah 38:21
+          - value: 300
+            clue: How much must the invited people pay for the offered drinks and grain?
+            answer: What is nothing?
+            scripture_reference: Isaiah 55:1
+      - name: Promises of Help
+        clues:
+          - value: 100
+            little_kids: true
+            clue: Those who trust in the Lord will fly as high as which birds?
+            answer: What is eagles?
+            scripture_reference: Isaiah 40:31
+          - value: 200
+            clue: Where has the Lord written the person’s name?
+            answer: What is on the palms of his hands?
+            scripture_reference: Isaiah 49:16
+          - value: 300
+            clue: >-
+              Besides passing through deep waters, what will people walk through without being
+              burned?
+            answer: What is fire?
+            scripture_reference: Isaiah 43:2
+  - name: More from Isaiah
+    mode: turns
+    multiplier: 2
+    penalize_wrong: false
+    categories:
+      - name: Names and Callings
+        clues:
+          - value: 100
+            clue: What name will be given to the son in this sign?
+            answer: What is Immanuel?
+            scripture_reference: Isaiah 7:14
+          - value: 200
+            clue: Who will receive the key of authority in David’s royal house?
+            answer: Who is Eliakim?
+            scripture_reference: Isaiah 22:22
+          - value: 300
+            clue: Which title in this verse calls the promised ruler an adviser?
+            answer: What is Wonderful Adviser?
+            scripture_reference: Isaiah 9:6
+      - name: Changes to Come
+        clues:
+          - value: 100
+            clue: Those who cannot walk will leap like which animal?
+            answer: What is a deer?
+            scripture_reference: Isaiah 35:6
+          - value: 200
+            clue: What will the Lord wipe away from everyone’s face?
+            answer: What is tears?
+            scripture_reference: Isaiah 25:8
+          - value: 300
+            clue: What will the Lord pour out on the people’s children?
+            answer: What is his Spirit?
+            scripture_reference: Isaiah 44:3
+      - name: Words to Remember
+        clues:
+          - value: 100
+            clue: What will stand forever after the plants fade?
+            answer: What is what our God says?
+            scripture_reference: Isaiah 40:8
+          - value: 200
+            clue: From which direction will the Teacher’s voice be heard?
+            answer: What is behind you?
+            scripture_reference: Isaiah 30:21
+          - value: 300
+            daily_double: true
+            clue: Why will the faithful receive perfect peace, according to the last line?
+            answer: What is because they trust in the Lord?
+            scripture_reference: Isaiah 26:3
+      - name: Scenes to Explore
+        clues:
+          - value: 100
+            clue: Near the hole of which snakes will a baby play?
+            answer: What is cobras?
+            scripture_reference: Isaiah 11:8
+          - value: 200
+            clue: What structure did the vineyard owner build as a place to keep watch?
+            answer: What is a lookout tower?
+            scripture_reference: Isaiah 5:2
+          - value: 300
+            clue: What two things does the king say the Lord has made?
+            answer: What is heaven and earth?
+            scripture_reference: Isaiah 37:16
+      - name: Good News and Joy
+        clues:
+          - value: 100
+            clue: Being saved brings joy like a drink drawn up from what places?
+            answer: What is wells?
+            scripture_reference: Isaiah 12:3
+          - value: 200
+            clue: From what landforms are the messengers coming down?
+            answer: What is mountains?
+            scripture_reference: Isaiah 52:7
+          - value: 300
+            clue: What bent object will the servant refuse to break?
+            answer: What is a twig?
+            scripture_reference: Isaiah 42:3
+final:
+  category: A Last Assurance
+  clue: What reason does the Lord give immediately after telling the people not to be afraid?
+  answer: What is “I am with you”?
+  scripture_reference: Isaiah 41:10

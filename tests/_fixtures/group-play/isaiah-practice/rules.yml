@@ -1,0 +1,18 @@
+artifact:
+  kind: gaming-rules
+  version: 1
+  id: jeopardy:practice-isaiah
+rule_module:
+  id: jeopardy
+  version: 1
+experience:
+  id: jeopardy
+  version: 1
+rules_contract: jeopardy-v1
+party_games:
+  setup_revision: guest-teams-v1
+  anonymous_teams:
+    - name: Blue Team
+      color: '#3273dc'
+    - name: Gold Team
+      color: '#e6b325'
