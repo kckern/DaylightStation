@@ -245,13 +245,13 @@ export class MastraAdapter extends IAgentRuntime {
         ...(this.#inputProcessors ? { inputProcessors: this.#inputProcessors } : {}),
         ...(this.#outputProcessors ? { outputProcessors: this.#outputProcessors } : {}),
       };
-      if (this.#memory) agentOpts.memory = this.#memory;
+      if (options.memory !== false && this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);
       mastraAgent.__setLogger?.(new StructuredSdkLogger(this.#logger));
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
 
-      const memoryOpts = (this.#memory && userId && threadId)
+      const memoryOpts = (options.memory !== false && this.#memory && userId && threadId)
         ? { memory: { resource: userId, thread: threadId } }
         : null;
 
@@ -401,12 +401,12 @@ export class MastraAdapter extends IAgentRuntime {
         ...(this.#inputProcessors ? { inputProcessors: this.#inputProcessors } : {}),
         ...(this.#outputProcessors ? { outputProcessors: this.#outputProcessors } : {}),
       };
-      if (this.#memory) agentOpts.memory = this.#memory;
+      if (options.memory !== false && this.#memory) agentOpts.memory = this.#memory;
       const mastraAgent = new this.#AgentClass(agentOpts);
       mastraAgent.__setLogger?.(new StructuredSdkLogger(this.#logger));
 
       const callArg = (Array.isArray(messages) && messages.length > 0) ? messages : input;
-      const memoryOpts = (this.#memory && userId && threadId)
+      const memoryOpts = (options.memory !== false && this.#memory && userId && threadId)
         ? { memory: { resource: userId, thread: threadId } }
         : null;
       const output = await scope.wait(mastraAgent.stream(callArg, { ...memoryOpts, ...scope.options }));
@@ -553,8 +553,10 @@ export class MastraAdapter extends IAgentRuntime {
     timer.unref?.();
     const signal = controller.signal;
     const requestContext = new RequestContext(Object.entries(context).filter(([key]) => !['signal', 'requestContext'].includes(key) && !key.startsWith('mastra__')));
-    if (context.userId) requestContext.set(MASTRA_RESOURCE_ID_KEY, context.userId);
-    if (context.threadId) requestContext.set(MASTRA_THREAD_ID_KEY, context.threadId);
+    if (options.memory !== false) {
+      if (context.userId) requestContext.set(MASTRA_RESOURCE_ID_KEY, context.userId);
+      if (context.threadId) requestContext.set(MASTRA_THREAD_ID_KEY, context.threadId);
+    }
     return {
       context: { ...context, signal, maxToolCalls: options.limits?.maxToolCalls ?? this.#maxToolCalls },
       options: {

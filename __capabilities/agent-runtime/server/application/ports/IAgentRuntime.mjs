@@ -13,7 +13,7 @@ export class IAgentRuntime {
    * @param {Array} options.tools - Available tools (ITool[])
    * @param {string} options.systemPrompt - Agent persona/instructions
    * @param {Object} [options.context] - Execution context (userId, etc.)
-   * @param {Object} [options.memory] - Conversation memory (optional)
+   * @param {false} [options.memory] - False disables configured conversation memory and SDK memory scopes for this request; omission preserves runtime defaults
    * @param {AbortSignal} [options.signal] - Cancellation propagated to model and tools
    * @param {{timeoutMs?: number, maxToolCalls?: number, maxSteps?: number}} [options.limits]
    * @param {Object} [options.outputSchema] - JSON Schema; invalid output must reject

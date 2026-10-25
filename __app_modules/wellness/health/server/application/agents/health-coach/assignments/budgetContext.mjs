@@ -84,7 +84,7 @@ export function canonicalCoachingResult(raw, gathered, type, logger) {
   return { should_send: true, text: escape(text), parse_mode: 'HTML' };
 }
 
-/** Keep programmatic gathering intact; automated reasoning cannot invoke tools. */
+/** Keep programmatic gathering intact; automated reasoning cannot invoke tools or SDK memory. */
 export function automatedAssignmentDeps(deps) {
-  return { ...deps, agentRuntime: { execute: request => deps.agentRuntime.execute({ ...request, tools: [] }) } };
+  return { ...deps, agentRuntime: { execute: request => deps.agentRuntime.execute({ ...request, tools: [], memory: false }) } };
 }
