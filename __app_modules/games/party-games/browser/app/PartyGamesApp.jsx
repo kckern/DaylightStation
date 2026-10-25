@@ -312,7 +312,12 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
 
   return (
     <div ref={rootRef} className="party-games-container"><PartyStage className={`party-games${isJeopardy ? ' party-games--jeopardy' : ''}`} theme={flow.theme?.id} phase={flow.phase}>
-      {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => setBootAttempt((value) => value + 1)}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
+      {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => {
+        // A session created after boot has no initial URL attachment. Recover the
+        // current authority after a reconnect read fails, including its successor.
+        if (flow.sessionId) setAttachment({ diagnosticSessionId: flow.sessionId.startsWith('diagnostic:') ? flow.sessionId : null, sessionId: flow.sessionId.startsWith('diagnostic:') ? null : flow.sessionId, savedSession: false });
+        setBootAttempt((value) => value + 1);
+      }}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
       {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>{isJeopardy ? 'Host controls are unavailable. Reconnecting…' : 'Keyboard and on-screen controls still work.'}</span></div>}
 
       {flow.phase === 'loading' && <TitleCard title="Party Games" subtitle="Loading…" />}

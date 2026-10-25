@@ -310,3 +310,21 @@ it('rejects an explicit URL attachment for a different requested pack', async ()
   expect(await screen.findByRole('alert')).toHaveTextContent('different game definition');
   expect(createSession).not.toHaveBeenCalled();
 });
+
+it('Retry after a failed reconnect read attaches the newly created current session and its replacement', async () => {
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet] });
+  fetchSession.mockRejectedValueOnce(new Error('reconnect read failed'));
+  const view = render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete session-one' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(1, { diagnosticSessionId: null, sessionId: null });
+  socket.connected = false; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  socket.connected = true; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('reconnect read failed');
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: { ...attached('session-one'), replacementSessionId: 'new' } })
+    .mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: attached('new') });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await screen.findByRole('button', { name: 'Complete new' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(2, { diagnosticSessionId: null, sessionId: 'session-one' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(3, { diagnosticSessionId: null, sessionId: 'new' });
+  expect(createSession).toHaveBeenCalledTimes(1);
+});
