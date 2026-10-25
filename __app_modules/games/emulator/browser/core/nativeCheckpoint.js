@@ -39,9 +39,10 @@ export async function prepareProtectedAssets({ provenance, romUrl, pathtodata,
       read(romUrl, provenance.romHash),
       read(`${path}cores/${core.name}-${core.variant}.protected-v1.data`, core.bundleHash),
     ]);
+    const bootName = `verified-${provenance.romHash}-${cryptoImpl.randomUUID()}`;
     const bundleUrl = win.URL.createObjectURL(new win.Blob([bundle]));
     return {
-      romFile: new win.File([rom], `verified-${provenance.romHash}.rom`), provenance,
+      romFile: new win.File([rom], `${bootName}.rom`), bootName, provenance,
       // If EJS selects a different GL setting, it still cannot load different
       // bytes. An unsupported GL mode fails boot instead of changing provenance.
       paths: Object.fromEntries(['wasm', 'legacy-wasm', 'thread-wasm', 'thread-legacy-wasm'].map(variant => [`${core.name}-${variant}.data`, bundleUrl])),
@@ -56,11 +57,22 @@ export async function prepareProtectedAssets({ provenance, romUrl, pathtodata,
 export function assertProtectedBoot(instance, assets) {
   const config = instance?.config, core = assets?.provenance?.core;
   const archive = core && `${core.name}-${core.variant}.data`;
-  if (!core || !assets.romFile?.name || config?.gameUrl !== assets.romFile.name
+  const gm = instance?.gameManager, savePath = gm?.getSaveFilePath?.();
+  if (!core || !assets.bootName || !savePath?.startsWith('/data/saves/')
+    || savePath.split('/').at(-1) !== `${assets.bootName}.srm` || !assets.romFile?.name || config?.gameUrl !== assets.romFile.name
     || config.disableDatabases !== true || instance.getCore?.() !== core.name
     || typeof assets.paths?.[archive] !== 'string' || config.filePaths?.[archive] !== assets.paths[archive]) {
     throw fail('The running emulator identity does not match the verified game assets');
   }
+  // disableDatabases only controls EJS's asset databases. Its native save mount
+  // still syncs IDBFS, so every boot gets a unique filename before native startup.
+  // After checking that identity, detach the persistent mount without deleting
+  // any old database data. All subsequent native file IO stays in MEMFS; the
+  // verified checkpoint journal is the sole persistence path.
+  const fs = gm.FS, mount = fs.lookupPath('/data/saves').node.mount;
+  if (mount.mountpoint === '/data/saves' && mount.type === fs.filesystems.IDBFS) fs.unmount('/data/saves');
+  if (fs.lookupPath('/data/saves').node.mount.type !== fs.filesystems.MEMFS) throw fail('Native save storage is not isolated');
+  fs.mkdirTree(savePath.slice(0, savePath.lastIndexOf('/')));
   return true;
 }
 

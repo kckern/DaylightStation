@@ -569,8 +569,10 @@ describe('protected engine boot', () => {
       _daylight_restore_last_request_v1: () => lastRequest,
       cwrap: () => (path, id) => { lastRequest = id; return 1; },
     });
-    const assets = { romFile: { name: 'verified-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
+    const assets = { bootName: 'verified-game', romFile: { name: 'verified-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
     instance.config = { gameUrl: assets.romFile.name, filePaths: assets.paths, disableDatabases: true };
+    const MEMFS = {}; Object.assign(instance.gameManager.FS, { filesystems: { MEMFS }, lookupPath: () => ({ node: { mount: { type: MEMFS, mountpoint: '/' } } }), mkdirTree: vi.fn() });
+    instance.gameManager.getSaveFilePath = () => '/data/saves/Gambatte/verified-game.srm';
     const prepareAssets = vi.fn(async () => assets), load = vi.fn(async () => instance);
     const engine = createEmulatorEngine({ load, prepareAssets, win: makeFakeWin(), cryptoImpl: webcrypto });
     await engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance });
@@ -605,7 +607,7 @@ it('rejects a returned instance that actually booted a different verified ROM', 
   const instance = makeFakeInstance({ getCore: () => 'gambatte', config: { gameUrl: 'a-different-game.rom', disableDatabases: true, filePaths: { 'gambatte-wasm.data': 'blob:verified' } } });
   Object.assign(instance.gameManager, { clearEJSResetTimer() {} });
   Object.assign(instance.gameManager.Module, { _daylight_checkpoint_contract_version: () => 1, _daylight_enable_checkpoint_protection_v1: () => 1, cwrap: () => () => 1 });
-  const assets = { romFile: { name: 'expected-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
+  const assets = { bootName: 'expected-game', romFile: { name: 'expected-game.rom' }, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance, dispose: vi.fn() };
   const engine = createEmulatorEngine({ load: async () => instance, prepareAssets: async () => assets, win: makeFakeWin() });
   await expect(engine.boot({ mount: '#m', romUrl: '/rom', pathtodata: '/engine/', checkpointProvenance: provenance })).rejects.toThrow(/identity|different|match/i);
   expect(engine.isReady()).toBe(false);

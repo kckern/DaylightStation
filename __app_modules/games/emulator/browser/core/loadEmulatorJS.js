@@ -62,6 +62,7 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
     EJS_player: playerSelector,
     EJS_core: core,
     EJS_gameUrl: protectedAssets?.romFile || romUrl,
+    EJS_gameName: null,
     EJS_pathtodata: normalizedPath,
     EJS_startOnLoaded: true,
     EJS_threads: false,

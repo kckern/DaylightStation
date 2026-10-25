@@ -149,3 +149,23 @@ describe('console recovery, claims and failed exits', () => {
     expect((await env.repository.readRecoveryRevision(env.key, previous.revision)).snapshot.toString()).toBe('state-previous');
   });
 });
+
+it('lets keyboard/controller intent select a recovery copy after the game menu closes', async () => {
+  const first = await seed('first'); const view = setup(); await playable(view);
+  fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
+  const restore = await view.findByRole('button', { name: /^Restore saved copy/ }); restore.focus();
+  fireEvent.keyDown(window, { key: 'Enter' });
+  await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
+  expect((await env.repository.read(env.key)).restoredFrom).toBe(first.revision);
+});
+it('supports keyboard reset confirmation and submits only one reset for pointer-down plus click', async () => {
+  const resetCheckpoint = vi.fn((...args) => client.resetCheckpoint(...args));
+  const view = setup({ protectedClient: { ...client, resetCheckpoint } }); await playable(view);
+  fireEvent.click(view.container.querySelector('[data-hotspot-id="power"]'));
+  const start = view.getByRole('button', { name: 'Start over' }); start.focus(); fireEvent.keyDown(window, { key: 'Enter' });
+  await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view); expect(resetCheckpoint).toHaveBeenCalledTimes(1);
+  fireEvent.click(view.container.querySelector('[data-hotspot-id="power"]'));
+  const next = view.getByRole('button', { name: 'Start over' });
+  fireEvent.pointerDown(next); fireEvent.click(next); await waitFor(() => expect(view.engines).toHaveLength(3));
+  expect(resetCheckpoint).toHaveBeenCalledTimes(2);
+});
