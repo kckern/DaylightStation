@@ -170,3 +170,38 @@ it('GET exposes committed replacement and restart retries return it without new 
   expect((await invoke(router, 'post', '/sessions/:sessionId/restart', request)).body).toEqual(fresh);
   expect(application.createSession).toHaveBeenCalledTimes(1);
 });
+
+it('enforces readiness through the actual command route and authenticated coordinator', async () => {
+  const { GameRuntime, GameSessionCoordinator, SessionActorAuthorization } = await import('../../../../../__capabilities/gaming/portable/kernel/index.mjs');
+  const { MemorySessionJournal, MemorySnapshotRepository } = await import('../../../../../__capabilities/gaming/portable/testing/memoryPorts.mjs');
+  const { jeopardyRuleModule } = await import('../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs');
+  const definition = { rounds: [{ mode: 'turns', categories: [{ clues: [{ value: 100, clue: 'Question', answer: 'Answer' }] }] }] };
+  let now = 1000;
+  const coordinator = new GameSessionCoordinator({
+    runtime: new GameRuntime({ rulesets: [jeopardyRuleModule] }), snapshots: new MemorySnapshotRepository(), journal: new MemorySessionJournal(),
+    definitions: { getCurrent: async () => ({ definition, hash: 'a'.repeat(64) }), pin: async () => ({ definition, hash: 'a'.repeat(64) }), getPinned: async () => definition },
+    ids: { session: () => 'game:readiness', seed: () => 1 }, clock: { now: () => new Date(now) }, authorization: new SessionActorAuthorization(),
+  });
+  const created = await coordinator.create({ ruleset: { id: 'jeopardy', version: 1 }, definitionId: 'ready', seats: [{ id: 'red' }], participants: [{ id: 'player' }] });
+  let revision = created.header.revision; let id = 0;
+  const router = createGamingRouter({ gamingApplication: coordinator });
+  const request = async (command, auth = { roles: ['gaming-host'] }, actorId = 'host') => {
+    const result = await invoke(router, 'post', '/sessions/:sessionId/commands', { ...auth, params: { sessionId: 'game:readiness' }, body: { command_id: `cmd:${id++}`, actor_id: actorId, expected_revision: revision, logical_time: 1000, command } });
+    if (result.statusCode === 200) revision = result.body.header.revision;
+    return result;
+  };
+  const migrated = await request({ type: 'CONFIGURE_COMPETITIVE' });
+  expect(migrated).toMatchObject({ statusCode: 200, body: { header: { session_id: 'game:readiness' }, state: { scores: { red: 0 }, teamIds: ['red'] } } });
+  expect(migrated.body.state.set.rounds[0].mode).toBe('hosted');
+  expect(await request({ type: 'START_ROUND' })).toMatchObject({ statusCode: 422, body: { error: 'buzzers_not_ready' } });
+  expect(await request({ type: 'BUZZER_SETUP', epoch: 'forged' }, { user: { sub: 'player' } })).toMatchObject({ statusCode: 403 });
+  expect(await request({ type: 'BUZZER_SETUP', epoch: 'forged' }, { user: { sub: 'player' } }, 'player')).toMatchObject({ statusCode: 403 });
+  await request({ type: 'BUZZER_SETUP', epoch: 'tv' });
+  await request({ type: 'BUZZER_REPORT', kind: 'assign', epoch: 'tv', teamId: 'red', generation: 0, slot: 'gamepad:0:Pad' });
+  expect(await request({ type: 'START_ROUND' })).toMatchObject({ statusCode: 422 });
+  await request({ type: 'BUZZER_REPORT', kind: 'test', epoch: 'tv', teamId: 'red', generation: 0, slot: 'gamepad:0:Pad' });
+  now = 30000; // Client still sends the old timestamp; the server clock expires the lease.
+  expect(await request({ type: 'START_ROUND' })).toMatchObject({ statusCode: 422 });
+  await request({ type: 'BUZZER_PRESENCE', epoch: 'tv' });
+  expect(await request({ type: 'START_ROUND' })).toMatchObject({ statusCode: 200, body: { state: { phase: 'board' } } });
+});

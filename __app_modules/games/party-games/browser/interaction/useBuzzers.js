@@ -14,6 +14,7 @@ const log = () => getLogger().child({ component: 'party-games-buzzers' });
  * onLock(teamId) fires exactly once per armed window.
  */
 export function useBuzzers({ teams, onLock }) {
+  const inputListeners = useRef(new Set());
   const arbiterRef = useRef(null);
   if (!arbiterRef.current) arbiterRef.current = new BuzzerArbiter(teams);
   const [locked, setLocked] = useState(null);
@@ -55,7 +56,9 @@ export function useBuzzers({ teams, onLock }) {
   useEffect(() => {
     const onInteraction = (event) => {
       const intent = event.detail;
-      if (intent?.source !== 'gamepad' || intent.phase !== 'press' || !intent.controller_id) return;
+      if (intent?.source !== 'gamepad' || !intent.controller_id) return;
+      for (const listener of inputListeners.current) listener(intent);
+      if (intent.phase !== 'press') return;
       handleSlot(`gamepad:${intent.controller_id}`, 'gamepad');
     };
     window.addEventListener('gaming:interaction', onInteraction);
@@ -64,6 +67,7 @@ export function useBuzzers({ teams, onLock }) {
 
   return {
     arbiter: arbiterRef.current,
+    subscribeInput: useCallback(listener => { inputListeners.current.add(listener); return () => inputListeners.current.delete(listener); }, []),
     locked,
     bindingTeamId,
     arm: useCallback((teamIds) => { setLocked(null); arbiterRef.current.arm(teamIds); }, []),

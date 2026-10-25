@@ -253,3 +253,39 @@
     &__team { font-size: 18px; }
   }
 }
+
+.jp-choose {
+  padding: 0.6rem 1rem;
+  border-left: 0.75rem solid var(--team-color, var(--gp-brass));
+  background: var(--gp-well);
+  color: var(--gp-paper);
+  font-size: clamp(1.2rem, 2.6vw, 2rem);
+  font-weight: 800;
+  text-align: center;
+}
+.jp-board__tile { position: relative; }
+.jp-board__tile.is-selected {
+  outline: 0.4rem solid var(--gp-brass-bright);
+  outline-offset: -0.4rem;
+  background: var(--gp-paper);
+  color: var(--gp-well);
+  text-shadow: none;
+  z-index: 1;
+}
+.jp-board__owner {
+  position: absolute;
+  bottom: 0.25rem;
+  right: 0.4rem;
+  padding: 0.1rem 0.35rem;
+  border-left: 0.3rem solid var(--team-color, var(--gp-brass));
+  background: var(--gp-well);
+  color: var(--gp-paper);
+  font-size: 0.8rem;
+  text-shadow: none;
+}
+.jp-buzzer-setup { text-align: center; }
+.jp-buzzer-setup [data-active] {
+  border: 0.2rem solid currentColor;
+  padding: 0.4rem;
+  font-size: 1.2em;
+}

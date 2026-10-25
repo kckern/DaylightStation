@@ -35,6 +35,7 @@ export class BuzzerArbiter {
 
   handleBindPress(slot) {
     if (!this._bindingTeamId) return false;
+    if (this._slotToTeam[slot] && this._slotToTeam[slot] !== this._bindingTeamId) return false;
     // one slot per team: drop the team's previous binding
     for (const [s, t] of Object.entries(this._slotToTeam)) {
       if (t === this._bindingTeamId) delete this._slotToTeam[s];

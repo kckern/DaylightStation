@@ -2,7 +2,7 @@ import express from 'express';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
-const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
+const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, buzzers_not_ready: 422, invalid_buzzer_report: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
 
 const HOST_ROLES = new Set(['sysadmin', 'parent', 'gaming-host']);
 
@@ -48,7 +48,7 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
     try { await operation(req, res); }
     catch (error) {
       const status = Number(error.status) || STATUS[error.code] || 500;
-      logger?.[status >= 500 ? 'error' : 'warn']?.('gaming.api.error', { code: error.code || 'internal_error', status, message: error.message });
+      logger?.[status >= 500 ? 'error' : 'warn']?.(error.code === 'buzzers_not_ready' ? 'jeopardy.start-refused' : 'gaming.api.error', { code: error.code || 'internal_error', status, message: error.message });
       res.status(status).json({ error: error.code || 'internal_error', message: status >= 500 ? 'Gaming request failed' : error.message, ...(error.details ? { details: error.details } : {}) });
     }
   };

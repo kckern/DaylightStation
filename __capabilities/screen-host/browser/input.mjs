@@ -7,6 +7,6 @@ export { translateAction, translateSecondary, ACTION_MAP } from "./input/actionM
 export { KeyboardAdapter } from "./input/adapters/KeyboardAdapter.js";
 export { NumpadAdapter } from "./input/adapters/NumpadAdapter.js";
 export { RemoteAdapter } from "./input/adapters/RemoteAdapter.js";
-export { GamepadAdapter, acquireGamepadInputHost, bindNextGamepadPress, cancelPendingGamepadBind, clearGamepadRoleBindings, restoreGamepadRoleBindings } from "./input/adapters/GamepadAdapter.js";
+export { GamepadAdapter, acquireGamepadBuzzerCapture, acquireGamepadInputHost, bindNextGamepadPress, cancelPendingGamepadBind, clearGamepadRoleBindings, restoreGamepadRoleBindings } from "./input/adapters/GamepadAdapter.js";
 export { TouchAdapter } from "./input/adapters/TouchAdapter.js";
 export { useScopedRemoteControls } from "./input/useScopedRemoteControls.js";

@@ -32,6 +32,7 @@ const clue = {
 };
 const set = {
   rounds: [{
+    mode: 'hosted',
     categories: [{
       name: 'Creation',
       clues: [clue]
@@ -48,6 +49,8 @@ const teams = [{
   name: 'Red'
 }];
 const base = {
+  teamIds: ['red'],
+  buzzerSetup: { epoch: 'fixture', seenAt: Date.now(), teams: { red: { slot: 'gamepad:0:Pad', connected: true, tested: true, generation: 0 } } },
   roundIndex: 0,
   used: {},
   scores: {

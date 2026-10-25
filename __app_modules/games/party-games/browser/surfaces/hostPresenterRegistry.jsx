@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import MemberAvatar from "../../../../../__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx";
 import { clampWager } from "../experiences/jeopardy/ui/wager.js";
+import BuzzerStatus from "../experiences/jeopardy/ui/BuzzerStatus.jsx";
+import { buzzersReady } from "../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs";
 import { hostButtons } from "./hostView.js";
 
 const PHASE_LABELS = Object.freeze({
@@ -30,21 +32,25 @@ function WagerControl({ label, bounds, value, onChange, onConfirm, pending }) {
 }
 
 export function JeopardyHost({ state, set, teams, scores, send, pending, wagerDraft, setWagerDraft, print, printStatus }) {
+  const [, tick] = useState(0);
+  const now = Date.now();
+  useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 1000); return () => clearInterval(timer); }, []);
   const round = set.rounds[state.roundIndex];
   const buttons = hostButtons(state);
   const teamName = (id) => teams.find((team) => team.id === id)?.name || id;
   return <>
     <Scores teams={teams} scores={scores} />
     <Phase value={state.phase} />
+    {state.phase === 'round-intro' && <BuzzerStatus state={state} teams={teams} onReassign={teamId => send({ type: 'BUZZER_REASSIGN', teamId })} pending={pending} />}
     {state.phase === 'board' && <div className="gp-host__utility"><HostButton label={printStatus === 'printing' ? 'Printing…' : 'Print host packet'} disabled={printStatus === 'printing'} onClick={print} />{printStatus && printStatus !== 'printing' && <span>{printStatus}</span>}</div>}
-    {state.phase === 'board' && round && <div className="gp-host__board" style={{ '--cats': round.categories.length }}>{round.categories.map((category, categoryIndex) => <div key={category.name} className="gp-host__col"><div className="gp-host__cat">{category.name}</div>{category.clues.map((clue, rowIndex) => { const used = state.used[`${state.roundIndex}:${categoryIndex}:${rowIndex}`]; return <button key={rowIndex} type="button" disabled={used || pending} aria-label={`${category.name} $${clue.value * multiplier(round)}${used ? ' — used' : ''}`} className={`gp-host__tile${used ? ' is-used' : ''}`} onClick={() => send({ type: 'SELECT_AT', cat: categoryIndex, row: rowIndex })}>{used ? '' : `$${clue.value * multiplier(round)}`}</button>; })}</div>)}</div>}
-    {(state.phase === 'clue' || state.phase === 'judging') && state.active && <div className="gp-host__clue"><div className="gp-host__cluetext">{state.active.clue.clue}</div><div className="gp-host__answer">Answer: {state.active.clue.answer}</div>{state.active.clue.scripture_reference && <div className="gp-host__reference">Scripture: {state.active.clue.scripture_reference}</div>}{state.phase === 'clue' && !state.isDailyDouble && !state.revealed && round?.mode !== 'turns' && <div className="gp-host__row">{teams.filter((team) => !state.attempted.includes(team.id)).map((team) => <HostButton key={team.id} label={`${team.name} answers`} tone="team" disabled={pending} onClick={() => send({ type: 'BUZZ', teamId: team.id })} />)}</div>}</div>}
+    {state.phase === 'board' && round && <div className="gp-host__board" style={{ '--cats': round.categories.length }}>{round.categories.map((category, categoryIndex) => <div key={category.name} className="gp-host__col"><div className="gp-host__cat">{category.name}</div>{category.clues.map((clue, rowIndex) => { const used = state.used[`${state.roundIndex}:${categoryIndex}:${rowIndex}`]; return <button key={rowIndex} type="button" disabled={used || pending} aria-label={`${category.name} $${clue.value * multiplier(round)}${used ? ' — used' : ''}${clue.assigned_team_id ? ` — ${teamName(clue.assigned_team_id)} answers` : ''}`} className={`gp-host__tile${used ? ' is-used' : ''}`} onClick={() => send({ type: 'SELECT_AT', cat: categoryIndex, row: rowIndex })}>{used ? '' : <>{`$${clue.value * multiplier(round)}`}{clue.assigned_team_id && <span> {teamName(clue.assigned_team_id)}</span>}</>}</button>; })}</div>)}</div>}
+    {(state.phase === 'clue' || state.phase === 'judging') && state.active && <div className="gp-host__clue"><div className="gp-host__cluetext">{state.active.clue.little_kids && <p>{teamName(state.answeringTeamId)} answers</p>}{state.active.clue.clue}</div><div className="gp-host__answer">Answer: {state.active.clue.answer}</div>{state.active.clue.scripture_reference && <div className="gp-host__reference">Scripture: {state.active.clue.scripture_reference}</div>}{state.phase === 'clue' && !state.isDailyDouble && !state.active.clue.little_kids && !state.revealed && round?.mode !== 'turns' && <div className="gp-host__row">{teams.filter((team) => !state.attempted.includes(team.id)).map((team) => <HostButton key={team.id} label={`${team.name} answers`} tone="team" disabled={pending} onClick={() => send({ type: 'BUZZ', teamId: team.id })} />)}</div>}</div>}
     {state.phase === 'wager' && <WagerControl label={`${teamName(state.answeringTeamId)} — wager`} bounds={{ score: Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax: roundMax(round) }} value={wagerDraft} onChange={setWagerDraft} pending={pending} onConfirm={(amount) => { send({ type: 'SET_WAGER', amount }); setWagerDraft(100); }} />}
     {state.phase === 'final-wager' && (() => { const team = teams.find((candidate) => state.finalWagers[candidate.id] == null); return team ? <WagerControl label={`${team.name} — final wager`} bounds={{ score: Math.max(scores[team.id] ?? 0, 0), roundMax: finalRoundMax(set) }} value={wagerDraft} onChange={setWagerDraft} pending={pending} onConfirm={(amount) => { send({ type: 'SET_FINAL_WAGER', teamId: team.id, amount }); setWagerDraft(100); }} /> : null; })()}
     {['final-clue', 'final-judging'].includes(state.phase) && <div className="gp-host__clue"><div className="gp-host__cluetext">{set.final.clue}</div>{set.final.scripture_reference && <div className="gp-host__reference">Scripture: {set.final.scripture_reference}</div>}</div>}
     {state.phase === 'final-judging' && <div className="gp-host__finaljudge"><div className="gp-host__answer">Answer: {set.final.answer}</div>{teams.map((team) => <div key={team.id} className="gp-host__row"><span>{team.name} (wager {state.finalWagers[team.id]})</span>{state.finalJudged[team.id] == null ? <><HostButton label="Correct" tone="primary" disabled={pending} onClick={() => send({ type: 'JUDGE_FINAL', teamId: team.id, correct: true })} /><HostButton label="Wrong" tone="danger" disabled={pending} onClick={() => send({ type: 'JUDGE_FINAL', teamId: team.id, correct: false })} /></> : <span>{state.finalJudged[team.id] ? 'Correct' : 'Wrong'}</span>}</div>)}</div>}
     {state.phase === 'done' && <div className="gp-host__done">Game complete</div>}
-    {buttons.length > 0 && <div className="gp-host__actions">{buttons.map((button) => <HostButton key={button.label} label={button.label} tone={button.tone} pending={pending} onClick={() => send(button.command)} />)}</div>}
+    {buttons.length > 0 && <div className="gp-host__actions">{buttons.map((button) => <HostButton key={button.label} label={button.label} tone={button.tone} pending={pending} disabled={button.command.type === 'START_ROUND' && state.phase === 'round-intro' && !buzzersReady(state, now)} onClick={() => send(button.command)} />)}</div>}
   </>;
 }
 
