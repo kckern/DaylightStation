@@ -35,11 +35,11 @@ Status block and snapshot are computed from the same assessed daily budgets and 
 
 **Pattern detection.** The coach reads a calendar window of the user's assessed daily budgets, classifies the most notable trend or break, and tags the snapshot with a single pattern label. The label is not shown to the user; it is a hint to the LLM about what is worth noticing.
 
-**Snapshot.** The pattern, the day's totals, the recent comparisons, the weight trend, the most prominent food items, and a short window of recent coaching messages are gathered into one compact, structured object. The snapshot is the LLM's entire view of the world for this call. Anything not in the snapshot is invisible to the LLM.
+**Snapshot.** The pattern, the day's totals, the recent comparisons, the weight trend, the most prominent food items, and a short window of recent coaching messages are gathered into one compact, structured object. Eligible observations are derived from the snapshot evidence; the selector receives those candidates and separately labelled historical context.
 
 **Status block.** Independently and deterministically, the coach builds a short formatted block of the day's numbers, goal-relative percentages, and trend values. The status block is the user's first read and the part the LLM cannot rewrite.
 
-**LLM commentary.** The snapshot is passed to a generative model with a system prompt. The model returns short commentary anchored on the snapshot, or an empty string if it has nothing new to say. (See §5 for the full constraints on length, persona, and call shape.)
+**LLM selection.** The model chooses an offered observation ID or silence. Deterministic templates render the selected facts; model prose never reaches delivery. See LLM commentary below for the selection contract.
 
 **Delivery.** The status block and the optional commentary are joined into a single message and sent through the household's messaging gateway. The same message is persisted to the user's coaching history so the next call can avoid repeating it.
 
@@ -78,7 +78,7 @@ Every status block carries:
 
 Numbers in the status block are **rounded** — calories to whole digits, protein to whole grams, weight to one decimal, slope to one or two decimals. Decimals beyond what is meaningful are not displayed.
 
-The contract with the LLM is unconditional: **the LLM may cite the status block, paraphrase it, or build on it. The LLM may not contradict it, restate it verbatim, invent new numbers, or replace any value with a different one.** If the LLM emits a number, that number is in the snapshot. If a number is in the snapshot, it agrees with the status block.
+The model selects an offered observation ID. Every delivered commentary number comes from the selected facts through a deterministic template; returned model prose is discarded.
 
 If commentary is empty, the status block is sent alone. The status block stands on its own.
 
@@ -129,30 +129,15 @@ Each composition scope builds its own `BudgetService` over the shared stores (`c
 
 ## LLM commentary
 
-The persona is a friend who happens to know the user's numbers — direct, data-aware, never preachy, never motivational-poster, never clinical. The voice is conversational and concrete. The commentary itself is **at most one sentence, at most about thirty words**, wrapped below the status block in a quoted line.
+Automated commentary is selected from supported observations rather than generated prose. `buildObservations({type, evidence, proteinGoal, recentObservations, eventItems})` returns eligible facts with an ID, kind, covered date/window, evidence dates, priority, and fingerprint. `renderObservation` turns a selected observation into plain text; the Telegram wrapper escapes that text once.
 
-What commentary **may** do:
+Supported kinds are `logging_incomplete`, `within_plan`, `over_plan`, `energy_surplus`, `protein_gap`, `exercise_budget`, and `period_summary`. Daily calorie judgments require trustworthy measured budget evidence. Live complete logs describe current position with “so far”; protein gaps require a finished day, known measured protein, and a configured target supplied to that call. Reconstructed intake receives no intake verdict and has unknown protein. Surplus means above estimated maintenance, never merely above plan. Period summaries require at least half the calendar window to have trustworthy finished logs, state their coverage, and disclose current configured goals when that is the supplied goal basis. Sparse periods can still produce a factual logging-status observation.
 
-- Interpret the status block ("the chicken carried the protein").
-- Frame a number against a recent pattern ("calories are dialed in but protein crept up only seven grams").
-- Connect a specific food item to the day's totals ("that yogurt covered most of the gap").
-- Reference what the budget allows for the rest of the day ("you have room for a snack, not a meal").
-- Stay silent. Returning an empty string is a first-class outcome and the system handles it gracefully.
+`CoachingCommentaryService.generate(snapshot)` returns an offered Observation or `null`. The model receives only eligible observations under `current_evidence`, with recent messages clearly separated under `historical_context`. It returns exactly `{"observationId":"an offered ID"}` or `{"observationId":null}`. Explicit null chooses silence. Malformed JSON, extra fields, unsupported IDs, stale model prose, and provider failures fall back to the highest-priority unseen eligible observation, or silence when none remain. No model prose is delivered, and no natural-language factual validator is involved. The runtime call carries the explicit user ID and uses one step, no tools, and a 30-second limit.
 
-What commentary **may not** do:
+Fingerprints use kind, subject, and date/window. Delivered history stores `observationId`, `observationKind`, `observationFingerprint`, and `observationFingerprints` alongside existing receipt fields. The plural field remembers facts bundled into another observation, such as a protein gap included in a within-plan sentence. This prevents the gap from being repeated under another kind after the day's calorie position changes. History text may be truncated for context without losing these fingerprints; legacy history without metadata remains readable and is not rewritten.
 
-- Invent a number that is not in the snapshot.
-- Contradict any value in the status block.
-- Repeat an observation already made in the recent coaching window included in the snapshot.
-- Use cheerleading phrases ("great job," "keep it up," "you've got this," "stay consistent").
-- Give generic advice ("focus on protein-rich foods," "ensure consistent tracking") with no anchor in the user's data.
-- Suggest specific named foods the user has not already logged or quick-added.
-- Offer medical advice, diagnose, or interpret symptoms. The coach is a habit-and-trend coach, not a clinician.
-- Reference reconciliation-derived implied intake or tracking accuracy for days less than two weeks old. Those quantities are only meaningful in long-view framing and the snapshot omits them for recent days.
-
-The commentary call is **single-call, single-turn, no tools**. The model receives the snapshot as input, returns text, and that is the whole interaction. There is no follow-up turn, no tool loop, no multi-step planning. Failure modes — empty output, malformed output, transport error, timeout — degrade to no commentary, never to a partial or invented one.
-
-The LLM provider, model, and token budget are configured at the household level. The coach commits to a small, fast model — the call must complete before delivery, and the message budget is one sentence.
+Daily prominent foods are labelled as foods logged today, without implying a recent event. Only explicitly supplied `eventItems` support “just logged” wording. Missing event items never produce that claim. Templates give neutral factual context and do not advise eating remaining calories.
 
 ---
 
@@ -197,7 +182,7 @@ The practical rules:
 - **Midday.** The coach frames remaining budget as *what is still possible* — calories left, protein gap, what a typical lunch or dinner from the food catalog would do to the totals.
 - **Late in the day.** The coach frames remaining budget as *what is still appropriate* — a snack-sized window, a protein-shake-sized gap, or the day already closed against goal.
 - **After the day's calorie ceiling is met.** The coach does not pile on. It does not nag, does not remind, does not suggest restriction. The status block reports the situation factually; commentary, if any, is brief and forward-looking.
-- **After a workout.** The exercise reaction frames burned calories as *expanded budget* — what the burn buys for the rest of the day in user-meaningful terms ("a snack, not a meal"; "room for the dinner you were already planning"). With the budget contract the burn is credited in full, exactly as the Today bar nets it off food (the range is judged on net); only without the budget does the legacy half-credit estimate apply.
+- **After a workout.** The exercise reaction frames burned calories as *expanded budget* — what the burn buys for the rest of the day in user-meaningful terms ("a snack, not a meal"; "room for the dinner you were already planning"). With the budget contract the burn is credited in full, exactly as the Today bar nets it off food (the range is judged on net); when budget evidence is unavailable, exercise credit is labelled unavailable. Raw activity burn remains a separate reported fact; the canonical daily credit describes only exercise already included in that budget.
 
 The coach also respects **source freshness**: if a source has gone silent (no scale reading in many days, no fitness session recorded in a week), the coach does not pretend the absence is data. A weight-plateau pattern requires recent weight readings; without them, the pattern is suppressed.
 
@@ -226,9 +211,9 @@ The coach degrades gracefully. No failure in any single stage blocks the daily r
 
 | Failure | Behavior |
 |---|---|
-| LLM unavailable, errored, or timed out | Commentary is dropped. The status block is delivered alone. The user sees the numbers without the conversational line. |
-| LLM returns malformed or empty output | Treated as "nothing to say." The status block is delivered alone. |
-| LLM commentary contradicts the status block | The commentary is dropped before delivery. Contradiction is detected by re-checking emitted numbers against the snapshot. |
+| LLM unavailable, errored, or timed out | Select the highest-priority unseen eligible observation, or remain silent if none exists. |
+| LLM returns malformed or empty output, extra fields, or an unsupported ID | Use the deterministic unseen fallback. A valid `observationId: null` explicitly chooses silence. |
+| LLM emits unsupported prose or stale numbers | Discard the prose and use the supported fallback; no model numbers are delivered. |
 | Sparse data (no recent food log, no weight, very thin window) | The coach defers commentary, delivers only the factual status block, and frames missing dimensions as such ("no weight reading in five days") rather than as zeros. |
 | Partial day (under the completeness threshold, not closed with `/done` or `/fast`) | Classified `incomplete` (see Logging completeness): labelled in the status block, excluded from averages and patterns, and never narrated as low intake. |
 | Pattern detection finds nothing | The snapshot carries a null pattern. The LLM is free to find a smaller observation or to stay silent. |

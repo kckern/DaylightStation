@@ -6,3 +6,6 @@ export { detectPattern } from "./patterns.mjs";
 export * from "./snapshots.mjs";
 
 export { CoachingEvidenceService, budgetDayView, evidenceAverage } from "./CoachingEvidenceService.mjs";
+
+export { buildObservations } from './observations.mjs';
+export { renderObservation } from './observationText.mjs';

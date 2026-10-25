@@ -141,11 +141,14 @@ describe('CoachingMessageBuilder', () => {
       });
       expect(html).toContain('<b>Run:</b> 45 min');
       expect(html).toContain('320 cal burned');
-      expect(html).toContain('~150 extra cal earned');
+      expect(html).toContain('150 cal exercise credit included today');
     });
   });
 
   describe('wrapCommentary', () => {
+    it('escapes plain text exactly once at the channel boundary', () => {
+      expect(CoachingMessageBuilder.wrapCommentary('Rice & beans <b>food</b>')).toBe('\n\n<blockquote>Rice &amp; beans &lt;b&gt;food&lt;/b&gt;</blockquote>');
+    });
     it('wraps non-empty commentary in blockquote', () => {
       const html = CoachingMessageBuilder.wrapCommentary('That chicken hit hard.');
       expect(html).toBe('\n\n<blockquote>That chicken hit hard.</blockquote>');

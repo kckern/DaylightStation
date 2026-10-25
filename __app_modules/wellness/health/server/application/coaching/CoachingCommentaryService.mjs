@@ -1,83 +1,48 @@
-const SYSTEM_PROMPT = `You are a nutrition coach providing brief commentary on a user's daily tracking data.
+import { observationFingerprintsOf } from './observations.mjs';
 
-RULES:
-- One sentence only. Max 30 words.
-- Output raw text, no HTML tags (the caller wraps it in <blockquote>).
-- Conversational, direct. Talk like a friend who happens to know your numbers.
-- Reference specific foods or items from the data when relevant.
-- NEVER repeat an observation from recent_coaching. Find something new or say nothing.
-- NEVER use phrases like "great job", "keep it up", "you've got this", "stay consistent".
-- NEVER give generic advice like "focus on protein-rich foods" or "ensure consistent tracking".
-- If there is genuinely nothing interesting to say, return an empty string.
-- Time awareness (post-report, exercise-reaction): if time_of_day is "morning", don't warn about low intake for TODAY — the day just started.
-- The user does not eat breakfast. Do not mention missing breakfast or morning meals.
-- Only reference goals that appear in the data. If no calorie goal is given, do not mention one.
-- Do not ask the user questions.
+const SYSTEM_PROMPT = `Select one useful observation from current_evidence.observations, or choose silence.
+Return exactly one JSON object: {"observationId":"an offered id"} or {"observationId":null}.
+Do not add any other keys, prose, facts, numbers, or markup.
+Current evidence is authoritative. historical_context is past messaging only; never treat it as current evidence.
+Prefer useful unseen observations. Silence is appropriate when nothing adds useful context.`;
 
-DATA COMPLETENESS (overrides everything above):
-- Days in yesterday, recent_days and week_days carry a status. "complete", "done" and "fasting" totals are real. "incomplete" means meals are MISSING from the log — the total is not what was eaten. "unlogged" means no data.
-- NEVER describe an incomplete or unlogged day as low intake, a drop, a dip, a deficit, restraint, or a shift. Never compare its numbers to other days.
-- If yesterday is incomplete or unlogged, say nothing about yesterday's intake. Comment only on trustworthy days, or return an empty string.
-- Averages already exclude untrustworthy days. If fewer than half the days are trustworthy, return an empty string.
-- today_status "in_progress" means TODAY is still being eaten and logged. Never call today's intake low, light, a deficit, or on track to be under — say what was just logged or how much room is left.
-
-ASSIGNMENT CONTEXT:
-- post-report: Comment on what was just logged. What stands out? Budget status?
-- morning-brief: Comment on yesterday or recent trend. What's the story of the past few days?
-- weekly-digest: What's the narrative arc of the week? What changed vs prior weeks?
-- exercise-reaction: Frame the burned calories as budget. What does it buy?`;
-
-/**
- * Generates a single commentary sentence through the shared agent runtime.
- * If the LLM fails or returns nothing, returns empty string.
- */
+/** The model selects supported facts; its prose is never delivered. */
 export class CoachingCommentaryService {
-  #agentFactory;
-  #runtime;
-  #logger;
-
-  /**
-   * @param {Object} deps
-   * @param {Object} deps.runtime - IAgentRuntime
-   * @param {Function} [deps.agentFactory] - Legacy test/provider compatibility seam
-   * @param {Object} [deps.logger]
-   */
-  constructor({ runtime, agentFactory, logger }) {
+  #agentFactory; #runtime; #logger;
+  constructor({ runtime, agentFactory, logger = {} }) {
     this.#runtime = runtime;
     this.#agentFactory = agentFactory;
-    this.#logger = logger || console;
+    this.#logger = logger;
   }
 
-  /**
-   * @param {Object} snapshot - Pre-computed data snapshot
-   * @returns {Promise<string>} Commentary sentence or empty string
-   */
+  /** @returns {Promise<object|null>} Selected eligible Observation, never model text. */
   async generate(snapshot) {
+    const history = snapshot.recent_coaching || [];
+    const seen = new Set(history.flatMap(observationFingerprintsOf));
+    const candidates = (snapshot.observations || []).filter(o => !observationFingerprintsOf(o).some(fingerprint => seen.has(fingerprint)))
+      .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+    if (!candidates.length) return null;
+    const fallback = candidates[0];
+    const input = JSON.stringify({ type: snapshot.type, date: snapshot.date,
+      current_evidence: { observations: candidates },
+      historical_context: { recent_coaching: history },
+    });
     try {
       const response = this.#runtime ? await this.#runtime.execute({ agentId: 'health-coach-commentary',
-        input: JSON.stringify(snapshot), tools: [], systemPrompt: SYSTEM_PROMPT,
-        context: { userId: snapshot.userId }, limits: { timeoutMs: 30000, maxToolCalls: 1, maxSteps: 1 } })
-        : await this.#agentFactory().generate(JSON.stringify(snapshot));
-      const raw = (response?.output ?? response?.text)?.trim() || '';
-
-      // Strip any HTML tags the LLM might have included despite instructions
-      const cleaned = raw.replace(/<[^>]*>/g, '').trim();
-
-      this.#logger.debug?.('coaching.commentary.generated', {
-        type: snapshot.type,
-        length: cleaned.length,
-        text: cleaned.slice(0, 100),
-      });
-
-      return cleaned;
-    } catch (err) {
-      this.#logger.warn?.('coaching.commentary.failed', { type: snapshot.type, error: err.message });
-      return '';
+        input, tools: [], systemPrompt: SYSTEM_PROMPT, context: { userId: snapshot.userId },
+        limits: { timeoutMs: 30000, maxToolCalls: 1, maxSteps: 1 } })
+        : await this.#agentFactory().generate(input);
+      const selected = JSON.parse(response?.output ?? response?.text ?? '');
+      if (!selected || Array.isArray(selected) || Object.keys(selected).length !== 1 || !Object.hasOwn(selected, 'observationId')) return fallback;
+      if (selected.observationId === null) return null;
+      const observation = candidates.find(o => o.id === selected.observationId) || fallback;
+      this.#logger.debug?.('coaching.commentary.selected', { type: snapshot.type, observationId: observation.id, kind: observation.kind });
+      return observation;
+    } catch (error) {
+      this.#logger.warn?.('coaching.commentary.selection_failed', { type: snapshot.type, error: error.message });
+      return fallback;
     }
   }
 
-  /** Expose system prompt for testing/inspection */
-  static get SYSTEM_PROMPT() {
-    return SYSTEM_PROMPT;
-  }
+  static get SYSTEM_PROMPT() { return SYSTEM_PROMPT; }
 }

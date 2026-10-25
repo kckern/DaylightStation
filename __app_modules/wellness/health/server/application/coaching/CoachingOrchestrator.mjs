@@ -1,12 +1,14 @@
+import { observationFingerprintsOf } from './observations.mjs';
+import { renderObservation } from './observationText.mjs';
 import { CoachingEvidenceService, evidenceAverage } from "./CoachingEvidenceService.mjs";
 import { summarizeBudgetPeriod } from "../../../portable/contracts/health/budgetPeriod.mjs";
 import { CoachingMessageBuilder } from "./CoachingMessageBuilder.mjs";
 import { detectPattern } from "./patterns.mjs";
-import { resolveMinCalories, closureStatus, fastedMealsOf } from "./dayCompleteness.mjs";
+import { resolveMinCalories } from "./dayCompleteness.mjs";
 import { buildPostReportSnapshot, buildMorningBriefSnapshot, buildWeeklyDigestSnapshot, buildExerciseReactionSnapshot, buildRecentCoaching, getTimeOfDay } from "./snapshots.mjs";
 
 /**
- * Coordinates data gathering → status block → LLM commentary → delivery → persistence.
+ * Coordinates shared evidence → supported observation selection → deterministic text → delivery → persistence.
  */
 export class CoachingOrchestrator {
   #commentaryService;
@@ -15,7 +17,6 @@ export class CoachingOrchestrator {
   #nutriListStore;
   #config;
   #minCalories;
-  #budgetService;
   #logger;
   #evidenceService;
   #clock;
@@ -37,25 +38,12 @@ export class CoachingOrchestrator {
     this.#nutriListStore = nutriListStore;
     this.#config = config;
     this.#minCalories = resolveMinCalories(completeness);
-    this.#budgetService = budgetService;
     this.#logger = logger || console;
     this.#clock = clock;
     this.#evidenceService = evidenceService || new CoachingEvidenceService({
       budgetService, healthStore, clock, completeness, logger: this.#logger,
       timezoneForUser: userId => config.getUserTimezone?.(userId),
     });
-  }
-
-  // The day's budget contract, or null (no service, no goals, no weight). A
-  // missing budget falls back to the configured goals; it never fails a send.
-  async #dayBudget(userId, date) {
-    if (!this.#budgetService) return null;
-    try {
-      return await this.#budgetService.getBudget(userId, date);
-    } catch (err) {
-      this.#logger.warn?.('coaching.budget.unavailable', { userId, date, error: err.message, code: err.code || null });
-      return null;
-    }
   }
 
   // Goals in the shape the pattern detector and builders read, taken from the
@@ -79,9 +67,10 @@ export class CoachingOrchestrator {
    * @param {string} opts.userId
    * @param {string} opts.conversationId
    * @param {string} [opts.date] - defaults to the user's today
-   * @param {{calories, protein}} [opts.totals] - defaults to the sum of the day's items
+   * @param {{calories, protein}} [opts.totals] - fallback only when the canonical budget is unavailable
+   * @param {Array} [opts.eventItems] - actual capture-event foods, never the full daily ledger
    */
-  async sendPostReport({ userId, conversationId, date, totals }) {
+  async sendPostReport({ userId, conversationId, date, totals, eventItems = [] }) {
     const today = this.#getToday(userId);
     date = date || today;
     try {
@@ -89,11 +78,10 @@ export class CoachingOrchestrator {
         this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'not-today' });
         return;
       }
-      const [coachingData, evidence, weightData, closures, items] = await Promise.all([
+      const [coachingData, evidence, weightData, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
         this.#evidenceService.load({ userId, date, historyDays: 5 }),
         this.#healthStore.loadWeightData(userId).catch(() => ({})),
-        this.#loadClosures(userId),
         this.#nutriListStore.findByDate(userId, date).catch(() => []),
       ]);
       const budget = evidence.current.assessment.availability === 'available' ? evidence.current.budget : null;
@@ -101,9 +89,9 @@ export class CoachingOrchestrator {
       const minCalories = this.#minCaloriesFor(budget);
 
       // The budget's counted fold is the day's total (the same one the bar
-      // shows); an explicit total from the caller still wins.
-      const dayTotals = this.#roundTotals(totals
-        || (budget ? { calories: budget.food, protein: budget.macros?.protein } : this.#sumItems(items)));
+      // shows); caller totals are only a fallback when it is unavailable.
+      const dayTotals = this.#roundTotals(budget ? { calories: budget.food, protein: budget.macros?.protein }
+        : totals || this.#sumItems(items));
       if (!(dayTotals.calories > 0)) {
         this.#logger.info?.('coaching.post_report.skipped', { userId, date, reason: 'nothing-logged' });
         return;
@@ -114,7 +102,7 @@ export class CoachingOrchestrator {
       const pattern = detectPattern(recentDays, goals);
       const weightTrend = this.#getWeightTrend7d(weightData, date);
       const timeOfDay = getTimeOfDay(this.#config.getUserTimezone?.(userId));
-      const fastedMeals = fastedMealsOf(closures[date]);
+      const fastedMeals = evidence.current.fastedMeals || [];
       const calories = {
         consumed: dayTotals.calories, goal_min: goals.calories_min, goal_max: goals.calories_max || goals.calories,
         ...(budget?.zone ? { zone: budget.zone, complete: budget.complete, remaining: budget.remaining, net: budget.net } : {}),
@@ -122,17 +110,18 @@ export class CoachingOrchestrator {
       };
       const protein = { consumed: dayTotals.protein, goal: goals.protein };
 
-      const todayStatus = closureStatus(closures[date]) || 'in_progress';
-      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({ calories, protein, inProgress: todayStatus === 'in_progress' });
+      const todayStatus = evidence.current.declared || 'in_progress';
+      const statusBlock = CoachingMessageBuilder.buildPostReportBlock({ calories, protein, inProgress: todayStatus === 'in_progress', dayEvidence: evidence.current });
 
       const snapshot = buildPostReportSnapshot({
         date, timeOfDay, calories, protein, items,
         todayStatus,
         recentPattern: pattern, weightTrend7d: weightTrend, recentCoaching, recentDays,
-        minCalories, evidence,
+        minCalories, evidence, eventItems,
       });
 
-      const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      const observation = await this.#commentaryService.generate({ ...snapshot, userId }).catch(() => null);
+      const commentary = renderObservation(observation);
       // The capture receipt already shows the totals; a post-meal message with
       // nothing to say is just a second ping. Stay silent instead.
       if (!commentary?.trim()) {
@@ -143,7 +132,7 @@ export class CoachingOrchestrator {
 
       const previous = this.#lastEntry(coachingData, date, 'post-report');
       const sent = await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, date, 'post-report', message, { messageId: sent?.messageId ?? null });
+      await this.#persistCoaching(userId, date, 'post-report', message, { messageId: sent?.messageId ?? null, ...this.#observationMetadata(observation) });
       if (previous?.messageId) {
         await this.#messagingGateway.deleteMessage?.(conversationId, previous.messageId)
           .catch(err => this.#logger.warn?.('coaching.post_report.supersede_failed', { userId, date, error: err.message }));
@@ -183,11 +172,12 @@ export class CoachingOrchestrator {
         weight, recentPattern: pattern, recentCoaching, recentDays, minCalories, evidence,
       });
 
-      const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      const observation = await this.#commentaryService.generate({ ...snapshot, userId }).catch(() => null);
+      const commentary = renderObservation(observation);
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
       await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, today, 'morning-brief', message);
+      await this.#persistCoaching(userId, today, 'morning-brief', message, this.#observationMetadata(observation));
 
       this.#logger.info?.('coaching.morning_brief.sent', { userId, date: today, hasCommentary: !!commentary });
     } catch (err) {
@@ -210,7 +200,7 @@ export class CoachingOrchestrator {
       const weekDays = longTermDays.slice(0, 7);
       const thisWeek = evidenceAverage(weekDays);
       const longTermAvg = evidenceAverage(longTermDays);
-      const weekEvidence = { ...evidence, period: summarizeBudgetPeriod(weekDays.map(day => day.assessment)) };
+      const weekEvidence = { ...evidence, days: weekDays, period: summarizeBudgetPeriod(weekDays.map(day => day.assessment)) };
       const weight = this.#getWeightSnapshotWeekly(weightData, today);
 
       const statusBlock = CoachingMessageBuilder.buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight });
@@ -219,11 +209,12 @@ export class CoachingOrchestrator {
         thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories, evidence: weekEvidence, longTermPeriod: evidence.period,
       });
 
-      const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      const observation = await this.#commentaryService.generate({ ...snapshot, userId }).catch(() => null);
+      const commentary = renderObservation(observation);
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
       await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, today, 'weekly-digest', message);
+      await this.#persistCoaching(userId, today, 'weekly-digest', message, this.#observationMetadata(observation));
 
       this.#logger.info?.('coaching.weekly_digest.sent', { userId, date: today, hasCommentary: !!commentary });
     } catch (err) {
@@ -239,12 +230,12 @@ export class CoachingOrchestrator {
   async sendExerciseReaction({ userId, conversationId, activity }) {
     try {
       const today = this.#getToday(userId);
-      const [coachingData, closures, items, budget] = await Promise.all([
+      const [coachingData, evidence, items] = await Promise.all([
         this.#healthStore.loadCoachingData(userId).catch(() => ({})),
-        this.#loadClosures(userId),
+        this.#evidenceService.load({ userId, date: today, historyDays: 1 }),
         this.#nutriListStore.findByDate(userId, today).catch(() => []),
-        this.#dayBudget(userId, today),
       ]);
+      const budget = evidence.current.assessment.availability === 'available' ? evidence.current.budget : null;
       const goals = this.#goalsFor(budget, this.#config.getUserGoals(userId));
 
       const activityId = activity.id != null ? String(activity.id) : null;
@@ -255,10 +246,9 @@ export class CoachingOrchestrator {
       }
 
       const todayTotals = this.#roundTotals(budget ? { calories: budget.food, protein: budget.macros?.protein } : this.#sumItems(items));
-      // With the budget contract, exercise is credited in full — the range is
-      // judged on net (food − exercise), exactly as the Today bar draws it.
-      // Without it, the legacy half-credit estimate stands.
-      const budgetImpact = Math.round(activity.caloriesBurned * (budget ? 1 : 0.5));
+      // Quote the canonical day's credit. A missing budget cannot establish
+      // how much exercise has been included; never invent a fallback credit.
+      const budgetImpact = evidence.current.assessment.exercise;
       const recentCoaching = buildRecentCoaching(coachingData);
 
       const statusBlock = CoachingMessageBuilder.buildExerciseReactionBlock({ activity, budgetImpact });
@@ -272,15 +262,16 @@ export class CoachingOrchestrator {
         // The budget's `remaining` already nets every synced workout; the
         // model must not add this burn on top of it a second time.
         ...(budget?.zone ? { budgetImpactNote: 'today_calories.remaining already counts synced workouts (this one included once synced); budget_impact explains the change, do not add it again' } : {}),
-        todayStatus: closureStatus(closures[today]) || 'in_progress',
-        recentCoaching,
+        todayStatus: evidence.current.declared || 'in_progress',
+        recentCoaching, evidence,
       });
 
-      const commentary = await this.#commentaryService.generate(snapshot).catch(() => '');
+      const observation = await this.#commentaryService.generate({ ...snapshot, userId }).catch(() => null);
+      const commentary = renderObservation(observation);
       const message = statusBlock + CoachingMessageBuilder.wrapCommentary(commentary);
 
       const sent = await this.#messagingGateway.sendMessage(conversationId, message, { parseMode: 'HTML' });
-      await this.#persistCoaching(userId, today, 'exercise-reaction', message, { messageId: sent?.messageId ?? null, activityId });
+      await this.#persistCoaching(userId, today, 'exercise-reaction', message, { messageId: sent?.messageId ?? null, activityId, ...this.#observationMetadata(observation) });
 
       this.#logger.info?.('coaching.exercise_reaction.sent', { userId, date: today, activityId, hasCommentary: !!commentary });
     } catch (err) {
@@ -289,6 +280,10 @@ export class CoachingOrchestrator {
   }
 
   // ── Private helpers ──
+
+  #observationMetadata(observation) {
+    return observation ? { observationId: observation.id, observationKind: observation.kind, observationFingerprint: observation.fingerprint, observationFingerprints: observationFingerprintsOf(observation) } : {};
+  }
 
   #getToday(userId) {
     const tz = this.#config.getUserTimezone?.(userId) || 'America/Los_Angeles';
@@ -309,14 +304,6 @@ export class CoachingOrchestrator {
 
   #lastEntry(coachingData, date, type) {
     return (coachingData?.[date] || []).filter(e => e?.type === type).at(-1) || null;
-  }
-
-  async #loadClosures(userId) {
-    try {
-      return (await this.#healthStore.loadDayClosedData?.(userId)) || {};
-    } catch {
-      return {};
-    }
   }
 
   /**

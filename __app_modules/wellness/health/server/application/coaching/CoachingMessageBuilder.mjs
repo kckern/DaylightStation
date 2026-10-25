@@ -22,7 +22,23 @@ export class CoachingMessageBuilder {
    * @param {{calories: {consumed, goal_min, goal_max}, protein: {consumed, goal}}} data
    * @returns {string} Telegram HTML
    */
-  static buildPostReportBlock({ calories, protein, inProgress = false }) {
+  static buildPostReportBlock({ calories, protein, inProgress = false, dayEvidence }) {
+    if (dayEvidence) {
+      const { assessment: a } = dayEvidence;
+      const live = !a.finished;
+      const amount = Number.isFinite(a.food) ? a.food : calories.consumed;
+      const calorieLine = dayEvidence.provenance === 'reconstructed'
+        ? `${dayEvidence.estimatedCalories == null ? 'intake estimate unavailable' : `${Math.round(dayEvidence.estimatedCalories)} cal estimated`}`
+        : `${Math.round(amount)} cal${live ? ' so far' : ' logged'}`;
+      const calorieTail = a.planFood == null || dayEvidence.provenance === 'reconstructed'
+        ? 'calorie budget unavailable' : `exercise-adjusted plan: ${Math.round(a.planFood)} cal`;
+      const knownProtein = a.proteinKnown && Number.isFinite(dayEvidence.protein);
+      const hasTarget = Number.isFinite(protein.goal) && protein.goal > 0;
+      const proteinLine = knownProtein
+        ? `${Math.round(dayEvidence.protein)}${hasTarget ? ` / ${protein.goal}` : ''}g protein${live ? ' so far' : ''}`
+        : 'protein unknown';
+      return [`🔥 <b>${calorieLine}</b> · ${calorieTail}`, `💪 <b>${proteinLine}</b>`].join('\n');
+    }
     const consumedCal = Math.round(calories.consumed);
     const consumedProt = Math.round(protein.consumed);
     if (inProgress) {
@@ -58,7 +74,7 @@ export class CoachingMessageBuilder {
     const lines = [...CoachingMessageBuilder.#yesterdayLines(yesterday, minCalories)];
 
     lines.push(weekAvg.trustedDays > 0
-      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} (target: ${proteinGoal}g)${CoachingMessageBuilder.#coverage(weekAvg)}`
+      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} ${Number.isFinite(proteinGoal) && proteinGoal > 0 ? `(target: ${proteinGoal}g)` : ''}${CoachingMessageBuilder.#coverage(weekAvg)}`
       : `\u{1F4C9} <b>7-day avg:</b> no fully logged days`);
 
     if (weight) {
@@ -131,8 +147,8 @@ export class CoachingMessageBuilder {
    */
   static buildExerciseReactionBlock({ activity, budgetImpact }) {
     return [
-      `\u{1F3C3} <b>${activity.type}:</b> ${activity.durationMin} min \u{00B7} ${activity.caloriesBurned} cal burned`,
-      `\u{1F525} <b>Budget update:</b> ~${budgetImpact} extra cal earned`,
+      `\u{1F3C3} <b>${String(activity.type).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}:</b> ${activity.durationMin} min \u{00B7} ${activity.caloriesBurned} cal burned`,
+      `\u{1F525} <b>Budget update:</b> ${budgetImpact == null ? 'exercise credit unavailable' : `${Math.round(budgetImpact)} cal exercise credit included today`}`,
     ].join('\n');
   }
 
@@ -145,6 +161,6 @@ export class CoachingMessageBuilder {
     if (!commentary) return '';
     const trimmed = commentary.trim();
     if (!trimmed) return '';
-    return `\n\n<blockquote>${trimmed}</blockquote>`;
+    return `\n\n<blockquote>${trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</blockquote>`;
   }
 }

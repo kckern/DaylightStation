@@ -1,3 +1,5 @@
+import { buildObservations } from './observations.mjs';
+
 /**
  * Build pre-computed data snapshots for LLM commentary.
  * Each builder takes raw data from datastores and returns a compact JSON object.
@@ -14,7 +16,7 @@
  * @param {number|null} opts.weightTrend7d
  * @param {Array<{type: string, hours_ago: number, text: string}>} opts.recentCoaching
  */
-export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories, evidence }) {
+export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories, evidence, eventItems = [] }) {
   // Pick top 3 notable items by protein contribution, then calories
   const notable = (items || [])
     .filter(i => i.calories > 0)
@@ -28,6 +30,7 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
 
   return {
     type: 'post-report',
+    observations: buildObservations({ type: 'post-report', evidence, proteinGoal: protein.goal, recentObservations: recentCoaching, eventItems }),
     ...evidenceContext(evidence),
     date,
     time_of_day: timeOfDay,
@@ -44,6 +47,7 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
     },
     protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
     notable_items: notable,
+    notable_items_scope: 'foods_logged_today',
     recent_pattern: recentPattern,
     weight_trend_7d: weightTrend7d,
     recent_days: (recentDays || []).map(pickDay),
@@ -70,6 +74,7 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
 export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories, evidence }) {
   return {
     type: 'morning-brief',
+    observations: buildObservations({ type: 'morning-brief', evidence, proteinGoal, recentObservations: recentCoaching }),
     ...evidenceContext(evidence),
     date,
     time_of_day: 'morning',
@@ -96,6 +101,8 @@ export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoa
 export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories, evidence, longTermPeriod }) {
   return {
     type: 'weekly-digest',
+    date: evidence?.date,
+    observations: buildObservations({ type: 'weekly-digest', evidence, recentObservations: recentCoaching }),
     ...evidenceContext(evidence),
     ...(longTermPeriod ? { long_term_period: longTermPeriod } : {}),
     logging: loggingContext(minCalories),
@@ -136,9 +143,12 @@ function loggingContext(minCalories) {
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null, evidence }) {
   return {
     type: 'exercise-reaction',
+    date: evidence?.date,
+    ...evidenceContext(evidence),
+    observations: buildObservations({ type: 'exercise-reaction', evidence, recentObservations: recentCoaching }),
     today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
@@ -169,6 +179,9 @@ export function buildRecentCoaching(coachingData, windowDays = 4) {
         type: msg.type,
         hours_ago: Math.round((now - ts) / (60 * 60 * 1000)),
         text: (msg.text || '').slice(0, 200),
+        ...(msg.observationFingerprint ? { observationFingerprint: msg.observationFingerprint } : {}),
+        ...(msg.observationFingerprints ? { observationFingerprints: msg.observationFingerprints } : {}),
+        ...(msg.observationId ? { observationId: msg.observationId, observationKind: msg.observationKind } : {}),
       });
     }
   }

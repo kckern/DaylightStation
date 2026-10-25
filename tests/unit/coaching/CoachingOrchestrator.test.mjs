@@ -23,7 +23,7 @@ describe('CoachingOrchestrator', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-07T20:00:00Z')); // 1pm PDT on the post-report date
-    mockCommentary = { generate: vi.fn().mockResolvedValue('Nice protein hit.') };
+    mockCommentary = { generate: vi.fn().mockImplementation(async snapshot => snapshot.observations[0] ?? null) };
     mockMessaging = { sendMessage: vi.fn().mockResolvedValue({ messageId: '123' }), deleteMessage: vi.fn().mockResolvedValue(undefined) };
     mockHealthStore = {
       loadNutritionData: vi.fn().mockResolvedValue({}),
@@ -64,16 +64,16 @@ describe('CoachingOrchestrator', () => {
     it("sums today's items when no totals are given, and marks the day in progress", async () => {
       await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
       const [, text] = mockMessaging.sendMessage.mock.calls[0];
-      expect(text).toContain('<b>500 cal so far</b> · 1100 left of 1600');
-      expect(text).toContain('<b>45g protein so far</b> · 75g to go');
+      expect(text).toContain('<b>500 cal so far</b> · calorie budget unavailable');
+      expect(text).toContain('<b>protein unknown</b>');
       expect(text).not.toMatch(/\d+%/);
       const snapshot = mockCommentary.generate.mock.calls[0][0];
       expect(snapshot.today_status).toBe('in_progress');
       expect(snapshot.recent_days.every(d => d.status)).toBe(true);
     });
 
-    it('sends nothing when the model has nothing to add (the receipt already shows totals)', async () => {
-      mockCommentary.generate.mockResolvedValue('');
+    it('sends nothing when selection chooses silence (the receipt already shows totals)', async () => {
+      mockCommentary.generate.mockResolvedValue(null);
       await orchestrator.sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
       expect(mockMessaging.sendMessage).not.toHaveBeenCalled();
     });
@@ -125,7 +125,7 @@ describe('CoachingOrchestrator', () => {
       const snapshot = mockCommentary.generate.mock.calls[0][0];
       expect(snapshot.today_calories.consumed).toBe(500);
       expect(snapshot.today_status).toBe('in_progress');
-      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('~210 extra cal earned');
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('exercise credit unavailable');
     });
   });
 
@@ -141,12 +141,12 @@ describe('CoachingOrchestrator', () => {
     const [convId, text, opts] = mockMessaging.sendMessage.mock.calls[0];
     expect(convId).toBe('telegram:123');
     expect(text).toContain('<b>850 cal so far</b>');
-    expect(text).toContain('<blockquote>Nice protein hit.</blockquote>');
+    expect(text).toContain('<blockquote>2026-04-07: Calorie-budget evidence is unavailable.</blockquote>');
     expect(opts.parseMode).toBe('HTML');
   });
 
-  it('sends nothing when the LLM returns empty', async () => {
-    mockCommentary.generate.mockResolvedValue('');
+  it('sends nothing when selection returns null', async () => {
+    mockCommentary.generate.mockResolvedValue(null);
 
     await orchestrator.sendPostReport({
       userId: 'user_1',
@@ -258,7 +258,7 @@ describe('CoachingOrchestrator', () => {
     it('post-report goals and totals come from the budget: floor, top, counted food, zone', async () => {
       await withBudget(vi.fn().mockResolvedValue(budget())).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
       const [, text] = mockMessaging.sendMessage.mock.calls[0];
-      expect(text).toContain('<b>700 cal so far</b> · 1091 left of 1791');
+      expect(text).toContain('<b>700 cal so far</b> · exercise-adjusted plan: 1791 cal');
       const snapshot = mockCommentary.generate.mock.calls[0][0];
       expect(snapshot.calories).toMatchObject({ consumed: 700, goal_min: 1300, goal_max: 1791, zone: 'incomplete', complete: false, remaining: 1091 });
       expect(snapshot.logging.min_calories).toBe(1300);
@@ -274,25 +274,25 @@ describe('CoachingOrchestrator', () => {
       expect(snapshot.logging.min_calories).toBe(1300);
     });
 
-    it('credits exercise in full, as the bar does, and quotes the range top', async () => {
+    it('quotes exercise already included by the budget and the range top', async () => {
       await withBudget(vi.fn().mockResolvedValue(budget())).sendExerciseReaction({ userId: 'user_1', conversationId: 'telegram:123',
         activity: { id: 5, type: 'Ride', durationMin: 45, caloriesBurned: 420 } });
-      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('~420 extra cal earned');
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('0 cal exercise credit included today');
       expect(mockCommentary.generate.mock.calls[0][0].today_calories).toMatchObject({ consumed: 700, goal_max: 1791, zone: 'incomplete' });
     });
 
     it('tells the model which meals were declared fasted, without closing the day', async () => {
       mockHealthStore.loadDayClosedData = vi.fn().mockResolvedValue({ '2026-04-07': { meals: { morning: { status: 'fasting', at: 'x' } } } });
-      await withBudget(vi.fn().mockResolvedValue(budget())).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
+      await withBudget(vi.fn().mockResolvedValue(budget({ fastedMeals: ['morning'] }))).sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
       const snapshot = mockCommentary.generate.mock.calls[0][0];
       expect(snapshot.today_status).toBe('in_progress');
       expect(snapshot.calories.fasted_meals).toEqual(['morning']);
     });
 
-    it('falls back to the configured goals when the budget is unavailable', async () => {
+    it('keeps logged totals but marks the budget unavailable when evidence is missing', async () => {
       await withBudget(vi.fn().mockRejectedValue(Object.assign(new Error('NO_WEIGHT_DATA'), { code: 'NO_WEIGHT_DATA' })))
         .sendPostReport({ userId: 'user_1', conversationId: 'telegram:123' });
-      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('<b>500 cal so far</b> · 1100 left of 1600');
+      expect(mockMessaging.sendMessage.mock.calls[0][1]).toContain('<b>500 cal so far</b> · calorie budget unavailable');
     });
   });
 
@@ -330,7 +330,7 @@ describe('canonical historical budgets in coaching snapshots', () => {
     ['2026-10-22', 1532, 275], ['2026-10-23', 330, 413], ['2026-10-24', 1704, 997],
   ].map(([date, food, exercise]) => ({ date, food, exercise, net: food - exercise, range: { floor: 1200, top: 1791 }, maintenance: 2291, complete: food >= 1200, macros: { protein: 125 }, goalBasis: 'current' }));
   const setup = (nutrition = { '2026-10-24': { calories: 9999, protein: 999 } }) => {
-    const commentary = { generate: vi.fn().mockResolvedValue('A comment') };
+    const commentary = { generate: vi.fn().mockImplementation(async snapshot => snapshot.observations[0] ?? null) };
     const budgetService = { getBudgetRange: vi.fn().mockResolvedValue([...rows].reverse()), getBudget: vi.fn().mockResolvedValue({ ...rows[0], date: '2026-10-25', food: 700 }) };
     const messaging = { sendMessage: vi.fn().mockResolvedValue({}) };
     const orchestrator = new CoachingOrchestrator({
