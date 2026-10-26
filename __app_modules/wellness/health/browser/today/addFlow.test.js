@@ -76,3 +76,13 @@ describe('useAddedRowHighlight', () => {
     expect(result.current.size).toBe(0);
   });
 });
+
+it('never completes one date from another date visibility',async()=>{
+ resetAddFlow();
+ let finished=false;
+ const done=trackAddFlow({ids:['a'],userId:'u',date:'2026-10-24',submitToCommittedMs:10}).then(()=>{finished=true;});
+ noteVisibleRows({userId:'u',date:'2026-10-25',rows:[{uuid:'a'}]});
+ await Promise.resolve(); expect(finished).toBe(false);
+ noteVisibleRows({userId:'u',date:'2026-10-24',rows:[{uuid:'a'}]});
+ await done; expect(finished).toBe(true);
+});

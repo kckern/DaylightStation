@@ -19,7 +19,7 @@ export const ADD_VISIBLE_TIMEOUT_MS = 30_000;
 export const ADDED_HIGHLIGHT_MS = 1500;
 
 const waiting = new Set();
-let lastSeen = new Set(); // row ids in the most recent day the view reported
+let lastSeen = new Map(); // row ids in the most recent day the view reported
 const listeners = new Set();
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const rowId = row => String(row?.uuid ?? row?.id ?? '');
@@ -41,7 +41,7 @@ export function addedRowIds(response) {
  * day, or immediately when there are none, or after the timeout — so a caller
  * can hold a placeholder exactly until the real row replaces it.
  */
-export function trackAddFlow({ ids = [], bucket = null, surface, kind, submitToCommittedMs, at = now() }) {
+export function trackAddFlow({ ids = [], userId = null, date = null, bucket = null, surface, kind, submitToCommittedMs, at = now() }) {
   const data = { bucket, surface, kind, submitToCommittedMs: Math.round(submitToCommittedMs), rows: ids.length };
   if (!ids.length) {
     logger.info('add.flow', { ...data, committedToVisibleMs: null });
@@ -49,7 +49,8 @@ export function trackAddFlow({ ids = [], bucket = null, surface, kind, submitToC
   }
   for (const notify of listeners) notify(ids);
   return new Promise((resolve) => {
-    const pending = { ids: new Set(ids), committedAt: at, data, resolve };
+    const scope = JSON.stringify([userId, date]);
+    const pending = { ids: new Set(ids), scope, committedAt: at, data, resolve };
     pending.timer = setTimeout(() => {
       if (!waiting.delete(pending)) return;
       logger.info('add.flow', { ...data, committedToVisibleMs: null, timedOut: true });
@@ -57,20 +58,25 @@ export function trackAddFlow({ ids = [], bucket = null, surface, kind, submitToC
     }, ADD_VISIBLE_TIMEOUT_MS);
     waiting.add(pending);
     // The day may already hold the rows (a reload that beat the response).
-    completeSeen(lastSeen, at);
+    completeSeen(lastSeen.get(scope) || new Set(), at, scope);
   });
 }
 
 /** The day's current rows. Completes every registered add they now contain. */
-export function noteVisibleRows(rows, at = now()) {
+export function noteVisibleRows(value, at = now()) {
+  const legacy = Array.isArray(value);
+  const rows = legacy ? value : value?.rows;
   if (!Array.isArray(rows)) return;
-  lastSeen = new Set(rows.map(rowId));
-  completeSeen(lastSeen, at);
+  const scope = JSON.stringify(legacy ? [null, null] : [value.userId ?? null, value.date ?? null]);
+  const seen = new Set(rows.map(rowId));
+  lastSeen.set(scope, seen);
+  completeSeen(seen, at, scope);
 }
 
-function completeSeen(seen, at) {
+function completeSeen(seen, at, scope) {
   if (!waiting.size) return;
   for (const pending of [...waiting]) {
+    if (pending.scope !== scope) continue;
     if (![...pending.ids].every(id => seen.has(id))) continue;
     waiting.delete(pending);
     clearTimeout(pending.timer);
@@ -83,7 +89,7 @@ function completeSeen(seen, at) {
 export function resetAddFlow() {
   for (const pending of waiting) clearTimeout(pending.timer);
   waiting.clear();
-  lastSeen = new Set();
+  lastSeen = new Map();
 }
 
 /**

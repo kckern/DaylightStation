@@ -6,9 +6,12 @@ import { BUCKETS } from "./mealBuckets.js";
 import { noteVisibleRows } from "./addFlow.js";
 import { refreshHealthResources, healthDayPath } from "../healthResources.js";
 
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+
 const logger = createAppLogger('health').child('use-health-day');
 
 export function useHealthDay(date, { enabled = true } = {}) {
+  const operations = useHealthOperations();
   // `day.view`: once per viewed date, whether the day painted from the swr
   // cache (a prefetch or an earlier visit) and how long it took to have data.
   // The cache is peeked BEFORE the reader below runs, so a hit is a real hit.
@@ -26,13 +29,23 @@ export function useHealthDay(date, { enabled = true } = {}) {
 
   // The day's rows: the endpoint serves {message, data:[...], date, count};
   // also tolerate bare array or {items} for backward compatibility.
-  const items = useMemo(() => {
+  const rawItems = useMemo(() => {
     const d = list.data;
     return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
   }, [list.data]);
 
+  const read = useRef({ date: null, active: false, token: -1 });
+  const reading = list.loading || list.revalidating;
+  if (read.current.date !== date || (reading && !read.current.active)) read.current = { date, active: reading, token: operations?.reconciliation.beginRead() ?? -1 };
+  else read.current.active = reading;
+  const readToken = read.current.token;
+  const reconciled = useMemo(() => operations?.reconciliation.reconcile({ date, rows: rawItems, budget: list.data?.budget, readToken })
+    || { rows: rawItems, budget: list.data?.budget }, [rawItems, list.data?.budget, date, operations?.snapshot.revision, operations?.reconciliation, readToken]);
+  const items = reconciled.rows;
+  useEffect(() => { if (operations) for (const row of items) operations.knownRows.set(String(row.uuid ?? row.id), row); }, [items, operations?.knownRows]);
+
   // An add from the add row completes (add.flow) when its rows are here.
-  useEffect(() => { if (enabled) noteVisibleRows(items); }, [enabled, items]);
+  useEffect(() => { if (enabled) noteVisibleRows(operations ? { userId: operations.snapshot.userId, date, rows: items } : items); }, [enabled, items]);
 
   const byBucket = useMemo(() => {
     const map = new Map([...BUCKETS.map((b) => [b.id, []]), [null, []]]);
@@ -91,7 +104,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
   return {
     items,
     byBucket,
-    budget: list.data?.budget ?? null,
+    budget: reconciled.budget ?? null,
     // { status: 'done'|'fasting'|null, minCalories } — the day's closure for coaching.
     dayStatus: list.data?.dayStatus ?? null,
     budgetError: list.data?.budgetError ?? null,
