@@ -18,6 +18,7 @@ import { TodayView } from "./today/TodayView.jsx";
 import { useLayoutShiftLog } from "./useLayoutShiftLog.js";
 import { HealthDisplayPreferencesProvider } from "./display/HealthDisplayPreferences.jsx";
 import "./health.scss";
+import { HealthOperationsProvider } from "./operations/HealthOperationsProvider.jsx";
 const ProgressView = lazy(() => import("./progress/ProgressView.jsx").then(module => ({ default: module.ProgressView })));
 const MedicalView = lazy(() => import("./medical/MedicalView.jsx").then(module => ({ default: module.MedicalView })));
 const HealthSettings = lazy(() => import("./cleanup/HealthSettings.jsx").then(module => ({ default: module.HealthSettings })));
@@ -74,7 +75,7 @@ const HealthGate = () => {
   const heldByOther = healthCacheHeldByOther(context.data?.userId);
   return context.data?.userId && !heldByOther ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
     densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
-    <HealthShell userId={context.data.userId} />
+    <HealthOperationsProvider userId={context.data.userId}><HealthShell userId={context.data.userId} /></HealthOperationsProvider>
   </HealthDisplayPreferencesProvider>
     : <AppThemeProvider pack="health">{context.error ? <ErrorState error={context.error} onRetry={context.reload} label="Health" /> : <LoadingState label="Health" />}</AppThemeProvider>;
 };
