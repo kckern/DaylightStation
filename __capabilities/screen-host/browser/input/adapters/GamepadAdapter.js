@@ -125,6 +125,7 @@ export class GamepadAdapter {
     // Suppresses phantom-enumeration double-fires: a press from the same id
     // within the dedupe window is dropped. Keyed by `${gpId}__${key}`.
     this._lastFireById = {};
+    this._lastFireByController = {};
     this._onConnected = null;
     this._onDisconnected = null;
     this._onVisibility = null;
@@ -203,6 +204,7 @@ export class GamepadAdapter {
     this._prevStick = {};
     this._seeded = {};
     this._lastFireById = {};
+    this._lastFireByController = {};
   }
 
   _hasAnyGamepad() {
@@ -328,14 +330,14 @@ export class GamepadAdapter {
       let semanticEdgeAccepted = false;
 
       if (pressed && !wasPressed) {
-        if (this._claimFire(gp.id, `btn${idx}`)) {
+        if (this._claimFire(gp, `btn${idx}`)) {
           semanticEdgeAccepted = true;
           this._emit(mapping, idx);
           if (mapping.repeats) this._startRepeat(repeatKey, mapping);
         }
       } else if (!pressed && wasPressed) {
         this._stopRepeat(repeatKey);
-        semanticEdgeAccepted = this._claimFire(gp.id, `btn${idx}:release`);
+        semanticEdgeAccepted = this._claimFire(gp, `btn${idx}:release`);
       }
 
       if (pressed !== wasPressed && semanticEdgeAccepted) this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
@@ -349,7 +351,7 @@ export class GamepadAdapter {
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
       const key = `unmapped_${idx}`;
       const wasPressed = !!prev[key];
-      if (pressed && !wasPressed && this._claimFire(gp.id, key)) {
+      if (pressed && !wasPressed && this._claimFire(gp, key)) {
         logger().debug('gamepad.button-pressed', {
           buttonIndex: idx, mapped: false, gamepadId: gp.id,
         });
@@ -366,7 +368,7 @@ export class GamepadAdapter {
       const repeatKey = `${gpIdx}__${stickKey}`;
 
       if (active && !wasActive) {
-        if (this._claimFire(gp.id, stickKey)) {
+        if (this._claimFire(gp, stickKey)) {
           this._emit(dir);
           this._startRepeat(repeatKey, dir);
         }
@@ -384,7 +386,7 @@ export class GamepadAdapter {
     }
     for (let idx = 0; idx < gp.buttons.length; idx++) {
       const pressed = !!gp.buttons[idx]?.pressed;
-      if (pressed !== !!prev[idx] && this._claimFire(gp.id, `btn${idx}${pressed ? '' : ':release'}`)) {
+      if (pressed !== !!prev[idx] && this._claimFire(gp, `btn${idx}${pressed ? '' : ':release'}`)) {
         this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
       }
       prev[idx] = pressed; prev[`unmapped_${idx}`] = pressed;
@@ -393,7 +395,7 @@ export class GamepadAdapter {
       const value = gp.axes[dir.axis] || 0;
       const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
       const stickKey = `stick_${dir.key}`;
-      if (active !== !!prevStick[stickKey] && this._claimFire(gp.id, `${stickKey}${active ? '' : ':release'}`)) {
+      if (active !== !!prevStick[stickKey] && this._claimFire(gp, `${stickKey}${active ? '' : ':release'}`)) {
         this._emitSemantic(gp, null, active ? 'press' : 'release', `stick.${dir.payload.direction}`);
       }
       prevStick[stickKey] = active;
@@ -406,12 +408,25 @@ export class GamepadAdapter {
    * two indices on Shield TV mirrors button state — both indices observe
    * the press in the same frame and would fire twice without this guard.
    */
-  _claimFire(gamepadId, key) {
+  _claimFire(gamepad, key) {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const fireKey = `${gamepadId}__${key}`;
-    const lastFire = this._lastFireById[fireKey];
-    if (lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) return false;
-    this._lastFireById[fireKey] = now;
+    const controllerId = `${gamepad.index}:${gamepad.id}`;
+    const bound = roleBindings.has(controllerId);
+    const modelKey = `${gamepad.id}__${key}`;
+    // Independently bound pads are distinct devices even with identical models.
+    // Still stamp the model guard so an unbound mirrored slot cannot navigate.
+    const fireKey = bound ? `${controllerId}__${key}` : modelKey;
+    const history = bound ? this._lastFireByController : this._lastFireById;
+    const lastFire = history[fireKey];
+    if (lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) {
+      logger().sampled?.('gaming.input.suppressed', {
+        controller_id: controllerId, action: key,
+        reason: bound ? 'duplicate-controller-edge' : 'unbound-phantom-or-repeat',
+      }, { maxPerMinute: 10, aggregate: true });
+      return false;
+    }
+    history[fireKey] = now;
+    this._lastFireById[modelKey] = now;
     return true;
   }
 
