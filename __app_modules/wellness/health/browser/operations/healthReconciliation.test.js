@@ -40,3 +40,15 @@ it('does not resurrect a food from a capture response started before its deletio
  r.acknowledge({id:'restore',date,submittedEpoch:r.beginRead()},{rows:[row('a',2,100)],removedIds:[]});
  expect(r.reconcile({date,rows:[]}).rows[0].version).toBe(2);
 });
+
+it('retains every old location across moves, destination edits, and deletion',()=>{
+ const r=createHealthReconciliation();
+ const a='2026-10-23',b='2026-10-24',c='2026-10-25';
+ r.acknowledge({id:'move1',date:a},{rows:[{...row('x',2,100),date:b}],removedIds:[]});
+ r.acknowledge({id:'move2',date:b},{rows:[{...row('x',3,100),date:c}],removedIds:[]});
+ r.acknowledge({id:'edit',date:c},{rows:[{...row('x',4,200),date:c}],removedIds:[]});
+ expect(r.reconcile({date:a,rows:[{...row('x',1,100),date:a}]}).rows).toEqual([]);
+ expect(r.reconcile({date:b,rows:[{...row('x',2,100),date:b}]}).rows).toEqual([]);
+ r.acknowledge({id:'delete',date:c},{rows:[],removedIds:['x']});
+ expect(r.reconcile({date:a,rows:[{...row('x',1,100),date:a}]}).rows).toEqual([]);
+});

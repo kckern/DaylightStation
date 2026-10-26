@@ -416,6 +416,7 @@ export class LogFoodFromText {
         nutrilogUuid: nutriLog.id,
         messageId: statusMsgId,
         itemCount: foodItems.length,
+        date: logDate,
         // Task 4.1 — meal-time precedence seam (NutribotInputRouter#capture).
         // The log itself always stores the CLOCK-derived meal.time above (unchanged,
         // for backward compatibility); mealTime/mealTimeExplicit here just report what

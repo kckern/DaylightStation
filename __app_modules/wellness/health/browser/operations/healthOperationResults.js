@@ -15,7 +15,7 @@ export function normalizeFoodOperationResult(operation, response = {}) {
   removedIds.forEach(id => requiredIds.delete(id));
   const complete = [...requiredIds].every(id => rows.some(row => String(idOf(row)) === id && row.version != null && row.date));
   return { operationId: operation.id, outcome, rows, resultIds, versions, removedIds,
-    affectedDates: [...new Set([operation.date, ...(response.affectedDates || result.affectedDates || []), ...rows.map(row => row.date)].filter(Boolean))],
+    affectedDates: [...new Set([operation.date, response.date, result.date, ...(response.affectedDates || result.affectedDates || []), ...rows.map(row => row.date)].filter(Boolean))],
     destination: { date: response.date || rows[0]?.date || operation.date, bucket: response.mealTime || response.bucket || operation.bucket },
     readRequired: committed && (!complete || (!rows.length && !removedIds.length)),
   };

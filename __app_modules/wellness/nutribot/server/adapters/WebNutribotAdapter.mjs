@@ -314,7 +314,7 @@ export class WebNutribotAdapter {
       if (outcome[key] !== undefined) response[key] = outcome[key];
     }
     if (response.committed && response.items === undefined && routerResult?.items) response.items = routerResult.items;
-    if (response.committed && response.affectedDates === undefined && response.items?.length) response.affectedDates = [...new Set(response.items.map(row => row.date).filter(Boolean))];
+    if (response.committed && response.affectedDates === undefined && response.items?.length) response.affectedDates = [...new Set([response.date, ...response.items.map(row => row.date)].filter(Boolean))];
     if (outcome.entryIds) response.entryIds = outcome.entryIds;
     if (outcome.outcome) response.outcome = outcome.outcome;
     if (response.committed && !response.message) response.message = 'Meal updated.';

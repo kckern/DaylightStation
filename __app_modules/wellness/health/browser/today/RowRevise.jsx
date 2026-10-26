@@ -51,7 +51,8 @@ function FoodRevise({ row, onReload }) {
   return <Stack gap={4} className="health-row-revise__body">
     <ReviseField row={row} onApply={async (changes, meta) => {
       const before = Object.fromEntries(UNDO_FIELDS.filter(field => Object.hasOwn(changes, field)).map(field => [field, row[field] ?? null]));
-      const result = await updateEntry(row, { ...changes, ...meta }, crypto.randomUUID(), foodAPI);
+      const { writeOperationId, ...fields } = meta;
+      const result = await updateEntry(row, { ...changes, ...fields }, writeOperationId || crypto.randomUUID(), foodAPI);
       setUndo(result?.data ? { before, after: result.data } : null);
       onReload?.();
     }} />

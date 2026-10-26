@@ -20,6 +20,7 @@ export function HealthOperationsProvider({ userId, children, send = DaylightAPI 
 function Session({ userId, children, send }) {
   const store = useMemo(() => createHealthOperations({ userId }), [userId]);
   const running = useRef(new Map());
+  const continuations = useRef(new Map());
   const reconciliation = useMemo(createHealthReconciliation, [userId]);
   const lease = useRef(null);
   const knownRows = useRef(new Map());
@@ -30,7 +31,7 @@ function Session({ userId, children, send }) {
     return () => {
       token.active = false;
       // StrictMode can replay an effect; disposal belongs to the departed session.
-      queueMicrotask(() => { if (lease.current === token) { store.dispose(); reconciliation.dispose(); } });
+      queueMicrotask(() => { if (lease.current === token) { store.dispose(); reconciliation.dispose(); continuations.current.clear(); } });
     };
   }, [store, reconciliation]);
   const value = useMemo(() => {
@@ -65,6 +66,7 @@ function Session({ userId, children, send }) {
       store.transition(op.id, { normalizedResult: result });
     };
     const execute = (id, onResult) => {
+      if (onResult) continuations.current.set(id, onResult);
       if (running.current.has(id)) return running.current.get(id);
       const op = store.getSnapshot().operations.get(id);
       if (!op || store.disposed) return Promise.resolve();
@@ -78,7 +80,11 @@ function Session({ userId, children, send }) {
         if (!owner?.active || store.disposed) return;
         await accept(response, submitted, owner);
         if (!owner?.active || store.disposed) return;
-        await onResult?.(response, op);
+        const continuation = continuations.current.get(id);
+        if (continuation) {
+          store.transition(id, { response }); // resume application from this exact proposal
+          await continuation(response, op);
+        }
         if (owner.active) {
           const outcome = normalizeFoodOperationResult(op, response).outcome;
           store.transition(id, ['committed', 'proposal'].includes(outcome) ? { phase: 'succeeded', response } : {
@@ -87,6 +93,7 @@ function Session({ userId, children, send }) {
         }
         if (owner.active && normalizeFoodOperationResult(op, response).outcome === "committed") refreshHealthResources();
         logger.info("operation.finished", { operationId: id, kind: op.kind, affected: op.targetIds.length, elapsedMs: Date.now() - op.startedAt });
+        continuations.current.delete(id);
         return response;
       }).catch(error => {
         if (owner?.active && !store.disposed) store.transition(id, { phase: error.status === 409 ? 'conflict' : 'error', error: error.message });

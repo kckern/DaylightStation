@@ -40,7 +40,7 @@ function Section({
   const [localClarification, setClarification] = useState(null);
   const clarification = externalClarification === undefined ? localClarification : externalClarification;
   const operations = useHealthOperations();
-  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
+  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
   const [clarifying, setClarifying] = useState(false);
   const [clarifyError, setClarifyError] = useState(null);
   const selectedIds = selection.filter(id => rows.some(row => (row.uuid || row.id) === id));

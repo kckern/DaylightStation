@@ -154,3 +154,21 @@ it('does not mistake cached rows for the result of a refresh that has only just 
  expect(result.current.day.items.map(row=>row.uuid)).toEqual(['new']);
  await act(async()=>finish({items:[saved],budget:{food:100,remaining:900}}));
 });
+
+it('never treats an optimistic patch during a refresh as authoritative absence',async()=>{
+ resetApiResourceCache();const date='2026-10-25';let reads=0;
+ const saved={uuid:'ingredient',date,version:1,calories:100};
+ apiMock.mockReset().mockImplementation(path=>{
+  if(path.endsWith('nutrition/input'))return Promise.resolve({committed:true,items:[saved]});
+  if(++reads===1)return Promise.resolve({items:[],budget:{food:0,remaining:1000}});
+  return new Promise(()=>{});
+ });
+ const wrapper=({children})=><HealthOperationsProvider userId="u">{children}</HealthOperationsProvider>;
+ const {result}=renderHook(()=>({day:useHealthDay(date),operations:useHealthOperations()}),{wrapper});
+ await waitFor(()=>expect(result.current.day.loading).toBe(false));
+ await act(async()=>result.current.operations.submitSentence({text:'ingredient',date,bucket:'morning'}));
+ await waitFor(()=>expect(result.current.day.revalidating).toBe(true));
+ const {patchApiResource}=await import('../../../../../frontend/src/lib/hooks/useApiResource.js');
+ act(()=>patchApiResource(`api/v1/health/day?date=${date}`,day=>({...day,items:[...day.items,{uuid:'pending-local',date,provisional:true}]})));
+ expect(result.current.day.items.map(row=>row.uuid)).toContain('ingredient');
+});

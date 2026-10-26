@@ -106,3 +106,42 @@ describe('ReviseField', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 });
+
+import { HealthOperationsProvider, useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
+import { FoodOperationStatus } from '../operations/FoodOperationStatus.jsx';
+import { RowRevise } from './RowRevise.jsx';
+function RevisionOperations(){
+ const context=useHealthOperations();
+ return [...context.snapshot.operations.values()].filter(op=>!op.parentId || !context.snapshot.operations.get(op.parentId)?.resumable).map(operation=><FoodOperationStatus key={operation.id} operation={operation}/>);
+}
+it('retries failed analysis through the subsequent PUT instead of stopping at a proposal',async()=>{
+ let analyses=0,writes=0;
+ apiMock.mockReset().mockImplementation(async(path,body,method)=>{
+  if(path.endsWith('/revise')){if(++analyses===1)throw new Error('analysis offline');return proposal;}
+  if(method==='PUT'){writes++;return {data:{...row,date:'2026-10-25',name:body.name,version:2}};}
+  return {};
+ });
+ render(<MantineProvider><HealthOperationsProvider userId="u"><RowRevise row={{...row,date:'2026-10-25',version:1}} isGroup={false} onClose={()=>{}} onReload={()=>{}}/><RevisionOperations/></HealthOperationsProvider></MantineProvider>);
+ type('cauliflower rice');fireEvent.click(screen.getByRole('button',{name:'Rework'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Retry'}));
+ await waitFor(()=>expect(writes).toBe(1));
+ expect(analyses).toBe(2);
+ expect(apiMock.mock.calls.filter(([path])=>path.endsWith('/revise'))[1][1]).toEqual(apiMock.mock.calls[0][1]);
+});
+
+it('resumes an uncertain application with the same PUT and without repeating analysis',async()=>{
+ let analyses=0,writes=0;
+ apiMock.mockReset().mockImplementation(async(path,body,method)=>{
+  if(path.endsWith('/revise')){analyses++;return proposal;}
+  if(method==='PUT'){if(++writes===1)throw new Error('save offline');return {data:{...row,date:'2026-10-25',name:body.name,version:2}};}
+  return {};
+ });
+ render(<MantineProvider><HealthOperationsProvider userId="u"><RowRevise row={{...row,date:'2026-10-25',version:1}} isGroup={false} onClose={()=>{}} onReload={()=>{}}/><RevisionOperations/></HealthOperationsProvider></MantineProvider>);
+ type('cauliflower rice');fireEvent.click(screen.getByRole('button',{name:'Rework'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Retry'}));
+ await waitFor(()=>expect(writes).toBe(2));
+ expect(analyses).toBe(1);
+ const calls=apiMock.mock.calls.filter(([_path,_body,method])=>method==='PUT');
+ expect(calls[1][1]).toEqual(calls[0][1]);
+ await waitFor(()=>expect(screen.queryByRole('button',{name:'Retry'})).toBeNull());
+});

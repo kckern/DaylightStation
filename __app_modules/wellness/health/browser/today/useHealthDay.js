@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { summarizeDayQuality } from "./dayQuality.js";
-import { useApiResource, peekApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useApiResource, peekApiResource, apiResourceReadToken } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { BUCKETS } from "./mealBuckets.js";
 import { noteVisibleRows } from "./addFlow.js";
@@ -36,18 +36,9 @@ export function useHealthDay(date, { enabled = true } = {}) {
   }, [list.data]);
 
   const rawItems = useMemo(() => operations ? cachedItems.filter(row => !isProvisionalRow(row)) : cachedItems, [cachedItems, Boolean(operations)]);
-  // A request's provenance belongs to the snapshot it RETURNS. Starting a
-  // revalidation must never make the still-visible cached rows authoritative.
-  const read = useRef({ date, active: false, started: -1, completed: -1, data: list.data });
-  const reading = list.loading || list.revalidating;
-  if (read.current.date !== date) read.current = { date, active: false, started: -1, completed: -1, data: list.data };
-  if (list.data !== read.current.data) {
-    read.current.completed = read.current.started;
-    read.current.data = list.data;
-  }
-  if (reading && !read.current.active) read.current.started = operations?.reconciliation.beginRead() ?? -1;
-  read.current.active = reading;
-  const readToken = read.current.completed;
+  // Only actual network responses carry provenance; cache patches cannot
+  // establish authoritative absence of a saved food.
+  const readToken = apiResourceReadToken(list.data);
   const reconciled = useMemo(() => operations?.reconciliation.reconcile({ date, rows: rawItems, budget: list.data?.budget, readToken })
     || { rows: rawItems, budget: list.data?.budget }, [rawItems, list.data?.budget, date, operations?.snapshot.revision, operations?.reconciliation, readToken]);
   const items = useMemo(() => {

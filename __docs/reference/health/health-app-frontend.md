@@ -251,3 +251,15 @@ Explicit retries reuse the same request ID and bytes. Intentional identical
 submissions get different IDs. Local reservations coordinate this browser
 session; server version checks protect writes from other clients. There is no
 queue of edits to a saving item and no automatic conflict rebase.
+
+
+Revision analysis and its application are one resumable operation. Retry repeats
+failed analysis with the same request, or resumes the recorded proposal and exact
+versioned write when analysis already succeeded. Child writes share the parent
+reservation; dismissing a failed workflow releases its retained children too.
+
+Read provenance comes from a side channel on actual network response objects in
+`useApiResource`; optimistic patches and restored disk snapshots never establish
+authoritative absence. The payload and shared cache behavior are unchanged.
+Reconciliation retains removal evidence for every prior date when a food moves
+repeatedly or is edited after a move.

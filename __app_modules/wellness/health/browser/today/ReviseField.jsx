@@ -43,26 +43,24 @@ export function ReviseField({ row, onApply, busy: parentBusy = false }) {
     if (busy) return;
     setState('thinking'); setError(null); setOutcome(null);
     try {
-      const result = await foodAPI(`api/v1/health/nutrilist/${entryId(row)}/revise`, body, 'POST');
-      const skip = released ? [] : result.pinned;
-      const changes = Object.fromEntries(Object.entries(result.proposal).filter(([field]) => !skip.includes(field)));
-      logger.info('revise.interpreted', { uuid: entryId(row), basis: result.basis, pinned: result.pinned, released });
-      if (!Object.keys(changes).length) {
-        setError('Everything this would change is pinned. Release your edits to apply it.');
-        return;
-      }
-      setState('applying');
-      await onApply(changes, { correctedNutrients: Object.keys(changes).filter(field => field !== 'name' && field !== 'icon' && field !== 'color') });
-      setText('');
-      setOutcome({
-        heard: result.instruction || body.instruction,
-        name: result.proposal.name,
-        grams: result.proposal.grams ?? null,
-        basis: result.basis,
-        volume: result.volume,
-        skipped: skip,
+      const writeOperationId = crypto.randomUUID();
+      const skip = released ? [] : pins;
+      await foodAPI.withContinuation(`api/v1/health/nutrilist/${entryId(row)}/revise`, body, 'POST', async (result, operation) => {
+        const held = released ? [] : result.pinned || skip;
+        const changes = Object.fromEntries(Object.entries(result.proposal).filter(([field]) => !held.includes(field)));
+        if (!Object.keys(changes).length) throw new Error('Everything this would change is pinned. Release your edits to apply it.');
+        setState('applying');
+        try {
+          await onApply(changes, { correctedNutrients: Object.keys(changes).filter(field => !['name', 'icon', 'color'].includes(field)),
+            ...(operation ? { parentOperationId: operation.id, writeOperationId } : {}),
+          });
+          setText(current => current === body.instruction ? '' : current);
+          setError(null);
+          setOutcome({ heard: result.instruction || body.instruction, name: result.proposal.name, grams: result.proposal.grams ?? null,
+            basis: result.basis, volume: result.volume, skipped: held });
+        } finally { setState(null); }
       });
-      logger.info('revise.applied', { uuid: entryId(row), fields: Object.keys(changes), released });
+      logger.info('revise.applied', { uuid: entryId(row), released });
     } catch (err) {
       logger.warn('revise.failed', { uuid: entryId(row), error: err.message });
       setError(err.message || 'Could not work that out. Try saying it another way.');

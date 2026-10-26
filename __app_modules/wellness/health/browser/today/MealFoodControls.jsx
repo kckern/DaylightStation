@@ -59,7 +59,7 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
           <input type="text" aria-label={`Suggested dish ${index+1}`} value={group.name} disabled={busy} onChange={e=>setGroups(prev=>prev.map((g,i)=>i===index?{...g,name:e.target.value}:g))}/>
           {foods.filter(row=>!selectedIds.length || selectedIds.includes(idOf(row))).map(row=><label key={idOf(row)}><input type="checkbox" disabled={busy} checked={group.selectedIds.includes(idOf(row))} onChange={e=>setGroups(prev=>prev.map((g,i)=>i===index?{...g,selectedIds:e.target.checked?[...g.selectedIds,idOf(row)]:g.selectedIds.filter(id=>id!==idOf(row))}:g))}/>{nameOf(row)}</label>)}
         </div>) : <span>No groups suggested for these foods.</span>}
-        {groups.length ? <Button size="compact-xs" disabled={busy || groups.some(g=>!g.name.trim() || g.selectedIds.length<2)} onClick={()=>run(()=>command({action:'groups',groups,selectedIds:selectedIds.length?selectedIds:foods.map(idOf),expectedVersions:versions}))}>Apply suggested groups</Button> : null}
+        {groups.length ? <Button size="compact-xs" disabled={busy || groups.some(g=>!g.name.trim() || g.selectedIds.length<2)} onClick={()=>run(()=>command({action:'groups',groups,selectedIds:[...new Set(groups.flatMap(group=>group.selectedIds))],expectedVersions:versions}))}>Apply suggested groups</Button> : null}
       </> : null}
       {panel === 'membership' ? <>
         <label>Dish<NativeSelect aria-label="Dish to edit" value={groupId} disabled={busy} onChange={e=>editGroup(e.target.value)} data={parents.map(row=>({value:idOf(row),label:nameOf(row)}))}/></label>

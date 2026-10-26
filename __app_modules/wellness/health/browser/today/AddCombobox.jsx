@@ -213,7 +213,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       } else response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface, saveMs: Math.round(performance.now() - submittedAt) });
       settleProvisionalRow(provisional, response?.item ?? null);
-      trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
+      trackAddFlow({ ids: addedRowIds(response), userId: operations?.snapshot.userId ?? null, date: operations ? targetDate : null, bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       onDone?.();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
@@ -259,7 +259,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       // The response IS the saved row: show it now. Waiting for the day
       // refetch left the add row cleared and the meal unchanged for seconds.
       showCommittedFoodRows(response?.item ? [response.item] : []);
-      trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
+      trackAddFlow({ ids: addedRowIds(response), userId: operations?.snapshot.userId ?? null, date: operations ? (date || localTodayISO()) : null, bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       finish();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });

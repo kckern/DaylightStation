@@ -152,3 +152,9 @@ separate IDs. Delete and restore HTTP requests also accept operation IDs for
 replaying a lost successful response. Undo reserves the affected IDs recorded
 with its originating operation. Server transaction checks remain authoritative
 across clients; no browser-wide loading flag substitutes for them.
+
+
+Applying suggested groups reserves the union of proposed members and their group
+dependencies, not every food in the meal. Ordinary parsed text captures return
+the resolved log date through the adapter so the browser can refresh the actual
+destination and explain entries filed on another day.

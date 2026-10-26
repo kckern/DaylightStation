@@ -53,6 +53,8 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
   const [query, setQuery] = useState('');
   const [icons, setIcons] = useState([]);
   const pending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const saveOperation = useRef(null);
   const catalog = useApiResource(isGroup ? null : row.foodId
     ? `api/v1/health/nutrition/catalog/${encodeURIComponent(row.foodId)}`
@@ -76,13 +78,13 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
     return () => { live = false; };
   }, [picking, query]);
 
-  const run = async (action, { close = false } = {}) => {
+  const run = async (action, { close = false, rethrow = false } = {}) => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);
     try {
       await action(); onChanged();
-      if (close) onClose();
-    } catch (err) { logger.warn('entry.command_failed', { id: identity(row), error: err.message }); setError(err); }
+      if (close && mounted.current) onClose();
+    } catch (err) { logger.warn('entry.command_failed', { id: identity(row), error: err.message }); setError(err); if (rethrow) throw err; }
     finally { pending.current = false; setBusy(false); }
   };
 
@@ -125,9 +127,9 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
           roll-up, so re-deriving one writes a total the next roll-up discards
           (the server refuses it for the same reason). */}
       {!isGroup ? <ReviseField row={row} busy={busy} onApply={(changes, meta) => run(async () => {
-        const operationId = crypto.randomUUID();
-        await updateEntry(row, { ...changes, ...meta }, operationId, foodAPI);
-      }, { close: true })} /> : null}
+        const { writeOperationId, ...fields } = meta;
+        await updateEntry(row, { ...changes, ...fields }, writeOperationId || crypto.randomUUID(), foodAPI);
+      }, { close: true, rethrow: true })} /> : null}
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
         data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))} onChange={setMealTime} />
       {picking ? <>

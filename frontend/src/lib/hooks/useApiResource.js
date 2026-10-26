@@ -209,13 +209,23 @@ export function flushApiResourcePersistence() {
 // Only a request issued moments ago is joined: the point is readers mounting
 // together. A request still pending after that may be stuck, and a reader
 // mounting later (navigating back) must get a fresh one, not wait on it.
+// Provenance is attached only to actual network result objects. Local patches
+// and disk-cache hydration never become evidence of a completed server read.
+let resourceEvent = 0;
+const networkStarts = new WeakMap();
+export const nextApiResourceEvent = () => ++resourceEvent;
+export const apiResourceReadToken = value => value && typeof value === 'object' ? networkStarts.get(value) ?? -1 : -1;
 const JOIN_WINDOW_MS = 3000;
 const inFlight = new Map(); // path -> { request, issuedAt }
 
 function sharedRequest(path, { join = true } = {}) {
   const current = inFlight.get(path);
   if (join && current && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
-  const request = new Promise(resolve => resolve(DaylightAPI(path)));
+  const issuedEvent = nextApiResourceEvent();
+  const request = new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
+    if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
+    return result;
+  });
   inFlight.set(path, { request, issuedAt: Date.now() });
   const settle = () => { if (inFlight.get(path)?.request === request) inFlight.delete(path); };
   request.then(settle, settle);

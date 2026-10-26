@@ -37,7 +37,15 @@ export function createHealthOperations({ userId }) {
       retired.slice(0, Math.max(0, retired.length - 50)).forEach(op => operations.delete(op.id));
       publish(operations);
     },
-    discard(id) { if (!disposed) { const next = new Map(snapshot.operations); next.delete(id); publish(next); } },
+    discard(id, { descendants = false } = {}) {
+      if (disposed) return;
+      const next = new Map(snapshot.operations), removed = new Set([id]);
+      if (descendants) {
+        let changed = true;
+        while (changed) { changed = false; for (const op of next.values()) if (removed.has(op.parentId) && !removed.has(op.id)) { removed.add(op.id); changed = true; } }
+      }
+      removed.forEach(key => next.delete(key)); publish(next);
+    },
     dispose() { disposed = true; publish(new Map()); listeners.clear(); },
   };
 }
