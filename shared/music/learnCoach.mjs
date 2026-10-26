@@ -35,7 +35,7 @@ export function makeCoachTask(plan, spec) {
 export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredLadder = false, tempoMap = [], criteria = {} }) {
   const content = fingerprintOf(fingerprint);
   if (!scoreId || !content) throw new Error('Coaching requires a score and content fingerprint');
-  const plan = { version: COACH_VERSION, scoreId, fingerprint: content, authoredLadder, tempoMap, segments: [], tasks: [] };
+  const plan = { version: COACH_VERSION, scoreId, fingerprint: content, authoredLadder, tempoMap, criteria: { ...criteria }, segments: [], tasks: [] };
   for (const segment of segments) {
     const parts = partsOf(segment.playableParts);
     if (!parts.length || !Number.isInteger(segment.inMeasure) || segment.outMeasure < segment.inMeasure) continue;
