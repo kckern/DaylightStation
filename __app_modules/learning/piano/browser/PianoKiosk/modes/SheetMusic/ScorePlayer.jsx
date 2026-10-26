@@ -30,6 +30,9 @@ import { partIdForStaff } from '../../../performance/partIdentity.js';
 import { projectLearnPassage } from './learnRoadmap.js';
 import { CustomLearnSession } from './LearnRoadmap.jsx';
 import LearnLab from './LearnLab.jsx';
+import LearnCoach from './LearnCoach.jsx';
+import useLearnCoach from './useLearnCoach.js';
+import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
 import LearnProgressStrip from './LearnProgressStrip.jsx';
@@ -2143,6 +2146,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       tempoMap: layout.tempoEntries, tempo: parsed?.tempo,
     },
   }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
+  const coachPlan = useMemo(() => createCoachPlan({ scoreId: scoreMeta.id, fingerprint,
+    segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap }),
+    [scoreMeta.id, fingerprint, learnPlan]);
+  const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
+  const coachedPassages = useMemo(() => coach.projection.segments.map((passage) => ({ ...passage,
+    testedOut: passage.mastered, inProgress: passage.skills.some((skill) => skill.ready || skill.successes > 0) })), [coach.projection.segments]);
   const learnPassages = useMemo(() => {
     const compatible = compatibleLearnPassages(practice?.learn, learnPlan);
     const projected = learnPlan.segments.map((passage) => {
@@ -2156,7 +2165,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return segmentNavigationState(projected, learnPlan.navigation);
   }, [layout.measures, learnPlan, practice]);
   const selectedPassageId = searchParams.get('learnPassage');
-  const selectedPassage = learnPassages.find((passage) => passage.id === selectedPassageId) ?? null;
+  const selectedPassage = (roadmapLearn ? coachedPassages : learnPassages).find((passage) => passage.id === selectedPassageId) ?? null;
   const [learnLaunch, setLearnLaunch] = useState(null);
   const [learnResult, setLearnResult] = useState(null);
   const [learnLaunchNonce, setLearnLaunchNonce] = useState(0);
@@ -2243,7 +2252,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const activeLearnRung = activeLearnLaunch?.rung ?? null;
   const optionalCreditRung = activeLearnLaunch?.source === 'recommended'
     ? activeLearnRung : selectedPassage && activeLearnLaunch ? creditEligibleRung(selectedPassage, activeLearnLaunch) : null;
-  const learnSessionOpen = Boolean(mode === 'learn' && selectedPassage && activeLearnRung && !learnResult);
+  const learnSessionOpen = Boolean(!roadmapLearn && mode === 'learn' && selectedPassage && activeLearnRung && !learnResult);
   const learnSession = learnSessionOpen ? (
       <LearnLab
         key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
@@ -2286,6 +2295,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return () => cancelAnimationFrame(frame);
   }, [learnSessionOpen, restoreLearnAnchor]);
 
+  if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
+    <LearnCoach score={learnScore} plan={coachPlan} segment={selectedPassage} coach={coach}
+      tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
+      onBack={closeLearnPassage} onPassageChange={openLearnPassage}
+      onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />
+  </div>;
   if (learnSession) return <div className="piano-score-player piano-score-player--learn-lab">{learnSession}</div>;
   if (mode === 'learn' && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
     <LearnLaunchpad
@@ -2427,7 +2442,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
           {roadmapLearn && layoutFresh && (
             <LearnPassageLayer
-              passages={learnPassages}
+              passages={roadmapLearn ? coachedPassages : learnPassages}
               measures={layout.measures}
               stepBoxes={selectionStepBoxes}
               measureRects={measureRects}
@@ -2459,7 +2474,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
         <>
-          <LearnProgressStrip segments={learnPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
+          <div className="piano-learn-entry piano-learn-coach"><button type="button" className="is-primary" onClick={() => openLearnPassage(coach.projection.recommended?.passageId ?? coachedPassages[0]?.id)}>{coach.state.evidence.length || coachedPassages.some((passage) => passage.inProgress || passage.complete) ? 'Continue learning' : 'Start learning'}</button>
+            {coach.projection.review && <button type="button" onClick={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}>Review a passage</button>}
+          </div>
+          <LearnProgressStrip segments={coachedPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
         </>
       )}
 

@@ -159,6 +159,14 @@ describe('identity, authored requirements, review and legacy preservation', () =
     expect(projection(old, undefined, { legacy }).recommended.skill).toBe('right');
   });
 
+  it('keeps an explicitly selected review as the next task even though mastery is earned', () => {
+    const plan = planOf(); const task = choose(plan, 'mastery');
+    let state = outcome(outcome(undefined, plan, task), plan, task);
+    const review = projectCoach({ plan, state, dayKey: '2026-10-27' }).review;
+    state = applyCoachEvent(state, { id: 'choose-review', type: 'selection', task: review }, { plan, now: '2026-10-27T18:00:00Z', dayKey: '2026-10-27' });
+    expect(projectCoach({ plan, state, dayKey: '2026-10-27' }).recommended).toMatchObject({ review: true, skill: 'mastery' });
+  });
+
   it('offers a later-day review and keeps mastery after an unsuccessful review', () => {
     const plan = planOf();const task = choose(plan, 'mastery');let state = outcome(outcome(undefined, plan, task), plan, task);
     const p = projection(plan, state, { dayKey: '2026-10-27' });

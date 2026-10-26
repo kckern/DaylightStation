@@ -84,7 +84,8 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false }),
 }));
 vi.mock('../../usePianoPlayback.js', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
-vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: cfg.value }) }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: cfg.value }), usePianoKioskConfigOptional: () => ({ config: cfg.value }) }));
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest' }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() }) }));

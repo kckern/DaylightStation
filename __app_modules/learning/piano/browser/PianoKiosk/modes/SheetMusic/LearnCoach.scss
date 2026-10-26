@@ -12,7 +12,7 @@
     min-height: 64px;
     padding: var(--sp-2) var(--sp-3);
     border: 1px solid var(--piano-border);
-    border-radius: var(--r-control);
+    border-radius: var(--r-md);
     background: var(--piano-surface-2);
     color: var(--piano-fg);
     font: inherit;
@@ -39,3 +39,5 @@
   @media (max-width: 760px) { &__body { grid-template-columns: minmax(0, 1fr); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none; transition: none; } }
 }
+
+.piano-learn-entry.piano-learn-coach { height: auto; flex-direction: row; flex-shrink: 0; }

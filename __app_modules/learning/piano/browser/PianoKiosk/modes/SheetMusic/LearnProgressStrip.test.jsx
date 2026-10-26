@@ -39,8 +39,8 @@ describe('LearnProgressStrip', () => {
   });
 
   it('centers the track without stranding the earliest pill when it overflows', () => {
-    const frontend = process.cwd().endsWith('/frontend') ? process.cwd() : resolve(process.cwd(), 'frontend');
-    const styles = readFileSync(resolve(frontend, 'src/Apps/PianoApp.scss'), 'utf8');
+    const root = process.cwd().endsWith('/frontend') ? resolve(process.cwd(), '..') : process.cwd();
+    const styles = readFileSync(resolve(root, '__app_modules/learning/piano/browser/PianoApp.scss'), 'utf8');
     const progressStyles = styles.slice(styles.indexOf('.piano-learn-progress'), styles.indexOf('.piano-learn-segment-rail'));
     const track = progressStyles.match(/&__track\s*\{([\s\S]*?)\n\s*\}/)?.[1] ?? '';
     expect(track).toContain('justify-content: safe center');

@@ -4,6 +4,7 @@ import LearnCoach from './LearnCoach.jsx';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 const h = vi.hoisted(() => ({ profile: 'guest', lab: null, unavailable: null }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.profile }) }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: true }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => null }));
 vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: ({ onExpectation, onUnrunnable }) => {
   h.unavailable = onUnrunnable;

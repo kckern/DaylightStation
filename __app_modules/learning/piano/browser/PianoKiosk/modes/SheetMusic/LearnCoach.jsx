@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coachFeedback, makeCoachTask } from '../../../../../../../shared/music/learnCoach.mjs';
 import useLearnCoach from './useLearnCoach.js';
 import LearnLab from './LearnLab.jsx';
+import LearnListen from './LearnListen.jsx';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 import './LearnCoach.scss';
@@ -39,6 +40,14 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   const [runNumber, setRunNumber] = useState(0);
   const live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  // Save acknowledgements change the projection, never the material of a live take.
+  const takeMaterial = useMemo(() => {
+    if (!run) return null;
+    const canonical = plan.segments.find((item) => item.id === run.passageId);
+    return { segment: { ...canonical, inMeasure: run.range.start, outMeasure: run.range.end },
+      rung: { id: run.skill, label: run.label, effectiveParts: run.parts, mode: run.mode,
+        tempoPercent: run.tempoPercent, criteria: run.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
+  }, [plan, run]);
   const activeTask = run ?? task;
   const range = useMemo(() => activeTask?.range, [activeTask]);
   const parts = useMemo(() => activeTask?.parts, [activeTask]);
@@ -60,6 +69,9 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   const message = result ? coachFeedback(result.raw, result.task) : null;
   const earned = result && projected?.skills.find((skill) => skill.key === result.task.key)?.ready;
   const recovery = next?.depth > 0 && next.key !== result?.task.key;
+  const openingQuarter = tempo.measureOnsets?.[task?.range.start] ?? 0;
+  const baseBpm = plan.tempoMap.filter((entry) => entry.onsetQuarter <= openingQuarter).at(-1)?.bpm;
+  const effectiveBpm = baseBpm > 0 ? Math.round(baseBpm * (task?.tempoPercent ?? 100) / 100) : null;
   const nextPassage = coach.projection.segments.find((item) => !item.complete && item.id !== segment.id);
   const progress = <div className="piano-learn-coach__save" role="status">
     <span>{coach.profileId === 'guest' ? 'Choose your name to save. This practice counts for this visit.' : `Practicing as ${coach.profileId}`}</span>
@@ -70,12 +82,10 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
     {coach.storageError && <span>Keep this page open until progress is saved.</span>}
   </div>;
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button onClick={onBack}>Back to score</button></section>;
+  if (view === 'listen') return <LearnListen score={score} task={task} tempoMap={plan.tempoMap} onDone={() => setView('prepare')} />;
   if (view === 'run') {
-    const runSegment = { ...segment, inMeasure: run.range.start, outMeasure: run.range.end };
-    const rung = { id: run.skill, label: run.label, effectiveParts: run.parts, mode: run.mode,
-      tempoPercent: run.tempoPercent, criteria: run.criteria, sets: 1, reps: 1, required: 1, passCount: 0 };
     return <div className="piano-learn-coach piano-learn-coach--running">
-      <LearnLab key={runNumber} score={score} revision={plan.fingerprint} segment={runSegment} rung={rung}
+      <LearnLab key={runNumber} score={score} revision={plan.fingerprint} segment={takeMaterial.segment} rung={takeMaterial.rung}
         coachingTask={run} onOutcome={finish} startOnReady tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
         onClose={() => { setSelected(run); setView('prepare'); }} onChangePractice={() => setView('custom')} onUnavailable={operational} />
       {progress}
@@ -96,7 +106,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
     </header>
     {progress}
     <div className="piano-learn-coach__body">
-      <div className="piano-learn-coach__music" aria-label="Passage music">{preview}</div>
+      <div className="piano-learn-coach__music piano-exercise-run__score" aria-label="Passage music">{preview}</div>
       <div className="piano-learn-coach__task" aria-live="polite">
         {view === 'result' ? <>
           <h2>{message.title}</h2><p>{message.detail}</p>
@@ -113,12 +123,12 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
           <button onClick={onBack}>Finish for now</button>
         </> : <>
           <h2>{task.label}</h2>
-          <p>{task.parts.length > 1 ? 'Both hands' : task.parts[0] === 'lh' ? 'Left hand' : 'Right hand'}{task.mode !== 'free' ? ` · ${task.tempoPercent}% of score tempo` : ''} · Bars {task.range.start + 1}–{task.range.end + 1}</p>
+          <p>{task.parts.length > 1 ? 'Both hands' : task.parts[0] === 'lh' ? 'Left hand' : 'Right hand'}{task.mode !== 'free' ? ` · ${task.tempoPercent}% of score tempo${effectiveBpm ? ` · starts at ${effectiveBpm} BPM` : ''}` : ''} · Bars {task.range.start + 1}–{task.range.end + 1}</p>
           <p>{criteriaCopy(task)}</p>
           <p>{task.required ? `${projected?.skills.find((item) => item.key === task.key)?.successes ?? 0} of ${task.required} successful takes` : 'Two successful takes out of your last three earn this skill.'}</p>
           {musicError && <p role="alert">The music could not be prepared. Return to the score or choose another passage.</p>}
           <button className="is-primary" disabled={readyKey !== task.key || Boolean(musicError)} onClick={() => start()}>Start practice</button>
-          {onListen && <button onClick={() => onListen(task)}>Listen</button>}
+          <button onClick={() => { onListen?.(task); setView('listen'); }}>Listen</button>
           <button onClick={() => setView('custom')}>Change practice</button>
           {segment.tasks.some((item) => item.mastery) && <button onClick={() => {
             setSelected(segment.tasks.find((item) => item.mastery)); setMusicError(null);

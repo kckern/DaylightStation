@@ -145,7 +145,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
   if (validTask(plan, current.resume)) {
     const canonical = plan.tasks.find((task) => task.key === current.resume.key);
     const parentSegment = segments.find((item) => item.id === current.resume.passageId);
-    if (!canonical || !parentSegment?.skills.find((item) => item.key === canonical.key)?.ready) recommended = current.resume;
+    if (current.resume.review || !canonical || !parentSegment?.skills.find((item) => item.key === canonical.key)?.ready) recommended = current.resume;
   }
   recommended ??= segments.flatMap((segment) => segment.skills).find((task) => !task.ready) ?? null;
   return { segments, recommended, review, state: current };
