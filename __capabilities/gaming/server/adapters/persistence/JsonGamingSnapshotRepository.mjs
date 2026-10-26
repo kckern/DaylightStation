@@ -42,18 +42,20 @@ export class JsonGamingSnapshotRepository extends SnapshotRepository {
     const lock = `${file}.lock`; let descriptor;
     try { descriptor = openFileExclusive(lock); }
     catch (error) { if (error.code === 'EEXIST') throw conflict(); throw error; }
-    let temporary;
+    let temporary, committedVersion;
     try {
       const current = this.#read(file) ?? (this.legacy ? await this.legacy.get(id) : null);
       if (expectedRevision === null ? current !== null : current?.header?.revision !== expectedRevision) throw conflict(current?.header?.revision);
       temporary = `${file}.${randomUUID()}.tmp`;
       writeFileExclusive(temporary, JSON.stringify(session));
       renameFile(temporary, file); temporary = null;
+      committedVersion = await this.getVersion(id);
     } finally {
       if (temporary && storageVersion(temporary) !== null) deleteFileStrict(temporary);
       closeFileDescriptor(descriptor); deleteFileStrict(lock);
     }
     for (const listener of this.listeners.get(id) || []) listener(structuredClone(session));
+    return { version: committedVersion };
   }
   observe(id, listener) {
     const listeners = this.listeners.get(id) || new Set(); listeners.add(listener); this.listeners.set(id, listeners);

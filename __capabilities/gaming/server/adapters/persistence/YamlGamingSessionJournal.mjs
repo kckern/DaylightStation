@@ -24,14 +24,15 @@ export class YamlGamingSessionJournal extends SessionJournal {
   }
   async create(id, record) {
     const file = this.#file(id); if (!file) throw new Error('invalid gaming session id');
-    this.#locked(file, () => {
+    return this.#locked(file, () => {
       writeFileExclusive(file, `${JSON.stringify({ kind: 'session-created', ...record })}\n`);
       this.heads.set(id, { version: storageVersion(file), revision: 0 });
+      return { version: this.heads.get(id).version };
     });
   }
   async append(id, record, { expectedRevision }) {
     const file = this.#file(id); if (!file) throw new Error('invalid gaming session id');
-    this.#locked(file, () => {
+    return this.#locked(file, () => {
       const version = storageVersion(file), head = this.heads.get(id);
       if (head && head.version !== version) {
         this.heads.delete(id);
@@ -44,6 +45,7 @@ export class YamlGamingSessionJournal extends SessionJournal {
       try {
         appendTextFile(file, `${JSON.stringify({ kind: 'command-committed', revision: expectedRevision + 1, ...record })}\n`);
         this.heads.set(id, { version: storageVersion(file), revision: expectedRevision + 1 });
+        return { version: this.heads.get(id).version };
       } catch (error) { this.heads.delete(id); throw error; }
     });
   }

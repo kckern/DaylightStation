@@ -1,6 +1,8 @@
 export class SessionJournal {
+  // Optional observable storage token; null means absent, undefined unsupported.
   async getVersion(_sessionId) { return undefined; }
   async create(_sessionId, _record) { throw new Error('SessionJournal.create not implemented'); }
+  // A version-capable writer may return { version } captured under its commit lock.
   async append(_sessionId, _record, _options) { throw new Error('SessionJournal.append not implemented'); }
   async read(_sessionId) { throw new Error('SessionJournal.read not implemented'); }
 }

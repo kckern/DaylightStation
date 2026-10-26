@@ -30,6 +30,7 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
     definitions: definitionStore, snapshotsDir, journalsDir,
     rulesets: [cardBattleRuleModule, jeopardyRuleModule, activityPartyRuleModule, diceRuleModule, selectorRuleModule, checkersRuleModule, chessRuleModule, connectFourRuleModule],
     createIds: createGamingIdentitySource, clock,
+    onOperation: metric => logger?.info('gaming.session.operation', metric),
   });
   const effectStore = effectsDir ? new YamlGamingEffectStore({ effectsDir }) : null;
   const drawingCheckpoints = drawingCheckpointsDir ? new YamlDrawingCheckpointRepository({ checkpointsDir: drawingCheckpointsDir }) : null;
