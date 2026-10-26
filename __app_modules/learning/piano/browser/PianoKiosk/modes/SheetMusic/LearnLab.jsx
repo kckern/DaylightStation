@@ -48,10 +48,12 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
+  const outcomeReported = useRef(false);
+  const reportOutcome = (result) => { if (!outcomeReported.current) { outcomeReported.current = true; onOutcome?.(result); } };
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
   const [repCard, setRepCard] = useState(null);
@@ -73,7 +75,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     minimumPercent: tempo.minimumPercent, maximumPercent: tempo.maximumPercent,
   }), [tempo.minimumPercent, tempo.maximumPercent]);
   const stage = masteryTempo ? TEMPO_STAGES[TEMPO_STAGES.length - 1] : nearestTempoStage(selectedPercent, stages);
-  const tempoPercent = ['cued', 'metronome'].includes(rung.mode) ? stage.percent : selectedPercent;
+  const tempoPercent = coachingTask ? (coachingTask.tempoPercent ?? 100) : ['cued', 'metronome'].includes(rung.mode) ? stage.percent : selectedPercent;
   const configuredStagePercent = masteryTempo ? 100 : nearestTempoStage(configuredPercent, stages).percent;
   const takeCreditEligible = creditEligible && tempoPercent === configuredStagePercent;
   const preferencesRef = useRef({ tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id });
@@ -132,6 +134,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     segments,
   }) : null, [takeCreditEligible, creditRung, onRecord, revision, segment.id, segments]);
   const settle = useCallback((result) => {
+    if (coachingTask) { reportOutcome(result); return; }
     const outcome = recordResult(result);
     logger.info('piano.learn.terminal', {
       runId: runIdRef.current, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
@@ -168,13 +171,13 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       });
       setTake((value) => value + 1);
     }
-  }, [launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, takeCreditEligible, tempoPercent]);
+  }, [coachingTask, onOutcome, launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, takeCreditEligible, tempoPercent]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const controlContext = { runId: runIdRef.current, take, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
     mode: rung.mode, parts: [...(rung.effectiveParts ?? [])], tempoStage: stage.id, tempoPercent, effectiveBpm, launchSource, creditEligible: takeCreditEligible };
   const logControl = (action) => logger.info('piano.learn.control', { ...controlContext, action });
-  const adjustable = ['cued', 'metronome'].includes(rung.mode) && tempo.adjustable !== false && !masteryTempo;
+  const adjustable = !coachingTask && ['cued', 'metronome'].includes(rung.mode) && tempo.adjustable !== false && !masteryTempo;
   const tempoLabel = `${stage.label}${effectiveBpm ? ` · ${effectiveBpm} BPM` : ''}`;
   const abandonTake = (reason) => logger.info('piano.learn.take-abandoned', { ...controlContext, reason, creditOutcome: 'none' });
   const restartTake = (reason) => { abandonTake(reason); if (reason === 'restart') logControl('restart'); setPaused(false); setTake((value) => value + 1); };
@@ -182,6 +185,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const closeLab = () => { abandonTake('back'); onClose(); };
   const togglePaused = () => setPaused((value) => { logControl(value ? 'resume' : 'pause'); return !value; });
   const failTake = (result) => {
+    if (coachingTask) { reportOutcome(result); return; }
     const outcome = recordResult(result);
     logger.info('piano.learn.terminal', { ...controlContext, status: 'failed',
       creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
@@ -197,7 +201,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
         <span aria-hidden="true">‹</span><span>Back</span>
       </button>
       <div className="piano-learn-lab__identity"><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
-      <div className="piano-learn-lab__task"><strong>{rung.label}</strong><span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span></div>
+      <div className="piano-learn-lab__task"><strong>{rung.label}</strong><span>{coachingTask ? (rung.mode === 'cued' ? 'Play with the beat' : 'Find every note') : <>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</>}</span></div>
       {['cued', 'metronome'].includes(rung.mode) && <div className="piano-learn-lab__tempo" role="status">
         {adjustable ? <button type="button" aria-label={`Choose tempo: ${tempoLabel}`} aria-haspopup="dialog" aria-expanded={tempoSheetOpen}
           onClick={() => setTempoSheetOpen(true)}><strong>{tempoLabel}</strong></button> : <strong>{tempoLabel}</strong>}
@@ -225,9 +229,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       startOnReady={startOnReady}
-      persistInterrupted={false}
+      persistInterrupted={false} persistAssessment={!coachingTask}
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
-      failurePresentation="local" onExit={onClose} onPassed={settle}
+      failurePresentation={coachingTask ? 'host' : 'local'} onExit={onClose} onPassed={settle}
       onFailed={failTake}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />

@@ -37,7 +37,7 @@ function Result({ result, official, onAction }) {
   </section>;
 }
 
-export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', initialChoice = null, onChoiceChange, onView, onLaunch, onBack, onResultAction }) {
+export default function LearnLaunchpad({ segment, preview = null, result = null, initialView = 'home', customOnly = false, initialChoice = null, onChoiceChange, onView, onLaunch, onBack, onResultAction }) {
   const [view, setView] = useState(initialView);
   const [parts, setParts] = useState(() => initialChoice?.parts ?? (segment.playableParts?.length > 1 ? ['rh', 'lh'] : [...(segment.playableParts ?? [])]));
   const [mode, setMode] = useState(initialChoice?.mode ?? 'free');
@@ -58,7 +58,7 @@ export default function LearnLaunchpad({ segment, preview = null, result = null,
   const launchCustom = () => { onChoiceChange?.(choice); onLaunch?.(buildCustomLaunch(segment, choice)); };
   return <section className="piano-learn-launchpad" role="dialog" aria-modal="true" aria-label={`${segment.label} practice`}>
     <header>
-      <button type="button" className="piano-learn-launchpad__back" onClick={view === 'home' ? onBack : () => setView('home')}><Icon name="back" /> Back</button>
+      <button type="button" className="piano-learn-launchpad__back" onClick={view === 'home' || customOnly ? onBack : () => setView('home')}><Icon name="back" /> Back</button>
       <div><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
       {(segment.complete || segment.testedOut) && <span className="piano-learn-launchpad__earned"><Icon name="crown" /> Mastered</span>}
     </header>

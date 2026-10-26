@@ -348,7 +348,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -692,6 +692,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const persist = useCallback(async (result, status = result?.status || 'completed', { keepalive = false } = {}) => {
     if (persistedRef.current || !subject) return;
     persistedRef.current = true;
+    if (!persistAssessment) return; // The coached host owns the ordered assessment + progress outbox.
     const terminalResult = { ...(result || {}), status };
     const body = buildPianoAttemptEvidence({
       result: terminalResult,
@@ -724,7 +725,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     });
     if (outcome === 'saved') logger.info('piano.exercise-assessment', { ...who, ...log });
     else logger.warn('piano.exercise-assessment', { ...who, ...log });
-  }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject]);
+  }, [access.persistent, challenge, currentUser, logger, programId, selectedMode, stepId, subject, persistAssessment]);
 
   // THE RESOLVE HOLD. A resolved attempt keeps its staff up for RESOLVE_HOLD_MS
   // before the host hears `onPassed`/`onFailed`; input is ignored meanwhile (a
