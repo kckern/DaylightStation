@@ -15,7 +15,7 @@ export function useNutritionInput() {
   const requests = useRef(new Map());
   const activeCount = useRef(0);
 
-  const submit = useCallback(async (type, content, { bucket, date, audioRef, selectedIds, clarification } = {}) => {
+  const submit = useCallback(async (type, content, { bucket, date, audioRef, selectedIds, clarification, operationId, expectedVersions } = {}) => {
     activeCount.current++; setBusy(true); setError(null);
     // `bucket` and `date` are only added to the body when a caller actually
     // names one — omitting the key entirely (not sending `undefined`) keeps
@@ -26,6 +26,7 @@ export function useNutritionInput() {
     const body = {
       type, content,
       ...(selectedIds ? { selectedIds } : {}),
+      ...(expectedVersions ? { expectedVersions } : {}),
       ...(clarification ? { clarification } : {}),
       ...(bucket ? { bucket } : {}),
       ...(date ? { date } : {}),
@@ -36,17 +37,20 @@ export function useNutritionInput() {
     // A confirmed result releases its ID so logging the same food again is
     // a new intent, not a permanently deduplicated barcode.
     const requestRef = requests.current.get(fingerprint) || { current: null };
-    requests.current.set(fingerprint, requestRef);
+    // Only FAILED implicit requests remain eligible for legacy retry. In-flight
+    // identical inputs are independent intentions. Explicit IDs belong to callers.
+    requests.current.delete(fingerprint);
     logger.info('capture.submit', {
       type, size: String(content || '').length,
       bucket: bucket || undefined, date: date || undefined, audioRef: audioRef || undefined,
     });
     try {
-      const result = await DaylightAPI('api/v1/health/nutrition/input', operationRequest(requestRef, body), 'POST');
+      const result = await DaylightAPI('api/v1/health/nutrition/input', operationId ? { ...body, operationId } : operationRequest(requestRef, body), 'POST');
       if (requests.current.get(fingerprint) === requestRef) requests.current.delete(fingerprint);
       logger.info('capture.result', { type, unknownUpc: result?.unknownUpc === true, moved: result?.moved === true });
       return result;
     } catch (err) {
+      if (!operationId) requests.current.set(fingerprint, requestRef);
       logger.error('capture.failed', { type, error: err?.message });
       setError(err);
       throw err;

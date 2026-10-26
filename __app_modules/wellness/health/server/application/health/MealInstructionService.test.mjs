@@ -95,3 +95,9 @@ it('previews multiple disjoint dishes and rejects overlapping memberships', asyn
  await expect(service.suggest('alice', input)).rejects.toThrow(/overlap/i);
  expect(calls).toEqual([]);
 });
+
+it('preserves submission-time versions through analysis instead of rebasing an amendment', async () => {
+ const {service,calls}=harness({intent:'amend',targetIds:['broth'],changes:{broth:{name:'Broth'}}});
+ await service.execute('alice',{...input,expectedVersions:{broth:4,veg:2}});
+ expect(calls[0].expectedVersions).toEqual({broth:4,veg:2});
+});
