@@ -30,20 +30,39 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
     }
     catch (error) { storageError = error.message;return {}; }
   };
+  const restoreItems = (scope, held) => {
+    const items = []; const quarantined = Array.isArray(held?.quarantined) ? [...held.quarantined] : [];
+    const source = held?.items ?? [];
+    if (!Array.isArray(source)) quarantined.push(source);
+    else for (const item of source) {
+      try {
+        const event = item?.body?.event;
+        const recipe = item?.body?.plan;
+        if (!event?.id || !['selection', 'outcome'].includes(event.type) || event.profileId !== scope.profileId
+          || recipe?.scoreId !== scope.scoreId || recipe.fingerprint !== scope.fingerprint
+          || (event.type === 'outcome' && (!item.evidence || item.evidence.attempt_id !== event.id))) throw new Error('Unreadable queued take');
+        applyCoachEvent(null, event, { plan: createCoachPlan(recipe), ...context() });
+        items.push(item);
+      } catch { quarantined.push(item); }
+    }
+    return { items, quarantined: [...new Map(quarantined.map((item) => [JSON.stringify(item), item])).values()] };
+  };
   const ensure = (scope, plan) => {
     const key = coachScopeKey(scope);
     if (!entries.has(key)) {
       const held = persistent(scope) ? read()[key] : null;
-      entries.set(key, { scope: { ...scope }, plan: plan ?? (held?.plan ? createCoachPlan(held.plan) : null),
-        items: held?.items ?? [], acknowledged: new Set(), serverState: null, legacy: {}, loaded: !persistent(scope), error: null, running: null });
+      let restoredPlan = plan;
+      if (!restoredPlan && held?.plan) { try { restoredPlan = createCoachPlan(held.plan); } catch (error) { storageError = error.message; } }
+      entries.set(key, { scope: { ...scope }, plan: restoredPlan ?? null,
+        ...restoreItems(scope, held), acknowledged: new Set(), serverState: null, legacy: {}, loaded: !persistent(scope), error: null, running: null });
     }
     const entry = entries.get(key);if (plan) entry.plan = plan;return entry;
   };
   const snapshot = (entry) => {
-    const state = entry.plan ? entry.items.reduce((current, item) => applyCoachEvent(current, item.body.event, { plan: entry.plan, ...context() }), entry.serverState) : entry.serverState;
+    const state = entry.plan ? entry.items.reduce((current, item) => applyCoachEvent(current, item.body.event, { plan: createCoachPlan(item.body.plan), legacy: entry.legacy, ...context() }), entry.serverState) : entry.serverState;
     return { scope: entry.scope, state, legacy: entry.legacy, loaded: entry.loaded,
       revision: entry.serverState?.revision ?? 0, pendingCount: entry.items.length, storageError,
-      error: entry.error, saveStatus: !persistent(entry.scope) ? 'guest' : entry.error ? 'error' : entry.items.length ? 'pending' : entry.loaded ? 'saved' : 'loading' };
+      error: entry.error, recoveryError: entry.quarantined.length ? 'Some earlier practice could not be restored. It is retained on this device; export it for recovery. You can continue practicing.' : null, saveStatus: !persistent(entry.scope) ? 'guest' : entry.error ? 'error' : entry.items.length ? 'pending' : entry.loaded ? 'saved' : 'loading' };
   };
   const emit = (entry) => { if (!disposed) onChange(entry.scope, snapshot(entry)); };
   const persist = (entry) => {
@@ -51,11 +70,13 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
     try {
       if (!storage) throw new Error('Browser storage is unavailable');
       const data = read();const key = coachScopeKey(entry.scope);
-      const merged = new Map((data[key]?.items ?? []).map((item) => [item.body.event.id, item]));
+      const restored = restoreItems(entry.scope, data[key]);
+      entry.quarantined = [...new Map([...entry.quarantined, ...restored.quarantined].map((item) => [JSON.stringify(item), item])).values()];
+      const merged = new Map(restored.items.map((item) => [item.body.event.id, item]));
       for (const item of entry.items) merged.set(item.body.event.id, item);
       for (const id of entry.acknowledged) merged.delete(id);
       entry.items = [...merged.values()];
-      if (entry.items.length) data[key] = { scope: entry.scope, plan: serializeCoachPlan(entry.plan), items: entry.items };
+      if (entry.items.length || entry.quarantined.length) data[key] = { scope: entry.scope, plan: serializeCoachPlan(entry.plan), items: entry.items, quarantined: entry.quarantined };
       else delete data[key];
       storage.setItem(OUTBOX, JSON.stringify(data));
     } catch (error) { storageError = error.message; }
@@ -117,7 +138,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
         entry.serverState = applyCoachEvent(entry.serverState, captured, { plan, ...context() });entry.loaded = true;emit(entry);return snapshot(entry);
       }
       if (!entry.items.some((item) => item.body.event.id === captured.id)) {
-        const storedCount = Object.entries(read()).filter(([key]) => key !== coachScopeKey(scope)).reduce((n, [, value]) => n + (value.items?.length ?? 0), 0);
+        const storedCount = Object.entries(read()).filter(([key]) => key !== coachScopeKey(scope)).reduce((n, [, value]) => n + (Array.isArray(value?.items) ? value.items.length : 0), 0);
         if (storedCount + entry.items.length >= LIMIT) { entry.error = 'Progress queue is full';emit(entry);throw new Error(entry.error); }
         const item = { body: { event: captured, plan: serializeCoachPlan(plan) }, assessmentSaved: false };
         if (captured.type === 'outcome') {
@@ -138,6 +159,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
       if (!entry.items.length) return this.load(scope, entry.plan);
       return drain(entry);
     },
+    recoveryData(scope) { return JSON.stringify({ scope, unreadable: ensure(scope).quarantined }, null, 2); },
     dispose() { disposed = true; },
   };
 }

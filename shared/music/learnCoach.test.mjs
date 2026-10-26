@@ -191,4 +191,35 @@ describe('identity, authored requirements, review and legacy preservation', () =
     expect(state.evidence.length).toBeLessThanOrEqual(128);
     expect(projection(plan, state).segments[0].skills[0].ready).toBe(true);
   });
+  it('excludes silent completed takes from readiness and difficulty while explaining no input', () => {
+    const plan=planOf();const task=choose(plan,'timed-60');
+    const silent={...bad,diagnostics:{expected_notes:10,matched_notes:0,wrong_notes:0,missed_notes:10}};
+    let state=outcome(undefined,plan,task,silent);state=outcome(state,plan,task,silent);
+    expect(state.evidence).toHaveLength(0);expect(state.resume).toBeNull();
+    expect(coachFeedback(silent,task)).toMatchObject({reason:'no-input'});
+  });
+  it('grandfathers three earned timed passes and equivalent single-part hand work', () => {
+    const plan=planOf();const legacy={learn:{passages:{opening:{rungs:{timed:{passCount:3}}},answer:{rungs:{right:{passCount:6}}}}}};
+    const p=projection(plan,null,{legacy});
+    expect(p.segments[0].skills.find(s=>s.skill==='timed-60')).toMatchObject({ready:true,provenance:'legacy'});
+    expect(p.segments[0].skills.find(s=>s.skill==='timed-80').ready).toBe(false);
+    expect(p.segments[1].skills.find(s=>s.skill==='notes')).toMatchObject({ready:true,provenance:'legacy'});
+  });
+  it('offers optional full-tempo mastery without replacing an authored practice-plan quota', () => {
+    const plan=planOf({authoredLadder:true,segments:[{...segments[0],ladder:[{id:'phrase',label:'Phrase',effectiveParts:['rh'],mode:'free',sets:1,reps:4,completes:'passage'}]}]});
+    const demo=plan.segments[0].demonstration;expect(demo).toMatchObject({mastery:true,mode:'cued',parts:['rh','lh'],tempoPercent:100});
+    let state=outcome(outcome(undefined,plan,demo),plan,demo);
+    expect(projection(plan,state).segments[0]).toMatchObject({mastered:true,complete:false});
+    expect(projection(plan,state).recommended.skill).toBe('phrase');
+  });
+  it('retains authored set tempos, requiring distinct successful takes at each stage', () => {
+    const plan=planOf({authoredLadder:true,segments:[{...segments[0],ladder:[{id:'ramp',label:'Ramp',effectiveParts:['rh','lh'],mode:'cued',sets:2,reps:1,tempoPercent:60,tempoPercents:[60,100],completes:'passage'}]}]});
+    const first=projection(plan).recommended;expect(first.tempoPercent).toBe(60);
+    let state=outcome(undefined,plan,first);const second=projection(plan,state).recommended;expect(second.tempoPercent).toBe(100);
+    state=outcome(state,plan,first);expect(projection(plan,state).segments[0].complete).toBe(false);
+    state=outcome(state,plan,second);expect(projection(plan,state).segments[0].complete).toBe(true);
+    const full=plan.segments[0].demonstration;const once=outcome(undefined,plan,full);
+    expect(projection(plan,once).segments[0].complete).toBe(false);
+  });
+
 });

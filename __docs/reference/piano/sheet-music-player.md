@@ -246,7 +246,7 @@ readiness requires two successful valid equivalent completed takes among the
 latest three. Default criteria are completeness 1 and cleanliness at least 0.8;
 timed work also requires placement at least 0.8. An explicitly authored ladder
 retains its order, criteria, repetition quota and consecutive-pass requirements.
-Its terminal achievement is **Practice plan complete** unless the work establishes
+Authored per-set tempos remain distinct ordered requirements; repeating a slower set cannot finish a faster one. Its terminal achievement is **Practice plan complete** unless the work establishes
 the full timed achievement, labeled **Played at score tempo**.
 
 A stronger timed demonstration can establish easier skills without redundant
@@ -288,7 +288,7 @@ parent again without completing its quota. Manual tempo choices under Change
 practice remain available at 15, 25, 40, 60, 80 and 100 percent. Preparation shows
 the starting effective BPM as well as its percentage of score tempo.
 
-Progress is scoped to profile, score and content fingerprint. Coaching uses a
+Progress is scoped to profile, score and content fingerprint. Unreadable queued items are retained separately and can be exported for recovery; valid queued work and new practice continue. Each pending take replays against its captured plan, including after configuration changes. Coaching uses a
 bounded browser outbox, posting the immutable assessment first and its coaching
 event second. Retry and reconnect retain the same event IDs. The server reads the
 saved assessment, applies the shared policy in order, and acknowledges a revision
@@ -305,7 +305,7 @@ The additive `learnCoach` summary preserves existing `learn`, `measures`, and
 `polish`. Compatible legacy earned skills are grandfathered with explicit
 provenance, including six banked passes under weaker old rubrics. Earlier counts
 remain visible separately when score identity changes. Partial legacy counts do
-not manufacture current equivalent evidence. Historical version-2 two-part timed
+not manufacture current equivalent evidence. Silent takes never count toward readiness or difficulty. Historical version-2 two-part timed
 failures without the corrected `onsets-v1` contract never drive adaptation, and
 historical attempts are never rewritten as passes. Content versions of coaching
 state are archived rather than overwritten.

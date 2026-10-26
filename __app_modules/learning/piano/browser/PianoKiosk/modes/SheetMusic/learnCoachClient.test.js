@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { createLearnCoachClient } from './learnCoachClient.js';
+import { createLearnCoachClient, coachScopeKey } from './learnCoachClient.js';
 import { PianoLearnCoachService } from '../../../../server/application/PianoLearnCoachService.mjs';
 import { pianoCoachFixture } from '../../../../../../../tests/_lib/pianoCoachFixture.mjs';
 import { createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
@@ -126,4 +126,26 @@ describe('profile-scoped coaching outbox', () => {
     expect(next.get(scope).pendingCount).toBe(1);
     next.dispose();
   });
+  it.each([{}, [{}], [{body:{event:{id:'broken',type:'selection',task:{}}}}]])('quarantines unreadable nested work while allowing new work: %j',async(items)=>{
+    const storage=storageOf();storage.setItem('piano.learn.coach.outbox.v1',JSON.stringify({[coachScopeKey(scope)]:{scope,items}}));
+    const h=setup({storage});await expect(h.client.load(scope,h.f.plan)).resolves.toMatchObject({loaded:true});
+    expect(h.client.get(scope).recoveryError).toMatch(/earlier practice/i);
+    await h.client.enqueue(scope,h.event(),h.f.plan);expect(h.f.attempts.has('attempt-one')).toBe(true);
+    const saved=JSON.parse(storage.getItem('piano.learn.coach.outbox.v1'));expect(saved[coachScopeKey(scope)].quarantined.length).toBeGreaterThan(0);
+  });
+  it('replays valid queued work against its captured plan after segment configuration changes',async()=>{
+    const h=setup({intercept:async()=>{throw new Error('offline')}});await h.client.enqueue(scope,h.event(),h.f.plan);h.client.dispose();
+    const changed=createCoachPlan({...h.f.plan,segments:[{id:'new',inMeasure:0,outMeasure:1,playableParts:['rh','lh']}]});
+    const next=createLearnCoachClient({request:async()=>{throw new Error('offline')},storage:h.storage});
+    await expect(next.load(scope,changed)).resolves.toMatchObject({loaded:true,pendingCount:1});expect(next.get(scope).state.evidence).toHaveLength(1);next.dispose();
+  });
+
+  it('preserves authored tempo stages through the saved recipe and server acknowledgements',async()=>{
+    const h=setup();const plan=createCoachPlan({...h.f.plan,authoredLadder:true,segments:[{...h.f.plan.segments[0],ladder:[{id:'ramp',label:'Ramp',effectiveParts:['rh','lh'],mode:'cued',sets:2,reps:1,tempoPercent:60,tempoPercents:[60,100],completes:'passage'}]}]});
+    const take=async(id,task)=>{const event=h.event(id);event.task=task;await h.client.enqueue(scope,event,plan)};
+    await h.client.load(scope,plan);const first=projectCoach({plan}).recommended;await take('ramp-one',first);await take('ramp-slow-again',first);
+    let p=projectCoach({plan,state:h.client.get(scope).state});expect(p.segments[0].complete).toBe(false);expect(p.recommended.tempoPercent).toBe(100);
+    await take('ramp-full',p.recommended);p=projectCoach({plan,state:h.client.get(scope).state});expect(p.segments[0]).toMatchObject({complete:true,mastered:true});
+  });
+
 });

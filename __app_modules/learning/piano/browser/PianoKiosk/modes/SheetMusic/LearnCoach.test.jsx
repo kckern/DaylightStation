@@ -6,7 +6,7 @@ const h = vi.hoisted(() => ({ profile: 'guest', connected: true, lab: null, unav
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.profile }) }));
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: h.connected }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => null }));
-vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: ({ onExpectation, onUnrunnable }) => {
+vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: (props) => { const { onExpectation, onUnrunnable } = props; h.preview = props;
   h.unavailable = onUnrunnable;
   return <button onClick={() => onExpectation({ events: [{ notes: [60] }] })}>Music ready</button>;
 } }));
@@ -47,7 +47,7 @@ describe('LearnCoach', () => {
   await act(async () => h.lab.onOutcome(result)); fireEvent.click(screen.getByRole('button', { name: 'Play again' }));
   await act(async () => h.lab.onOutcome({ ...result, assessmentId: 'fail2' }));
   expect(screen.getByRole('heading', { name: /missing notes/ })).toBeInTheDocument();
-  const smaller = screen.getByRole('button', { name: /Try a smaller task/ });
+  const smaller = screen.getByRole('button', { name: /Practice bars 1–2/ });
   expect(screen.queryByText('Running take')).not.toBeInTheDocument(); fireEvent.click(smaller);
   expect(h.lab.coachingTask.range.end).toBeLessThan(3);
  });
@@ -100,6 +100,28 @@ describe('LearnCoach', () => {
   act(()=>h.lab.onOutcome(passed));expect(screen.getByRole('heading',{name:'Nice work!'})).toBeInTheDocument();
   expect(screen.getByText('Progress not saved')).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Retry saving'}));
   await waitFor(()=>expect(coach.record).toHaveBeenCalledTimes(2));expect(coach.record.mock.calls[1][1].assessmentId).toBe('take');
+ });
+
+ it('uses the changed task for its excerpt and waits for that task to become ready', async()=>{
+  render(<LearnCoach {...props}/>);await start();await act(async()=>h.lab.onOutcome(passed));
+  fireEvent.click(screen.getByRole('button',{name:'Change practice'}));fireEvent.click(screen.getByRole('button',{name:'Left hand',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Use this setup'}));
+  expect(h.preview.activeParts).toEqual(['lh']);expect(screen.getByRole('button',{name:'Start practice',exact:true})).toBeDisabled();
+  fireEvent.click(screen.getByRole('button',{name:'Music ready'}));expect(screen.getByRole('button',{name:'Start practice',exact:true})).toBeEnabled();
+ });
+ it('names a timing recovery by its slower tempo, without internal reason enums',async()=>{
+  render(<LearnCoach {...props}/>);fireEvent.click(screen.getByRole('button',{name:'Try the full passage'}));await start();
+  const failed={...passed,criteria:{completeness:1,cleanliness:1,placement:.2},verdict:{passed:false}};
+  await act(async()=>h.lab.onOutcome(failed));fireEvent.click(screen.getByRole('button',{name:'Play again'}));
+  await act(async()=>h.lab.onOutcome({...failed,assessmentId:'timing2'}));
+  expect(screen.getByRole('button',{name:'Try a little slower · 80%'})).toBeInTheDocument();
+  expect(screen.queryByText('slower-beat')).not.toBeInTheDocument();
+ });
+
+ it('labels inherited completion without claiming a newly measured full-tempo performance',()=>{
+  render(<LearnCoach {...props} legacy={{learn:{passages:{a:{complete:true}}}}}/>);
+  expect(screen.getByText('Previously completed')).toBeInTheDocument();
+  expect(screen.queryByText('Played at score tempo',{exact:true})).not.toBeInTheDocument();
  });
 
 });

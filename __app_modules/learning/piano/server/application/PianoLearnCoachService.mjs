@@ -109,7 +109,7 @@ export class PianoLearnCoachService {
       if (!this.timezone) fail('Household timezone is unavailable; progress was not saved', 503);
       const at = this.clock();
       const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
-      const state = applyCoachEvent(this.#state(record, plan), { ...event, result }, { plan, now: at.toISOString(), dayKey });
+      const state = applyCoachEvent(this.#state(record, plan), { ...event, result }, { plan, now: at.toISOString(), dayKey, legacy: record });
       const acknowledged = { signature, revision: state.revision, fingerprint: plan.fingerprint, scoreId: plan.scoreId };
       this.receiptStore.savePending(userId, scoreKey, { id: event.id, stateAfter: state, receipt: acknowledged });
       this.#recover(userId, scoreKey);

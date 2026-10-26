@@ -53,7 +53,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
       rung: { id: run.skill, label: run.label, effectiveParts: run.parts, mode: run.mode,
         tempoPercent: run.tempoPercent, criteria: run.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
   }, [plan, run]);
-  const activeTask = run ?? task;
+  const activeTask = view === 'result' ? (result?.task ?? task) : task;
   const range = useMemo(() => activeTask?.range, [activeTask]);
   const parts = useMemo(() => activeTask?.parts, [activeTask]);
   const ready = useCallback(() => { setReadyKey(task?.key); setMusicError(null); }, [task?.key]);
@@ -73,8 +73,14 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   };
   const operational = () => finish({ status: 'error', validity: 'invalid', error: 'music-unavailable', diagnostics: {} });
   const message = result ? coachFeedback(result.raw, result.task) : null;
-  const earned = result && projected?.skills.find((skill) => skill.key === result.task.key)?.ready;
+  const earned = result && (projected?.skills.find((skill) => skill.key === result.task.key)?.ready || (result.task.mastery && projected?.mastered));
   const recovery = next?.depth > 0 && next.key !== result?.task.key;
+  const recoveryAction = next?.reason === 'slower-beat' ? `Try a little slower · ${next.tempoPercent}%`
+    : next?.reason === 'one-hand' ? `Practice the ${next.parts[0] === 'lh' ? 'left' : 'right'} hand`
+      : `Practice bars ${(next?.range.start ?? 0) + 1}–${(next?.range.end ?? 0) + 1}`;
+  const recoveryDetail = next?.reason === 'slower-beat' ? 'Keep the same notes and give yourself more time between beats.'
+    : next?.reason === 'one-hand' ? 'Work on this hand, then return to the hands together.'
+      : 'Work on these bars, then return to the whole passage.';
   const openingQuarter = tempo.measureOnsets?.[task?.range.start] ?? 0;
   const baseBpm = plan.tempoMap.filter((entry) => entry.onsetQuarter <= openingQuarter).at(-1)?.bpm;
   const effectiveBpm = baseBpm > 0 ? Math.round(baseBpm * (task?.tempoPercent ?? 100) / 100) : null;
@@ -85,6 +91,10 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
       await coach.retry().catch(() => {});
       if (result && live.current) coach.record(result.task, result.raw);
     }}>Retry saving</button></> : coach.saveStatus === 'pending' ? <span>Saving progress…</span> : coach.saveStatus === 'saved' ? <span>Progress saved</span> : null}
+    {coach.recoveryError && <><span role="alert">{coach.recoveryError}</span><button type="button" onClick={() => {
+      const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([coach.recoveryData()], { type: 'application/json' }));
+      link.href = url; link.download = 'piano-earlier-practice.json'; link.click(); URL.revokeObjectURL(url);
+    }}>Export earlier practice</button></>}
     {coach.storageError && <span>Keep this page open until progress is saved.</span>}
   </div>;
   if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button onClick={onBack}>Back to score</button></section>;
@@ -108,7 +118,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   return <section className="piano-learn-coach" aria-label={`${segment.label} learning`}>
     <header className="piano-learn-coach__header"><button type="button" onClick={onBack}>‹ Back to score</button>
       <div><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
-      {projected?.complete && <strong>{projected.mastered ? 'Played at score tempo' : 'Practice plan complete'}</strong>}
+      {(projected?.complete || projected?.mastered) && <strong>{projected.mastered ? (projected.masteredAt ? 'Played at score tempo' : 'Previously completed') : 'Practice plan complete'}</strong>}
     </header>
     {progress}
     <div className="piano-learn-coach__body">
@@ -118,8 +128,8 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
           <h2>{message.title}</h2><p>{message.detail}</p>
           {earned ? <p className="piano-learn-coach__earned">✓ Skill earned · {result.task.label}</p>
             : message.reason === 'passed' && <p>{result.task.required ? 'A successful take added to your practice plan.' : 'One more successful take will make this skill ready.'}</p>}
-          {next?.reason && <p>{next.reason}</p>}
-          {recovery ? <button className="is-primary" onClick={() => start(next)}>Try a smaller task</button>
+          {recovery && <p>{recoveryDetail}</p>}
+          {recovery ? <button className="is-primary" onClick={() => start(next)}>{recoveryAction}</button>
             : next && next.key !== result.task.key && !projected?.complete
               ? <button className="is-primary" onClick={() => start(next)}>Next: {next.label}</button>
               : projected?.complete && nextPassage && onPassageChange
@@ -139,8 +149,8 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
           <button className="is-primary" disabled={readyKey !== task.key || Boolean(musicError) || connected === false || coach.loaded === false} onClick={() => start()}>Start practice</button>
           <button onClick={() => { onListen?.(task); setView('listen'); }}>Listen</button>
           <button onClick={() => setView('custom')}>Change practice</button>
-          {segment.tasks.some((item) => item.mastery) && <button onClick={() => {
-            setSelected(segment.tasks.find((item) => item.mastery)); setMusicError(null);
+          {segment.demonstration && <button onClick={() => {
+            setSelected(segment.demonstration); setMusicError(null);
           }}>Try the full passage</button>}
         </>}
         {Object.values(coach.projection.retainedLegacy?.passages ?? {}).some((passage) => passage.complete || Object.values(passage.rungs ?? {}).some((rung) => rung.passCount > 0)) && <details className="piano-learn-coach__earlier">
