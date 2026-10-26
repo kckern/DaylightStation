@@ -9,6 +9,6 @@
     "random": "node simulation.mjs --random"
   },
   "dependencies": {
-    "ws": "^8.14.0"
+    "ws": "^8.22.0"
   }
 }
