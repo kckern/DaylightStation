@@ -103,3 +103,11 @@ describe('HTTP → real health ledger contracts', () => {
     expect(conflict.status).toBe(409);
   });
 });
+
+it('replays a delete whose successful response was lost',async()=>{
+ await store.saveMany([food()]);
+ const first=await request(app).delete('/api/v1/health/nutrilist/a').send({operationId:'delete-once'});
+ const retry=await request(app).delete('/api/v1/health/nutrilist/a').send({operationId:'delete-once'});
+ expect(first.status).toBe(200);expect(retry.status).toBe(200);
+ expect(retry.body).toEqual(first.body);
+});

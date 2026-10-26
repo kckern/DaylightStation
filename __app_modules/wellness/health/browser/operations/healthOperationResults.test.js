@@ -8,3 +8,7 @@ it('matches one-to-many and IDs-only results without guessing row versions', () 
  expect(normalizeFoodOperationResult(op,{committed:false,quarantined:true}).outcome).not.toBe('committed');
  expect(normalizeFoodOperationResult(op,{committed:true,items:[{uuid:'b',version:1,date:'2026-10-24'}]}).affectedDates).toContain('2026-10-24');
 });
+
+it('never treats a model revision proposal as a committed food write',()=>{
+ expect(normalizeFoodOperationResult({id:'revise'},{proposal:{name:'Soup'},pinned:[]}).outcome).toBe('proposal');
+});

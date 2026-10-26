@@ -4,8 +4,9 @@ import { useApiResource, peekApiResource } from "../../../../../frontend/src/lib
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { BUCKETS } from "./mealBuckets.js";
 import { noteVisibleRows } from "./addFlow.js";
-import { refreshHealthResources, healthDayPath } from "../healthResources.js";
+import { refreshHealthResources, healthDayPath, isProvisionalRow } from "../healthResources.js";
 
+import { projectRowsBudget } from "./portionPreview.js";
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 
 const logger = createAppLogger('health').child('use-health-day');
@@ -29,19 +30,34 @@ export function useHealthDay(date, { enabled = true } = {}) {
 
   // The day's rows: the endpoint serves {message, data:[...], date, count};
   // also tolerate bare array or {items} for backward compatibility.
-  const rawItems = useMemo(() => {
+  const cachedItems = useMemo(() => {
     const d = list.data;
     return Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
   }, [list.data]);
 
-  const read = useRef({ date: null, active: false, token: -1 });
+  const rawItems = useMemo(() => operations ? cachedItems.filter(row => !isProvisionalRow(row)) : cachedItems, [cachedItems, Boolean(operations)]);
+  // A request's provenance belongs to the snapshot it RETURNS. Starting a
+  // revalidation must never make the still-visible cached rows authoritative.
+  const read = useRef({ date, active: false, started: -1, completed: -1, data: list.data });
   const reading = list.loading || list.revalidating;
-  if (read.current.date !== date || (reading && !read.current.active)) read.current = { date, active: reading, token: operations?.reconciliation.beginRead() ?? -1 };
-  else read.current.active = reading;
-  const readToken = read.current.token;
+  if (read.current.date !== date) read.current = { date, active: false, started: -1, completed: -1, data: list.data };
+  if (list.data !== read.current.data) {
+    read.current.completed = read.current.started;
+    read.current.data = list.data;
+  }
+  if (reading && !read.current.active) read.current.started = operations?.reconciliation.beginRead() ?? -1;
+  read.current.active = reading;
+  const readToken = read.current.completed;
   const reconciled = useMemo(() => operations?.reconciliation.reconcile({ date, rows: rawItems, budget: list.data?.budget, readToken })
     || { rows: rawItems, budget: list.data?.budget }, [rawItems, list.data?.budget, date, operations?.snapshot.revision, operations?.reconciliation, readToken]);
-  const items = reconciled.rows;
+  const items = useMemo(() => {
+    const rows = [...reconciled.rows];
+    for (const operation of operations?.snapshot.operations.values() || []) {
+      if (operation.kind === 'quickadd' && ['pending', 'reconciling'].includes(operation.phase) && operation.date === date
+        && !rows.some(row => String(row.uuid ?? row.id) === String(operation.provisionalRow.uuid))) rows.push(operation.provisionalRow);
+    }
+    return rows;
+  }, [reconciled.rows, operations?.snapshot.revision, date]);
   useEffect(() => { if (operations) for (const row of items) operations.knownRows.set(String(row.uuid ?? row.id), row); }, [items, operations?.knownRows]);
 
   // An add from the add row completes (add.flow) when its rows are here.
@@ -104,7 +120,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
   return {
     items,
     byBucket,
-    budget: reconciled.budget ?? null,
+    budget: projectRowsBudget(reconciled.rows, reconciled.budget, items) ?? null,
     // { status: 'done'|'fasting'|null, minCalories } — the day's closure for coaching.
     dayStatus: list.data?.dayStatus ?? null,
     budgetError: list.data?.budgetError ?? null,

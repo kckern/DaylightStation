@@ -25,3 +25,12 @@ describe('food operation reservations', () => {
     expect(store.begin(intent('two', ['2'])).ok).toBe(false);
   });
 });
+
+it('allows a batch child inside its own reservation while excluding every other writer',()=>{
+ const store=createHealthOperations({userId:'u'});
+ store.begin({id:'batch',targetIds:['a','b']});
+ expect(store.begin({id:'child',parentId:'batch',targetIds:['a']}).ok).toBe(true);
+ expect(store.begin({id:'outside',targetIds:['b']}).ok).toBe(false);
+ store.discard('batch');
+ expect(store.isReserved(['a'])).toBe(true);
+});

@@ -56,3 +56,9 @@ it('replays a committed contextual voice operation after losing the outer respon
   expect((await store.findByDate('alice', request.date)).filter(row => row.name === 'Potatoes')).toHaveLength(1);
  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+it('preserves committed rows and destination metadata for one-to-many response matching',async()=>{
+ const items=[{uuid:'a',date:'2026-09-05',mealTime:'afternoon',version:1},{uuid:'b',date:'2026-09-05',mealTime:'afternoon',version:1}];
+ const adapter=new WebNutribotAdapter({logger:{},inputRouter:{handleText:async()=>({committed:true,items,mealTime:'afternoon',moved:true,result:{committed:true,items,date:'2026-09-05',bucket:'afternoon',affectedDates:['2026-09-05']}})}});
+ expect(await adapter.process({userId:'u',date:'2026-09-06',bucket:'morning',type:'text',content:'yesterday lunch'})).toMatchObject({committed:true,items,date:'2026-09-05',affectedDates:['2026-09-05']});
+});

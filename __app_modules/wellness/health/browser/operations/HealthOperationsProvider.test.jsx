@@ -35,3 +35,27 @@ it('retries a failed reconciliation read without resending an acknowledged write
  expect(writes).toBe(1);expect(reads).toBe(2);
  expect(result.current.store.isReserved(['a'])).toBe(false);
 });
+
+it('disposes old work when the confirmed user changes',async()=>{
+ let owner='first',finish;
+ const send=()=>new Promise(resolve=>{finish=resolve;});
+ const completed=vi.fn();
+ const wrapper=({children})=><HealthOperationsProvider userId={owner} send={send}>{children}</HealthOperationsProvider>;
+ const {result,rerender}=renderHook(useHealthOperations,{wrapper});
+ let request;
+ act(()=>{result.current.store.begin({id:'old',targetIds:['a'],request:{path:'test',body:{},method:'POST'}});request=result.current.execute('old',completed);});
+ owner='second';rerender();
+ expect(result.current.snapshot.operations.size).toBe(0);
+ await act(async()=>{finish({committed:true});await request;});
+ expect(completed).not.toHaveBeenCalled();
+ expect(result.current.snapshot.userId).toBe('second');
+});
+
+it('keeps affected foods locked when a reconciliation snapshot is behind acknowledged versions',async()=>{
+ const send=async path=>path.endsWith('/a')?{data:{uuid:'a',version:2},versions:{a:2}}:{items:[{uuid:'a',date:'2026-10-25',version:1}]};
+ const wrapper=({children})=><HealthOperationsProvider userId="u" send={send}>{children}</HealthOperationsProvider>;
+ const {result}=renderHook(useHealthOperations,{wrapper});
+ act(()=>result.current.store.begin({id:'stale',date:'2026-10-25',targetIds:['a'],request:{path:'api/v1/health/nutrilist/a',body:{},method:'PUT'}}));
+ await act(async()=>{await expect(result.current.execute('stale')).rejects.toThrow(/refresh/i);});
+ expect(result.current.store.isReserved(['a'])).toBe(true);
+});

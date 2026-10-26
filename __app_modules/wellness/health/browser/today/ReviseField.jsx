@@ -1,6 +1,6 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useState } from 'react';
 import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { VoiceCapture } from "../capture/VoiceCapture.jsx";
 import { entryId, entryLabel, entryPins } from "./entryCommands.js";
@@ -29,6 +29,7 @@ const logger = createAppLogger('health').child('revise');
  * named beside the field, with one tap to release them before you speak.
  */
 export function ReviseField({ row, onApply, busy: parentBusy = false }) {
+  const foodAPI = useFoodMutation([row]);
   const [text, setText] = useState('');
   const [state, setState] = useState(null); // null | 'thinking' | 'applying'
   const [error, setError] = useState(null);
@@ -42,7 +43,7 @@ export function ReviseField({ row, onApply, busy: parentBusy = false }) {
     if (busy) return;
     setState('thinking'); setError(null); setOutcome(null);
     try {
-      const result = await DaylightAPI(`api/v1/health/nutrilist/${entryId(row)}/revise`, body, 'POST');
+      const result = await foodAPI(`api/v1/health/nutrilist/${entryId(row)}/revise`, body, 'POST');
       const skip = released ? [] : result.pinned;
       const changes = Object.fromEntries(Object.entries(result.proposal).filter(([field]) => !skip.includes(field)));
       logger.info('revise.interpreted', { uuid: entryId(row), basis: result.basis, pinned: result.pinned, released });

@@ -1,12 +1,13 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 const logger = createAppLogger('health').child('meal-food-controls');
 const idOf = row => row.uuid || row.id;
 const nameOf = row => row.name || row.label || row.item;
 
 export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, onSelectionMode, onChanged, extraActions }) {
+  const foodAPI = useFoodMutation(rows);
   const [panel, setPanel] = useState(null);
   const [name, setName] = useState('');
   const [groups, setGroups] = useState([]);
@@ -32,11 +33,11 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
     const body = { date,bucket,selectedIds,expectedVersions:allVersions(),...payload };
     const fingerprint = JSON.stringify(body);
     if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint,operationId:crypto.randomUUID() };
-    const result = await DaylightAPI('api/v1/health/nutrition/meal-command',{...body,operationId:request.current.operationId},'POST');
+    const result = await foodAPI('api/v1/health/nutrition/meal-command',{...body,operationId:request.current.operationId},'POST');
     request.current = null; setPanel(null); onChanged(result);
   };
   const suggest = () => run(async () => {
-    const result = await DaylightAPI('api/v1/health/nutrition/meal-suggestions',{date,bucket,selectedIds},'POST');
+    const result = await foodAPI('api/v1/health/nutrition/meal-suggestions',{date,bucket,selectedIds},'POST');
     setGroups(result.groups || []); setVersions(result.expectedVersions || allVersions()); setPanel('smart');
   });
   const editGroup = id => {

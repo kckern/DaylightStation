@@ -20,3 +20,23 @@ it('protects deletes and moves then retires against a post-ack authoritative rea
  r.reconcile({date,rows:[],readToken:r.beginRead()});
  expect(r.reconcile({date,rows:[]}).rows).toEqual([]);
 });
+
+it('keeps a version floor after catch-up so an older outstanding poll cannot revert it',()=>{
+ const r=createHealthReconciliation();
+ r.acknowledge({id:'saved',date},{rows:[row('a',2,200)],removedIds:[]});
+ r.reconcile({date,rows:[row('a',2,200)]});
+ expect(r.reconcile({date,rows:[row('a',1,100)]}).rows[0].calories).toBe(200);
+ const token=r.beginRead();
+ r.reconcile({date,rows:[],readToken:token});
+ expect(r.reconcile({date,rows:[row('a',1,100)]}).rows).toEqual([]);
+});
+
+it('does not resurrect a food from a capture response started before its deletion',()=>{
+ const r=createHealthReconciliation();
+ const capture={id:'capture',date,submittedEpoch:r.beginRead()};
+ r.acknowledge({id:'delete',date},{rows:[],removedIds:['a']});
+ r.acknowledge(capture,{rows:[row('a',1,100)],removedIds:[]});
+ expect(r.reconcile({date,rows:[]}).rows).toEqual([]);
+ r.acknowledge({id:'restore',date,submittedEpoch:r.beginRead()},{rows:[row('a',2,100)],removedIds:[]});
+ expect(r.reconcile({date,rows:[]}).rows[0].version).toBe(2);
+});

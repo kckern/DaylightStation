@@ -4,8 +4,8 @@ export const entryId = row => row.uuid || row.id;
 export const entryVersions = row => Object.fromEntries([row, ...(row.kind === 'group' ? row.children || [] : [])]
   .map(item => [entryId(item), item.version ?? 1]));
 
-export function updateEntry(row, changes, operationId) {
-  return DaylightAPI(`api/v1/health/nutrilist/${entryId(row)}`, {
+export function updateEntry(row, changes, operationId, api = DaylightAPI) {
+  return api(`api/v1/health/nutrilist/${entryId(row)}`, {
     ...changes, operationId, expectedVersion: row.version ?? 1, expectedVersions: entryVersions(row),
   }, 'PUT');
 }
@@ -52,9 +52,9 @@ export function deleteConfirmBody(row) {
  * sheet's Delete produce identical results — they used to be two call sites with
  * two different contracts for one action.
  */
-export async function deleteEntry(row) {
+export async function deleteEntry(row, api = DaylightAPI) {
   const id = entryId(row);
-  const result = await DaylightAPI(`api/v1/health/nutrilist/${id}`, {}, 'DELETE');
+  const result = await api(`api/v1/health/nutrilist/${id}`, {}, 'DELETE');
   return { entryIds: result.affectedIds || [id], label: entryLabel(row) };
 }
 

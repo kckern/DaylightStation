@@ -10,6 +10,7 @@ export function createHealthReconciliation() {
       const stamp = ++epoch;
       for (const row of result.rows || []) {
         const id = idOf(row), old = overlays.get(id);
+        if (old && !old.row && operation.submittedEpoch != null && old.stamp > operation.submittedEpoch) continue;
         if (!old?.row || (old.row.version ?? 0) <= (row.version ?? 0)) overlays.set(id, { row, sourceDate: operation.date, operationId: operation.id, stamp });
       }
       for (const id of result.removedIds || []) overlays.set(String(id), { row: null, sourceDate: operation.date, operationId: operation.id, stamp });
@@ -22,8 +23,19 @@ export function createHealthReconciliation() {
         const server = replacements.get(id);
         const newerRead = readToken >= overlay.stamp;
         const caughtUp = overlay.row ? server && (server.version ?? 0) >= overlay.row.version : !server && newerRead;
-        if (caughtUp || (newerRead && !server)) {
-          overlays.delete(id); reconciledOperationIds.push(overlay.operationId); continue;
+        if (caughtUp) {
+          // Retire the operation, but retain its version floor against older
+          // requests that were already in flight when this snapshot arrived.
+          if (server && server.version > overlay.row.version) overlays.set(id, { ...overlay, row: server, stamp: ++epoch });
+          reconciledOperationIds.push(overlay.operationId); continue;
+        }
+        if (newerRead && !server && overlay.row?.date === date) {
+          overlays.set(id, { ...overlay, row: null, sourceDate: date, stamp: ++epoch });
+          reconciledOperationIds.push(overlay.operationId); continue;
+        }
+        if (!overlay.row && newerRead && server) {
+          overlays.set(id, { ...overlay, row: server, stamp: ++epoch });
+          reconciledOperationIds.push(overlay.operationId); continue;
         }
         if (!overlay.row || overlay.row.date !== date) replacements.delete(id);
         else if (!server || (server.version ?? 0) < (overlay.row.version ?? 0)) replacements.set(id, overlay.row);

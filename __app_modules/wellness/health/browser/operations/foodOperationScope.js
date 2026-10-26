@@ -5,7 +5,7 @@ export function foodOperationScope({ action, rows = [], selectedIds = [], groupI
   const visit = row => { all.set(idOf(row), row); (row.children || []).forEach(visit); };
   rows.forEach(visit);
   const ids = new Set([...selectedIds, groupId, destinationGroupId].filter(id => id != null).map(String));
-  if (action === 'membership') {
+  if (['membership', 'group', 'groups', 'ungroup', 'amend'].includes(action)) {
     for (const id of [...ids]) { const parent = all.get(id)?.parentId; if (parent != null) ids.add(String(parent)); }
   }
   // Transitive descendants, including nested group membership.

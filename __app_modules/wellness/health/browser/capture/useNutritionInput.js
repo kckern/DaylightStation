@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { operationRequest } from "./operationRequest.js";
 
 const logger = createAppLogger('health').child('capture');
@@ -10,6 +10,7 @@ const logger = createAppLogger('health').child('capture');
  * one hook so busy/error state and logging aren't duplicated per input type.
  */
 export function useNutritionInput() {
+  const foodAPI = useFoodMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const requests = useRef(new Map());
@@ -45,7 +46,7 @@ export function useNutritionInput() {
       bucket: bucket || undefined, date: date || undefined, audioRef: audioRef || undefined,
     });
     try {
-      const result = await DaylightAPI('api/v1/health/nutrition/input', operationId ? { ...body, operationId } : operationRequest(requestRef, body), 'POST');
+      const result = await foodAPI('api/v1/health/nutrition/input', operationId ? { ...body, operationId } : operationRequest(requestRef, body), 'POST');
       if (requests.current.get(fingerprint) === requestRef) requests.current.delete(fingerprint);
       logger.info('capture.result', { type, unknownUpc: result?.unknownUpc === true, moved: result?.moved === true });
       return result;
@@ -55,7 +56,7 @@ export function useNutritionInput() {
       setError(err);
       throw err;
     } finally { activeCount.current--; setBusy(activeCount.current > 0); }
-  }, []);
+  }, [foodAPI]);
 
   return { submit, busy, error };
 }

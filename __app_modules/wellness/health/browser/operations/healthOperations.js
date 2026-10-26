@@ -1,5 +1,5 @@
 const idsOf = ids => [...new Set((ids || []).filter(id => id != null).map(String))].sort();
-const reserved = operation => !['succeeded', 'dismissed'].includes(operation.phase);
+const reserved = operation => ['editing', 'pending', 'reconciling', 'error', 'conflict'].includes(operation.phase);
 
 /** Session-owned intents. Reservations are synchronous, independent of React renders. */
 export function createHealthOperations({ userId }) {
@@ -20,7 +20,7 @@ export function createHealthOperations({ userId }) {
     begin(intent) {
       if (disposed || snapshot.operations.has(intent.id)) return { ok: false };
       const targetIds = idsOf(intent.targetIds);
-      const blockedBy = owners(targetIds).map(op => op.id);
+      const blockedBy = owners(targetIds, intent.parentId).map(op => op.id);
       if (blockedBy.length) return { ok: false, blockedBy };
       const op = { ...structuredClone(intent), targetIds, phase: intent.phase || 'pending', startedAt: Date.now(), userId };
       publish(new Map(snapshot.operations).set(op.id, op));

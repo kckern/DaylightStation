@@ -1,4 +1,5 @@
 import { Button } from '@mantine/core';
+import { BUCKETS } from "../today/mealBuckets.js";
 import { CaptureProgress } from '../today/CaptureProgress.jsx';
 import { normalizeFoodOperationResult } from './healthOperationResults.js';
 import { useHealthOperations } from './HealthOperationsProvider.jsx';
@@ -6,7 +7,11 @@ export function FoodOperationStatus({ operation }) {
   const context = useHealthOperations();
   if (operation.phase === 'succeeded') {
     const destination = operation.normalizedResult?.destination;
-    return destination?.date && destination.date !== operation.date ? <p role="status">Added to {destination.date}</p> : null;
+    const movedDate = destination?.date && destination.date !== operation.date;
+    const movedMeal = destination?.bucket && destination.bucket !== operation.bucket;
+    const meal = BUCKETS.find(bucket => bucket.id === destination?.bucket)?.label || destination?.bucket;
+    return movedDate || movedMeal ? <p role="status">Added to {movedMeal ? meal : ''}{movedDate ? ` ${destination.date}` : ''}
+      <Button size="compact-xs" variant="subtle" onClick={() => context.store.discard(operation.id)}>Dismiss</Button></p> : null;
   }
   const acknowledged = operation.response && normalizeFoodOperationResult(operation, operation.response).outcome === 'committed';
   const text = (operation.kind === 'sentence' ? operation.request?.body?.content : operation.label) || 'Food';

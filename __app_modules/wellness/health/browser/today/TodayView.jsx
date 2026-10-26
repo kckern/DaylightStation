@@ -1,3 +1,4 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortionContext, usePortionDraft } from "./usePortionDraft.js";
@@ -51,6 +52,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
+  const foodAPI = useFoodMutation(day.items);
   // Drag-to-meal moves wear their new meal from the drop until the day
   // reloads with them (mealDrag.jsx), so the portion overlay reads that view.
   const moves = useMealMoves(day);
@@ -103,7 +105,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (deleteBusy || !pendingDelete) return;
     setDeleteBusy(true); setDeleteError(null);
     try {
-      const removed = await deleteEntry(pendingDelete);
+      const removed = await deleteEntry(pendingDelete, foodAPI);
       logger.info('entry.delete', { uuid: pendingDelete.uuid || pendingDelete.id, count: removed.entryIds.length });
       setPendingDelete(null); setUndoDelete(removed); day.reload();
     } catch (err) {
@@ -419,7 +421,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (undoPending.current || !mealUndo) return;
     undoPending.current = true; setUndoBusy(true);
     mealUndoOperation.current ??= crypto.randomUUID();
-    try { await DaylightAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); setMealUndo(null); day.reload(); }
+    try { await foodAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); setMealUndo(null); day.reload(); }
     catch (err) { setCaptureNotice(err.message || 'Undo failed. Try again.'); }
     finally { undoPending.current = false; setUndoBusy(false); }
   };
@@ -427,7 +429,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (undoPending.current || !undoDelete) return;
     undoPending.current = true; setUndoBusy(true);
     try {
-      await DaylightAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
+      await foodAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
       setUndoDelete(null); day.reload();
     } catch (err) { setCaptureNotice(err.message); }
     finally { undoPending.current = false; setUndoBusy(false); }
@@ -491,14 +493,14 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
-          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={nutrition.busy} onOrphanedRetry={keepOrphanedRecording}
+          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
-      <BarcodeCapture open={active && captureMode === 'barcode'} busy={nutrition.busy} bucket={barcodeTargetBucket}
+      <BarcodeCapture open={active && captureMode === 'barcode'} busy={false} bucket={barcodeTargetBucket}
         onClose={() => { setCaptureMode(null); setBarcodeTargetBucket(null); }}
         onDecode={async (upc, bucket) => {
           const result = await submitWithPending('barcode', upc, { bucket, date: barcodeDate });

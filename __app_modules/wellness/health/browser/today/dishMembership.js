@@ -1,3 +1,4 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 // Add a food to a dish from the dish's own last line. (Taking one out was
 // retired 2026-10-01: a part leaving its dish but staying in the meal read as
 // the dish logged twice. The row menu's Remove deletes it instead.)
@@ -6,7 +7,6 @@
 // dish's next member list: the same write the "Edit groups" panel makes, so it
 // carries the same version checks and the same Undo.
 import { useRef, useState } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('dish-membership');
@@ -17,15 +17,16 @@ export const dishCandidates = (rows, groupId) => rows.filter(row => row.kind !==
   && row.parentId !== groupId && !rows.some(other => other.parentId === idOf(row)));
 
 export function useDishMembership({ date, bucket, rows, onChanged }) {
-  const [busy, setBusy] = useState(null); // groupId while a write is in flight
+  const foodAPI = useFoodMutation(rows);
+  const [busyIds, setBusy] = useState(new Set()); // groupId while a write is in flight
   const [error, setError] = useState(null);
-  const running = useRef(false);
+  const running = useRef(new Set());
   const save = async (groupId, members, event) => {
-    if (running.current) return;
-    running.current = true; setBusy(groupId); setError(null);
+    if (running.current.has(groupId)) return;
+    running.current.add(groupId); setBusy(new Set(running.current)); setError(null);
     const expectedVersions = Object.fromEntries(rows.map(row => [idOf(row), row.version ?? 1]));
     try {
-      const result = await DaylightAPI('api/v1/health/nutrition/meal-command', {
+      const result = await foodAPI('api/v1/health/nutrition/meal-command', {
         date, bucket, action: 'membership', groupId, selectedIds: members, expectedVersions, operationId: crypto.randomUUID(),
       }, 'POST');
       logger.info(event, { date, bucket, groupId, members: members.length });
@@ -33,11 +34,11 @@ export function useDishMembership({ date, bucket, rows, onChanged }) {
     } catch (err) {
       setError({ groupId, message: err.message || 'Could not update this dish. Try again.' });
       logger.warn(`${event}-failed`, { date, bucket, groupId, error: err.message });
-    } finally { running.current = false; setBusy(null); }
+    } finally { running.current.delete(groupId); setBusy(new Set(running.current)); }
   };
   const membersOf = groupId => rows.filter(row => row.parentId === groupId).map(idOf);
   return {
-    busy, error,
+    busy: [...busyIds][0] || null, isBusy: id => busyIds.has(id), error,
     add: (groupId, foodId) => save(groupId, [...membersOf(groupId), foodId], 'dish.add-food'),
   };
 }

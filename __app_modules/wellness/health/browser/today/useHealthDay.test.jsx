@@ -135,3 +135,22 @@ describe('useHealthDay', () => {
     expect(views.every(v => Number.isFinite(v.paintMs) && v.paintMs >= 0)).toBe(true);
   });
 });
+
+import { HealthOperationsProvider, useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
+it('does not mistake cached rows for the result of a refresh that has only just started',async()=>{
+ resetApiResourceCache();
+ const date='2026-10-25';let reads=0,finish;
+ const saved={uuid:'new',date,version:1,calories:100};
+ apiMock.mockReset().mockImplementation(path=>{
+  if(path.endsWith('nutrition/input'))return Promise.resolve({committed:true,items:[saved]});
+  if(++reads===1)return Promise.resolve({items:[],budget:{food:0,remaining:1000}});
+  return new Promise(resolve=>{finish=resolve;});
+ });
+ const wrapper=({children})=><HealthOperationsProvider userId="u">{children}</HealthOperationsProvider>;
+ const {result}=renderHook(()=>({day:useHealthDay(date),operations:useHealthOperations()}),{wrapper});
+ await waitFor(()=>expect(result.current.day.loading).toBe(false));
+ await act(async()=>result.current.operations.submitSentence({text:'apple',date,bucket:'morning'}));
+ await waitFor(()=>expect(result.current.day.revalidating).toBe(true));
+ expect(result.current.day.items.map(row=>row.uuid)).toEqual(['new']);
+ await act(async()=>finish({items:[saved],budget:{food:100,remaining:900}}));
+});

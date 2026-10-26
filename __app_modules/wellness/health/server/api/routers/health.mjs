@@ -386,7 +386,8 @@ export function createHealthRouter(config) {
   }));
 
   router.post('/nutrition/restore', asyncHandler(async (req, res) => {
-    return res.json(await healthOperations.restoreNutritionItems(getDefaultUsername(req), req.body?.entryIds));
+    const userId = getDefaultUsername(req);
+    return res.json(await runNutritionOperation(userId, req.body?.operationId, { operation: 'restore', entryIds: req.body?.entryIds }, () => healthOperations.restoreNutritionItems(userId, req.body?.entryIds)));
   }));
 
   /**
@@ -855,7 +856,7 @@ export function createHealthRouter(config) {
       const userId = getDefaultUsername(req);
 
       // Check if item exists
-      const result = await healthOperations.deleteNutritionItem(userId, uuid);
+      const result = await runNutritionOperation(userId, req.body?.operationId, { operation: 'delete', uuid }, () => healthOperations.deleteNutritionItem(userId, uuid));
       if (!result.found) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }

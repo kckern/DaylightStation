@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { afterEach, expect, it, vi } from 'vitest';
 import { LogTable } from "./LogTable.jsx";
@@ -40,4 +40,14 @@ it('offers no dish edits outside a real meal', () => {
   render(<MantineProvider><LogTable date="2026-09-24" byBucket={new Map([[null, rows]])} onRowTap={() => {}}/></MantineProvider>);
   expect(screen.queryByRole('button', { name: /out of/ })).toBeNull();
   expect(screen.queryByRole('combobox', { name: /Add a food to/ })).toBeNull();
+});
+
+it('allows independent dishes in the same meal to save at the same time',async()=>{
+ const calls=[];
+ api.mockImplementation((path,body)=>new Promise(resolve=>calls.push({body,resolve})));
+ mount({byBucket:new Map([['afternoon',[...rows,{uuid:'pepper',name:'Pepper',mealTime:'afternoon',version:1}]]])});
+ fireEvent.change(screen.getByRole('combobox',{name:'Add a food to Rice bowl'}),{target:{value:'kimchi'}});
+ fireEvent.change(screen.getByRole('combobox',{name:'Add a food to Poke'}),{target:{value:'pepper'}});
+ expect(calls).toHaveLength(2);
+ await act(async()=>calls.forEach(call=>call.resolve({committed:true})));
 });

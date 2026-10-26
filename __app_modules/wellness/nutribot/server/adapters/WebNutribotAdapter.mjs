@@ -310,9 +310,11 @@ export class WebNutribotAdapter {
     response.logId = outcome.nutrilogUuid || null;
     response.entryIds = (routerResult?.items || []).map(item => item.uuid || item.id).filter(Boolean);
     response.message = outcome.message || routerResult?.message || response.responseText;
-    for (const key of ['undoToken', 'affectedIds', 'clarification', 'instructionText', 'groups', 'expectedVersions']) {
+    for (const key of ['undoToken', 'affectedIds', 'clarification', 'instructionText', 'groups', 'expectedVersions', 'items', 'date', 'bucket', 'affectedDates', 'versions', 'removedIds']) {
       if (outcome[key] !== undefined) response[key] = outcome[key];
     }
+    if (response.committed && response.items === undefined && routerResult?.items) response.items = routerResult.items;
+    if (response.committed && response.affectedDates === undefined && response.items?.length) response.affectedDates = [...new Set(response.items.map(row => row.date).filter(Boolean))];
     if (outcome.entryIds) response.entryIds = outcome.entryIds;
     if (outcome.outcome) response.outcome = outcome.outcome;
     if (response.committed && !response.message) response.message = 'Meal updated.';

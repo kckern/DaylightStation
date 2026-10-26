@@ -4,9 +4,9 @@ import { foodOperationScope } from "./foodOperationScope.js";
 import { createHealthOperations } from './healthOperations.js';
 import { createHealthReconciliation } from './healthReconciliation.js';
 import { normalizeFoodOperationResult } from './healthOperationResults.js';
-import { primeApiResource, peekApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { primeApiResource, peekApiResource, patchApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
-import { healthDayPath } from '../healthResources.js';
+import { healthDayPath, refreshHealthResources } from '../healthResources.js';
 
 const Context = createContext(null);
 const EMPTY = { operations: new Map(), revision: 0 };
@@ -50,8 +50,13 @@ function Session({ userId, children, send }) {
           const fresh = await send(healthDayPath(date));
           if (!owner?.active || store.disposed) return;
           const current = fresh.items || fresh.data || [];
+          if (Object.entries(result.versions).some(([id, version]) => {
+            const row = current.find(row => String(row.uuid ?? row.id) === String(id));
+            return row?.date === date && (row.version ?? 0) < version;
+          })) throw new Error('Saved changes are still refreshing. Retry refresh.');
           const projected = reconciliation.reconcile({ date, rows: current, budget: fresh.budget, readToken });
-          primeApiResource(healthDayPath(date), { ...fresh, items: projected.rows, budget: projected.budget });
+          const snapshot = { ...fresh, items: projected.rows, budget: projected.budget };
+          if (!patchApiResource(healthDayPath(date), () => snapshot)) primeApiResource(healthDayPath(date), snapshot);
           rows.push(...current);
         }
         result = { ...result, rows, removedIds: (op.targetIds || []).filter(id => !rows.some(row => String(row.uuid ?? row.id) === id)) };
@@ -64,20 +69,23 @@ function Session({ userId, children, send }) {
       const op = store.getSnapshot().operations.get(id);
       if (!op || store.disposed) return Promise.resolve();
       const owner = lease.current;
-      store.transition(id, { phase: 'pending', error: null });
+      const submittedEpoch = op.submittedEpoch ?? reconciliation.beginRead();
+      const submitted = { ...op, submittedEpoch };
+      store.transition(id, { phase: 'pending', error: null, submittedEpoch });
       logger.info('operation.pending', { operationId: id, kind: op.kind, affected: op.targetIds.length });
       const request = op.response ? Promise.resolve(op.response) : send(op.request.path, structuredClone(op.request.body), op.request.method);
       const promise = Promise.resolve(request).then(async response => {
         if (!owner?.active || store.disposed) return;
-        await accept(response, op, owner);
+        await accept(response, submitted, owner);
         if (!owner?.active || store.disposed) return;
         await onResult?.(response, op);
         if (owner.active) {
           const outcome = normalizeFoodOperationResult(op, response).outcome;
-          store.transition(id, outcome === 'committed' ? { phase: 'succeeded', response } : {
+          store.transition(id, ['committed', 'proposal'].includes(outcome) ? { phase: 'succeeded', response } : {
             phase: outcome, response, error: response.message || response.responseText || 'No food was logged. Review the submitted sentence and try a new entry.',
           });
         }
+        if (owner.active && normalizeFoodOperationResult(op, response).outcome === "committed") refreshHealthResources();
         logger.info("operation.finished", { operationId: id, kind: op.kind, affected: op.targetIds.length, elapsedMs: Date.now() - op.startedAt });
         return response;
       }).catch(error => {

@@ -1,6 +1,6 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useRef, useState } from 'react';
 import { Button, CloseButton, Group, Stack, Text, TextInput } from '@mantine/core';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { VoiceCapture } from "../capture/VoiceCapture.jsx";
 import { ReviseField } from "./ReviseField.jsx";
@@ -32,6 +32,7 @@ export function RowRevise({ row, isGroup, onClose, onChanged, onReload }) {
 }
 
 function FoodRevise({ row, onReload }) {
+  const foodAPI = useFoodMutation([row]);
   const [undo, setUndo] = useState(null); // { before, after }
   const [undoing, setUndoing] = useState(false);
   const [error, setError] = useState(null);
@@ -39,7 +40,7 @@ function FoodRevise({ row, onReload }) {
     if (!undo || undoing) return;
     setUndoing(true); setError(null);
     try {
-      await updateEntry(undo.after, undo.before, crypto.randomUUID());
+      await updateEntry(undo.after, undo.before, crypto.randomUUID(), foodAPI);
       logger.info('revise.food.undone', { uuid: entryId(row) });
       setUndo(null); onReload?.();
     } catch (err) {
@@ -50,7 +51,7 @@ function FoodRevise({ row, onReload }) {
   return <Stack gap={4} className="health-row-revise__body">
     <ReviseField row={row} onApply={async (changes, meta) => {
       const before = Object.fromEntries(UNDO_FIELDS.filter(field => Object.hasOwn(changes, field)).map(field => [field, row[field] ?? null]));
-      const result = await updateEntry(row, { ...changes, ...meta }, crypto.randomUUID());
+      const result = await updateEntry(row, { ...changes, ...meta }, crypto.randomUUID(), foodAPI);
       setUndo(result?.data ? { before, after: result.data } : null);
       onReload?.();
     }} />
@@ -60,6 +61,7 @@ function FoodRevise({ row, onReload }) {
 }
 
 function DishRevise({ row, onChanged }) {
+  const foodAPI = useFoodMutation([row]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -70,7 +72,7 @@ function DishRevise({ row, onChanged }) {
     running.current = true; setBusy(true); setError(null); setOutcome(null);
     logger.info('revise.dish.start', { uuid: entryId(row), spoken: Boolean(body.audio) });
     try {
-      const result = await DaylightAPI(`api/v1/health/nutrilist/${entryId(row)}/revise-dish`, { ...body, operationId: crypto.randomUUID() }, 'POST');
+      const result = await foodAPI(`api/v1/health/nutrilist/${entryId(row)}/revise-dish`, { ...body, operationId: crypto.randomUUID() }, 'POST');
       setText('');
       setOutcome({ heard: result.instruction || body.instruction, removed: result.removed || [], added: result.added || [], changed: result.changed || [] });
       logger.info('revise.dish.applied', { uuid: entryId(row), removed: result.removed?.length, added: result.added?.length, changed: result.changed?.length });

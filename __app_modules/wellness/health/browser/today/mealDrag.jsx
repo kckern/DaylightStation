@@ -1,3 +1,4 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 // Drag a food from one meal to another.
 //
 // The whole row is the handle, except the parts of it that already answer the
@@ -164,6 +165,7 @@ function applyMoves(items, moves) {
  * the moved row, and one Undo.
  */
 export function useMealMoves(day) {
+  const foodAPI = useFoodMutation(day.items);
   const [moves, setMoves] = useState(() => new Map()); // id -> { to }
   const [recent, setRecent] = useState(() => new Set());
   const [undo, setUndo] = useState(null); // { rows, from, to } | { rows, day: { from, to } }
@@ -206,6 +208,7 @@ export function useMealMoves(day) {
   // Moves one row or a whole meal. Rows go one PUT each (a dish's PUT carries
   // its ingredients); a failure puts back the rows it did not reach.
   const send = useCallback(async (rows, to, from, { isUndo = false } = {}) => {
+    try { return await foodAPI.withReservation(rows, async batchAPI => {
     const ids = rows.map(row => String(entryId(row)));
     setError(null);
     setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.set(id, { to })); return next; });
@@ -214,7 +217,7 @@ export function useMealMoves(day) {
     try {
       for (const row of rows) {
         const id = String(entryId(row));
-        const result = await updateEntry(row, { mealTime: to }, crypto.randomUUID());
+        const result = await updateEntry(row, { mealTime: to }, crypto.randomUUID(), batchAPI);
         const versions = result?.versions || {};
         moved.push({ ...row, mealTime: to, version: versions[id] ?? row.version,
           children: row.children?.map(child => ({ ...child, mealTime: to, version: versions[String(entryId(child))] ?? child.version })) });
@@ -232,12 +235,15 @@ export function useMealMoves(day) {
     } finally {
       day.reload?.();
     }
+
+    }); } catch (err) { setError(entryError(err)); }
   }, [day]);
 
   // Moves rows to another DAY, same meal. The rows leave the viewed day at
   // once and the PUTs follow one by one; a failure brings back the rows it did
   // not reach. Undo sends the reached rows home.
   const sendToDay = useCallback(async (rows, toDate, fromDate, { isUndo = false } = {}) => {
+    try { return await foodAPI.withReservation(rows, async batchAPI => {
     const ids = rows.map(row => String(entryId(row)));
     setError(null);
     setGone(previous => new Set([...previous, ...ids]));
@@ -245,7 +251,7 @@ export function useMealMoves(day) {
     try {
       for (const row of rows) {
         const id = String(entryId(row));
-        const result = await updateEntry(row, { date: toDate }, crypto.randomUUID());
+        const result = await updateEntry(row, { date: toDate }, crypto.randomUUID(), batchAPI);
         const versions = result?.versions || {};
         moved.push({ ...row, date: toDate, version: versions[id] ?? row.version,
           children: row.children?.map(child => ({ ...child, date: toDate, version: versions[String(entryId(child))] ?? child.version })) });
@@ -262,6 +268,8 @@ export function useMealMoves(day) {
     } finally {
       day.reload?.();
     }
+
+    }); } catch (err) { setError(entryError(err)); }
   }, [day]);
 
   const undoLabel = () => {

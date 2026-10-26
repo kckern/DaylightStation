@@ -1,3 +1,6 @@
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+import { usePortionControl } from "./usePortionDraft.js";
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, SegmentedControl, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { Sheet, ErrorState } from '@/lib/ui';
@@ -24,6 +27,8 @@ export function EntryEditor({ row, open, ...props }) {
 }
 
 function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observations = [], onPaired }) {
+  const foodAPI = useFoodMutation([row]);
+  const session = useHealthOperations();
   const children = row.kind === 'group' ? row.children || [] : [];
   const isGroup = row.kind === 'group';
   const original = isGroup ? {
@@ -40,7 +45,9 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
   const [icon, setIcon] = useState(row.icon);
   const [overrides, setOverrides] = useState({});
   const [favorite, setFavorite] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [saving, setBusy] = useState(false);
+  const foodState = usePortionControl(row);
+  const busy = saving || Boolean(foodState?.locked || foodState?.draft);
   const [error, setError] = useState(null);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
@@ -88,10 +95,14 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
     changes.correctedNutrients = Object.keys(overrides).filter(key => Object.hasOwn(changes, key));
     const fingerprint = JSON.stringify(changes);
     if (saveOperation.current?.fingerprint !== fingerprint) saveOperation.current = { fingerprint, id: crypto.randomUUID() };
-    return updateEntry(row, changes, saveOperation.current.id);
-  }, { close: true });
+    const request = updateEntry(row, changes, saveOperation.current.id, foodAPI);
+    // The session owns completion and recovery, so the sheet need not block
+    // logging another food while this row is locked.
+    if (session?.store.getSnapshot().operations.has(saveOperation.current.id)) onClose();
+    return request;
+  }, { close: !session });
 
-  return <Sheet open onClose={() => { if (!busy) onClose(); }} title={nameOf(row)}>
+  return <Sheet open onClose={() => { if (!saving) onClose(); }} title={nameOf(row)}>
     <Stack gap="xs">
       {error ? <Text role="alert" size="sm" c="red">{entryError(error)}</Text> : null}
       <Group wrap="nowrap" gap="xs">
@@ -115,7 +126,7 @@ function Editor({ row, onClose, onChanged, onRequestDelete, onCoach, observation
           (the server refuses it for the same reason). */}
       {!isGroup ? <ReviseField row={row} busy={busy} onApply={(changes, meta) => run(async () => {
         const operationId = crypto.randomUUID();
-        await updateEntry(row, { ...changes, ...meta }, operationId);
+        await updateEntry(row, { ...changes, ...meta }, operationId, foodAPI);
       }, { close: true })} /> : null}
       <SegmentedControl aria-label="Meal" size="xs" fullWidth value={mealTime || ''} disabled={busy}
         data={BUCKETS.map(bucket => ({ value: bucket.id, label: bucket.label }))} onChange={setMealTime} />
