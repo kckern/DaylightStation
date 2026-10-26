@@ -315,3 +315,5 @@
 @media (prefers-reduced-motion: reduce) { .jp-clue__locked, .jp-clue__dd { animation: none; } }
 
 .jeopardy .jp-choose { border-left: 0; background: transparent; padding: 8px 16px 0; font-size: 22px; }
+
+.jp-clue__pending { margin: 0; flex: 0 0 auto; font-size: 22px; line-height: 1.2; text-align: center; }

@@ -6,7 +6,7 @@ import {fetchSession} from '../../../../../../__capabilities/gaming/browser/plat
 import {sendJeopardyCommand} from './jeopardyClient.js';
 const ws=vi.hoisted(()=>({handler:null}));
 vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketSubscription:(_,fn)=>{ws.handler=fn;}}));
-vi.mock('../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js',()=>({fetchSession:vi.fn()}));
+vi.mock('../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js',async(importOriginal)=>({...await importOriginal(),fetchSession:vi.fn()}));
 vi.mock('./jeopardyClient.js',()=>({sendJeopardyCommand:vi.fn()}));
 const set={title:'Quiz',open_book:true,rounds:[0,1].map(()=>({name:'Round',mode:'turns',categories:[{name:'Pictures',clues:[{value:100,clue:'Question',answer:'Answer'}]}]})),final:{category:'Final',clue:'Final question',answer:'Final answer'}};
 const base={set,phase:'board',roundIndex:0,active:null,revealed:false,turnTeamId:'team_1',scores:{team_1:0},attempted:[],cursor:{cat:0,row:0},used:{},finalWagers:{},finalJudged:{}};

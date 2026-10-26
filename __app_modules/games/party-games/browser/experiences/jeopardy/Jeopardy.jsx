@@ -1,4 +1,5 @@
-import { commandContext } from '../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs';
+import { buzzWindow } from './buzzWindow.js';
+import { commandContext, contextKey, matchesCommandContext } from '../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs';
 // Jeopardy native presenter. Authoritative transitions and scores are owned by
 // the shared ruleset and remote Gaming coordinator.
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
@@ -7,7 +8,7 @@ import { wsService } from '@/services/WebSocketService.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { currentRound } from "../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/stateMachine.mjs";
 import Scoreboard from "../../../../../../__capabilities/gaming/browser/platform/ui/Scoreboard.jsx";
-import { fetchSession } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import { fetchSession, ruleCommandEnvelope } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
 import { sendJeopardyCommand } from "./jeopardyClient.js";
 import { JEOPARDY_PACK, actionCue, phaseCues, consumePresentationEvents } from "./jeopardyCues.js";
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
@@ -51,18 +52,24 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const finishedRef = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const pendingCommand = useRef(false);
+  const pendingCommands = useRef(new Map());
+  const [pendingInputs,setPendingInputs] = useState([]);
+  const recoveryPending = useRef(false);
+  const armedWindow = useRef(null);
+  const visibleWindow = buzzWindow(state, !selection && !error);
   const actionRef = useRef(() => {});
   const mounted = useRef(true);
   const activeSessionId = useRef(sessionId);
   activeSessionId.current = sessionId;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(selectionTimer.current); }; }, []);
-  useEffect(() => { latestRevision.current = -1; heardActionRevision.current = -1; presentationCursor.current = { seq: null }; stateRef.current = null; setSelection(null); return () => clearTimeout(selectionTimer.current); }, [sessionId]);
+  useEffect(() => { latestRevision.current = -1; heardActionRevision.current = -1; presentationCursor.current = { seq: null }; stateRef.current = null; setState(null); setSet(null); armedWindow.current=null; pendingCommands.current.clear(); setPendingInputs([]); setSelection(null); return () => clearTimeout(selectionTimer.current); }, [sessionId]);
 
   useEffect(() => {
     return buzzers.subscribe((teamId) => {
+      const window = armedWindow.current;
+      if (!window) return;
       if (stateRef.current?.jeopardyFlowVersion !== 2) audio.play('buzz', { pack: JEOPARDY_PACK });
-      actionRef.current({ type: 'BUZZ', teamId });
+      actionRef.current({ type: 'BUZZ', teamId }, window.context);
     });
   }, [audio, buzzers]);
 
@@ -113,15 +120,35 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
 
   // Hardware buzzers and timed trivia retain coordinator command dispatch.
   const applyAction = useCallback(async (action, expectedContext = commandContext(stateRef.current)) => {
-    if (!action || !stateRef.current || pendingCommand.current) return;
-    pendingCommand.current = true;
-    try { const result = await sendJeopardyCommand(sessionId, action, { expectedRevision: latestRevision.current >= 0 ? latestRevision.current : undefined, expectedContext }); acceptSession(result); logger.info('jeopardy.command-result', { sessionId, type: action.type, teamId: action.teamId, revision: result.header?.revision, result: 'accepted' }); }
-    catch (cause) { if (!mounted.current) return; if (cause.code === 'stale_command_context' && cause.session) { acceptSession(cause.session); logger.info('jeopardy.command-superseded', { sessionId, type: action.type }); return; } logger.warn('jeopardy.command-failed', { type: action.type, phase: stateRef.current?.phase, error: cause.message }); errorRef.current = cause.message; setError(cause.message); }
-    finally { pendingCommand.current = false; }
-  }, [audio, sessionId, logger, acceptSession]);
+    if (!action || !stateRef.current) return;
+    const context = structuredClone(expectedContext);
+    const key = `${sessionId}:${contextKey(context)}`;
+    if (pendingCommands.current.has(key)) {
+      logger.sampled?.('jeopardy.command-suppressed', {sessionId,type:action.type,reason:'pending-same-context'}, {maxPerMinute:10,aggregate:true});
+      return;
+    }
+    const expectedRevision = latestRevision.current >= 0 ? latestRevision.current : undefined;
+    const envelope = ruleCommandEnvelope(sessionId, action, {expectedRevision});
+    const entry = {sessionId,key,windowKey:armedWindow.current?.key,type:action.type,teamId:action.teamId,commandId:envelope.command_id};
+    const startedAt=performance.now();
+    pendingCommands.current.set(key,entry); setPendingInputs([...pendingCommands.current.values()]);
+    try {
+      const result=await sendJeopardyCommand(sessionId,action,{expectedRevision,expectedContext:context,commandId:envelope.command_id,logicalTime:envelope.logical_time});
+      acceptSession(result);
+      logger.info('jeopardy.command-result',{sessionId,type:action.type,teamId:action.teamId,commandId:entry.commandId,windowKey:entry.windowKey,revision:result.header?.revision,result:'accepted',elapsedMs:Math.round(performance.now()-startedAt)});
+    } catch(cause) {
+      if (!mounted.current || activeSessionId.current!==sessionId) return;
+      if(cause.code==='stale_command_context' && cause.session){acceptSession(cause.session);logger.info('jeopardy.command-superseded',{sessionId,type:action.type,commandId:entry.commandId});return;}
+      if (!matchesCommandContext(stateRef.current,context)) {logger.info('jeopardy.command-superseded',{sessionId,type:action.type,commandId:entry.commandId});return;}
+      logger.warn('jeopardy.command-failed',{sessionId,type:action.type,commandId:entry.commandId,phase:stateRef.current?.phase,error:cause.message});errorRef.current=cause.message;setError(cause.message);
+    } finally {
+      if(pendingCommands.current.get(key)===entry)pendingCommands.current.delete(key);
+      if(mounted.current && activeSessionId.current===sessionId)setPendingInputs([...pendingCommands.current.values()]);
+    }
+  }, [sessionId,logger,acceptSession]);
   const recoverConnection = useCallback(async () => {
-    if (pendingCommand.current) return;
-    pendingCommand.current = true;
+    if (recoveryPending.current) return;
+    recoveryPending.current = true;
     logger.info('jeopardy.connection-retry', { sessionId });
     try {
       const session = await fetchSession(sessionId);
@@ -132,18 +159,16 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
       if (!mounted.current) return;
       logger.warn('jeopardy.connection-retry-failed', { error: cause.message });
       errorRef.current = cause.message; setError(cause.message);
-    } finally { pendingCommand.current = false; }
+    } finally { recoveryPending.current = false; }
   }, [sessionId, logger, acceptSession]);
   actionRef.current = applyAction;
 
-  // Buzzer arming window (hosted/self buzz races only).
+  // Window identity, not snapshot arrival, owns first-buzz arbitration.
   useEffect(() => {
-    if (!set || !state) return;
-    const round = currentRound(state);
-    const buzzable = !selection && state.phase === 'clue' && !state.isDailyDouble && !state.active?.clue.little_kids && round.mode !== 'turns' && !state.revealed;
-    if (buzzable) buzzers.arm(teamIds.filter((id) => !state.attempted.includes(id)));
+    armedWindow.current=visibleWindow;
+    if(visibleWindow)buzzers.arm(visibleWindow.eligibleTeamIds,{windowKey:visibleWindow.key});
     else buzzers.disarm();
-  }, [state?.phase, state?.attempted, state?.revealed, state?.isDailyDouble, set, buzzers, teamIds, state, selection]);
+  }, [visibleWindow?.key,buzzers,sessionId]);
 
   // A reconnect starts a fresh silent baseline rather than replaying offline cues.
   useEffect(() => wsService.onStatusChange(({ connected }) => {
@@ -188,6 +213,8 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   const round = currentRound(state);
   const { phase } = state;
   const lockedTeam = teams.find((t) => t.id === state.answeringTeamId) || null;
+  const pendingCandidate=pendingInputs.find(entry=>entry.sessionId===sessionId && entry.type==='BUZZ' && entry.windowKey===visibleWindow?.key);
+  const pendingTeam=teams.find(team=>team.id===pendingCandidate?.teamId) || null;
   const timerSeconds = round?.timer_seconds ?? config?.defaults?.timer_seconds ?? 12;
 
   return (
@@ -209,6 +236,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
           timerSeconds={timerSeconds}
           onTimeout={() => applyAction({ type: 'TIMEOUT' }, commandContext(state))}
           lockedTeam={lockedTeam}
+          pendingTeam={pendingTeam}
         />
       )}
       {['final-category', 'final-wager', 'final-clue', 'final-judging'].includes(phase) && (

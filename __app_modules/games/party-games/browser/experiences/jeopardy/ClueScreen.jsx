@@ -12,7 +12,7 @@ import "./Jeopardy.scss";
  * Owns the per-clue countdown so the parent can remount (via key) for a fresh
  * timer on every timed trivia clue. Open-book games wait for the phone host.
  */
-export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = null }) {
+export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = null, pendingTeam = null }) {
   const [mediaError, setMediaError] = useState(null);
   const { active, revealed, isDailyDouble, wager, phase } = state;
   const running = !state.set.open_book && !active?.clue.little_kids && phase === 'clue' && !state.answeringTeamId && !revealed;
@@ -30,6 +30,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
         <span className="jp-clue__value">${value?.toLocaleString?.() ?? value}</span>
         {!state.set.open_book && !active.clue.little_kids && !judging && !revealed && !state.answeringTeamId && <TimerRing progress={progress} remaining={remaining} size={72} />}
       </div>
+      {pendingTeam && <p className="jp-clue__pending" role="status">{pendingTeam.name} buzz received — confirming…</p>}
       {active.clue.media && !mediaError && (
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />
       )}

@@ -31,11 +31,14 @@ export function useBuzzers({ teams, onLock }) {
       }
       return;
     }
-    const teamId = arbiter.handleBuzz(slot);
-    if (teamId) {
+    const decision = arbiter.tryBuzz(slot);
+    const teamId = decision.teamId;
+    if (decision.accepted) {
       log().info('party-games.buzz.locked', { slot, teamId, source });
       setLocked(teamId);
       onLockRef.current?.(teamId);
+    } else {
+      log().sampled?.('party-games.buzz.decision', {slot,source,teamId,windowKey:arbiter.windowKey,reason:decision.reason}, {maxPerMinute:10,aggregate:true});
     }
   }, []);
 
@@ -70,7 +73,7 @@ export function useBuzzers({ teams, onLock }) {
     subscribeInput: useCallback(listener => { inputListeners.current.add(listener); return () => inputListeners.current.delete(listener); }, []),
     locked,
     bindingTeamId,
-    arm: useCallback((teamIds) => { setLocked(null); arbiterRef.current.arm(teamIds); }, []),
+    arm: useCallback((teamIds, options) => { arbiterRef.current.arm(teamIds, options); setLocked(arbiterRef.current.lockedTeamId); }, []),
     disarm: useCallback(() => { setLocked(null); arbiterRef.current.disarm(); }, []),
     startBind: useCallback((teamId) => { arbiterRef.current.startBind(teamId); setBindingTeamId(teamId); }, []),
   };

@@ -63,3 +63,13 @@ it('rejects a slot already owned by another team instead of stealing it', () => 
   expect(arbiter.bindings()).toEqual({ 'gamepad:0:Pad': 'red' });
   expect(arbiter.bindingTeamId).toBe('blue');
 });
+it('keeps a keyed first selection until a different question attempt opens',()=>{
+ const a=new BuzzerArbiter(TEAMS);a.arm(['team_1','team_2'],{windowKey:'q1:attempt0'});a.handleBuzz('slot_2');
+ for(let i=0;i<100;i++)a.arm(['team_1','team_2'],{windowKey:'q1:attempt0'});
+ expect(a.lockedTeamId).toBe('team_2');
+ expect(a.tryBuzz('slot_1')).toMatchObject({accepted:false,reason:'already-selected'});
+ a.arm(['team_1'],{windowKey:'q1:attempt1'});expect(a.lockedTeamId).toBeNull();
+ expect(a.tryBuzz('slot_2')).toMatchObject({accepted:false,reason:'ineligible'});
+ expect(a.tryBuzz('slot_1')).toMatchObject({accepted:true,reason:'candidate'});
+ a.disarm();expect(a.tryBuzz('slot_1')).toMatchObject({accepted:false,reason:'closed'});
+});
