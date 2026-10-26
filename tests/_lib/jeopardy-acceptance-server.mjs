@@ -1,3 +1,4 @@
+import { createLatencyFixture, verifyFrozenSession } from './gamingLatencyFixtures.mjs';
 import { createDurableJeopardyFixture } from './createDurableJeopardyFixture.mjs';
 import { GamingSessionRestarts } from '../../__app_modules/games/party-games/server/application/runtime/GamingSessionRestarts.mjs';
 // Isolated loopback preview: real gaming authority, no household boot or effects.
@@ -79,6 +80,9 @@ app.use((req, res, next) => {
   next();
 });
 const durable = process.env.JEOPARDY_ACCEPTANCE_DURABLE === '1' ? await createDurableJeopardyFixture({ definitionId: 'jeopardy:fhe-jeremiah', definition: { ...packs.get('jeopardy:fhe-jeremiah'), rounds: packs.get('jeopardy:fhe-jeremiah').rounds.map(round => ({ ...round, mode: 'hosted' })) } }) : null;
+const latencySessions = new Map();
+const latencyFixtures = [];
+const sessionApplication = id => latencySessions.get(id)?.application || durable?.application;
 const application = {
   getEnvironmentProfile: () => ({
     defaults: {mute: !durable},
@@ -106,13 +110,29 @@ const application = {
     valid: true
   })),
   createSession: request => durable ? durable.application.createSession(request) : diagnostics.createSession(request),
-  resumeSession: (...args) => durable.application.resumeSession(...args),
-  dispatch: (...args) => durable.application.dispatch(...args),
-  closeSession: (...args) => durable.application.closeSession(...args),
+  resumeSession: (...args) => sessionApplication(args[0]).resumeSession(...args),
+  dispatch: (...args) => sessionApplication(args[0]).dispatch(...args),
+  closeSession: (...args) => sessionApplication(args[0]).closeSession(...args),
   getDefinition: (...args) => durable.application.getDefinition(...args)
 };
 let wss;
-app.get('/__jeopardy_acceptance', (_req,res) => res.json({ isolated: true, durable: Boolean(durable) }));
+app.get('/__jeopardy_acceptance', (_req,res) => res.json({ isolated: true, durable: Boolean(durable), node: process.version }));
+app.post('/__jeopardy_acceptance/fixtures', (req,res,next) => {
+  (async () => {
+    if (!durable) return res.sendStatus(404);
+    if (!['legacy305','counter1000'].includes(req.body?.kind) || latencyFixtures.length >= 16) return res.sendStatus(400);
+    const fixture = await createLatencyFixture(req.body.kind); latencyFixtures.push(fixture); latencySessions.set(fixture.sessionId, fixture);
+    res.status(201).json({ sessionId: fixture.sessionId, kind: req.body.kind, node: process.version });
+  })().catch(next);
+});
+app.get('/__jeopardy_acceptance/metrics/:id', (req,res) => {
+  const fixture = latencySessions.get(req.params.id); if (!fixture) return res.sendStatus(404);
+  res.json(fixture.observation);
+});
+app.get('/__jeopardy_acceptance/verify/:id', (req,res,next) => {
+  const fixture = latencySessions.get(req.params.id); if (!fixture?.frozen) return res.sendStatus(404);
+  verifyFrozenSession(fixture).then(sha256 => res.json({ sha256, matches: true }), next);
+});
 app.use('/api/v1/gaming', createGamingRouter({
   gamingSessionRestarts: new GamingSessionRestarts(),
   gamingApplication: application,
@@ -144,7 +164,7 @@ const html = '<!doctype html><html><head><meta name="viewport" content="width=de
 const shared = {
   root,
   configFile: false,
-  cacheDir: path.join(root, '.superpowers/jeopardy-vite-cache'),
+  cacheDir: process.env.JEOPARDY_ACCEPTANCE_CACHE_DIR || path.join(root, '.superpowers/jeopardy-vite-cache'),
   plugins: [react(), {
     name: 'jeopardy-only',
     configureServer(vite) {
@@ -157,6 +177,7 @@ const shared = {
       });
     }
   }],
+  optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', '@tabler/icons-react', 'three'] },
   resolve: {
     alias: {
       '@shared-interaction': path.join(root, 'shared/interaction'),
@@ -171,7 +192,7 @@ const shared = {
     }
   },
   server: {
-    host: '127.0.0.1',
+    host: process.env.JEOPARDY_ACCEPTANCE_HOST || '127.0.0.1',
     port: Number(process.env.JEOPARDY_ACCEPTANCE_PORT || 3111),
     strictPort: true,
     hmr: false,
@@ -213,11 +234,12 @@ if (process.argv.includes('--build')) {
     });
   });
   await server.listen();
-  process.stdout.write(`JEOPARDY_ACCEPTANCE_READY http://127.0.0.1:${shared.server.port}\n`);
+  process.stdout.write(`JEOPARDY_ACCEPTANCE_READY http://127.0.0.1:${shared.server.port} durable=${Boolean(durable)} storage=${durable?.root || 'memory'} node=${process.version} source=${root}\n`);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     wss.close();
     await server.close();
     fs.rmSync(mediaRoot,{recursive:true,force:true});
+    for (const fixture of latencyFixtures) fixture.dispose();
     durable?.dispose();
     process.exit(0);
   });
