@@ -1,5 +1,5 @@
 import React from 'react';
-import {act, cleanup, render, screen} from '@testing-library/react';
+import {act, cleanup, render, screen, waitFor} from '@testing-library/react';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import Jeopardy from '../../../../../__app_modules/games/party-games/browser/experiences/jeopardy/Jeopardy.jsx';
 import {BuzzerArbiter} from '../../../../../__app_modules/games/party-games/browser/interaction/BuzzerArbiter.js';
@@ -19,11 +19,12 @@ afterEach(()=>cleanup());
 async function fixture() {
   let callback,resolveOld;
   const arbiter=new BuzzerArbiter();arbiter.restore({slotToTeam:{blue:'blue',gold:'gold'}});
-  const buzzers={subscribe:fn=>{callback=fn;return()=>{};},arm:vi.fn(ids=>arbiter.arm(ids)),disarm:vi.fn(()=>arbiter.disarm())};
+  const buzzers={subscribe:fn=>{callback=fn;return()=>{};},arm:vi.fn((ids,options)=>arbiter.arm(ids,options)),disarm:vi.fn(()=>arbiter.disarm())};
   fetchSession.mockResolvedValue({header:{revision:10},state:structuredClone(initial)});
   sendJeopardyCommand.mockImplementation(()=>new Promise(()=>{})).mockImplementationOnce(()=>new Promise(resolve=>{resolveOld=resolve;}));
   render(<Jeopardy sessionId="diagnosis" seats={teams} gamingServices={{buzzers,audio:{play:vi.fn(),stopChannel:vi.fn()}}}/>);
   await screen.findByTestId('clue-screen');
+  await waitFor(()=>expect(arbiter.windowKey).not.toBeNull());
   const press=team=>{const winner=arbiter.handleBuzz(team);if(winner)callback(winner);return winner;};
   const snapshot=async(revision,state)=>{
     fetchSession.mockResolvedValue({header:{revision},state:structuredClone(state)});

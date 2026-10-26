@@ -9,7 +9,7 @@ import { sendJeopardyCommand } from './jeopardyClient.js';
 import { acquireGamepadBuzzerCapture, restoreGamepadRoleBindings } from '../../../../../../__capabilities/screen-host/browser/input.mjs';
 const socket = vi.hoisted(() => ({ listeners: new Set() }));
 vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: (_, fn) => { socket.listeners.add(fn); } }));
-vi.mock('../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js', () => ({ fetchSession: vi.fn() }));
+vi.mock('../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js', async importOriginal => ({ ...await importOriginal(), fetchSession: vi.fn() }));
 vi.mock('./jeopardyClient.js', () => ({ sendJeopardyCommand: vi.fn() }));
 const teams = [{ id: 'red', name: 'Red' }, { id: 'blue', name: 'Blue' }];
 const definition = { title: 'Ready quiz', open_book: true, rounds: [{ name: 'Round', mode: 'hosted', categories: [{ name: 'Kids', clues: [{ value: 100, clue: 'Question', answer: 'Secret', little_kids: true }] }] }] };

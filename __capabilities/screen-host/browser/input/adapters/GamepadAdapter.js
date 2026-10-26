@@ -18,6 +18,14 @@ export function acquireGamepadBuzzerCapture() {
 }
 let sharedHost = null;
 let sharedHostConsumers = 0;
+const observedNow = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
+export function gamepadPresence() {
+  const host = sharedHost;
+  const fresh = Boolean(host && host._observedAt != null && observedNow() - host._observedAt < 1000 &&
+    (typeof document === 'undefined' || document.visibilityState !== 'hidden') &&
+    (typeof window === 'undefined' || !window.__emulatorCapturingGamepad));
+  return { fresh, slots: host ? [...host._observedSlots] : [] };
+}
 export function bindNextGamepadPress(role) { pendingRole = role; }
 export function gamepadRoleBindings() { return Object.fromEntries(roleBindings); }
 export function cancelPendingGamepadBind() { pendingRole = null; }
@@ -131,6 +139,8 @@ export class GamepadAdapter {
     this._onVisibility = null;
     // Timestamp of the last poll frame; a large gap means the loop was frozen.
     this._lastPollAt = null;
+    this._observedAt = null;
+    this._observedSlots = [];
   }
 
   attach() {
@@ -157,6 +167,7 @@ export class GamepadAdapter {
     // changes as fresh presses (phantom Escape/Enter). Re-seed every gamepad on
     // resume so the post-suspend state becomes the new baseline.
     this._onVisibility = () => {
+      this._observedAt = null;
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         logger().info('gamepad.resume-reseed', {});
         this._invalidateAllSeeds();
@@ -251,6 +262,8 @@ export class GamepadAdapter {
   _handleDisconnect(e) {
     // Drop state for the disconnected gamepad only — leave others' state intact.
     const idx = e?.gamepad?.index;
+    const slot = `gamepad:${idx}:${e?.gamepad?.id}`;
+    this._observedSlots = this._observedSlots.filter(value => value !== slot);
     if (e?.gamepad) roleBindings.delete(`${e.gamepad.index}:${e.gamepad.id}`);
     if (idx != null) {
       delete this._prevButtons[idx];
@@ -276,13 +289,17 @@ export class GamepadAdapter {
       this._invalidateAllSeeds();
     }
     this._lastPollAt = now;
-    if (typeof window !== 'undefined' && window.__emulatorCapturingGamepad === true) {
+    if ((typeof window !== 'undefined' && window.__emulatorCapturingGamepad === true) || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) {
+      this._observedAt = null;
       this._invalidateAllSeeds();
       return;
     }
     // Team-bound controllers poll first: a phantom twin (one physical pad at
     // two indices) then loses the same-id dedupe and cannot navigate.
-    const gamepads = getActiveGamepads().sort((a, b) => Number(roleBindings.has(`${b.index}:${b.id}`)) - Number(roleBindings.has(`${a.index}:${a.id}`)));
+    const gamepads = getActiveGamepads().filter(gp => gp.connected !== false).sort((a, b) => Number(roleBindings.has(`${b.index}:${b.id}`)) - Number(roleBindings.has(`${a.index}:${a.id}`)));
+    const slots = gamepads.map(gp => `gamepad:${gp.index}:${gp.id}`);
+    if (JSON.stringify(slots) !== JSON.stringify(this._observedSlots)) logger().info('gamepad.presence-changed', { slots });
+    this._observedSlots = slots; this._observedAt = now;
     for (const gp of gamepads) {
       this._pollOne(gp);
     }

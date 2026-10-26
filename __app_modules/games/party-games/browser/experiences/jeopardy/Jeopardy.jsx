@@ -104,7 +104,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     setState(session.state); setSet(session.state.set); setCompletion(session.result || null); setError(null);
   }, [logger, sessionId, audio]);
 
-  useBuzzerSetup({ sessionId, state, buzzers, acceptSession, audio, logger });
+  const buzzerHardware = useBuzzerSetup({ sessionId, state, revision: latestRevision.current, buzzers, acceptSession, audio, logger });
 
   // Load the coordinator projection, which includes the pinned content pack.
   useEffect(() => {
@@ -221,8 +221,8 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     <div className="jeopardy" data-phase={phase}>
       {phase !== 'round-intro' && !phase.startsWith('final-') && <ShowHeader eyebrow={round?.name} title={set.title} status={phase === 'board' ? `${teams.find(team => team.id === state.turnTeamId)?.name || 'Next team'} chooses — Round ${state.roundIndex + 1}` : state.active ? round.categories[state.active.cat]?.name : null} />}
       {phase === 'round-intro' && (state.roundIndex === 0 && Object.keys(state.used || {}).length === 0
-        ? <HostLobby sessionId={sessionId} title={set.title} state={state} teams={teams} />
-        : <div className="jp-final"><TitleCard title={round.name} subtitle={`${set.title} — round ${state.roundIndex + 1}`} /><BuzzerStatus state={state} teams={teams} /><p>Waiting for the host to open the board.</p></div>)}
+        ? <HostLobby sessionId={sessionId} title={set.title} state={state} teams={teams} hardware={buzzerHardware} />
+        : <div className="jp-final"><TitleCard title={round.name} subtitle={`${set.title} — round ${state.roundIndex + 1}`} /><BuzzerStatus state={state} teams={teams} hardware={buzzerHardware} /><p>Waiting for the host to open the board.</p></div>)}
       {phase === 'round-decision' && <div className="jp-final"><TitleCard title={`Round ${state.roundIndex + 1} complete`} subtitle="Choose on your phone: continue to the next round or finish the game." /></div>}
       {(phase === 'board' || selection) && <>
         <div className="jp-choose" role="status" style={{ '--team-color': teams.find(t => t.id === (selection?.state || state).turnTeamId)?.color }}>{teams.find(t => t.id === (selection?.state || state).turnTeamId)?.name || 'Next team'} — choose the next question</div>
