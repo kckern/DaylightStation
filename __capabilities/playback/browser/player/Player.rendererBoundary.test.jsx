@@ -472,3 +472,25 @@ describe('Player explicit renderer boundary', () => {
     subscription.unsubscribe();
   });
 });
+
+it('quality adoption preserves the visit and rejects a superseded recovery target before queue mutation', async () => {
+  const ref = createRef();
+  render(<Player ref={ref} play={[{ contentId: 'plex:a', format: 'video', title: 'A' }]} />);
+  await waitFor(() => expect(mounts).toHaveLength(1));
+  const identity = ref.current.getRecoveryIdentity();
+  const initial = identity.getTarget();
+  act(() => {
+    expect(ref.current.adoptSessionSnapshot(snapshot(), { reason: 'manual-quality', autoplay: false })).toMatchObject({ ok: true });
+  });
+  expect(identity.getTarget().visitId).toBe(initial.visitId);
+  expect(identity.getTarget().rendererGeneration).toBeGreaterThan(initial.rendererGeneration);
+  const expected = identity.getTarget();
+  act(() => ref.current.pause());
+  const queueBefore = ref.current.getQueueSnapshot();
+  act(() => {
+    expect(ref.current.adoptSessionSnapshot(snapshot({ contentId: 'plex:stale' }), {
+      reason: 'recovery-quality', target: expected, autoplay: true,
+    })).toMatchObject({ ok: false, code: 'PLAYBACK_CHANGED' });
+  });
+  expect(ref.current.getQueueSnapshot()).toEqual(queueBefore);
+});

@@ -143,29 +143,34 @@ Since Milestone B (2026-07) there is exactly **one recovery accounting
 authority**: `lib/recoveryLedger.js`, a session-scoped ledger shared by every
 actuator. Its budget model:
 
-- **Session cap 5** (`RECOVERY_MAX_ATTEMPTS`) — total recovery attempts across
-  all actors for one playback session; hitting it drives the `exhausted`
-  overlay.
-  On a single item (not a queue) the exhausted Player calls the owner's opt-in
-  `onResilienceEvent({ kind: 'resilience-exhausted', reason, attempts })`
-  *before* `clear()`, so an owner that listens (only Media's `PlayerBridge`)
-  can report a failure and skip instead of mistaking the clear for a natural
-  end. Existing `onError` owners (FitnessMusicPlayer, DancePartyWidget, …) see
-  nothing new.
-- **Cooldown with backoff** — 4s × 3ⁿ between attempts, anchored at the first
-  retry (attempt 2 waits 4s, attempt 3 waits 12s, …). Denied callers get a
-  `waitMs` they can reschedule against.
-- **Per-mount sub-budget** — dash-error URL refreshes get 3 attempts per mount
-  (a remount mints a new Plex session, so that actor earns a fresh sub-budget,
-  but every attempt still counts toward the session cap).
-- **`recordSuccess`** — real playback progress resets the ledger, so a
-  recovered session gets its full budget back.
+- **Incident cap 3 / rolling cap 6 per ten minutes** — disruptive actions from
+  every actor share the owner's current visit. A decoder remount, quality
+  adoption, seek, pause, or source-refusal clear retains both histories. Explicit
+  Retry opens a new incident while retaining rolling history and actor limits.
+- **Four-second minimum spacing** — applies even to legacy cooldown-bypass
+  requests. Configured stricter actor cooldowns and per-mount budgets still apply.
+- **One action in flight** — `reserveAction` supplies an action ID; duplicate IDs
+  never debit twice. `completeAction` releases only the matching reservation.
+  Adoption acknowledgement does not mean renderer success. Legacy native progress
+  can complete its actor's reservation; full owner replacement readiness is separate.
+- **Sustained success** — only `useMediaResilience` reports eligible health via
+  `observeHealth`. Sixty continuous healthy seconds clear incident actions while
+  retaining rolling history. Pause, hidden tabs, stale observations and unknown
+  media evidence earn no healthy credit. On-time visible owner heartbeats advance
+  a pending action's fifteen-second eligible deadline even if the native node has
+  not appeared; stale owner heartbeats freeze it.
+- **Owner-held identity** — `ownerId:visitId` scopes budgets. `intentRevision` and
+  `rendererGeneration` validate asynchronous work and never renew budgets.
+  Media's controller supplies its store through PlayerBridge; direct/screen
+  Players own a store exposed through the session bridge. Queue advance, repeat-one,
+  replay and cross-owner adoption create new visit tokens. Quality adoption carries
+  an explicit `manual-quality` or `recovery-quality` reason to retain the visit.
 
 Every actuator asks the ledger before acting: the resilience state machine's
 startup/warmup deadlines, the stall-jolt rungs, VideoPlayer's dash-error
 resets, the user-facing forceReload, and the controller's nudge and
-duration-lost softReinit (softReinit bypasses the cooldown but is still
-cap-bounded). No actuator retries outside the ledger's accounting.
+duration-lost softReinit (legacy bypass requests still obey minimum spacing and
+the shared reservation). No actuator retries outside the ledger's accounting.
 
 **In-place recovery must still reach the cap (2026-10-07).** A stream aborted at
 the network layer (an hls.js fatal `networkError`) is recovered in place: the
@@ -174,8 +179,7 @@ renderer's `hardReset` reloads the manifest without a remount, so the Player's
 only on a status change, so such an item got two attempts (startup, then
 recovering) and then sat on the spinner forever with no `onExhausted`. The
 deadline path now re-arms itself after every recovery it triggers
-(`resilience-deadline-rearm`, debug), so the ledger's cap (5, with its 4s x3
-cooldown backoff, a few minutes in all) ends in `resilience-recovery-exhausted`
+(`resilience-deadline-rearm`, debug), so the ledger's three-action incident cap ends in `resilience-recovery-exhausted`
 and the usual `onExhausted` (queue skip / owner failure report). The same re-arm covers the transcode-warmup deadline. A browser-refused autoplay
 (`autoplayBlocked`, awaiting a tap) is not a failing stream: the deadline holds and
 no attempt is spent. Covered by `useMediaResilience.inPlaceExhaustion.test.jsx`. Remounting recoveries are
@@ -189,7 +193,7 @@ unaffected: a remount already starts a fresh watchdog.
 | **Stale-session watchdog** | `dash.error` code-28 bursts (3 within 10s) — MPD points at a dead Plex session | Escalates `stale-session-detected` before the startup deadline fires |
 | **Dash-error recovery** | `dash.error` 27 (segment unavailable) / 28 (manifest/init unavailable) | `hardReset({ refreshUrl: true })` — cache-busts the `src` so the proxy mints a fresh transcode session. Ledger-gated: 3 per mount, counts toward the session cap |
 | **Controller stall detection + nudge** | Soft/hard stall timers on the media element | Detection lives in `useCommonMediaController`; its only in-place actuator is a ledger-gated **nudge** (±1ms seek to kick the buffer). If the nudge is denied or fails, escalation belongs to the resilience jolt ladder — the controller has no ladder of its own |
-| **Duration-lost softReinit** | Stalled with `duration` gone (dead pipeline) | Ledger-gated soft reinit of the dash element (cooldown-bypassed, cap-bounded) |
+| **Duration-lost softReinit** | Stalled with `duration` gone (dead pipeline) | Ledger-gated soft reinit of the dash element (serialized and cap-bounded) |
 | **Fatal media error** | `MediaError` code 2 (`NETWORK`) or 3 (`DECODE`) mid-playback — a dead pipeline, which fires no `waiting`/`stalled` at all and can still report a full buffer | `usePlaybackHealth` exposes `hasMediaError`, which is a fourth cause in the jolt ladder's `isStuck`, so the ladder arms on a dead stream and not only a starved one. Mechanism, the pause-classification guard, and the three gaps it leaves: `README.media-resilience.md` |
 | **Refused source** | The media server will not read the file: Plex 404 on a direct-play part (NAS zeroed its mode, or Plex mid library scan), or the proxy's 503 `source-unreadable`. Mid-playback it can arrive as an unlabelled `Format error` / `PIPELINE_ERROR_READ`, which is checked with the backend; the jolt ladder also checks before exhausting, so a refused file waits instead of being skipped | The recovery ladder stands down, and `useSourceAvailability` waits on `POST /api/v1/media-source/check`, which runs the repair ladder. The Player remounts once when the file is readable. See `media-source-healing.md` |
 | **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
@@ -215,8 +219,8 @@ matters most.
 The escalation ladder is deliberate: nudge in place → refresh the URL in place
 (jolt rung 1) → remount the renderer at the last known position (jolt rung 2) →
 operator retry from the exhausted overlay. Each step is more disruptive than
-the last, the ledger paces every climb, and real progress (`recordSuccess`)
-resets the whole budget.
+the last. The ledger serializes every action; only sixty continuous eligible
+healthy seconds close an incident, retaining rolling safety history.
 
 ### A scheduled remount must not fire after playback recovered
 

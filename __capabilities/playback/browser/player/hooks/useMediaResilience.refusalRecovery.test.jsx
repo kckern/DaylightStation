@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({ DaylightAPI: vi.fn() }));
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => api);
 
 import { useMediaResilience } from './useMediaResilience.js';
-import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { createRecoveryLedger, getRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 import { HLS_REFUSAL_EVENT } from '../lib/hlsRefusal.js';
 
@@ -96,6 +96,20 @@ describe('HLS refusal joins the path', () => {
     expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-restored', refreshUrl: true, forceRemount: true }));
   });
 
+  it('refusal clearing retains prior incident and rolling action debits', async () => {
+    api.DaylightAPI.mockResolvedValue(answer('unreadable'));
+    const el = makeFakeEl({ currentTime: 12, paused: false });
+    const args = baseArgs(el, { seconds: 12 });
+    const ledger = getRecoveryLedger();
+    const gate = ledger.reserveAction({ sessionKey: args.playbackSessionKey, actionId: 'before-refusal', actor: 'jolt', reason: 'stall' });
+    ledger.completeAction({ sessionKey: args.playbackSessionKey, actionId: gate.actionId });
+    renderHook(() => useMediaResilience(args));
+    await fireHls(el, { status: 503, message: '503 Service Unavailable' });
+    api.DaylightAPI.mockResolvedValue(answer('readable'));
+    await advance(4000);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'source-restored' }));
+    expect(ledger.snapshot(args.playbackSessionKey)).toMatchObject({ count: 2, rollingCount: 2 });
+  });
   it('a readable answer to an HLS suspicion hands back to the stall ladder (no extra reload)', async () => {
     api.DaylightAPI.mockResolvedValue(answer('readable'));
     const el = makeFakeEl({ currentTime: 10, duration: 420 });

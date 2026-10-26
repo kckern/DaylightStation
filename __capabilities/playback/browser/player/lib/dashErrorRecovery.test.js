@@ -24,81 +24,41 @@ describe('decideDashErrorRecovery (classification)', () => {
   });
 });
 
-describe('requestDashErrorRecovery (ledger-gated)', () => {
-  const SESSION = 'player-item:test-guid';
-
-  const makeLedger = () => createRecoveryLedger({
-    maxAttempts: 5,
-    cooldownMs: 4000,
-    mountBudgets: { 'dash-error': 3 },
-    now: () => 1_000_000 // frozen clock: proves bypassCooldown, not elapsed time
+describe('requestDashErrorRecovery shared safety gate', () => {
+  const SESSION = 'owner:visit';
+  it('refreshes once, rejects overlaps, and retains the shared cap across remounts', () => {
+    let now = 1000000;
+    const ledger = createRecoveryLedger({ now: () => now });
+    for (let i = 0; i < 3; i++) {
+      const result = requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: `mount-${i}`, ledger });
+      expect(result.fire).toBe(true);
+      expect(result.gate.attempt).toBe(i + 1);
+      expect(requestDashErrorRecovery({ errorCode: 28, sessionKey: SESSION, mountId: 'other', ledger }))
+        .toMatchObject({ fire: false, gate: { deniedBy: i < 2 ? 'in-flight' : 'session-cap' } });
+      ledger.completeAction({ sessionKey: SESSION, actionId: result.gate.actionId });
+      now += 4000;
+    }
+    expect(ledger.snapshot(SESSION)).toMatchObject({ count: 3, rollingCount: 3, urlRefreshCount: 3 });
+    expect(requestDashErrorRecovery({ errorCode: 28, sessionKey: SESSION, mountId: 'new-mount', ledger }))
+      .toMatchObject({ fire: false, gate: { deniedBy: 'session-cap' } });
+    expect(ledger.request({ sessionKey: SESSION, actor: 'resilience', reason: 'stall' }))
+      .toMatchObject({ allowed: false, deniedBy: 'session-cap' });
   });
-
-  it('fires for a refreshable code and records the attempt as a URL refresh', () => {
-    const ledger = makeLedger();
-    const r = requestDashErrorRecovery({ errorCode: 28, sessionKey: SESSION, mountId: 'm1', ledger });
-    expect(r.fire).toBe(true);
-    expect(r.gate.attempt).toBe(1);
-    expect(ledger.snapshot(SESSION)).toMatchObject({ count: 1, urlRefreshCount: 1 });
-  });
-
-  it('never touches the ledger for a non-refreshable code', () => {
-    const ledger = makeLedger();
-    const r = requestDashErrorRecovery({ errorCode: 25, sessionKey: SESSION, mountId: 'm1', ledger });
-    expect(r.fire).toBe(false);
-    expect(r.gate).toBeNull();
+  it('does not spend budget for an unrelated code', () => {
+    const ledger = createRecoveryLedger();
+    expect(requestDashErrorRecovery({ errorCode: 25, sessionKey: SESSION, ledger }).fire).toBe(false);
     expect(ledger.snapshot(SESSION)).toBeNull();
   });
-
-  it('denies the 4th dash error on one mount (mount budget of 3), even back-to-back', () => {
-    const ledger = makeLedger();
+  it('uses a bounded shared bucket for hosts without identity', () => {
+    let now = 1000000;
+    const ledger = createRecoveryLedger({ now: () => now });
     for (let i = 0; i < 3; i++) {
-      // Frozen clock: allowed despite zero elapsed time — bypassCooldown wiring.
-      expect(requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm1', ledger }).fire).toBe(true);
+      const result = requestDashErrorRecovery({ errorCode: 27, sessionKey: null, mountId: `mount-${i}`, ledger });
+      expect(result.fire).toBe(true);
+      ledger.completeAction({ sessionKey: 'player-item:unkeyed', actionId: result.gate.actionId });
+      now += 4000;
     }
-    const fourth = requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm1', ledger });
-    expect(fourth.fire).toBe(false);
-    expect(fourth.gate.deniedBy).toBe('mount-budget');
-    expect(fourth.gate.exhausted).toBe(false); // budget denial, NOT session exhaustion
-    expect(ledger.snapshot(SESSION).count).toBe(3); // denied request not recorded
-  });
-
-  it('grants a fresh mount budget after remount, but the session cap still binds', () => {
-    const ledger = makeLedger();
-    for (let i = 0; i < 3; i++) {
-      requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm1', ledger });
-    }
-    // New mount → fresh 3-attempt allotment, but session cap (5) leaves only 2.
-    expect(requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm2', ledger }).fire).toBe(true);
-    expect(requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm2', ledger }).fire).toBe(true);
-    const sixth = requestDashErrorRecovery({ errorCode: 27, sessionKey: SESSION, mountId: 'm2', ledger });
-    expect(sixth.fire).toBe(false);
-    expect(sixth.gate.deniedBy).toBe('session-cap');
-  });
-
-  it('a falsy sessionKey falls back to a shared unkeyed bucket — never the allow-always passthrough', () => {
-    const ledger = makeLedger();
-    for (let i = 0; i < 3; i++) {
-      expect(requestDashErrorRecovery({ errorCode: 27, sessionKey: null, mountId: 'm1', ledger }).fire).toBe(true);
-    }
-    // Without the fallback this 4th request would be allowed forever (uncapped
-    // hardResets for a direct SinglePlayer embedder with no session key).
-    const fourth = requestDashErrorRecovery({ errorCode: 27, sessionKey: null, mountId: 'm1', ledger });
-    expect(fourth.fire).toBe(false);
-    expect(fourth.gate.deniedBy).toBe('mount-budget');
-    expect(ledger.snapshot('player-item:unkeyed').count).toBe(3);
-  });
-
-  it('dash-error attempts consume the same session cap other actors see (audit §3.1)', () => {
-    const ledger = makeLedger();
-    for (let i = 0; i < 3; i++) {
-      requestDashErrorRecovery({ errorCode: 28, sessionKey: SESSION, mountId: 'm1', ledger });
-    }
-    // The resilience actor now has only 2 of the 5 session attempts left.
-    ledger.request({ sessionKey: SESSION, actor: 'resilience', reason: 'x', bypassCooldown: true });
-    ledger.request({ sessionKey: SESSION, actor: 'resilience', reason: 'x', bypassCooldown: true });
-    const capped = ledger.request({ sessionKey: SESSION, actor: 'resilience', reason: 'x', bypassCooldown: true });
-    expect(capped.allowed).toBe(false);
-    expect(capped.deniedBy).toBe('session-cap');
+    expect(requestDashErrorRecovery({ errorCode: 28, sessionKey: null, mountId: 'new', ledger }))
+      .toMatchObject({ fire: false, gate: { deniedBy: 'session-cap' } });
   });
 });

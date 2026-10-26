@@ -78,6 +78,7 @@ export function AudioPlayer({
     onMediaRef,
     onController,
     recoverySessionKey: resilienceBridge?.playbackSessionKey || null,
+    recoveryIdentity: resilienceBridge?.recoveryIdentity || null,
     // Threaded from Player.jsx's forceSinglePlayerRemount diagnostics via
     // resilienceBridge (SinglePlayer.jsx) — not previously forwarded into this
     // call, so a resilience remount always armed autoplay regardless of pause

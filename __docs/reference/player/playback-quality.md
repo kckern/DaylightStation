@@ -96,9 +96,12 @@ Use a ladder that preserves the movie and its timeline:
    successful manifest request or command acknowledgement proves neither.
 
 Steps 3–4 currently require an explicit control action. A future automatic app
-ladder needs rolling stall accounting (short healthy intervals must not erase
-repeated stalls), bounded replacements and a sustained healthy reset. It must
-respect explicit quality ceilings and `adaptive=false`. Parameter propagation
+ladder still needs evidence classification and guarded quality execution. Shared
+accounting now retains an owner/visit budget across short progress and quality
+adoption: three incident actions, six per rolling ten minutes, four-second
+minimum spacing, one action in flight, and a sixty-second continuous healthy
+reset that preserves rolling history. Explicit Retry also preserves that history.
+The future automatic ladder must respect explicit quality ceilings and `adaptive=false`. Parameter propagation
 and Plex adjustment alone do not implement that app policy.
 
 ## Playback signal limits

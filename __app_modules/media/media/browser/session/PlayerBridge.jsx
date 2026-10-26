@@ -597,6 +597,7 @@ export function PlayerBridge() {
        has a search box and full transport UI — it owns its keys. */
     <Player
       ref={playerRef}
+      recoveryIdentity={controller.recoveryIdentity}
       play={playProp}
       clear={onClear}
       onProgress={onProgress}

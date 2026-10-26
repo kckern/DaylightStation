@@ -578,6 +578,8 @@ export function createPlayerSessionBridge({
   };
 
   const player = {
+    getRecoveryIdentity: () => readHandle()?.getRecoveryIdentity?.() ?? null,
+    getRecoveryTarget: () => readHandle()?.getRecoveryTarget?.() ?? null,
     getState,
     getPosition,
     getDuration,

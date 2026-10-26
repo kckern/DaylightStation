@@ -1,3 +1,4 @@
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
@@ -72,6 +73,7 @@ export function useCommonMediaController({
   // resilienceBridge.playbackSessionKey) — scopes recovery-ledger accounting.
   // Falls back to assetId below for hosts that don't thread one.
   recoverySessionKey = null,
+  recoveryIdentity = null,
   // Remount context (Player.jsx's forceSinglePlayerRemount diagnostics, threaded
   // through resilienceBridge.remountDiagnostics). null on a normal, non-remount
   // load. Used to decide whether the rebuilt element should arm autoplay — see
@@ -102,6 +104,17 @@ export function useCommonMediaController({
   // Ledger scope: prefer the real playback session key; assetId keeps
   // accounting coherent for hosts without the resilience bridge.
   const recoveryScopeKey = recoverySessionKey || assetId || null;
+  const recoveryActionRef = useRef(null);
+  useEffect(() => {
+    if (!recoveryIdentity) return;
+    return recoveryIdentity.subscribe(target => {
+      const active = recoveryActionRef.current;
+      if (active && !sameRecoveryTarget(active.target, target)) {
+        getRecoveryLedger().completeAction(active);
+        recoveryActionRef.current = null;
+      }
+    });
+  }, [recoveryIdentity]);
   const recoveryMountIdRef = useRef(null);
   if (!recoveryMountIdRef.current) recoveryMountIdRef.current = `controller-mount-${++_controllerMountSeq}`;
 
@@ -469,6 +482,7 @@ export function useCommonMediaController({
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
+    recoveryIdentity?.acceptUserIntent('seek');
     mediaEl.__seekSource = 'click';
     const rect = event.currentTarget.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
@@ -485,11 +499,24 @@ export function useCommonMediaController({
       duration,
       segment: segment ? { start: segStart, end: segEnd } : null
     });
-  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segEnd]);
+  }, [duration, getMediaEl, segStart, segDuration, assetId, segment, segEnd, recoveryIdentity]);
 
   // Use centralized keyboard handler
   useMediaKeyboardHandler({
     getMediaEl,
+    controller: recoveryIdentity ? {
+      play: () => { recoveryIdentity.acceptUserIntent('play'); return getMediaEl()?.play?.(); },
+      pause: () => { recoveryIdentity.acceptUserIntent('pause'); return getMediaEl()?.pause?.(); },
+      toggle: () => {
+        const node = getMediaEl();
+        if (!node) return null;
+        recoveryIdentity.acceptUserIntent(node.paused ? 'play' : 'pause');
+        return node.paused ? node.play?.() : node.pause?.();
+      },
+      // The keyboard transport applies the native seek after this intent boundary.
+      seek: () => { recoveryIdentity.acceptUserIntent('seek'); },
+      seekRelative: () => { recoveryIdentity.acceptUserIntent('seek'); },
+    } : undefined,
     onEnd: onManualEnd,
     onClear,
     cycleThroughClasses,
@@ -831,6 +858,13 @@ export function useCommonMediaController({
 
           const ledger = getRecoveryLedger();
           const fireStrategy = (strategy, method, gate) => {
+            const expected = recoveryIdentity?.getTarget();
+            const target = strategy === 'softReinit' ? recoveryIdentity?.beginRenderer(expected) : expected;
+            if (recoveryIdentity && !target) {
+              ledger.completeAction({ sessionKey: recoveryScopeKey, actionId: gate.actionId });
+              return false;
+            }
+            recoveryActionRef.current = { sessionKey: recoveryScopeKey, actionId: gate.actionId, target };
             s.lastStrategy = strategy;
             s.status = 'recovering';
             publishStallSnapshot();
@@ -916,7 +950,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
-  }, [getMediaEl, clearTimers, assetId, dismissStallSuspicion, meta?.title, meta?.name, meta?.artist, meta?.album, meta?.grandparentTitle, meta?.parentTitle, publishStallSnapshot, recoveryScopeKey, nudgeRecovery, softReinitRecovery]);
+  }, [getMediaEl, clearTimers, assetId, dismissStallSuspicion, meta?.title, meta?.name, meta?.artist, meta?.album, meta?.grandparentTitle, meta?.parentTitle, publishStallSnapshot, recoveryScopeKey, recoveryIdentity, nudgeRecovery, softReinitRecovery]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -959,9 +993,9 @@ export function useCommonMediaController({
       s.sinceTs = null;
       s.status = 'monitoring';
       s.lastSuccessTs = Date.now();
-      // Controller-observed resume clears the shared ledger session (idempotent
-      // with useMediaResilience's progress-effect recordSuccess).
-      getRecoveryLedger().recordSuccess(recoveryScopeKey);
+      // Native progress completes only this actor's reservation; the incident owner observes sustained health.
+      if (recoveryActionRef.current) getRecoveryLedger().completeAction(recoveryActionRef.current);
+      recoveryActionRef.current = null;
       publishStallSnapshot();
       clearTimers();
       setIsStalled(false);

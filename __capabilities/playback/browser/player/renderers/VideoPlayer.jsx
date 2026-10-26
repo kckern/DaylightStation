@@ -1,3 +1,5 @@
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
+import { getRecoveryLedger } from '../lib/recoveryLedger.js';
 import { useVideoPresentation } from '../../presentation.mjs';
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
@@ -68,6 +70,7 @@ export function VideoPlayer({
   // native <video> branch but WITHOUT a static src — the attach effect below
   // assigns the source.
   const isHls = media?.mediaType === 'hls_video';
+  const dashRecoveryActionRef = useRef(null);
   const isOwnerOperationMount = resilienceBridge?.remountDiagnostics?.remountClass === 'owner-operation';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const hlsOwnerRef = useRef(null);
@@ -163,6 +166,7 @@ export function VideoPlayer({
     keyboardOverrides,
     onController,
     recoverySessionKey: resilienceBridge?.playbackSessionKey || null,
+    recoveryIdentity: resilienceBridge?.recoveryIdentity || null,
     // Threaded from Player.jsx's forceSinglePlayerRemount diagnostics via
     // resilienceBridge (SinglePlayer.jsx) — not previously forwarded into this
     // call, so a resilience remount always armed autoplay regardless of pause
@@ -742,12 +746,19 @@ export function VideoPlayer({
         // Escalate to hardReset with refreshUrl so the backend mints a fresh
         // transcode. Gated by the shared recoveryLedger: 3 per mount for the
         // 'dash-error' actor, counted against the session-wide cap (audit §3.1).
+        const identity = resilienceBridgeRef.current?.recoveryIdentity;
+        const expectedTarget = identity?.getTarget();
         const { fire, decision, gate } = requestDashErrorRecovery({
           errorCode: code,
           sessionKey: resilienceBridgeRef.current?.playbackSessionKey || null,
           mountId: mountIdRef.current
         });
         if (fire) {
+          const target = identity?.beginRenderer(expectedTarget);
+          if (identity && !target) {
+            getRecoveryLedger().completeAction({ sessionKey: resilienceBridgeRef.current?.playbackSessionKey, actionId: gate.actionId });
+            return;
+          }
           const innerEl = getMediaEl();
           const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
           dashLog.warn('dash.error-recovery', {
@@ -756,6 +767,7 @@ export function VideoPlayer({
             attempt: gate.attempt,
             seekToSeconds
           });
+          dashRecoveryActionRef.current = { sessionKey: resilienceBridgeRef.current?.playbackSessionKey || 'player-item:unkeyed', actionId: gate.actionId, target };
           hardReset({ seekToSeconds, refreshUrl: true });
         } else if (gate) {
           // Refreshable code, but the ledger denied it (mount budget spent or
@@ -920,6 +932,33 @@ export function VideoPlayer({
     
   
   
+  useEffect(() => {
+    const identity = resilienceBridge?.recoveryIdentity;
+    if (!identity) return;
+    return identity.subscribe(target => {
+      const active = dashRecoveryActionRef.current;
+      if (active && !sameRecoveryTarget(active.target, target)) {
+        getRecoveryLedger().completeAction(active);
+        dashRecoveryActionRef.current = null;
+      }
+    });
+  }, [resilienceBridge?.recoveryIdentity]);
+  useEffect(() => {
+    const node = getMediaEl();
+    if (!node?.addEventListener) return;
+    let lastTime = node.currentTime;
+    const complete = () => {
+      const active = dashRecoveryActionRef.current;
+      if (active && node.readyState >= 1 && node.currentTime > lastTime && !node.seeking) {
+        getRecoveryLedger().completeAction(active);
+        dashRecoveryActionRef.current = null;
+      }
+      lastTime = node.currentTime;
+    };
+    node.addEventListener('timeupdate', complete);
+    return () => node.removeEventListener('timeupdate', complete);
+  });
+
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar

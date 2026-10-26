@@ -1,3 +1,4 @@
+import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { describeWaitKey } from '../lib/waitKeyLabel.js';
@@ -11,7 +12,6 @@ import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
-import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { isNearEnd } from '../lib/nearEnd.js';
 import { useSourceAvailability } from './useSourceAvailability.js';
 import { sourceNoticeText, resolveSourceContentId } from '../lib/sourceAvailability.js';
@@ -74,6 +74,7 @@ export function useMediaResilience({
   controllerRef,
   plexId,
   playbackSessionKey,
+  recoveryIdentity = null,
   debugContext,
   message,
   mediaTypeHint,
@@ -117,35 +118,17 @@ export function useMediaResilience({
   const prevSessionKeyRef = useRef(playbackSessionKey);
   useEffect(() => {
     if (prevSessionKeyRef.current && prevSessionKeyRef.current !== playbackSessionKey) {
-      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+      if (!recoveryIdentity) getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
       exhaustedNotifiedRef.current = false;
-      lastSuccessPosRef.current = null;
+      joltStepRef.current = 0;
     }
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
-  // … and on unmount — the final session's entry used to leak (audit §5).
-  //
-  // Requires one mounted Player per playbackSessionKey: a sibling hook sharing the key
-  // gets its ledger entry wiped here. That used to hold by accident, because the Player
-  // minted a RANDOM guid per source object, so two Players never shared a key. Since
-  // 2026-08-16 the guid is derived from content (a hash of contentId/plex/…), which is
-  // what stops a re-rendering caller from remounting the video — and it meant two
-  // Players showing the SAME content computed the same key. A reachable pairing: a menu
-  // selection mounts a Player on the nav stack (MenuWidget is a layout widget, so it
-  // renders inside ScreenOverlayProvider's children), then a media:play action mounts a
-  // second Player in the fullscreen slot for content already open in the menu — its
-  // dismissOverlay clears only the overlay slot and cannot unmount the first.
-  //
-  // Player.jsx now pays for the constraint deliberately: it appends a per-instance id
-  // (`#<id>`, a ref seeded once per mounted Player) to itemSessionKey, so two live
-  // Players on the same content hold separate ledger sessions and separate
-  // usePlaybackSession entries. The id is a ref rather than per-mount state because a
-  // remount happens BELOW the Player, and the attempt cap has to accumulate across
-  // remounts. Anything that passes a hand-built playbackSessionKey here still owes the
-  // one-mounted-consumer-per-key rule. See Player.sessionScope.test.jsx.
+  // Compatibility for standalone hook consumers only. Real Player and Media owners
+  // retain the ledger through renderer teardown and release at visit/owner termination.
   useEffect(() => () => {
     if (prevSessionKeyRef.current) {
-      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+      if (!recoveryIdentity) getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
     }
   }, []);
 
@@ -164,7 +147,10 @@ export function useMediaResilience({
     mediaKey: meta?.contentId || meta?.assetId || plexId || null,
     mediaType: mediaTypeHint || meta?.mediaType,
     playerFlavor: playerFlavorHint,
-    epsilonSeconds
+    epsilonSeconds,
+    target: recoveryIdentity?.getTarget(),
+    autoplayBlocked,
+    phase: isSeeking ? 'seeking' : undefined
   });
 
   // A fatal pipeline error is consulted in TWO places below, at two different
@@ -293,10 +279,42 @@ export function useMediaResilience({
   const joltLatestRef = useRef(null);
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
-  // Last playhead position that counted as a genuine recovery success. The
-  // ledger must only be cleared when the clock actually moved forward — a
-  // remount at a frozen position fires progress events but is not recovery.
-  const lastSuccessPosRef = useRef(null);
+  const activeActionRef = useRef(null);
+  const deferredRecoveryRef = useRef(null);
+  useEffect(() => () => { clearTimeout(deferredRecoveryRef.current); }, [playbackSessionKey]);
+  const health = playbackHealth.recoveryHealth;
+  const ownerHeartbeatRef = useRef(null);
+  useEffect(() => {
+    if (!health) return;
+    const gap = ownerHeartbeatRef.current === null ? null : health.atMs - ownerHeartbeatRef.current;
+    ownerHeartbeatRef.current = health.atMs;
+    // Owner deadlines advance even with no native node. Unknown media cannot earn health credit.
+    const eligible = gap !== null && gap >= 0 && gap <= 2000 && health.visible
+      && userIntent !== USER_INTENT.paused && !(userIntent === USER_INTENT.seeking && isPaused)
+      && !autoplayBlocked && !sourceUnavailable;
+    const healthy = eligible && health.fresh && health.phase === 'playing' && health.clockAdvancing === true
+      && health.presentationAdvancing !== false && externalStalled !== true && !isSeeking;
+    const active = activeActionRef.current;
+    if (healthy && active && (!recoveryIdentity || sameRecoveryTarget(active.target, recoveryIdentity.getTarget()))) {
+      getRecoveryLedger().completeAction({ sessionKey: playbackSessionKey, actionId: active.actionId });
+      activeActionRef.current = null;
+    }
+    getRecoveryLedger().observeHealth({ sessionKey: playbackSessionKey, healthy, eligible, atMs: health.atMs });
+    if (getRecoveryLedger().snapshot(playbackSessionKey)?.count === 0) {
+      joltStepRef.current = 0;
+      exhaustedNotifiedRef.current = false;
+    }
+  }, [health, playbackSessionKey, recoveryIdentity, externalStalled, userIntent, sourceUnavailable, autoplayBlocked, isPaused, isSeeking]);
+  useEffect(() => {
+    if (!recoveryIdentity) return;
+    return recoveryIdentity.subscribe(target => {
+      const active = activeActionRef.current;
+      if (active && !sameRecoveryTarget(active.target, target)) {
+        getRecoveryLedger().completeAction({ sessionKey: active.sessionKey, actionId: active.actionId });
+        activeActionRef.current = null;
+      }
+    });
+  }, [recoveryIdentity]);
 
   // options (all optional — every no-options call site keeps its old behavior):
   //   bypassCooldown  — user-initiated recoveries skip the cooldown gate but
@@ -328,7 +346,7 @@ export function useMediaResilience({
     });
 
     if (!gate.allowed) {
-      if (gate.deniedBy === 'session-cap') {
+      if (gate.deniedBy === 'session-cap' || gate.deniedBy === 'rolling-cap') {
         // Max attempts — prevents an infinite remount loop.
         playbackLog('resilience-recovery-exhausted', {
           reason, ...waitKeyFields,
@@ -347,10 +365,18 @@ export function useMediaResilience({
           reason, ...waitKeyFields, waitMs: gate.waitMs, attempts: gate.attempt
         }, { level: 'debug' });
       }
-      return gate.deniedBy === 'session-cap' ? 'exhausted' : 'denied';
+      if ((options.sourceRestored || options.deferDenied) && !gate.exhausted && gate.waitMs > 0) {
+        clearTimeout(deferredRecoveryRef.current);
+        const expected = recoveryIdentity?.getTarget();
+        deferredRecoveryRef.current = setTimeout(() => {
+          if (!recoveryIdentity || sameRecoveryTarget(expected, recoveryIdentity.getTarget())) triggerRecovery(reason, options);
+        }, gate.waitMs);
+      }
+      return gate.exhausted ? 'exhausted' : 'denied';
     }
 
     const attempt = gate.attempt;
+    options.onReserved?.();
     playbackLog('resilience-recovery', {
       reason, ...waitKeyFields,
       status: statusRef.current, attempt, maxAttempts,
@@ -377,46 +403,35 @@ export function useMediaResilience({
         recoverySeekTrackerRef.current = computed.tracker;
         seekMs = computed.seekMs;
       }
+      const expectedTarget = recoveryIdentity?.getTarget();
       onReload({
+        actionId: gate.actionId,
+        target: expectedTarget,
         reason,
         meta,
         waitKey,
         refreshUrl,
         ...(options.forceRemount === true ? { forceRemount: true } : {}),
+        ...(options.userInitiated === true ? { userInitiated: true } : {}),
         ...(options.resumePlayback === true ? { resumePlayback: true } : {}),
         seekToIntentMs: seekMs
       });
+      activeActionRef.current = { actionId: gate.actionId, sessionKey: playbackSessionKey, target: recoveryIdentity?.getTarget() };
+    } else {
+      ledger.completeAction({ sessionKey: playbackSessionKey, actionId: gate.actionId });
     }
-  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds, maxAttempts]);
+  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds, maxAttempts, recoveryIdentity]);
 
   const retryFromExhausted = useCallback(() => {
+    recoveryIdentity?.acceptUserIntent('Retry');
     getRecoveryLedger().userReset(playbackSessionKey);
+    joltStepRef.current = 0;
     exhaustedNotifiedRef.current = false;
     const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
-    actions.setStatus(STATUS.recovering);
-    // Force the startup-deadline watchdog to re-arm even though `status` was
-    // already `recovering` (so the retried remount isn't left without a watchdog
-    // and escalation continues if it also stalls).
-    clearTimeout(startupDeadlineRef.current);
-    startupDeadlineRef.current = null;
-    setRecoveryNonce((n) => n + 1);
-    playbackLog('resilience-retry-from-exhausted', { ...waitKeyFields, seekToIntentMs: seekMs });
-    if (typeof onReload === 'function') {
-      // forceRemount: in-place hardReset (even with refreshUrl) is unreliable on a
-      // reaped Plex transcode session — the <video> stays wedged at readyState=0.
-      // A user-initiated exhaustion retry must escalate to a real React remount,
-      // which mints a fresh transcode session (plexClientSession bumps with the
-      // remount nonce). refreshUrl stays true so any in-place fallback still refreshes.
-      // userInitiated: a HUMAN asked for this. Distinct from forceRemount, which
-      // only says "an in-place hardReset won't do". The stall-jolt ladder sets
-      // forceRemount automatically (STALL_JOLT_LADDER rung 1), so consumers must
-      // not read it as consent — this is the only path a viewer drives, and it is
-      // what tells the Player not to second-guess the request when playback looks
-      // healthy mid-backoff.
-      onReload({ reason: 'user-retry-exhausted', meta, waitKey, refreshUrl: true, forceRemount: true, userInitiated: true, seekToIntentMs: seekMs });
-    }
-  }, [actions, consumeTargetTimeSeconds, waitKeyFields, meta, onReload, playbackSessionKey, waitKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart]);
+    return triggerRecovery('user-retry-exhausted', { bypassCooldown: true, refreshUrl: true,
+      forceRemount: true, userInitiated: true, seekToIntentMs: seekMs });
+  }, [consumeTargetTimeSeconds, recoveryIdentity, playbackSessionKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart, triggerRecovery]);
 
   // How a settled source wait becomes (at most) one reload. Assigned every
   // render so it always closes over the current triggerRecovery.
@@ -467,9 +482,15 @@ export function useMediaResilience({
         tracker.sessionKey = playbackSessionKey;
         tracker.retried = false;
       }
+      const active = activeActionRef.current;
+      if (active) {
+        // A current native load failure completes its reservation without erasing the debit.
+        getRecoveryLedger().completeAction({ sessionKey: active.sessionKey, actionId: active.actionId });
+        activeActionRef.current = null;
+      }
       if (!tracker.retried) {
-        tracker.retried = true;
-        triggerRecovery('media-error-unplayable', { refreshUrl: true, forceRemount: true, bypassCooldown: true });
+        triggerRecovery('media-error-unplayable', { refreshUrl: true, forceRemount: true, bypassCooldown: true,
+          deferDenied: true, onReserved: () => { tracker.retried = true; } });
         return;
       }
       actions.setStatus(STATUS.exhausted);
@@ -480,11 +501,7 @@ export function useMediaResilience({
       return;
     }
     if (decision === 'resume') {
-      getRecoveryLedger().userReset(playbackSessionKey);
-      exhaustedNotifiedRef.current = false;
-      // A wait may have begun at the END of the jolt ladder (checked before
-      // skipping). The restored file gets a fresh ladder, not an instant skip.
-      joltStepRef.current = 0;
+      // Refusal healing retains every unrelated incident debit.
       triggerRecovery('source-restored', {
         sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true,
         resumePlayback: sourceWaitResumeRef.current,
@@ -572,19 +589,7 @@ export function useMediaResilience({
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
 
-      // A progressToken bump means "a progress event fired", NOT "the clock
-      // moved". A jolt's own remount fires `playing` at the frozen position;
-      // clearing the ledger on that would defeat the attempt cap and cooldown.
-      // Only strictly-forward motion counts as recovery.
-      const observed = Number.isFinite(playbackHealth.lastProgressSeconds)
-        ? playbackHealth.lastProgressSeconds
-        : null;
-      const { advanced, nextPos } = evaluatePlayheadProgress(observed, lastSuccessPosRef.current);
-      lastSuccessPosRef.current = nextPos;
-      if (advanced) {
-        getRecoveryLedger().recordSuccess(playbackSessionKey);
-        exhaustedNotifiedRef.current = false;
-      }
+      // Progress updates playback state. The continuous-health observation above owns resets.
       return;
     }
 
@@ -869,15 +874,13 @@ export function useMediaResilience({
   // the captured intent (the frozen seek target), until the clock advances again
   // or the ladder + attempt cap are exhausted. The shared recoveryLedger's
   // session cap bounds total jolts even if `isStuck` flaps (a jolt that plays one
-  // frame then re-stalls) — this holds only because recordSuccess requires
-  // strictly-forward playhead motion (2026-07-10); a bare progress event at a
-  // frozen position must never clear the session. End-of-content is excluded
+  // frame then re-stalls). Only 60 continuous healthy seconds close an incident;
+  // a brief advance or frozen progress event cannot replenish its actions. End-of-content is excluded
   // upstream by `atEnd`, so the ladder never chases a playhead parked at duration.
   useEffect(() => {
     if (disabled) return undefined;
     if (!isStuck) {
       if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; }
-      joltStepRef.current = 0;
       joltIntentRef.current = null;
       return undefined;
     }
@@ -958,7 +961,7 @@ export function useMediaResilience({
         reason: plan.reason
       });
       if (!gate.allowed) {
-        if (gate.deniedBy === 'cooldown') {
+        if (gate.deniedBy === 'cooldown' || gate.deniedBy === 'in-flight') {
           // Too soon after the last recovery (any actor). Re-check this SAME
           // rung once the cooldown has elapsed — don't advance the ladder.
           playbackLog('resilience-stall-jolt-cooldown-denied', {
@@ -967,7 +970,7 @@ export function useMediaResilience({
           joltTimerRef.current = setTimeout(fireRung, gate.waitMs);
           return;
         }
-        if (gate.deniedBy === 'session-cap') {
+        if (gate.deniedBy === 'session-cap' || gate.deniedBy === 'rolling-cap') {
           // Total recovery budget spent.
           exhaustUnlessRefused(gate.attempt);
           return;
@@ -990,9 +993,11 @@ export function useMediaResilience({
         intentSeconds, refreshUrl: plan.refreshUrl, forceRemount: plan.forceRemount,
       });
       L.onReload?.({
+        actionId: gate.actionId, target: recoveryIdentity?.getTarget(),
         reason: plan.reason, meta: L.meta, waitKey: L.waitKey,
         refreshUrl: plan.refreshUrl, forceRemount: plan.forceRemount, seekToIntentMs,
       });
+      activeActionRef.current = { actionId: gate.actionId, sessionKey: L.playbackSessionKey, target: recoveryIdentity?.getTarget() };
       // Escalate again if we're still stuck after this rung has had time to work.
       joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_STEP_MS);
     };

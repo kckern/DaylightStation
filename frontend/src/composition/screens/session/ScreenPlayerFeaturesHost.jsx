@@ -72,7 +72,9 @@ export function ScreenPlayerFeaturesHost({ features, source }) {
         if (!result.ok) return result;
         if (typeof source?.adopt !== 'function') return { ok: false, code: 'QUALITY_UNSUPPORTED' };
         return source.adopt(result.snapshot, {
-          operationId: `quality-${globalThis.crypto.randomUUID()}`,
+          operationId: request.actionId ?? `quality-${globalThis.crypto.randomUUID()}`,
+          reason: request.reason === 'recovery-quality' ? 'recovery-quality' : 'manual-quality',
+          target: request.target,
           autoplay: current.state !== 'paused',
         });
       },

@@ -29,6 +29,7 @@ export function SinglePlayer(props = {}) {
     // Player's itemSessionKey — the recoveryLedger session scope. Distinct from
     // the local playbackSessionKey below (watchedDuration storage key).
     resilienceSessionKey = null,
+    recoveryIdentity = null,
     wrapWithContainer = true,
     suppressLocalOverlay = false,
     plexClientSession = null,
@@ -425,6 +426,7 @@ export function SinglePlayer(props = {}) {
     requestRecovery: typeof onRequestRecovery === 'function' ? onRequestRecovery : null,
     // Ledger session scope for renderer-level recovery actors (dash-error).
     playbackSessionKey: resilienceSessionKey,
+    recoveryIdentity,
     // New: accessor registration for children
     registerAccessors: ({ getMediaEl, getContainerEl }) => {
       mediaAccessorsRef.current = {
@@ -435,7 +437,7 @@ export function SinglePlayer(props = {}) {
     // New: accessors that delegate to registered functions
     getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
     getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, resilienceSessionKey]);
+  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, resilienceSessionKey, recoveryIdentity]);
 
   // Register the resilienceBridge with the parent Player component
   useEffect(() => {
