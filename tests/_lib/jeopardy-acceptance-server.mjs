@@ -78,14 +78,14 @@ app.use((req, res, next) => {
   req.roles = ['gaming-host'];
   next();
 });
-const durable = process.env.JEOPARDY_ACCEPTANCE_DURABLE === '1' ? await createDurableJeopardyFixture({ definition: packs.get('jeopardy:fhe-jeremiah') }) : null;
+const durable = process.env.JEOPARDY_ACCEPTANCE_DURABLE === '1' ? await createDurableJeopardyFixture({ definitionId: 'jeopardy:fhe-jeremiah', definition: { ...packs.get('jeopardy:fhe-jeremiah'), rounds: packs.get('jeopardy:fhe-jeremiah').rounds.map(round => ({ ...round, mode: 'hosted' })) } }) : null;
 const application = {
   getEnvironmentProfile: () => ({
-    defaults: {mute:true},
+    defaults: {mute: !durable},
     household_members: [],
     team_presets: []
   }),
-  listPartyGamesCatalog: () => [...packs].map(([id, p]) => ({
+  listPartyGamesCatalog: () => [...packs].filter(([id]) => !durable || id === 'jeopardy:fhe-jeremiah').map(([id, p]) => ({
     id,
     definition_id: id,
     experience_id: 'jeopardy',
@@ -105,13 +105,14 @@ const application = {
     competition: true,
     valid: true
   })),
-  createSession: request => durable ? durable.application.createSession({ ...request, definitionId: 'jeopardy:test' }) : diagnostics.createSession(request),
+  createSession: request => durable ? durable.application.createSession(request) : diagnostics.createSession(request),
   resumeSession: (...args) => durable.application.resumeSession(...args),
   dispatch: (...args) => durable.application.dispatch(...args),
   closeSession: (...args) => durable.application.closeSession(...args),
   getDefinition: (...args) => durable.application.getDefinition(...args)
 };
 let wss;
+app.get('/__jeopardy_acceptance', (_req,res) => res.json({ isolated: true, durable: Boolean(durable) }));
 app.use('/api/v1/gaming', createGamingRouter({
   gamingSessionRestarts: new GamingSessionRestarts(),
   gamingApplication: application,

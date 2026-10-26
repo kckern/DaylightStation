@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
+const trace=vi.hoisted(()=>({info:vi.fn(),sampled:vi.fn(),child:vi.fn()}));
+vi.mock('@/lib/logging/Logger.js',()=>({default:()=>({...trace,child:trace.child.mockImplementation(()=>trace)})}));
+
 vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: () => {} }));
 import { useBuzzers } from './useBuzzers.js';
 
@@ -30,4 +33,17 @@ describe('useBuzzers gamepad slots', () => {
     act(() => gamepadPress('9:Stray', 'release'));
     expect(onLock).not.toHaveBeenCalled();
   });
+});
+
+it('attributes accepted and ineligible gamepad decisions to the session/window and samples spam',()=>{
+ trace.info.mockClear();trace.sampled.mockClear();trace.child.mockClear();const onLock=vi.fn();
+ const {result}=renderHook(()=>useBuzzers({teams:TEAMS,onLock,sessionId:'game:trace'}));
+ act(()=>{result.current.arbiter.restore({slotToTeam:{'gamepad:1:Pad':'team_1','gamepad:2:Pad':'team_2'}});result.current.arm(['team_2'],{windowKey:'question:one'});});
+ act(()=>gamepadPress('1:Pad'));act(()=>gamepadPress('2:Pad'));
+ for(let n=0;n<50;n++)act(()=>gamepadPress('2:Pad'));
+ expect(onLock).toHaveBeenCalledTimes(1);
+ expect(trace.child).toHaveBeenCalledWith(expect.objectContaining({sessionId:'game:trace'}));
+ expect(trace.info).toHaveBeenCalledWith('party-games.buzz.locked',expect.objectContaining({windowKey:'question:one',controllerId:'2:Pad',decision:'candidate'}));
+ expect(trace.sampled).toHaveBeenCalledWith('party-games.buzz.decision',expect.objectContaining({reason:'ineligible',windowKey:'question:one'}),{maxPerMinute:10,aggregate:true});
+ expect(JSON.stringify([...trace.info.mock.calls,...trace.sampled.mock.calls])).not.toMatch(/answer|token|qrPayload/);
 });

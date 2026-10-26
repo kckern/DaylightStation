@@ -435,10 +435,13 @@ export class GamepadAdapter {
     const fireKey = bound ? `${controllerId}__${key}` : modelKey;
     const history = bound ? this._lastFireByController : this._lastFireById;
     const lastFire = history[fireKey];
-    if (lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) {
+    // Bound inputs already passed per-controller fresh-edge detection. A
+    // cooldown here would discard a legitimate release/repress across the
+    // opening of a clue. Only an unbound model twin needs the phantom guard.
+    if (!bound && lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) {
       logger().sampled?.('gaming.input.suppressed', {
         controller_id: controllerId, action: key,
-        reason: bound ? 'duplicate-controller-edge' : 'unbound-phantom-or-repeat',
+        reason: 'unbound-phantom-or-repeat',
       }, { maxPerMinute: 10, aggregate: true });
       return false;
     }

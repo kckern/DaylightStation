@@ -66,3 +66,10 @@ it('starts the next session setup even when the prior session has an unresolved 
  await act(async()=>f.view.result.current.setSessionId('next-ready'));
  expect(sendJeopardyCommand.mock.calls.some(([id,c])=>id==='next-ready'&&c.type==='BUZZER_SETUP')).toBe(true);
 });
+it('drops queued Ready renewals when Start moves into active play',async()=>{
+ const f=await fixture(),normal=sendJeopardyCommand.getMockImplementation();let release,first=true;
+ sendJeopardyCommand.mockImplementation((id,c,o)=>{if(c.type==='BUZZER_PRESENCE'&&first){first=false;return new Promise(resolve=>{release=()=>resolve(normal(id,c,o));});}return normal(id,c,o);});
+ await act(async()=>vi.advanceTimersByTimeAsync(15000));await f.phase('board');
+ await act(async()=>release());
+ expect(sendJeopardyCommand.mock.calls.filter(([,c])=>c.type==='BUZZER_PRESENCE')).toHaveLength(1);
+});

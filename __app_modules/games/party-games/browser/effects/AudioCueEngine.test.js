@@ -88,3 +88,24 @@ it('releases failed and completed cues while retaining contextual failure attrib
   expect(engine.channels.sfx).toHaveLength(0);
   expect(engine.log.warn).toHaveBeenCalledWith('jeopardy.cue-result', expect.objectContaining({ cue: 'buzz', channel: 'sfx', sessionId: 'safe', revision: 3, result: 'failed' }));
 });
+
+it('returns a completion receipt and traces actual completion with bounded attribution',async()=>{
+ const audio=new EventTarget();audio.play=vi.fn(()=>Promise.resolve());audio.pause=vi.fn();audio.currentTime=3;
+ const engine=new AudioCueEngine({audioFactory:()=>audio});engine.log={info:vi.fn(),warn:vi.fn()};
+ const receipt=engine.play('win',{pack:'jeopardy',context:{sessionId:'game:one',revision:3,commandId:'cmd:one',answer:'secret-answer',token:'secret-token',qrPayload:'secret-qr'}});
+ await Promise.resolve();audio.dispatchEvent(new Event('ended'));
+ expect(await receipt.finished).toMatchObject({result:'ended'});expect(engine.channels.sfx).toHaveLength(0);
+ expect(engine.log.info).toHaveBeenCalledWith('jeopardy.cue-result',expect.objectContaining({result:'ended',sessionId:'game:one',commandId:'cmd:one',elapsedMs:expect.any(Number)}));
+ expect(JSON.stringify(engine.log.info.mock.calls)).not.toMatch(/secret-answer|secret-token|secret-qr/);
+});
+it('settles once when playback fails and later emits a duplicate error event',async()=>{
+ const audio=new EventTarget();audio.play=vi.fn(()=>Promise.reject(new Error('blocked')));audio.pause=vi.fn();
+ const engine=new AudioCueEngine({audioFactory:()=>audio});engine.log={info:vi.fn(),warn:vi.fn()};
+ const receipt=engine.play('win');expect(await receipt.finished).toMatchObject({result:'failed',reason:'blocked'});
+ audio.dispatchEvent(new Event('error'));expect(engine.log.warn).toHaveBeenCalledTimes(1);expect(engine.channels.sfx).toHaveLength(0);
+});
+it('settles outstanding receipts on explicit owner stop',async()=>{
+ const audio=new EventTarget();audio.play=vi.fn(()=>new Promise(()=>{}));audio.pause=vi.fn();
+ const engine=new AudioCueEngine({audioFactory:()=>audio});engine.log={info:vi.fn(),warn:vi.fn()};const receipt=engine.play('win');
+ engine.stopAll('game-restart');expect(await receipt.finished).toMatchObject({result:'stopped',reason:'game-restart'});expect(audio.pause).toHaveBeenCalledTimes(1);
+});

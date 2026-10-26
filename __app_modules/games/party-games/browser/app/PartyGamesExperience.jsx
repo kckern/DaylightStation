@@ -6,18 +6,18 @@ import { restoreGamepadRoleBindings, clearGamepadRoleBindings, gamepadPresence, 
 
 // Adapts Party Games hardware/effects to the environment-neutral capability
 // ports consumed by experiences. Experiences never import this environment.
-export default function PartyGamesExperience({ component: Experience, seats, buzzerBindings, config, ...props }) {
+export default function PartyGamesExperience({ component: Experience, seats, buzzerBindings, config, audio: providedAudio, ...props }) {
   const buzzListeners = useRef(new Set());
   const appliedBindings = useRef(null);
   const audio = useMemo(
-    () => new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
-    [config?.defaults?.mute, config?.sounds?.pack],
+    () => providedAudio || new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
+    [providedAudio, config?.defaults?.mute, config?.sounds?.pack],
   );
   const music = useMemo(() => new GuessingMusic(), []);
   const onBuzz = useCallback((teamId) => {
     for (const listener of buzzListeners.current) listener(teamId);
   }, []);
-  const { arbiter, locked, arm, disarm, subscribeInput } = useBuzzers({ teams: seats, onLock: onBuzz });
+  const { arbiter, locked, arm, disarm, subscribeInput } = useBuzzers({ teams: seats, onLock: onBuzz, sessionId: props.sessionId });
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
 
@@ -31,9 +31,9 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
   useEffect(() => () => {
     music.stop();
     audio.stopChannel('music');
-    audio.stopChannel('sfx');
+    if (!providedAudio) audio.stopChannel('sfx');
     audio.stopChannel('clue-media');
-  }, [audio, music]);
+  }, [audio, music, providedAudio]);
 
   const subscribe = useCallback((listener) => {
     buzzListeners.current.add(listener);

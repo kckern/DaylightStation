@@ -67,7 +67,10 @@ export function useBuzzerSetup({ sessionId, state, revision, buzzers, acceptSess
       queue.current = queue.current.then(async () => {
         if (!active) return false;
         // Never renew stale readiness while any safety transition lacks an ack.
-        if (command.type === 'BUZZER_PRESENCE' && pending.size) return false;
+        if (command.type === 'BUZZER_PRESENCE' && (pending.size || latest.current?.phase !== 'round-intro')) {
+          logger.sampled?.('jeopardy.buzzer.presence-suppressed', { sessionId, reason: pending.size ? 'safety-report-pending' : 'left-ready' }, { maxPerMinute: 5, aggregate: true });
+          return false;
+        }
         try {
           const receipt = receipts.get(command);
           if (command.type !== 'BUZZER_PRESENCE') logger.info('jeopardy.buzzer.report-sent', { sessionId, type: command.type, teamId: command.teamId, slot: command.slot, epoch: token, generation: command.generation, kind: command.kind, commandId: receipt.commandId });

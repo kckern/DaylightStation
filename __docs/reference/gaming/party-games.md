@@ -417,7 +417,7 @@ Content may set `open_book: true` and add `scripture_reference: "Jeremiah 1:5"` 
 
 Restart preserves the same teams and their saved physical buzzer roles, clears the arbiter’s prior locks by remounting the experience, and moves both phone and TV to a fresh opening lobby. Confirm/cancel is available during play and completed results. TV results offer Exit; the phone host owns Restart game.
 
-For isolated browser acceptance, run `node tests/_lib/jeopardy-acceptance-server.mjs`, then set `BASE_URL` to its printed loopback URL before running the focused `fhe-jeopardy.runtime.test.mjs` browser suite. `BASE_URL` disables automatic backend startup. The harness mounts real Party Games TV/host surfaces, fonts, router, gaming diagnostic authority and WebSocket events; sessions are ephemeral and cleaned up by the tests. It starts no household services or durable games. The harness serves reviewed local authored art through the production gaming media service and does not exercise the outer screen renderer or physical kiosk/buzzer hardware.
+For isolated browser acceptance, run `node tests/_lib/jeopardy-acceptance-server.mjs`, then set `BASE_URL` to its printed loopback URL before running the focused `fhe-jeopardy.runtime.test.mjs` browser suite. `BASE_URL` disables automatic backend startup. The harness mounts real Party Games TV/host surfaces, fonts, router, gaming diagnostic authority and WebSocket events; sessions are ephemeral and cleaned up by the tests. The default diagnostic mode starts no household services or durable games. For durable acceptance, set `JEOPARDY_ACCEPTANCE_DURABLE=1 JEOPARDY_ACCEPTANCE_PORT=3337` and run `jeopardy-reliable-input.runtime.test.mjs` against its printed loopback URL. That mode uses real journal/checkpoint repositories and pinned definitions in a disposable temporary directory; shutdown removes it. It exposes only its installed Jeremiah catalog entry and reports isolation through `/__jeopardy_acceptance`. Set `GAMING_ACCEPTANCE_MEDIA_ROOT` to a read-only reviewed media directory to exercise real clips. The harness serves reviewed local authored art through the production gaming media service and does not exercise the outer screen renderer or physical kiosk/buzzer hardware.
 
 Embedded admin previews ignore ambient URL session attachments and leave the admin URL unchanged. Direct game routes validate attached definition identity against the requested pack.
 
@@ -434,22 +434,11 @@ zero. It is not exposed as a general phone workflow and never changes an
 in-progress/scored session. Unrelated authored `turns` packs retain that mode.
 
 
-Jeopardy hardware/readiness and gameplay commands share one local per-session
-write lane. Explicit revision conflicts refetch and retry against the server;
-semantic phase/epoch/generation checks still reject obsolete commands. Failed
-hardware facts remain pending for reconnect/periodic reconciliation. Presence
-cannot renew readiness while a safety report is unacknowledged, and bind/test
-feedback follows successful acknowledgment or verified committed state.
+New sessions persist `setup.jeopardy_input_version: 1`. Scoped commands capture the original phase, question, attempt, answerer, choosing team and Final progress. Known revisions avoid an extra GET. A lost acknowledgement retries the identical envelope; an explicit revision conflict updates only its revision while the captured context still matches. A stale question or answering turn refreshes the view and cannot retarget an old action. Missing protocol metadata preserves exact historical behavior. The host-only `ENABLE_RELIABLE_INPUT` command opts an idle, nonterminal session in explicitly.
 
-Accepted sound-bearing actions carry a small `acceptedAction` hint containing
-only normalized type, judgment correctness when applicable, and server revision.
-Only Start, tile selection, timeout and judgment advance that hint; presence and
-other silent commands preserve it. The TV establishes a silent baseline on its
-initial fetch, then plays each newly observed hint once through the existing
-Jeopardy cue map. Phone actions and local accepted actions use the same path;
-rejected requests, duplicate WebSocket snapshots and direct refresh do not replay
-cues. Existing phase theme/think/Daily Double/win behavior and audio files are
-unchanged.
+Client writes are organized by session and captured context, so an old outstanding request cannot discard the first press on a new clue. Server operations serialize per session. The local first-winner lock belongs to a stable question/attempt window; presence snapshots cannot reset it. Bound pads use independent controller identities, including identical model strings. Fresh observed release/repress edges remain eligible across window opening, while the separate unbound phantom guard prevents mirrored navigation. Early or held presses never buffer into a new attempt.
+
+The TV gives a valid candidate immediate, silent confirming feedback. Only accepted authority transitions produce gameplay sounds. Pending reports and rejected inputs remain silent. Initial attachment establishes a silent baseline; unseen retained v2 presentation events play once, with the older accepted-action hint as a compatibility fallback. The app owns audio across presenter/results, so the victory clip may finish; exit, restart and app unmount stop it. Music and clue media still stop when their presenter leaves. Audio receipts report actual ended/failed/stopped outcomes without delaying results or changing clip durations.
 
 ### Jeopardy family flow
 
@@ -459,6 +448,19 @@ The Ready screen guides each team through assignment and a fresh second press to
 
 After judgment, the answer stays visible until the host chooses Next question. A wrong ordinary hosted answer can reopen attempts only while the answer is hidden; revealing ends attempts. An active answerer must still be judged before advancing. A late timeout cannot erase that answerer. After the last first-round answer review, the host chooses Continue to Round 2 or Finish game; Finish keeps current scores and skips remaining rounds and Final.
 
-Daily Doubles belong exclusively to the selecting team. The team chooses an amount before the clue appears; the host sees the allowed range and the actual penalty policy. Family rounds with wrong-answer penalties disabled award the wager for a correct answer and deduct nothing for a wrong answer. Final wagers follow their separate existing scoring rules.
+Daily Doubles belong exclusively to the selecting team. The team chooses an amount before the clue appears; the host sees the allowed range and the actual penalty policy. New Jeremiah and Isaiah rounds explicitly set `daily_double_penalize_wrong: true`: correct adds the wager and wrong deducts it, even when ordinary wrong answers lose zero. Scores can go below zero. The phone previews the actual gain/loss for the selected amount. An absent DD flag retains historical inheritance from `penalize_wrong`; old pinned games keep their original scores and events. Final always adds or deducts its wager.
 
-Presentation cues follow accepted v2 transitions, retained in a bounded sequence of 32 safe events. Initial attachment is silent for historical stings; live snapshots deliver unseen retained cues once. Repeated setup presses, rejected commands and presence updates are silent. Structured buzzer-report and audio start/failure diagnostics identify the session, team and accepted revision when available; they do not contain question answers or controller credentials. A playback-start record confirms browser playback acceptance, not physical speaker audibility.
+Presentation cues follow accepted v2 transitions, retained in a bounded sequence of 32 safe events. Initial attachment is silent for historical stings; live snapshots deliver unseen retained cues once. Repeated setup presses, rejected commands and presence updates are silent. Structured buzzer-report and audio lifecycle diagnostics identify the session, team, window/command and accepted revision when available; they do not contain question answers or controller credentials. A playback-start record confirms browser playback acceptance, not physical speaker audibility.
+
+
+### Ready presence and storage recovery
+
+Ready renews its server lease every 5000ms only after the shared controller poller has observed the assigned hardware within 1000ms. The server lease remains 15000ms. Missing pads generate generation-checked disconnect facts and require retest; stale hardware shows a reconnect cue. Board, clue, judgment, review, wager, round decision and Final send no periodic presence commands. Pending disconnect facts can still retry during play, and no renewal can overwrite an unacknowledged safety report.
+
+The shared gaming coordinator verifies the creation checksum, every committed command/event and the pinned definition on cold recovery, yielding every 32 commands. Matching journal/checkpoint storage versions allow warm requests to use a bounded cache of verified state. Authorization still runs on every request. JSON checkpoints are atomic and retain all accepted-command receipts; an existing YAML checkpoint is read when JSON is absent and remains untouched on promotion. A failed checkpoint after a durable journal commit recovers through exact-envelope retry without duplicate scoring. Unknown changes or corruption invalidate the warm path and fail closed or recover through verified history.
+
+### Investigating buzzer and sound reports
+
+Query VictoriaLogs first (`/select/logsql/query`). For example, use `_time:24h _msg:~"jeopardy.buzzer|party-games.buzz|gaming.input"`, then filter `context.sessionId` or `data.sessionId` to the game. `jeopardy.buzzer.ready-state` reports blockers, fresh hardware facts, epoch, generation, slot and lease age. Pair `report-sent` with `report-result`, `report-unconfirmed`, `report-superseded` or `buzzer-report-failed` by command ID. Controller discovery/disconnection is reported separately by `gamepad.connected`, `gamepad.presence-changed` and `gamepad.disconnected`.
+
+For gameplay latency, query `_time:24h _msg:~"jeopardy.command|gaming.session.operation|jeopardy.cue-result|system.event-loop.lag"`. Operation metrics contain cache outcome, replayed command count and load/replay/append/checkpoint/project/total milliseconds. Input and arbiter suppression use sampled/aggregated reason counters; they do not emit one record per poll. Cue records distinguish browser playback acceptance from ended, failed, stopped or muted playback. Join session/revision with the command result; use only monotonic spans from the same process/page when measuring latency. Neither a play-start nor an ended event proves physical speaker audibility. Logs exclude answers, host tokens and QR payloads.

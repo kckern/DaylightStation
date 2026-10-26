@@ -29,7 +29,7 @@ function setup(goldModel = MODEL) {
   listeners.push(listener); window.addEventListener('gaming:interaction',listener);
   const adapter=new GamepadAdapter({emit:vi.fn()}); adapter._pollGamepad();
   const button=(gamepad,index,down)=>{gamepad.buttons[index]={pressed:down,value:Number(down)};adapter._pollGamepad();};
-  return {blue,gold,adapter,inputs,wins,button};
+  return {blue,gold,adapter,arbiter,inputs,wins,button};
 }
 it('eligible Gold receives A when ineligible Blue pressed A 20ms earlier on identical hardware', () => {
   const h=setup();h.button(h.blue,0,true);clock+=20;h.button(h.gold,0,true);
@@ -62,4 +62,9 @@ it('bound controller independence also holds with Gold polled before Blue', () =
   h.button(h.gold,0,true);clock+=20;h.button(h.blue,0,true);
   expect(h.wins).toEqual(['gold']);
   expect(h.inputs.filter(i=>i.phase==='press').map(i=>i.controller_id.split(':')[0])).toEqual(['2','1']);
+});
+it('accepts a fresh bound press just after a window opens even after an early press less than 50ms ago',()=>{
+ const h=setup();h.arbiter.disarm();h.button(h.gold,0,true);clock+=10;h.button(h.gold,0,false);
+ h.arbiter.arm(['gold']);clock+=10;h.button(h.gold,0,true);
+ expect(h.wins).toEqual(['gold']);
 });

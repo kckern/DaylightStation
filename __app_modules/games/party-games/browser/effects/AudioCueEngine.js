@@ -3,6 +3,8 @@
 import getLogger from '@/lib/logging/Logger.js';
 
 const DUCKED = 0.15;
+const ATTRIBUTION = new Set(['sessionId', 'revision', 'teamId', 'commandId', 'windowKey', 'controllerId', 'challengeId', 'roundIndex']);
+const now = () => globalThis.performance?.now?.() ?? Date.now();
 
 export class AudioCueEngine {
   constructor({ pack = 'classic', mute = false, audioFactory = (src) => new Audio(src) } = {}) {
@@ -10,6 +12,7 @@ export class AudioCueEngine {
     this.mute = mute;
     this.audioFactory = audioFactory;
     this.channels = { music: [], sfx: [], 'clue-media': [] };
+    this.playbacks = new WeakMap();
     this.log = getLogger().child({ component: 'party-games-audio' });
   }
 
@@ -19,36 +22,57 @@ export class AudioCueEngine {
   }
 
   play(cue, { channel = 'sfx', loop = false, pack = this.pack, volume = 1, context = {} } = {}) {
-    if (this.mute) return;
+    const attribution = { cue, channel, pack, ...Object.fromEntries(Object.entries(context).filter(([key]) => ATTRIBUTION.has(key))) };
+    if (this.mute) {
+      this.#trace({ ...attribution, result: 'suppressed', reason: 'muted' });
+      return { finished: Promise.resolve({ result: 'muted' }) };
+    }
+    const startedAt = now();
+    let audio, settled = false, resolve;
+    const finished = new Promise(done => { resolve = done; });
+    const settle = (result, reason) => {
+      if (settled) return;
+      settled = true;
+      this.channels[channel] = (this.channels[channel] || []).filter(item => item !== audio);
+      if (audio) this.playbacks.delete(audio);
+      if (channel === 'clue-media' && !this.channels[channel].length) this.#setChannelVolume('music', 1);
+      this.#trace({ ...attribution, result, ...(reason ? { reason } : {}), elapsedMs: Math.max(0, now() - startedAt) });
+      resolve({ result, ...(reason ? { reason } : {}) });
+    };
     try {
-      // served by the party-games router's /media route (raw /media/* is not served)
-      const audio = this.audioFactory(`/api/v1/gaming/media/${pack}/${cue}.mp3`);
+      audio = this.audioFactory(`/api/v1/gaming/media/${pack}/${cue}.mp3`);
       audio.loop = loop;
       const requestedVolume = Number(volume);
       audio.volume = Number.isFinite(requestedVolume) ? Math.max(0, Math.min(1, requestedVolume)) : 1;
       (this.channels[channel] ||= []).push(audio);
+      this.playbacks.set(audio, { settle });
       if (channel === 'clue-media') this.#setChannelVolume('music', DUCKED);
-      const attribution = { cue, channel, pack, ...context };
-      const release = () => {
-        this.channels[channel] = (this.channels[channel] || []).filter(item => item !== audio);
-        if (channel === 'clue-media' && !this.channels[channel].length) this.#setChannelVolume('music', 1);
-      };
-      audio.addEventListener?.('ended', release, { once: true });
-      audio.addEventListener?.('error', () => { release(); this.log.warn('jeopardy.cue-result', { ...attribution, result: 'failed', reason: 'media-error' }); }, { once: true });
-      const p = audio.play();
-      p?.then?.(() => this.log.info('jeopardy.cue-result', { ...attribution, result: 'started' }), () => {});
-      p?.catch?.((err) => { release(); this.log.warn('jeopardy.cue-result', { ...attribution, result: 'failed', reason: err.message }); });
-    } catch (err) {
-      this.log.warn('party-games.audio.error', { cue, channel, pack, ...context, error: err.message });
-    }
+      audio.addEventListener?.('ended', () => settle('ended'), { once: true });
+      audio.addEventListener?.('error', () => settle('failed', 'media-error'), { once: true });
+      const started = () => { if (!settled) this.#trace({ ...attribution, result: 'started', elapsedMs: Math.max(0, now() - startedAt) }); };
+      const promise = audio.play();
+      if (promise?.then) promise.then(started, error => settle('failed', error.message));
+      else started();
+    } catch (error) { settle('failed', error.message); }
+    return { finished };
   }
 
-  stopChannel(channel) {
-    for (const audio of this.channels[channel] || []) {
+  #trace(fields) {
+    try { this.log[fields.result === 'failed' ? 'warn' : 'info']('jeopardy.cue-result', fields); }
+    catch { /* Logging must not interrupt playback or leave a receipt pending. */ }
+  }
+
+  stopChannel(channel, { reason = 'channel-stopped' } = {}) {
+    for (const audio of [...(this.channels[channel] || [])]) {
       try { audio.pause(); } catch { /* ignore */ }
+      this.playbacks.get(audio)?.settle('stopped', reason);
     }
     this.channels[channel] = [];
     if (channel === 'clue-media') this.#setChannelVolume('music', 1);
+  }
+
+  stopAll(reason = 'owner-exit') {
+    for (const channel of Object.keys(this.channels)) this.stopChannel(channel, { reason });
   }
 
   duck(channel) { this.#setChannelVolume(channel, DUCKED); }

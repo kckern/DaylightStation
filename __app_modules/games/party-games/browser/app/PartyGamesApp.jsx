@@ -20,6 +20,7 @@ import { saveBuzzerBindings, loadBuzzerBindings, forgetBuzzerBindings } from "./
 import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import EffectOverlay from "../effects/EffectOverlay.jsx";
 import PartyGamesExperience from "./PartyGamesExperience.jsx";
+import { AudioCueEngine } from "../effects/AudioCueEngine.js";
 import PartyStage from "../../../../../__capabilities/gaming/browser/platform/ui/PartyStage.jsx";
 import GameButton from "../../../../../__capabilities/gaming/browser/platform/ui/GameButton.jsx";
 import CompanionPanel from "../../../../../__capabilities/gaming/browser/platform/ui/CompanionPanel.jsx";
@@ -66,6 +67,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const shellExit = dismiss || clear;
   const rootRef = useRef(null);
   const creation = useRef(null);
+  const audioRef = useRef(null);
+  const completedSession = useRef(null);
+  const currentSession = useRef(null);
   const [launch] = useState(() => {
     const raw = definitionId || param || appPath || '';
     const queryIndex = raw.indexOf('?');
@@ -103,6 +107,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     window.history.replaceState({}, '', returnTo);
   }, [returnTo]);
   const exit = useCallback(() => {
+    audioRef.current?.stopAll('app-exit');
     if (needsDocumentReturn) {
       window.location.replace(returnTo);
       return;
@@ -124,6 +129,10 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return { diagnosticSessionId, sessionId: explicitSessionId || savedSessionId, savedSession: Boolean(savedSessionId) };
   });
   const [flow, dispatchFlow] = useReducer(flowReducer, initialFlowState);
+  currentSession.current = flow.sessionId;
+  const audio = useMemo(() => new AudioCueEngine({ pack: flow.config?.sounds?.pack, mute: flow.config?.defaults?.mute }), [flow.config?.sounds?.pack, flow.config?.defaults?.mute]);
+  audioRef.current = audio;
+  useEffect(() => () => audio.stopAll('owner-unmount'), [audio]);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [confirmExit, setConfirmExit] = useState(false);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
@@ -178,6 +187,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     const activeId = flow.sessionId || attachment.diagnosticSessionId || attachment.sessionId;
     if (!replacement || sourceId !== activeId || restarting.current === sourceId) return;
     restarting.current = sourceId;
+    audioRef.current?.stopAll('session-restart');
     logger.info('party-games.session-restarting', {sessionId: flow.sessionId, replacementSessionId: replacement});
     // Team IDs survive restart; carry hardware roles into the newly keyed arbiter.
     const bindings = flow.buzzerBindings ?? loadBuzzerBindings(sourceId);
@@ -300,12 +310,18 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
   }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch, friendlyPath]);
   const playAgain = () => {
+    audio.stopAll('game-restart');
     creation.current = null;
     try { if (flow.definitionId) window.localStorage.removeItem(activeSessionKey(flow.definitionId)); } catch { /* continue */ }
     restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' });
   };
 
-  const onComplete = useCallback((result) => { dispatchFlow({ type: 'GAME_FINISHED', result }); }, []);
+  const onComplete = useCallback((result) => {
+    const sessionId = flow.sessionId;
+    if (!sessionId || currentSession.current !== sessionId || completedSession.current === sessionId) return;
+    completedSession.current = sessionId;
+    dispatchFlow({ type: 'GAME_FINISHED', result });
+  }, [flow.sessionId]);
 
   const isJeopardy = flow.presenterId === 'jeopardy-board';
   const Game = EXPERIENCE_REGISTRY[flow.presenterId]?.component;
@@ -357,6 +373,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
               sessionId={flow.sessionId}
               buzzerBindings={buzzerBindings}
               config={flow.config}
+              audio={audio}
               registerBackAction={registerBackAction}
               registerForwardAction={registerForwardAction}
               registerRemoteAction={registerRemoteAction}

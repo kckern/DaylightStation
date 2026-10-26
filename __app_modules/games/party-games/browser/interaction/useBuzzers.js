@@ -1,9 +1,8 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { BuzzerArbiter } from "./BuzzerArbiter.js";
 
-const log = () => getLogger().child({ component: 'party-games-buzzers' });
 
 /**
  * Wires buzz sources into a BuzzerArbiter:
@@ -13,7 +12,8 @@ const log = () => getLogger().child({ component: 'party-games-buzzers' });
  *    from a team-bound controller as a semantic `gaming:interaction` press)
  * onLock(teamId) fires exactly once per armed window.
  */
-export function useBuzzers({ teams, onLock }) {
+export function useBuzzers({ teams, onLock, sessionId }) {
+  const logger = useMemo(() => getLogger().child({ component: 'party-games-buzzers', ...(sessionId ? { sessionId } : {}) }), [sessionId]);
   const inputListeners = useRef(new Set());
   const arbiterRef = useRef(null);
   if (!arbiterRef.current) arbiterRef.current = new BuzzerArbiter(teams);
@@ -26,7 +26,7 @@ export function useBuzzers({ teams, onLock }) {
     const arbiter = arbiterRef.current;
     if (arbiter.bindingTeamId) {
       if (arbiter.handleBindPress(slot)) {
-        log().info('party-games.buzzer.bound', { slot, source });
+        logger.info('party-games.buzzer.bound', { slot, source });
         setBindingTeamId(null);
       }
       return;
@@ -34,13 +34,13 @@ export function useBuzzers({ teams, onLock }) {
     const decision = arbiter.tryBuzz(slot);
     const teamId = decision.teamId;
     if (decision.accepted) {
-      log().info('party-games.buzz.locked', { slot, teamId, source });
+      logger.info('party-games.buzz.locked', { slot, teamId, source, controllerId: source === 'gamepad' ? slot.slice('gamepad:'.length) : undefined, windowKey: arbiter.windowKey, decision: 'candidate' });
       setLocked(teamId);
       onLockRef.current?.(teamId);
     } else {
-      log().sampled?.('party-games.buzz.decision', {slot,source,teamId,windowKey:arbiter.windowKey,reason:decision.reason}, {maxPerMinute:10,aggregate:true});
+      logger.sampled?.('party-games.buzz.decision', {slot,source,teamId,windowKey:arbiter.windowKey,decision:'rejected',reason:decision.reason}, {maxPerMinute:10,aggregate:true});
     }
-  }, []);
+  }, [logger]);
 
   useWebSocketSubscription('gaming', (msg) => {
     if (msg?.kind === 'buzz' && msg.slot) handleSlot(msg.slot, 'ws');

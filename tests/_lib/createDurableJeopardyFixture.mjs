@@ -10,10 +10,10 @@ import { YamlGamingDefinitionStore } from '../../__app_modules/games/party-games
 import { GamingApplication } from '../../__app_modules/games/party-games/server/application/runtime/GamingApplication.mjs';
 import { jeopardyRuleModule } from '../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs';
 
-export async function createDurableJeopardyFixture({ clock = { now: () => new Date() }, definition = null } = {}) {
+export async function createDurableJeopardyFixture({ clock = { now: () => new Date() }, definition = null, definitionId = 'jeopardy:test' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'jeopardy-authority-'));
   const source = definition || YAML.parse(fs.readFileSync(fileURLToPath(new URL('../_fixtures/group-play/jeremiah-open-book.yml', import.meta.url)), 'utf8'));
-  const id = 'jeopardy:test';
+  const id = definitionId;
   const directory = path.join(root, 'definitions', id); fs.mkdirSync(directory, { recursive: true });
   const { rule_module = { id: 'jeopardy', version: 1 }, experience = { id: 'jeopardy', version: 1 }, artifact: _artifact, ...content } = source;
   fs.writeFileSync(path.join(directory, 'rules.yml'), YAML.stringify({ artifact: { kind: 'gaming-rules', version: 1, id }, rule_module, experience }));
