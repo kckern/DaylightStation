@@ -2315,7 +2315,8 @@ const Player = forwardRef(function Player(props, ref) {
   }, [cancelPendingRendererOperation, issueOwnerRevision, acceptRecoveryIntent]);
 
   const playOwner = useCallback(() => {
-    if (ownerStoppedRef.current) beginRecoveryVisit();
+    const restarting = ownerStoppedRef.current;
+    if (restarting) beginRecoveryVisit();
     acceptRecoveryIntent('play');
     ownerStoppedRef.current = false;
     issueOwnerRevision({ playback: true });
@@ -2325,11 +2326,31 @@ const Player = forwardRef(function Player(props, ref) {
       setTargetTimeSeconds(0);
       return { ok: true };
     }
+    const format = effectiveMeta?.format ?? activeSource?.format;
+    const live = effectiveMeta?.isLive === true || activeSource?.isLive === true;
+    if (restarting && mountedMediaRegistrationRef.current?.node && !live
+      && ['audio', 'video', 'hls_video', 'dash_video'].includes(format)) {
+      // A new visit commits a fresh native binding. Retired callbacks remain
+      // tied to the stopped visit instead of inheriting this Play's target.
+      const observerIds = [...mountedOperationObserversRef.current.keys()];
+      return beginRendererBoundary({
+        operationId: `owner-restart-${++rendererOperationSequenceRef.current}`,
+        expectedContentId: mountedMediaRegistrationRef.current.resolvedContentId ?? completionAssetId,
+        targetSeconds: effectiveMeta?.segment?.start ?? 0,
+        autoplay: true,
+        requiredObserverIds: observerIds,
+        requireObserver: observerIds.length > 0,
+        source: 'owner-stop-restart',
+        format,
+      });
+    }
     return withTransport(
       (api) => api.play?.(),
       () => _getMediaElFallback()?.play?.(),
     );
-  }, [issueOwnerRevision, withTransport, playQueue, queueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, beginRecoveryVisit, acceptRecoveryIntent]);
+  }, [issueOwnerRevision, withTransport, playQueue, queueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, beginRecoveryVisit, acceptRecoveryIntent,
+    effectiveMeta?.format, effectiveMeta?.isLive, effectiveMeta?.segment?.start, activeSource?.format, activeSource?.isLive,
+    beginRendererBoundary, completionAssetId]);
 
   const pauseOwner = useCallback(() => {
     acceptRecoveryIntent('pause');

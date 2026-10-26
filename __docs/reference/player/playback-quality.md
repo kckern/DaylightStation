@@ -177,6 +177,9 @@ Pause, play, and seek retain completion ownership for the current native node.
 A renderer replacement claim retires the prior terminal target; old-node
 callbacks stay rejected while a replacement resolves and after newer controls.
 Stop supersedes pending terminal events without spending a recovery attempt.
+Playing a stopped finite audio/video item starts a new visit through the
+existing renderer boundary, with a fresh native binding at zero or the authored
+clip start. The clip window survives a fresh full-item transport descriptor.
 Without a catalog or clip end, ordinary EOF remains available and records
 `completion-unverified`; this does not validate the whole film.
 

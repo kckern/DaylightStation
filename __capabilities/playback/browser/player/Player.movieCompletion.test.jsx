@@ -24,10 +24,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); _setSharedLedgerForTests(null); vi.useRealTimers(); vi.restoreAllMocks(); });
 
-async function mount({ timeline = full, segment, seconds = 4320, catalogDuration = 5895, repeat } = {}) {
+async function mount({ timeline = full, segment, seconds = 4320, catalogDuration = 5895, repeat, format = 'video' } = {}) {
   const resolved = { id: 'files:movie', assetId: 'files:movie', contentId: 'files:movie', title: 'Movie',
-    mediaType: 'video', format: 'video', mediaUrl: '/movie.mp4?offset=4320', duration: catalogDuration,
-    contentTimeline: timeline };
+    mediaType: format, format, mediaUrl: format === 'audio' ? '/track.mp3' : '/movie.mp4?offset=4320', duration: catalogDuration,
+    ...(format === 'audio' ? {} : { contentTimeline: timeline }) };
   DaylightAPI.mockImplementation(async path => String(path).includes('/queue/') ? { items: [resolved] } : String(path).includes('/play/') ? resolved : {});
   const completed = vi.fn();
   const held = vi.fn();
@@ -44,7 +44,7 @@ async function mount({ timeline = full, segment, seconds = 4320, catalogDuration
     config: { shuffle: false, repeat, volume: 50, playbackRate: 1, shader: null },
     meta: { ownerId: 'test', updatedAt: '2026-10-26T00:00:00.000Z' },
   }, { autoplay: true }));
-  const node = view.container.querySelector('video');
+  const node = ref.current.getMediaElement();
   expect(node).toBeTruthy();
   Object.defineProperties(node, {
     currentTime: { configurable: true, writable: true, value: seconds },
@@ -295,6 +295,53 @@ describe('movie terminal candidates through Player, SinglePlayer and native cont
     expect(node.currentTime).toBe(0);
     emit(node, 'ended', 0);
     expect(completed).not.toHaveBeenCalled();
+    expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
+  });
+
+  it.each([
+    ['audio', false], ['audio', true], ['video', false], ['video', true],
+  ])('starts a fresh %s visit after Stop→Play and completes its clip=%s exactly once', async (format, clip) => {
+    const listeners = vi.spyOn(HTMLMediaElement.prototype, 'addEventListener');
+    const segment = clip ? { start: 10, end: 20 } : undefined;
+    const { node, ref, completed, clear } = await mount({ format, segment,
+      seconds: clip ? 10 : 0, catalogDuration: 100, timeline: { ...full, expectedEndSeconds: 100 } });
+    const oldEnded = listeners.mock.calls.flatMap(([type, listener], index) =>
+      type === 'ended' && listeners.mock.contexts[index] === node ? [listener] : []).at(-1);
+    expect(oldEnded).toBeTypeOf('function');
+    expect(ref.current.getMountedMediaRegistration()?.node).toBe(node);
+    const before = ref.current.getRecoveryTarget();
+    const queue = ref.current.getQueueSnapshot();
+    act(() => ref.current.stop());
+    expect(node.currentTime).toBe(0);
+    await act(async () => ref.current.play());
+    const fresh = ref.current.getMediaElement();
+    expect(fresh).toBeTruthy();
+    expect(ref.current.getRecoveryTarget().visitId).not.toBe(before.visitId);
+    // This queued signal belongs to the visit Stop superseded, even though
+    // the current content id and later Play intent are unchanged.
+    node.currentTime = 100;
+    act(() => oldEnded(new Event('ended')));
+    expect(completed).not.toHaveBeenCalled();
+    Object.defineProperties(fresh, {
+      currentTime: { configurable: true, writable: true, value: 0 },
+      duration: { configurable: true, value: 100 },
+      readyState: { configurable: true, value: 4 },
+      paused: { configurable: true, writable: true, value: false },
+      ended: { configurable: true, writable: true, value: false },
+    });
+    act(() => { fresh.dispatchEvent(new Event('durationchange')); fresh.dispatchEvent(new Event('loadedmetadata')); });
+    expect(fresh.currentTime).toBe(clip ? 10 : 0);
+    if (clip) {
+      act(() => { fresh.dispatchEvent(new Event('seeking')); fresh.dispatchEvent(new Event('seeked')); });
+      emit(fresh, 'timeupdate', 20);
+    } else emit(fresh, 'ended', 100);
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(fresh).not.toBe(node);
+    expect(ref.current.getQueueSnapshot()).toEqual(queue);
+    emit(fresh, 'ended', clip ? 20 : 100);
+    act(() => oldEnded(new Event('ended')));
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledTimes(1);
     expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
   });
 

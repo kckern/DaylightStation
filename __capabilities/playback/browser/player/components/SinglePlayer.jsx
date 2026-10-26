@@ -44,16 +44,19 @@ export function SinglePlayer(props = {}) {
   const resolveTracksRef = useRef(resolveTracks);
   resolveTracksRef.current = resolveTracks;
   const withTracks = (info) => {
-    const descriptor = info.contentTimeline;
+    // The owner-authored clip survives a fresh transport descriptor, which
+    // describes the full item when restarting the same content.
+    const resolvedInfo = play?.segment ? { ...info, segment: play.segment } : info;
+    const descriptor = resolvedInfo.contentTimeline;
     const isVideo = ['video', 'hls_video', 'dash_video'].includes(info.format)
       || ['video', 'hls_video', 'dash_video'].includes(info.mediaType);
-    const normalized = isVideo ? { ...info, contentTimeline: createContentTimeline({
+    const normalized = isVideo ? { ...resolvedInfo, contentTimeline: createContentTimeline({
       catalogDurationSeconds: descriptor ? descriptor.expectedEndSeconds : info.duration,
       rendererStartSeconds: descriptor?.rendererStartSeconds,
       contentStartSeconds: descriptor?.contentStartSeconds,
-      clipStartSeconds: info.segment?.start ?? descriptor?.clipStartSeconds,
-      clipEndSeconds: info.segment?.end ?? descriptor?.clipEndSeconds,
-    }) } : info;
+      clipStartSeconds: resolvedInfo.segment?.start ?? descriptor?.clipStartSeconds,
+      clipEndSeconds: resolvedInfo.segment?.end ?? descriptor?.clipEndSeconds,
+    }) } : resolvedInfo;
     return typeof resolveTracksRef.current === 'function' ? resolveTracksRef.current(normalized) ?? normalized : normalized;
   };
   const {
