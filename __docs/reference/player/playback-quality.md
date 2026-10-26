@@ -222,3 +222,50 @@ construction, copyable-source enforcement, selected local/remote dispatch,
 receiver acknowledgements, stale targets, and a real PlayerBridge decoder
 replacement retaining a paused full-timeline position. They do not constitute
 production acceptance or measured stream-quality verification.
+
+## Fragment delivery observations
+
+VideoPlayer reports optional `onDeliveryObservation(observation)` callbacks
+through SinglePlayer and Player. DASH observations use actual media segment
+start/completion/abandon events; HLS uses fragment/part load, load failure, and
+abort events. Manifest, initialization, buffer-stall and health-probe events
+supply no fragment timing. Native HLS and original native video can recover
+without any delivery observations. A completed transfer or successful health
+probe does not establish healthy media playback or diagnose its root cause.
+
+Each request captures the full recovery target at start:
+`ownerId`, `visitId`, `intentRevision`, and `rendererGeneration`. The observation
+keeps that target, a binding-specific `requestId`, and increasing `sequence`.
+Unmatched starts, duplicate terminal events, superseded targets, and outgoing
+engine/source callbacks are discarded. Intent changes on a retained node do
+not recreate the engine for telemetry; new requests may capture the new intent.
+
+`normalizeDeliveryObservation(engine, event, context)` normalizes terminal
+fragment evidence. Context supplies the captured target, request ID, sequence,
+and `{wallMs, monotonicMs}` clock mapping. DASH runtime request dates map to
+browser monotonic milliseconds; HLS loading stats already use that clock.
+`requestStartMs`, `firstByteMs`, and `endMs` remain separate. Derived
+`firstByteDurationMs`, `transferDurationMs`, and `requestDurationMs` describe
+only observed active requests, never scheduler gaps. Missing fields stay null.
+The installed DASH runtime uses `endDate`; its synthesized first-byte fallback
+(equal to start time) is treated as unknown. Internal DASH retry timing describes
+the final attempt, with its retry count retained; earlier attempt timing and HTTP
+status are unavailable from these fragment events. HLS default zero timing
+fields are unknown. If HLS replaces loader stats after a key-gated start,
+unmatched attempt telemetry is discarded rather than assigned a new identity.
+
+The source-bound `createDeliveryObserver` adds
+`newlyDeliveredMediaSeconds`: the positive-byte completed interval union delta,
+separately for audio/video and each full target. Retries, repeated completions,
+and overlapping fragments cannot count an interval twice. Empty Plex warmup
+responses remain observable with zero bytes and zero credited media; missing
+bytes or interval values yield null credit. Failed and aborted requests credit
+zero. Intervals represent delivered media, not decoded or presented frames.
+Pathological histories beyond 512 disjoint intervals per kind retain unknown
+credit instead of forgetting intervals and double-counting them.
+
+Player emits sampled `playback.delivery-observation` summaries (at most twelve
+per minute). They contain hashed owner/visit keys, numeric generation/intent,
+request sequence, timing, byte/status/retry values and interval credit. They
+exclude source URLs, credentials and raw owner/visit tokens. Full target tokens
+remain inside the observation callback for owner validation.

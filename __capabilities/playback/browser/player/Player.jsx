@@ -1,3 +1,4 @@
+import { deliveryObservationSummary } from './lib/recovery/deliveryObservation.js';
 import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from './lib/recovery/recoveryIdentity.js';
 import { getRecoveryLedger } from './lib/recoveryLedger.js';
 import { createContentTimeline, toContentSeconds, readContentPosition, validateMovieCompletion } from './lib/recovery/contentTimeline.js';
@@ -936,6 +937,13 @@ const Player = forwardRef(function Player(props, ref) {
     const unsubscribe = subscribeTrackOwners(sync);
     return () => { unsubscribe(); if (timer) clearInterval(timer); };
   }, [playerInstanceId, currentTrackState]);
+
+  const handleDeliveryObservation = useCallback((observation) => {
+    if (!observation || !sameRecoveryTarget(observation.target, recoveryIdentity.getTarget())) return;
+    getLogger().sampled('playback.delivery-observation', deliveryObservationSummary(observation),
+      { maxPerMinute: 12, aggregate: true });
+    props.onDeliveryObservation?.(observation);
+  }, [recoveryIdentity, props.onDeliveryObservation]);
 
   const handlePlaybackMetrics = useCallback((metrics = {}) => {
     const metricSeconds = Number(metrics.seconds);
@@ -2912,6 +2920,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResolvedMeta: handleResolvedMeta,
     resolveTracks,
     onPlaybackMetrics: handlePlaybackMetrics,
+    onDeliveryObservation: handleDeliveryObservation,
     onRegisterMediaAccess: rendererRegistration.onRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onRequestRecovery: handleRequestRecovery,
@@ -3036,6 +3045,7 @@ const Player = forwardRef(function Player(props, ref) {
 });
 
 Player.propTypes = {
+  onDeliveryObservation: PropTypes.func,
   play: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
   queue: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
   clear: PropTypes.func,

@@ -21,6 +21,7 @@ export function SinglePlayer(props = {}) {
   const {
     onResolvedMeta,
     onPlaybackMetrics,
+    onDeliveryObservation,
     onRegisterMediaAccess,
     onRegisterResilienceBridge,
     onRequestRecovery,
@@ -437,6 +438,7 @@ export function SinglePlayer(props = {}) {
 
   const resilienceBridge = useMemo(() => ({
     onPlaybackMetrics,
+    onDeliveryObservation,
     onRegisterMediaAccess,
     onTerminalCandidate,
     held: recoveryHeld,
@@ -457,7 +459,7 @@ export function SinglePlayer(props = {}) {
     // New: accessors that delegate to registered functions
     getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
     getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
-  }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, onTerminalCandidate, recoveryHeld, resilienceSessionKey, recoveryIdentity]);
+  }), [onPlaybackMetrics, onDeliveryObservation, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onRequestRecovery, onTerminalCandidate, recoveryHeld, resilienceSessionKey, recoveryIdentity]);
 
   // Register the resilienceBridge with the parent Player component
   useEffect(() => {
@@ -525,6 +527,7 @@ export function SinglePlayer(props = {}) {
           onMediaRef={onMediaRef}
           keyboardOverrides={play?.keyboardOverrides}
           onController={play?.onController}
+          onDeliveryObservation={onDeliveryObservation}
           resilienceBridge={resilienceBridge}
           maxVideoBitrate={mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null}
           maxResolution={mediaInfo?.maxResolution ?? play?.maxResolution ?? null}
@@ -638,6 +641,7 @@ SinglePlayer.propTypes = {
   wrapWithContainer: PropTypes.bool,
   onResolvedMeta: PropTypes.func,
   onPlaybackMetrics: PropTypes.func,
+  onDeliveryObservation: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
   onRegisterResilienceBridge: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,
