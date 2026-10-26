@@ -15,6 +15,20 @@ const expectation = (events, extra = {}) => compileAssessmentExpectation({
   source: { kind: 'chart', id: 'test' }, events, ...extra,
 });
 
+describe('timed input integrity', () => {
+  it('ends a held-only timed observation as an operational error without charging a wrong note', () => {
+    const started = startAssessmentAttempt(createAssessmentAttempt({
+      matcher: 'timed', mode: 'cued',
+      expectation: expectation([{ id: 'chord', notes: [{ midi: 60, part: 'rh' }, { midi: 48, part: 'lh' }] }], { bpm: 60 }),
+    }), { time: 1000, clock: 'date-now' });
+    const observed = observeAssessment(started, { held: new Map([[60, {}], [48, {}]]), time: 1000, clock: 'date-now' });
+    expect(observed.event).toMatchObject({ type: 'integrity_error', reason: 'timed-onset-required' });
+    expect(observed.attempt.wrong).toHaveLength(0);
+    expect(observed.attempt.result).toMatchObject({ status: 'error', validity: 'invalid' });
+    expect(observed.attempt.result.verdict).toBeUndefined();
+  });
+});
+
 describe('canonical compilation', () => {
   it('maps score staves, filters active parts, preserves rests and ties', () => {
     const compiled = compileScoreExpectation({

@@ -321,6 +321,15 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
   const input = eventTime(attempt, midiOrHeldEvent);
   if (attempt.clock != null && input.clock == null) return ignored(attempt, 'missing_clock', input);
   if (attempt.clock != null && input.clock !== attempt.clock) return ignored(attempt, 'wrong_clock', input);
+  // A held set is useful to the cursor/chord matchers, but cannot represent
+  // an attack on the timed clock. Never charge NaN as a child's wrong pitch.
+  if (attempt.matcher === 'timed' && (!Number.isInteger(input.midi) || input.midi < 0 || input.midi > 127)) {
+    const failed = finalizeAssessmentAttempt(attempt, { status: 'error' });
+    return {
+      attempt: { ...failed, result: { ...failed.result, validity: 'invalid', error: 'timed-onset-required' } },
+      event: { type: 'integrity_error', reason: 'timed-onset-required' },
+    };
+  }
   if (!Number.isFinite(input.midi) && !input.held) return ignored(attempt, 'invalid_input', input);
   if (attempt.matcher === 'timed' && !Number.isFinite(input.time)) return ignored(attempt, 'missing_time', input);
   if (Number.isFinite(input.time) && input.time < attempt.startedAt) return ignored(attempt, 'before_start', input);

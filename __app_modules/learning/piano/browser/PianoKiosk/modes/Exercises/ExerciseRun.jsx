@@ -348,7 +348,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -570,6 +570,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       now: () => Date.now(),
       tickMs: 50,
       onEvent: (event, state, previous) => {
+        if (event.type === 'integrity_error') {
+          logger.warn('piano.exercise-input-integrity', { reason: event.reason, assessmentId: assessmentIdRef.current });
+          setUnrunnable(event.reason);
+        }
         setLastWrong(wrongEventState(event));
         // Fold this observation into the hunt BEFORE tracing it, so a rung and
         // the observation that earned it carry the same cursor.
@@ -700,7 +704,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       prompt: { exercise_id: subject.id, label: subject.title, mode: selectedMode, level: subject.level?.[selectedMode] ?? null },
       context: { surface: 'exercises', matcher: runtimeRef.current?.getSnapshot().matcher ?? null, program_id: programId, step_id: stepId },
       gradingPolicyVersion: result?.rubric?.id ?? 'exercise-interrupted-v2',
-      providerVersion: 'exercise-runtime-v4',
+      providerVersion: 'exercise-runtime-v5-onsets',
     });
     // WHOSE ATTEMPT THIS WAS. Every other event on this surface goes through
     // `traceEvent` and carries the learner; these two were plain `logger.info`
@@ -812,7 +816,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // happened. Reported AFTER the resolve hold, so the last note's verdict is
     // on screen first.
     if (!passed) {
-      const result = snapshot.result;
+      const result = { ...snapshot.result, assessmentId: assessmentIdRef.current };
       holdResolve('failed', () => onFailedRef.current?.(result), Boolean(onFailedRef.current));
     }
   }, [challenge, traceEvent, persist, resultReady, runRequirement, snapshot, subject, holdResolve]);
@@ -1026,6 +1030,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     });
   }, [clickLead, countIn, runtime, traceEvent]);
 
+  useEffect(() => {
+    if (startOnReady && runtime && snapshot.status === 'prepared' && snapshot.mode === 'cued' && !snapshot.paused) startCountIn();
+  }, [startOnReady, runtime, snapshot.status, snapshot.mode, snapshot.paused, startCountIn]);
+
   /**
    * The notes that can arm a free ask: the pitches of the event the cursor is
    * sitting on. For a single-note ask that is "the first expected note". For a
@@ -1195,7 +1203,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       return;
     }
     if (snapshot.status !== 'running') return;
-    if (snapshot.matcher === 'held' || snapshot.policy?.requireConcurrentOnset === true) {
+    if (snapshot.matcher === 'held' || (snapshot.matcher === 'cursor' && snapshot.policy?.requireConcurrentOnset === true)) {
       if (lastHeldObservedRef.current === heldKey) return;
       lastHeldObservedRef.current = heldKey;
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });

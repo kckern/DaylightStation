@@ -107,6 +107,42 @@ describe('a timed run paints the judge, not the held key', () => {
   });
   afterEach(() => { view?.unmount(); vi.useRealTimers(); });
 
+  it('starts the count-in from a deliberate host start without consuming an arming note', () => {
+    view = render(<ExerciseRun {...props} startOnReady />);
+    expect(document.querySelector('.piano-exercise-run').dataset.phase).toBe('countdown');
+    expect(h.activeNotes.size).toBe(0);
+  });
+
+  it('credits co-arriving hands in a concurrent Learn timed task without grading releases', async () => {
+    const paired = { ...INSTANCE, events: [60, 62, 64, 65].map((midi, i) => ({
+      id: `pair-${i}`, value: 'quarter', notes: [{ midi, hand: 'right' }, { midi: midi - 12, hand: 'left' }],
+    })) };
+    const pairProps = { ...props, instance: paired, practiceRequirement: {
+      mode: 'cued', policy: { requireConcurrentOnset: true },
+      rubric: { criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 } },
+    } };
+    const update = () => view.rerender(<ExerciseRun {...pairProps} />);
+    view = render(<ExerciseRun {...pairProps} />);
+    armedAt = Date.now() + CLICK_PREROLL_MS;
+    act(() => { h.activeNotes = new Map([[55, { timestamp: Date.now() }]]); update(); });
+    act(() => { h.activeNotes = new Map(); update(); });
+    for (const [index, midi] of [60, 62, 64, 65].entries()) {
+      advanceTo(LEAD_IN_MS + index * GAP_MS + 10);
+      act(() => {
+        h.activeNotes = new Map([[midi, { timestamp: Date.now() }], [midi - 12, { timestamp: Date.now() }]]);
+        update();
+      });
+      advance(30);
+      act(() => { h.activeNotes = new Map(); update(); });
+    }
+    advanceTo(LEAD_IN_MS + 4 * GAP_MS + 100);
+    await act(async () => {});
+    expect(h.record).toHaveBeenCalled();
+    const result = h.record.mock.calls[0][1];
+    expect(result.diagnostics).toMatchObject({ expected_notes: 8, matched_notes: 8, wrong_notes: 0, missed_notes: 0 });
+    expect(result.verdict.passed).toBe(true);
+  });
+
   it('a child ~450 ms late on every note sees amber ▸ — never green — and is told they were late', async () => {
     mountAndArm();
     const midis = [60, 62, 64, 65];

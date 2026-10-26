@@ -48,7 +48,7 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -224,6 +224,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
+      startOnReady={startOnReady}
       persistInterrupted={false}
       scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
       failurePresentation="local" onExit={onClose} onPassed={settle}

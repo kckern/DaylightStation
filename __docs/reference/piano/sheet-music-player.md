@@ -624,6 +624,12 @@ representative pitch: top-staff highest, else overall highest.
 
 ## Telemetry (logs-only)
 
+Timed Learn input is dispatched as individual note attacks with the original MIDI
+timestamp, including when both hands are selected. Held-key snapshots belong to
+the cursor/chord matchers. A malformed timed observation ends as an operational
+error (`piano.exercise-input-integrity`), never as a wrong pitch. Corrected
+assessment evidence uses provider `exercise-runtime-v5-onsets`.
+
 All timing goes through the logging framework (`component: 'piano-score-player'`;
 geometry counts under `osmd-render`), measured with `performance.now()` and
 stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collection
