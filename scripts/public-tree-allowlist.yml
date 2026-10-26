@@ -50,6 +50,8 @@ largeText:
   - __app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/ScorePlayer.test.jsx
   - __app_modules/learning/school/browser/Programs/SentenceLadder/SentenceLadderProgram.test.jsx
   - __app_modules/learning/school/browser/School.scss
+  # Authored teacher-console styles; source is retained, not a generated/data blob.
+  - __app_modules/learning/school/browser/teacher/Teacher.scss
   - __app_modules/learning/school/server/adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs
   - __app_modules/media/media/browser/surround/modules/SegmentMap.jsx
   - __app_modules/media/media/browser/surround/modules/SegmentMap.test.jsx

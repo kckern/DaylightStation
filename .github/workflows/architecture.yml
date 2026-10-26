@@ -21,8 +21,10 @@ jobs:
           cache: npm
       # Static checks need only the root tooling dependencies. Do not invoke
       # application setup, native package installers, or household services.
+      # Match the peer-resolution policy used to create/install these lockfiles
+      # in docker/Dockerfile; optional application peers are not architecture inputs.
       - name: Install locked tooling dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
       - name: Enforce application ownership and server layers
         run: |
           npm run audit:owners

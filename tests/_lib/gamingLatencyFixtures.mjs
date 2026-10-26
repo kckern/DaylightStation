@@ -15,6 +15,8 @@ export function observeAuthority(fixture){
 export async function createLatencyFixture(kind){
  if(kind==='legacy305'){
   const frozen=JSON.parse(fs.readFileSync(new URL('../_fixtures/group-play/jeopardy-durable/legacy-305.json',import.meta.url),'utf8'));
+  // Keep the frozen journal/checksums intact while keeping each source fixture below the public-tree size gate.
+  frozen.records.push(...JSON.parse(fs.readFileSync(new URL('../_fixtures/group-play/jeopardy-durable/legacy-305-continuation.json',import.meta.url),'utf8')));
   const id=frozen.parts.rules.artifact.id,f=await createDurableGamingFixture({definition:frozen.definition,definitionId:id,rulesets:[jeopardyRuleModule],manifest:manifest('jeopardy')});
   const pinned=await f.definitions.pin(await f.definitions.getCurrent(id));if(pinned.hash!==frozen.records[0].header.ruleset.definition_hash)throw Error('Baseline artifact identity changed');
   const sessionId=frozen.records[0].header.session_id;await f.journal.create(sessionId,frozen.records[0]);for(const record of frozen.records.slice(1))await f.journal.append(sessionId,record,{expectedRevision:record.revision-1});

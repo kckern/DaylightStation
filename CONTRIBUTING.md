@@ -13,9 +13,9 @@
 ```bash
 git clone https://github.com/kckern/DaylightStation.git
 cd DaylightStation
-npm install
-cd frontend && npm install && cd ..
-cd __backend && npm install && cd ..
+npm ci --legacy-peer-deps
+cd frontend && npm ci --legacy-peer-deps && cd ..
+cd __backend && npm ci --legacy-peer-deps && cd ..
 ```
 
 ### 2. Configure for development
@@ -74,6 +74,21 @@ npm run test:isolated       # Isolated feature tests
 npm run test:unit:vitest    # Gated unit tests
 npm run test:file -- <path> # One Vitest test file
 ```
+
+### Architecture CI
+
+The [Architecture workflow](.github/workflows/architecture.yml) installs only root
+locked dependencies with `npm ci --ignore-scripts --legacy-peer-deps --no-audit
+--no-fund`. The peer-resolution setting matches the Docker build and the existing
+lockfile graph. Skipping scripts keeps static checks independent of native builds,
+frontend/backend setup, and household services.
+
+The workflow runs ownership, layer, filesystem, ESM-link and public-tree audits,
+then the architecture violation controls and static tooling tests. The public-tree
+audit requires a documented exact-path allowance for large authored source;
+generated fixtures should stay below its per-file limit. The frozen Jeopardy
+journal is split across its main and continuation files and recombined by the
+fixture loader without changing records or checksums.
 
 ## Code Style
 
