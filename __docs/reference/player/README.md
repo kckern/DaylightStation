@@ -166,6 +166,11 @@ actuator. Its budget model:
   replay and cross-owner adoption create new visit tokens. Quality adoption carries
   an explicit `manual-quality` or `recovery-quality` reason to retain the visit.
 
+Source repair checks retain their initiating recovery target across backend
+polls. A readable response can clear the source wait, but an accepted Pause,
+Seek or manual Quality change supersedes its restore intent before it reserves
+an action. Cooldown-deferred restores retain and recheck that same target.
+
 Every actuator asks the ledger before acting: the resilience state machine's
 startup/warmup deadlines, the stall-jolt rungs, VideoPlayer's dash-error
 resets, the user-facing forceReload, and the controller's nudge and

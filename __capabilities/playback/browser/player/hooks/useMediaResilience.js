@@ -212,6 +212,7 @@ export function useMediaResilience({
     mediaType: mediaTypeHint || meta?.mediaType || null,
     disabled,
     onSettled: (decision, context) => sourceSettledRef.current?.(decision, context),
+    recoveryIdentity,
     maxWaitMs: monitorSettings.sourceUnavailableMaxMs,
     onWaitChange: (event) => onSourceWaitRef.current?.(event),
   });
@@ -325,6 +326,8 @@ export function useMediaResilience({
   //   refreshUrl      — override the reason-derived URL-refresh decision.
   //   forceRemount    — escalate to a full React remount in onReload.
   const triggerRecovery = useCallback((reason, options = {}) => {
+    const expectedTarget = options.target ?? recoveryIdentity?.getTarget();
+    if (options.target && (!recoveryIdentity || !sameRecoveryTarget(options.target, recoveryIdentity.getTarget()))) return 'superseded';
     // Reloading cannot fix a file the server refuses to read; the source wait
     // owns this item until it settles.
     if (sourceUnavailableRef.current && options.sourceRestored !== true) {
@@ -367,9 +370,8 @@ export function useMediaResilience({
       }
       if ((options.sourceRestored || options.deferDenied) && !gate.exhausted && gate.waitMs > 0) {
         clearTimeout(deferredRecoveryRef.current);
-        const expected = recoveryIdentity?.getTarget();
         deferredRecoveryRef.current = setTimeout(() => {
-          if (!recoveryIdentity || sameRecoveryTarget(expected, recoveryIdentity.getTarget())) triggerRecovery(reason, options);
+          if (!recoveryIdentity || sameRecoveryTarget(expectedTarget, recoveryIdentity.getTarget())) triggerRecovery(reason, { ...options, target: expectedTarget });
         }, gate.waitMs);
       }
       return gate.exhausted ? 'exhausted' : 'denied';
@@ -403,7 +405,6 @@ export function useMediaResilience({
         recoverySeekTrackerRef.current = computed.tracker;
         seekMs = computed.seekMs;
       }
-      const expectedTarget = recoveryIdentity?.getTarget();
       onReload({
         actionId: gate.actionId,
         target: expectedTarget,
@@ -435,9 +436,8 @@ export function useMediaResilience({
 
   // How a settled source wait becomes (at most) one reload. Assigned every
   // render so it always closes over the current triggerRecovery.
-  //   resume  — the file is readable again after a wait: a fresh ledger (the
-  //             wait was not the player's failure) and one remount at the saved
-  //             position, even from `exhausted`.
+  //   resume  — the file is readable again after a wait: one budgeted remount
+  //             at the saved position if its initiating target is still current.
   //   retry   — the refusal cleared before we ever waited: reload now instead
   //             of sitting until the startup deadline.
   //   gave-up — SOURCE_UNAVAILABLE_MAX_MS passed: the ordinary Tap to Retry.
@@ -470,6 +470,7 @@ export function useMediaResilience({
   // healthy reload after a cleared refusal is not mistaken for one (review B2).
   const unsupportedRetryRef = useRef({ sessionKey: null, retried: false });
   sourceSettledRef.current = (decision, context = {}) => {
+    if (context.target && !sameRecoveryTarget(context.target, recoveryIdentity?.getTarget())) return;
     const fromMediaError = context.reason === 'media-error' || context.reason === 'media-error-suspected';
     // The same failure seen again only through the startup deadline (a
     // refreshed URL that fails the same way raises no NEW error event).
@@ -489,7 +490,7 @@ export function useMediaResilience({
         activeActionRef.current = null;
       }
       if (!tracker.retried) {
-        triggerRecovery('media-error-unplayable', { refreshUrl: true, forceRemount: true, bypassCooldown: true,
+        triggerRecovery('media-error-unplayable', { target: context.target, refreshUrl: true, forceRemount: true, bypassCooldown: true,
           deferDenied: true, onReserved: () => { tracker.retried = true; } });
         return;
       }
@@ -503,11 +504,11 @@ export function useMediaResilience({
     if (decision === 'resume') {
       // Refusal healing retains every unrelated incident debit.
       triggerRecovery('source-restored', {
-        sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true,
+        target: context.target, sourceRestored: true, refreshUrl: true, forceRemount: true, bypassCooldown: true,
         resumePlayback: sourceWaitResumeRef.current,
       });
     } else if (decision === 'retry') {
-      triggerRecovery('source-refusal-cleared', { refreshUrl: true });
+      triggerRecovery('source-refusal-cleared', { target: context.target, refreshUrl: true });
     } else if (decision === 'gave-up') {
       actions.setStatus(STATUS.exhausted);
       if (!exhaustedNotifiedRef.current) {
@@ -931,6 +932,7 @@ export function useMediaResilience({
         joltTimerRef.current = token;
         L.checkSource('before-exhausted-skip', { suspected: true }).then((decision) => {
           if (joltTimerRef.current !== token) return;
+          if (decision === 'superseded') { joltTimerRef.current = null; return; }
           if (decision === 'wait') {
             playbackLog('exhausted-skip-deferred', {
               ...L.waitKeyFields, rung: joltStepRef.current, attempt: attempts,
