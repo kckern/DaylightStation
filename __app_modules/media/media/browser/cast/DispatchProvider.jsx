@@ -290,6 +290,15 @@ export function DispatchProvider({ children }) {
       const kind = record.kind === 'playback' ? 'playNow' : (record.command?.kind ?? 'playNow');
       mediaLog.outcomeRetried({ attemptId, targetId: record.targetId, contentId: item?.contentId ?? null });
       const destination = record.targetId === 'local' ? localController : peek?.getController?.(record.targetId);
+      if (record.kind === 'playback' && record.command?.kind === 'retry') {
+        // A held visit already owns its queue and pause intent. Retry repairs
+        // that renderer; replaying Play would mint a new visit and budget.
+        if (!destination?.transport?.retry) return [];
+        return Promise.resolve(destination.transport.retry(record.command.target)).then(result => {
+          if (result?.ok !== false) dispatch({ type: 'REMOVED', dispatchId: attemptId });
+          return [];
+        }, () => []);
+      }
       if (!destination?.execute || !item?.contentId) return [];
       // The replay replaces the failed record (review c).
       dispatch({ type: 'REMOVED', dispatchId: attemptId });

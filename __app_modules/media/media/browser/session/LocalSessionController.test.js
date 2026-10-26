@@ -508,10 +508,10 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().state).toBe('ended');
   });
 
-  it('onPlayerError logs and auto-advances', () => {
+  it('excluded audio errors log and auto-advance', () => {
     const c = makeController();
-    c.queue.add({ contentId: 'a', format: 'video' });
-    c.queue.add({ contentId: 'b', format: 'video' });
+    c.queue.add({ contentId: 'a', format: 'audio' });
+    c.queue.add({ contentId: 'b', format: 'audio' });
     c.transport.play();
     c.onPlayerError({ message: 'boom', code: 'E_X' });
     expect(mediaLog.playbackError).toHaveBeenCalledWith(expect.objectContaining({
@@ -520,10 +520,10 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().currentItem?.contentId).toBe('b');
   });
 
-  it('onPlayerStalled logs and advances; no-op without a current item', () => {
+  it('excluded audio stalls log and advance; no-op without a current item', () => {
     const c = makeController();
-    c.queue.playNow({ contentId: 'p:1', format: 'video', title: 'A', duration: 60 });
-    c.queue.add({ contentId: 'p:2', format: 'video', title: 'B', duration: 60 });
+    c.queue.playNow({ contentId: 'p:1', format: 'audio', title: 'A', duration: 60 });
+    c.queue.add({ contentId: 'p:2', format: 'audio', title: 'B', duration: 60 });
     c.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
     c.onPlayerStalled({ stalledMs: 10500 });
     expect(mediaLog.playbackStallAutoAdvanced).toHaveBeenCalledWith(expect.objectContaining({

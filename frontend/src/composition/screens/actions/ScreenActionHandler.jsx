@@ -451,10 +451,11 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     const transportOp = payload?.command?.toLowerCase();
     // A photo slideshow has no media keyboard handler: a synthetic Tab never
     // reached it, so a remote Next did nothing (RQ-PLAY-12 needs "skip a
-    // photo"). Only a current IMAGE item takes this route; video/audio keep Tab.
+    // photo"). Images and held movies select the next queue visit directly.
     if (transportOp === 'skipnext') {
-      const current = (sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.())?.currentItem;
-      if (current?.format === 'image'
+      const snapshot = sessionSource?.getBareSnapshot?.() ?? sessionSource?.getSnapshot?.();
+      const current = snapshot?.currentItem;
+      if ((current?.format === 'image' || snapshot?.meta?.problem?.target)
         && getPlayerQueueOpRegistry().dispatch({ op: 'skip-next', commandId: payload?.commandId })) {
         return;
       }
@@ -469,8 +470,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       }
       return;
     }
-    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle')
-      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId })) {
+    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle' || transportOp === 'retry')
+      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId, ...(transportOp === 'retry' ? { target: payload.target } : {}) })) {
       return;
     }
 

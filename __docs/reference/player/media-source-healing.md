@@ -131,11 +131,11 @@ container mounts it. The backend SSHes to the host with a key that
   the rule above never matched it. The Player asks once. `unreadable` starts the
   wait. `readable` returns `normal`, never the extra `retry` reload, because a
   readable file with a failing stream belongs to the stall ladder.
-- **Before the stall ladder gives up.** On a queue, exhaustion skips the item,
-  so for Plex items the jolt ladder asks first. `wait` holds instead of
-  skipping (`exhausted-skip-deferred`); anything else is exhausted as before.
-  When that wait ends with `resume`, the ladder restarts from rung zero, so the
-  restored file gets a fresh ladder rather than an instant skip.
+- **Before the stall ladder gives up.** For Plex items the jolt ladder asks
+  first. `wait` lets backend healing finish (`exhausted-skip-deferred`).
+  Finite video holds at terminal exhaustion rather than advancing or clearing.
+  A restored source requests a shared-ledger action; it does not erase incident
+  or rolling history.
 
 2026-09-29: Plex refused a Bluey part at 6:17 of 7:00 while its library scan
 ran. The stall ladder ran both rungs and skipped the episode; the file was
@@ -171,18 +171,18 @@ prop (only Media's `PlayerBridge`; `onError` owners see nothing new) receives
 `{ kind: 'source-wait', waiting: true, since, contentId }` when a wait opens and
 `{ kind: 'source-wait-ended', waiting: false, decision }` when it ends
 (`resume`, `retry`, `normal`, `gave-up`, or `abandoned` when the item changes).
-`gave-up → exhausted → onExhausted` remains the only skip path.
+`gave-up → exhausted → onExhausted` enters a held failure for finite video.
 
-**Media's policy (`/media`, RELY.5a, 2026-10-03).** Media's `PlayerBridge` sets
-`sourceUnavailableMaxMs: 60000`. A wait longer than 3 s shows "Waiting for
-<title> — the file is being repaired" with Skip now and Retry, and the mini
-player's problem sign; both clear (and recovery is logged) when the file comes
-back. At 60 s the item is skipped: "<title> skipped — file unavailable. Now
-playing <next>", with Retry (which plays the item again, re-asking the check).
-Storm guard: if the item after such a skip also enters a wait within 60 s, Media
-stops auto-skipping and holds on it with one "Library unavailable" notice.
-Fitness and the kiosks pass no option and no `onResilienceEvent`: they keep the
-30-minute wait and the existing overlay.
+**Media's policy (`/media`).** Media's `PlayerBridge` sets
+`sourceUnavailableMaxMs: 60000`. A wait longer than 3 s shows the waiting problem;
+a readable result still requests a budgeted reload. At 60 s a finite movie stays
+on the same owner visit, queue and confirmed position. The held overlay offers
+focusable Retry, Quality and manual Skip. Retry calls the existing owner's
+transport recovery action, preserves deliberate pause and rolling accounting,
+and displays any rolling-cap delay. Quality opens the existing quality UI and
+adopts the changed snapshot. A held report or renderer clear cannot advance the
+queue. Audio/live/continuous terminal policy and the excluded audio storm guard
+remain unchanged. Backend healing and the existing polling cadence are preserved.
 
 **Readable but unplayable.** A code-4 element ("Format error") whose file the
 backend calls readable used to arm nothing: code 4 is outside the stall ladder,
@@ -348,37 +348,25 @@ heal clears it in under a second. Recovery existed and never ran. Design:
 | **C. "Readable" skipped the host rung.** A per-user ghost refuses Plex's streamer while its stat passes. | A proxy-observed refusal (`origin: 'proxy'`, sent by the proxy trigger and by the Player for a confirmed 403/404/503) runs the host ctime refresh even when Plex says readable, then re-checks. Per-file cooldown `proxyRefreshCooldownMs` (60 s). Logged as `media.source.heal.proxy-refresh`. |
 | **D. HLS refusals invisible.** The manifest answers 200; the refusal is a transcode segment 404 and hls.js reports a `networkError` with no MediaError. | Proxy: a persistent transcode **segment** 404 becomes the same 503 `source-unreadable` (retried 3x first), so the backend trigger fires. Player: `lib/hlsRefusal.js` classifies hls.js errors (403/404/5xx on a manifest/level/fragment; the 2nd of a session, or any fatal one) and `VideoPlayer` raises `daylight:hls-refusal` on the element; `useSourceAvailability` asks the backend as a *suspected* refusal (readable -> the stall ladder, as before). Logged as `playback.refusal-hls {status, details, urlKind, decision}`. |
 
-**Screens hold (owner ruling, screens only).** A refusal NEVER auto-skips a
-*screen's* queue. "Screen" means a TV/kiosk screen rendered by the
-screen-framework (living-room, office, Portal screen pages): the screen
-framework opts in with `holdOnRefusal` (`ScreenPlayer`, `MenuStack`). **Fitness,
-piano and school-lesson Players do not opt in** and keep their previous
-behaviour exactly: wait up to 30 minutes, then the previous cap action
-(close / ladder / skip), no Skip keys.
+**Source waiting and terminal holds.** Screen-framework owners opt in with
+`holdOnRefusal` (`ScreenPlayer`, `MenuStack`), retaining their existing confirmed
+refusal handling and 30-minute source wait. A confirmed refusal the backend
+cannot judge keeps waiting; missing/readable results return to the ordinary
+ladder. Regardless of source-wait opt-in, finite video holds at terminal
+exhaustion and publishes a `waiting` problem with its reason and RecoveryTarget.
+Audio, live and continuous playback retain their existing terminal policy.
 
-- A confirmed refusal (the element named 403/404/503; other 5xx on HLS is only
-  *suspected*) the backend cannot judge (`unknown`, or the check failed) keeps
-  a screen waiting. Four consecutive `unknown` *answers* (a failed request does
-  not count) are treated as missing, so a deleted item does not hold for 30
-  minutes. A `missing` file, an unlabelled error, and a file the backend calls
-  readable go to the ordinary ladder. A held screen publishes a `waiting`
-  problem record in its session snapshot, so a phone steering it sees it is
-  parked.
-- The wait is the existing one (poll 2/4/8/15 s, resume at the saved spot,
-  30-minute cap), with the quiet `Fixing this video…` note.
-- At the cap the Player does **not** advance (`resilience-exhausted-hold`); it
-  stays on Tap to Retry.
-- **Skip** on a screen: OK (Enter / NumpadEnter) or the media-next key, or a tap
-  on the `Skip · OK` pill, which shows during the wait AND in the held state
-  (`lib/Player/useSourceWaitSkipKeys.js`; Back is unreliable on the Shield, so
-  nothing depends on it). D-pad and Tab are never used. The listener only acts
-  when focus is on the page body or inside that Player, the pill is actually
-  visible (not blacked out), and the Player is not auxiliary; it swallows a key
-  (`stopImmediatePropagation`) only when a skip really happened, absorbs the
-  repeat within 1 s, and otherwise leaves every key to the listeners beneath it.
-  `playback.source-wait-skip` records it.
-- **Media on phones is unchanged**: it passes `onResilienceEvent`, keeps its 60 s
-  cap, its own Skip now / Retry and the storm guard, and gets none of the above.
+- Source polling remains 2/4/8/15 s, with `Fixing this video…` while waiting.
+- At the cap a finite video does not advance (`resilience-exhausted-hold`).
+  Retry, Quality and Skip are native focusable controls; D-pad moves between
+  them and Enter/Space activates the focused control. Focused controls own their
+  keys instead of the broad source-wait Skip listener.
+- With focus on the page, the existing screen source-wait OK/media-next shortcut
+  remains available only while the Skip control is visible and not blacked out.
+  Explicit Skip is a manual queue action, never natural completion.
+- Media retains its 60 s source limit, then holds finite video with the same
+  controls. Its outcome tray Retry targets that held owner visit rather than
+  replaying Play. An old duplicate-title visit cannot retry the current visit.
 
 ## Observability
 

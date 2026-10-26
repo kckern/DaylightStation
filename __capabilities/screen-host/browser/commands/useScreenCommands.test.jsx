@@ -86,6 +86,13 @@ describe('useScreenCommands (structured envelope)', () => {
       );
     });
 
+    it('forwards the expected held visit on Retry without a new load', () => {
+      mountOk();
+      const target = { ownerId: 'screen', visitId: 'held', intentRevision: 2, rendererGeneration: 3 };
+      act(() => capturedCallback(env('transport', { action: 'retry', value: target })));
+      expect(actionBus.emit).toHaveBeenCalledWith('media:playback', { command: 'retry', commandId: 'c1', target });
+    });
+
     it('dispatches transport goLive to media:go-live', () => {
       mountOk();
       act(() => capturedCallback(env('transport', { action: 'goLive' })));

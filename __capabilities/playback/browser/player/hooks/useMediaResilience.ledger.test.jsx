@@ -167,3 +167,25 @@ describe('useMediaResilience — end-of-content is never jolted', () => {
     );
   });
 });
+
+describe('held Retry controller', () => {
+  it('projects a rolling delay and exposes a paused Retry on the owner controller', () => {
+    installLedger();
+    const controllerRef = { current: null };
+    const identity = createRecoveryIdentity({ ownerId: 'held-owner' });
+    const args = baseArgs({ controllerRef, recoveryIdentity: identity, seconds: 321, isPaused: true, pauseIntent: 'user' });
+    const hook = renderHook(() => useMediaResilience(args));
+    spend(hook, args, 3);
+    act(() => hook.result.current.retryFromExhausted()); complete(args); advance(4000);
+    spend(hook, args, 2);
+    act(() => hook.result.current.retryFromExhausted());
+    expect(hook.result.current.overlayProps.retryAfterMs).toBeGreaterThan(500000);
+    const before = args.onReload.mock.calls.length;
+    act(() => controllerRef.current.retryFromExhausted());
+    expect(args.onReload).toHaveBeenCalledTimes(before);
+    advance(600000);
+    act(() => controllerRef.current.retryFromExhausted());
+    expect(args.onReload).toHaveBeenLastCalledWith(expect.objectContaining({ seekToIntentMs: 321000, userInitiated: true }));
+    expect(args.onReload.mock.calls.at(-1)[0].resumePlayback).not.toBe(true);
+  });
+});

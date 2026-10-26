@@ -212,6 +212,23 @@ export function createLocalSessionController({
   let sourceWaitTimer = null;
   let lastSourceSkipAt = null;
   let holdContentId = null;
+  let heldFailureTarget = null;
+  const isFiniteVideo = () => {
+    const item = store.getSnapshot().currentItem;
+    return (item?.mediaType === 'video' || ['video', 'hls_video', 'dash_video'].includes(item?.format))
+      && !item?.isLive && !item?.continuous && store.getSnapshot().config.repeat !== 'all';
+  };
+  const holdFailure = ({ reason = 'playback-failed', attempts = 0, target, retryAfterMs = 0 } = {}) => {
+    const currentTarget = recoveryIdentity.getTarget();
+    if (target && !sameRecoveryTarget(target, currentTarget)) return false;
+    const item = store.getSnapshot().currentItem;
+    if (!item || !isFiniteVideo()) return false;
+    clearSourceWaitTimer();
+    heldFailureTarget = currentTarget;
+    mediaLog.playbackProblem({ sessionId: store.getSnapshot().sessionId, kind: 'waiting', reason, contentId: item.contentId, replacementContentId: null });
+    setProblem({ kind: 'waiting', reason, attempts, target: currentTarget, retryAfterMs, item: problemItem(item), replacement: null, at: Date.now() });
+    return true;
+  };
   const clearSourceWaitTimer = () => {
     if (sourceWaitTimer) { clearTimeout(sourceWaitTimer); sourceWaitTimer = null; }
   };
@@ -224,6 +241,7 @@ export function createLocalSessionController({
   store.onTransition((_prev, _next, action) => {
     if (['LOAD_ITEM', 'SET_CURRENT_ITEM', 'ADOPT_SNAPSHOT', 'RESET', 'STOP'].includes(action?.type)) {
       clearSourceWaitTimer();
+      heldFailureTarget = null;
       const current = store.getSnapshot().currentItem;
       if (holdContentId && current?.contentId !== holdContentId) holdContentId = null;
     }
@@ -825,6 +843,14 @@ export function createLocalSessionController({
     },
 
     transport: {
+      retry: (expectedTarget) => {
+        const current = recoveryIdentity.getTarget();
+        if (expectedTarget && (expectedTarget.ownerId !== current.ownerId || expectedTarget.visitId !== current.visitId)) return { ok: false, code: 'PLAYBACK_CHANGED' };
+        beginAction();
+        stampOrigin(pendingOrigin);
+        mediaLog.transportCommand({ action: 'retry', target: 'local' });
+        return player.retryMediaResilience?.(expectedTarget) ?? { ok: false, code: 'PLAYER_NOT_READY' };
+      },
       play: () => {
         beginAction();
         const opOrigin = pendingOrigin;
@@ -1168,16 +1194,22 @@ export function createLocalSessionController({
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       store.dispatch({ type: 'PLAYER_STATE', playerState: state, __playerDriven: true });
       // Playback is moving again: the handle's problem sign clears.
-      if (state === 'playing') clearProblem('playing');
+      if (state === 'playing') { heldFailureTarget = null; holdContentId = null; clearProblem('playing'); }
     },
     onPlayerEnded: (contentId = null) => {
       if (contentId != null && snap().currentItem?.contentId !== contentId) return;
       // Holding on a refused file during a library outage: its clear is not an end.
+      if (heldFailureTarget?.visitId === recoveryIdentity.getTarget().visitId) return;
       if (holdContentId && snap().currentItem?.contentId === holdContentId) return;
       if (consultNaturalEnd()) return;
       advance('item-ended', { playerDriven: true });
     },
+    onPlayerHeld: (event) => holdFailure(event),
     onPlayerError: ({ message, code } = {}) => {
+      if (holdFailure({ reason: code ?? 'playback-failed' })) {
+        mediaLog.playbackError({ sessionId: snap().sessionId, contentId: snap().currentItem.contentId, error: message ?? 'playback held', code });
+        return;
+      }
       if (code === 'source-unavailable-gave-up') {
         clearSourceWaitTimer();
         const failedItem = snap().currentItem;
@@ -1235,6 +1267,7 @@ export function createLocalSessionController({
     onPlayerStalled: ({ stalledMs } = {}) => {
       const current = snap().currentItem;
       if (!current) return;
+      if (holdFailure({ reason: 'stalled' })) return;
       mediaLog.playbackStallAutoAdvanced({
         sessionId: snap().sessionId,
         contentId: current.contentId,

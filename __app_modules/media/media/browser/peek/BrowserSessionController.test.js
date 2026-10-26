@@ -65,3 +65,23 @@ describe('browser quality round trip', () => {
     expect(local.getSnapshot().currentItem).not.toHaveProperty('maxResolution');
   });
 });
+
+it('remote held Retry preserves pause and visit and rejects an old duplicate-title visit', async () => {
+  const local = createLocalSessionController({ clientId: 'target' });
+  await local.queue.playNow({ contentId: 'plex:42', format: 'video' });
+  local.onPlayerProgress(321);
+  local.onPlayerStateChange('paused', 'plex:42');
+  local.onPlayerError({ code: 'resilience-exhausted' });
+  let reloads = 0;
+  local.setPlayerHandle({ retryMediaResilience: () => { reloads++; return { ok: true }; } });
+  const remote = createBrowserSessionController({ deviceId: 'browser:target', callerDeviceId: 'browser:caller',
+    fleetStore: fleetStore(local.getSnapshot()), correlator: { send: async ({ command }) => applyCommandEnvelope(local, command) } });
+  const target = local.recoveryIdentity.getTarget();
+  await expect(remote.transport.retry(target)).resolves.toMatchObject({ ok: true });
+  expect(reloads).toBe(1);
+  expect(local.getSnapshot()).toMatchObject({ state: 'paused', position: 321, currentItem: { contentId: 'plex:42' } });
+  expect(local.recoveryIdentity.getTarget().visitId).toBe(target.visitId);
+  await local.queue.playNow({ contentId: 'plex:42', format: 'video' });
+  await expect(remote.transport.retry(target)).resolves.toMatchObject({ ok: false, code: 'PLAYBACK_CHANGED' });
+  expect(reloads).toBe(1);
+});

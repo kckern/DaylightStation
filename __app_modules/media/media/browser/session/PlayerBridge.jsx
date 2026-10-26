@@ -19,9 +19,10 @@
 //    until an explicit Play, so restore never makes a sound (RELY.7a). It
 //    then mounts once, at the restored spot.
 //  - A terminal Player failure (resilience exhausted) reaches the controller
-//    as a failure, so it is reported and skipped, not mistaken for an end.
+//    as a held failure for finite video; audio/continuous terminal policy stays owner-managed.
 //    Recoverable media errors are left to the Player's own resilience.
 import React, { useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { usePlaybackQuality } from '../quality/PlaybackQualityProvider.jsx';
 import { createPortal } from 'react-dom';
 import { Player as Player } from "../playback.mjs";
 import { LocalSessionContext } from "./LocalSessionContext.js";
@@ -41,6 +42,7 @@ export function PlayerBridge() {
   const ctx = useContext(LocalSessionContext);
   if (!ctx) throw new Error('PlayerBridge must be inside LocalSessionProvider');
   const { controller } = ctx;
+  const quality = usePlaybackQuality();
   const [currentItem, setCurrentItem] = useState(() => controller.getSnapshot().currentItem);
   // Where this item should START: the persisted/adopted position captured at
   // the moment the item becomes current (C9.1 resume, C7.3 take-over).
@@ -96,6 +98,7 @@ export function PlayerBridge() {
   // Hand the controller its imperative player surface.
   useEffect(() => {
     controller.setPlayerHandle({
+      retryMediaResilience: (target) => playerRef.current?.retryMediaResilience?.(target),
       play: () => playerRef.current?.play?.(),
       pause: () => playerRef.current?.pause?.(),
       seek: (t) => playerRef.current?.seek?.(t),
@@ -538,6 +541,7 @@ export function PlayerBridge() {
       });
       return;
     }
+    if (error?.kind === 'resilience-held') { controller.onPlayerHeld?.(error); return; }
     if (error?.kind !== 'resilience-exhausted') return;
     const sourceGaveUp = error.reason === 'source-unavailable-gave-up';
     failureClearRef.current = { generation: playbackGeneration };
@@ -598,10 +602,12 @@ export function PlayerBridge() {
     <Player
       ref={playerRef}
       recoveryIdentity={controller.recoveryIdentity}
+      onOpenPlaybackQuality={quality ? () => quality.openForPlayback({ controller, snapshot: controller.getSnapshot(), targetLabel: 'this device' }) : undefined}
       play={playProp}
       clear={onClear}
       onProgress={onProgress}
       onResilienceEvent={onPlayerError}
+      onSkipHeldPlayback={() => controller.transport.skipNext()}
       mediaResilienceConfig={MEDIA_RESILIENCE_CONFIG}
       forceShader={forceShader ?? undefined}
       ignoreKeys

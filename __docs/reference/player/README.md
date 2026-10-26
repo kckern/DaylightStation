@@ -185,10 +185,32 @@ only on a status change, so such an item got two attempts (startup, then
 recovering) and then sat on the spinner forever with no `onExhausted`. The
 deadline path now re-arms itself after every recovery it triggers
 (`resilience-deadline-rearm`, debug), so the ledger's three-action incident cap ends in `resilience-recovery-exhausted`
-and the usual `onExhausted` (queue skip / owner failure report). The same re-arm covers the transcode-warmup deadline. A browser-refused autoplay
+and `onExhausted` (finite video holds; audio/continuous owners retain their terminal policy). The same re-arm covers the transcode-warmup deadline. A browser-refused autoplay
 (`autoplayBlocked`, awaiting a tap) is not a failing stream: the deadline holds and
 no attempt is spent. Covered by `useMediaResilience.inPlaceExhaustion.test.jsx`. Remounting recoveries are
 unaffected: a remount already starts a fresh watchdog.
+
+### Held movie controls
+
+A finite video never advances or clears automatically when recovery is exhausted,
+including Media's 60-second source-unavailable timeout and terminal error/stall
+reports. Audio, live and continuous playback retain their existing terminal policy.
+The held event is `{kind: 'resilience-held', reason, attempts, target, retryAfterMs}`;
+`target` is the owner's RecoveryTarget. Media projects it as a `waiting` problem,
+and a held report/renderer clear cannot be interpreted as natural completion.
+Backend source checks and repair still run within their existing bounded wait.
+
+The held overlay offers native, focusable Retry, Quality and Skip buttons. D-pad
+arrows move among these controls; Enter/Space use native button activation and do
+not reach page playback/skip handlers. Quality reuses `PlaybackQualityForm` and
+existing guarded owner snapshot adoption; Media opens its existing quality sheet.
+Blackout still suppresses all overlays. Retry displays the remaining rolling-cap
+delay, keeps the current queue visit and intentional pause, and uses the same
+shared ledger as other recovery actions. The browser/screen transport action
+`retry` carries the expected RecoveryTarget as `value`; owner/visit mismatch rejects
+it, while newer pause intent in the same visit remains authoritative. Held outcome
+tray Retry sends that owner action instead of replaying Play. Explicit Skip is the
+only terminal-failure action that advances the queue.
 
 ### The layers
 
@@ -202,7 +224,7 @@ unaffected: a remount already starts a fresh watchdog.
 | **Fatal media error** | `MediaError` code 2 (`NETWORK`) or 3 (`DECODE`) mid-playback — a dead pipeline, which fires no `waiting`/`stalled` at all and can still report a full buffer | `usePlaybackHealth` exposes `hasMediaError`, which is a fourth cause in the jolt ladder's `isStuck`, so the ladder arms on a dead stream and not only a starved one. Mechanism, the pause-classification guard, and the three gaps it leaves: `README.media-resilience.md` |
 | **Refused source** | The media server will not read the file: Plex 404 on a direct-play part (NAS zeroed its mode, or Plex mid library scan), or the proxy's 503 `source-unreadable`. Mid-playback it can arrive as an unlabelled `Format error` / `PIPELINE_ERROR_READ`, which is checked with the backend; the jolt ladder also checks before exhausting, so a refused file waits instead of being skipped | The recovery ladder stands down, and `useSourceAvailability` waits on `POST /api/v1/media-source/check`, which runs the repair ladder. The Player remounts once when the file is readable. See `media-source-healing.md` |
 | **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
-| **Stall exhaustion** | Session cap reached | Enters `exhausted`, renders the retry button; `retryFromExhausted` resets the ledger and restarts |
+| **Stall exhaustion** | Session cap reached | Finite video stays on the same visit/queue/confirmed position and reports `resilience-held`. Focusable Retry, Quality and explicit Skip remain available. Retry opens an incident through the owner, retaining the rolling cap and deliberate pause |
 | **User forceReload** | Operator reload request | Records a ledger attempt like everything else — reload-hammering lands on the exhausted overlay (which still offers retry) instead of looping raw reloads |
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |

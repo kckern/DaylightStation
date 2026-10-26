@@ -42,6 +42,7 @@ export function createBrowserSessionController({
       goLive: () => transport('goLive'),
       skipNext: () => transport('skipNext'), skipPrev: () => transport('skipPrev'),
       restartCurrent: () => transport('seekAbs', 0),
+      retry: (target) => transport('retry', target),
     },
     queue: {
       playNow: (input, opts = {}) => queue('play-now', { contentId: input.contentId, ...normalizePlaybackQuality(input), clearRest: !!opts.clearRest }),

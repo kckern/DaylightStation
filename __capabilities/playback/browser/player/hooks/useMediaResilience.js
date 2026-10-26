@@ -360,7 +360,7 @@ export function useMediaResilience({
         if (!exhaustedNotifiedRef.current) {
           exhaustedNotifiedRef.current = true;
           if (typeof onExhausted === 'function') {
-            onExhausted({ reason, attempts: gate.attempt, waitKey });
+            onExhausted({ reason, attempts: gate.attempt, waitKey, target: expectedTarget, retryAfterMs: gate.waitMs });
           }
         }
       } else if (gate.deniedBy === 'cooldown') {
@@ -430,9 +430,11 @@ export function useMediaResilience({
     exhaustedNotifiedRef.current = false;
     const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
-    return triggerRecovery('user-retry-exhausted', { bypassCooldown: true, refreshUrl: true,
-      forceRemount: true, userInitiated: true, seekToIntentMs: seekMs });
-  }, [consumeTargetTimeSeconds, recoveryIdentity, playbackSessionKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart, triggerRecovery]);
+    const result = triggerRecovery('user-retry-exhausted', { bypassCooldown: true, refreshUrl: true,
+      forceRemount: true, userInitiated: true, resumePlayback: userIntent !== USER_INTENT.paused, seekToIntentMs: seekMs });
+    const snapshot = getRecoveryLedger().snapshot(playbackSessionKey);
+    return { ok: result == null, ...(result != null ? { code: result } : {}), retryAfterMs: snapshot?.retryAfterMs ?? 0 };
+  }, [consumeTargetTimeSeconds, recoveryIdentity, playbackSessionKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart, triggerRecovery, userIntent]);
 
   // How a settled source wait becomes (at most) one reload. Assigned every
   // render so it always closes over the current triggerRecovery.
@@ -1035,6 +1037,7 @@ export function useMediaResilience({
   const isExhausted = status === STATUS.exhausted;
   const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isExhausted || isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused || sourceUnavailable);
 
+  const retryAfterMs = getRecoveryLedger().snapshot(playbackSessionKey)?.retryAfterMs ?? 0;
   const overlayProps = useMemo(() => ({
     status: effectiveSeeking ? 'seeking' : status,
     isVisible: shouldShowOverlay && (isUserPaused ? showPauseOverlay : true),
@@ -1062,6 +1065,7 @@ export function useMediaResilience({
       ? sourceAvailability.checkNow('user-tap')
       : triggerRecovery('manual-reset')),
     onRetryFromExhausted: retryFromExhausted,
+    retryAfterMs,
     isExhausted,
     sourceNotice,
     playerPositionDisplay: formatTime(Math.max(0, seconds)),
@@ -1111,6 +1115,7 @@ export function useMediaResilience({
     waitKeyFields,
     triggerRecovery,
     retryFromExhausted,
+    retryAfterMs,
     isExhausted,
     sourceNotice,
     sourceUnavailable,
@@ -1128,6 +1133,7 @@ export function useMediaResilience({
     if (!controllerRef || !('current' in controllerRef)) return undefined;
     const api = {
       getState: () => resilienceState,
+      retryFromExhausted,
       reset: () => actions.reset(),
       // User-initiated reload (Fitness manual-reload button / stalled-seek
       // recovery). Routes through gated recovery so the attempt is recorded
@@ -1149,7 +1155,7 @@ export function useMediaResilience({
       // a no-op instead of driving a recovery against an unmounted player.
       if (controllerRef.current === api) controllerRef.current = null;
     };
-  }, [controllerRef, resilienceState, actions, triggerRecovery, consumeTargetTimeSeconds]);
+  }, [controllerRef, resilienceState, actions, triggerRecovery, consumeTargetTimeSeconds, retryFromExhausted]);
 
   const cancelDeadline = useCallback(() => {
     clearTimeout(startupDeadlineRef.current);

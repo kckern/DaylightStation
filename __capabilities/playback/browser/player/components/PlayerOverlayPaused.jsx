@@ -16,6 +16,7 @@ export function PlayerOverlayPaused({
   togglePauseOverlay,
   playerPositionDisplay,
   suppressForBlackout = false,
+  isExhausted = false,
   suppressPauseOverlay = false
 }) {
   // NOTE: `suppressForBlackout` / `suppressPauseOverlay` early returns are deliberately
@@ -137,7 +138,7 @@ export function PlayerOverlayPaused({
   }, [blockFullscreenToggle, playerPositionDisplay, seconds, stalled, togglePauseOverlay]);
 
   // In blackout mode, keep screen completely dark (TV appears off).
-  if (suppressForBlackout) {
+  if (suppressForBlackout || isExhausted) {
     return null;
   }
   // Study mode (instructional content): the paused frame is the thing the viewer
@@ -191,6 +192,7 @@ PlayerOverlayPaused.propTypes = {
   togglePauseOverlay: PropTypes.func,
   playerPositionDisplay: PropTypes.string,
   suppressForBlackout: PropTypes.bool,
+  isExhausted: PropTypes.bool,
   suppressPauseOverlay: PropTypes.bool
 };
 

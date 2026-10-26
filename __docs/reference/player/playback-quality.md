@@ -104,6 +104,18 @@ reset that preserves rolling history. Explicit Retry also preserves that history
 The future automatic ladder must respect explicit quality ceilings and `adaptive=false`. Parameter propagation
 and Plex adjustment alone do not implement that app policy.
 
+## Quality while a movie is held
+
+Recovery exhaustion keeps finite video on the current visit, including Media's
+60-second refused-source timeout. The held overlay exposes focusable Retry,
+Quality and Skip controls. Quality uses the same form and owner adoption as the
+normal controls, preserving queue, current position and deliberate pause. The
+Media bridge opens its existing Quality sheet; direct/screen Players render the
+shared form in place. An open direct/screen form rejects a superseded recovery
+target before changing the queue. Retry remains bounded by the rolling action
+cap and displays its remaining delay; it never replays a new Play command.
+Audio, live and continuous terminal behavior is unchanged.
+
 ## Playback signal limits
 
 The player exposes `recoveryHealth` alongside its existing health fields. It

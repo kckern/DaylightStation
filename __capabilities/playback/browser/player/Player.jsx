@@ -1,6 +1,6 @@
 import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from './lib/recovery/recoveryIdentity.js';
 import { getRecoveryLedger } from './lib/recoveryLedger.js';
-import { normalizePlaybackQuality, withPlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
+import { normalizePlaybackQuality, withPlaybackQuality, playbackQualityChange, supportsPlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
 import './styles/Player.scss';
@@ -8,6 +8,7 @@ import { useQueueController } from './hooks/useQueueController.js';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { AudioLayer } from './components/AudioLayer.jsx';
 import { AmbientLayer } from './components/AmbientLayer.jsx';
+import { PlaybackQualityForm } from './components/PlaybackQualityForm.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { holdsAfterGaveUp } from './lib/sourceAvailability.js';
 import { useSourceWaitSkipKeys, playerIsHitTarget } from "../player-support/useSourceWaitSkipKeys.js";
@@ -214,7 +215,8 @@ const Player = forwardRef(function Player(props, ref) {
     onPlaybackCompleted,
     onError,
     // Opt-in resilience events for an owner that manages its own queue
-    // (Media's PlayerBridge): 'resilience-exhausted' before a clear, and
+    // (Media's PlayerBridge): 'resilience-held' for finite video,
+    // 'resilience-exhausted' before an excluded terminal clear, and
     // 'source-wait' / 'source-wait-ended' for a refused file. Existing
     // onError owners never see these.
     onResilienceEvent,
@@ -325,7 +327,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (!queuePreviousKey && !queueNextKey) return undefined;
 
     const handleQueueNavigation = (event) => {
-      if (event._menuNav) return;
+      if (event._menuNav || event.target?.closest?.('button, [role="dialog"]')) return;
       const target = event.target;
       if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || '')) return;
 
@@ -1580,6 +1582,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   // See handleResilienceExhausted: what this Player last gave up on.
   const lastProblemRef = useRef(null);
+  const [heldFailure, setHeldFailure] = useState(null);
   const compositeAwareOnState = useCallback((state) => {
     // A pending backoff remount exists because playback was not progressing.
     // The hook saying "playing" means that reason is gone; a timer that fires
@@ -1605,6 +1608,7 @@ const Player = forwardRef(function Player(props, ref) {
     // item plays, the wait is over and a phone must stop seeing it.
     if (state?.status === RESILIENCE_STATUS.playing && lastProblemRef.current?.kind === 'waiting') {
       lastProblemRef.current = null;
+      setHeldFailure(null);
     }
     if (state?.status === RESILIENCE_STATUS.playing && problemClearedByPlaying(lastProblemRef.current)) {
       lastProblemRef.current = null;
@@ -1731,6 +1735,13 @@ const Player = forwardRef(function Player(props, ref) {
   // screen can be told. A record, not a live state: it carries its own time.
   // The item a screen is HOLDING after the maximum wait (Tap to Retry + Skip).
   const [refusalHeldGuid, setRefusalHeldGuid] = useState(null);
+  const finiteVideo = (effectiveMeta?.mediaType === 'video'
+    || ['video', 'hls_video', 'dash_video'].includes(effectiveMeta?.format))
+    && !effectiveMeta?.isLive && !singlePlayerProps?.continuous && !play?.continuous && !queue?.continuous && repeatMode !== 'all';
+  const heldForCurrentVisit = heldFailure?.target.visitId === recoveryIdentity.getTarget().visitId;
+  useEffect(() => {
+    if (heldFailure && heldFailure.target.visitId !== recoveryIdentity.getTarget().visitId) setHeldFailure(null);
+  }, [heldFailure, recoveryIdentity, recoveryIdentity.getTarget()]);
   // A phone steering this screen must be able to see it is PARKED on a refused
   // video (the `waiting` problem kind Media already labels), not just silent.
   const publishHeldProblem = useCallback((reason) => {
@@ -1752,11 +1763,16 @@ const Player = forwardRef(function Player(props, ref) {
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     // A screen never gives a refused video up to its queue, even after the
     // maximum wait: it stays on "Tap to Retry" (and Skip) until someone decides.
-    if (holdsAfterGaveUp({ reason, hold: holdRefusals })) {
+    if (finiteVideo || holdsAfterGaveUp({ reason, hold: holdRefusals })) {
       playbackLog('resilience-exhausted-hold', {
         reason, attempts, ...describeWaitKey(exhaustedWaitKey), action: 'hold', queueRemaining: playQueue?.length ?? 0,
       }, { level: 'warn' });
-      publishHeldProblem('source-unavailable-gave-up');
+      publishHeldProblem(reason || 'playback-failed');
+      const target = recoveryIdentity.getTarget();
+      const retryAfterMs = getRecoveryLedger().snapshot(recoverySessionKey(target))?.retryAfterMs ?? 0;
+      Object.assign(lastProblemRef.current, { target, attempts, retryAfterMs });
+      setHeldFailure({ reason, attempts, target, retryAfterMs });
+      onResilienceEvent?.({ kind: 'resilience-held', reason, attempts, target, retryAfterMs });
       setRefusalHeldGuid(currentMediaGuid);
       return;
     }
@@ -1793,7 +1809,7 @@ const Player = forwardRef(function Player(props, ref) {
       onResilienceEvent?.({ kind: 'resilience-exhausted', reason, attempts });
       clear();
     }
-  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta, currentMediaGuid, holdRefusals, publishHeldProblem]);
+  }, [isQueue, hasNextQueueItem, advance, clear, playQueue, onResilienceEvent, effectiveMeta, currentMediaGuid, holdRefusals, publishHeldProblem, finiteVideo, recoveryIdentity]);
 
   // Self-contained formats (titlecard, etc.) have no media element —
   // suppress the resilience overlay which would never exit startup.
@@ -2096,14 +2112,14 @@ const Player = forwardRef(function Player(props, ref) {
   // makes skip/back/load-failure incapable of earning completion.
   const manualAdvance = isQueue ? advance : singleAdvance;
 
-  // The one way OUT of a screen's source wait (it never skips by itself): OK,
-  // D-pad, media-next or the Remote's skip, or a tap on the pill. Media
-  // (onResilienceEvent) has its own Skip and storm guard.
-  const sourceWaitSkippable = holdRefusals && (
+  // A held movie leaves only through an explicit owner action. Source-wait
+  // shortcuts remain available when a focused control does not own the key.
+  const sourceWaitSkippable = heldForCurrentVisit || holdRefusals && (
     Boolean(overlayProps?.sourceNotice)
     || (overlayProps?.isExhausted === true && refusalHeldGuid !== null && refusalHeldGuid === currentMediaGuid)
   );
   const skipRefusedSource = useCallback((origin) => {
+    if (typeof props.onSkipHeldPlayback === 'function') { props.onSkipHeldPlayback(); return true; }
     if (typeof manualAdvance !== 'function') return false;
     playbackLog('source-wait-skip', {
       key: origin?.key ?? null, queueRemaining: playQueue?.length ?? 0, hasNext: Boolean(isQueue && hasNextQueueItem),
@@ -2111,14 +2127,13 @@ const Player = forwardRef(function Player(props, ref) {
     ownerStoppedRef.current = false;
     manualAdvance();
     return true;
-  }, [manualAdvance, playQueue, isQueue, hasNextQueueItem]);
+  }, [manualAdvance, playQueue, isQueue, hasNextQueueItem, props.onSkipHeldPlayback]);
   // The Skip pill is only really on screen when the loading overlay renders it
   // (visible, not blacked out); keys are consumed only then.
   const skipPillShowing = sourceWaitSkippable
     && effectiveShader !== 'blackout'
-    && overlayProps?.shouldRender !== false
-    && overlayProps?.isVisible !== false
-    && (!overlayProps?.pauseOverlayActive || overlayProps?.stalled === true);
+    && (heldForCurrentVisit || (overlayProps?.shouldRender !== false && overlayProps?.isVisible !== false))
+    && (!overlayProps?.pauseOverlayActive || overlayProps?.stalled === true || heldForCurrentVisit);
   const skipPillShowingRef = useRef(false);
   skipPillShowingRef.current = skipPillShowing;
   const playerShellRef = useRef(null);
@@ -2325,7 +2340,92 @@ const Player = forwardRef(function Player(props, ref) {
     return seekOwner(Number.isFinite(duration) && duration > 0 ? Math.min(target, duration) : target);
   }, [seekOwner, withTransport]);
 
+  const adoptSessionSnapshot = useCallback((incoming, options = {}) => {
+    if (options.reason === 'recovery-quality' && !sameRecoveryTarget(options.target, recoveryIdentity.getTarget())) {
+      return { ok: false, code: 'PLAYBACK_CHANGED' };
+    }
+    const prepared = preparePlaybackOwnerAdoption(incoming);
+    if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
+    const adopted = prepared.snapshot;
+    const adoptedCurrent = adopted.queue.items[adopted.queue.currentIndex] ?? null;
+    const boundaryRequest = adoptedCurrent?.contentId == null ? null : {
+      operationId: options.operationId ?? options.transferId,
+      expectedContentId: adoptedCurrent.contentId,
+      targetSeconds: adopted.position,
+      autoplay: options.autoplay !== false,
+      requiredObserverIds: options.requiredObserverIds,
+      source: 'legacy-adoption',
+      target: options.reason === 'recovery-quality' ? options.target : undefined,
+      format: adoptedCurrent.format,
+      isLive: adoptedCurrent.isLive === true,
+    };
+    if (boundaryRequest) {
+      const boundaryInspected = inspectRendererBoundaryRequest(boundaryRequest);
+      if (!boundaryInspected.ok) return boundaryInspected;
+    }
+    if (['manual-quality', 'recovery-quality'].includes(options.reason)) {
+      if (options.reason === 'manual-quality') acceptRecoveryIntent('manual-quality');
+    } else beginRecoveryVisit();
+    if (!adoptedCurrent) stopOwner();
+    else ownerStoppedRef.current = false;
+    adoptQueueSnapshot(adopted);
+    setQueueHasAdvanced(true);
+    setTargetTimeSeconds(adopted.position);
+    pendingAdoptedConfigRef.current = {
+      config: adopted.config,
+      queueItemId: adopted.queue.executionOrder[0] ?? null,
+    };
+    setAdoptedConfigEpoch((epoch) => epoch + 1);
+    if (boundaryRequest) beginRendererBoundary(boundaryRequest);
+    return { ok: true };
+  }, [recoveryIdentity, inspectRendererBoundaryRequest, acceptRecoveryIntent, beginRecoveryVisit, stopOwner, adoptQueueSnapshot, setTargetTimeSeconds, beginRendererBoundary]);
+
+  const retryHeldPlayback = useCallback((expectedTarget) => {
+    const current = recoveryIdentity.getTarget();
+    if (expectedTarget && (expectedTarget.ownerId !== current.ownerId || expectedTarget.visitId !== current.visitId)) {
+      return { ok: false, code: 'PLAYBACK_CHANGED' };
+    }
+    const retry = resilienceControllerRef.current?.retryFromExhausted ?? overlayProps?.onRetryFromExhausted;
+    if (!retry) return { ok: false, code: 'PLAYER_NOT_READY' };
+    const result = retry();
+    if (result?.ok !== false) { setHeldFailure(null); lastProblemRef.current = null; }
+    return result ?? { ok: true };
+  }, [resilienceControllerRef, recoveryIdentity, overlayProps?.onRetryFromExhausted]);
+  const [heldQualityRequest, setHeldQualityRequest] = useState(null);
+  const focusHeldQuality = useCallback(node => node?.querySelector('select')?.focus(), []);
+  const openHeldQuality = useCallback(() => {
+    if (typeof props.onOpenPlaybackQuality === 'function') { props.onOpenPlaybackQuality(); return; }
+    setHeldQualityRequest({ mode: 'playing', item: effectiveMeta,
+      initial: normalizePlaybackQuality(effectiveMeta), target: recoveryIdentity.getTarget() });
+  }, [props.onOpenPlaybackQuality, effectiveMeta, recoveryIdentity]);
+  const applyHeldQuality = useCallback((quality) => {
+    if (!heldQualityRequest || !sameRecoveryTarget(heldQualityRequest.target, recoveryIdentity.getTarget())) {
+      return { ok: false, code: 'PLAYBACK_CHANGED' };
+    }
+    const item = { ...effectiveMeta, contentId: effectiveMeta.contentId ?? effectiveMeta.assetId,
+      format: effectiveMeta.format ?? 'video' };
+    const ownedQueue = queueSnapshot.items.length ? queueSnapshot : {
+      items: [{ ...item, queueItemId: currentMediaGuid, priority: 'queue' }], currentIndex: 0,
+      upNextCount: 0, executionOrder: [currentMediaGuid],
+    };
+    const native = _getMediaElFallback();
+    const paused = overlayProps?.userIntent === 'paused'
+      || (overlayProps?.userIntent == null && playbackMetrics.pauseIntent !== 'system' && playbackMetrics.isPaused === true);
+    const snapshot = { sessionId: playerInstanceId, currentItem: item, queue: ownedQueue,
+      position: Number.isFinite(native?.currentTime) ? native.currentTime : playbackMetrics.seconds,
+      state: paused ? 'paused' : 'playing',
+      config: { shuffle: shuffleOn, repeat: repeatMode, shader: effectiveShader,
+        volume: sessionVolume * 100, playbackRate: sessionPlaybackRate },
+      meta: { ownerId: playerInstanceId, updatedAt: new Date().toISOString() } };
+    const result = playbackQualityChange(snapshot, { contentId: item.contentId, quality });
+    if (!result.ok) return result;
+    const adopted = adoptSessionSnapshot(result.snapshot, { reason: 'manual-quality', autoplay: !paused });
+    if (adopted.ok) { setHeldQualityRequest(null); setHeldFailure(null); lastProblemRef.current = null; }
+    return adopted;
+  }, [heldQualityRequest, recoveryIdentity, effectiveMeta, queueSnapshot, currentMediaGuid, playbackMetrics,
+    playerInstanceId, shuffleOn, repeatMode, effectiveShader, sessionVolume, sessionPlaybackRate, adoptSessionSnapshot, overlayProps?.userIntent]);
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
+    retryMediaResilience: retryHeldPlayback,
     getRecoveryIdentity: () => recoveryIdentity,
     getRecoveryTarget: () => recoveryIdentity.getTarget(),
     getProblem: () => lastProblemRef.current,
@@ -2436,45 +2536,7 @@ const Player = forwardRef(function Player(props, ref) {
       if (queueSnapshot.items.length === 0 && playQueue.length === 0) return 'idle';
       return null;
     },
-    adoptSessionSnapshot: (incoming, options = {}) => {
-      if (options.reason === 'recovery-quality' && !sameRecoveryTarget(options.target, recoveryIdentity.getTarget())) {
-        return { ok: false, code: 'PLAYBACK_CHANGED' };
-      }
-      const prepared = preparePlaybackOwnerAdoption(incoming);
-      if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
-      const adopted = prepared.snapshot;
-      const adoptedCurrent = adopted.queue.items[adopted.queue.currentIndex] ?? null;
-      const boundaryRequest = adoptedCurrent?.contentId == null ? null : {
-        operationId: options.operationId ?? options.transferId,
-        expectedContentId: adoptedCurrent.contentId,
-        targetSeconds: adopted.position,
-        autoplay: options.autoplay !== false,
-        requiredObserverIds: options.requiredObserverIds,
-        source: 'legacy-adoption',
-        target: options.reason === 'recovery-quality' ? options.target : undefined,
-        format: adoptedCurrent.format,
-        isLive: adoptedCurrent.isLive === true,
-      };
-      if (boundaryRequest) {
-        const boundaryInspected = inspectRendererBoundaryRequest(boundaryRequest);
-        if (!boundaryInspected.ok) return boundaryInspected;
-      }
-      if (['manual-quality', 'recovery-quality'].includes(options.reason)) {
-        if (options.reason === 'manual-quality') acceptRecoveryIntent('manual-quality');
-      } else beginRecoveryVisit();
-      if (!adoptedCurrent) stopOwner();
-      else ownerStoppedRef.current = false;
-      adoptQueueSnapshot(adopted);
-      setQueueHasAdvanced(true);
-      setTargetTimeSeconds(adopted.position);
-      pendingAdoptedConfigRef.current = {
-        config: adopted.config,
-        queueItemId: adopted.queue.executionOrder[0] ?? null,
-      };
-      setAdoptedConfigEpoch((epoch) => epoch + 1);
-      if (boundaryRequest) beginRendererBoundary(boundaryRequest);
-      return { ok: true };
-    },
+    adoptSessionSnapshot,
     stopIfCurrent: (expected, sessionId) => {
       const currentIndex = queueSnapshot.currentIndex;
       const current = currentIndex >= 0 ? queueSnapshot.items[currentIndex] : null;
@@ -2519,7 +2581,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount]);
+  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount, adoptSessionSnapshot, retryHeldPlayback]);
 
   useEffect(() => () => {
     clearRemountTimer();
@@ -2555,6 +2617,7 @@ const Player = forwardRef(function Player(props, ref) {
       pauseOwner();
       return;
     }
+    if (op === 'retry') return retryHeldPlayback(payload.target);
     if (op === 'toggle') {
       return toggleOwner();
     }
@@ -2589,8 +2652,8 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
     if (op === 'skip-next') {
-      // Routed here only for photo slideshows (ScreenActionHandler); a
-      // manual skip, never the natural end.
+      // Photo slideshows and held movies route explicit Skip here;
+      // this is manual navigation, never a natural end.
       ownerStoppedRef.current = false;
       (isQueue ? advance : singleAdvance)?.();
       return;
@@ -2707,7 +2770,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [queueSnapshot, applyQueueSnapshot, issueOwnerRevision, setRepeatMode, setIsContinuous, setOwnerVolume, playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive, beginRecoveryVisit]);
+  }, [queueSnapshot, applyQueueSnapshot, issueOwnerRevision, setRepeatMode, setIsContinuous, setOwnerVolume, playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive, beginRecoveryVisit, retryHeldPlayback]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
@@ -2726,15 +2789,26 @@ const Player = forwardRef(function Player(props, ref) {
     <>
       <PlayerOverlayLoading
         {...overlayProps}
+        held={heldForCurrentVisit}
+        isExhausted={heldForCurrentVisit || overlayProps.isExhausted}
+        shouldRender={heldForCurrentVisit || overlayProps.shouldRender}
+        isVisible={heldForCurrentVisit || overlayProps.isVisible}
+        onRetryFromExhausted={() => retryHeldPlayback()}
+        onOpenQuality={heldForCurrentVisit && supportsPlaybackQuality(effectiveMeta) ? openHeldQuality : null}
         onSkipSource={sourceWaitSkippable ? skipRefusedSource : null}
         effectiveMetaIsNull={!effectiveMeta}
         suppressForBlackout={suppressOverlaysForBlackout}
       />
       <PlayerOverlayPaused
         {...overlayProps}
+        isExhausted={heldForCurrentVisit || overlayProps.isExhausted}
         suppressForBlackout={suppressOverlaysForBlackout}
         suppressPauseOverlay={props.suppressPauseOverlay}
       />
+      {heldQualityRequest && !suppressOverlaysForBlackout && <div ref={focusHeldQuality} className="player-held-quality" role="dialog" aria-label="Playback quality" data-no-fullscreen="true" onKeyDown={event => event.stopPropagation()}>
+        <PlaybackQualityForm request={heldQualityRequest} onApply={applyHeldQuality} />
+        <button type="button" onClick={() => setHeldQualityRequest(null)}>Close Quality</button>
+      </div>}
       <PlayerOverlayStateDebug {...overlayProps} />
       <PlayerOverlayAutoplayBlocked
         autoplayBlocked={mediaAccess.autoplayBlocked}

@@ -186,7 +186,7 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
       }
       // play | pause | stop | skipNext | skipPrev
       bus.emit('media:playback', withOrigin({
-        command: action, commandId,
+        command: action, commandId, ...(action === 'retry' ? { target: value } : {}),
         // The sender's explicit answer to "Keep the music?" on a Stop.
         ...(action === 'stop' && typeof params.keepMusic === 'boolean' ? { keepMusic: params.keepMusic } : {}),
       }));

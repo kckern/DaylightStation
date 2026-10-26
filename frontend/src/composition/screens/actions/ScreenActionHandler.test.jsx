@@ -712,6 +712,29 @@ describe('ScreenActionHandler', () => {
       unmount();
     });
 
+    it('remote Skip on a held movie selects the next visit instead of seeking a segment', () => {
+      const owner = vi.fn(); getPlayerQueueOpRegistry().register(owner);
+      const source = { getBareSnapshot: () => ({ currentItem: { contentId: 'plex:1', format: 'video' },
+        meta: { problem: { kind: 'waiting', target: { ownerId: 'screen', visitId: 'held' } } } }), subscribe: () => () => {} };
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const view = render(<SessionSourceProvider source={source}><ScreenOverlayProvider>
+        <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+      </ScreenOverlayProvider></SessionSourceProvider>);
+      act(() => getActionBus().emit('media:playback', { command: 'skipNext', commandId: 'held-skip' }));
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'skip-next', commandId: 'held-skip' }));
+      expect(dispatchSpy.mock.calls.some(([event]) => event instanceof KeyboardEvent && event.key === 'Tab')).toBe(false);
+      dispatchSpy.mockRestore(); view.unmount();
+    });
+
+    it('remote Retry forwards the expected held visit to the owner', () => {
+      const owner = vi.fn(); getPlayerQueueOpRegistry().register(owner);
+      const target = { ownerId: 'screen', visitId: 'held', intentRevision: 2, rendererGeneration: 3 };
+      const view = render(<ScreenOverlayProvider><ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} /></ScreenOverlayProvider>);
+      act(() => getActionBus().emit('media:playback', { command: 'retry', commandId: 'held-retry', target }));
+      expect(owner).toHaveBeenCalledWith({ op: 'retry', commandId: 'held-retry', target });
+      view.unmount();
+    });
+
     it('routes remote Stop to the active Player owner without synthesizing Escape', () => {
       const owner = vi.fn();
       getPlayerQueueOpRegistry().register(owner);

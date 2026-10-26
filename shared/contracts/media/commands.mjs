@@ -9,6 +9,8 @@ export const TRANSPORT_ACTIONS = Object.freeze([
   'play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev',
   // Return a live stream to its live edge (STEER.4a/AC3). Carries no value.
   'goLive',
+  // Retry a held renderer using the current owner's visit and action budget.
+  'retry',
 ]);
 
 export const QUEUE_OPS = Object.freeze([
