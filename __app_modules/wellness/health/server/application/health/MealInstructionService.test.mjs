@@ -101,3 +101,16 @@ it('preserves submission-time versions through analysis instead of rebasing an a
  await service.execute('alice',{...input,expectedVersions:{broth:4,veg:2}});
  expect(calls[0].expectedVersions).toEqual({broth:4,veg:2});
 });
+
+it('analyzes two independent submissions concurrently and keeps their replies separate',async()=>{
+ const pending=[];let allStarted;
+ const started=new Promise(resolve=>{allStarted=resolve;});
+ const service=new MealInstructionService({nutritionItems:{findByDate:async()=>rows},aiGateway:{chat:()=>new Promise(resolve=>{pending.push(resolve);if(pending.length===2)allStarted();})},mealCommands:{}});
+ const first=service.execute('alice',{...input,operationId:'first'});
+ const second=service.execute('alice',{...input,operationId:'second'});
+ await started;
+ pending[1](JSON.stringify({intent:'clarification',candidateIds:['broth'],message:'Second?'}));
+ expect((await second).clarification.question).toBe('Second?');
+ pending[0](JSON.stringify({intent:'add'}));
+ expect(await first).toBeNull();
+});

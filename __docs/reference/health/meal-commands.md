@@ -130,3 +130,25 @@ All browser API traffic is intercepted. Grouping and amendments use a temporary
 YAML datastore, never household nutrition data. The journey checks manual/smart/
 voice grouping, preview before mutation, potatoes amendments, choices, Undo,
 indeterminate progress, retry operation identity, and desktop/mobile screenshots.
+
+
+## Concurrent browser commands
+
+The browser tracks operations separately from their affected foods. A group,
+membership change, or bulk move reserves its complete dependency set before
+sending; a command intersecting another pending operation cannot partially
+acquire targets. Independent groups may save concurrently, including in the
+same meal. Bulk moves still report partial network success accurately and offer
+Undo for the rows that reached their destination.
+
+Contextual captures may supply `expectedVersions` from the submitted day.
+`MealInstructionService` forwards those versions to the final meal command; it
+does not silently rebase the intended mutation on rows changed during analysis.
+Without supplied versions, its canonical pre-analysis snapshot remains the
+baseline. Explicit selected IDs still constrain the model's target scope.
+
+Capture retries retain their operation ID; independent identical captures use
+separate IDs. Delete and restore HTTP requests also accept operation IDs for
+replaying a lost successful response. Undo reserves the affected IDs recorded
+with its originating operation. Server transaction checks remain authoritative
+across clients; no browser-wide loading flag substitutes for them.

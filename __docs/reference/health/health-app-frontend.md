@@ -215,3 +215,39 @@ timing. Frontend events ship to the log store only at info and above:
 | `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
 
 All carry `context.app: health`.
+
+
+## Concurrent food entry and saving
+
+The Health shell owns a user-scoped operation session in
+`__app_modules/wellness/health/browser/operations/`. Each operation has its own
+request ID, immutable submitted input, affected food IDs, progress and recovery.
+Changing the viewed day or switching tabs does not abandon submitted work.
+Changing the confirmed user disposes the old session and prevents its responses
+from patching the new user's cache.
+
+A submitted sentence clears the add field immediately. Further sentences can be
+submitted through the same field while earlier analysis continues. Each sentence
+keeps its own progress entry until its resulting foods are available; failure
+keeps the submitted text with Retry and Dismiss, without changing newer input.
+Clarifications and no-food outcomes remain attached to their submission.
+
+Only affected foods lock while saving. Group commands reserve their dependent
+members atomically; unrelated foods and capture controls remain available.
+Already-open editors recheck reservations before sending. Pending catalog rows
+are visible but cannot be edited before the server assigns their real IDs.
+
+A server acknowledgment and a refreshed day snapshot are separate states.
+Authoritative returned rows release the save lock immediately. Responses carrying
+only IDs or incomplete group values keep those affected foods reconciling until a
+fresh read supplies the values. Retry refresh never resends an acknowledged write.
+Version floors, move/delete tombstones, and completed-read provenance prevent
+older polls from reverting saved values or resurrecting removed foods. Numeric
+previews compose independently and adjust counted food totals without counting
+group headers twice. Failed numeric drafts keep their intended values and local
+Retry/Discard controls.
+
+Explicit retries reuse the same request ID and bytes. Intentional identical
+submissions get different IDs. Local reservations coordinate this browser
+session; server version checks protect writes from other clients. There is no
+queue of edits to a saving item and no automatic conflict rebase.
