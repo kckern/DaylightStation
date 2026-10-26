@@ -14,6 +14,8 @@ import { YamlExerciseBank } from "./adapters/YamlExerciseBank.mjs";
 import { PianoScaleChallengePolicy } from "./application/PianoScaleChallengePolicy.mjs";
 import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
+import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
+import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
 export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection}) {
@@ -73,6 +75,12 @@ export async function createPianoModule({configService, userService, rootLogger,
   });
   const pianoAttemptStore = new YamlPianoAttemptStore({
     usersDir: join(configService.getDataDir(), 'users'),
+  });
+  const pianoLearnCoachService = new PianoLearnCoachService({
+    datastore: pianoStudioDatastore,
+    receiptStore: new YamlPianoLearnCoachStore({ usersDir: join(configService.getDataDir(), 'users') }),
+    attemptStore: pianoAttemptStore, clock: () => new Date(), timezone: configService.getTimezone?.() ?? null,
+    logger: rootLogger.child({ module: 'piano-learn-coach' }),
   });
   // Exercise bank: seeds at data/content/music/, instances computed on demand.
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
@@ -155,6 +163,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     // reshuffling the composition root around one field.
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
     pianoAttemptStore,
+    pianoLearnCoachService,
     pianoLearningService,
     pianoGameBudgetService,
     pianoBoardGameDayService,

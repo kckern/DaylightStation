@@ -167,6 +167,14 @@ describe('identity, authored requirements, review and legacy preservation', () =
     expect(projection(plan, state).segments[0].mastered).toBe(true);
   });
 
+  it('uses the earned household date for review when UTC has already crossed midnight', () => {
+    const plan = planOf();const task = choose(plan, 'mastery');let state;
+    for (const id of ['late-one', 'late-two'])state = applyCoachEvent(state, { id, type: 'outcome', task, result: good }, {
+      plan, now: '2026-10-27T06:30:00Z', dayKey: '2026-10-26',
+    });
+    expect(projection(plan, state, { dayKey: '2026-10-27' }).review).toMatchObject({ passageId: 'opening' });
+  });
+
   it('bounds recent evidence while retaining earned achievements and ignores duplicate delivery', () => {
     const plan = planOf();const task = choose(plan, 'right');let state = outcome(outcome(undefined, plan, task), plan, task);
     const same = outcome(state, plan, task, good, state.evidence.at(-1).id);

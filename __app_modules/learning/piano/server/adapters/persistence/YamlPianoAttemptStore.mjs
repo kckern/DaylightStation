@@ -103,6 +103,13 @@ export class YamlPianoAttemptStore {
     return existing;
   }
 
+  /** Read the acknowledged evidence for a coaching transaction, including old days. */
+  get(userId, attemptId) {
+    if (!SEGMENT_RE.test(String(userId)) || !SEGMENT_RE.test(String(attemptId))) return null;
+    const file = this.#findAttemptFile(userId, attemptId);
+    return file ? this.#read(file) : null;
+  }
+
   /**
    * Mark an attempt as not counting — e.g. a run the grader got wrong. The
    * record stays on disk (with when and why) so the evidence is never lost,
