@@ -131,6 +131,10 @@ export function jeopardyReducer(state, action) {
   const round = currentRound(state);
   const v2 = state.jeopardyFlowVersion === 2;
   switch (action.type) {
+    case 'ENABLE_RELIABLE_INPUT': {
+      if (state.inputProtocolVersion === 1 || state.active || state.answeringTeamId || state.wager != null || !['round-intro','board','round-decision'].includes(state.phase)) return state;
+      return { ...state, inputProtocolVersion: 1 };
+    }
     case 'ENABLE_EXPERIENCE_V2': {
       if (v2 || state.phase !== 'round-intro' || state.active || state.wager != null || state.answeringTeamId) return state;
       const usedKeys = Object.keys(state.used || {}).filter(key => state.used[key]);

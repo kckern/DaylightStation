@@ -1,0 +1,1095 @@
+[
+  {
+    "definition": {
+      "title": "Legacy synthetic replay",
+      "rounds": [
+        {
+          "name": "Round",
+          "mode": "turns",
+          "penalize_wrong": false,
+          "categories": [
+            {
+              "name": "Two",
+              "clues": [
+                {
+                  "value": 100,
+                  "clue": "First",
+                  "answer": "A"
+                },
+                {
+                  "value": 200,
+                  "clue": "Second",
+                  "answer": "B"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "setup": {},
+    "initial": {
+      "set": {
+        "title": "Legacy synthetic replay",
+        "rounds": [
+          {
+            "name": "Round",
+            "mode": "turns",
+            "penalize_wrong": false,
+            "categories": [
+              {
+                "name": "Two",
+                "clues": [
+                  {
+                    "value": 100,
+                    "clue": "First",
+                    "answer": "A"
+                  },
+                  {
+                    "value": 200,
+                    "clue": "Second",
+                    "answer": "B"
+                  }
+                ]
+              }
+            ],
+            "multiplier": 1
+          }
+        ]
+      },
+      "teamIds": [
+        "blue",
+        "gold"
+      ],
+      "roundIndex": 0,
+      "phase": "round-intro",
+      "cursor": {
+        "cat": 0,
+        "row": 0
+      },
+      "used": {},
+      "active": null,
+      "isDailyDouble": false,
+      "wager": null,
+      "answeringTeamId": null,
+      "attempted": [],
+      "turnTeamId": "blue",
+      "revealed": false,
+      "finalWagers": {},
+      "finalJudged": {},
+      "scores": {
+        "blue": 0,
+        "gold": 0
+      },
+      "team_actors": {
+        "blue": [],
+        "gold": []
+      },
+      "status": "active"
+    },
+    "steps": [
+      {
+        "command": {
+          "type": "START_ROUND"
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 0
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "START_ROUND",
+              "revision": 1
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "START_ROUND",
+              "phase": "board"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SELECT_AT",
+          "cat": 0,
+          "row": 0
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 1
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "clue",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 100,
+                "clue": "First",
+                "answer": "A"
+              }
+            },
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SELECT_AT",
+              "phase": "clue"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "REVEAL"
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 2
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "judging",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 100,
+                "clue": "First",
+                "answer": "A"
+              }
+            },
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "REVEAL",
+              "phase": "judging"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "JUDGE",
+          "correct": true
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 3
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 1
+            },
+            "used": {
+              "0:0:0": true
+            },
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "gold",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 100,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "JUDGE",
+              "correct": true,
+              "revision": 4
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "JUDGE",
+              "phase": "board",
+              "score_delta": {
+                "teamId": "blue",
+                "delta": 100
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "definition": {
+      "title": "Legacy synthetic replay",
+      "rounds": [
+        {
+          "name": "Round",
+          "mode": "turns",
+          "penalize_wrong": false,
+          "categories": [
+            {
+              "name": "Two",
+              "clues": [
+                {
+                  "value": 100,
+                  "clue": "First",
+                  "answer": "A"
+                },
+                {
+                  "value": 200,
+                  "clue": "Second",
+                  "answer": "B"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "jeopardy_flow_version": 2
+    },
+    "initial": {
+      "set": {
+        "title": "Legacy synthetic replay",
+        "rounds": [
+          {
+            "name": "Round",
+            "mode": "turns",
+            "penalize_wrong": false,
+            "categories": [
+              {
+                "name": "Two",
+                "clues": [
+                  {
+                    "value": 100,
+                    "clue": "First",
+                    "answer": "A"
+                  },
+                  {
+                    "value": 200,
+                    "clue": "Second",
+                    "answer": "B"
+                  }
+                ]
+              }
+            ],
+            "multiplier": 1
+          }
+        ]
+      },
+      "teamIds": [
+        "blue",
+        "gold"
+      ],
+      "roundIndex": 0,
+      "phase": "round-intro",
+      "cursor": {
+        "cat": 0,
+        "row": 0
+      },
+      "used": {},
+      "active": null,
+      "isDailyDouble": false,
+      "wager": null,
+      "answeringTeamId": null,
+      "attempted": [],
+      "turnTeamId": "blue",
+      "revealed": false,
+      "finalWagers": {},
+      "finalJudged": {},
+      "jeopardyFlowVersion": 2,
+      "presentationSeq": 0,
+      "presentationEvents": [],
+      "scores": {
+        "blue": 0,
+        "gold": 0
+      },
+      "team_actors": {
+        "blue": [],
+        "gold": []
+      },
+      "status": "active"
+    },
+    "steps": [
+      {
+        "command": {
+          "type": "START_ROUND"
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 0
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 1,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "START_ROUND",
+              "revision": 1
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "START_ROUND",
+              "phase": "board"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SELECT_AT",
+          "cat": 0,
+          "row": 0
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 1
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "clue",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 100,
+                "clue": "First",
+                "answer": "A"
+              }
+            },
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 2,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SELECT_AT",
+              "phase": "clue"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "REVEAL"
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 2
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "judging",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 100,
+                "clue": "First",
+                "answer": "A"
+              }
+            },
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 3,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "REVEAL"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            },
+            "answerReview": {
+              "teamId": "blue",
+              "correct": null,
+              "scoreDelta": 0,
+              "judgmentPending": true
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "REVEAL",
+              "phase": "judging"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "JUDGE",
+          "correct": true
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 3
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "answer-review",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 100,
+                "clue": "First",
+                "answer": "A"
+              }
+            },
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [
+              "blue"
+            ],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 4,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "REVEAL"
+              },
+              {
+                "seq": 4,
+                "revision": 4,
+                "type": "JUDGE",
+                "correct": true
+              }
+            ],
+            "scores": {
+              "blue": 100,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "JUDGE",
+              "correct": true,
+              "revision": 4
+            },
+            "answerReview": {
+              "teamId": "blue",
+              "correct": true,
+              "scoreDelta": 100,
+              "judgmentPending": false
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "JUDGE",
+              "phase": "answer-review",
+              "score_delta": {
+                "teamId": "blue",
+                "delta": 100
+              }
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "RETURN_TO_BOARD"
+        },
+        "context": {
+          "actorId": "host",
+          "recordedAt": "2026-01-01T00:00:00.000Z",
+          "revision": 4
+        },
+        "result": {
+          "state": {
+            "set": {
+              "title": "Legacy synthetic replay",
+              "rounds": [
+                {
+                  "name": "Round",
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Two",
+                      "clues": [
+                        {
+                          "value": 100,
+                          "clue": "First",
+                          "answer": "A"
+                        },
+                        {
+                          "value": 200,
+                          "clue": "Second",
+                          "answer": "B"
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 1
+            },
+            "used": {
+              "0:0:0": true
+            },
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "gold",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 4,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "REVEAL"
+              },
+              {
+                "seq": 4,
+                "revision": 4,
+                "type": "JUDGE",
+                "correct": true
+              }
+            ],
+            "scores": {
+              "blue": 100,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "JUDGE",
+              "correct": true,
+              "revision": 4
+            },
+            "answerReview": null
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "RETURN_TO_BOARD",
+              "phase": "board"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

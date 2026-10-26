@@ -1,3 +1,4 @@
+import { commandContext } from '../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs';
 // Jeopardy native presenter. Authoritative transitions and scores are owned by
 // the shared ruleset and remote Gaming coordinator.
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
@@ -111,11 +112,11 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   }, [sessionId, setId, acceptSession]);
 
   // Hardware buzzers and timed trivia retain coordinator command dispatch.
-  const applyAction = useCallback(async (action) => {
+  const applyAction = useCallback(async (action, expectedContext = commandContext(stateRef.current)) => {
     if (!action || !stateRef.current || pendingCommand.current) return;
     pendingCommand.current = true;
-    try { const result = await sendJeopardyCommand(sessionId, action); acceptSession(result); logger.info('jeopardy.command-result', { sessionId, type: action.type, teamId: action.teamId, revision: result.header?.revision, result: 'accepted' }); }
-    catch (cause) { if (!mounted.current) return; logger.warn('jeopardy.command-failed', { type: action.type, phase: stateRef.current?.phase, error: cause.message }); errorRef.current = cause.message; setError(cause.message); }
+    try { const result = await sendJeopardyCommand(sessionId, action, { expectedRevision: latestRevision.current >= 0 ? latestRevision.current : undefined, expectedContext }); acceptSession(result); logger.info('jeopardy.command-result', { sessionId, type: action.type, teamId: action.teamId, revision: result.header?.revision, result: 'accepted' }); }
+    catch (cause) { if (!mounted.current) return; if (cause.code === 'stale_command_context' && cause.session) { acceptSession(cause.session); logger.info('jeopardy.command-superseded', { sessionId, type: action.type }); return; } logger.warn('jeopardy.command-failed', { type: action.type, phase: stateRef.current?.phase, error: cause.message }); errorRef.current = cause.message; setError(cause.message); }
     finally { pendingCommand.current = false; }
   }, [audio, sessionId, logger, acceptSession]);
   const recoverConnection = useCallback(async () => {
@@ -206,7 +207,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
           key={`${state.roundIndex}:${state.active?.cat}:${state.active?.row}:${state.attempted.length}`}
           state={state}
           timerSeconds={timerSeconds}
-          onTimeout={() => applyAction({ type: 'TIMEOUT' })}
+          onTimeout={() => applyAction({ type: 'TIMEOUT' }, commandContext(state))}
           lockedTeam={lockedTeam}
         />
       )}

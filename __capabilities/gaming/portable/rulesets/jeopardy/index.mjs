@@ -1,3 +1,4 @@
+import { commandContext, needsCommandContext, matchesCommandContext } from './commandContext.mjs';
 import { validateJeopardyScriptureMetadata } from "./content.mjs";
 import { defineRuleModule } from "../../kernel/index.mjs";
 import { initJeopardy, jeopardyReducer, scoreDelta, migrateJeopardyState } from "./stateMachine.mjs";
@@ -19,6 +20,12 @@ function participantProjection(state, viewer) {
   const projected = structuredClone(state);
   const viewerTeam = teamForActor(state, viewer?.participant_id);
   delete projected.team_actors;
+  if (state.inputProtocolVersion === 1) {
+    // Counts are public progress, while the underlying wager amounts stay private.
+    const context = commandContext(state);
+    projected.finalWagerCount = context.finalWagerCount;
+    projected.finalJudgedCount = context.finalJudgedCount;
+  }
   if (projected.buzzerSetup) {
     delete projected.buzzerSetup.epoch;
     for (const entry of Object.values(projected.buzzerSetup.teams)) { entry.assigned = Boolean(entry.slot); delete entry.slot; }
@@ -57,7 +64,7 @@ function participantProjection(state, viewer) {
   return projected;
 }
 
-const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE', 'ENABLE_EXPERIENCE_V2', 'CONTINUE_ROUND', 'FINISH_GAME']);
+const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE', 'ENABLE_EXPERIENCE_V2', 'ENABLE_RELIABLE_INPUT', 'CONTINUE_ROUND', 'FINISH_GAME']);
 const CUE_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'TIMEOUT', 'JUDGE', 'JUDGE_FINAL']);
 const actorIsHost = (actorId) => actorId === 'host' || actorId === 'system';
 
@@ -104,7 +111,7 @@ export const jeopardyRuleModule = defineRuleModule({
       ...definition,
       rounds: definition.rounds.map((round) => ({ ...round, multiplier: Number(round.multiplier) > 0 ? Number(round.multiplier) : 1 })),
     };
-    return { ...initJeopardy(normalizedDefinition, teamIds), ...(setup.jeopardy_flow_version === 2 ? { jeopardyFlowVersion: 2, presentationSeq: 0, presentationEvents: [] } : {}), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
+    return { ...initJeopardy(normalizedDefinition, teamIds), ...(setup.jeopardy_flow_version === 2 ? { jeopardyFlowVersion: 2, presentationSeq: 0, presentationEvents: [] } : {}), ...(setup.jeopardy_input_version === 1 ? { inputProtocolVersion: 1 } : {}), scores: Object.fromEntries(teamIds.map((id) => [id, 0])), team_actors: teamActors, status: 'active' };
   },
   handleCommand(state, command, _definition, context) {
     state = migrateJeopardyState(state);
@@ -112,6 +119,10 @@ export const jeopardyRuleModule = defineRuleModule({
     const action = { ...command, type: command.type.replace(/^jeopardy\./, '').replaceAll('.', '_').toUpperCase() };
     const authorizationError = authorizeAction(state, action, context.actorId);
     if (authorizationError) return { error: authorizationError };
+    if (state.inputProtocolVersion === 1 && needsCommandContext(action.type)) {
+      if (!action.expectedContext) return { error: { code: 'command_context_required', message: 'Refresh this controller to load question-specific controls' } };
+      if (!matchesCommandContext(state, action.expectedContext)) return { error: { code: 'stale_command_context', message: 'The question or answering turn changed; use the current controls' } };
+    }
     if (action.type === 'CONFIGURE_COMPETITIVE') {
       if (state.phase !== 'round-intro' || state.roundIndex !== 0 || Object.values(state.used || {}).some(Boolean) || Object.values(state.scores || {}).some(score => Number(score) !== 0)) {
         return { error: { code: 'illegal_command', message: 'Competitive setup can change only before the first round starts' } };
@@ -162,3 +173,5 @@ export * from "./stateMachine.mjs";
 export * from "./content.mjs";
 
 export { buzzersReady, requiresBuzzers, BUZZER_LEASE_MS } from "./buzzerReadiness.mjs";
+
+export { commandContext, contextKey, matchesCommandContext, needsCommandContext } from './commandContext.mjs';

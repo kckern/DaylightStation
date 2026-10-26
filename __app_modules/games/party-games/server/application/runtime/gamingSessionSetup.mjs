@@ -31,6 +31,6 @@ export function prepareGamingSessionSetup({ manifest, request, partyGamesCatalog
     setup.candidates = partyGamesCatalog.getConfig().household_members;
   }
   // Persist the flow contract in the creation journal; old journals omit it.
-  if (manifest.id === 'jeopardy') setup.jeopardy_flow_version = 2;
+  if (manifest.id === 'jeopardy') { setup.jeopardy_flow_version = 2; setup.jeopardy_input_version = 1; }
   return { participants, seats, setup };
 }

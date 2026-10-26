@@ -1,3 +1,4 @@
+import { commandContext } from '../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
@@ -76,12 +77,12 @@ export default function PartyGamesHost() {
     inFlight.current = true;
     setPending(true);
     try {
-      const result = rulesetId === 'jeopardy' ? await sendJeopardyCommand(sessionId, command) : await sendRuleCommand(sessionId, command);
+      const result = rulesetId === 'jeopardy' ? await sendJeopardyCommand(sessionId, command, { expectedRevision: session?.header?.revision, expectedContext: commandContext(session?.state) }) : await sendRuleCommand(sessionId, command);
       accept(token, result);
       logger.info('party-games.host.command-completed', { sessionId, type: command.type });
-    } catch (cause) { if (identity.current !== token) return; logger.warn('party-games.host.command-failed', { sessionId, type: command.type, message: cause.message }); setError(cause.message); }
+    } catch (cause) { if (identity.current !== token) return; if (cause.code === 'stale_command_context' && cause.session) { accept(token, cause.session); logger.info('party-games.host.command-superseded', { sessionId, type: command.type }); return; } logger.warn('party-games.host.command-failed', { sessionId, type: command.type, message: cause.message }); setError(cause.message); }
     finally { if (identity.current === token) { inFlight.current = false; setPending(false); } }
-  }, [rulesetId, sessionId, logger, accept]);
+  }, [rulesetId, sessionId, session, logger, accept]);
   const restart = useCallback(async () => {
     if (inFlight.current) return;
     const token = identity.current;

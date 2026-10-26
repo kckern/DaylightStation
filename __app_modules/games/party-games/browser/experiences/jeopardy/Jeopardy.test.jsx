@@ -38,7 +38,7 @@ it('preserves hosted hardware buzzer dispatch',async()=>{
  const state={...base,set:hosted,phase:'clue',active:{cat:0,row:0,clue:set.rounds[0].categories[0].clues[0]}};
  fetchSession.mockResolvedValue({state});sendJeopardyCommand.mockResolvedValue({state});let buzz;
  render(<Jeopardy sessionId="test" seats={teams} gamingServices={{buzzers:{subscribe:fn=>{buzz=fn;return()=>{};},arm:vi.fn(),disarm:vi.fn()}}}/>);
- await screen.findByTestId('clue-screen');await act(async()=>buzz('team_1'));expect(sendJeopardyCommand).toHaveBeenCalledWith('test',{type:'BUZZ',teamId:'team_1'});
+ await screen.findByTestId('clue-screen');await act(async()=>buzz('team_1'));expect(sendJeopardyCommand).toHaveBeenCalledWith('test',{type:'BUZZ',teamId:'team_1'},expect.objectContaining({expectedContext:expect.objectContaining({phase:'clue'})}));
 });
 it('remounts fresh lobby after completion and ignores late old refresh',async()=>{
  let late;const completed={outcome:{kind:'completed'},scores:[]};const finish=vi.fn();

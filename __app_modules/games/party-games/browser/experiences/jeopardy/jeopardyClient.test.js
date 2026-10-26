@@ -50,3 +50,36 @@ it('serializes heartbeat and winning BUZZ in one local session lane', async () =
   expect(authority.snapshot().state).toMatchObject({ phase: 'judging', answeringTeamId: 'red' });
   expect(committed).toEqual(['jeopardy.buzzer.presence', 'jeopardy.buzz']);
 });
+
+it('uses an accepted revision/context without a redundant GET',async()=>{
+ const state=server('clue').snapshot().state;
+ const {commandContext}=await import('../../../../../../__capabilities/gaming/portable/rulesets/jeopardy/commandContext.mjs');
+ DaylightAPI.mockResolvedValue({header:{revision:11},state});
+ await sendJeopardyCommand('known:revision',{type:'BUZZ',teamId:'red'},{expectedRevision:10,expectedContext:commandContext(state),commandId:'known:one',logicalTime:123});
+ expect(DaylightAPI).toHaveBeenCalledTimes(1);
+ expect(DaylightAPI).toHaveBeenCalledWith('api/v1/gaming/sessions/known:revision/commands',expect.objectContaining({command_id:'known:one',logical_time:123,expected_revision:10,command:expect.objectContaining({expectedContext:commandContext(state)})}),'POST');
+});
+it('probes a lost accepted response using the identical envelope and scores once',async()=>{
+ const authority=server('clue');let committed,firstEnvelope,commits=0;
+ DaylightAPI.mockImplementation(async(_,envelope,method)=>{
+  if(method!=='POST')return authority.snapshot();
+  if(!committed){commits++;firstEnvelope=structuredClone(envelope);committed=authority.post(envelope);throw Object.assign(new Error('lost accepted response'),{transient:true});}
+  expect(envelope).toEqual(firstEnvelope);return{...committed,duplicate:true};
+ });
+ const result=await sendJeopardyCommand('lost:ack',{type:'BUZZ',teamId:'red'});
+ expect(result.state.answeringTeamId).toBe('red');expect(commits).toBe(1);expect(result.duplicate).toBe(true);
+});
+it('retains identity and logical time across an explicit uncommitted conflict',async()=>{
+ const authority=server('clue');const attempts=[];
+ DaylightAPI.mockImplementation(async(_,envelope,method)=>{
+  if(method!=='POST')return authority.snapshot();attempts.push(structuredClone(envelope));
+  if(attempts.length===1)authority.phoneCommit();return authority.post(envelope);
+ });
+ await sendJeopardyCommand('identity:conflict',{type:'BUZZ',teamId:'red'});
+ expect(attempts).toHaveLength(2);expect(attempts[1]).toEqual({...attempts[0],expected_revision:1});
+});
+it('never retries an explicitly aborted request',async()=>{
+ DaylightAPI.mockImplementation(async(_,body,method)=>{if(method!=='POST')return server('clue').snapshot();throw Object.assign(new Error('aborted'),{name:'AbortError',transient:true});});
+ await expect(sendJeopardyCommand('abort:request',{type:'BUZZ',teamId:'red'})).rejects.toHaveProperty('name','AbortError');
+ expect(DaylightAPI.mock.calls.filter(([, ,method])=>method==='POST')).toHaveLength(1);
+});
