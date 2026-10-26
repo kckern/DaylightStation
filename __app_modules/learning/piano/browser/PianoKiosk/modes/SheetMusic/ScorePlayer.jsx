@@ -2335,6 +2335,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     <div className="piano-score-player">
       {learnSession}
       {customSession}
+      {roadmapLearn && selectedPassageId && !selectedPassage && layoutFresh && (layout.measures?.length ?? 0) > 0 && <p role="status">That passage is no longer available. Choose a passage to continue.</p>}
       {learnNotice && <div className="piano-score-player__notice" role="status">{learnNotice}</div>}
       {scoreMeta.splashImage && !engraveReady && (
         <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
@@ -2475,6 +2476,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
         <>
           <div className="piano-learn-entry piano-learn-coach"><button type="button" className="is-primary" onClick={() => openLearnPassage(coach.projection.recommended?.passageId ?? coachedPassages[0]?.id)}>{coach.state.evidence.length || coachedPassages.some((passage) => passage.inProgress || passage.complete) ? 'Continue learning' : 'Start learning'}</button>
+            {coach.projection.recommended && <span>{coachedPassages.find((passage) => passage.id === coach.projection.recommended.passageId)?.label} · {coach.projection.recommended.label}</span>}
             {coach.projection.review && <button type="button" onClick={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}>Review a passage</button>}
           </div>
           <LearnProgressStrip segments={coachedPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />

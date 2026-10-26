@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnCoach from './LearnCoach.jsx';
-import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
-const h = vi.hoisted(() => ({ profile: 'guest', lab: null, unavailable: null }));
+import { createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
+const h = vi.hoisted(() => ({ profile: 'guest', connected: true, lab: null, unavailable: null }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.profile }) }));
-vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: true }) }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: h.connected }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => null }));
 vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: ({ onExpectation, onUnrunnable }) => {
   h.unavailable = onUnrunnable;
@@ -16,7 +16,7 @@ const props = { score: { id: 'score', musicXml: '<score />' }, plan, segment: pl
 const passed = { assessmentId: 'take', status: 'completed', diagnostics: { expected_notes: 8, matched_notes: 8 }, criteria: { completeness: 1, cleanliness: 1, placement: 1 }, verdict: { passed: true } };
 const start = async () => { fireEvent.click(screen.getByRole('button', { name: 'Music ready' })); fireEvent.click(screen.getByRole('button', { name: 'Start practice', exact: true })); await screen.findByText('Running take'); };
 describe('LearnCoach', () => {
- beforeEach(() => { h.profile = 'guest'; h.lab = null; props.onListen.mockClear(); localStorage.clear(); });
+ beforeEach(() => { h.profile = 'guest'; h.connected = true; h.lab = null; props.onListen.mockClear(); localStorage.clear(); });
  it('prepares one clear task and waits for notation and a deliberate start', async () => {
   render(<LearnCoach {...props} />);
   expect(screen.getByRole('heading', { name: 'Find the right-hand notes' })).toBeInTheDocument();
@@ -63,4 +63,43 @@ describe('LearnCoach', () => {
   await waitFor(() => expect(screen.queryByText('Running take')).not.toBeInTheDocument());
   expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeInTheDocument();
  });
+ it('keeps custom hands, beat and tempo through preparation and another setup visit', async () => {
+  render(<LearnCoach {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Change practice' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Left hand', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Play on time', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Slow 40%' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Use this setup' }));
+  expect(screen.getByRole('heading', { name: 'Your practice' })).toBeInTheDocument();
+  expect(h.lab).toBeNull();
+  await start(); expect(h.lab.coachingTask).toMatchObject({ parts: ['lh'], mode: 'cued', tempoPercent: 40 });
+  act(() => h.lab.onChangePractice());
+  expect(screen.getByRole('button', { name: 'Left hand', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Slow 40%' })).toHaveAttribute('aria-pressed', 'true');
+ });
+
+ it('explains missing MIDI separately and never starts until the connection is restored', () => {
+  h.connected = false; const view = render(<LearnCoach {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Music ready' }));
+  expect(screen.getByText(/Connect the piano/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
+  h.connected = true; view.rerender(<LearnCoach {...props} />);
+  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeEnabled();
+ });
+ it('shows preparation failure and retries the music without losing the selected task', () => {
+  render(<LearnCoach {...props} />); act(() => h.unavailable('engrave-failed'));
+  expect(screen.getByRole('alert')).toHaveTextContent('music could not be prepared');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry music' }));
+  expect(screen.getByText('Preparing the music…')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Music ready' }));
+  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeEnabled();
+ });
+ it('keeps success visible beside save failure and retries the same take', async () => {
+  const coach = { profileId:'learner4', projection:projectCoach({plan}), state:{}, saveStatus:'error', selectTask:vi.fn(), record:vi.fn(), retry:vi.fn(async()=>{}) };
+  render(<LearnCoach {...props} coach={coach} />); await start();
+  act(()=>h.lab.onOutcome(passed));expect(screen.getByRole('heading',{name:'Nice work!'})).toBeInTheDocument();
+  expect(screen.getByText('Progress not saved')).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Retry saving'}));
+  await waitFor(()=>expect(coach.record).toHaveBeenCalledTimes(2));expect(coach.record.mock.calls[1][1].assessmentId).toBe('take');
+ });
+
 });

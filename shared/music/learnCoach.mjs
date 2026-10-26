@@ -148,7 +148,8 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     if (current.resume.review || !canonical || !parentSegment?.skills.find((item) => item.key === canonical.key)?.ready) recommended = current.resume;
   }
   recommended ??= segments.flatMap((segment) => segment.skills).find((task) => !task.ready) ?? null;
-  return { segments, recommended, review, state: current };
+  return { segments, recommended, review, state: current,
+    retainedLegacy: { passages: legacy.learn?.passages ?? {}, compatible: compatibleLegacy === legacy } };
 }
 
 function recovery(plan, task, result) {

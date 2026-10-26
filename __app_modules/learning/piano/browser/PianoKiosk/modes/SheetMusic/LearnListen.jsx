@@ -39,7 +39,7 @@ export default function LearnListen({ score, task, tempoMap, onDone }) {
   return <section className="piano-learn-coach" aria-label="Passage demonstration">
     <h2>Listen to this passage</h2><p>Your turn comes next. Listening does not change your progress.</p>
     <button type="button" onClick={onDone}>Stop listening</button>
-    <ScorePassage musicXml={score.musicXml} sourceId={score.id} rangeIndices={task.range} activeParts={task.parts}
-      onExpectation={onExpectation} keepWholePassage onUnrunnable={onDone} />
+    <div className="piano-learn-coach__demo piano-exercise-run__score"><ScorePassage musicXml={score.musicXml} sourceId={score.id} rangeIndices={task.range} activeParts={task.parts}
+      onExpectation={onExpectation} keepWholePassage onUnrunnable={onDone} /></div>
   </section>;
 }

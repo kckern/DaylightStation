@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { PianoLearnCoachService } from './PianoLearnCoachService.mjs';
 import { pianoCoachFixture } from '../../../../../tests/_lib/pianoCoachFixture.mjs';
 
+import captured from '../../../../../shared/music/__fixtures__/learnCoachCapturedPractice.json';
+import { createCoachPlan } from '../../../../../shared/music/learnCoach.mjs';
+
 const SCORE = 'files-test-musicxml';
 describe('acknowledged piano coaching', () => {
   it('keeps the application readable when timezone configuration is missing and refuses an ambiguous-day write', async () => {
@@ -98,4 +101,20 @@ describe('acknowledged piano coaching', () => {
     expect((await s.get('learner4', SCORE, { scoreId: f.plan.scoreId, fingerprint: 'content-a' })).state.evidence).toHaveLength(128);
     expect((await s.get('learner4', SCORE, { scoreId: f.plan.scoreId, fingerprint: 'content-b' })).state.evidence).toHaveLength(1);
   });
+  it('preserves all thirteen captured legacy summaries through an idempotent coaching write', async () => {
+    for (const [index, fixture] of captured.entries()) {
+      const f = pianoCoachFixture(); const key = `files-captured-score-${index}-musicxml`;
+      const scoreId = `files:captured-score-${index}.musicxml`;
+      f.records.set(`learner4/${key}`, structuredClone(fixture.record));
+      const plan = createCoachPlan({ scoreId, fingerprint: fixture.record.fingerprint.contentSha256,
+        segments: [{ id: 'm0-3', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
+      const body = { plan, event: { id: `migration-${index}`, profileId: 'learner4', type: 'selection', task: plan.tasks[0] } };
+      const service = new PianoLearnCoachService(f);
+      await service.record('learner4', key, body); await service.record('learner4', key, body);
+      const saved = f.records.get(`learner4/${key}`);
+      for (const field of ['learn', 'measures', 'polish', 'fingerprint']) expect(saved[field]).toEqual(fixture.record[field]);
+      expect(saved.learnCoach.revision).toBe(1);
+    }
+  });
+
 });

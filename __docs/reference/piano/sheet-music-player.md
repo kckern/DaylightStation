@@ -208,87 +208,114 @@ Green means one thing only: you are playing the right note, right now.
 
 ## Learn: landing and the state matrix
 
-### Passage roadmap and practice launchpad
+### Guided passage learning
 
-The score remains visible as the roadmap. Rehearsal regions are never crossed;
-within each region, the planner creates balanced passages targeting four bars
-(normally three to five) and avoids accidental one-bar tails. Every segment is
-open from the start unless sequential navigation is explicitly configured. The
-first incomplete segment is marked Next, but a player can open any unlocked
-segment.
+The score remains the map. Rehearsal regions are never crossed; within each
+region the planner balances passages targeting four bars (normally three to
+five). **Start learning** or **Continue learning** names the next passage and
+skill. Large passage cards remain directly selectable, including completed
+passages. A stale passage URL shows an explanation and the available choices.
 
-The score shows numbered segment markers plus a horizontally scrollable row of
-large, labeled segment cards. Each card includes its number, authored name or
-segment label, printed bar range, and plain-language state. Learned and mastered
-cards remain enabled so practice is never a one-way door. A thin
-outline appears only for the selected segment. It follows engraved barlines
-horizontally and hugs the active notation vertically with a small clearance.
-Wrapped passages receive one outline per system and never bridge page whitespace.
+Selecting a passage opens preparation with its engraved excerpt, printed bar
+range, selected profile, earned skills, one musical task, and a plain success
+condition. **Start practice** becomes available after notation and its assessment
+expectation are ready. Preparation failures offer **Retry music**. A disconnected
+piano is explained separately. Routes, reloads, and profile restoration always
+prepare; they never start a graded run.
 
-Choosing a segment opens its full-screen launchpad: the engraved excerpt stays
-visible on the left while large icon-and-label actions fill the right. **Up next**
-is the dominant action. **Practice again** exposes every unlocked drill,
-including completed drills; **Make your own** chooses hands, beat mode, and a
-named tempo; **Test out** remains a separate challenge. Beat choices use the
-learner-facing labels **No beat**, **Keep a beat**, and **Play on time**.
+**Listen** demonstrates only the selected passage and parts using the existing
+score transport, returns to the unchanged preparation, and records no assessment.
+**Change practice** retains hands, beat and named tempo choices; **Use this setup**
+returns to preparation. **Try the full passage** prepares a full-tempo timed
+demonstration when the passage has a timed mastery task. The learner can attempt
+it before completing the easier skills.
 
-Starting an action plucks the segment into the existing full-screen lab. The lab
-engraves only the selected bars, in one or at most two systems, and physically
-removes inactive staves for single-hand work. Replaying a completed drill starts
-fresh temporary sets and reps without erasing the earned completion. Custom
-practice is one passage run, not another sets/reps editor. If its hands, beat,
-and tempo exactly match an unlocked unfinished rung, the successful run also
-earns that rung's normal credit; it never removes or rewrites existing credit.
+The standard path is:
 
-The lab leads with notation. Its existing assessment cursor is visible on free
-and timed rungs; timed work adds beat-window state to that same cursor. The
-keyboard footer remains neutral until the learner plays a wrong pitch at the
-current event, then reveals the still-owed key or chord only until the cursor
-advances. Two-system excerpts choose a width-balanced break and avoid a
-one-measure second-system orphan when a legal two-or-more-measure split exists.
-The passage extractor writes that break as MusicXML `new-system` metadata and
-the lab renderer explicitly enables OSMD's `newSystemFromXML` option; the normal
-full-score viewer continues to use responsive automatic wrapping.
-
-Lab context lives in one compact toolbar rather than floating controls: Back,
-segment and bar identity, rung, set/rep position, and (for timed work) tempo.
-Every run ends on an explicit result screen rather than dismissing itself.
-Recommended work offers **Next drill**, **Practice again**, and **Back to
-segment**. Review and custom work offer **Play again**, **Change setup**, and
-**Back to segment**. Back returns to the prior score position, and a newly
-completed segment pulses once there.
-
-The default ladder is:
-
-| Rung | Work | Requirement |
+| Skill | Assessment | Recommended tempo |
 |---|---|---|
-| Right hand | free, RH | 2 sets × 3 reps |
-| Left hand | free, LH | 2 sets × 3 reps |
-| Hands together | free, RH+LH | 2 sets × 3 reps |
-| Together with the beat | cued at 60% of the MusicXML tempo map, RH+LH | 1 set × 3 reps |
-| Mastery | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 reps; completes the segment |
-| Test out | cued at 100% of the MusicXML tempo map, RH+LH | 1 set × 3 consecutive reps; always available and completes the segment |
+| Find the right-hand notes | Pitch, RH | Unpaced |
+| Find the left-hand notes | Pitch, LH | Unpaced |
+| Join the hands / Find the notes | Pitch, all playable parts | Unpaced |
+| Settle into a beat | Pitch with a guide click; timing is not graded | 60% |
+| Play with the beat | Pitch and placement | 60%, then 80% |
+| Play at score tempo | Pitch and placement, full passage and every playable part | 100% |
 
-Normal rungs unlock sequentially inside a passage. Test Out is always
-selectable; a failed take resets only its own streak. Single-staff and other
-non-grand-staff passages omit impossible hand-specific rungs and run their
-combined work against the parts actually present.
+Single-part passages omit separate-hand and coordination tasks. Standard
+readiness requires two successful valid equivalent completed takes among the
+latest three. Default criteria are completeness 1 and cleanliness at least 0.8;
+timed work also requires placement at least 0.8. An explicitly authored ladder
+retains its order, criteria, repetition quota and consecutive-pass requirements.
+Its terminal achievement is **Practice plan complete** unless the work establishes
+the full timed achievement, labeled **Played at score tempo**.
 
-Timed rungs may configure a `tempoPercents` value per set. Adjustable timed work
-uses named stages: **Very slow** (25%), **Slow** (40%), **Steady** (60%),
-**Nearly there** (80%), and **Full speed** (100%). A single tempo button shows
-the current stage and effective BPM; it opens the shared modal-sheet shell.
-Picking a stage commits and closes the sheet. Back, Close, Escape, and the
-scrim dismiss it; focus stays inside the open sheet and returns to its opener.
-There is no numeric stepper in Learn. Legacy configured percentages select the
-nearest available stage (ties favor the slower stage), and configured bounds
-filter the choices; a narrow interval with no stage receives one clamped choice.
-Full speed always means exactly 100%; a 90–95% interval offers Nearly there at
-95%, retaining a valid practice choice without claiming the original speed.
-Every entry in a score's tempo map is scaled proportionally; Mastery and Test Out
-show Full speed and remain locked to 100%, regardless of user or piece overrides.
-If MusicXML provides no tempo, the lab labels and uses the configured fallback
-explicitly. The main ScorePlayer transport retains its own tempo ladder.
+A stronger timed demonstration can establish easier skills without redundant
+practice. Equivalent custom takes contribute regardless of their launch source.
+Shortened, slower or single-hand work never proves a stronger full-passage skill.
+Earned readiness and mastery are permanent. A failed review or easier practice
+cannot remove them. One mastered passage can be offered for review on a later
+household-local day, alongside continuing the unfinished work.
+
+Each deliberate start installs one take in the existing LearnLab/ExerciseRun.
+Free practice waits for and counts the first expected note. Timed practice starts
+its visible, audible count-in without a sacrificial arming note. During the
+count-in, input is excluded from grading. Timed assessment receives individual
+fresh MIDI attacks with original timestamps; held-set observations remain
+limited to the cursor/held contracts. Malformed timed input is an operational
+failure, never an extra wrong note.
+
+Notation, the assessment cursor and verdicts remain dominant in the lab. Wrong
+pitches reveal the still-owed keyboard notes until the cursor advances. **Pause**,
+**Start over**, **Change practice**, and **Back** remain visible. Pause freezes the
+clock, miss windows and click; resume supplies a short count-in. Restart and
+setup changes affect the current take, preserving achievements. Save responses
+cannot replace the material of an active take or interrupt its verdict hold.
+
+After the final verdict hold, every completed take reaches a result and a choice.
+Feedback leads with a musical accomplishment or focus. **Play again** repeats the
+same task directly. The primary recommendation names the actual next skill,
+focused recovery task or next passage; no take advances automatically. Operational
+failures have their own explanation, and metronome results never claim to have
+graded timing.
+
+After two equivalent valid failures, offer a smaller task deliberately. Prioritize
+missing/extra notes in the measure with the greatest normalized burden, breaking
+ties by earlier score order; without spans use the first half. Continued
+coordination difficulty can narrow to a hand. Timing-only difficulty steps down a
+named tempo stage, with an automatic floor of 40%, then shortens the range. There
+are at most two recovery levels. Two successful recovery takes recommend the
+parent again without completing its quota. Manual tempo choices under Change
+practice remain available at 15, 25, 40, 60, 80 and 100 percent. Preparation shows
+the starting effective BPM as well as its percentage of score tempo.
+
+Progress is scoped to profile, score and content fingerprint. Coaching uses a
+bounded browser outbox, posting the immutable assessment first and its coaching
+event second. Retry and reconnect retain the same event IDs. The server reads the
+saved assessment, applies the shared policy in order, and acknowledges a revision
+using durable receipts and atomic YAML summaries. Duplicate delivery cannot award
+credit twice, including after restart or eviction from recent evidence. A profile
+switch disposes the old run; delayed writes retain their captured profile.
+
+Musical success remains visible while saving is pending. **Progress not saved**
+offers **Retry saving**. Browser-storage failures ask the learner to keep the page
+open until saved. Guests receive session-only coaching and a visible reminder to
+choose a name for durable progress, with no guest writes.
+
+The additive `learnCoach` summary preserves existing `learn`, `measures`, and
+`polish`. Compatible legacy earned skills are grandfathered with explicit
+provenance, including six banked passes under weaker old rubrics. Earlier counts
+remain visible separately when score identity changes. Partial legacy counts do
+not manufacture current equivalent evidence. Historical version-2 two-part timed
+failures without the corrected `onsets-v1` contract never drive adaptation, and
+historical attempts are never rewritten as passes. Content versions of coaching
+state are archived rather than overwritten.
+
+The coaching API is `GET/POST /api/v1/piano/users/:userId/practice/:scoreKey/coach`.
+The shared policy is `shared/music/learnCoach.mjs`. Aggregate events include
+`piano.learn.saved`, `piano.learn.save-failed`, `piano.learn.queue-failed`,
+`piano.learn.listen`, and existing exercise terminal/timing summaries. Runtime
+provider `exercise-runtime-v5-onsets` identifies the corrected attack contract.
+Raw note streams are not added to ordinary coaching logs.
 
 Timed and metronome Learn rungs show **Soft**, **Medium**, **Loud**, and **Max**
 click controls, with Loud selected initially. Their base gains are 0.08, 0.18,
@@ -307,8 +334,7 @@ PLAY sits above notation ink. Running beats produce a short, pointer-transparent
 stage-edge halo with a stronger measure downbeat; reduced motion replaces it
 with a static numbered corner marker and disables the numeral pop. Countdown,
 PLAY, cursor, and beat treatment all project the existing run clock, with no
-second animation timer. The score, rep/set rail, and bottom keyboard retain
-their space throughout.
+second animation timer. The score and bottom keyboard retain their space throughout.
 
 Bar accents use the engraver's actual measure start and duration, carried in the
 compiled assessment's `measureMap`. This preserves 3/4, compound meter, pickups,
@@ -327,11 +353,11 @@ the remaining-count API announces `Starting in N`.
 
 Selection lives in `learnPassage` and `learnRung` query parameters. The run
 receives the original MusicXML, printed passage boundaries, active parts, the
-configured rubric, and a set/rep projection. `ExerciseRun` is therefore the one
+configured rubric, and the selected coaching task. `ExerciseRun` is therefore the one
 assessment and feedback surface rather than a second Learn-only judge.
 
 Learn configuration is deep-merged in order: built-in defaults, category,
-piece, user, then user-plus-piece. All ladder behavior is configurable under
+piece, user, then user-plus-piece. An explicitly supplied ladder overrides the standard skill policy. Ladder behavior is configurable under
 `sheetmusic.learn`; the following is
 the shape, not a second source of defaults:
 
@@ -359,8 +385,7 @@ sheetmusic:
 `scope: all-parts` is available for together/timed rungs and expands their
 effective parts to every playable staff, including staves beyond a grand staff.
 `legacySeed` is opt-in migration metadata; custom free rungs are not inferred to
-be compatible with old per-measure history. The normalized passage sizing and
-complete ladder are hashed into a plan revision. Each segment also stores a
+be compatible with old per-measure history. The legacy planner hashes normalized passage sizing and the complete ladder into a plan revision. Each segment also stores a
 fingerprint of its boundaries and effective ladder. A harmless label change
 retains progress; changing one segment's boundaries or ladder invalidates only
 that segment while compatible siblings survive the new plan revision. Invalid

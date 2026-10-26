@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { pianoCoachFixture } from '../../../../../../../tests/_lib/pianoCoachFixture.mjs';
+import { validateAssessment } from '../../../../portable/music/assessmentRecord.mjs';
 import { PianoLearnCoachService } from '../../../../server/application/PianoLearnCoachService.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ beforeAll(async () => {
   build.onResolve({filter:/\.(scss|css)$/},args=>{ const file=args.path.startsWith('.')?path.resolve(args.resolveDir,args.path):require.resolve(args.path);sheets.add(file);return{path:file,namespace:'sheet'};});
   build.onLoad({filter:/.*/,namespace:'sheet'},()=>({contents:'',loader:'js'}));
   build.onLoad({filter:/\.(jsx|js|mjs)$/},args=>{for(const [pattern,contents] of stubs)if(pattern.test(args.path))return{contents,loader:'jsx'};
-    if(args.path.endsWith('/ui/icons/Icon.jsx')){const dir=path.join(path.dirname(args.path),'svg');const assets=Object.fromEntries(fs.readdirSync(dir).filter(f=>f.endsWith('.svg')).map(f=>[`./svg/${f}`,fs.readFileSync(path.join(dir,f),'utf8')]));return{contents:fs.readFileSync(args.path,'utf8').replace(/import\.meta\.glob\([^\n]+\)/,JSON.stringify(assets)),loader:'jsx'};}return null;});
+    if(args.path.endsWith('/ui/icons/Icon.jsx')){const dir=path.join(path.dirname(args.path),'svg');const files=[...fs.readdirSync(dir).filter(f=>f.endsWith('.svg')),...fs.readdirSync(path.join(dir,'generated')).filter(f=>f.endsWith('.svg')).map(f=>`generated/${f}`)];const assets=Object.fromEntries(files.map(f=>[`./svg/${f}`,fs.readFileSync(path.join(dir,f),'utf8')]));return{contents:fs.readFileSync(args.path,'utf8').replace(/import\.meta\.glob\([^\n]+\)/,JSON.stringify(assets)),loader:'jsx'};}return null;});
  }}] });js=bundle.outputFiles[0].text;
  const sass = await import('sass-embedded'); const out=[];
  for(const file of new Set([path.join(ROOT,'__capabilities/music-notation/browser/styles/tokens.scss'),path.join(ROOT,'__app_modules/learning/piano/browser/pianoTokens.scss'),path.join(ROOT,'__app_modules/learning/piano/browser/PianoApp.scss'),...sheets]))out.push(file.endsWith('.css')?fs.readFileSync(file,'utf8'):(await sass.compileAsync(file,{loadPaths:[path.join(ROOT,'frontend'),path.dirname(file)]})).css);
@@ -46,13 +47,13 @@ async function open(viewport={width:1280,height:800}){
   const [,user]=url.match(/users\/([^/]+)/)??[];
   if(f.offline && method==='POST')throw new Error('offline');
   if(url.includes('/preferences'))return{};
-  if(url.includes('/attempts')){f.attempts.set(body.attempt_id,{...body,user_id:user});return{attempt_id:body.attempt_id};}
+  if(url.includes('/attempts')){const checked=validateAssessment(body);if(!checked.valid)throw new Error(checked.errors.join('; '));f.attempts.set(body.attempt_id,{...body,user_id:user});return{attempt_id:body.attempt_id};}
   const [,key]=url.match(/practice\/([^/?]+)/)??[];
   if(url.includes('/coach'))return method==='POST'?service.record(user,key,body):service.get(user,key);
   if(key)return f.datastore.getPractice(user,key);return{};
  });
  await page.route('http://learn.test/**',route=>route.fulfill({status:200,body:'<!doctype html>'}));await page.goto('http://learn.test');
- await page.setContent(`<style>${css}html,body{margin:0}#root{height:calc(100vh - 70px)}</style><div class="piano-app"><header style="height:70px"></header><div id="root"></div></div>`);
+ await page.setContent(`<style>${css}html,body{margin:0}#root{height:calc(100vh - 70px);display:flex;flex-direction:column;min-height:0}</style><div class="piano-app"><header style="height:70px"></header><div id="root"></div></div>`);
  await page.evaluate(value=>{window.__xml=value},xml);await page.addScriptTag({content:js});
  return{page,f,errors};
 }
@@ -96,6 +97,20 @@ describe('real Learn journey',()=>{
   const{page,f,errors}=await open();try{await click(page,'Start learning');await click(page,'Listen');
    await page.getByRole('heading',{name:'Listen to this passage'}).waitFor();await page.getByRole('button',{name:'Start practice',exact:true}).waitFor({timeout:15000});
    const audio=await page.evaluate(()=>window.__audio);expect(audio.length).toBe(8);expect(audio.every(note=>note>=60)).toBe(true);expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },60000);
+ it('keeps run controls and the grand staff visible while pause freezes the timed run',async()=>{
+  const{page,f,errors}=await open();try{
+   await prepareFull(page);await click(page,'Start practice');await page.waitForFunction(()=>window.__logs.some(l=>l.event==='piano.exercise-countdown-started'));await click(page,'Pause');
+   await page.locator('.piano-exercise-run[data-phase="paused"]').waitFor();
+   await page.screenshot({path:path.join(ARTIFACTS,'tablet-running-paused.png')});
+   for(const name of ['Resume','Start over','Change practice']){
+    const box=await page.getByRole('button',{name,exact:true}).boundingBox();expect(box.height).toBeGreaterThanOrEqual(64);expect(box.y+box.height).toBeLessThanOrEqual(800);
+   }
+   const stage=await page.locator('.piano-exercise-run__stage').boundingBox();expect(stage.height).toBeGreaterThan(150);
+   await page.waitForTimeout(2200);expect(f.attempts.size).toBe(0);expect(await page.locator('.piano-exercise-run[data-phase="paused"]').count()).toBe(1);
+   await click(page,'Resume');await page.locator('.piano-exercise-run[data-phase="resume-countdown"]').waitFor();
+   await click(page,'Change practice');expect(await page.getByRole('heading',{name:'Make your own practice'}).count()).toBe(1);expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);
  it('keeps keyboard focus and preparation usable on a narrow screen with reduced motion',async()=>{

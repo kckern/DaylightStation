@@ -97,7 +97,7 @@ export default function LearnLaunchpad({ segment, preview = null, result = null,
           </div>
           {mode !== 'free' && <div role="group" aria-label="Tempo"><h3>Tempo</h3>{TEMPO_STAGES.map((item) => <TouchButton key={item.id} variant="choice"
             aria-pressed={stage.id === item.id} aria-label={`${item.label} ${item.percent}%`} onClick={() => chooseStage(item)}>{item.label}<small>{item.percent}%</small></TouchButton>)}</div>}
-          <TouchButton className="piano-learn-builder__start" onClick={launchCustom}><Icon name="play" />Start practice</TouchButton>
+          <TouchButton className="piano-learn-builder__start" onClick={launchCustom}><Icon name="play" />{customOnly ? 'Use this setup' : 'Start practice'}</TouchButton>
         </div>}
       </div>
     </div>

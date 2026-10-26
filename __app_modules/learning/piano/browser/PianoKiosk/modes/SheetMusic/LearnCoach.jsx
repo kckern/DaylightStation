@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coachFeedback, makeCoachTask } from '../../../../../../../shared/music/learnCoach.mjs';
 import useLearnCoach from './useLearnCoach.js';
+import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import LearnLab from './LearnLab.jsx';
 import LearnListen from './LearnListen.jsx';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
@@ -8,6 +9,8 @@ import ScorePassage from '../Exercises/ScorePassage.jsx';
 import './LearnCoach.scss';
 
 const EMPTY = {};
+const earlierBars = (id) => { const match = /^m(\d+)-(\d+)$/.exec(id); return match ? `Bars ${Number(match[1]) + 1}–${Number(match[2]) + 1}` : 'Earlier passage'; };
+const earlierSkill = (id) => ({ right: 'Right hand', left: 'Left hand', together: 'Hands together', timed: 'With the beat', 'test-out': 'Full passage' })[id] ?? 'Earlier skill';
 const criteriaCopy = (task) => task.mode === 'cued'
   ? 'Find every note, with few extra notes, and place them with the beat.'
   : task.mode === 'metronome' ? 'Find every note with few extra notes. The click is a guide; timing is not graded.'
@@ -26,6 +29,8 @@ function OwnedCoach(props) {
 }
 
 function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+  const { connected } = usePianoMidi();
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [view, setView] = useState('prepare');
   const [choice, setChoice] = useState(null);
   const projected = coach.projection.segments.find((item) => item.id === segment.id);
@@ -53,7 +58,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   const parts = useMemo(() => activeTask?.parts, [activeTask]);
   const ready = useCallback(() => { setReadyKey(task?.key); setMusicError(null); }, [task?.key]);
   const unavailable = useCallback((reason) => setMusicError(reason), []);
-  const preview = task && <ScorePassage key={task.key} musicXml={score.musicXml} sourceId={score.id}
+  const preview = task && <ScorePassage key={`${task.key}:${previewAttempt}`} musicXml={score.musicXml} sourceId={score.id}
     rangeIndices={range} activeParts={parts} keepWholePassage onExpectation={ready} onUnrunnable={unavailable} />;
   const start = (wanted = task) => {
     if (!wanted) return;
@@ -62,6 +67,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   };
   const finish = (raw) => {
     if (!live.current) return;
+    raw = { ...raw, assessmentId: raw.assessmentId ?? `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}` };
     setResult({ task: run, raw }); setView('result'); setSelected(null);
     coach.record(run, raw);
   };
@@ -126,14 +132,22 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
           <p>{task.parts.length > 1 ? 'Both hands' : task.parts[0] === 'lh' ? 'Left hand' : 'Right hand'}{task.mode !== 'free' ? ` · ${task.tempoPercent}% of score tempo${effectiveBpm ? ` · starts at ${effectiveBpm} BPM` : ''}` : ''} · Bars {task.range.start + 1}–{task.range.end + 1}</p>
           <p>{criteriaCopy(task)}</p>
           <p>{task.required ? `${projected?.skills.find((item) => item.key === task.key)?.successes ?? 0} of ${task.required} successful takes` : 'Two successful takes out of your last three earn this skill.'}</p>
-          {musicError && <p role="alert">The music could not be prepared. Return to the score or choose another passage.</p>}
-          <button className="is-primary" disabled={readyKey !== task.key || Boolean(musicError)} onClick={() => start()}>Start practice</button>
+          {musicError ? <><p role="alert">The music could not be prepared. Return to the score or try again.</p><button onClick={() => { setReadyKey(null); setMusicError(null); setPreviewAttempt((value) => value + 1); }}>Retry music</button></>
+            : readyKey !== task.key && <p role="status">Preparing the music…</p>}
+          {coach.loaded === false && <p role="status">Loading your practice…</p>}
+          {connected === false && <p role="alert">Connect the piano before starting. Your progress is safe.</p>}
+          <button className="is-primary" disabled={readyKey !== task.key || Boolean(musicError) || connected === false || coach.loaded === false} onClick={() => start()}>Start practice</button>
           <button onClick={() => { onListen?.(task); setView('listen'); }}>Listen</button>
           <button onClick={() => setView('custom')}>Change practice</button>
           {segment.tasks.some((item) => item.mastery) && <button onClick={() => {
             setSelected(segment.tasks.find((item) => item.mastery)); setMusicError(null);
           }}>Try the full passage</button>}
         </>}
+        {Object.values(coach.projection.retainedLegacy?.passages ?? {}).some((passage) => passage.complete || Object.values(passage.rungs ?? {}).some((rung) => rung.passCount > 0)) && <details className="piano-learn-coach__earlier">
+          <summary>Earlier practice retained</summary>
+          {!coach.projection.retainedLegacy.compatible && <p>This score has changed. Your earlier achievements are kept separately.</p>}
+          <ul>{Object.entries(coach.projection.retainedLegacy.passages).flatMap(([id, passage]) => Object.entries(passage.rungs ?? {}).filter(([, rung]) => rung.passCount > 0).map(([skill, rung]) => <li key={`${id}:${skill}`}>{earlierBars(id)} · {earlierSkill(skill)} · {rung.passCount} successful takes</li>))}</ul>
+        </details>}
         <ul className="piano-learn-coach__skills" aria-label="Earned skills">{projected?.skills.map((skill) => <li key={skill.key} data-earned={skill.ready}>
           <span aria-hidden="true">{skill.ready ? '✓' : '○'}</span> {skill.label}{skill.mode === 'cued' ? ` · ${skill.tempoPercent}%` : ''}{skill.provenance === 'legacy' ? ' · previously earned' : ''}
         </li>)}</ul>
