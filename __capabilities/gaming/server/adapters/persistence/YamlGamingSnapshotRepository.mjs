@@ -1,3 +1,4 @@
+import { storageVersion } from './storageVersion.mjs';
 import path from 'node:path';
 import YAML from 'yaml';
 import {
@@ -18,6 +19,7 @@ export class YamlGamingSnapshotRepository extends SnapshotRepository {
     try { return operation(); }
     finally { closeFileDescriptor(descriptor); deleteFileStrict(lock); }
   }
+  async getVersion(id) { return storageVersion(this.#file(id)); }
   async get(id) { const file = this.#file(id); return file && fileExists(file) ? YAML.parse(readTextFromPath(file), { uniqueKeys: true }) : null; }
   async put(session, { expectedRevision }) {
     const file = this.#file(session?.header?.session_id); if (!file) throw new Error('invalid gaming session id');

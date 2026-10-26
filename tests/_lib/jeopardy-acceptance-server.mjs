@@ -1,3 +1,4 @@
+import { createDurableJeopardyFixture } from './createDurableJeopardyFixture.mjs';
 import { GamingSessionRestarts } from '../../__app_modules/games/party-games/server/application/runtime/GamingSessionRestarts.mjs';
 // Isolated loopback preview: real gaming authority, no household boot or effects.
 import fs from 'node:fs';
@@ -77,6 +78,7 @@ app.use((req, res, next) => {
   req.roles = ['gaming-host'];
   next();
 });
+const durable = process.env.JEOPARDY_ACCEPTANCE_DURABLE === '1' ? await createDurableJeopardyFixture({ definition: packs.get('jeopardy:fhe-jeremiah') }) : null;
 const application = {
   getEnvironmentProfile: () => ({
     defaults: {mute:true},
@@ -103,7 +105,11 @@ const application = {
     competition: true,
     valid: true
   })),
-  createSession: request => diagnostics.createSession(request)
+  createSession: request => durable ? durable.application.createSession({ ...request, definitionId: 'jeopardy:test' }) : diagnostics.createSession(request),
+  resumeSession: (...args) => durable.application.resumeSession(...args),
+  dispatch: (...args) => durable.application.dispatch(...args),
+  closeSession: (...args) => durable.application.closeSession(...args),
+  getDefinition: (...args) => durable.application.getDefinition(...args)
 };
 let wss;
 app.use('/api/v1/gaming', createGamingRouter({
@@ -165,7 +171,7 @@ const shared = {
   },
   server: {
     host: '127.0.0.1',
-    port: 3111,
+    port: Number(process.env.JEOPARDY_ACCEPTANCE_PORT || 3111),
     strictPort: true,
     hmr: false,
     ws: false,
@@ -190,6 +196,7 @@ if (process.argv.includes('--build')) {
     }
   });
   fs.rmSync(mediaRoot,{recursive:true,force:true});
+  durable?.dispose();
 } else {
   const server = await createServer(shared);
   wss = new WebSocketServer({
@@ -205,11 +212,12 @@ if (process.argv.includes('--build')) {
     });
   });
   await server.listen();
-  process.stdout.write('JEOPARDY_ACCEPTANCE_READY http://127.0.0.1:3111\n');
+  process.stdout.write(`JEOPARDY_ACCEPTANCE_READY http://127.0.0.1:${shared.server.port}\n`);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
     wss.close();
     await server.close();
     fs.rmSync(mediaRoot,{recursive:true,force:true});
+    durable?.dispose();
     process.exit(0);
   });
 }

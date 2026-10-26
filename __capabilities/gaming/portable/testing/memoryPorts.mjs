@@ -1,5 +1,7 @@
+import { stableHash } from '../kernel/canonical.mjs';
 export class MemorySnapshotRepository {
   constructor() { this.sessions = new Map(); this.listeners = new Map(); }
+  async getVersion(id) { return this.sessions.has(id) ? stableHash(this.sessions.get(id)) : null; }
   async get(id) { return this.sessions.has(id) ? structuredClone(this.sessions.get(id)) : null; }
   async put(session, { expectedRevision }) {
     const current = this.sessions.get(session.header.session_id);
@@ -23,5 +25,6 @@ export class MemorySessionJournal {
     if (revision !== expectedRevision) throw Object.assign(new Error('journal_revision_conflict'), { code: 'revision_conflict' });
     records.push({ revision: expectedRevision + 1, ...structuredClone(record) });
   }
+  async getVersion(id) { return this.records.has(id) ? stableHash(this.records.get(id)) : null; }
   async read(id) { return structuredClone(this.records.get(id) || []); }
 }

@@ -1,3 +1,4 @@
+import { storageVersion } from './storageVersion.mjs';
 import path from 'node:path';
 import {
   appendTextFile, closeFileDescriptor, deleteFileStrict, ensureDir, fileExists,
@@ -8,7 +9,7 @@ import { SessionJournal } from "../../application/ports/SessionJournal.mjs";
 const SESSION_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
 
 export class YamlGamingSessionJournal extends SessionJournal {
-  constructor({ journalsDir }) { super(); this.journalsDir = journalsDir; ensureDir(journalsDir); }
+  constructor({ journalsDir }) { super(); this.journalsDir = journalsDir; this.heads = new Map(); ensureDir(journalsDir); }
   #file(id) { if (!SESSION_ID.test(String(id))) return null; return path.join(this.journalsDir, `${id}.jsonl`); }
   #locked(file, operation) {
     const lock = `${file}.lock`;
@@ -23,20 +24,36 @@ export class YamlGamingSessionJournal extends SessionJournal {
   }
   async create(id, record) {
     const file = this.#file(id); if (!file) throw new Error('invalid gaming session id');
-    this.#locked(file, () => writeFileExclusive(file, `${JSON.stringify({ kind: 'session-created', ...record })}\n`));
+    this.#locked(file, () => {
+      writeFileExclusive(file, `${JSON.stringify({ kind: 'session-created', ...record })}\n`);
+      this.heads.set(id, { version: storageVersion(file), revision: 0 });
+    });
   }
   async append(id, record, { expectedRevision }) {
     const file = this.#file(id); if (!file) throw new Error('invalid gaming session id');
     this.#locked(file, () => {
-      const records = this.#readFile(file); if (records.length === 0) throw new Error('gaming journal not found');
-      const revision = records.filter((entry) => entry.kind === 'command-committed').length;
+      const version = storageVersion(file), head = this.heads.get(id);
+      if (head && head.version !== version) {
+        this.heads.delete(id);
+        throw Object.assign(new Error('gaming journal changed; revalidation required'), { code: 'revision_conflict' });
+      }
+      const records = head ? null : this.#readFile(file);
+      if (records?.length === 0) throw new Error('gaming journal not found');
+      const revision = head ? head.revision : records.filter((entry) => entry.kind === 'command-committed').length;
       if (revision !== expectedRevision) throw Object.assign(new Error('gaming journal revision conflict'), { code: 'revision_conflict', current_revision: revision });
-      appendTextFile(file, `${JSON.stringify({ kind: 'command-committed', revision: expectedRevision + 1, ...record })}\n`);
+      try {
+        appendTextFile(file, `${JSON.stringify({ kind: 'command-committed', revision: expectedRevision + 1, ...record })}\n`);
+        this.heads.set(id, { version: storageVersion(file), revision: expectedRevision + 1 });
+      } catch (error) { this.heads.delete(id); throw error; }
     });
   }
+  async getVersion(id) { return storageVersion(this.#file(id)); }
   async read(id) {
     const file = this.#file(id); if (!file || !fileExists(file)) return [];
-    return this.#readFile(file);
+    const version = storageVersion(file), records = this.#readFile(file);
+    if (storageVersion(file) !== version) throw Object.assign(new Error('gaming journal changed during read'), { code: 'revision_conflict' });
+    this.heads.set(id, { version, revision: records.filter(entry => entry.kind === 'command-committed').length });
+    return records;
   }
   #readFile(file) {
     return readTextFromPath(file).split('\n').filter(Boolean).map((line, index) => {
