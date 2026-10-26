@@ -83,6 +83,7 @@ config.app-local.yml
 !scripts/gen-sheet.mjs
 !scripts/audit-baseline.unit.txt
 !scripts/audit-layer-imports.mjs
+!scripts/audit-jeopardy-content.mjs
 !scripts/audit-server-layout.mjs
 !scripts/audit-baseline.json
 !scripts/gate-vitest.mjs
